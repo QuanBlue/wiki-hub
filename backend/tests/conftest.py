@@ -1,0 +1,35 @@
+"""Shared pytest fixtures.
+
+Unit tests run entirely in-process. Tests marked ``integration`` need the
+compose infrastructure (PostgreSQL, Redis, MinIO) and are skipped automatically
+when it is not reachable.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import AsyncIterator
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+# Settings are read at import time, so the test environment must be set first.
+os.environ.setdefault("WIKIHUB_ENV", "test")
+os.environ.setdefault("WIKIHUB_SECRET_KEY", "test-secret-key-for-unit-tests-only-not-real")
+os.environ.setdefault("WIKIHUB_LOG_FORMAT", "console")
+os.environ.setdefault("WIKIHUB_LOG_LEVEL", "WARNING")
+
+
+@pytest.fixture(scope="session")
+def app():
+    from app.main import create_app
+
+    return create_app()
+
+
+@pytest.fixture
+async def client(app) -> AsyncIterator[AsyncClient]:
+    """HTTP client bound directly to the ASGI app - no network, no server."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        yield ac

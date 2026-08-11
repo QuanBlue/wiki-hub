@@ -1,0 +1,61 @@
+# =============================================================================
+# WikiHub - development overlay (hot reload)
+#
+#   ./scripts/run.sh --dev
+#   # equivalent to:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# Edit anything under backend/ or frontend/ and the running containers pick the
+# change up without a rebuild:
+#
+#   backend   uvicorn --reload   (watchfiles, ships with uvicorn[standard])
+#   worker    arq --watch
+#   frontend  next dev --turbopack
+#
+# This overlay is NOT named docker-compose.override.yml on purpose: Compose
+# auto-loads that filename, which would silently turn every plain
+# `docker compose up` into a development run.
+# =============================================================================
+
+services:
+  backend:
+    # --reload-dir keeps the watcher on application code only, so a stray file
+    # in the mounted tree does not restart the API in a loop.
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/app
+    environment:
+      WIKIHUB_ENV: development
+      WIKIHUB_DEBUG: "true"
+
+  worker:
+    command:
+      - arq
+      - app.workers.settings.WorkerSettings
+      - --watch
+      - /app/app
+    environment:
+      WIKIHUB_ENV: development
+      WIKIHUB_DEBUG: "true"
+
+  frontend:
+    build:
+      target: dev
+    command: ["npm", "run", "dev"]
+    environment:
+      NODE_ENV: development
+    volumes:
+      # Source from the host...
+      - ./frontend:/app
+      # ...but keep the container's own node_modules and build cache. Anonymous
+      # volumes shadow the bind mount, so host artifacts (built for a different
+      # platform, or absent entirely) can never break the container.
+      - /app/node_modules
+      - /app/.next

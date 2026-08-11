@@ -1,0 +1,201 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ===========================================================================
+   WikiHub design tokens
+   ---------------------------------------------------------------------------
+   Layout and density follow the conventions documentation readers expect
+   (fixed top bar, left navigation tree, ~850px reading column, 8px grid).
+   Every colour, font and metric below is WikiHub's own - no third-party
+   design system values are reproduced here. See docs/design-system.md.
+   =========================================================================== */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* --- neutral ramp (slightly cool grey) --- */
+  --wh-neutral-0: #ffffff;
+  --wh-neutral-50: #f7f8fa;
+  --wh-neutral-100: #eef0f4;
+  --wh-neutral-200: #e2e5eb;
+  --wh-neutral-300: #cbd1da;
+  --wh-neutral-400: #9aa3b2;
+  --wh-neutral-500: #6b7484;
+  --wh-neutral-600: #4d5566;
+  --wh-neutral-700: #363d4d;
+  --wh-neutral-800: #232936;
+  --wh-neutral-900: #161b24;
+  --wh-neutral-950: #0d1017;
+
+  /* --- brand: WikiHub workspace blue --- */
+  --wh-brand-50: #edf6ff;
+  --wh-brand-100: #d8ecff;
+  --wh-brand-200: #b7dcff;
+  --wh-brand-300: #8ac8ff;
+  --wh-brand-400: #59adf3;
+  --wh-brand-500: #2d88db;
+  --wh-brand-600: #216fc0;
+  --wh-brand-700: #1d579b;
+  --wh-brand-800: #1d487e;
+  --wh-brand-900: #1c3b65;
+
+  /* --- status --- */
+  --wh-success: #1f7a4d;
+  --wh-success-bg: #e6f5ed;
+  --wh-warning: #9a6100;
+  --wh-warning-bg: #fdf3e0;
+  --wh-danger: #b3261e;
+  --wh-danger-bg: #fdeceb;
+  --wh-info: #1f6592;
+  --wh-info-bg: #e8f2f9;
+
+  /* --- semantic surface tokens (light) --- */
+  --background: var(--wh-neutral-0);
+  --foreground: var(--wh-neutral-900);
+  --surface: var(--wh-neutral-0);
+  --surface-sunken: var(--wh-neutral-50);
+  --surface-raised: var(--wh-neutral-0);
+  --surface-hover: var(--wh-neutral-100);
+  --surface-selected: var(--wh-brand-50);
+  --border: var(--wh-neutral-200);
+  --border-strong: var(--wh-neutral-300);
+  --muted: var(--wh-neutral-50);
+  --muted-foreground: var(--wh-neutral-500);
+  --primary: var(--wh-brand-600);
+  --primary-hover: var(--wh-brand-700);
+  --primary-foreground: #ffffff;
+  --primary-subtle: var(--wh-brand-50);
+  --ring: var(--wh-brand-500);
+  --danger: var(--wh-danger);
+  --danger-foreground: #ffffff;
+
+  /* --- layout metrics (8px grid) --- */
+  --wh-topbar-height: 3.5rem; /* 56px */
+  --wh-sidebar-width: 16rem; /* 256px */
+  --wh-toc-width: 14rem; /* 224px */
+  --wh-content-max: 53rem; /* ~850px reading column */
+  --radius: 0.375rem;
+}
+
+.dark {
+  --background: var(--wh-neutral-950);
+  --foreground: var(--wh-neutral-100);
+  --surface: var(--wh-neutral-900);
+  --surface-sunken: var(--wh-neutral-950);
+  --surface-raised: var(--wh-neutral-800);
+  --surface-hover: var(--wh-neutral-800);
+  --surface-selected: color-mix(in oklab, var(--wh-brand-500) 22%, transparent);
+  --border: var(--wh-neutral-800);
+  --border-strong: var(--wh-neutral-700);
+  --muted: var(--wh-neutral-900);
+  --muted-foreground: var(--wh-neutral-400);
+  --primary: var(--wh-brand-400);
+  --primary-hover: var(--wh-brand-300);
+  --primary-foreground: var(--wh-neutral-950);
+  --primary-subtle: color-mix(in oklab, var(--wh-brand-500) 18%, transparent);
+  --ring: var(--wh-brand-400);
+
+  --wh-success: #6ed3a3;
+  --wh-success-bg: color-mix(in oklab, #1f7a4d 24%, transparent);
+  --wh-warning: #f0c07a;
+  --wh-warning-bg: color-mix(in oklab, #9a6100 26%, transparent);
+  --wh-danger: #f2938c;
+  --wh-danger-bg: color-mix(in oklab, #b3261e 24%, transparent);
+  --wh-info: #86c0e6;
+  --wh-info-bg: color-mix(in oklab, #1f6592 26%, transparent);
+  --danger: #e5675e;
+}
+
+/* Expose the tokens to Tailwind utilities (bg-surface, text-muted-foreground, ...) */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-selected: var(--surface-selected);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-subtle: var(--primary-subtle);
+  --color-ring: var(--ring);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-success: var(--wh-success);
+  --color-success-bg: var(--wh-success-bg);
+  --color-warning: var(--wh-warning);
+  --color-warning-bg: var(--wh-warning-bg);
+  --color-info: var(--wh-info);
+  --color-info-bg: var(--wh-info-bg);
+  --color-danger-bg: var(--wh-danger-bg);
+
+  --spacing-topbar: var(--wh-topbar-height);
+  --spacing-sidebar: var(--wh-sidebar-width);
+  --spacing-toc: var(--wh-toc-width);
+  --spacing-content: var(--wh-content-max);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-mono:
+    var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    /* Scroll targets must clear the fixed top bar. */
+    scroll-padding-top: calc(var(--wh-topbar-height) + 1rem);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 0.875rem; /* 14px base - documentation density */
+    line-height: 1.5715;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background-color: var(--primary-subtle);
+  }
+}
+
+@layer utilities {
+  /* Thin scrollbars for the navigation tree and long content panes. */
+  .wh-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  .wh-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .wh-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 4px;
+  }
+  .wh-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

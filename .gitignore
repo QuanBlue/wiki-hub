@@ -1,0 +1,45 @@
+# --- Secrets -----------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+coverage.json
+dist/
+build/
+
+# --- Node / Next.js ----------------------------------------------------------
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+playwright-report/
+test-results/
+blob-report/
+coverage/
+.playwright/
+
+# --- Editors / OS ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# --- Local runtime artifacts -------------------------------------------------
+*.log
+tmp/
+.tmp/

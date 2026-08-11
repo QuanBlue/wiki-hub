@@ -1,0 +1,27 @@
+# Keep build contexts small and never ship secrets or local state into an image.
+.git/
+.github/
+**/.venv/
+**/venv/
+**/node_modules/
+**/.next/
+**/out/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
+**/playwright-report/
+**/test-results/
+**/*.log
+.env
+.env.*
+!.env.example
+docs/
+deploy/kubernetes/
+deploy/helm/
+**/.DS_Store
+**/.idea/
+**/.vscode/

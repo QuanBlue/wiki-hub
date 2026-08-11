@@ -1,0 +1,155 @@
+"use client";
+
+import { Search } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+
+/**
+ * Filter and pagination controls that write their state into the URL.
+ *
+ * `searchParams` rather than component state on purpose: the server component
+ * reads the filters, so a `router.refresh()` after a mutation re-renders the
+ * *current* filtered page. It also makes a filtered view linkable and keeps the
+ * back button working.
+ */
+
+interface FilterOption {
+  name: string;
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+}
+
+function useParamWriter() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  return (updates: Record<string, string | null>) => {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === "") next.delete(key);
+      else next.set(key, value);
+    }
+    // Any filter change invalidates the current page.
+    if (!("offset" in updates)) next.delete("offset");
+    const qs = next.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  };
+}
+
+export function ListFilters({
+  searchValue,
+  searchPlaceholder = "Search…",
+  filters = [],
+}: {
+  searchValue: string;
+  searchPlaceholder?: string;
+  filters?: FilterOption[];
+}) {
+  const write = useParamWriter();
+  const [term, setTerm] = useState(searchValue);
+  const [lastFromUrl, setLastFromUrl] = useState(searchValue);
+
+  // Keep the box in step when the URL changes from elsewhere (back button, a
+  // filter reset) without fighting the user while they type.
+  //
+  // This is React's documented "adjust state when a prop changes" pattern:
+  // setting state during render of *this same* component, guarded by a compare.
+  // An effect would fire a second render pass for every keystroke-free URL
+  // change, which is what react-hooks/set-state-in-effect flags.
+  if (searchValue !== lastFromUrl) {
+    setLastFromUrl(searchValue);
+    setTerm(searchValue);
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <form
+        className="flex items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          write({ q: term.trim() || null });
+        }}
+      >
+        <div className="relative">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+          <Input
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            className="w-56 pl-8"
+          />
+        </div>
+        <Button type="submit" variant="secondary">
+          Search
+        </Button>
+      </form>
+
+      {filters.map((filter) => (
+        <div key={filter.name} className="min-w-36">
+          <Select
+            aria-label={filter.label}
+            value={filter.value}
+            onChange={(e) => write({ [filter.name]: e.target.value || null })}
+          >
+            <option value="">{filter.label}: all</option>
+            {filter.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function PaginationControls({
+  total,
+  limit,
+  offset,
+}: {
+  total: number;
+  limit: number;
+  offset: number;
+}) {
+  const write = useParamWriter();
+
+  const from = total === 0 ? 0 : offset + 1;
+  const to = Math.min(offset + limit, total);
+  const hasPrevious = offset > 0;
+  const hasNext = offset + limit < total;
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <p className="text-muted-foreground text-sm" aria-live="polite">
+        {total === 0 ? "No results" : `Showing ${from}–${to} of ${total}`}
+      </p>
+      <div className="flex gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={!hasPrevious}
+          onClick={() => write({ offset: String(Math.max(0, offset - limit)) })}
+        >
+          Previous
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={!hasNext}
+          onClick={() => write({ offset: String(offset + limit) })}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}
