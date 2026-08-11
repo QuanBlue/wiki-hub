@@ -1,6 +1,13 @@
 "use client";
 
-import { AlertTriangle, Download, Loader2, Upload } from "lucide-react";
+import {
+  AlertTriangle,
+  Download,
+  FileArchive,
+  Info,
+  Loader2,
+  Upload,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
@@ -44,6 +51,7 @@ export function BackupPanel() {
 
   const [includeCredentials, setIncludeCredentials] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [confluenceFile, setConfluenceFile] = useState<File | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [pending, setPending] = useState<"preview" | "apply" | null>(null);
   const [confirmApply, setConfirmApply] = useState(false);
@@ -91,8 +99,8 @@ export function BackupPanel() {
   return (
     <div className="space-y-4">
       {/* -- Export ------------------------------------------------------- */}
-      <section className="border-border bg-surface rounded-lg border p-5">
-        <h2 className="font-medium">Export</h2>
+      <section className="border-border bg-surface rounded-xl border p-5 shadow-sm">
+        <h2 className="text-base font-semibold">Export</h2>
         <p className="text-muted-foreground mt-1 text-sm">
           Downloads every account, space, membership and favourite as one JSON
           file. Page content is not included — that domain does not exist yet.
@@ -126,9 +134,57 @@ export function BackupPanel() {
         </div>
       </section>
 
+      {/* -- Confluence import ------------------------------------------ */}
+      <section className="border-border bg-surface rounded-xl border p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-semibold">
+              <FileArchive className="text-primary size-4" />
+              Import from Confluence
+            </h2>
+            <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
+              Choose a Confluence site or space export archive to prepare it for
+              import into WikiHub.
+            </p>
+          </div>
+          <Badge variant="info">coming soon</Badge>
+        </div>
+
+        <div className="border-border bg-surface-sunken mt-4 rounded-md border border-dashed p-4">
+          <Label htmlFor="confluence-backup-file">
+            Confluence export archive
+          </Label>
+          <input
+            id="confluence-backup-file"
+            type="file"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            onChange={(event) => {
+              setConfluenceFile(event.target.files?.[0] ?? null);
+            }}
+            className="border-border bg-surface file:bg-surface-sunken file:text-foreground hover:border-border-strong mt-2 block w-full max-w-md cursor-pointer rounded-md border text-sm transition-colors duration-150 file:mr-3 file:cursor-pointer file:border-0 file:px-3 file:py-2 file:text-sm"
+          />
+          <p className="text-muted-foreground mt-2 text-xs">
+            Accepted format: <code className="font-mono">.zip</code> archive
+            exported by Confluence. The original file is not uploaded until the
+            importer is available.
+          </p>
+        </div>
+
+        {confluenceFile ? (
+          <div className="border-info/25 bg-info-bg mt-3 flex gap-2.5 rounded-md border p-3 text-sm">
+            <Info className="text-info mt-0.5 size-4 shrink-0" />
+            <p>
+              <span className="font-medium">{confluenceFile.name}</span> is
+              ready to import. Confluence page, attachment, and user migration
+              will be enabled with the content-importer release.
+            </p>
+          </div>
+        ) : null}
+      </section>
+
       {/* -- Import ------------------------------------------------------- */}
-      <section className="border-border bg-surface rounded-lg border p-5">
-        <h2 className="font-medium">Restore</h2>
+      <section className="border-border bg-surface rounded-xl border p-5 shadow-sm">
+        <h2 className="text-base font-semibold">Restore</h2>
         <p className="text-muted-foreground mt-1 text-sm">
           Upload a backup to preview what it would change. Existing usernames
           and space keys are <strong>skipped, never overwritten</strong>, and
@@ -185,9 +241,9 @@ export function BackupPanel() {
 
       {/* -- Report ------------------------------------------------------- */}
       {report ? (
-        <section className="border-border bg-surface rounded-lg border p-5">
+        <section className="border-border bg-surface rounded-xl border p-5 shadow-sm">
           <div className="flex items-center gap-2">
-            <h2 className="font-medium">
+            <h2 className="text-base font-semibold">
               {report.dry_run ? "Preview" : "Import result"}
             </h2>
             <Badge variant={report.dry_run ? "info" : "success"}>

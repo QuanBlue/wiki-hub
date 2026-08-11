@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { CreateSpaceForm } from "@/components/spaces/create-space-form";
 import { SpaceList } from "@/components/spaces/space-list";
 import { getCurrentUser } from "@/lib/auth";
@@ -20,15 +21,12 @@ export default async function SpacesPage() {
   return (
     <AppShell siteName={SITE_NAME} user={user}>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Spaces</h1>
-            <p className="text-muted-foreground mt-1.5">
-              A space is a top-level area of documentation, owned by a team.
-            </p>
-          </div>
-          <CreateSpaceForm />
-        </div>
+        <PageHeader
+          eyebrow="Knowledge library"
+          title="Spaces"
+          description="Spaces are the shared homes for your teams, projects, and documentation."
+          actions={<CreateSpaceForm />}
+        />
 
         <SpaceList
           spaces={spaces}

@@ -24,21 +24,15 @@ export function CreateSpaceForm() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [key, setKey] = useState("");
-  const [keyTouched, setKeyTouched] = useState(false);
   const [description, setDescription] = useState("");
-  const [icon, setIcon] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const effectiveKey = keyTouched ? key : deriveKey(name);
+  const key = deriveKey(name);
 
   function reset() {
     setName("");
-    setKey("");
-    setKeyTouched(false);
     setDescription("");
-    setIcon("");
     setError(null);
   }
 
@@ -48,10 +42,10 @@ export function CreateSpaceForm() {
     setError(null);
     try {
       const space = await api.post<Space>("/api/v1/spaces", {
-        key: effectiveKey,
+        key,
         name: name.trim(),
         description: description.trim(),
-        icon: icon.trim(),
+        icon: "",
       });
       toast.success(`Space "${space.name}" created.`);
       setOpen(false);
@@ -113,41 +107,6 @@ export function CreateSpaceForm() {
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="space-key" className="text-sm font-medium">
-            Key
-          </label>
-          <Input
-            id="space-key"
-            value={effectiveKey}
-            onChange={(e) => {
-              setKeyTouched(true);
-              setKey(e.target.value.toUpperCase());
-            }}
-            placeholder="ENG"
-            required
-            disabled={pending}
-            className="font-mono"
-          />
-          <p className="text-muted-foreground text-xs">
-            Used in URLs. Letters, digits and underscores.
-          </p>
-        </div>
-
-        <div className="space-y-1.5">
-          <label htmlFor="space-icon" className="text-sm font-medium">
-            Icon
-          </label>
-          <Input
-            id="space-icon"
-            value={icon}
-            onChange={(e) => setIcon(e.target.value)}
-            placeholder="🚀"
-            maxLength={16}
-            disabled={pending}
-          />
-        </div>
-
-        <div className="space-y-1.5">
           <label htmlFor="space-description" className="text-sm font-medium">
             Description
           </label>
@@ -174,7 +133,7 @@ export function CreateSpaceForm() {
         <Button
           type="submit"
           variant="primary"
-          disabled={pending || !name || !effectiveKey}
+          disabled={pending || !name || !key}
         >
           {pending ? (
             <>

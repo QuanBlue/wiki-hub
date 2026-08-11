@@ -22,12 +22,23 @@ from app.schemas.pagination import Page
 from app.schemas.user import (
     PasswordChange,
     PasswordReset,
+    SelfProfileUpdate,
     UserCreate,
     UserRead,
     UserUpdate,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.patch("/me", response_model=UserRead, summary="Update your profile")
+async def update_own_profile(
+    payload: SelfProfileUpdate,
+    user: CurrentUser,
+    service: ActingAuthServiceDep,
+) -> UserRead:
+    updated = await service.update_own_profile(user.id, payload)
+    return UserRead.model_validate(updated)
 
 
 @router.get("", response_model=Page[UserRead], summary="List users")

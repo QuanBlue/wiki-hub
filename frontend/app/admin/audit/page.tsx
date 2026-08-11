@@ -62,10 +62,13 @@ export default async function AdminAuditPage({
 
   return (
     <div className="space-y-5">
-      <p className="text-muted-foreground text-sm">
-        A record of privileged operations. Entries are written in the same
-        transaction as the action itself and can never be edited or deleted.
-      </p>
+      <div>
+        <h2 className="text-lg font-semibold">Audit log</h2>
+        <p className="text-muted-foreground mt-1 text-sm">
+          A permanent record of privileged operations, written in the same
+          transaction as the action itself.
+        </p>
+      </div>
 
       <Suspense fallback={null}>
         <ListFilters
@@ -85,10 +88,10 @@ export default async function AdminAuditPage({
         />
       </Suspense>
 
-      <div className="border-border bg-surface overflow-x-auto rounded-lg border">
+      <div className="border-border bg-surface overflow-x-auto rounded-xl border shadow-sm">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-muted-foreground border-border border-b text-left">
+            <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
               <th className="px-4 py-3 font-medium">When</th>
               <th className="px-4 py-3 font-medium">Actor</th>
               <th className="px-4 py-3 font-medium">Action</th>

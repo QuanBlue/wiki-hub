@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserRead(BaseModel):
@@ -24,6 +24,7 @@ class UserRead(BaseModel):
     #: make the account unreadable.
     email: str
     full_name: str
+    avatar_url: str | None
     is_active: bool
     is_superuser: bool
     is_protected: bool
@@ -55,6 +56,14 @@ class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     is_active: bool | None = None
     is_superuser: bool | None = None
+
+
+class SelfProfileUpdate(BaseModel):
+    """Fields an account owner may change without admin privileges."""
+
+    email: EmailStr | None = None
+    full_name: str | None = Field(default=None, max_length=255)
+    avatar_url: AnyHttpUrl | None = Field(default=None, max_length=2048)
 
 
 class PasswordChange(BaseModel):

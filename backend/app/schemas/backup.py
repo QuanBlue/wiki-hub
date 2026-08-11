@@ -71,6 +71,7 @@ class BackupSiteSettings(BaseModel):
     site_name: str | None = None
     max_upload_size_mb: int | None = None
     allowed_attachment_types: list[str] | None = None
+    sidebar_permissions: dict[str, list[str]] | None = None
 
 
 class BackupMeta(BaseModel):

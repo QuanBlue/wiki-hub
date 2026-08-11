@@ -13,8 +13,8 @@ export function SpaceList({
 }) {
   if (spaces.length === 0) {
     return (
-      <div className="border-border text-muted-foreground rounded-lg border border-dashed p-10 text-center">
-        <p className="text-foreground font-medium">{emptyTitle}</p>
+      <div className="border-border bg-surface text-muted-foreground rounded-xl border border-dashed p-10 text-center">
+        <p className="text-foreground font-semibold">{emptyTitle}</p>
         <p className="mt-1 text-sm">{emptyHint}</p>
       </div>
     );

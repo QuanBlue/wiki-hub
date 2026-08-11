@@ -43,6 +43,9 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     full_name: Mapped[str] = mapped_column(
         String(255), nullable=False, default="", server_default=""
     )
+    #: Optional remote image chosen by the account owner. Avatar binary uploads
+    #: will use object storage once the attachments domain lands.
+    avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
     #: Argon2id hash. NULL for users that authenticate only through an external
     #: identity provider - those accounts must never fall back to a password.

@@ -40,6 +40,12 @@ class SiteSettings(TimestampMixin, Base):
     site_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     max_upload_size_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     allowed_attachment_types: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    #: Per-role visibility for the application navigation. NULL keeps the
+    #: conservative built-in policy (knowledge navigation for everyone,
+    #: administration for administrators only).
+    sidebar_permissions: Mapped[dict[str, list[str]] | None] = mapped_column(
+        JSONB, nullable=True
+    )
 
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True),

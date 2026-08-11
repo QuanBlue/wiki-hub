@@ -6,8 +6,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import ClientInfoDep, CurrentSuperuser, DbSession, Impersonator
-from app.schemas.site_settings import SiteSettingsRead, SiteSettingsUpdate
+from app.api.deps import ClientInfoDep, CurrentSuperuser, CurrentUser, DbSession, Impersonator
+from app.schemas.site_settings import (
+    SidebarPermissionsRead,
+    SiteSettingsRead,
+    SiteSettingsUpdate,
+)
 from app.services.site_settings import SiteSettingsService
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -33,6 +37,18 @@ def get_acting_site_settings_service(
 ActingSiteSettingsServiceDep = Annotated[
     SiteSettingsService, Depends(get_acting_site_settings_service)
 ]
+
+
+@router.get(
+    "/sidebar-permissions",
+    response_model=SidebarPermissionsRead,
+    summary="Read effective sidebar permissions",
+)
+async def read_sidebar_permissions(
+    _user: CurrentUser, service: SiteSettingsServiceDep
+) -> SidebarPermissionsRead:
+    """Expose only navigation visibility to signed-in users, not instance settings."""
+    return await service.read_sidebar_permissions()
 
 
 @router.get("", response_model=SiteSettingsRead, summary="Read instance settings")

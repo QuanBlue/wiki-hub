@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { AdminNav } from "@/components/admin/admin-nav";
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { getCurrentUser } from "@/lib/auth";
 import { SITE_NAME } from "@/lib/env";
 
@@ -24,10 +25,14 @@ export default async function AdminLayout({
   if (!user.is_superuser) {
     return (
       <AppShell siteName={SITE_NAME} user={user}>
-        <div className="space-y-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <div className="border-border bg-surface rounded-lg border p-6">
-            <p className="font-medium">Administrator access required</p>
+        <div className="space-y-6">
+          <PageHeader
+            eyebrow="Administration"
+            title="Settings"
+            description="Manage this WikiHub instance."
+          />
+          <div className="border-border bg-surface rounded-xl border p-6 shadow-sm">
+            <p className="font-semibold">Administrator access required</p>
             <p className="text-muted-foreground mt-1 text-sm">
               Your account does not have administrator privileges. Ask an
               administrator if you need access to this section.
@@ -47,12 +52,11 @@ export default async function AdminLayout({
         A uniform rhythm makes the active tab look detached from its own page.
       */}
       <div>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground mt-1.5">
-            Administration for this WikiHub instance.
-          </p>
-        </div>
+        <PageHeader
+          eyebrow="Administration"
+          title="Settings"
+          description="Manage people, safeguards, and the configuration of this WikiHub instance."
+        />
 
         <div className="mt-6">
           <AdminNav />

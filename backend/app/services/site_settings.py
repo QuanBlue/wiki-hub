@@ -24,6 +24,8 @@ from app.models.site_settings import SINGLETON_ID, SiteSettings
 from app.models.user import User
 from app.schemas.site_settings import (
     EffectiveSettings,
+    SidebarPermissions,
+    SidebarPermissionsRead,
     SiteSettingsOverrides,
     SiteSettingsRead,
     SiteSettingsUpdate,
@@ -33,7 +35,12 @@ from app.services.audit import AuditService, ClientInfo
 logger = get_logger(__name__)
 
 #: Fields recorded in the audit diff when settings change.
-AUDITED_FIELDS = ("site_name", "max_upload_size_mb", "allowed_attachment_types")
+AUDITED_FIELDS = (
+    "site_name",
+    "max_upload_size_mb",
+    "allowed_attachment_types",
+    "sidebar_permissions",
+)
 
 
 class SiteSettingsService:
@@ -66,6 +73,9 @@ class SiteSettingsService:
         row = await self._get_row()
         return self._effective(row)
 
+    async def read_sidebar_permissions(self) -> SidebarPermissionsRead:
+        return SidebarPermissionsRead(permissions=(await self.get_effective()).sidebar_permissions)
+
     @classmethod
     def env_defaults(cls) -> EffectiveSettings:
         """Effective settings with no database involved.
@@ -82,11 +92,17 @@ class SiteSettingsService:
         types = row.allowed_attachment_types if row else None
         if types is None:
             types = list(settings.attachment_allowed_types)
+        sidebar_permissions = (
+            SidebarPermissions.model_validate(row.sidebar_permissions)
+            if row and row.sidebar_permissions is not None
+            else SidebarPermissions()
+        )
         return EffectiveSettings(
             site_name=site_name,
             max_upload_size_mb=max_mb,
             max_upload_size_bytes=max_mb * 1024 * 1024,
             allowed_attachment_types=list(types),
+            sidebar_permissions=sidebar_permissions,
         )
 
     async def read(self) -> SiteSettingsRead:
@@ -131,7 +147,11 @@ class SiteSettingsService:
         if diff:
             logger.info("site_settings_updated", changed=sorted(diff))
             await self.audit.record(
-                AuditAction.site_settings_updated,
+                (
+                    AuditAction.sidebar_permissions_updated
+                    if set(diff) == {"sidebar_permissions"}
+                    else AuditAction.site_settings_updated
+                ),
                 entity_type="site_settings",
                 entity_label="Site settings",
                 details={"changes": diff},

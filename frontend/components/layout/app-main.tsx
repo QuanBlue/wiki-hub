@@ -1,5 +1,7 @@
 "use client";
 
+import type { CSSProperties } from "react";
+
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { cn } from "@/lib/utils";
 
@@ -11,25 +13,36 @@ import { cn } from "@/lib/utils";
 export function AppMain({
   children,
   hasBanner = false,
+  contentClassName,
+  disableSidebarOffset = false,
 }: {
   children: React.ReactNode;
   /** Reserve room for the fixed impersonation bar so it covers no content. */
   hasBanner?: boolean;
+  contentClassName?: string;
+  disableSidebarOffset?: boolean;
 }) {
-  const { collapsed } = useSidebar();
+  const { collapsed, sidebarWidth } = useSidebar();
 
   return (
     <main
       className={cn(
         "pt-topbar transition-[padding] duration-200 motion-reduce:transition-none",
         // No left padding below md: there the sidebar is an overlay, not a rail.
-        collapsed ? "md:pl-14" : "md:pl-sidebar",
+        !disableSidebarOffset &&
+          (collapsed ? "md:pl-14" : "md:pl-(--app-sidebar-width)"),
       )}
+      style={
+        {
+          "--app-sidebar-width": `${sidebarWidth}px`,
+        } as CSSProperties
+      }
     >
       <div
         className={cn(
-          "max-w-content mx-auto w-full px-6 py-8",
+          "max-w-content mx-auto w-full px-5 py-8 sm:px-8 sm:py-10",
           hasBanner && "pb-24",
+          contentClassName,
         )}
       >
         {children}

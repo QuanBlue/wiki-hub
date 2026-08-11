@@ -23,7 +23,7 @@ from app.core.security import hash_password, needs_rehash, verify_password
 from app.models.audit import AuditAction
 from app.models.user import User
 from app.repositories.user import UserRepository
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import SelfProfileUpdate, UserCreate, UserUpdate
 from app.services.audit import AuditService, ClientInfo
 
 logger = get_logger(__name__)
@@ -37,7 +37,7 @@ PROTECTED_ACCOUNT_MESSAGE = (
 
 #: Fields worth recording in the audit trail when an account changes. An
 #: explicit allowlist - `password_hash` must never appear in a diff.
-AUDITED_USER_FIELDS = ("email", "full_name", "is_active", "is_superuser")
+AUDITED_USER_FIELDS = ("email", "full_name", "avatar_url", "is_active", "is_superuser")
 
 
 class AuthService:
@@ -332,6 +332,47 @@ class AuthService:
             )
         return user
 
+    async def update_own_profile(self, user_id: uuid.UUID, payload: SelfProfileUpdate) -> User:
+        """Change presentation and contact fields for the signed-in account.
+
+        This deliberately does not call ``assert_mutable``: a protected account
+        must remain impossible to disable, delete, rename or demote, but its
+        owner may update profile details.
+        """
+        user = await self.users.get(user_id)
+        if user is None:
+            raise NotFoundError("User not found.")
+        if self.actor is None or self.actor.id != user.id:
+            raise PermissionDeniedError(
+                "You can only edit your own profile.", code="profile_forbidden"
+            )
+
+        data = payload.model_dump(exclude_unset=True)
+        before = {field: getattr(user, field) for field in AUDITED_USER_FIELDS}
+        if "email" in data and data["email"] is not None:
+            email = str(data["email"]).strip().lower()
+            existing = await self.users.get_by_email(email)
+            if existing and existing.id != user.id:
+                raise ConflictError(f"E-mail '{email}' is already registered.", code="email_taken")
+            user.email = email
+        if "full_name" in data and data["full_name"] is not None:
+            user.full_name = str(data["full_name"]).strip()
+        if "avatar_url" in data:
+            user.avatar_url = str(data["avatar_url"]) if data["avatar_url"] else None
+
+        await self.session.flush()
+        after = {field: getattr(user, field) for field in AUDITED_USER_FIELDS}
+        diff = AuditService.changes(before, after, AUDITED_USER_FIELDS)
+        if diff:
+            await self.audit.record(
+                AuditAction.user_updated,
+                entity_type="user",
+                entity_id=user.id,
+                entity_label=user.username,
+                details={"changes": diff},
+            )
+        return user
+
     async def change_password(
         self, user_id: uuid.UUID, current_password: str, new_password: str
     ) -> User:
@@ -341,7 +382,8 @@ class AuthService:
 
         # Checked before the current-password comparison so the protected
         # account gives the same answer regardless of what was submitted.
-        self.assert_mutable(user)
+        if user.is_protected and (self.actor is None or self.actor.id != user.id):
+            self.assert_mutable(user)
 
         if not verify_password(current_password, user.password_hash):
             raise AuthenticationError("Your current password is incorrect.")

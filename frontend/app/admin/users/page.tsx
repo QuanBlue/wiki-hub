@@ -40,6 +40,12 @@ export default async function AdminUsersPage({
 
   return (
     <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-semibold">People</h2>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Control who can access and help maintain your team&apos;s knowledge.
+        </p>
+      </div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <Suspense fallback={null}>
           <ListFilters
@@ -70,10 +76,10 @@ export default async function AdminUsersPage({
         <CreateUserDialog />
       </div>
 
-      <div className="border-border bg-surface overflow-x-auto rounded-lg border">
+      <div className="border-border bg-surface overflow-x-auto rounded-xl border shadow-sm">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-muted-foreground border-border border-b text-left">
+            <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
               <th className="px-4 py-3 font-medium">User</th>
               <th className="px-4 py-3 font-medium">E-mail</th>
               <th className="px-4 py-3 font-medium">Role</th>

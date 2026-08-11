@@ -3,6 +3,8 @@ import { ImpersonationBanner } from "@/components/layout/impersonation-banner";
 import { Sidebar } from "@/components/layout/sidebar";
 import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { TopBar } from "@/components/layout/top-bar";
+import { getSidebarPermissions } from "@/lib/navigation";
+import { getSidebarPreferences } from "@/lib/sidebar-preferences";
 import type { Me } from "@/types/api";
 
 /**
@@ -13,21 +15,41 @@ import type { Me } from "@/types/api";
  * Only rendered for a signed-in user — the middleware redirects everyone else
  * to /login before a page using this shell is reached.
  */
-export function AppShell({
+export async function AppShell({
   siteName,
   user,
   children,
+  contentClassName,
+  hideSidebar = false,
 }: {
   siteName: string;
   user: Me;
   children: React.ReactNode;
+  contentClassName?: string;
+  hideSidebar?: boolean;
 }) {
+  const [sidebarPermissions, sidebarPreferences] = await Promise.all([
+    getSidebarPermissions(),
+    getSidebarPreferences(),
+  ]);
+
   return (
-    <SidebarProvider>
+    <SidebarProvider
+      initialCollapsed={sidebarPreferences.collapsed}
+      initialSidebarWidth={sidebarPreferences.appWidth}
+    >
       <div className="bg-background min-h-screen">
         <TopBar siteName={siteName} user={user} />
-        <Sidebar />
-        <AppMain hasBanner={user.impersonator !== null}>{children}</AppMain>
+        {hideSidebar ? null : (
+          <Sidebar user={user} permissions={sidebarPermissions} />
+        )}
+        <AppMain
+          hasBanner={user.impersonator !== null}
+          contentClassName={contentClassName}
+          disableSidebarOffset={hideSidebar}
+        >
+          {children}
+        </AppMain>
         {user.impersonator ? (
           <ImpersonationBanner
             viewingAs={user}

@@ -13,33 +13,13 @@ import type { User } from "@/types/api";
 
 const MIN_PASSWORD_LENGTH = 8;
 
-export function ChangePasswordForm({
-  protectedAccount,
-}: {
-  protectedAccount: boolean;
-}) {
+export function ChangePasswordForm() {
   const router = useRouter();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-
-  if (protectedAccount) {
-    // The backend answers 403 for this account, so do not offer a form that
-    // can only fail.
-    return (
-      <p className="text-muted-foreground text-sm">
-        This is the built-in administrator account. Its password is fixed when
-        the instance is first seeded and cannot be changed here — that is what
-        guarantees there is always a way back in. To rotate it, change{" "}
-        <code className="bg-surface-sunken rounded px-1 py-0.5 font-mono text-xs">
-          WIKIHUB_ADMIN_PASSWORD
-        </code>{" "}
-        and re-seed a fresh instance.
-      </p>
-    );
-  }
 
   const mismatch = confirm.length > 0 && next !== confirm;
 

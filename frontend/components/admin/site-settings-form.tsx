@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, RotateCcw } from "lucide-react";
+import { Loader2, RotateCcw, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -9,7 +9,36 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, ApiError } from "@/lib/api-client";
-import type { SiteSettings } from "@/types/api";
+import type { AppRole, SidebarPermissions, SiteSettings } from "@/types/api";
+
+const NAVIGATION_ITEMS: Array<{
+  key: keyof SidebarPermissions;
+  label: string;
+  description: string;
+  fixed?: boolean;
+}> = [
+  { key: "home", label: "Home", description: "Workspace overview" },
+  { key: "spaces", label: "Spaces", description: "Browse team knowledge" },
+  { key: "recent", label: "Recent", description: "Recently updated spaces" },
+  { key: "favorites", label: "Favorites", description: "Starred spaces" },
+  {
+    key: "settings",
+    label: "Settings",
+    description: "Instance configuration",
+    fixed: true,
+  },
+  {
+    key: "backups",
+    label: "Backups",
+    description: "Export and restore data",
+    fixed: true,
+  },
+];
+
+const ROLE_OPTIONS: Array<{ value: AppRole; label: string }> = [
+  { value: "member", label: "Member" },
+  { value: "admin", label: "Admin" },
+];
 
 /**
  * Each field shows its effective value and whether that came from an explicit
@@ -29,6 +58,8 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const [types, setTypes] = useState(
     settings.overrides.allowed_attachment_types?.join(", ") ?? "",
   );
+  const [sidebarPermissions, setSidebarPermissions] =
+    useState<SidebarPermissions>(settings.effective.sidebar_permissions);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -59,6 +90,26 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
             .map((t) => t.trim())
             .filter(Boolean)
         : null,
+      sidebar_permissions: sidebarPermissions,
+    });
+  }
+
+  function toggleNavigationRole(
+    item: keyof SidebarPermissions,
+    role: AppRole,
+    checked: boolean,
+  ) {
+    setSidebarPermissions((current) => {
+      const roles = current[item];
+      // A sidebar item with no eligible role can never be reached again. Keep
+      // one selected directly in the UI as well as in the API validator.
+      if (!checked && roles.length === 1) return current;
+      return {
+        ...current,
+        [item]: checked
+          ? [...roles, role]
+          : roles.filter((candidate) => candidate !== role),
+      };
     });
   }
 
@@ -70,7 +121,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     );
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
           <Label htmlFor="site-name">Site name</Label>
@@ -88,6 +139,85 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           Leave empty to use the environment value.
         </p>
       </div>
+
+      <section
+        aria-labelledby="sidebar-permissions-heading"
+        className="border-border bg-surface-sunken space-y-4 rounded-lg border p-4"
+      >
+        <div className="flex gap-3">
+          <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-md">
+            <ShieldCheck className="size-4" />
+          </span>
+          <div>
+            <h3 id="sidebar-permissions-heading" className="font-medium">
+              Sidebar access
+            </h3>
+            <p className="text-muted-foreground mt-0.5 text-sm">
+              Choose which instance roles can see each navigation item. Space
+              membership still controls access to content inside a space.
+            </p>
+          </div>
+        </div>
+
+        <div className="border-border overflow-hidden rounded-md border">
+          <div className="bg-surface grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-3 border-b px-3 py-2 text-xs font-medium">
+            <span>Navigation item</span>
+            <span className="w-16 text-center">Member</span>
+            <span className="w-16 text-center">Admin</span>
+          </div>
+          {NAVIGATION_ITEMS.map((item) => (
+            <div
+              key={item.key}
+              className="border-border bg-surface grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 border-b px-3 py-2.5 last:border-b-0"
+            >
+              <div>
+                <p className="text-sm font-medium">{item.label}</p>
+                <p className="text-muted-foreground text-xs">
+                  {item.description}
+                </p>
+              </div>
+              {ROLE_OPTIONS.map((role) => {
+                const checked = sidebarPermissions[item.key].includes(
+                  role.value,
+                );
+                const isLastRole = sidebarPermissions[item.key].length === 1;
+                const disabled =
+                  pending || item.fixed || (checked && isLastRole);
+                return (
+                  <label
+                    key={role.value}
+                    className="flex w-16 justify-center"
+                    title={
+                      item.fixed
+                        ? "Administrative navigation is restricted to administrators."
+                        : undefined
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        toggleNavigationRole(
+                          item.key,
+                          role.value,
+                          event.target.checked,
+                        )
+                      }
+                      aria-label={`${role.label} can access ${item.label}`}
+                      className="accent-primary focus-visible:ring-ring border-border size-4 rounded focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Settings and backups remain administrator-only because those routes
+          change instance-level data.
+        </p>
+      </section>
 
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
@@ -151,6 +281,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               site_name: null,
               max_upload_size_mb: null,
               allowed_attachment_types: null,
+              sidebar_permissions: null,
             });
           }}
         >

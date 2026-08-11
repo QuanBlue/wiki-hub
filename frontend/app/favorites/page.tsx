@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page-header";
 import { SpaceList } from "@/components/spaces/space-list";
 import { getCurrentUser } from "@/lib/auth";
 import { SITE_NAME } from "@/lib/env";
@@ -19,12 +20,11 @@ export default async function FavoritesPage() {
   return (
     <AppShell siteName={SITE_NAME} user={user}>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Favorites</h1>
-          <p className="text-muted-foreground mt-1.5">
-            Spaces you have starred.
-          </p>
-        </div>
+        <PageHeader
+          eyebrow="Your shortcuts"
+          title="Favorites"
+          description="The spaces you have starred for quick access."
+        />
 
         <SpaceList
           spaces={spaces}

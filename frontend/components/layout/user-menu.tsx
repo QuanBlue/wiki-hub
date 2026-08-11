@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  ChevronDown,
-  LogOut,
-  Undo2,
-  UserRound,
-  UsersRound,
-} from "lucide-react";
+import { ChevronDown, LogOut, Undo2, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -16,11 +10,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SwitchAccountDialog } from "@/components/layout/switch-account-dialog";
+import { SwitchAccountMenu } from "@/components/layout/switch-account-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Me, User } from "@/types/api";
@@ -41,7 +34,6 @@ function initials(user: User): string {
 export function UserMenu({ user }: { user: Me }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const [switchOpen, setSwitchOpen] = useState(false);
 
   const displayName = user.full_name || user.username;
   const impersonator = user.impersonator;
@@ -90,8 +82,16 @@ export function UserMenu({ user }: { user: Me }) {
         <span
           className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
           aria-hidden
+          style={
+            user.avatar_url
+              ? {
+                  backgroundImage: `url(${user.avatar_url})`,
+                  backgroundSize: "cover",
+                }
+              : undefined
+          }
         >
-          {initials(user)}
+          {user.avatar_url ? null : initials(user)}
         </span>
         <span className="hidden max-w-40 truncate sm:inline">
           {displayName}
@@ -102,23 +102,19 @@ export function UserMenu({ user }: { user: Me }) {
         />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent
-        align="end"
-        onCloseAutoFocus={(event) => {
-          if (switchOpen) event.preventDefault();
-        }}
-      >
-        <DropdownMenuLabel>
-          <span className="block truncate font-medium">{displayName}</span>
-          <span className="text-muted-foreground block truncate text-xs">
-            {user.email}
-          </span>
-          {impersonator ? (
-            <span className="text-warning mt-1 block truncate text-xs">
+      <DropdownMenuContent align="end" className="w-72">
+        <SwitchAccountMenu
+          currentUser={user}
+          canSwitch={!impersonator && user.is_superuser}
+        />
+
+        {impersonator ? (
+          <div className="px-4 pb-2">
+            <span className="text-warning block truncate text-xs">
               Signed in as {impersonator.username}
             </span>
-          ) : null}
-        </DropdownMenuLabel>
+          </div>
+        ) : null}
 
         <DropdownMenuSeparator />
 
@@ -142,11 +138,6 @@ export function UserMenu({ user }: { user: Me }) {
             <Undo2 />
             Return to {impersonator.username}
           </DropdownMenuItem>
-        ) : user.is_superuser ? (
-          <DropdownMenuItem onSelect={() => setSwitchOpen(true)}>
-            <UsersRound />
-            Switch account…
-          </DropdownMenuItem>
         ) : null}
 
         <DropdownMenuSeparator />
@@ -162,12 +153,6 @@ export function UserMenu({ user }: { user: Me }) {
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
-
-      <SwitchAccountDialog
-        open={switchOpen}
-        onOpenChange={setSwitchOpen}
-        currentUserId={user.id}
-      />
     </DropdownMenu>
   );
 }

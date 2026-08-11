@@ -23,6 +23,7 @@ export interface User {
   username: string;
   email: string;
   full_name: string;
+  avatar_url: string | null;
   is_active: boolean;
   is_superuser: boolean;
   /** The built-in administrator: immutable and undeletable through the API. */
@@ -74,6 +75,18 @@ export interface SpaceMember {
   role: SpaceRole;
 }
 
+export interface WikiPage {
+  id: string;
+  space_id: string;
+  title: string;
+  slug: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  created_by_username: string | null;
+  updated_by_username: string | null;
+}
+
 export type DependencyStatus = "ok" | "error" | "timeout";
 
 export interface ReadinessResponse {
@@ -109,6 +122,7 @@ export interface SiteSettingsOverrides {
   site_name: string | null;
   max_upload_size_mb: number | null;
   allowed_attachment_types: string[] | null;
+  sidebar_permissions: SidebarPermissions | null;
 }
 
 export interface EffectiveSettings {
@@ -116,6 +130,18 @@ export interface EffectiveSettings {
   max_upload_size_mb: number;
   max_upload_size_bytes: number;
   allowed_attachment_types: string[];
+  sidebar_permissions: SidebarPermissions;
+}
+
+export type AppRole = "admin" | "member";
+
+export interface SidebarPermissions {
+  home: AppRole[];
+  spaces: AppRole[];
+  recent: AppRole[];
+  favorites: AppRole[];
+  settings: AppRole[];
+  backups: AppRole[];
 }
 
 export interface SiteSettings {
@@ -123,6 +149,10 @@ export interface SiteSettings {
   effective: EffectiveSettings;
   updated_at: string | null;
   updated_by_username: string | null;
+}
+
+export interface SidebarPermissionsRead {
+  permissions: SidebarPermissions;
 }
 
 export interface ImportEntry {

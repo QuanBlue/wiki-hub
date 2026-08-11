@@ -45,11 +45,14 @@ class AuditAction(StrEnum):
     space_deleted = "space_deleted"
     space_member_set = "space_member_set"
     space_member_removed = "space_member_removed"
+    page_created = "page_created"
+    page_updated = "page_updated"
 
     impersonation_started = "impersonation_started"
     impersonation_stopped = "impersonation_stopped"
 
     site_settings_updated = "site_settings_updated"
+    sidebar_permissions_updated = "sidebar_permissions_updated"
     backup_exported = "backup_exported"
     backup_imported = "backup_imported"
 

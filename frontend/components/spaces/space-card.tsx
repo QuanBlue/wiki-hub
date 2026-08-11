@@ -50,12 +50,15 @@ export function SpaceCard({ space }: { space: Space }) {
       )}
     >
       <div className="flex items-start gap-3">
-        <span aria-hidden className="text-xl leading-none">
+        <span
+          aria-hidden
+          className="bg-primary-subtle flex size-10 shrink-0 items-center justify-center rounded-lg text-xl leading-none"
+        >
           {space.icon || "📄"}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate font-medium">{space.name}</h3>
+            <h3 className="truncate font-semibold">{space.name}</h3>
             <code className="text-muted-foreground bg-surface-sunken rounded px-1.5 py-0.5 font-mono text-[11px]">
               {space.key}
             </code>

@@ -11,12 +11,15 @@ export default async function AdminSettingsPage() {
 
   return (
     <div className="space-y-5">
-      <p className="text-muted-foreground text-sm">
-        These take effect immediately, with no restart. A field left empty falls
-        back to its environment variable.
-      </p>
+      <div>
+        <h2 className="text-lg font-semibold">Workspace configuration</h2>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Changes take effect immediately. Leave a field empty to keep its
+          environment-provided value.
+        </p>
+      </div>
 
-      <div className="border-border bg-surface max-w-2xl rounded-lg border p-5">
+      <div className="border-border bg-surface max-w-2xl rounded-xl border p-5 shadow-sm">
         <SiteSettingsForm settings={settings} />
       </div>
     </div>

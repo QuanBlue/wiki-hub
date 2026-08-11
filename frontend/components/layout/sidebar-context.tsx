@@ -21,6 +21,11 @@ import * as React from "react";
  */
 
 const STORAGE_KEY = "wikihub:sidebar-collapsed";
+const WIDTH_STORAGE_KEY = "wikihub:sidebar-width";
+const COLLAPSED_COOKIE = "wikihub_sidebar_collapsed";
+const WIDTH_COOKIE = "wikihub_sidebar_width";
+const DEFAULT_SIDEBAR_WIDTH = 256;
+const MAX_SIDEBAR_WIDTH = 520;
 
 /**
  * localStorage exposed as an external store.
@@ -43,15 +48,19 @@ const collapsedStore = {
   },
   getSnapshot(): boolean {
     try {
-      return window.localStorage.getItem(STORAGE_KEY) === "true";
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (stored !== null) return stored === "true";
     } catch {
-      // Private mode or a blocked storage partition: fall back to expanded.
-      return false;
+      // Fall back to the server-provided preference below.
     }
+    return document.documentElement.dataset.whSidebarCollapsed === "true";
   },
   // The server cannot know the preference; render expanded and let the first
   // client render correct it.
   getServerSnapshot(): boolean {
+    if (typeof document !== "undefined") {
+      return document.documentElement.dataset.whSidebarCollapsed === "true";
+    }
     return false;
   },
   set(value: boolean): void {
@@ -60,35 +69,152 @@ const collapsedStore = {
     } catch {
       // The preference simply does not persist; the UI still works.
     }
+    document.cookie = `${COLLAPSED_COOKIE}=${value}; path=/; max-age=31536000; samesite=lax`;
+    document.documentElement.dataset.whSidebarCollapsed = String(value);
     // `storage` only fires in *other* tabs, so notify this one explicitly.
     window.dispatchEvent(new Event(STORAGE_KEY));
   },
 };
 
+const widthStore = {
+  subscribe(onChange: () => void): () => void {
+    window.addEventListener("storage", onChange);
+    window.addEventListener(WIDTH_STORAGE_KEY, onChange);
+    return () => {
+      window.removeEventListener("storage", onChange);
+      window.removeEventListener(WIDTH_STORAGE_KEY, onChange);
+    };
+  },
+  getSnapshot(): number {
+    try {
+      const stored = window.localStorage.getItem(WIDTH_STORAGE_KEY);
+      if (stored !== null) {
+        const value = Number(stored);
+        if (Number.isFinite(value)) {
+          return Math.min(MAX_SIDEBAR_WIDTH, Math.max(0, value));
+        }
+      }
+    } catch {
+      // Fall through to the default width.
+    }
+    const preloaded = Number.parseFloat(
+      document.documentElement.style.getPropertyValue(
+        "--wh-preloaded-sidebar-width",
+      ),
+    );
+    if (Number.isFinite(preloaded)) {
+      return Math.min(MAX_SIDEBAR_WIDTH, Math.max(0, preloaded));
+    }
+    return DEFAULT_SIDEBAR_WIDTH;
+  },
+  getServerSnapshot(): number {
+    return DEFAULT_SIDEBAR_WIDTH;
+  },
+  set(value: number): void {
+    const width = Math.min(MAX_SIDEBAR_WIDTH, Math.max(0, value));
+    try {
+      window.localStorage.setItem(WIDTH_STORAGE_KEY, String(width));
+    } catch {
+      // The preference simply does not persist; the UI still works.
+    }
+    document.cookie = `${WIDTH_COOKIE}=${width}; path=/; max-age=31536000; samesite=lax`;
+    document.documentElement.style.setProperty(
+      "--wh-preloaded-sidebar-width",
+      `${width}px`,
+    );
+    window.dispatchEvent(new Event(WIDTH_STORAGE_KEY));
+  },
+};
+
 interface SidebarState {
   collapsed: boolean;
+  setCollapsed: (collapsed: boolean) => void;
   toggleCollapsed: () => void;
+  sidebarWidth: number;
+  setSidebarWidth: (width: number) => void;
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
 }
 
 const SidebarContext = React.createContext<SidebarState | null>(null);
 
-export function SidebarProvider({ children }: { children: React.ReactNode }) {
+export function SidebarProvider({
+  children,
+  initialCollapsed = false,
+  initialSidebarWidth = DEFAULT_SIDEBAR_WIDTH,
+}: {
+  children: React.ReactNode;
+  initialCollapsed?: boolean;
+  initialSidebarWidth?: number;
+}) {
   const collapsed = React.useSyncExternalStore(
     collapsedStore.subscribe,
     collapsedStore.getSnapshot,
-    collapsedStore.getServerSnapshot,
+    () => {
+      if (typeof document !== "undefined") {
+        return document.documentElement.dataset.whSidebarCollapsed === "true";
+      }
+      return initialCollapsed;
+    },
+  );
+  const sidebarWidth = React.useSyncExternalStore(
+    widthStore.subscribe,
+    widthStore.getSnapshot,
+    () => {
+      if (typeof document !== "undefined") {
+        const preloaded = Number.parseFloat(
+          document.documentElement.style.getPropertyValue(
+            "--wh-preloaded-sidebar-width",
+          ),
+        );
+        if (Number.isFinite(preloaded)) return preloaded;
+      }
+      return initialSidebarWidth;
+    },
   );
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
+  React.useEffect(() => {
+    document.documentElement.dataset.whSidebarHydrated = "true";
+  }, []);
+
+  const setCollapsed = React.useCallback((value: boolean) => {
+    if (!value && widthStore.getSnapshot() <= 56) {
+      widthStore.set(DEFAULT_SIDEBAR_WIDTH);
+    }
+    collapsedStore.set(value);
+  }, []);
+
   const toggleCollapsed = React.useCallback(() => {
-    collapsedStore.set(!collapsedStore.getSnapshot());
+    const next = !collapsedStore.getSnapshot();
+    if (!next && widthStore.getSnapshot() <= 56) {
+      widthStore.set(DEFAULT_SIDEBAR_WIDTH);
+    }
+    collapsedStore.set(next);
+  }, []);
+
+  const setSidebarWidth = React.useCallback((width: number) => {
+    widthStore.set(width);
   }, []);
 
   const value = React.useMemo(
-    () => ({ collapsed, toggleCollapsed, mobileOpen, setMobileOpen }),
-    [collapsed, toggleCollapsed, mobileOpen],
+    () => ({
+      collapsed,
+      setCollapsed,
+      toggleCollapsed,
+      sidebarWidth,
+      setSidebarWidth,
+      mobileOpen,
+      setMobileOpen,
+    }),
+    [
+      collapsed,
+      setCollapsed,
+      toggleCollapsed,
+      sidebarWidth,
+      setSidebarWidth,
+      mobileOpen,
+    ],
   );
 
   return (

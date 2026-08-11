@@ -2,6 +2,7 @@
 
 import {
   Clock,
+  DatabaseBackup,
   Home,
   LayoutGrid,
   Settings,
@@ -10,12 +11,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import type { CSSProperties } from "react";
+import { useEffect, useState } from "react";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { cn } from "@/lib/utils";
+import type { Me, SidebarPermissions } from "@/types/api";
 
 interface NavItem {
+  permission: keyof SidebarPermissions;
   href: string;
   label: string;
   icon: LucideIcon;
@@ -24,14 +28,30 @@ interface NavItem {
 }
 
 const PRIMARY_NAV: NavItem[] = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/spaces", label: "Spaces", icon: LayoutGrid },
-  { href: "/recent", label: "Recent", icon: Clock },
-  { href: "/favorites", label: "Favorites", icon: Star },
+  { href: "/", label: "Home", icon: Home, permission: "home" },
+  { href: "/spaces", label: "Spaces", icon: LayoutGrid, permission: "spaces" },
+  { href: "/recent", label: "Recent", icon: Clock, permission: "recent" },
+  {
+    href: "/favorites",
+    label: "Favorites",
+    icon: Star,
+    permission: "favorites",
+  },
 ];
 
 const ADMIN_NAV: NavItem[] = [
-  { href: "/admin", label: "Settings", icon: Settings },
+  {
+    href: "/admin/settings",
+    label: "Settings",
+    icon: Settings,
+    permission: "settings",
+  },
+  {
+    href: "/admin/backup",
+    label: "Backups",
+    icon: DatabaseBackup,
+    permission: "backups",
+  },
 ];
 
 function NavLink({
@@ -86,9 +106,30 @@ function NavLink({
   );
 }
 
-export function Sidebar() {
+export function Sidebar({
+  user,
+  permissions,
+}: {
+  user: Me;
+  permissions: SidebarPermissions;
+}) {
   const pathname = usePathname();
-  const { collapsed, mobileOpen, setMobileOpen } = useSidebar();
+  const {
+    collapsed,
+    setCollapsed,
+    sidebarWidth,
+    setSidebarWidth,
+    mobileOpen,
+    setMobileOpen,
+  } = useSidebar();
+  const [dragging, setDragging] = useState(false);
+  const role = user.is_superuser ? "admin" : "member";
+  const primaryItems = PRIMARY_NAV.filter((item) =>
+    permissions[item.permission].includes(role),
+  );
+  const adminItems = ADMIN_NAV.filter((item) =>
+    permissions[item.permission].includes(role),
+  );
 
   // Navigating on a phone must close the drawer, otherwise it covers the page
   // the user just asked for.
@@ -105,6 +146,38 @@ export function Sidebar() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileOpen, setMobileOpen]);
+
+  useEffect(() => {
+    if (!dragging) return;
+
+    const onPointerMove = (event: PointerEvent) => {
+      const nextWidth = Math.max(0, event.clientX);
+      if (nextWidth <= 56) {
+        setCollapsed(true);
+        return;
+      }
+      setSidebarWidth(nextWidth);
+      setCollapsed(false);
+    };
+    const stopDragging = () => {
+      setDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", stopDragging);
+    window.addEventListener("pointercancel", stopDragging);
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", stopDragging);
+      window.removeEventListener("pointercancel", stopDragging);
+    };
+  }, [dragging, setCollapsed, setSidebarWidth]);
 
   // The drawer is only collapsed-styled on desktop; on mobile it is always the
   // full-width panel, otherwise the overlay would show bare icons.
@@ -123,18 +196,25 @@ export function Sidebar() {
 
       <nav
         id="wikihub-sidebar"
+        data-sidebar-kind="app"
         aria-label="Primary"
         className={cn(
           "wh-scroll top-topbar border-border bg-surface-sunken fixed inset-y-0 left-0 z-20",
           "overflow-y-auto border-r px-2 py-3",
-          "transition-[width,transform] duration-200 motion-reduce:transition-none",
-          railCollapsed ? "w-14" : "w-sidebar",
+          !dragging &&
+            "transition-[width,transform] duration-200 motion-reduce:transition-none",
+          railCollapsed ? "w-14" : "w-sidebar md:w-(--app-sidebar-width)",
           // Off-canvas on mobile unless opened; always on-canvas from md up.
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
         )}
+        style={
+          {
+            "--app-sidebar-width": `${sidebarWidth}px`,
+          } as CSSProperties
+        }
       >
         <ul className="space-y-0.5">
-          {PRIMARY_NAV.map((item) => (
+          {primaryItems.map((item) => (
             <li key={item.href}>
               <NavLink
                 item={item}
@@ -146,15 +226,17 @@ export function Sidebar() {
           ))}
         </ul>
 
-        <div className="border-border my-3 border-t" />
+        {adminItems.length > 0 ? (
+          <div className="border-border my-3 border-t" />
+        ) : null}
 
-        {!railCollapsed ? (
+        {!railCollapsed && adminItems.length > 0 ? (
           <p className="text-muted-foreground px-2 pb-1 text-[11px] font-semibold tracking-wide uppercase">
             Administration
           </p>
         ) : null}
         <ul className="space-y-0.5">
-          {ADMIN_NAV.map((item) => (
+          {adminItems.map((item) => (
             <li key={item.href}>
               <NavLink
                 item={item}
@@ -165,6 +247,25 @@ export function Sidebar() {
             </li>
           ))}
         </ul>
+        {!railCollapsed ? (
+          <button
+            type="button"
+            aria-label="Resize app sidebar"
+            title="Drag to resize sidebar"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            className="group focus-visible:ring-ring absolute top-0 right-0 hidden h-full w-3 translate-x-1/2 cursor-col-resize focus-visible:ring-2 focus-visible:outline-none md:block"
+          >
+            <span
+              className={cn(
+                "bg-border-strong absolute top-0 right-1/2 h-full w-px opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100",
+                dragging && "opacity-100",
+              )}
+            />
+          </button>
+        ) : null}
       </nav>
     </>
   );
