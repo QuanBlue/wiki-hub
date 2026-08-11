@@ -8,13 +8,13 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import PermissionDeniedError
+from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.models.space import SpaceRole
 from app.models.user import User
 from app.modules.auth.service import AuthService
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
-from app.schemas.page import PageCreate
+from app.schemas.page import PageCreate, PageMove, PageUpdate
 from app.schemas.space import SpaceCreate
 from app.schemas.user import UserCreate
 
@@ -81,3 +81,136 @@ class TestCreatePage:
 
         with pytest.raises(PermissionDeniedError):
             await PageService(session).create(space, PageCreate(title="Nope"), viewer)
+
+    async def test_child_page_is_linked_to_its_parent(self, session: AsyncSession) -> None:
+        owner = await _make_user(session)
+        space = await SpaceService(session).create(
+            SpaceCreate(key="ENG", name="Engineering"), owner
+        )
+        service = PageService(session)
+        parent = await service.create(space, PageCreate(title="Runbooks"), owner)
+
+        child = await service.create(
+            space,
+            PageCreate(title="On-call", parent_id=parent.id),
+            owner,
+        )
+
+        assert child.parent_id == parent.id
+        assert [item.parent_id for item in await service.list_for_space(space)] == [
+            parent.id,
+            None,
+        ]
+
+    async def test_parent_must_belong_to_the_same_space(self, session: AsyncSession) -> None:
+        owner = await _make_user(session)
+        spaces = SpaceService(session)
+        engineering = await spaces.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        product = await spaces.create(SpaceCreate(key="PROD", name="Product"), owner)
+        service = PageService(session)
+        foreign_parent = await service.create(product, PageCreate(title="Roadmap"), owner)
+
+        with pytest.raises(NotFoundError, match="Parent page not found"):
+            await service.create(
+                engineering,
+                PageCreate(title="Invalid child", parent_id=foreign_parent.id),
+                owner,
+            )
+
+    async def test_move_transfers_a_page_subtree_to_another_space(
+        self, session: AsyncSession
+    ) -> None:
+        owner = await _make_user(session)
+        spaces = SpaceService(session)
+        engineering = await spaces.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        product = await spaces.create(SpaceCreate(key="PROD", name="Product"), owner)
+        service = PageService(session)
+        parent = await service.create(engineering, PageCreate(title="Runbooks"), owner)
+        child = await service.create(
+            engineering, PageCreate(title="On-call", parent_id=parent.id), owner
+        )
+
+        moved = await service.move(
+            engineering,
+            parent,
+            PageMove(destination_space_key=product.key),
+            owner,
+        )
+
+        assert moved.space_id == product.id
+        assert moved.parent_id is None
+        assert child.space_id == product.id
+        assert child.parent_id == moved.id
+
+    async def test_move_cannot_make_a_page_its_own_descendant(
+        self, session: AsyncSession
+    ) -> None:
+        owner = await _make_user(session)
+        space = await SpaceService(session).create(
+            SpaceCreate(key="ENG", name="Engineering"), owner
+        )
+        service = PageService(session)
+        parent = await service.create(space, PageCreate(title="Runbooks"), owner)
+        child = await service.create(
+            space, PageCreate(title="On-call", parent_id=parent.id), owner
+        )
+
+        with pytest.raises(BadRequestError, match="cannot be moved"):
+            await service.move(
+                space,
+                parent,
+                PageMove(destination_space_key=space.key, parent_id=child.id),
+                owner,
+            )
+
+
+class TestUpdatePage:
+    async def test_space_editor_can_update_page_title_and_content(
+        self, session: AsyncSession
+    ) -> None:
+        owner = await _make_user(session)
+        editor = await _make_user(session)
+        spaces = SpaceService(session)
+        space = await spaces.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        await spaces.set_member(space, owner, editor.id, SpaceRole.editor)
+        service = PageService(session)
+        page = await service.create(space, PageCreate(title="Draft", content="Before"), owner)
+
+        updated = await service.update(
+            space,
+            page,
+            PageUpdate(title="Runbook", content="After"),
+            editor,
+        )
+
+        assert updated.title == "Runbook"
+        assert updated.content == "After"
+        assert updated.updated_by_id == editor.id
+
+    async def test_page_content_format_is_saved_with_its_source(self, session: AsyncSession) -> None:
+        owner = await _make_user(session)
+        space = await SpaceService(session).create(
+            SpaceCreate(key="ENG", name="Engineering"), owner
+        )
+        service = PageService(session)
+        page = await service.create(
+            space,
+            PageCreate(title="Runbook", content="# On-call", content_format="markdown"),
+            owner,
+        )
+
+        assert page.content == "# On-call"
+        assert page.content_format == "markdown"
+        assert service.to_read(page).content_format == "markdown"
+
+    async def test_viewer_cannot_update_a_page(self, session: AsyncSession) -> None:
+        owner = await _make_user(session)
+        viewer = await _make_user(session)
+        spaces = SpaceService(session)
+        space = await spaces.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        await spaces.set_member(space, owner, viewer.id, SpaceRole.viewer)
+        service = PageService(session)
+        page = await service.create(space, PageCreate(title="Draft"), owner)
+
+        with pytest.raises(PermissionDeniedError):
+            await service.update(space, page, PageUpdate(content="Nope"), viewer)

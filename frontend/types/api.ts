@@ -51,6 +51,7 @@ export interface LoginResponse {
 
 export type SpaceStatus = "active" | "archived";
 export type SpaceRole = "viewer" | "editor" | "admin";
+export type PageContentFormat = "html" | "markdown";
 
 export interface Space {
   id: string;
@@ -78,9 +79,11 @@ export interface SpaceMember {
 export interface WikiPage {
   id: string;
   space_id: string;
+  parent_id: string | null;
   title: string;
   slug: string;
   content: string;
+  content_format: PageContentFormat;
   created_at: string;
   updated_at: string;
   created_by_username: string | null;
@@ -121,6 +124,7 @@ export interface AuditLogEntry {
 export interface SiteSettingsOverrides {
   site_name: string | null;
   max_upload_size_mb: number | null;
+  max_backup_import_size_mb: number | null;
   allowed_attachment_types: string[] | null;
   sidebar_permissions: SidebarPermissions | null;
 }
@@ -129,6 +133,8 @@ export interface EffectiveSettings {
   site_name: string;
   max_upload_size_mb: number;
   max_upload_size_bytes: number;
+  max_backup_import_size_mb: number;
+  max_backup_import_size_bytes: number;
   allowed_attachment_types: string[];
   sidebar_permissions: SidebarPermissions;
 }
@@ -150,6 +156,12 @@ export interface SiteSettings {
   updated_at: string | null;
   updated_by_username: string | null;
 }
+
+export interface ConfluenceSpaceCandidate { key: string; name: string; page_count: number; attachment_count: number; conflict: boolean; }
+export interface ConfluenceArchive { id: string; filename: string; size_bytes: number; status: string; error: string | null; spaces: ConfluenceSpaceCandidate[]; }
+export interface ConfluenceUploadTarget { archive_id: string; object_key: string; upload_url: string; max_size_bytes: number; }
+export interface ConfluenceImportJob { id: string; archive_id: string; import_all: boolean; space_keys: string[]; status: string; phase: string; counters: Record<string, number>; cancel_requested: boolean; error: string | null; created_at: string; updated_at: string; }
+export interface ConfluenceImportLog { id: string; created_at: string; level: string; phase: string; entity_type: string | null; entity_label: string | null; message: string; }
 
 export interface SidebarPermissionsRead {
   permissions: SidebarPermissions;

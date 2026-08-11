@@ -39,6 +39,7 @@ class SiteSettings(TimestampMixin, Base):
     # Every override is nullable: NULL = fall back to the env-backed default.
     site_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     max_upload_size_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_backup_import_size_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     allowed_attachment_types: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     #: Per-role visibility for the application navigation. NULL keeps the
     #: conservative built-in policy (knowledge navigation for everyone,

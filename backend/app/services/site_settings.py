@@ -38,6 +38,7 @@ logger = get_logger(__name__)
 AUDITED_FIELDS = (
     "site_name",
     "max_upload_size_mb",
+    "max_backup_import_size_mb",
     "allowed_attachment_types",
     "sidebar_permissions",
 )
@@ -89,6 +90,7 @@ class SiteSettingsService:
     def _effective(row: SiteSettings | None) -> EffectiveSettings:
         site_name = (row.site_name if row else None) or settings.site_name
         max_mb = (row.max_upload_size_mb if row else None) or settings.max_upload_size_mb
+        import_mb = (row.max_backup_import_size_mb if row else None) or settings.max_import_size_mb
         types = row.allowed_attachment_types if row else None
         if types is None:
             types = list(settings.attachment_allowed_types)
@@ -101,6 +103,8 @@ class SiteSettingsService:
             site_name=site_name,
             max_upload_size_mb=max_mb,
             max_upload_size_bytes=max_mb * 1024 * 1024,
+            max_backup_import_size_mb=import_mb,
+            max_backup_import_size_bytes=import_mb * 1024 * 1024,
             allowed_attachment_types=list(types),
             sidebar_permissions=sidebar_permissions,
         )

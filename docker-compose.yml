@@ -77,11 +77,14 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       BUCKET: ${WIKIHUB_S3_BUCKET:-wikihub}
+    volumes:
+      - ./deploy/minio-cors.json:/tmp/minio-cors.json:ro
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
       mc mb --ignore-existing local/$$BUCKET &&
       mc anonymous set none local/$$BUCKET &&
+      mc cors set local/$$BUCKET /tmp/minio-cors.json &&
       echo 'bucket ready: '$$BUCKET
       "
     restart: "no"

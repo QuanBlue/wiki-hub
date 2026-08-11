@@ -55,6 +55,9 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const [maxUpload, setMaxUpload] = useState(
     settings.overrides.max_upload_size_mb?.toString() ?? "",
   );
+  const [maxBackupImport, setMaxBackupImport] = useState(
+    settings.overrides.max_backup_import_size_mb?.toString() ?? "",
+  );
   const [types, setTypes] = useState(
     settings.overrides.allowed_attachment_types?.join(", ") ?? "",
   );
@@ -84,6 +87,9 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     void save({
       site_name: siteName.trim() || null,
       max_upload_size_mb: maxUpload.trim() ? Number(maxUpload) : null,
+      max_backup_import_size_mb: maxBackupImport.trim()
+        ? Number(maxBackupImport)
+        : null,
       allowed_attachment_types: types.trim()
         ? types
             .split(",")
@@ -137,6 +143,29 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
         <p className="text-muted-foreground text-xs">
           Currently showing as <strong>{settings.effective.site_name}</strong>.
           Leave empty to use the environment value.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="max-backup-import">
+            Maximum backup/import archive size (MB)
+          </Label>
+          {inherited(settings.overrides.max_backup_import_size_mb !== null)}
+        </div>
+        <Input
+          id="max-backup-import"
+          type="number"
+          min={1}
+          max={102400}
+          value={maxBackupImport}
+          onChange={(e) => setMaxBackupImport(e.target.value)}
+          placeholder={String(settings.effective.max_backup_import_size_mb)}
+          disabled={pending}
+          className="max-w-40"
+        />
+        <p className="text-muted-foreground text-xs">
+          Limits large Confluence and backup archives independently from normal attachments.
         </p>
       </div>
 
@@ -276,10 +305,12 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           onClick={() => {
             setSiteName("");
             setMaxUpload("");
+            setMaxBackupImport("");
             setTypes("");
             void save({
               site_name: null,
               max_upload_size_mb: null,
+              max_backup_import_size_mb: null,
               allowed_attachment_types: null,
               sidebar_permissions: null,
             });

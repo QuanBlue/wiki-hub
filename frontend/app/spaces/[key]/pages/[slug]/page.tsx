@@ -55,6 +55,11 @@ export default async function WikiPageView({ params }: Params) {
         members={members}
         currentPage={page}
         initialSidebarWidth={sidebarPreferences.spaceWidth}
+        canEdit={
+          user.is_superuser ||
+          space.my_role === "admin" ||
+          space.my_role === "editor"
+        }
       />
     </AppShell>
   );

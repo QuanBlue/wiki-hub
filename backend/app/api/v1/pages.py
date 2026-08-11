@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from app.api.deps import CurrentUser, DbSession
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
-from app.schemas.page import PageCreate, PageRead, PageUpdate
+from app.schemas.page import PageCreate, PageMove, PageRead, PageUpdate
 
 router = APIRouter(prefix="/spaces/{key}/pages", tags=["pages"])
 
@@ -55,6 +55,21 @@ async def create_page(
     space = await space_service.get_by_key(key)
     page = await page_service.create(space, payload, user)
     return page_service.to_read(page)
+
+
+@router.post("/{slug}/move", response_model=PageRead, summary="Move a page and its children")
+async def move_page(
+    key: str,
+    slug: str,
+    payload: PageMove,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> PageRead:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    moved = await page_service.move(space, page, payload, user)
+    return page_service.to_read(moved)
 
 
 @router.get("/{slug}", response_model=PageRead, summary="Get one page")

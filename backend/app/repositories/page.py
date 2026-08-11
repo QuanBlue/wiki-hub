@@ -39,6 +39,10 @@ class PageRepository:
         )
         return (await self.session.execute(stmt)).scalars().unique().all()
 
+    async def list_all_for_space(self, space_id: uuid.UUID) -> Sequence[WikiPage]:
+        stmt = self._space_query(space_id).order_by(WikiPage.title.asc(), WikiPage.created_at.asc())
+        return (await self.session.execute(stmt)).scalars().unique().all()
+
     def add(self, page: WikiPage) -> WikiPage:
         self.session.add(page)
         return page

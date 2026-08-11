@@ -64,6 +64,7 @@ class SiteSettingsOverrides(BaseModel):
 
     site_name: str | None = None
     max_upload_size_mb: int | None = None
+    max_backup_import_size_mb: int | None = None
     allowed_attachment_types: list[str] | None = None
     sidebar_permissions: SidebarPermissions | None = None
 
@@ -74,6 +75,8 @@ class EffectiveSettings(BaseModel):
     site_name: str
     max_upload_size_mb: int
     max_upload_size_bytes: int
+    max_backup_import_size_mb: int
+    max_backup_import_size_bytes: int
     allowed_attachment_types: list[str]
     sidebar_permissions: SidebarPermissions
 
@@ -102,6 +105,7 @@ class SiteSettingsUpdate(BaseModel):
 
     site_name: str | None = Field(default=None, max_length=255)
     max_upload_size_mb: int | None = Field(default=None, ge=1, le=10_240)
+    max_backup_import_size_mb: int | None = Field(default=None, ge=1, le=102_400)
     allowed_attachment_types: list[str] | None = Field(default=None, max_length=100)
     sidebar_permissions: SidebarPermissions | None = None
 

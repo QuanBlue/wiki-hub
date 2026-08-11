@@ -52,6 +52,11 @@ export default async function SpaceDetailPage({ params }: Params) {
         pages={pages}
         members={members}
         initialSidebarWidth={sidebarPreferences.spaceWidth}
+        canEdit={
+          user.is_superuser ||
+          space.my_role === "admin" ||
+          space.my_role === "editor"
+        }
       />
     </AppShell>
   );

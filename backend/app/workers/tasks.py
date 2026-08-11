@@ -10,6 +10,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.core.logging import get_logger
+from app.db.session import session_scope
+from app.modules.import_export.service import run_import
+from app.services.storage import get_storage
 
 logger = get_logger(__name__)
 
@@ -24,3 +27,11 @@ async def ping(ctx: dict[str, Any]) -> dict[str, str]:
     job_id = str(ctx.get("job_id", ""))
     logger.info("worker_ping", job_id=job_id)
     return {"status": "ok", "job_id": job_id, "at": datetime.now(UTC).isoformat()}
+
+
+async def run_confluence_import(ctx: dict[str, Any], job_id: str) -> None:
+    """ARQ entrypoint; the database rows are the durable source of progress."""
+    import uuid
+
+    async with session_scope() as session:
+        await run_import(session, get_storage(), uuid.UUID(job_id))

@@ -48,7 +48,10 @@ services:
   frontend:
     build:
       target: dev
-    command: ["npm", "run", "dev"]
+    # /app/node_modules is an anonymous volume so it survives source bind
+    # mounts. Reconcile it from package-lock.json on startup; otherwise a new
+    # dependency can exist in the image but remain hidden behind an old volume.
+    command: ["sh", "-c", "npm ci && npm run dev"]
     environment:
       NODE_ENV: development
     volumes:

@@ -26,9 +26,18 @@ class WikiPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("pages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    content_format: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="html", server_default="html"
+    )
 
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True),
@@ -42,5 +51,9 @@ class WikiPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     space: Mapped[Space] = relationship()
+    parent: Mapped[WikiPage | None] = relationship(
+        remote_side="WikiPage.id",
+        foreign_keys=[parent_id],
+    )
     created_by: Mapped[User | None] = relationship(foreign_keys=[created_by_id], lazy="joined")
     updated_by: Mapped[User | None] = relationship(foreign_keys=[updated_by_id], lazy="joined")

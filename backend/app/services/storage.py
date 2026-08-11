@@ -65,6 +65,11 @@ class ObjectStorage(abc.ABC):
     ) -> str: ...
 
     @abc.abstractmethod
+    async def presigned_upload_url(
+        self, key: str, *, content_type: str, expires_in: int | None = None
+    ) -> str: ...
+
+    @abc.abstractmethod
     async def ensure_bucket(self) -> None: ...
 
     @abc.abstractmethod
@@ -212,6 +217,23 @@ class S3ObjectStorage(ObjectStorage):
             lambda: self.signing_client.generate_presigned_url(
                 "get_object",
                 Params=params,
+                ExpiresIn=expires_in or settings.s3_presign_ttl_seconds,
+            )
+        )
+        return str(url)
+
+    async def presigned_upload_url(
+        self, key: str, *, content_type: str, expires_in: int | None = None
+    ) -> str:
+        """Give the browser a short-lived, storage-only upload capability.
+
+        The archive does not traverse FastAPI, avoiding request buffering and
+        making the configured archive limit enforceable before bytes transfer.
+        """
+        url = await anyio.to_thread.run_sync(
+            lambda: self.signing_client.generate_presigned_url(
+                "put_object",
+                Params={"Bucket": self.bucket, "Key": key, "ContentType": content_type},
                 ExpiresIn=expires_in or settings.s3_presign_ttl_seconds,
             )
         )

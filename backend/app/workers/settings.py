@@ -17,7 +17,7 @@ from arq.connections import RedisSettings
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine
-from app.workers.tasks import ping
+from app.workers.tasks import ping, run_confluence_import
 
 logger = get_logger(__name__)
 
@@ -39,7 +39,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """arq entrypoint. Task functions are registered here as phases land."""
 
-    functions: ClassVar[list[Any]] = [ping]
+    functions: ClassVar[list[Any]] = [ping, run_confluence_import]
     cron_jobs: ClassVar[list[Any]] = []
     redis_settings = redis_settings()
     on_startup = startup

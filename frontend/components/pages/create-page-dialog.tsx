@@ -21,11 +21,13 @@ import type { WikiPage } from "@/types/api";
 
 export function CreatePageDialog({
   spaceKey,
+  parentPage,
   triggerLabel = "Create page",
   triggerVariant = "primary",
   triggerSize = "md",
 }: {
   spaceKey: string;
+  parentPage?: Pick<WikiPage, "id" | "title"> | null;
   triggerLabel?: string;
   triggerVariant?: ButtonProps["variant"];
   triggerSize?: ButtonProps["size"];
@@ -48,6 +50,7 @@ export function CreatePageDialog({
         {
           title: trimmedTitle,
           content,
+          parent_id: parentPage?.id ?? null,
         },
       );
       toast.success(`Page "${page.title}" created.`);
@@ -75,8 +78,12 @@ export function CreatePageDialog({
         </Button>
       </DialogTrigger>
       <DialogContent
-        title="Create page"
-        description="Add a page to this space."
+        title={parentPage ? "Create child page" : "Create page"}
+        description={
+          parentPage
+            ? `Add a page under "${parentPage.title}".`
+            : "Add a top-level page to this space."
+        }
       >
         <form onSubmit={submit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
