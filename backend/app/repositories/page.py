@@ -47,6 +47,13 @@ class PageRepository:
         self.session.add(page)
         return page
 
+    async def list_children(self, page_id: uuid.UUID) -> Sequence[WikiPage]:
+        stmt = select(WikiPage).where(WikiPage.parent_id == page_id)
+        return (await self.session.execute(stmt)).scalars().unique().all()
+
+    async def delete(self, page: WikiPage) -> None:
+        await self.session.delete(page)
+
     async def like_count(self, page_id: uuid.UUID) -> int:
         stmt = select(func.count()).select_from(PageLike).where(PageLike.page_id == page_id)
         return int((await self.session.execute(stmt)).scalar_one())

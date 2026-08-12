@@ -38,7 +38,7 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -140,6 +140,32 @@ const editorExtensions = [
 
 const headingLevels = [1, 2, 3] as const;
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Convert Confluence's XML-style code macro into semantic HTML for Tiptap. */
+function normalizeConfluenceCodeMacros(content: string): string {
+  return content.replace(
+    /<ac:structured-macro\b[^>]*\bac:name=(?:"code"|'code')[^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    (macro, inner: string) => {
+      const code = inner.match(
+        /<ac:plain-text-body\b[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/ac:plain-text-body>/i,
+      )?.[1];
+      if (code === undefined) return macro;
+      const language = inner.match(
+        /<ac:parameter\b[^>]*\bac:name=(?:"language"|'language')[^>]*>([\s\S]*?)<\/ac:parameter>/i,
+      )?.[1].trim().replace(/[^a-z0-9_-]/gi, "");
+      return `<pre><code${language ? ` class="language-${language}"` : ""}>${escapeHtml(code)}</code></pre>`;
+    },
+  );
+}
+
 const editorClassName =
   "min-h-[calc(100vh-19rem)] px-5 py-4 text-sm leading-7 outline-none " +
   "[&_p.is-editor-empty:first-child::before]:text-muted-foreground [&_p.is-editor-empty:first-child::before]:pointer-events-none [&_p.is-editor-empty:first-child::before]:float-left [&_p.is-editor-empty:first-child::before]:h-0 [&_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] " +
@@ -149,7 +175,7 @@ const editorClassName =
   "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 " +
   "[&_blockquote]:my-4 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground " +
   "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
-  "[&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-surface-sunken [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 " +
+  "[&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-4 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
   "[&_img]:my-4 [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-border " +
   "[&_.tableWrapper]:my-4 [&_.tableWrapper]:overflow-x-auto [&_table]:w-full [&_table]:border-collapse [&_th]:min-w-24 [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-semibold [&_td]:min-w-24 [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2 [&_.selectedCell]:bg-primary-subtle";
 
@@ -589,10 +615,11 @@ export function RichTextEditor({
   content: string;
   onChange: (html: string) => void;
 }) {
+  const normalizedContent = useMemo(() => normalizeConfluenceCodeMacros(content), [content]);
   const editor = useEditor({
     immediatelyRender: false,
     extensions: editorExtensions,
-    content,
+    content: normalizedContent,
     editorProps: { attributes: { class: editorClassName } },
     onUpdate: ({ editor: updatedEditor }) => onChange(updatedEditor.getHTML()),
   });
@@ -610,11 +637,12 @@ export function RichTextEditor({
 }
 
 export function RichTextContent({ content }: { content: string }) {
+  const normalizedContent = useMemo(() => normalizeConfluenceCodeMacros(content), [content]);
   const editor = useEditor({
     immediatelyRender: false,
     editable: false,
     extensions: editorExtensions,
-    content,
+    content: normalizedContent,
     editorProps: {
       attributes: {
         class: cn(editorClassName, "min-h-0 px-0 py-0"),
@@ -623,10 +651,10 @@ export function RichTextContent({ content }: { content: string }) {
   });
 
   useEffect(() => {
-    if (editor && editor.getHTML() !== content) {
-      editor.commands.setContent(content, { emitUpdate: false });
+    if (editor && editor.getHTML() !== normalizedContent) {
+      editor.commands.setContent(normalizedContent, { emitUpdate: false });
     }
-  }, [content, editor]);
+  }, [editor, normalizedContent]);
 
   return <EditorContent editor={editor} />;
 }

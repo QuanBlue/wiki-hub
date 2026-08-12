@@ -96,6 +96,13 @@ async def archive_space(key: str, user: CurrentUser, service: SpaceServiceDep) -
     return await service.to_read(space, user)
 
 
+@router.post("/{key}/unarchive", response_model=SpaceRead, summary="Restore an archived space")
+async def unarchive_space(key: str, user: CurrentUser, service: SpaceServiceDep) -> SpaceRead:
+    space = await service.get_by_key(key)
+    await service.unarchive(space, user)
+    return await service.to_read(space, user)
+
+
 @router.delete(
     "/{key}",
     status_code=status.HTTP_204_NO_CONTENT,

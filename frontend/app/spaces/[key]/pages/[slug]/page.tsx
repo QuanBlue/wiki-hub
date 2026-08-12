@@ -9,14 +9,20 @@ import { SITE_NAME } from "@/lib/env";
 import { listPages } from "@/lib/pages";
 import { getSidebarPreferences } from "@/lib/sidebar-preferences";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
+import { spaceTabTitle } from "@/lib/space-tab-title";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ key: string; slug: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { slug } = await params;
-  return { title: slug };
+  const { key } = await params;
+  try {
+    const space = await getSpace(key);
+    return { title: spaceTabTitle(space.name, key) };
+  } catch {
+    return { title: key.toUpperCase() };
+  }
 }
 
 export default async function WikiPageView({ params }: Params) {

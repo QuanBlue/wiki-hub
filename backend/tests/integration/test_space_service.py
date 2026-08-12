@@ -109,14 +109,23 @@ class TestSpacePermissions:
         updated = await service.update(space, SpaceUpdate(name="Renamed"), root)
         assert updated.name == "Renamed"
 
-    async def test_space_admin_cannot_hard_delete(self, session: AsyncSession) -> None:
-        # Archiving is the reversible option available to space admins.
+    async def test_space_admin_can_hard_delete(self, session: AsyncSession) -> None:
         service = SpaceService(session)
         owner = await _make_user(session)
         space = await service.create(SpaceCreate(key="ENG", name="Engineering"), owner)
 
+        await service.delete(space, owner)
+        assert await service.spaces.get_by_key("ENG") is None
+
+    async def test_editor_cannot_hard_delete(self, session: AsyncSession) -> None:
+        service = SpaceService(session)
+        owner = await _make_user(session)
+        editor = await _make_user(session)
+        space = await service.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        await service.set_member(space, owner, editor.id, SpaceRole.editor)
+
         with pytest.raises(PermissionDeniedError):
-            await service.delete(space, owner)
+            await service.delete(space, editor)
 
     async def test_superuser_can_hard_delete(self, session: AsyncSession) -> None:
         service = SpaceService(session)
@@ -149,6 +158,19 @@ class TestArchiving:
 
         found = await service.get_by_key("OPS")
         assert found.status is SpaceStatus.archived
+
+    async def test_unarchive_restores_a_space_to_the_default_listing(
+        self, session: AsyncSession
+    ) -> None:
+        service = SpaceService(session)
+        owner = await _make_user(session)
+        space = await service.create(SpaceCreate(key="OPS", name="DevOps"), owner)
+        await service.archive(space, owner)
+
+        restored = await service.unarchive(space, owner)
+
+        assert restored.status is SpaceStatus.active
+        assert [item.key for item in await service.spaces.list_spaces()] == ["OPS"]
 
 
 class TestMembership:

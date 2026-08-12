@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.core.exceptions import BadRequestError
@@ -18,6 +19,8 @@ class ConfluencePage:
     parent_id: str | None
     title: str
     status: str
+    created_at: datetime | None
+    updated_at: datetime | None
 
 
 @dataclass(slots=True)
@@ -42,6 +45,20 @@ def _reference(property_element: ET.Element | None) -> str | None:
 def _text(properties: dict[str, ET.Element], name: str, default: str = "") -> str:
     element = properties.get(name)
     return element.text.strip() if element is not None and element.text else default
+
+
+def _timestamp(properties: dict[str, ET.Element], *names: str) -> datetime | None:
+    """Read Confluence's ISO-8601 Page timestamp in UTC when present."""
+    for name in names:
+        value = _text(properties, name)
+        if not value:
+            continue
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+    return None
 
 
 def scan_archive(path: Path) -> list[ConfluenceSpace]:
@@ -78,7 +95,15 @@ def scan_archive(path: Path) -> list[ConfluenceSpace]:
                     if title and space_id and status == "current":
                         pages.append(
                             ConfluencePage(
-                                source_id, space_id, _reference(props.get("parent")), title, status
+                                source_id=source_id,
+                                space_id=space_id,
+                                parent_id=_reference(props.get("parent")),
+                                title=title,
+                                status=status,
+                                created_at=_timestamp(props, "creationDate", "createdDate"),
+                                updated_at=_timestamp(
+                                    props, "lastModificationDate", "lastModifiedDate", "modifiedDate"
+                                ),
                             )
                         )
                 element.clear()

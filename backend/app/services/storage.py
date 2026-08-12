@@ -11,6 +11,7 @@ the event loop free without pulling in a second AWS SDK.
 from __future__ import annotations
 
 import abc
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import IO, Any
 
@@ -51,7 +52,13 @@ class ObjectStorage(abc.ABC):
     async def get(self, key: str) -> bytes: ...
 
     @abc.abstractmethod
-    async def download_to_file(self, key: str, path: str) -> None: ...
+    async def download_to_file(
+        self,
+        key: str,
+        path: str,
+        *,
+        on_progress: Callable[[int], Awaitable[None]] | None = None,
+    ) -> None: ...
 
     @abc.abstractmethod
     async def delete(self, key: str) -> None: ...
@@ -199,8 +206,32 @@ class S3ObjectStorage(ObjectStorage):
         body = result["Body"]
         return await anyio.to_thread.run_sync(body.read)
 
-    async def download_to_file(self, key: str, path: str) -> None:
-        await self._call(self.client.download_file, self.bucket, key, path)
+    async def download_to_file(
+        self,
+        key: str,
+        path: str,
+        *,
+        on_progress: Callable[[int], Awaitable[None]] | None = None,
+    ) -> None:
+        if on_progress is None:
+            await self._call(self.client.download_file, self.bucket, key, path)
+            return
+
+        # Stream in chunks when progress is requested. boto3's transfer
+        # callback runs on a worker thread, while the import job and its
+        # counters live in this async session, so invoking the async callback
+        # here keeps progress updates safe and observable by the UI.
+        result = await self._call(self.client.get_object, Bucket=self.bucket, Key=key)
+        body = result["Body"]
+        downloaded = 0
+        try:
+            with open(path, "wb") as destination:
+                while chunk := await anyio.to_thread.run_sync(body.read, 8 * 1024 * 1024):
+                    destination.write(chunk)
+                    downloaded += len(chunk)
+                    await on_progress(downloaded)
+        finally:
+            await anyio.to_thread.run_sync(body.close)
 
     async def upload_file(
         self, key: str, path: str, *, content_type: str = "application/octet-stream"

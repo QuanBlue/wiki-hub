@@ -49,13 +49,19 @@ export function MovePageDialog({
   space,
   page,
   pages,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   space: Space;
   page: WikiPage;
   pages: WikiPage[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [destinationKey, setDestinationKey] = useState(space.key);
   const [destinationPages, setDestinationPages] = useState<WikiPage[]>(pages);
@@ -64,7 +70,10 @@ export function MovePageDialog({
   const [parentOpen, setParentOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState(false);
-  const excludedIds = useMemo(() => descendantIds(pages, page.id), [page.id, pages]);
+  const excludedIds = useMemo(
+    () => descendantIds(pages, page.id),
+    [page.id, pages],
+  );
   const parentPickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -115,7 +124,8 @@ export function MovePageDialog({
       }
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    return () =>
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, [parentOpen]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -130,7 +140,9 @@ export function MovePageDialog({
         },
       );
       const destination = spaces.find((item) => item.key === destinationKey);
-      toast.success(`Moved "${moved.title}"${destination ? ` to ${destination.name}` : ""}.`);
+      toast.success(
+        `Moved "${moved.title}"${destination ? ` to ${destination.name}` : ""}.`,
+      );
       setOpen(false);
       router.push(pageHref(destinationKey, moved.slug));
       router.refresh();
@@ -144,25 +156,31 @@ export function MovePageDialog({
   }
 
   const eligibleParents = destinationPages.filter((candidate) => {
-    const isEligible = destinationKey !== space.key || !excludedIds.has(candidate.id);
+    const isEligible =
+      destinationKey !== space.key || !excludedIds.has(candidate.id);
     const matchesSearch = candidate.title
       .toLocaleLowerCase()
       .includes(parentSearch.toLocaleLowerCase());
     return isEligible && matchesSearch;
   });
-  const selectedParent = destinationPages.find((candidate) => candidate.id === parentId);
+  const selectedParent = destinationPages.find(
+    (candidate) => candidate.id === parentId,
+  );
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm">
-          <FolderInput />
-          Move
-        </Button>
-      </DialogTrigger>
+      {controlledOpen === undefined ? (
+        <DialogTrigger asChild>
+          <Button variant="ghost" size="sm">
+            <FolderInput />
+            Move
+          </Button>
+        </DialogTrigger>
+      ) : null}
       <DialogContent
         title="Move page"
         description="The page and any child pages move together."
+        className="overflow-visible"
       >
         <form onSubmit={submit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
@@ -197,7 +215,9 @@ export function MovePageDialog({
                 role="combobox"
                 aria-expanded={parentOpen}
                 aria-controls="move-page-parent-options"
-                value={parentOpen ? parentSearch : selectedParent?.title ?? ""}
+                value={
+                  parentOpen ? parentSearch : (selectedParent?.title ?? "")
+                }
                 onFocus={() => {
                   setParentSearch("");
                   setParentOpen(true);
@@ -221,7 +241,7 @@ export function MovePageDialog({
                 <div
                   id="move-page-parent-options"
                   role="listbox"
-                  className="border-border bg-surface-raised absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-md border p-1 shadow-lg"
+                  className="border-border bg-surface-raised absolute z-20 mt-1 max-h-[min(13rem,calc(100vh-18rem))] w-full overflow-y-auto rounded-md border p-1 shadow-lg"
                 >
                   <button
                     type="button"
@@ -263,7 +283,11 @@ export function MovePageDialog({
           </div>
 
           <DialogFooter>
-            <Button type="submit" variant="primary" disabled={loading || pending}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={loading || pending}
+            >
               {pending ? <Loader2 className="animate-spin" /> : <FolderInput />}
               {pending ? "Moving..." : "Move page"}
             </Button>

@@ -8,6 +8,7 @@ import {
   Loader2,
   Pause,
   Play,
+  Search,
   Upload,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -17,9 +18,11 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiFetch } from "@/lib/api-client";
 import { PUBLIC_API_BASE_URL } from "@/lib/env";
+import { cn } from "@/lib/utils";
 import type {
   ConfluenceArchive,
   ConfluenceImportJob,
@@ -157,6 +160,7 @@ export function BackupPanel() {
   );
   const [selectedSpaces, setSelectedSpaces] = useState<string[]>([]);
   const [importAllSpaces, setImportAllSpaces] = useState(true);
+  const [spaceFilter, setSpaceFilter] = useState("");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadStats, setUploadStats] = useState<UploadStats | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -166,9 +170,78 @@ export function BackupPanel() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [confirmApply, setConfirmApply] = useState(false);
   const [confirmCancelUpload, setConfirmCancelUpload] = useState(false);
+  const [confirmOverwriteSpaces, setConfirmOverwriteSpaces] = useState(false);
   const [cancelUploadPending, setCancelUploadPending] = useState(false);
   const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const normalizedSpaceFilter = spaceFilter.trim().toLocaleLowerCase();
+  const filteredConfluenceSpaces = confluenceArchive?.spaces.filter((space) =>
+    !normalizedSpaceFilter ||
+    space.name.toLocaleLowerCase().includes(normalizedSpaceFilter) ||
+    space.key.toLocaleLowerCase().includes(normalizedSpaceFilter),
+  ) ?? [];
+  const selectedImportKeys = importAllSpaces
+    ? confluenceArchive?.spaces.map((space) => space.key) ?? []
+    : selectedSpaces;
+  const conflictingSelectedSpaces = confluenceArchive?.spaces.filter(
+    (space) => space.conflict && selectedImportKeys.includes(space.key),
+  ) ?? [];
+  const overwriteSpaceSummary = [
+    ...conflictingSelectedSpaces.slice(0, 8).map((space) => space.key),
+    ...(conflictingSelectedSpaces.length > 8
+      ? [`and ${conflictingSelectedSpaces.length - 8} more`]
+      : []),
+  ].join(", ");
+  const isFinalizingArchive =
+    confluencePending &&
+    !isUploading &&
+    !confluenceArchive &&
+    uploadProgress === 100;
+  const importInProgress = Boolean(
+    confluenceJob && !["completed", "failed", "cancelled"].includes(confluenceJob.status),
+  );
+  const jobSpacesTotal = confluenceJob?.counters.spaces_total ?? 0;
+  const jobSpacesCompleted = confluenceJob?.counters.spaces_completed ?? 0;
+  const jobDownloadPercent = Math.min(
+    100,
+    confluenceJob?.counters.download_percent ?? 0,
+  );
+  const displayedDownloadPercent =
+    confluenceJob?.status === "completed" ? 100 : jobDownloadPercent;
+  const jobSpacePercent = Math.min(
+    100,
+    (jobSpacesCompleted / Math.max(1, jobSpacesTotal)) * 100,
+  );
+  const jobProgressPercent = !confluenceJob
+    ? 0
+    : confluenceJob.status === "completed"
+      ? 100
+      : confluenceJob.status === "queued"
+        ? 0
+      : confluenceJob.phase === "downloading"
+        ? jobDownloadPercent * 0.15
+        : confluenceJob.phase === "scanning"
+          ? 15
+          : 15 + jobSpacePercent * 0.85;
+  const jobTitle = !confluenceJob
+    ? ""
+    : confluenceJob.status === "completed"
+      ? "Import complete"
+      : confluenceJob.status === "failed"
+        ? "Import failed"
+        : confluenceJob.status === "cancelled"
+          ? "Import cancelled"
+          : confluenceJob.phase === "downloading"
+            ? "Downloading archive"
+            : confluenceJob.phase === "scanning"
+              ? "Scanning archive"
+              : confluenceJob.phase === "importing"
+                ? "Importing spaces"
+                : "Import queued";
+  const jobPagesSummary = confluenceJob?.counters.pages_total
+    ? `${confluenceJob.counters.pages_processed ?? 0}/${confluenceJob.counters.pages_total} pages`
+    : `${confluenceJob?.counters.pages_processed ?? 0} pages`;
 
   // A real link, not a fetch: the browser handles the Content-Disposition
   // attachment itself, the session cookie rides along, and right-click
@@ -315,6 +388,8 @@ export function BackupPanel() {
           if (!active) return;
           await clearStoredUpload();
           setConfluenceArchive(archive);
+          setSelectedSpaces(archive.spaces.map((space) => space.key));
+          setImportAllSpaces(true);
           return;
         }
         if (progress.status !== "uploading") {
@@ -466,6 +541,13 @@ export function BackupPanel() {
         });
         uploadedBytes += chunk.size;
       }
+      setUploadProgress(100);
+      setUploadStats({
+        loaded: selectedFile.size,
+        total: selectedFile.size,
+        bytesPerSecond: 0,
+        secondsRemaining: 0,
+      });
       setIsUploading(false);
       await apiFetch(
         `/api/v1/confluence-imports/archives/${target.archive_id}/complete-upload`,
@@ -478,11 +560,9 @@ export function BackupPanel() {
         { method: "POST" },
       );
       setConfluenceArchive(archive);
-      setSelectedSpaces(
-        archive.spaces
-          .filter((space) => !space.conflict)
-          .map((space) => space.key),
-      );
+      setSpaceFilter("");
+      setSelectedSpaces(archive.spaces.map((space) => space.key));
+      setImportAllSpaces(true);
       toast.success("Archive scanned. Choose the Spaces to import.");
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -551,7 +631,7 @@ export function BackupPanel() {
     window.location.assign(leaveTarget);
   }
 
-  async function startConfluenceImport() {
+  async function startConfluenceImport(overwriteExisting = false) {
     if (!confluenceArchive) return;
     setConfluencePending(true);
     try {
@@ -559,11 +639,16 @@ export function BackupPanel() {
         `/api/v1/confluence-imports/archives/${confluenceArchive.id}/jobs`,
         {
           method: "POST",
-          body: { import_all: importAllSpaces, space_keys: selectedSpaces },
+          body: {
+            import_all: importAllSpaces,
+            space_keys: selectedSpaces,
+            overwrite_existing: overwriteExisting,
+          },
         },
       );
       setConfluenceJob(job);
       setConfluenceLogs([]);
+      setConfirmOverwriteSpaces(false);
       toast.success("Confluence import queued.");
     } catch (err) {
       setError(
@@ -572,6 +657,14 @@ export function BackupPanel() {
     } finally {
       setConfluencePending(false);
     }
+  }
+
+  function requestConfluenceImport() {
+    if (conflictingSelectedSpaces.length > 0) {
+      setConfirmOverwriteSpaces(true);
+      return;
+    }
+    void startConfluenceImport();
   }
 
   async function submitImport(dryRun: boolean) {
@@ -664,7 +757,6 @@ export function BackupPanel() {
               import into WikiHub.
             </p>
           </div>
-          <Badge variant="success">available</Badge>
         </div>
 
         <div className="border-border bg-surface-sunken mt-4 rounded-md border border-dashed p-4">
@@ -673,6 +765,7 @@ export function BackupPanel() {
             id="confluence-backup-file"
             type="file"
             accept=".zip,application/zip,application/x-zip-compressed"
+            disabled={confluencePending || Boolean(confluenceArchive)}
             onChange={(event) => {
               const nextFile = event.target.files?.[0] ?? null;
               const matchesInterruptedUpload =
@@ -706,8 +799,14 @@ export function BackupPanel() {
             className="sr-only"
           />
           <label
-            className="border-border bg-surface hover:border-border-strong focus-within:ring-ring mt-2 flex h-10 w-full max-w-md cursor-pointer items-center rounded-md border text-sm transition-[color,background-color,border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-offset-2"
+            className={cn(
+              "border-border bg-surface hover:border-border-strong focus-within:ring-ring mt-2 flex h-10 w-full max-w-md items-center rounded-md border text-sm transition-[color,background-color,border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-offset-2",
+              confluencePending || confluenceArchive
+                ? "cursor-not-allowed opacity-50"
+                : "cursor-pointer",
+            )}
             htmlFor="confluence-backup-file"
+            aria-disabled={confluencePending || Boolean(confluenceArchive)}
           >
             <span className="border-border bg-surface-sunken shrink-0 border-r px-3 py-2 font-medium">
               Choose file
@@ -725,46 +824,76 @@ export function BackupPanel() {
             Accepted format: <code className="font-mono">.zip</code> archive
             exported by Confluence. It uploads directly to protected object
             storage.
+            {confluenceArchive
+              ? " Finish or clear this space selection before choosing another archive."
+              : null}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              disabled={
-                (!confluenceFile && !storedConfluenceUpload) ||
-                confluencePending ||
-                Boolean(confluenceArchive)
-              }
-              onClick={() =>
-                void uploadConfluence(Boolean(storedConfluenceUpload))
-              }
-            >
-              {confluencePending && !confluenceArchive ? (
-                <Loader2 className="animate-spin" />
-              ) : storedConfluenceUpload ? (
-                <Play />
-              ) : (
-                <Upload />
-              )}{" "}
-              {storedConfluenceUpload ? "Resume upload" : "Upload and scan"}
-            </Button>
             {isUploading ? (
-              <Button variant="secondary" onClick={cancelConfluenceUpload}>
-                <Pause /> Pause upload
-              </Button>
-            ) : null}
-            {(isUploading || storedConfluenceUpload) && !confluenceArchive ? (
-              <Button
-                variant="danger"
-                disabled={cancelUploadPending}
-                onClick={() => setConfirmCancelUpload(true)}
-              >
-                Cancel upload
-              </Button>
+              <>
+                <Button variant="secondary" onClick={cancelConfluenceUpload}>
+                  <Pause /> Pause upload
+                </Button>
+                <Button
+                  variant="danger"
+                  disabled={cancelUploadPending}
+                  onClick={() => setConfirmCancelUpload(true)}
+                >
+                  Cancel upload
+                </Button>
+              </>
+            ) : !isFinalizingArchive ? (
+              <>
+                <Button
+                  variant="secondary"
+                  disabled={
+                    (!confluenceFile && !storedConfluenceUpload) ||
+                    confluencePending ||
+                    Boolean(confluenceArchive)
+                  }
+                  onClick={() =>
+                    void uploadConfluence(Boolean(storedConfluenceUpload))
+                  }
+                >
+                  {confluencePending && !confluenceArchive ? (
+                    <Loader2 className="animate-spin" />
+                  ) : storedConfluenceUpload ? (
+                    <Play />
+                  ) : (
+                    <Upload />
+                  )}{" "}
+                  {storedConfluenceUpload ? "Resume upload" : "Upload and scan"}
+                </Button>
+                {storedConfluenceUpload && !confluenceArchive ? (
+                  <Button
+                    variant="danger"
+                    disabled={cancelUploadPending}
+                    onClick={() => setConfirmCancelUpload(true)}
+                  >
+                    Cancel upload
+                  </Button>
+                ) : null}
+              </>
             ) : null}
           </div>
         </div>
 
-        {uploadProgress !== null && !confluenceArchive ? (
+        {isFinalizingArchive ? (
+          <div
+            className="border-info/25 bg-info-bg mt-3 flex gap-2.5 rounded-md border p-3 text-sm"
+            role="status"
+          >
+            <Loader2 className="text-info mt-0.5 size-4 shrink-0 animate-spin" />
+            <div>
+              <p className="font-medium">Upload complete. Preparing your archive…</p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Verifying the upload and scanning spaces can take a few minutes for large archives. Keep this page open while WikiHub prepares the import list.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {uploadProgress !== null && !confluenceArchive && !isFinalizingArchive ? (
           <div
             className="border-info/25 bg-info-bg mt-3 rounded-md border p-3 text-sm"
             role="status"
@@ -826,33 +955,71 @@ export function BackupPanel() {
               <p className="text-sm font-medium">
                 {confluenceArchive.spaces.length} Space(s) found
               </p>
-              <label className="flex items-center gap-2 text-sm">
+              <label
+                className={cn(
+                  "flex items-center gap-2 text-sm",
+                  importInProgress && "cursor-not-allowed opacity-60",
+                )}
+              >
                 <input
                   type="checkbox"
                   checked={importAllSpaces}
-                  onChange={(event) => setImportAllSpaces(event.target.checked)}
+                  disabled={importInProgress}
+                  onChange={(event) => {
+                    const nextImportAll = event.target.checked;
+                    setImportAllSpaces(nextImportAll);
+                    setSelectedSpaces(
+                      nextImportAll
+                        ? confluenceArchive.spaces
+                            .map((space) => space.key)
+                        : [],
+                    );
+                  }}
                   className="accent-primary size-4"
                 />{" "}
                 Import all spaces
               </label>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-52 flex-1">
+                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+                <Input
+                  type="search"
+                  value={spaceFilter}
+                  disabled={importInProgress}
+                  onChange={(event) => setSpaceFilter(event.target.value)}
+                  placeholder="Filter by space name or key"
+                  aria-label="Filter spaces to import"
+                  className="pl-9"
+                />
+              </div>
+              <span className="text-muted-foreground text-xs" aria-live="polite">
+                {filteredConfluenceSpaces.length} of {confluenceArchive.spaces.length} shown
+              </span>
+            </div>
             <div className="border-border max-h-64 overflow-y-auto rounded-md border">
-              {confluenceArchive.spaces.map((space) => (
+              {filteredConfluenceSpaces.length ? filteredConfluenceSpaces.map((space) => (
                 <label
                   key={space.key}
-                  className="border-border hover:bg-surface-sunken flex cursor-pointer items-center gap-3 border-b px-3 py-2 text-sm last:border-0"
+                  className={cn(
+                    "border-border flex items-center gap-3 border-b px-3 py-2 text-sm last:border-0",
+                    importInProgress
+                      ? "cursor-not-allowed opacity-60"
+                      : "hover:bg-surface-sunken cursor-pointer",
+                  )}
                 >
                   <input
                     type="checkbox"
-                    disabled={importAllSpaces || space.conflict}
+                    disabled={importInProgress}
                     checked={selectedSpaces.includes(space.key)}
-                    onChange={(event) =>
-                      setSelectedSpaces((current) =>
-                        event.target.checked
-                          ? [...current, space.key]
-                          : current.filter((key) => key !== space.key),
-                      )
-                    }
+                    onChange={(event) => {
+                      const nextSelected = event.target.checked
+                        ? [...selectedSpaces, space.key]
+                        : selectedSpaces.filter((key) => key !== space.key);
+                      const availableCount = confluenceArchive.spaces.length;
+                      setSelectedSpaces(nextSelected);
+                      setImportAllSpaces(nextSelected.length === availableCount);
+                    }}
                     className="accent-primary size-4"
                   />
                   <span className="font-medium">{space.name}</span>
@@ -860,19 +1027,24 @@ export function BackupPanel() {
                     {space.key} · {space.page_count} pages
                   </span>
                   {space.conflict ? (
-                    <Badge variant="warning">existing key: skipped</Badge>
+                    <Badge variant="warning">will replace existing</Badge>
                   ) : null}
                 </label>
-              ))}
+              )) : (
+                <p className="text-muted-foreground px-3 py-6 text-center text-sm">
+                  No spaces match “{spaceFilter}”.
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="primary"
                 disabled={
+                  importInProgress ||
                   confluencePending ||
                   (!importAllSpaces && selectedSpaces.length === 0)
                 }
-                onClick={startConfluenceImport}
+                onClick={requestConfluenceImport}
               >
                 {confluencePending ? (
                   <Loader2 className="animate-spin" />
@@ -883,17 +1055,30 @@ export function BackupPanel() {
               </Button>
               <Button
                 variant="secondary"
-                onClick={() =>
-                  setSelectedSpaces(
-                    confluenceArchive.spaces
-                      .filter((space) => !space.conflict)
-                      .map((space) => space.key),
-                  )
-                }
+                disabled={importInProgress}
+                onClick={() => {
+                  const nextSelected = Array.from(
+                    new Set([
+                      ...selectedSpaces,
+                      ...filteredConfluenceSpaces
+                        .map((space) => space.key),
+                    ]),
+                    );
+                  const availableCount = confluenceArchive.spaces.length;
+                  setSelectedSpaces(nextSelected);
+                  setImportAllSpaces(nextSelected.length === availableCount);
+                }}
               >
-                Select all
+                {normalizedSpaceFilter ? "Select visible" : "Select all"}
               </Button>
-              <Button variant="ghost" onClick={() => setSelectedSpaces([])}>
+              <Button
+                variant="ghost"
+                disabled={importInProgress}
+                onClick={() => {
+                  setSelectedSpaces([]);
+                  setImportAllSpaces(false);
+                }}
+              >
                 Clear selection
               </Button>
             </div>
@@ -901,9 +1086,10 @@ export function BackupPanel() {
         ) : null}
 
         {confluenceJob ? (
-          <div className="border-border bg-surface-sunken mt-4 rounded-md border p-4 text-sm">
-            <div className="flex items-center justify-between gap-3">
-              <p className="font-medium">
+          <div className="border-border bg-surface-raised mt-4 rounded-lg border p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="text-base font-semibold">{jobTitle}</p>
+              <p className="hidden">
                 Import {confluenceJob.status} · {confluenceJob.phase}
               </p>
               <Badge
@@ -918,19 +1104,37 @@ export function BackupPanel() {
                 {confluenceJob.status}
               </Badge>
             </div>
-            <p className="text-muted-foreground mt-1">
+            <p className="text-muted-foreground mt-1 text-sm">
+              {Math.round(jobProgressPercent)}% complete · {jobSpacesCompleted}/{jobSpacesTotal} spaces · {jobPagesSummary}
+            </p>
+            <p className="hidden">
+              {Math.round(jobProgressPercent)}% complete · {jobSpacesCompleted}/{jobSpacesTotal} spaces · {confluenceJob.counters.pages_processed ?? 0}/{confluenceJob.counters.pages_total ?? 0} pages
+            </p>
+            <p className="hidden">
               {confluenceJob.counters.spaces_completed ?? 0}/
               {confluenceJob.counters.spaces_total ?? 0} spaces ·{" "}
               {confluenceJob.counters.pages_processed ?? 0} pages
             </p>
-            <div className="bg-muted mt-3 h-2 overflow-hidden rounded-full">
+            <div
+              className="bg-surface-sunken mt-3 h-2 overflow-hidden rounded-full"
+              aria-label={`${Math.round(jobProgressPercent)}% of import complete`}
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={Math.round(jobProgressPercent)}
+              role="progressbar"
+            >
               <div
-                className="bg-primary h-full transition-all"
+                className="bg-primary h-full transition-[width] duration-300"
                 style={{
-                  width: `${Math.min(100, ((confluenceJob.counters.spaces_completed ?? 0) / Math.max(1, confluenceJob.counters.spaces_total ?? 1)) * 100)}%`,
+                  width: `${jobProgressPercent}%`,
                 }}
               />
             </div>
+            {confluenceJob.phase === "downloading" ? (
+              <p className="text-muted-foreground mt-2 text-xs">
+                Downloading archive: {formatBytes(confluenceJob.counters.downloaded_bytes ?? 0)} / {formatBytes(confluenceJob.counters.download_total_bytes ?? 0)} ({displayedDownloadPercent}%)
+              </p>
+            ) : null}
             {!["completed", "failed", "cancelled"].includes(
               confluenceJob.status,
             ) ? (
@@ -951,16 +1155,19 @@ export function BackupPanel() {
               </Button>
             ) : null}
             {confluenceLogs.length ? (
-              <details className="mt-3">
-                <summary className="cursor-pointer">
-                  Import logs ({confluenceLogs.length})
+              <details className="border-border bg-surface mt-4 rounded-md border" open>
+                <summary className="hover:bg-surface-hover cursor-pointer px-3 py-2 text-sm font-medium transition-colors duration-150">
+                  Import activity ({confluenceLogs.length})
                 </summary>
-                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs">
+                <ul className="border-border max-h-44 divide-y overflow-y-auto border-t text-xs">
                   {confluenceLogs.map((log) => (
-                    <li key={log.id}>
+                    <li key={log.id} className="px-3 py-2">
                       <span className="font-medium">{log.level}</span> ·{" "}
                       {log.entity_label ? `${log.entity_label}: ` : ""}
                       {log.message}
+                      {log.phase === "downloading" && !log.message.includes("%")
+                        ? ` (${displayedDownloadPercent}%)`
+                        : null}
                     </li>
                   ))}
                 </ul>
@@ -1130,6 +1337,16 @@ export function BackupPanel() {
         destructive
         pending={cancelUploadPending}
         onConfirm={() => void abandonConfluenceUpload()}
+      />
+      <ConfirmDialog
+        open={confirmOverwriteSpaces}
+        onOpenChange={setConfirmOverwriteSpaces}
+        title="Replace existing spaces?"
+        description={`This will permanently replace ${conflictingSelectedSpaces.length} existing ${conflictingSelectedSpaces.length === 1 ? "space" : "spaces"}: ${overwriteSpaceSummary}. Their current pages and memberships will be deleted before the archive version is imported.`}
+        confirmLabel="Replace and import"
+        destructive
+        pending={confluencePending}
+        onConfirm={() => void startConfluenceImport(true)}
       />
     </div>
   );

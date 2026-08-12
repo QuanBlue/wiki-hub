@@ -58,6 +58,7 @@ class ArchiveRead(BaseModel):
 class ImportCreate(BaseModel):
     import_all: bool = False
     space_keys: list[str] = Field(default_factory=list)
+    overwrite_existing: bool = False
 
 
 class ImportJobRead(BaseModel):
@@ -65,6 +66,7 @@ class ImportJobRead(BaseModel):
     archive_id: uuid.UUID
     import_all: bool
     space_keys: list[str]
+    overwrite_existing: bool
     status: str
     phase: str
     counters: dict[str, int]

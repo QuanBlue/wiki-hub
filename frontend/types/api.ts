@@ -192,6 +192,7 @@ export interface ConfluenceImportJob {
   archive_id: string;
   import_all: boolean;
   space_keys: string[];
+  overwrite_existing: boolean;
   status: string;
   phase: string;
   counters: Record<string, number>;

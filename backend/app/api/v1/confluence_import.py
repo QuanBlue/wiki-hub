@@ -58,6 +58,7 @@ def job_read(item: ImportJob) -> ImportJobRead:
         archive_id=item.archive_id,
         import_all=item.import_all,
         space_keys=item.space_keys,
+        overwrite_existing=item.overwrite_existing,
         status=item.status,
         phase=item.phase,
         counters=item.counters,
@@ -165,6 +166,7 @@ async def create_job(
         await importer.get_archive(archive_id),
         import_all=payload.import_all,
         space_keys=payload.space_keys,
+        overwrite_existing=payload.overwrite_existing,
         actor_id=user.id,
     )
     await enqueue(job.id)

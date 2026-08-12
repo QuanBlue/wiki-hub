@@ -154,6 +154,7 @@ class ConfluenceImportService:
         *,
         import_all: bool,
         space_keys: list[str],
+        overwrite_existing: bool,
         actor_id: uuid.UUID,
     ) -> ImportJob:
         if archive.status != "scanned":
@@ -164,16 +165,23 @@ class ConfluenceImportService:
             raise BadRequestError("Select at least one Space or choose Import all spaces.")
         if set(selected) - available:
             raise BadRequestError("One or more selected Space keys are not in this archive.")
+        selected_keys = available if import_all else set(selected)
+        selected_spaces = [item for item in archive.spaces if item["key"] in selected_keys]
         job = ImportJob(
             archive_id=archive.id,
             created_by_id=actor_id,
             import_all=import_all,
             space_keys=[] if import_all else selected,
+            overwrite_existing=overwrite_existing,
             counters={
-                "spaces_total": len(available) if import_all else len(selected),
+                "spaces_total": len(selected_spaces),
                 "spaces_completed": 0,
+                "pages_total": sum(int(item.get("page_count", 0)) for item in selected_spaces),
                 "pages_processed": 0,
                 "attachments_processed": 0,
+                "downloaded_bytes": 0,
+                "download_total_bytes": archive.size_bytes,
+                "download_percent": 0,
             },
         )
         self.session.add(job)
@@ -210,15 +218,55 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
     archive = await session.get(ImportArchive, job.archive_id)
     if archive is None:
         return
-    job.status, job.phase = "running", "preparing"
-    await log(session, job, "info", "preparing", "Downloading archive to worker scratch space.")
+    job.status, job.phase = "running", "downloading"
+    await log(session, job, "info", "downloading", "Downloading archive to worker scratch space: 0%.")
     await session.commit()
     try:
         with tempfile.TemporaryDirectory(prefix="wikihub-confluence-import-") as directory:
             path = Path(directory) / "archive.zip"
-            await storage.download_to_file(archive.object_key, str(path))
+            last_logged_tenth = 0
+
+            async def record_download_progress(downloaded_bytes: int) -> None:
+                nonlocal last_logged_tenth
+                percent = min(100, int(downloaded_bytes * 100 / max(1, archive.size_bytes)))
+                if percent == job.counters.get("download_percent", 0):
+                    return
+                job.counters = {
+                    **job.counters,
+                    "downloaded_bytes": min(downloaded_bytes, archive.size_bytes),
+                    "download_total_bytes": archive.size_bytes,
+                    "download_percent": percent,
+                }
+                if percent // 10 > last_logged_tenth:
+                    last_logged_tenth = percent // 10
+                    await log(
+                        session,
+                        job,
+                        "info",
+                        "downloading",
+                        f"Downloading archive to worker scratch space: {percent}%.",
+                    )
+                await session.commit()
+
+            await storage.download_to_file(
+                archive.object_key,
+                str(path),
+                on_progress=record_download_progress,
+            )
+            job.phase = "scanning"
+            job.counters = {
+                **job.counters,
+                "downloaded_bytes": archive.size_bytes,
+                "download_total_bytes": archive.size_bytes,
+                "download_percent": 100,
+            }
+            await log(session, job, "info", "scanning", "Archive downloaded. Reading its space structure.")
+            await session.commit()
             scanned = await anyio.to_thread.run_sync(scan_archive, path)
             selected = {space.key for space in scanned} if job.import_all else set(job.space_keys)
+            job.phase = "importing"
+            await log(session, job, "info", "importing", "Archive ready. Importing selected spaces.")
+            await session.commit()
             for source_space in scanned:
                 if source_space.key not in selected:
                     continue
@@ -234,21 +282,34 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     await session.execute(select(Space).where(Space.key == source_space.key))
                 ).scalar_one_or_none()
                 if existing:
-                    job.counters = {
-                        **job.counters,
-                        "spaces_completed": job.counters.get("spaces_completed", 0) + 1,
-                    }
-                    await log(
-                        session,
-                        job,
-                        "warning",
-                        "spaces",
-                        "Skipped: Space key already exists.",
-                        entity_type="space",
-                        entity_label=source_space.key,
-                    )
-                    await session.commit()
-                    continue
+                    if job.overwrite_existing:
+                        await session.delete(existing)
+                        await session.flush()
+                        await log(
+                            session,
+                            job,
+                            "warning",
+                            "spaces",
+                            "Existing space was replaced with the archive version.",
+                            entity_type="space",
+                            entity_label=source_space.key,
+                        )
+                    else:
+                        job.counters = {
+                            **job.counters,
+                            "spaces_completed": job.counters.get("spaces_completed", 0) + 1,
+                        }
+                        await log(
+                            session,
+                            job,
+                            "warning",
+                            "spaces",
+                            "Skipped: Space key already exists.",
+                            entity_type="space",
+                            entity_label=source_space.key,
+                        )
+                        await session.commit()
+                        continue
                 space = Space(
                     key=source_space.key, name=source_space.name, created_by_id=job.created_by_id
                 )
@@ -275,6 +336,13 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     parent = pages.get(source_page.parent_id or "")
                     if parent:
                         pages[source_page.source_id].parent_id = parent.id
+                    imported_page = pages[source_page.source_id]
+                    if source_page.created_at:
+                        imported_page.created_at = source_page.created_at
+                    if source_page.updated_at:
+                        imported_page.updated_at = source_page.updated_at
+                    elif source_page.created_at:
+                        imported_page.updated_at = source_page.created_at
                 await session.flush()
                 # Bodies are streamed in a second pass; only selected page ids are retained.
                 for page_source_id, html in await anyio.to_thread.run_sync(

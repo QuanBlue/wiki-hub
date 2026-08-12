@@ -175,6 +175,31 @@ class PageService:
         )
         return page
 
+    async def delete(self, space: Space, page: WikiPage, user: User) -> int:
+        """Delete one page while preserving its direct child pages.
+
+        Moving children to the deleted page's parent avoids silently deleting a
+        branch of documentation when an editor only intended to remove one
+        page. Root children remain root pages.
+        """
+        await self.require_editor(space, user)
+        children = await self.pages.list_children(page.id)
+        for child in children:
+            child.parent_id = page.parent_id
+            child.updated_by_id = user.id
+
+        moved_children = len(children)
+        await self.pages.delete(page)
+        await self.session.flush()
+        logger.info(
+            "page_deleted",
+            space_key=space.key,
+            slug=page.slug,
+            moved_children=moved_children,
+            by=user.username,
+        )
+        return moved_children
+
     async def unique_slug(self, space: Space, title: str) -> str:
         base = SLUG_CHARS.sub("-", title.strip().lower()).strip("-") or "page"
         slug = base[:240].strip("-") or "page"

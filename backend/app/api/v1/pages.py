@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.deps import CurrentUser, DbSession
 from app.modules.pages.service import PageService
+from app.modules.pages.pdf_export import render_page_pdf
 from app.modules.spaces.service import SpaceService
 from app.schemas.page import PageCreate, PageLikeRead, PageMove, PageRead, PageUpdate
 
@@ -72,6 +73,23 @@ async def move_page(
     return page_service.to_read(moved)
 
 
+@router.get("/{slug}/export/pdf", response_class=Response, summary="Download a page as PDF")
+async def export_page_pdf(
+    key: str,
+    slug: str,
+    _user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> Response:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    return Response(
+        content=render_page_pdf(page),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{page.slug or "page"}.pdf"'},
+    )
+
+
 @router.get("/{slug}", response_model=PageRead, summary="Get one page")
 async def get_page(
     key: str,
@@ -125,3 +143,20 @@ async def update_page(
     page = await page_service.get_by_slug(space, slug)
     updated = await page_service.update(space, page, payload, user)
     return page_service.to_read(updated)
+
+
+@router.delete(
+    "/{slug}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a page and move its child pages up one level",
+)
+async def delete_page(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    await page_service.delete(space, page, user)

@@ -9,6 +9,7 @@ import { SITE_NAME } from "@/lib/env";
 import { listPages } from "@/lib/pages";
 import { getSidebarPreferences } from "@/lib/sidebar-preferences";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
+import { spaceTabTitle } from "@/lib/space-tab-title";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,12 @@ type Params = { params: Promise<{ key: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { key } = await params;
-  return { title: key.toUpperCase() };
+  try {
+    const space = await getSpace(key);
+    return { title: spaceTabTitle(space.name, key) };
+  } catch {
+    return { title: key.toUpperCase() };
+  }
 }
 
 export default async function SpaceDetailPage({ params }: Params) {

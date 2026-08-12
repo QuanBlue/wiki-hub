@@ -175,14 +175,18 @@ class SpaceService:
         logger.info("space_archived", key=space.key, by=user.username)
         return space
 
+    async def unarchive(self, space: Space, user: User) -> Space:
+        """Restore an archived space without changing its contents or members."""
+        await self.require_admin(space, user)
+        space.status = SpaceStatus.active
+        await self._flush_and_refresh(space)
+        logger.info("space_unarchived", key=space.key, by=user.username)
+        return space
+
     async def delete(self, space: Space, user: User) -> None:
-        # Permanent removal is a superuser action: archiving is the reversible
-        # option and is what space admins get.
-        if not user.is_superuser:
-            raise PermissionDeniedError(
-                "Only a system administrator can permanently delete a space. "
-                "Space administrators can archive it instead."
-            )
+        # A space administrator owns the lifecycle of their space. System
+        # administrators retain that ability across every space.
+        await self.require_admin(space, user)
         await self.spaces.delete(space)
         await self.session.flush()
         logger.info("space_deleted", key=space.key, by=user.username)

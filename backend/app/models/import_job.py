@@ -41,6 +41,7 @@ class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     import_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     space_keys: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    overwrite_existing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
     phase: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     counters: Mapped[dict[str, int]] = mapped_column(JSONB, nullable=False, default=dict)

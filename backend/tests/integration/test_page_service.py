@@ -214,3 +214,39 @@ class TestUpdatePage:
 
         with pytest.raises(PermissionDeniedError):
             await service.update(space, page, PageUpdate(content="Nope"), viewer)
+
+
+class TestDeletePage:
+    async def test_editor_can_delete_page_and_children_move_to_parent(
+        self, session: AsyncSession
+    ) -> None:
+        owner = await _make_user(session)
+        editor = await _make_user(session)
+        spaces = SpaceService(session)
+        space = await spaces.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        await spaces.set_member(space, owner, editor.id, SpaceRole.editor)
+        service = PageService(session)
+        grandparent = await service.create(space, PageCreate(title="Runbooks"), owner)
+        parent = await service.create(
+            space, PageCreate(title="On-call", parent_id=grandparent.id), owner
+        )
+        child = await service.create(space, PageCreate(title="Escalation", parent_id=parent.id), owner)
+
+        moved_children = await service.delete(space, parent, editor)
+
+        assert moved_children == 1
+        assert await service.pages.get(parent.id) is None
+        assert child.parent_id == grandparent.id
+        assert child.updated_by_id == editor.id
+
+    async def test_viewer_cannot_delete_a_page(self, session: AsyncSession) -> None:
+        owner = await _make_user(session)
+        viewer = await _make_user(session)
+        spaces = SpaceService(session)
+        space = await spaces.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        await spaces.set_member(space, owner, viewer.id, SpaceRole.viewer)
+        service = PageService(session)
+        page = await service.create(space, PageCreate(title="Draft"), owner)
+
+        with pytest.raises(PermissionDeniedError):
+            await service.delete(space, page, viewer)
