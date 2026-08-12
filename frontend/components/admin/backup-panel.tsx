@@ -40,12 +40,20 @@ type UploadStats = {
   secondsRemaining: number | null;
 };
 
+type HashStats = {
+  loaded: number;
+  total: number;
+  bytesPerSecond: number;
+  secondsRemaining: number | null;
+};
+
 type StoredConfluenceUpload = {
   archiveId: string;
   file?: File;
   fileName: string;
   fileSize: number;
   fileLastModified: number | null;
+  sha256: string | null;
   partSize: number;
 };
 
@@ -88,6 +96,7 @@ function normalizeStoredUpload(
     fileName,
     fileSize,
     fileLastModified,
+    sha256: upload.sha256 ?? null,
     partSize: upload.partSize,
   };
 }
@@ -98,6 +107,7 @@ function storedUploadMetadata(upload: StoredConfluenceUpload) {
     fileName: upload.fileName,
     fileSize: upload.fileSize,
     fileLastModified: upload.fileLastModified,
+    sha256: upload.sha256,
     partSize: upload.partSize,
   };
 }
@@ -202,6 +212,7 @@ function serverUploadToStoredUpload(
     fileName: upload.filename,
     fileSize: upload.size_bytes,
     fileLastModified: null,
+    sha256: upload.sha256,
     partSize: upload.part_size_bytes,
   };
 }
@@ -222,6 +233,157 @@ async function clearStoredUpload(): Promise<void> {
   clearStoredUploadMetadata();
   // Current resumability uses lightweight metadata plus the server-side active
   // upload record. Legacy IndexedDB file caches are intentionally ignored.
+}
+
+const SHA256_INITIAL_STATE = [
+  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c,
+  0x1f83d9ab, 0x5be0cd19,
+];
+
+const SHA256_K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
+  0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+  0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+  0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+function rotateRight(value: number, bits: number): number {
+  return (value >>> bits) | (value << (32 - bits));
+}
+
+class IncrementalSha256 {
+  private state = [...SHA256_INITIAL_STATE];
+  private buffer = new Uint8Array(64);
+  private bufferLength = 0;
+  private bytesHashed = 0;
+  private finished = false;
+  private readonly words = new Uint32Array(64);
+
+  update(data: Uint8Array): void {
+    if (this.finished) throw new Error("SHA-256 digest is already finalized.");
+    let position = 0;
+    this.bytesHashed += data.length;
+    while (position < data.length) {
+      const take = Math.min(64 - this.bufferLength, data.length - position);
+      this.buffer.set(
+        data.subarray(position, position + take),
+        this.bufferLength,
+      );
+      this.bufferLength += take;
+      position += take;
+      if (this.bufferLength === 64) {
+        this.hashBlock(this.buffer);
+        this.bufferLength = 0;
+      }
+    }
+  }
+
+  digest(): string {
+    if (this.finished) throw new Error("SHA-256 digest is already finalized.");
+    this.finished = true;
+    const bitLengthHigh = Math.floor((this.bytesHashed * 8) / 0x100000000);
+    const bitLengthLow = (this.bytesHashed * 8) >>> 0;
+    this.buffer[this.bufferLength++] = 0x80;
+    if (this.bufferLength > 56) {
+      this.buffer.fill(0, this.bufferLength, 64);
+      this.hashBlock(this.buffer);
+      this.bufferLength = 0;
+    }
+    this.buffer.fill(0, this.bufferLength, 56);
+    this.buffer[56] = bitLengthHigh >>> 24;
+    this.buffer[57] = bitLengthHigh >>> 16;
+    this.buffer[58] = bitLengthHigh >>> 8;
+    this.buffer[59] = bitLengthHigh;
+    this.buffer[60] = bitLengthLow >>> 24;
+    this.buffer[61] = bitLengthLow >>> 16;
+    this.buffer[62] = bitLengthLow >>> 8;
+    this.buffer[63] = bitLengthLow;
+    this.hashBlock(this.buffer);
+    return this.state
+      .map((word) => word.toString(16).padStart(8, "0"))
+      .join("");
+  }
+
+  private hashBlock(block: Uint8Array): void {
+    for (let index = 0; index < 16; index += 1) {
+      const offset = index * 4;
+      this.words[index] =
+        ((block[offset] << 24) |
+          (block[offset + 1] << 16) |
+          (block[offset + 2] << 8) |
+          block[offset + 3]) >>>
+        0;
+    }
+    for (let index = 16; index < 64; index += 1) {
+      const s0 =
+        rotateRight(this.words[index - 15], 7) ^
+        rotateRight(this.words[index - 15], 18) ^
+        (this.words[index - 15] >>> 3);
+      const s1 =
+        rotateRight(this.words[index - 2], 17) ^
+        rotateRight(this.words[index - 2], 19) ^
+        (this.words[index - 2] >>> 10);
+      this.words[index] =
+        (this.words[index - 16] + s0 + this.words[index - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = this.state;
+    for (let index = 0; index < 64; index += 1) {
+      const s1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
+      const choice = (e & f) ^ (~e & g);
+      const temp1 =
+        (h + s1 + choice + SHA256_K[index] + this.words[index]) >>> 0;
+      const s0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
+      const majority = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (s0 + majority) >>> 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) >>> 0;
+    }
+    this.state[0] = (this.state[0] + a) >>> 0;
+    this.state[1] = (this.state[1] + b) >>> 0;
+    this.state[2] = (this.state[2] + c) >>> 0;
+    this.state[3] = (this.state[3] + d) >>> 0;
+    this.state[4] = (this.state[4] + e) >>> 0;
+    this.state[5] = (this.state[5] + f) >>> 0;
+    this.state[6] = (this.state[6] + g) >>> 0;
+    this.state[7] = (this.state[7] + h) >>> 0;
+  }
+}
+
+async function sha256File(
+  file: File,
+  onProgress: (loaded: number) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const hasher = new IncrementalSha256();
+  const chunkSize = 8 * 1024 * 1024;
+  let offset = 0;
+  while (offset < file.size) {
+    if (signal?.aborted) {
+      throw new DOMException("Fingerprint cancelled.", "AbortError");
+    }
+    const chunk = file.slice(offset, offset + chunkSize);
+    hasher.update(new Uint8Array(await chunk.arrayBuffer()));
+    offset += chunk.size;
+    onProgress(Math.min(offset, file.size));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+  }
+  if (signal?.aborted) {
+    throw new DOMException("Fingerprint cancelled.", "AbortError");
+  }
+  return hasher.digest();
 }
 
 function formatBytes(bytes: number): string {
@@ -285,7 +447,10 @@ export function BackupPanel() {
   const fileInput = useRef<HTMLInputElement>(null);
   const confluenceFileInput = useRef<HTMLInputElement>(null);
   const confluenceUploadRequest = useRef<XMLHttpRequest | null>(null);
-  const uploadPauseReason = useRef<"manual" | "session-expired" | null>(null);
+  const confluenceHashAbort = useRef<AbortController | null>(null);
+  const uploadPauseReason = useRef<
+    "pause" | "cancel" | "session-expired" | null
+  >(null);
   const uploadRestoreRun = useRef(0);
   const storedConfluenceUploadRef = useRef<StoredConfluenceUpload | null>(null);
   const uploadActiveRef = useRef(false);
@@ -311,6 +476,7 @@ export function BackupPanel() {
   const [spaceFilter, setSpaceFilter] = useState("");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadStats, setUploadStats] = useState<UploadStats | null>(null);
+  const [hashStats, setHashStats] = useState<HashStats | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [confluencePending, setConfluencePending] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -322,6 +488,9 @@ export function BackupPanel() {
   const [cancelUploadPending, setCancelUploadPending] = useState(false);
   const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
   const [confluenceUploadError, setConfluenceUploadError] = useState<
+    string | null
+  >(null);
+  const [confluenceUploadNotice, setConfluenceUploadNotice] = useState<
     string | null
   >(null);
   const [error, setError] = useState<string | null>(null);
@@ -355,10 +524,15 @@ export function BackupPanel() {
     storedConfluenceUpload && !storedConfluenceUpload.file,
   );
   const canResumeStoredUpload = Boolean(storedConfluenceUpload?.file);
+  const hashProgress = hashStats
+    ? Math.round((hashStats.loaded / Math.max(1, hashStats.total)) * 100)
+    : null;
+  const isHashingArchive = Boolean(confluencePending && hashStats);
   const isFinalizingArchive =
     confluencePending &&
     !isUploading &&
     !confluenceArchive &&
+    !isHashingArchive &&
     uploadProgress === 100;
   const importInProgress = Boolean(
     confluenceJob &&
@@ -581,6 +755,7 @@ export function BackupPanel() {
         setStoredConfluenceUpload(null);
         setUploadProgress(null);
         setUploadStats(null);
+        setHashStats(null);
         return;
       }
       for (const candidate of candidates) {
@@ -649,6 +824,7 @@ export function BackupPanel() {
           ...candidateWithFile,
           fileName: progress.filename,
           fileSize: progress.size_bytes,
+          sha256: progress.sha256,
           partSize: progress.part_size_bytes,
         };
         if (
@@ -683,6 +859,7 @@ export function BackupPanel() {
       setStoredConfluenceUpload(null);
       setUploadProgress(null);
       setUploadStats(null);
+      setHashStats(null);
     } catch (restoreError) {
       if (restoreError instanceof ApiError && restoreError.status === 404) {
         void clearStoredUpload();
@@ -692,6 +869,7 @@ export function BackupPanel() {
         setStoredConfluenceUpload(null);
         setUploadProgress(null);
         setUploadStats(null);
+        setHashStats(null);
       } else if (
         restoreError instanceof ApiError &&
         restoreError.status === 401
@@ -726,8 +904,9 @@ export function BackupPanel() {
     document.addEventListener("visibilitychange", restoreWhenVisible);
     return () => {
       uploadRestoreRun.current += 1;
-      uploadPauseReason.current = "manual";
+      uploadPauseReason.current = "pause";
       confluenceUploadRequest.current?.abort();
+      confluenceHashAbort.current?.abort();
       window.clearTimeout(initialRestore);
       window.removeEventListener("focus", restore);
       window.removeEventListener("pageshow", restore);
@@ -749,6 +928,7 @@ export function BackupPanel() {
     }
     setConfluencePending(true);
     setConfluenceUploadError(null);
+    setConfluenceUploadNotice(null);
     uploadPauseReason.current = null;
     let sessionRenewalTimer: number | null = null;
     let preparingArchive = false;
@@ -785,15 +965,83 @@ export function BackupPanel() {
         },
         5 * 60 * 1000,
       );
-      const target = saved
+      const hashAbortController = new AbortController();
+      confluenceHashAbort.current = hashAbortController;
+      const hashStartedAt = performance.now();
+      setHashStats({
+        loaded: 0,
+        total: selectedFile.size,
+        bytesPerSecond: 0,
+        secondsRemaining: null,
+      });
+      appendPreparationLog("Calculating archive fingerprint.");
+      const selectedSha256 = await sha256File(
+        selectedFile,
+        (loaded) => {
+          const elapsedSeconds = Math.max(
+            (performance.now() - hashStartedAt) / 1000,
+            0.001,
+          );
+          const bytesPerSecond = loaded / elapsedSeconds;
+          setHashStats({
+            loaded,
+            total: selectedFile.size,
+            bytesPerSecond,
+            secondsRemaining:
+              bytesPerSecond > 0
+                ? (selectedFile.size - loaded) / bytesPerSecond
+                : null,
+          });
+        },
+        hashAbortController.signal,
+      );
+      confluenceHashAbort.current = null;
+      appendPreparationLog(
+        `Archive fingerprint ready: ${selectedSha256.slice(0, 12)}...`,
+      );
+      setHashStats(null);
+      let resumeArchive = saved;
+      if (resumeArchive?.sha256 && resumeArchive.sha256 !== selectedSha256) {
+        rememberCancelledUpload(resumeArchive.archiveId);
+        void clearStoredUpload();
+        void apiFetch(
+          `/api/v1/confluence-imports/archives/${resumeArchive.archiveId}/upload`,
+          { method: "DELETE" },
+        ).catch(() => {
+          // The selected file is different. Do not let the abandoned upload
+          // come back into the UI even if server cleanup is delayed.
+        });
+        resumeArchive = null;
+      }
+      const resumeProgress = resumeArchive
+        ? await apiFetch<ConfluenceUploadProgress>(
+            `/api/v1/confluence-imports/archives/${resumeArchive.archiveId}/upload`,
+          )
+        : null;
+      if (
+        resumeArchive &&
+        resumeProgress?.sha256 &&
+        resumeProgress.sha256 !== selectedSha256
+      ) {
+        rememberCancelledUpload(resumeArchive.archiveId);
+        void clearStoredUpload();
+        void apiFetch(
+          `/api/v1/confluence-imports/archives/${resumeArchive.archiveId}/upload`,
+          { method: "DELETE" },
+        ).catch(() => {
+          // Best-effort cleanup only; the local cancelled marker is enough to
+          // keep this stale upload out of the current workflow.
+        });
+        resumeArchive = null;
+      }
+      const target = resumeArchive
         ? {
-            archive_id: saved.archiveId,
-            part_size_bytes: saved.partSize,
-            uploaded_parts: (
-              await apiFetch<ConfluenceUploadProgress>(
-                `/api/v1/confluence-imports/archives/${saved.archiveId}/upload`,
-              )
-            ).uploaded_parts,
+            archive_id: resumeArchive.archiveId,
+            part_size_bytes: resumeArchive.partSize,
+            uploaded_parts: resumeProgress?.uploaded_parts ?? [],
+            status: "uploading",
+            sha256: selectedSha256,
+            reused: false,
           }
         : await apiFetch<ConfluenceUploadTarget>(
             "/api/v1/confluence-imports/uploads",
@@ -802,16 +1050,42 @@ export function BackupPanel() {
               body: {
                 filename: selectedFile.name,
                 size_bytes: selectedFile.size,
+                sha256: selectedSha256,
               },
             },
           );
-      if (!saved) {
+      if (target.reused) {
+        setUploadProgress(null);
+        setUploadStats(null);
+        setHashStats(null);
+        setIsUploading(false);
+        preparingArchive = true;
+        appendPreparationLog(
+          "Archive already exists in object storage. Skipping upload.",
+        );
+        await clearStoredUpload();
+        storedConfluenceUploadRef.current = null;
+        setStoredConfluenceUpload(null);
+        const archive = await apiFetch<ConfluenceArchive>(
+          `/api/v1/confluence-imports/archives/${target.archive_id}/scan`,
+          { method: "POST" },
+        );
+        appendPreparationLog("Archive scan completed. Spaces are ready.");
+        setConfluenceArchive(archive);
+        setSpaceFilter("");
+        setSelectedSpaces(archive.spaces.map((space) => space.key));
+        setImportAllSpaces(true);
+        toast.success("Archive already uploaded. Choose the Spaces to import.");
+        return;
+      }
+      if (!resumeArchive) {
         const nextStored = {
           archiveId: target.archive_id,
           file: selectedFile,
           fileName: selectedFile.name,
           fileSize: selectedFile.size,
           fileLastModified: selectedFile.lastModified,
+          sha256: selectedSha256,
           partSize: target.part_size_bytes,
         };
         forgetCancelledUpload(target.archive_id);
@@ -921,6 +1195,8 @@ export function BackupPanel() {
         if (uploadPauseReason.current === "session-expired") {
           setConfluenceUploadError(SESSION_EXPIRED_UPLOAD_MESSAGE);
           toast.error("Upload paused because your session expired.");
+        } else if (uploadPauseReason.current === "cancel") {
+          setConfluenceUploadError(null);
         } else {
           toast.info(
             "Upload paused. You can resume it when you return to this page.",
@@ -948,20 +1224,23 @@ export function BackupPanel() {
         window.clearInterval(sessionRenewalTimer);
       }
       confluenceUploadRequest.current = null;
+      confluenceHashAbort.current = null;
+      setHashStats(null);
       setIsUploading(false);
       setConfluencePending(false);
     }
   }
 
-  function cancelConfluenceUpload() {
-    uploadPauseReason.current = "manual";
+  function cancelConfluenceUpload(reason: "pause" | "cancel" = "pause") {
+    uploadPauseReason.current = reason;
+    confluenceHashAbort.current?.abort();
     confluenceUploadRequest.current?.abort();
   }
 
   async function abandonConfluenceUpload() {
     const archiveId = storedConfluenceUpload?.archiveId;
     setCancelUploadPending(true);
-    cancelConfluenceUpload();
+    cancelConfluenceUpload("cancel");
     rememberCancelledUpload(archiveId);
     uploadRestoreRun.current += 1;
     // Make cancellation feel immediate. The server cleanup continues below;
@@ -973,8 +1252,12 @@ export function BackupPanel() {
     setConfluenceArchive(null);
     setUploadProgress(null);
     setUploadStats(null);
+    setHashStats(null);
     setPreparationLogs([]);
     setConfluenceUploadError(null);
+    setConfluenceUploadNotice(
+      "Upload cancelled. Choose a file to start a new import.",
+    );
     void clearStoredUpload();
     try {
       if (archiveId) {
@@ -1002,7 +1285,7 @@ export function BackupPanel() {
     // The application confirmation has already explained the consequence.
     // Suppress the browser's generic beforeunload prompt for this exact leave.
     allowConfirmedLeaveRef.current = true;
-    cancelConfluenceUpload();
+    cancelConfluenceUpload("pause");
     window.location.assign(leaveTarget);
   }
 
@@ -1158,6 +1441,7 @@ export function BackupPanel() {
                 setStoredConfluenceUpload(nextStored);
                 setConfluenceArchive(null);
                 setConfluenceUploadError(null);
+                setConfluenceUploadNotice(null);
                 setPreparationLogs([]);
                 setUploadProgress((current) => current ?? 0);
                 void saveStoredUpload(nextStored);
@@ -1184,9 +1468,11 @@ export function BackupPanel() {
               setConfluenceArchive(null);
               setConfluenceJob(null);
               setConfluenceUploadError(null);
+              setConfluenceUploadNotice(null);
               setPreparationLogs([]);
               setUploadProgress(null);
               setUploadStats(null);
+              setHashStats(null);
               setIsUploading(false);
             }}
             className="sr-only"
@@ -1223,11 +1509,16 @@ export function BackupPanel() {
               : null}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {isUploading ? (
+            {isUploading || isHashingArchive ? (
               <>
-                <Button variant="secondary" onClick={cancelConfluenceUpload}>
-                  <Pause /> Pause upload
-                </Button>
+                {isUploading ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => cancelConfluenceUpload("pause")}
+                  >
+                    <Pause /> Pause upload
+                  </Button>
+                ) : null}
                 <Button
                   variant="danger"
                   disabled={cancelUploadPending}
@@ -1255,7 +1546,9 @@ export function BackupPanel() {
                     void uploadConfluence(Boolean(storedConfluenceUpload));
                   }}
                 >
-                  {confluencePending && !confluenceArchive ? (
+                  {isHashingArchive ? (
+                    <FileArchive />
+                  ) : confluencePending && !confluenceArchive ? (
                     <Loader2 className="animate-spin" />
                   ) : storedConfluenceUpload ? (
                     <Play />
@@ -1281,6 +1574,56 @@ export function BackupPanel() {
             ) : null}
           </div>
         </div>
+
+        {isHashingArchive && hashStats ? (
+          <div
+            className="border-info/25 bg-info-bg mt-3 rounded-md border p-3 text-sm"
+            role="status"
+          >
+            <div className="flex gap-2.5">
+              <Info className="text-info mt-0.5 size-4 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p>
+                  Checking archive fingerprint{" "}
+                  <span className="font-medium">{confluenceArchiveName}</span>:{" "}
+                  {hashProgress}%
+                </p>
+                <div
+                  aria-label={`Fingerprint ${hashProgress}% complete`}
+                  aria-valuemax={100}
+                  aria-valuemin={0}
+                  aria-valuenow={hashProgress ?? 0}
+                  className="bg-surface mt-2 h-2 overflow-hidden rounded-full"
+                  role="progressbar"
+                >
+                  <div
+                    className="bg-info h-full duration-150 motion-safe:transition-[width]"
+                    style={{ width: `${hashProgress ?? 0}%` }}
+                  />
+                </div>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Read: {formatBytes(hashStats.loaded)} /{" "}
+                  {formatBytes(hashStats.total)}. WikiHub uses this hash to
+                  avoid uploading the same archive twice.
+                </p>
+                <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
+                  <span>
+                    <span className="text-foreground font-medium">Speed:</span>{" "}
+                    {hashStats.bytesPerSecond > 0
+                      ? `${formatBytes(hashStats.bytesPerSecond)}/s`
+                      : "Calculating speed…"}
+                  </span>
+                  <span>
+                    <span className="text-foreground font-medium">
+                      Estimate:
+                    </span>{" "}
+                    {formatDuration(hashStats.secondsRemaining)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {isFinalizingArchive ? (
           <div
@@ -1328,6 +1671,15 @@ export function BackupPanel() {
           </details>
         ) : null}
 
+        {confluenceUploadNotice ? (
+          <p
+            role="status"
+            className="border-success/30 bg-success-bg text-success mt-3 rounded-md border px-3 py-2 text-sm"
+          >
+            {confluenceUploadNotice}
+          </p>
+        ) : null}
+
         {confluenceUploadError ? (
           <p
             role="alert"
@@ -1339,7 +1691,8 @@ export function BackupPanel() {
 
         {uploadProgress !== null &&
         !confluenceArchive &&
-        !isFinalizingArchive ? (
+        !isFinalizingArchive &&
+        !isHashingArchive ? (
           <div
             className="border-info/25 bg-info-bg mt-3 rounded-md border p-3 text-sm"
             role="status"

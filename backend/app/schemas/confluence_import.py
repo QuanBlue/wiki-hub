@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 class UploadInit(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     size_bytes: int = Field(gt=0)
+    sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 class UploadTarget(BaseModel):
@@ -19,6 +20,9 @@ class UploadTarget(BaseModel):
     max_size_bytes: int
     part_size_bytes: int
     uploaded_parts: list[int] = Field(default_factory=list)
+    status: str = "uploading"
+    sha256: str | None = None
+    reused: bool = False
 
 
 class UploadPartUrlsRequest(BaseModel):
@@ -33,6 +37,7 @@ class UploadProgressRead(BaseModel):
     archive_id: uuid.UUID
     filename: str
     size_bytes: int
+    sha256: str | None = None
     status: str
     part_size_bytes: int
     uploaded_parts: list[int] = Field(default_factory=list)
@@ -50,6 +55,7 @@ class ArchiveRead(BaseModel):
     id: uuid.UUID
     filename: str
     size_bytes: int
+    sha256: str | None = None
     status: str
     error: str | None
     spaces: list[SpaceCandidate]

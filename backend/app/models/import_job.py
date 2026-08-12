@@ -16,10 +16,14 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 class ImportArchive(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "import_archives"
+    __table_args__ = (
+        Index("ix_import_archives_sha256_size_status", "sha256", "size_bytes", "status"),
+    )
 
     object_key: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BIGINT, nullable=False)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="uploading")
     multipart_upload_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
     spaces: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)

@@ -168,6 +168,7 @@ export interface ConfluenceArchive {
   id: string;
   filename: string;
   size_bytes: number;
+  sha256: string | null;
   status: string;
   error: string | null;
   spaces: ConfluenceSpaceCandidate[];
@@ -178,11 +179,15 @@ export interface ConfluenceUploadTarget {
   max_size_bytes: number;
   part_size_bytes: number;
   uploaded_parts: number[];
+  status: string;
+  sha256: string | null;
+  reused: boolean;
 }
 export interface ConfluenceUploadProgress {
   archive_id: string;
   filename: string;
   size_bytes: number;
+  sha256: string | null;
   status: string;
   part_size_bytes: number;
   uploaded_parts: number[];

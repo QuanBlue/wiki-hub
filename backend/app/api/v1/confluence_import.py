@@ -46,6 +46,7 @@ def archive_read(item: ImportArchive) -> ArchiveRead:
         id=item.id,
         filename=item.filename,
         size_bytes=item.size_bytes,
+        sha256=item.sha256,
         status=item.status,
         error=item.error,
         spaces=[SpaceCandidate.model_validate(space) for space in item.spaces],
@@ -85,7 +86,10 @@ async def start_upload(
     payload: UploadInit, user: CurrentSuperuser, importer: Service
 ) -> UploadTarget:
     archive = await importer.start_upload(
-        filename=payload.filename, size_bytes=payload.size_bytes, actor_id=user.id
+        filename=payload.filename,
+        size_bytes=payload.size_bytes,
+        actor_id=user.id,
+        sha256=payload.sha256,
     )
     return UploadTarget(
         archive_id=archive.id,
@@ -94,6 +98,9 @@ async def start_upload(
             await SiteSettingsService(importer.session).get_effective()
         ).max_backup_import_size_bytes,
         part_size_bytes=importer.upload_part_size_bytes,
+        status=archive.status,
+        sha256=archive.sha256,
+        reused=archive.status in {"uploaded", "scanned"},
     )
 
 
@@ -122,6 +129,7 @@ async def list_active_uploads(
             archive_id=archive.id,
             filename=archive.filename,
             size_bytes=archive.size_bytes,
+            sha256=archive.sha256,
             status=archive.status,
             part_size_bytes=importer.upload_part_size_bytes,
             uploaded_parts=await importer.uploaded_part_numbers(archive),
@@ -139,6 +147,7 @@ async def get_upload_progress(
         archive_id=archive.id,
         filename=archive.filename,
         size_bytes=archive.size_bytes,
+        sha256=archive.sha256,
         status=archive.status,
         part_size_bytes=importer.upload_part_size_bytes,
         uploaded_parts=await importer.uploaded_part_numbers(archive),
@@ -171,9 +180,7 @@ async def complete_upload(
 
 
 @router.delete("/archives/{archive_id}/upload", status_code=status.HTTP_204_NO_CONTENT)
-async def cancel_upload(
-    archive_id: uuid.UUID, _user: CurrentSuperuser, importer: Service
-) -> None:
+async def cancel_upload(archive_id: uuid.UUID, _user: CurrentSuperuser, importer: Service) -> None:
     await importer.abort_upload(await importer.get_archive(archive_id))
 
 

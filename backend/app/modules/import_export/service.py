@@ -6,6 +6,7 @@ import re
 import tempfile
 import uuid
 import zipfile
+from contextlib import suppress
 from pathlib import Path
 
 import anyio
@@ -32,9 +33,13 @@ def _slug(value: str, occupied: set[str]) -> str:
     return candidate
 
 
-def _link_imported_attachments(content: str, source_page_id: str, urls: dict[tuple[str, str], str]) -> str:
+def _link_imported_attachments(
+    content: str, source_page_id: str, urls: dict[tuple[str, str], str]
+) -> str:
     """Turn Confluence attachment/image macros into usable WikiHub HTML."""
-    page_urls = {filename: url for (page_id, filename), url in urls.items() if page_id == source_page_id}
+    page_urls = {
+        filename: url for (page_id, filename), url in urls.items() if page_id == source_page_id
+    }
     if not page_urls:
         return content
     soup = BeautifulSoup(content, "html.parser")
@@ -65,8 +70,27 @@ class ConfluenceImportService:
     def __init__(self, session: AsyncSession, storage: ObjectStorage) -> None:
         self.session, self.storage = session, storage
 
+    async def find_reusable_archive(self, *, sha256: str, size_bytes: int) -> ImportArchive | None:
+        archives = (
+            await self.session.execute(
+                select(ImportArchive)
+                .where(
+                    ImportArchive.sha256 == sha256,
+                    ImportArchive.size_bytes == size_bytes,
+                    ImportArchive.status.in_(["uploaded", "scanned"]),
+                    ImportArchive.multipart_upload_id.is_(None),
+                )
+                .order_by(ImportArchive.updated_at.desc(), ImportArchive.created_at.desc())
+                .limit(5)
+            )
+        ).scalars()
+        for archive in archives:
+            if await self.storage.exists(archive.object_key):
+                return archive
+        return None
+
     async def start_upload(
-        self, *, filename: str, size_bytes: int, actor_id: uuid.UUID
+        self, *, filename: str, size_bytes: int, actor_id: uuid.UUID, sha256: str | None = None
     ) -> ImportArchive:
         if not filename.lower().endswith(".zip"):
             raise BadRequestError("Choose a .zip archive exported by Confluence.")
@@ -79,10 +103,15 @@ class ConfluenceImportService:
             raise PayloadTooLargeError(
                 f"Archive exceeds the configured {limit // (1024 * 1024)} MB limit."
             )
+        if sha256:
+            reusable = await self.find_reusable_archive(sha256=sha256, size_bytes=size_bytes)
+            if reusable is not None:
+                return reusable
         archive = ImportArchive(
             object_key=f"imports/confluence/{uuid.uuid4()}/{filename}",
             filename=filename,
             size_bytes=size_bytes,
+            sha256=sha256,
             created_by_id=actor_id,
         )
         self.session.add(archive)
@@ -127,7 +156,9 @@ class ConfluenceImportService:
         parts = await self.storage.list_multipart_parts(
             archive.object_key, archive.multipart_upload_id
         )
-        expected_parts = (archive.size_bytes + self.upload_part_size_bytes - 1) // self.upload_part_size_bytes
+        expected_parts = (
+            archive.size_bytes + self.upload_part_size_bytes - 1
+        ) // self.upload_part_size_bytes
         actual_parts = {number for number, _etag in parts}
         if actual_parts != set(range(1, expected_parts + 1)):
             raise BadRequestError("The archive upload is incomplete.")
@@ -141,26 +172,33 @@ class ConfluenceImportService:
 
     async def abort_upload(self, archive: ImportArchive) -> None:
         if archive.multipart_upload_id:
-            try:
+            with suppress(NotFoundError):
                 await self.storage.abort_multipart_upload(
                     archive.object_key, archive.multipart_upload_id
                 )
-            except NotFoundError:
-                # MinIO has already removed the multipart session (for example
-                # after a previous abort). Cancellation is still complete.
-                pass
         archive.multipart_upload_id = None
         archive.status = "cancelled"
         await self.session.flush()
 
     async def scan(self, archive: ImportArchive) -> ImportArchive:
+        existing = set((await self.session.execute(select(Space.key))).scalars())
+        if archive.status == "scanned" and archive.spaces:
+            archive.spaces = [
+                {
+                    **item,
+                    "conflict": item.get("key") in existing,
+                }
+                for item in archive.spaces
+            ]
+            archive.error = None
+            await self.session.flush()
+            return archive
         if not await self.storage.exists(archive.object_key):
             raise BadRequestError("The archive upload has not completed yet.")
         with tempfile.TemporaryDirectory(prefix="wikihub-confluence-scan-") as directory:
             path = Path(directory) / "archive.zip"
             await self.storage.download_to_file(archive.object_key, str(path))
             spaces = await anyio.to_thread.run_sync(scan_archive, path)
-        existing = set((await self.session.execute(select(Space.key))).scalars())
         archive.spaces = [
             {
                 "key": item.key,
@@ -247,7 +285,9 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
     if archive is None:
         return
     job.status, job.phase = "running", "downloading"
-    await log(session, job, "info", "downloading", "Downloading archive to worker scratch space: 0%.")
+    await log(
+        session, job, "info", "downloading", "Downloading archive to worker scratch space: 0%."
+    )
     await session.commit()
     try:
         with tempfile.TemporaryDirectory(prefix="wikihub-confluence-import-") as directory:
@@ -288,12 +328,16 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 "download_total_bytes": archive.size_bytes,
                 "download_percent": 100,
             }
-            await log(session, job, "info", "scanning", "Archive downloaded. Reading its space structure.")
+            await log(
+                session, job, "info", "scanning", "Archive downloaded. Reading its space structure."
+            )
             await session.commit()
             scanned = await anyio.to_thread.run_sync(scan_archive, path)
             selected = {space.key for space in scanned} if job.import_all else set(job.space_keys)
             job.phase = "importing"
-            await log(session, job, "info", "importing", "Archive ready. Importing selected spaces.")
+            await log(
+                session, job, "info", "importing", "Archive ready. Importing selected spaces."
+            )
             await session.commit()
             imported_pages: dict[str, WikiPage] = {}
             for source_space in scanned:
@@ -399,7 +443,9 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 await session.commit()
             attachments_imported = 0
             attachment_urls: dict[tuple[str, str], str] = {}
-            attachment_sources = await anyio.to_thread.run_sync(lambda: list(iter_attachments(path)))
+            attachment_sources = await anyio.to_thread.run_sync(
+                lambda: list(iter_attachments(path))
+            )
             with zipfile.ZipFile(path) as source_archive:
                 for source_attachment, archive_member in attachment_sources:
                     target_page = imported_pages.get(source_attachment.page_id)
@@ -413,7 +459,9 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     )
                     session.add(attachment)
                     await session.flush()
-                    attachment.object_key = f"attachments/{target_page.id}/{attachment.id}/{source_attachment.filename}"
+                    attachment.object_key = (
+                        f"attachments/{target_page.id}/{attachment.id}/{source_attachment.filename}"
+                    )
                     with source_archive.open(archive_member) as binary:
                         await storage.put(
                             attachment.object_key,
@@ -421,7 +469,9 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                             content_type=attachment.content_type,
                             metadata={"source": "confluence-import"},
                         )
-                    attachment_urls[(source_attachment.page_id, source_attachment.filename)] = f"/api/v1/attachments/{attachment.id}/content"
+                    attachment_urls[(source_attachment.page_id, source_attachment.filename)] = (
+                        f"/api/v1/attachments/{attachment.id}/content"
+                    )
                     attachments_imported += 1
             if attachment_urls:
                 for source_page_id, target_page in imported_pages.items():
