@@ -804,7 +804,7 @@ export function SpaceWorkspace({
         id="wikihub-sidebar"
         data-sidebar-kind="space"
         className={cn(
-          "relative shrink-0",
+          "relative shrink-0 overflow-x-hidden",
           !dragging &&
             "transition-[width] duration-200 ease-out motion-reduce:transition-none",
           "md:top-topbar md:sticky md:h-[calc(100vh-var(--wh-topbar-height))]",
@@ -819,8 +819,8 @@ export function SpaceWorkspace({
         }
       >
         {!collapsed ? (
-          <div className="border-border bg-surface-sunken h-full border-r md:w-(--space-sidebar-panel-width) md:overflow-y-auto">
-            <div className="flex min-h-full flex-col px-5 py-4">
+          <div className="border-border bg-surface-sunken h-full w-full max-w-full overflow-x-hidden border-r md:w-(--space-sidebar-panel-width) md:overflow-y-auto">
+            <div className="flex min-h-full min-w-0 flex-col px-5 py-4">
               <div className="flex items-start gap-3">
                 <SpaceAvatar space={space} />
                 <div className="min-w-0 flex-1 pt-1">

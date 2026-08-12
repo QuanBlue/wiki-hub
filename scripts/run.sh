@@ -11,8 +11,9 @@
 #
 # OPTIONS
 #   --dev            Hot reload. Mounts backend/ and frontend/ into the
-#                    containers and runs uvicorn --reload, arq --watch and
-#                    next dev, so a code edit applies with no rebuild.
+#                    containers and runs polling-based uvicorn --reload,
+#                    arq --watch and next dev, so a code edit applies with no
+#                    rebuild even when Docker Desktop misses host file events.
 #                    Layers docker-compose.dev.yml over docker-compose.yml.
 #   --fresh          docker compose down -v first. DESTROYS every volume:
 #                    database, Redis and uploaded attachments all go.
@@ -456,9 +457,9 @@ EOF
 if [[ $DEV_MODE -eq 1 ]]; then
     cat <<EOF
   ${BOLD}Hot reload is active${RESET} - edits apply without a rebuild:
-    backend/   -> uvicorn --reload
-    worker     -> arq --watch
-    frontend/  -> next dev --turbopack
+    backend/   -> uvicorn --reload (polling)
+    worker     -> arq --watch (polling)
+    frontend/  -> next dev --webpack (polling)
 
   ${DIM}Rebuild is only needed when dependencies change${RESET}
   ${DIM}(pyproject.toml / package.json): ./scripts/run.sh --dev --rebuild${RESET}

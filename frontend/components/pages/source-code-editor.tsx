@@ -17,7 +17,6 @@ const wikiHubEditorTheme = EditorView.theme({
     backgroundColor: "var(--surface)",
     color: "var(--foreground)",
     fontSize: "0.875rem",
-    minHeight: "calc(100vh - 21rem)",
   },
   ".cm-scroller": {
     fontFamily: "var(--font-mono)",
@@ -158,7 +157,10 @@ export function SourceCodeEditor({
         </p>
         <span className="text-muted-foreground ml-auto text-xs">Editable source</span>
       </div>
-      <div ref={host} className="min-h-[calc(100vh-21rem)]" />
+      <div
+        ref={host}
+        className="source-code-editor-host h-[calc(100vh-21rem)]"
+      />
     </div>
   );
 }

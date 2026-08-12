@@ -6,7 +6,7 @@ import { SpaceWorkspace } from "@/components/pages/space-workspace";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/auth";
 import { SITE_NAME } from "@/lib/env";
-import { getPage, listPages } from "@/lib/pages";
+import { listPages } from "@/lib/pages";
 import { getSidebarPreferences } from "@/lib/sidebar-preferences";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
 
@@ -26,14 +26,12 @@ export default async function WikiPageView({ params }: Params) {
   const { key, slug } = await params;
 
   let space;
-  let page;
   let pages;
   let members;
   const sidebarPreferences = await getSidebarPreferences();
   try {
-    [space, page, pages, members] = await Promise.all([
+    [space, pages, members] = await Promise.all([
       getSpace(key),
-      getPage(key, slug),
       listPages(key),
       listSpaceMembers(key),
     ]);
@@ -41,6 +39,15 @@ export default async function WikiPageView({ params }: Params) {
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
+
+  // The page tree already contains the canonical page records (including the
+  // generated slug). Resolve the route from that same collection so a page
+  // created moments ago cannot fall through to the global 404 while the
+  // individual lookup is catching up. Slugs are case-insensitive in the API.
+  const page = pages.find(
+    (candidate) => candidate.slug.toLowerCase() === slug.toLowerCase(),
+  );
+  if (!page) notFound();
 
   return (
     <AppShell

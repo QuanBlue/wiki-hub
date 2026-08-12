@@ -200,7 +200,7 @@ export function Sidebar({
         aria-label="Primary"
         className={cn(
           "wh-scroll top-topbar border-border bg-surface-sunken fixed inset-y-0 left-0 z-20",
-          "overflow-y-auto border-r px-2 py-3",
+          "overflow-x-hidden overflow-y-auto border-r px-2 py-3",
           !dragging &&
             "transition-[width,transform] duration-200 motion-reduce:transition-none",
           railCollapsed ? "w-14" : "w-sidebar md:w-(--app-sidebar-width)",

@@ -86,6 +86,7 @@ export function BackupPanel() {
   const [confluencePending, setConfluencePending] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [pending, setPending] = useState<"preview" | "apply" | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [confirmApply, setConfirmApply] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,6 +97,40 @@ export function BackupPanel() {
   const exportHref = `${PUBLIC_API_BASE_URL}/api/v1/backup/export${
     includeCredentials ? "?include_credentials=true" : ""
   }`;
+
+  async function downloadBackup() {
+    if (isDownloading) return;
+
+    setIsDownloading(true);
+    try {
+      const response = await fetch(exportHref, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error(`Download failed with status ${response.status}.`);
+      }
+
+      const blob = await response.blob();
+      const filename =
+        response.headers
+          .get("Content-Disposition")
+          ?.match(/filename="?([^";]+)"?/i)?.[1] ?? "wikihub-backup.json";
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (downloadError) {
+      toast.error(
+        downloadError instanceof Error
+          ? downloadError.message
+          : "Could not download the backup.",
+      );
+    } finally {
+      setIsDownloading(false);
+    }
+  }
 
   useEffect(() => {
     if (!confluenceJob || ["completed", "failed", "cancelled"].includes(confluenceJob.status)) return;
@@ -232,11 +267,15 @@ export function BackupPanel() {
         </label>
 
         <div className="mt-4">
-          <Button asChild variant="primary">
-            <a href={exportHref} download>
-              <Download />
-              Download backup
-            </a>
+          <Button
+            type="button"
+            variant="primary"
+            disabled={isDownloading}
+            aria-busy={isDownloading}
+            onClick={() => void downloadBackup()}
+          >
+            {isDownloading ? <Loader2 className="animate-spin" /> : <Download />}
+            {isDownloading ? "Downloading..." : "Download backup"}
           </Button>
         </div>
       </section>

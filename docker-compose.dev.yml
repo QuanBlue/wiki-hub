@@ -10,7 +10,12 @@
 #
 #   backend   uvicorn --reload   (watchfiles, ships with uvicorn[standard])
 #   worker    arq --watch
-#   frontend  next dev --turbopack
+#   frontend  next dev --webpack
+#
+# Polling is deliberate. Docker Desktop does not reliably forward filesystem
+# events from Windows bind mounts, particularly when a repository lives outside
+# the Linux filesystem. It costs a small amount of idle CPU but makes edits on
+# E:/, C:/ and WSL-mounted paths consistently trigger a reload.
 #
 # This overlay is NOT named docker-compose.override.yml on purpose: Compose
 # auto-loads that filename, which would silently turn every plain
@@ -34,6 +39,7 @@ services:
     environment:
       WIKIHUB_ENV: development
       WIKIHUB_DEBUG: "true"
+      WATCHFILES_FORCE_POLLING: "true"
 
   worker:
     command:
@@ -44,6 +50,7 @@ services:
     environment:
       WIKIHUB_ENV: development
       WIKIHUB_DEBUG: "true"
+      WATCHFILES_FORCE_POLLING: "true"
 
   frontend:
     build:
@@ -60,9 +67,12 @@ services:
         if [ ! -f "$$stamp" ] || [ "$$(cat "$$stamp")" != "$$lock_hash" ]; then
           npm ci && printf '%s' "$$lock_hash" > "$$stamp";
         fi;
-        npm run dev
+        npm run dev:docker
     environment:
       NODE_ENV: development
+      # Watchpack polling is reliable for Docker bind mounts on Windows.
+      WATCHPACK_POLLING: "true"
+      WATCHPACK_POLLING_INTERVAL: "500"
     volumes:
       # Source from the host...
       - ./frontend:/app
