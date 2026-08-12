@@ -84,6 +84,19 @@ async def logout(response: Response) -> None:
     )
 
 
+@router.post(
+    "/renew",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Renew the current browser session",
+)
+async def renew(response: Response, user: CurrentUser, impersonator: Impersonator) -> None:
+    token, _expires_at = create_access_token(
+        str(user.id),
+        impersonator=str(impersonator.id) if impersonator else None,
+    )
+    _set_access_cookie(response, token)
+
+
 @router.get("/me", response_model=MeRead, summary="The authenticated user")
 async def me(user: CurrentUser, impersonator: Impersonator) -> MeRead:
     return MeRead(

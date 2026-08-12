@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ChevronDown,
   Download,
   FileArchive,
   Info,
@@ -12,7 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -41,59 +42,186 @@ type UploadStats = {
 
 type StoredConfluenceUpload = {
   archiveId: string;
-  file: File;
+  file?: File;
+  fileName: string;
+  fileSize: number;
+  fileLastModified: number | null;
   partSize: number;
 };
 
-const CONFLUENCE_UPLOAD_DATABASE = "wikihub-confluence-upload";
-const CONFLUENCE_UPLOAD_STORE = "pending";
-const CONFLUENCE_UPLOAD_KEY = "current";
+const CONFLUENCE_UPLOAD_METADATA_KEY = "wikihub-confluence-upload-current";
+const CONFLUENCE_CANCELLED_UPLOADS_KEY = "wikihub-confluence-cancelled-uploads";
+const SESSION_EXPIRED_UPLOAD_MESSAGE =
+  "Your session expired while uploading. Sign in again, then return here and resume the upload; completed parts are still kept.";
 
-function uploadStore(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(CONFLUENCE_UPLOAD_DATABASE, 1);
-    request.onupgradeneeded = () =>
-      request.result.createObjectStore(CONFLUENCE_UPLOAD_STORE);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+type StoredConfluenceUploadRecord = Partial<StoredConfluenceUpload> & {
+  archiveId: string;
+  partSize: number;
+};
+
+function normalizeStoredUpload(
+  upload: StoredConfluenceUploadRecord | null | undefined,
+): StoredConfluenceUpload | null {
+  if (!upload) return null;
+  const file =
+    typeof File !== "undefined" && upload.file instanceof File
+      ? upload.file
+      : undefined;
+  const fileName = upload.fileName ?? file?.name;
+  const fileSize = upload.fileSize ?? file?.size;
+  const fileLastModified =
+    upload.fileLastModified !== undefined
+      ? upload.fileLastModified
+      : file?.lastModified;
+  if (
+    !upload.archiveId ||
+    !upload.partSize ||
+    !fileName ||
+    fileSize === undefined ||
+    fileLastModified === undefined
+  ) {
+    return null;
+  }
+  return {
+    archiveId: upload.archiveId,
+    file,
+    fileName,
+    fileSize,
+    fileLastModified,
+    partSize: upload.partSize,
+  };
+}
+
+function storedUploadMetadata(upload: StoredConfluenceUpload) {
+  return {
+    archiveId: upload.archiveId,
+    fileName: upload.fileName,
+    fileSize: upload.fileSize,
+    fileLastModified: upload.fileLastModified,
+    partSize: upload.partSize,
+  };
+}
+
+function readStoredUploadMetadata(): StoredConfluenceUpload | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CONFLUENCE_UPLOAD_METADATA_KEY);
+    if (!raw) return null;
+    return normalizeStoredUpload(
+      JSON.parse(raw) as StoredConfluenceUploadRecord,
+    );
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredUploadMetadata(upload: StoredConfluenceUpload): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      CONFLUENCE_UPLOAD_METADATA_KEY,
+      JSON.stringify(storedUploadMetadata(upload)),
+    );
+  } catch {
+    // Metadata is only a resumability hint. If browser storage is unavailable,
+    // the server-side active upload endpoint can still recover the archive.
+  }
+}
+
+function clearStoredUploadMetadata(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(CONFLUENCE_UPLOAD_METADATA_KEY);
+  } catch {
+    // Ignore storage failures; clearing in-memory state still keeps the UI safe.
+  }
+}
+
+function readCancelledUploadIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(CONFLUENCE_CANCELLED_UPLOADS_KEY);
+    const ids = raw ? (JSON.parse(raw) as unknown) : [];
+    return new Set(Array.isArray(ids) ? ids.filter(Boolean).map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function rememberCancelledUpload(archiveId: string | null | undefined): void {
+  if (!archiveId || typeof window === "undefined") return;
+  try {
+    const ids = [archiveId, ...readCancelledUploadIds()].slice(0, 20);
+    window.localStorage.setItem(
+      CONFLUENCE_CANCELLED_UPLOADS_KEY,
+      JSON.stringify([...new Set(ids)]),
+    );
+  } catch {
+    // The server-side delete remains the source of truth. This local marker only
+    // prevents a just-cancelled upload from flashing back into the UI.
+  }
+}
+
+function forgetCancelledUpload(archiveId: string | null | undefined): void {
+  if (!archiveId || typeof window === "undefined") return;
+  try {
+    const ids = [...readCancelledUploadIds()].filter((id) => id !== archiveId);
+    if (ids.length) {
+      window.localStorage.setItem(
+        CONFLUENCE_CANCELLED_UPLOADS_KEY,
+        JSON.stringify(ids),
+      );
+    } else {
+      window.localStorage.removeItem(CONFLUENCE_CANCELLED_UPLOADS_KEY);
+    }
+  } catch {
+    // Ignore storage failures; starting a new upload still creates a fresh
+    // archive id, so it will not be confused with the cancelled one.
+  }
+}
+
+function fileMatchesStoredUpload(
+  file: File | null,
+  upload: StoredConfluenceUpload | null,
+) {
+  return Boolean(
+    file &&
+    upload &&
+    file.name === upload.fileName &&
+    file.size === upload.fileSize &&
+    (upload.fileLastModified === null ||
+      file.lastModified === upload.fileLastModified),
+  );
+}
+
+function serverUploadToStoredUpload(
+  upload: ConfluenceUploadProgress,
+): StoredConfluenceUpload {
+  return {
+    archiveId: upload.archive_id,
+    fileName: upload.filename,
+    fileSize: upload.size_bytes,
+    fileLastModified: null,
+    partSize: upload.part_size_bytes,
+  };
 }
 
 async function readStoredUpload(): Promise<StoredConfluenceUpload | null> {
-  const database = await uploadStore();
-  return new Promise((resolve, reject) => {
-    const request = database
-      .transaction(CONFLUENCE_UPLOAD_STORE)
-      .objectStore(CONFLUENCE_UPLOAD_STORE)
-      .get(CONFLUENCE_UPLOAD_KEY);
-    request.onsuccess = () =>
-      resolve((request.result as StoredConfluenceUpload | undefined) ?? null);
-    request.onerror = () => reject(request.error);
-  });
+  return readStoredUploadMetadata();
 }
 
 async function saveStoredUpload(upload: StoredConfluenceUpload): Promise<void> {
-  const database = await uploadStore();
-  await new Promise<void>((resolve, reject) => {
-    const request = database
-      .transaction(CONFLUENCE_UPLOAD_STORE, "readwrite")
-      .objectStore(CONFLUENCE_UPLOAD_STORE)
-      .put(upload, CONFLUENCE_UPLOAD_KEY);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+  saveStoredUploadMetadata(upload);
+  // Never persist the File object itself. Large Confluence archives can be tens
+  // of GB; cloning that blob into IndexedDB can freeze the tab before upload
+  // starts. The browser only keeps file read permission for the current page
+  // lifetime, so after navigation the user must reselect the same archive.
 }
 
 async function clearStoredUpload(): Promise<void> {
-  const database = await uploadStore();
-  await new Promise<void>((resolve, reject) => {
-    const request = database
-      .transaction(CONFLUENCE_UPLOAD_STORE, "readwrite")
-      .objectStore(CONFLUENCE_UPLOAD_STORE)
-      .delete(CONFLUENCE_UPLOAD_KEY);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+  clearStoredUploadMetadata();
+  // Current resumability uses lightweight metadata plus the server-side active
+  // upload record. Legacy IndexedDB file caches are intentionally ignored.
 }
 
 function formatBytes(bytes: number): string {
@@ -109,9 +237,22 @@ function formatBytes(bytes: number): string {
 function formatDuration(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds)) return "Calculating…";
   if (seconds < 60) return `${Math.ceil(seconds)} sec remaining`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.ceil(seconds % 60);
-  return `${minutes} min ${remainingSeconds} sec remaining`;
+  if (seconds < 60 * 60) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.ceil(seconds % 60);
+    return `${minutes} min ${remainingSeconds} sec remaining`;
+  }
+  if (seconds < 24 * 60 * 60) {
+    const hours = Math.floor(seconds / (60 * 60));
+    const remainingMinutes = Math.floor((seconds % (60 * 60)) / 60);
+    if (remainingMinutes === 0) return `${hours} hr remaining`;
+    return `${hours} hr ${remainingMinutes} min remaining`;
+  }
+  const days = Math.floor(seconds / (24 * 60 * 60));
+  const remainingHours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
+  const dayLabel = days === 1 ? "day" : "days";
+  if (remainingHours === 0) return `${days} ${dayLabel} remaining`;
+  return `${days} ${dayLabel} ${remainingHours} hr remaining`;
 }
 
 function CountList({
@@ -142,7 +283,11 @@ function CountList({
 export function BackupPanel() {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
+  const confluenceFileInput = useRef<HTMLInputElement>(null);
   const confluenceUploadRequest = useRef<XMLHttpRequest | null>(null);
+  const uploadPauseReason = useRef<"manual" | "session-expired" | null>(null);
+  const uploadRestoreRun = useRef(0);
+  const storedConfluenceUploadRef = useRef<StoredConfluenceUpload | null>(null);
   const uploadActiveRef = useRef(false);
   const allowConfirmedLeaveRef = useRef(false);
 
@@ -159,6 +304,8 @@ export function BackupPanel() {
   const [confluenceLogs, setConfluenceLogs] = useState<ConfluenceImportLog[]>(
     [],
   );
+  const [preparationLogs, setPreparationLogs] = useState<string[]>([]);
+  const [preparationLogsExpanded, setPreparationLogsExpanded] = useState(true);
   const [selectedSpaces, setSelectedSpaces] = useState<string[]>([]);
   const [importAllSpaces, setImportAllSpaces] = useState(true);
   const [spaceFilter, setSpaceFilter] = useState("");
@@ -174,6 +321,9 @@ export function BackupPanel() {
   const [confirmOverwriteSpaces, setConfirmOverwriteSpaces] = useState(false);
   const [cancelUploadPending, setCancelUploadPending] = useState(false);
   const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
+  const [confluenceUploadError, setConfluenceUploadError] = useState<
+    string | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
 
   const normalizedSpaceFilter = spaceFilter.trim().toLocaleLowerCase();
@@ -197,6 +347,14 @@ export function BackupPanel() {
       ? [`and ${conflictingSelectedSpaces.length - 8} more`]
       : []),
   ].join(", ");
+  const confluenceArchiveName =
+    storedConfluenceUpload?.fileName ?? confluenceFile?.name ?? null;
+  const confluenceArchiveSize =
+    storedConfluenceUpload?.fileSize ?? confluenceFile?.size ?? 0;
+  const storedUploadNeedsFile = Boolean(
+    storedConfluenceUpload && !storedConfluenceUpload.file,
+  );
+  const canResumeStoredUpload = Boolean(storedConfluenceUpload?.file);
   const isFinalizingArchive =
     confluencePending &&
     !isUploading &&
@@ -248,6 +406,19 @@ export function BackupPanel() {
     ? `${confluenceJob.counters.pages_processed ?? 0}/${confluenceJob.counters.pages_total} pages`
     : `${confluenceJob?.counters.pages_processed ?? 0} pages`;
 
+  async function renewUploadSession() {
+    await apiFetch<void>("/api/v1/auth/renew", { method: "POST" });
+  }
+
+  const appendPreparationLog = useCallback((message: string) => {
+    const time = new Intl.DateTimeFormat(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(new Date());
+    setPreparationLogs((current) => [...current, `${time} - ${message}`]);
+  }, []);
+
   // A real link, not a fetch: the browser handles the Content-Disposition
   // attachment itself, the session cookie rides along, and right-click
   // "save as" works. Fetching the JSON into memory only to re-wrap it in a
@@ -259,6 +430,10 @@ export function BackupPanel() {
   useEffect(() => {
     uploadActiveRef.current = isUploading;
   }, [isUploading]);
+
+  useEffect(() => {
+    storedConfluenceUploadRef.current = storedConfluenceUpload;
+  }, [storedConfluenceUpload]);
 
   // Next.js navigation does not trigger the browser's unload prompt. Catch
   // normal in-app link clicks before the router handles them, then pause the
@@ -373,24 +548,91 @@ export function BackupPanel() {
       });
   }, []);
 
-  // Keep the selected archive in IndexedDB. Unlike an in-memory File state,
-  // this survives route changes and a browser refresh, allowing the multipart
-  // session in MinIO to continue from its confirmed parts.
-  useEffect(() => {
-    let active = true;
-    void readStoredUpload()
-      .then(async (stored) => {
-        if (!active || !stored) return;
-        const progress = await apiFetch<ConfluenceUploadProgress>(
-          `/api/v1/confluence-imports/archives/${stored.archiveId}/upload`,
-        );
-        if (!active) return;
+  const restoreStoredConfluenceUpload = useCallback(async () => {
+    const run = uploadRestoreRun.current + 1;
+    uploadRestoreRun.current = run;
+    const stillCurrent = () => uploadRestoreRun.current === run;
+    try {
+      const cancelledUploadIds = readCancelledUploadIds();
+      const localStored = await readStoredUpload();
+      const safeLocalStored =
+        localStored && !cancelledUploadIds.has(localStored.archiveId)
+          ? localStored
+          : null;
+      if (localStored && !safeLocalStored) {
+        await clearStoredUpload();
+      }
+      const serverUploads = await apiFetch<ConfluenceUploadProgress[]>(
+        "/api/v1/confluence-imports/uploads/active",
+      );
+      if (!stillCurrent()) return;
+      const candidates = [
+        ...(safeLocalStored ? [safeLocalStored] : []),
+        ...serverUploads
+          .filter((upload) => !cancelledUploadIds.has(upload.archive_id))
+          .map(serverUploadToStoredUpload)
+          .filter(
+            (candidate) => candidate.archiveId !== safeLocalStored?.archiveId,
+          ),
+      ];
+      if (!candidates.length) {
+        await clearStoredUpload();
+        if (!stillCurrent()) return;
+        setStoredConfluenceUpload(null);
+        setUploadProgress(null);
+        setUploadStats(null);
+        return;
+      }
+      for (const candidate of candidates) {
+        const currentStored = storedConfluenceUploadRef.current;
+        const candidateWithFile =
+          currentStored?.archiveId === candidate.archiveId &&
+          fileMatchesStoredUpload(currentStored.file ?? null, candidate)
+            ? { ...candidate, file: currentStored.file }
+            : candidate;
+        storedConfluenceUploadRef.current = candidateWithFile;
+        setStoredConfluenceUpload(candidateWithFile);
+        setConfluenceFile(null);
+        setConfluenceArchive(null);
+        setUploadProgress((current) => current ?? 0);
+        setUploadStats((current) => ({
+          loaded:
+            current?.total === candidateWithFile.fileSize
+              ? (current.loaded ?? 0)
+              : 0,
+          total: candidateWithFile.fileSize,
+          bytesPerSecond: 0,
+          secondsRemaining: null,
+        }));
+        let progress: ConfluenceUploadProgress;
+        try {
+          progress = await apiFetch<ConfluenceUploadProgress>(
+            `/api/v1/confluence-imports/archives/${candidateWithFile.archiveId}/upload`,
+          );
+        } catch (candidateError) {
+          if (
+            candidateError instanceof ApiError &&
+            candidateError.status === 404 &&
+            candidateWithFile.archiveId === safeLocalStored?.archiveId
+          ) {
+            await clearStoredUpload();
+            continue;
+          }
+          throw candidateError;
+        }
+        if (!stillCurrent()) return;
         if (progress.status === "uploaded") {
+          setPreparationLogs([]);
+          setPreparationLogsExpanded(true);
+          appendPreparationLog(
+            "Upload was already complete. Scanning archive.",
+          );
           const archive = await apiFetch<ConfluenceArchive>(
-            `/api/v1/confluence-imports/archives/${stored.archiveId}/scan`,
+            `/api/v1/confluence-imports/archives/${candidateWithFile.archiveId}/scan`,
             { method: "POST" },
           );
-          if (!active) return;
+          if (!stillCurrent()) return;
+          appendPreparationLog("Archive scan completed. Spaces are ready.");
           await clearStoredUpload();
           setConfluenceArchive(archive);
           setSelectedSpaces(archive.spaces.map((space) => space.key));
@@ -398,64 +640,151 @@ export function BackupPanel() {
           return;
         }
         if (progress.status !== "uploading") {
-          await clearStoredUpload();
-          return;
+          if (candidateWithFile.archiveId === safeLocalStored?.archiveId) {
+            await clearStoredUpload();
+          }
+          continue;
         }
+        const stored = {
+          ...candidateWithFile,
+          fileName: progress.filename,
+          fileSize: progress.size_bytes,
+          partSize: progress.part_size_bytes,
+        };
+        if (
+          !safeLocalStored ||
+          stored.archiveId !== safeLocalStored.archiveId
+        ) {
+          await saveStoredUpload(stored);
+        }
+        if (!stillCurrent()) return;
+        storedConfluenceUploadRef.current = stored;
+        setStoredConfluenceUpload(stored);
         const uploadedBytes = progress.uploaded_parts.reduce(
           (total, part) =>
             total +
             Math.min(
               stored.partSize,
-              stored.file.size - (part - 1) * stored.partSize,
+              stored.fileSize - (part - 1) * stored.partSize,
             ),
           0,
         );
-        setStoredConfluenceUpload(stored);
-        setUploadProgress(Math.round((uploadedBytes / stored.file.size) * 100));
+        setUploadProgress(Math.round((uploadedBytes / stored.fileSize) * 100));
         setUploadStats({
           loaded: uploadedBytes,
-          total: stored.file.size,
+          total: stored.fileSize,
           bytesPerSecond: 0,
           secondsRemaining: null,
         });
-      })
-      .catch((restoreError) => {
-        // A deleted/expired server upload cannot be resumed. Drop the local
-        // file reference so the user can start a clean upload instead of being
-        // left with a permanent 0% paused state.
-        if (restoreError instanceof ApiError && restoreError.status === 404) {
-          void clearStoredUpload();
-        }
-        if (
-          active &&
-          restoreError instanceof ApiError &&
-          restoreError.status === 404
-        ) {
-          setStoredConfluenceUpload(null);
-          setUploadProgress(null);
-          setUploadStats(null);
-        }
-      });
-    return () => {
-      active = false;
-      confluenceUploadRequest.current?.abort();
+        return;
+      }
+      await clearStoredUpload();
+      if (!stillCurrent()) return;
+      setStoredConfluenceUpload(null);
+      setUploadProgress(null);
+      setUploadStats(null);
+    } catch (restoreError) {
+      if (restoreError instanceof ApiError && restoreError.status === 404) {
+        void clearStoredUpload();
+      }
+      if (!stillCurrent()) return;
+      if (restoreError instanceof ApiError && restoreError.status === 404) {
+        setStoredConfluenceUpload(null);
+        setUploadProgress(null);
+        setUploadStats(null);
+      } else if (
+        restoreError instanceof ApiError &&
+        restoreError.status === 401
+      ) {
+        setConfluenceUploadError(SESSION_EXPIRED_UPLOAD_MESSAGE);
+      } else {
+        setConfluenceUploadError(
+          restoreError instanceof ApiError
+            ? restoreError.message
+            : "Could not refresh the saved upload progress. You can still try Resume upload.",
+        );
+      }
+    }
+  }, [appendPreparationLog]);
+
+  // Keep only lightweight upload metadata in localStorage. Never cache the File
+  // itself: large Confluence archives can freeze the tab while the browser tries
+  // to clone them into storage. Restore on focus/pageshow too because settings
+  // tabs and browser bfcache may not remount this component when users return.
+  useEffect(() => {
+    const restore = () => void restoreStoredConfluenceUpload();
+    const initialRestore = window.setTimeout(restore, 0);
+    const restoreWhenVisible = () => {
+      if (document.visibilityState === "visible") restore();
     };
-  }, []);
+    const restoreFromStorage = (event: StorageEvent) => {
+      if (event.key === CONFLUENCE_UPLOAD_METADATA_KEY) restore();
+    };
+    window.addEventListener("focus", restore);
+    window.addEventListener("pageshow", restore);
+    window.addEventListener("storage", restoreFromStorage);
+    document.addEventListener("visibilitychange", restoreWhenVisible);
+    return () => {
+      uploadRestoreRun.current += 1;
+      uploadPauseReason.current = "manual";
+      confluenceUploadRequest.current?.abort();
+      window.clearTimeout(initialRestore);
+      window.removeEventListener("focus", restore);
+      window.removeEventListener("pageshow", restore);
+      window.removeEventListener("storage", restoreFromStorage);
+      document.removeEventListener("visibilitychange", restoreWhenVisible);
+    };
+  }, [restoreStoredConfluenceUpload]);
 
   async function uploadConfluence(resume = false) {
     const saved = resume ? storedConfluenceUpload : null;
     const selectedFile = saved?.file ?? confluenceFile;
-    if (!selectedFile) return;
+    if (!selectedFile) {
+      if (saved) {
+        setConfluenceUploadError(
+          "Select the same archive file again to resume this interrupted upload.",
+        );
+      }
+      return;
+    }
     setConfluencePending(true);
-    setError(null);
-    setUploadProgress(0);
-    setUploadStats({
-      loaded: 0,
-      total: selectedFile.size,
-      bytesPerSecond: 0,
-      secondsRemaining: null,
-    });
+    setConfluenceUploadError(null);
+    uploadPauseReason.current = null;
+    let sessionRenewalTimer: number | null = null;
+    let preparingArchive = false;
+    if (!saved) {
+      setPreparationLogs([]);
+      setPreparationLogsExpanded(true);
+      setUploadProgress(0);
+      setUploadStats({
+        loaded: 0,
+        total: selectedFile.size,
+        bytesPerSecond: 0,
+        secondsRemaining: null,
+      });
+    } else if (uploadProgress === null) {
+      setUploadProgress(0);
+      setUploadStats({
+        loaded: 0,
+        total: selectedFile.size,
+        bytesPerSecond: 0,
+        secondsRemaining: null,
+      });
+    }
     try {
+      await renewUploadSession();
+      sessionRenewalTimer = window.setInterval(
+        () => {
+          void renewUploadSession().catch((renewError) => {
+            if (renewError instanceof ApiError && renewError.status === 401) {
+              uploadPauseReason.current = "session-expired";
+              setConfluenceUploadError(SESSION_EXPIRED_UPLOAD_MESSAGE);
+              confluenceUploadRequest.current?.abort();
+            }
+          });
+        },
+        5 * 60 * 1000,
+      );
       const target = saved
         ? {
             archive_id: saved.archiveId,
@@ -480,9 +809,14 @@ export function BackupPanel() {
         const nextStored = {
           archiveId: target.archive_id,
           file: selectedFile,
+          fileName: selectedFile.name,
+          fileSize: selectedFile.size,
+          fileLastModified: selectedFile.lastModified,
           partSize: target.part_size_bytes,
         };
+        forgetCancelledUpload(target.archive_id);
         await saveStoredUpload(nextStored);
+        storedConfluenceUploadRef.current = nextStored;
         setStoredConfluenceUpload(nextStored);
       }
       setIsUploading(true);
@@ -497,6 +831,13 @@ export function BackupPanel() {
           ),
         0,
       );
+      setUploadProgress(Math.round((uploadedBytes / selectedFile.size) * 100));
+      setUploadStats({
+        loaded: uploadedBytes,
+        total: selectedFile.size,
+        bytesPerSecond: 0,
+        secondsRemaining: null,
+      });
       const startedAt = performance.now();
       for (let partNumber = 1; partNumber <= partCount; partNumber += 1) {
         if (uploadedParts.has(partNumber)) continue;
@@ -554,16 +895,22 @@ export function BackupPanel() {
         secondsRemaining: 0,
       });
       setIsUploading(false);
+      preparingArchive = true;
+      appendPreparationLog(
+        "Upload finished. Completing multipart upload in object storage.",
+      );
       await apiFetch(
         `/api/v1/confluence-imports/archives/${target.archive_id}/complete-upload`,
         { method: "POST" },
       );
+      appendPreparationLog("Multipart upload completed. Scanning archive.");
       await clearStoredUpload();
       setStoredConfluenceUpload(null);
       const archive = await apiFetch<ConfluenceArchive>(
         `/api/v1/confluence-imports/archives/${target.archive_id}/scan`,
         { method: "POST" },
       );
+      appendPreparationLog("Archive scan completed. Spaces are ready.");
       setConfluenceArchive(archive);
       setSpaceFilter("");
       setSelectedSpaces(archive.spaces.map((space) => space.key));
@@ -571,17 +918,35 @@ export function BackupPanel() {
       toast.success("Archive scanned. Choose the Spaces to import.");
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        toast.info(
-          "Upload paused. You can resume it when you return to this page.",
-        );
+        if (uploadPauseReason.current === "session-expired") {
+          setConfluenceUploadError(SESSION_EXPIRED_UPLOAD_MESSAGE);
+          toast.error("Upload paused because your session expired.");
+        } else {
+          toast.info(
+            "Upload paused. You can resume it when you return to this page.",
+          );
+        }
+      } else if (err instanceof ApiError && err.status === 401) {
+        setConfluenceUploadError(SESSION_EXPIRED_UPLOAD_MESSAGE);
+        toast.error("Upload paused because your session expired.");
       } else {
-        setError(
+        if (preparingArchive) {
+          appendPreparationLog(
+            err instanceof ApiError
+              ? `Preparation failed: ${err.message}`
+              : "Preparation failed.",
+          );
+        }
+        setConfluenceUploadError(
           err instanceof ApiError
             ? err.message
             : "Could not upload or scan the Confluence archive.",
         );
       }
     } finally {
+      if (sessionRenewalTimer !== null) {
+        window.clearInterval(sessionRenewalTimer);
+      }
       confluenceUploadRequest.current = null;
       setIsUploading(false);
       setConfluencePending(false);
@@ -589,6 +954,7 @@ export function BackupPanel() {
   }
 
   function cancelConfluenceUpload() {
+    uploadPauseReason.current = "manual";
     confluenceUploadRequest.current?.abort();
   }
 
@@ -596,15 +962,19 @@ export function BackupPanel() {
     const archiveId = storedConfluenceUpload?.archiveId;
     setCancelUploadPending(true);
     cancelConfluenceUpload();
+    rememberCancelledUpload(archiveId);
+    uploadRestoreRun.current += 1;
     // Make cancellation feel immediate. The server cleanup continues below;
     // its result cannot be allowed to leave the confirm dialog spinning.
     setConfirmCancelUpload(false);
+    storedConfluenceUploadRef.current = null;
     setStoredConfluenceUpload(null);
     setConfluenceFile(null);
     setConfluenceArchive(null);
     setUploadProgress(null);
     setUploadStats(null);
-    setError(null);
+    setPreparationLogs([]);
+    setConfluenceUploadError(null);
     void clearStoredUpload();
     try {
       if (archiveId) {
@@ -617,7 +987,7 @@ export function BackupPanel() {
       }
       toast.success("Confluence archive upload cancelled.");
     } catch (cancelError) {
-      setError(
+      setConfluenceUploadError(
         cancelError instanceof ApiError
           ? cancelError.message
           : "Could not cancel the archive upload.",
@@ -768,35 +1138,53 @@ export function BackupPanel() {
           <Label>Confluence export archive</Label>
           <input
             id="confluence-backup-file"
+            ref={confluenceFileInput}
             type="file"
             accept=".zip,application/zip,application/x-zip-compressed"
             disabled={confluencePending || Boolean(confluenceArchive)}
             onChange={(event) => {
               const nextFile = event.target.files?.[0] ?? null;
-              const matchesInterruptedUpload =
-                Boolean(nextFile) &&
-                Boolean(storedConfluenceUpload) &&
-                nextFile?.name === storedConfluenceUpload?.file.name &&
-                nextFile?.size === storedConfluenceUpload?.file.size &&
-                nextFile?.lastModified ===
-                  storedConfluenceUpload?.file.lastModified;
-              if (matchesInterruptedUpload) {
+              const matchesInterruptedUpload = fileMatchesStoredUpload(
+                nextFile,
+                storedConfluenceUpload,
+              );
+              if (matchesInterruptedUpload && storedConfluenceUpload) {
+                const nextStored = {
+                  ...storedConfluenceUpload,
+                  file: nextFile ?? undefined,
+                };
                 setConfluenceFile(null);
+                storedConfluenceUploadRef.current = nextStored;
+                setStoredConfluenceUpload(nextStored);
                 setConfluenceArchive(null);
+                setConfluenceUploadError(null);
+                setPreparationLogs([]);
                 setUploadProgress((current) => current ?? 0);
+                void saveStoredUpload(nextStored);
                 return;
               }
               if (storedConfluenceUpload) {
+                const replacedArchiveId = storedConfluenceUpload.archiveId;
+                rememberCancelledUpload(replacedArchiveId);
+                uploadRestoreRun.current += 1;
+                storedConfluenceUploadRef.current = null;
+                setStoredConfluenceUpload(null);
+                void clearStoredUpload();
                 void apiFetch(
-                  `/api/v1/confluence-imports/archives/${storedConfluenceUpload.archiveId}/upload`,
+                  `/api/v1/confluence-imports/archives/${replacedArchiveId}/upload`,
                   { method: "DELETE" },
-                );
+                ).catch(() => {
+                  // The local cancelled marker keeps this abandoned upload from
+                  // returning to the UI even if server cleanup is delayed.
+                });
               }
               setConfluenceFile(nextFile);
               setStoredConfluenceUpload(null);
               void clearStoredUpload();
               setConfluenceArchive(null);
               setConfluenceJob(null);
+              setConfluenceUploadError(null);
+              setPreparationLogs([]);
               setUploadProgress(null);
               setUploadStats(null);
               setIsUploading(false);
@@ -818,17 +1206,18 @@ export function BackupPanel() {
             </span>
             <span
               className="text-muted-foreground min-w-0 flex-1 truncate px-3"
-              title={storedConfluenceUpload?.file.name ?? confluenceFile?.name}
+              title={confluenceArchiveName ?? undefined}
             >
-              {storedConfluenceUpload?.file.name ??
-                confluenceFile?.name ??
-                "No file selected"}
+              {confluenceArchiveName ?? "No file selected"}
             </span>
           </label>
           <p className="text-muted-foreground mt-2 text-xs">
             Accepted format: <code className="font-mono">.zip</code> archive
             exported by Confluence. It uploads directly to protected object
             storage.
+            {storedUploadNeedsFile
+              ? ` Select ${storedConfluenceUpload?.fileName} again so WikiHub can read the remaining parts.`
+              : null}
             {confluenceArchive
               ? " Finish or clear this space selection before choosing another archive."
               : null}
@@ -852,13 +1241,19 @@ export function BackupPanel() {
                 <Button
                   variant="secondary"
                   disabled={
-                    (!confluenceFile && !storedConfluenceUpload) ||
+                    (!confluenceFile &&
+                      !canResumeStoredUpload &&
+                      !storedUploadNeedsFile) ||
                     confluencePending ||
                     Boolean(confluenceArchive)
                   }
-                  onClick={() =>
-                    void uploadConfluence(Boolean(storedConfluenceUpload))
-                  }
+                  onClick={() => {
+                    if (storedUploadNeedsFile) {
+                      confluenceFileInput.current?.click();
+                      return;
+                    }
+                    void uploadConfluence(Boolean(storedConfluenceUpload));
+                  }}
                 >
                   {confluencePending && !confluenceArchive ? (
                     <Loader2 className="animate-spin" />
@@ -867,7 +1262,11 @@ export function BackupPanel() {
                   ) : (
                     <Upload />
                   )}{" "}
-                  {storedConfluenceUpload ? "Resume upload" : "Upload and scan"}
+                  {storedUploadNeedsFile
+                    ? "Select file to resume"
+                    : storedConfluenceUpload
+                      ? "Resume upload"
+                      : "Upload and scan"}
                 </Button>
                 {storedConfluenceUpload && !confluenceArchive ? (
                   <Button
@@ -902,6 +1301,42 @@ export function BackupPanel() {
           </div>
         ) : null}
 
+        {preparationLogs.length > 0 && !confluenceArchive ? (
+          <details
+            className="border-border bg-surface mt-3 rounded-md border"
+            open={preparationLogsExpanded}
+            onToggle={(event) =>
+              setPreparationLogsExpanded(event.currentTarget.open)
+            }
+          >
+            <summary className="hover:bg-surface-hover focus-visible:ring-ring focus-visible:ring-offset-background flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-offset-1">
+              <span>Preparation logs ({preparationLogs.length})</span>
+              <ChevronDown
+                className={cn(
+                  "text-muted-foreground size-4 transition-transform duration-150",
+                  preparationLogsExpanded && "rotate-180",
+                )}
+              />
+            </summary>
+            <ul className="border-border max-h-36 divide-y overflow-y-auto border-t text-xs">
+              {preparationLogs.map((log, index) => (
+                <li key={`${index}-${log}`} className="px-3 py-2">
+                  {log}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+
+        {confluenceUploadError ? (
+          <p
+            role="alert"
+            className="border-danger/30 bg-danger/10 text-danger mt-3 rounded-md border px-3 py-2 text-sm"
+          >
+            {confluenceUploadError}
+          </p>
+        ) : null}
+
         {uploadProgress !== null &&
         !confluenceArchive &&
         !isFinalizingArchive ? (
@@ -914,10 +1349,8 @@ export function BackupPanel() {
               <div className="min-w-0 flex-1">
                 <p>
                   {isUploading ? "Uploading" : "Upload paused"}{" "}
-                  <span className="font-medium">
-                    {confluenceFile?.name ?? storedConfluenceUpload?.file.name}
-                  </span>
-                  : {uploadProgress}%
+                  <span className="font-medium">{confluenceArchiveName}</span>:{" "}
+                  {uploadProgress}%
                 </p>
                 <div
                   aria-label={`Upload ${uploadProgress}% complete`}
@@ -934,22 +1367,26 @@ export function BackupPanel() {
                 </div>
                 <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
                   <span>
+                    <span className="text-foreground font-medium">
+                      Uploaded:
+                    </span>{" "}
                     {formatBytes(uploadStats?.loaded ?? 0)} /{" "}
-                    {formatBytes(
-                      uploadStats?.total ??
-                        confluenceFile?.size ??
-                        storedConfluenceUpload?.file.size ??
-                        0,
-                    )}
+                    {formatBytes(uploadStats?.total ?? confluenceArchiveSize)}
                   </span>
                   {isUploading ? (
                     <>
                       <span>
+                        <span className="text-foreground font-medium">
+                          Speed:
+                        </span>{" "}
                         {uploadStats && uploadStats.bytesPerSecond > 0
                           ? `${formatBytes(uploadStats.bytesPerSecond)}/s`
                           : "Calculating speed…"}
                       </span>
                       <span>
+                        <span className="text-foreground font-medium">
+                          Estimate:
+                        </span>{" "}
                         {formatDuration(uploadStats?.secondsRemaining ?? null)}
                       </span>
                     </>

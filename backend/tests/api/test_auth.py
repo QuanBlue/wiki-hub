@@ -29,6 +29,18 @@ class TestAuthenticationRequired:
         response = await client.get("/api/v1/users")
         assert response.status_code == 401
 
+    async def test_renew_without_a_token_is_401(self, client: AsyncClient) -> None:
+        response = await client.post("/api/v1/auth/renew")
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "unauthenticated"
+
+    async def test_active_confluence_uploads_require_authentication(
+        self, client: AsyncClient
+    ) -> None:
+        response = await client.get("/api/v1/confluence-imports/uploads/active")
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "unauthenticated"
+
 
 class TestLoginValidation:
     async def test_missing_fields_are_422(self, client: AsyncClient) -> None:

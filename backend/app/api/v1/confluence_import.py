@@ -8,7 +8,7 @@ from typing import Annotated
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy import select
+from sqlalchemy import desc, select
 
 from app.api.deps import CurrentSuperuser, DbSession
 from app.core.config import settings
@@ -97,6 +97,39 @@ async def start_upload(
     )
 
 
+@router.get("/uploads/active", response_model=list[UploadProgressRead])
+async def list_active_uploads(
+    user: CurrentSuperuser, session: DbSession, importer: Service
+) -> list[UploadProgressRead]:
+    archives = (
+        (
+            await session.execute(
+                select(ImportArchive)
+                .where(
+                    ImportArchive.created_by_id == user.id,
+                    ImportArchive.status == "uploading",
+                    ImportArchive.multipart_upload_id.is_not(None),
+                )
+                .order_by(desc(ImportArchive.updated_at), desc(ImportArchive.created_at))
+                .limit(5)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        UploadProgressRead(
+            archive_id=archive.id,
+            filename=archive.filename,
+            size_bytes=archive.size_bytes,
+            status=archive.status,
+            part_size_bytes=importer.upload_part_size_bytes,
+            uploaded_parts=await importer.uploaded_part_numbers(archive),
+        )
+        for archive in archives
+    ]
+
+
 @router.get("/archives/{archive_id}/upload", response_model=UploadProgressRead)
 async def get_upload_progress(
     archive_id: uuid.UUID, _user: CurrentSuperuser, importer: Service
@@ -120,7 +153,9 @@ async def get_upload_part_urls(
     importer: Service,
 ) -> UploadPartUrlsRead:
     archive = await importer.get_archive(archive_id)
-    max_part = (archive.size_bytes + importer.upload_part_size_bytes - 1) // importer.upload_part_size_bytes
+    max_part = (
+        archive.size_bytes + importer.upload_part_size_bytes - 1
+    ) // importer.upload_part_size_bytes
     if any(number < 1 or number > max_part for number in payload.part_numbers):
         raise NotFoundError("Upload part not found.")
     return UploadPartUrlsRead(
