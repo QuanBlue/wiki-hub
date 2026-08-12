@@ -6,6 +6,8 @@ import {
   FileArchive,
   Info,
   Loader2,
+  Pause,
+  Play,
   Upload,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -18,7 +20,14 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiFetch } from "@/lib/api-client";
 import { PUBLIC_API_BASE_URL } from "@/lib/env";
-import type { ConfluenceArchive, ConfluenceImportJob, ConfluenceImportLog, ConfluenceUploadTarget, ImportReport } from "@/types/api";
+import type {
+  ConfluenceArchive,
+  ConfluenceImportJob,
+  ConfluenceImportLog,
+  ConfluenceUploadProgress,
+  ConfluenceUploadTarget,
+  ImportReport,
+} from "@/types/api";
 
 type UploadStats = {
   loaded: number;
@@ -27,10 +36,70 @@ type UploadStats = {
   secondsRemaining: number | null;
 };
 
+type StoredConfluenceUpload = {
+  archiveId: string;
+  file: File;
+  partSize: number;
+};
+
+const CONFLUENCE_UPLOAD_DATABASE = "wikihub-confluence-upload";
+const CONFLUENCE_UPLOAD_STORE = "pending";
+const CONFLUENCE_UPLOAD_KEY = "current";
+
+function uploadStore(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(CONFLUENCE_UPLOAD_DATABASE, 1);
+    request.onupgradeneeded = () =>
+      request.result.createObjectStore(CONFLUENCE_UPLOAD_STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function readStoredUpload(): Promise<StoredConfluenceUpload | null> {
+  const database = await uploadStore();
+  return new Promise((resolve, reject) => {
+    const request = database
+      .transaction(CONFLUENCE_UPLOAD_STORE)
+      .objectStore(CONFLUENCE_UPLOAD_STORE)
+      .get(CONFLUENCE_UPLOAD_KEY);
+    request.onsuccess = () =>
+      resolve((request.result as StoredConfluenceUpload | undefined) ?? null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveStoredUpload(upload: StoredConfluenceUpload): Promise<void> {
+  const database = await uploadStore();
+  await new Promise<void>((resolve, reject) => {
+    const request = database
+      .transaction(CONFLUENCE_UPLOAD_STORE, "readwrite")
+      .objectStore(CONFLUENCE_UPLOAD_STORE)
+      .put(upload, CONFLUENCE_UPLOAD_KEY);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function clearStoredUpload(): Promise<void> {
+  const database = await uploadStore();
+  await new Promise<void>((resolve, reject) => {
+    const request = database
+      .transaction(CONFLUENCE_UPLOAD_STORE, "readwrite")
+      .objectStore(CONFLUENCE_UPLOAD_STORE)
+      .delete(CONFLUENCE_UPLOAD_KEY);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)) - 1, units.length - 1);
+  const index = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)) - 1,
+    units.length - 1,
+  );
   return `${(bytes / 1024 ** (index + 1)).toFixed(index > 1 ? 2 : 1)} ${units[index]}`;
 }
 
@@ -71,13 +140,21 @@ export function BackupPanel() {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
   const confluenceUploadRequest = useRef<XMLHttpRequest | null>(null);
+  const uploadActiveRef = useRef(false);
+  const allowConfirmedLeaveRef = useRef(false);
 
   const [includeCredentials, setIncludeCredentials] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [confluenceFile, setConfluenceFile] = useState<File | null>(null);
-  const [confluenceArchive, setConfluenceArchive] = useState<ConfluenceArchive | null>(null);
-  const [confluenceJob, setConfluenceJob] = useState<ConfluenceImportJob | null>(null);
-  const [confluenceLogs, setConfluenceLogs] = useState<ConfluenceImportLog[]>([]);
+  const [storedConfluenceUpload, setStoredConfluenceUpload] =
+    useState<StoredConfluenceUpload | null>(null);
+  const [confluenceArchive, setConfluenceArchive] =
+    useState<ConfluenceArchive | null>(null);
+  const [confluenceJob, setConfluenceJob] =
+    useState<ConfluenceImportJob | null>(null);
+  const [confluenceLogs, setConfluenceLogs] = useState<ConfluenceImportLog[]>(
+    [],
+  );
   const [selectedSpaces, setSelectedSpaces] = useState<string[]>([]);
   const [importAllSpaces, setImportAllSpaces] = useState(true);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -88,6 +165,9 @@ export function BackupPanel() {
   const [pending, setPending] = useState<"preview" | "apply" | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [confirmApply, setConfirmApply] = useState(false);
+  const [confirmCancelUpload, setConfirmCancelUpload] = useState(false);
+  const [cancelUploadPending, setCancelUploadPending] = useState(false);
+  const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // A real link, not a fetch: the browser handles the Content-Disposition
@@ -97,6 +177,49 @@ export function BackupPanel() {
   const exportHref = `${PUBLIC_API_BASE_URL}/api/v1/backup/export${
     includeCredentials ? "?include_credentials=true" : ""
   }`;
+
+  useEffect(() => {
+    uploadActiveRef.current = isUploading;
+  }, [isUploading]);
+
+  // Next.js navigation does not trigger the browser's unload prompt. Catch
+  // normal in-app link clicks before the router handles them, then pause the
+  // current multipart request only after the user confirms.
+  useEffect(() => {
+    const confirmNavigation = (event: MouseEvent) => {
+      if (
+        !uploadActiveRef.current ||
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      const link = (event.target as Element | null)?.closest<HTMLAnchorElement>(
+        "a[href]",
+      );
+      if (!link || link.target || link.hasAttribute("download")) return;
+      const target = new URL(link.href, window.location.href);
+      if (target.href === window.location.href || target.hash) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setLeaveTarget(target.href);
+    };
+    const confirmUnload = (event: BeforeUnloadEvent) => {
+      if (!uploadActiveRef.current || allowConfirmedLeaveRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    document.addEventListener("click", confirmNavigation, true);
+    window.addEventListener("beforeunload", confirmUnload);
+    return () => {
+      document.removeEventListener("click", confirmNavigation, true);
+      window.removeEventListener("beforeunload", confirmUnload);
+    };
+  }, []);
 
   async function downloadBackup() {
     if (isDownloading) return;
@@ -133,58 +256,245 @@ export function BackupPanel() {
   }
 
   useEffect(() => {
-    if (!confluenceJob || ["completed", "failed", "cancelled"].includes(confluenceJob.status)) return;
+    if (
+      !confluenceJob ||
+      ["completed", "failed", "cancelled"].includes(confluenceJob.status)
+    )
+      return;
     const timer = window.setInterval(async () => {
       try {
         const [job, logs] = await Promise.all([
-          apiFetch<ConfluenceImportJob>(`/api/v1/confluence-imports/jobs/${confluenceJob.id}`),
-          apiFetch<{ items: ConfluenceImportLog[] }>(`/api/v1/confluence-imports/jobs/${confluenceJob.id}/logs`),
+          apiFetch<ConfluenceImportJob>(
+            `/api/v1/confluence-imports/jobs/${confluenceJob.id}`,
+          ),
+          apiFetch<{ items: ConfluenceImportLog[] }>(
+            `/api/v1/confluence-imports/jobs/${confluenceJob.id}/logs`,
+          ),
         ]);
-        setConfluenceJob(job); setConfluenceLogs(logs.items);
-      } catch { /* next poll reports a recoverable API failure */ }
+        setConfluenceJob(job);
+        setConfluenceLogs(logs.items);
+      } catch {
+        /* next poll reports a recoverable API failure */
+      }
     }, 2000);
     return () => window.clearInterval(timer);
   }, [confluenceJob]);
 
-  async function uploadConfluence() {
-    if (!confluenceFile) return;
-    setConfluencePending(true); setError(null); setUploadProgress(0);
-    setUploadStats({ loaded: 0, total: confluenceFile.size, bytesPerSecond: 0, secondsRemaining: null });
-    try {
-      const target = await apiFetch<ConfluenceUploadTarget>("/api/v1/confluence-imports/uploads", { method: "POST", body: { filename: confluenceFile.name, size_bytes: confluenceFile.size } });
-      setIsUploading(true);
-      await new Promise<void>((resolve, reject) => {
-        const request = new XMLHttpRequest();
-        confluenceUploadRequest.current = request;
-        const startedAt = performance.now();
-        request.open("PUT", target.upload_url);
-        request.setRequestHeader("Content-Type", "application/zip");
-        request.upload.onprogress = (event) => {
-          if (!event.lengthComputable) return;
-          const elapsedSeconds = Math.max((performance.now() - startedAt) / 1000, 0.001);
-          const bytesPerSecond = event.loaded / elapsedSeconds;
-          setUploadProgress(Math.round((event.loaded / event.total) * 100));
-          setUploadStats({
-            loaded: event.loaded,
-            total: event.total,
-            bytesPerSecond,
-            secondsRemaining: bytesPerSecond > 0 ? (event.total - event.loaded) / bytesPerSecond : null,
-          });
-        };
-        request.onload = () => request.status >= 200 && request.status < 300 ? resolve() : reject(new Error("MinIO rejected the archive upload."));
-        request.onabort = () => reject(new DOMException("Upload cancelled.", "AbortError"));
-        request.onerror = () => reject(new Error("Could not upload the archive to object storage."));
-        request.send(confluenceFile);
+  // Import work is server-side once queued. Restore the most recent active job
+  // whenever this panel mounts so navigation and refresh never hide progress.
+  useEffect(() => {
+    void apiFetch<ConfluenceImportJob[]>("/api/v1/confluence-imports/jobs")
+      .then((jobs) => {
+        const activeJob = jobs.find(
+          (job) => !["completed", "failed", "cancelled"].includes(job.status),
+        );
+        if (activeJob) setConfluenceJob(activeJob);
+      })
+      .catch(() => {
+        // The panel remains usable if the historical-job lookup is unavailable.
       });
+  }, []);
+
+  // Keep the selected archive in IndexedDB. Unlike an in-memory File state,
+  // this survives route changes and a browser refresh, allowing the multipart
+  // session in MinIO to continue from its confirmed parts.
+  useEffect(() => {
+    let active = true;
+    void readStoredUpload()
+      .then(async (stored) => {
+        if (!active || !stored) return;
+        const progress = await apiFetch<ConfluenceUploadProgress>(
+          `/api/v1/confluence-imports/archives/${stored.archiveId}/upload`,
+        );
+        if (!active) return;
+        if (progress.status === "uploaded") {
+          const archive = await apiFetch<ConfluenceArchive>(
+            `/api/v1/confluence-imports/archives/${stored.archiveId}/scan`,
+            { method: "POST" },
+          );
+          if (!active) return;
+          await clearStoredUpload();
+          setConfluenceArchive(archive);
+          return;
+        }
+        if (progress.status !== "uploading") {
+          await clearStoredUpload();
+          return;
+        }
+        const uploadedBytes = progress.uploaded_parts.reduce(
+          (total, part) =>
+            total +
+            Math.min(
+              stored.partSize,
+              stored.file.size - (part - 1) * stored.partSize,
+            ),
+          0,
+        );
+        setStoredConfluenceUpload(stored);
+        setUploadProgress(Math.round((uploadedBytes / stored.file.size) * 100));
+        setUploadStats({
+          loaded: uploadedBytes,
+          total: stored.file.size,
+          bytesPerSecond: 0,
+          secondsRemaining: null,
+        });
+      })
+      .catch((restoreError) => {
+        // A deleted/expired server upload cannot be resumed. Drop the local
+        // file reference so the user can start a clean upload instead of being
+        // left with a permanent 0% paused state.
+        if (restoreError instanceof ApiError && restoreError.status === 404) {
+          void clearStoredUpload();
+        }
+        if (
+          active &&
+          restoreError instanceof ApiError &&
+          restoreError.status === 404
+        ) {
+          setStoredConfluenceUpload(null);
+          setUploadProgress(null);
+          setUploadStats(null);
+        }
+      });
+    return () => {
+      active = false;
+      confluenceUploadRequest.current?.abort();
+    };
+  }, []);
+
+  async function uploadConfluence(resume = false) {
+    const saved = resume ? storedConfluenceUpload : null;
+    const selectedFile = saved?.file ?? confluenceFile;
+    if (!selectedFile) return;
+    setConfluencePending(true);
+    setError(null);
+    setUploadProgress(0);
+    setUploadStats({
+      loaded: 0,
+      total: selectedFile.size,
+      bytesPerSecond: 0,
+      secondsRemaining: null,
+    });
+    try {
+      const target = saved
+        ? {
+            archive_id: saved.archiveId,
+            part_size_bytes: saved.partSize,
+            uploaded_parts: (
+              await apiFetch<ConfluenceUploadProgress>(
+                `/api/v1/confluence-imports/archives/${saved.archiveId}/upload`,
+              )
+            ).uploaded_parts,
+          }
+        : await apiFetch<ConfluenceUploadTarget>(
+            "/api/v1/confluence-imports/uploads",
+            {
+              method: "POST",
+              body: {
+                filename: selectedFile.name,
+                size_bytes: selectedFile.size,
+              },
+            },
+          );
+      if (!saved) {
+        const nextStored = {
+          archiveId: target.archive_id,
+          file: selectedFile,
+          partSize: target.part_size_bytes,
+        };
+        await saveStoredUpload(nextStored);
+        setStoredConfluenceUpload(nextStored);
+      }
+      setIsUploading(true);
+      const partCount = Math.ceil(selectedFile.size / target.part_size_bytes);
+      const uploadedParts = new Set(target.uploaded_parts);
+      let uploadedBytes = [...uploadedParts].reduce(
+        (total, part) =>
+          total +
+          Math.min(
+            target.part_size_bytes,
+            selectedFile.size - (part - 1) * target.part_size_bytes,
+          ),
+        0,
+      );
+      const startedAt = performance.now();
+      for (let partNumber = 1; partNumber <= partCount; partNumber += 1) {
+        if (uploadedParts.has(partNumber)) continue;
+        const urls = await apiFetch<{ urls: Record<string, string> }>(
+          `/api/v1/confluence-imports/archives/${target.archive_id}/upload-parts`,
+          { method: "POST", body: { part_numbers: [partNumber] } },
+        );
+        const chunk = selectedFile.slice(
+          (partNumber - 1) * target.part_size_bytes,
+          partNumber * target.part_size_bytes,
+        );
+        await new Promise<void>((resolve, reject) => {
+          const request = new XMLHttpRequest();
+          confluenceUploadRequest.current = request;
+          request.open("PUT", urls.urls[String(partNumber)]);
+          request.setRequestHeader("Content-Type", "application/zip");
+          request.upload.onprogress = (event) => {
+            if (!event.lengthComputable) return;
+            const elapsedSeconds = Math.max(
+              (performance.now() - startedAt) / 1000,
+              0.001,
+            );
+            const loaded = uploadedBytes + event.loaded;
+            const bytesPerSecond = loaded / elapsedSeconds;
+            setUploadProgress(Math.round((loaded / selectedFile.size) * 100));
+            setUploadStats({
+              loaded,
+              total: selectedFile.size,
+              bytesPerSecond,
+              secondsRemaining:
+                bytesPerSecond > 0
+                  ? (selectedFile.size - loaded) / bytesPerSecond
+                  : null,
+            });
+          };
+          request.onload = () =>
+            request.status >= 200 && request.status < 300
+              ? resolve()
+              : reject(new Error("MinIO rejected the archive upload."));
+          request.onabort = () =>
+            reject(new DOMException("Upload cancelled.", "AbortError"));
+          request.onerror = () =>
+            reject(
+              new Error("Could not upload the archive to object storage."),
+            );
+          request.send(chunk);
+        });
+        uploadedBytes += chunk.size;
+      }
       setIsUploading(false);
-      const archive = await apiFetch<ConfluenceArchive>(`/api/v1/confluence-imports/archives/${target.archive_id}/scan`, { method: "POST" });
-      setConfluenceArchive(archive); setSelectedSpaces(archive.spaces.filter((space) => !space.conflict).map((space) => space.key));
+      await apiFetch(
+        `/api/v1/confluence-imports/archives/${target.archive_id}/complete-upload`,
+        { method: "POST" },
+      );
+      await clearStoredUpload();
+      setStoredConfluenceUpload(null);
+      const archive = await apiFetch<ConfluenceArchive>(
+        `/api/v1/confluence-imports/archives/${target.archive_id}/scan`,
+        { method: "POST" },
+      );
+      setConfluenceArchive(archive);
+      setSelectedSpaces(
+        archive.spaces
+          .filter((space) => !space.conflict)
+          .map((space) => space.key),
+      );
       toast.success("Archive scanned. Choose the Spaces to import.");
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        toast.info("Confluence archive upload cancelled.");
+        toast.info(
+          "Upload paused. You can resume it when you return to this page.",
+        );
       } else {
-        setError(err instanceof ApiError ? err.message : "Could not upload or scan the Confluence archive.");
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : "Could not upload or scan the Confluence archive.",
+        );
       }
     } finally {
       confluenceUploadRequest.current = null;
@@ -197,14 +507,71 @@ export function BackupPanel() {
     confluenceUploadRequest.current?.abort();
   }
 
+  async function abandonConfluenceUpload() {
+    const archiveId = storedConfluenceUpload?.archiveId;
+    setCancelUploadPending(true);
+    cancelConfluenceUpload();
+    // Make cancellation feel immediate. The server cleanup continues below;
+    // its result cannot be allowed to leave the confirm dialog spinning.
+    setConfirmCancelUpload(false);
+    setStoredConfluenceUpload(null);
+    setConfluenceFile(null);
+    setConfluenceArchive(null);
+    setUploadProgress(null);
+    setUploadStats(null);
+    setError(null);
+    void clearStoredUpload();
+    try {
+      if (archiveId) {
+        await apiFetch(
+          `/api/v1/confluence-imports/archives/${archiveId}/upload`,
+          {
+            method: "DELETE",
+          },
+        );
+      }
+      toast.success("Confluence archive upload cancelled.");
+    } catch (cancelError) {
+      setError(
+        cancelError instanceof ApiError
+          ? cancelError.message
+          : "Could not cancel the archive upload.",
+      );
+    } finally {
+      setCancelUploadPending(false);
+    }
+  }
+
+  function leaveWhileUploading() {
+    if (!leaveTarget) return;
+    // The application confirmation has already explained the consequence.
+    // Suppress the browser's generic beforeunload prompt for this exact leave.
+    allowConfirmedLeaveRef.current = true;
+    cancelConfluenceUpload();
+    window.location.assign(leaveTarget);
+  }
+
   async function startConfluenceImport() {
     if (!confluenceArchive) return;
     setConfluencePending(true);
     try {
-      const job = await apiFetch<ConfluenceImportJob>(`/api/v1/confluence-imports/archives/${confluenceArchive.id}/jobs`, { method: "POST", body: { import_all: importAllSpaces, space_keys: selectedSpaces } });
-      setConfluenceJob(job); setConfluenceLogs([]); toast.success("Confluence import queued.");
-    } catch (err) { setError(err instanceof ApiError ? err.message : "Could not queue the import."); }
-    finally { setConfluencePending(false); }
+      const job = await apiFetch<ConfluenceImportJob>(
+        `/api/v1/confluence-imports/archives/${confluenceArchive.id}/jobs`,
+        {
+          method: "POST",
+          body: { import_all: importAllSpaces, space_keys: selectedSpaces },
+        },
+      );
+      setConfluenceJob(job);
+      setConfluenceLogs([]);
+      toast.success("Confluence import queued.");
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Could not queue the import.",
+      );
+    } finally {
+      setConfluencePending(false);
+    }
   }
 
   async function submitImport(dryRun: boolean) {
@@ -274,7 +641,11 @@ export function BackupPanel() {
             aria-busy={isDownloading}
             onClick={() => void downloadBackup()}
           >
-            {isDownloading ? <Loader2 className="animate-spin" /> : <Download />}
+            {isDownloading ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Download />
+            )}
             {isDownloading ? "Downloading..." : "Download backup"}
           </Button>
         </div>
@@ -303,7 +674,29 @@ export function BackupPanel() {
             type="file"
             accept=".zip,application/zip,application/x-zip-compressed"
             onChange={(event) => {
-              setConfluenceFile(event.target.files?.[0] ?? null);
+              const nextFile = event.target.files?.[0] ?? null;
+              const matchesInterruptedUpload =
+                Boolean(nextFile) &&
+                Boolean(storedConfluenceUpload) &&
+                nextFile?.name === storedConfluenceUpload?.file.name &&
+                nextFile?.size === storedConfluenceUpload?.file.size &&
+                nextFile?.lastModified ===
+                  storedConfluenceUpload?.file.lastModified;
+              if (matchesInterruptedUpload) {
+                setConfluenceFile(null);
+                setConfluenceArchive(null);
+                setUploadProgress((current) => current ?? 0);
+                return;
+              }
+              if (storedConfluenceUpload) {
+                void apiFetch(
+                  `/api/v1/confluence-imports/archives/${storedConfluenceUpload.archiveId}/upload`,
+                  { method: "DELETE" },
+                );
+              }
+              setConfluenceFile(nextFile);
+              setStoredConfluenceUpload(null);
+              void clearStoredUpload();
               setConfluenceArchive(null);
               setConfluenceJob(null);
               setUploadProgress(null);
@@ -319,16 +712,55 @@ export function BackupPanel() {
             <span className="border-border bg-surface-sunken shrink-0 border-r px-3 py-2 font-medium">
               Choose file
             </span>
-            <span className="text-muted-foreground min-w-0 flex-1 truncate px-3" title={confluenceFile?.name}>
-              {confluenceFile?.name ?? "No file selected"}
+            <span
+              className="text-muted-foreground min-w-0 flex-1 truncate px-3"
+              title={storedConfluenceUpload?.file.name ?? confluenceFile?.name}
+            >
+              {storedConfluenceUpload?.file.name ??
+                confluenceFile?.name ??
+                "No file selected"}
             </span>
           </label>
-          <p className="text-muted-foreground mt-2 text-xs">Accepted format: <code className="font-mono">.zip</code> archive exported by Confluence. It uploads directly to protected object storage.</p>
+          <p className="text-muted-foreground mt-2 text-xs">
+            Accepted format: <code className="font-mono">.zip</code> archive
+            exported by Confluence. It uploads directly to protected object
+            storage.
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button variant="secondary" disabled={!confluenceFile || confluencePending || Boolean(confluenceArchive)} onClick={uploadConfluence}>
-              {confluencePending && !confluenceArchive ? <Loader2 className="animate-spin" /> : <Upload />} Upload and scan
+            <Button
+              variant="secondary"
+              disabled={
+                (!confluenceFile && !storedConfluenceUpload) ||
+                confluencePending ||
+                Boolean(confluenceArchive)
+              }
+              onClick={() =>
+                void uploadConfluence(Boolean(storedConfluenceUpload))
+              }
+            >
+              {confluencePending && !confluenceArchive ? (
+                <Loader2 className="animate-spin" />
+              ) : storedConfluenceUpload ? (
+                <Play />
+              ) : (
+                <Upload />
+              )}{" "}
+              {storedConfluenceUpload ? "Resume upload" : "Upload and scan"}
             </Button>
-            {isUploading ? <Button variant="danger" onClick={cancelConfluenceUpload}>Cancel upload</Button> : null}
+            {isUploading ? (
+              <Button variant="secondary" onClick={cancelConfluenceUpload}>
+                <Pause /> Pause upload
+              </Button>
+            ) : null}
+            {(isUploading || storedConfluenceUpload) && !confluenceArchive ? (
+              <Button
+                variant="danger"
+                disabled={cancelUploadPending}
+                onClick={() => setConfirmCancelUpload(true)}
+              >
+                Cancel upload
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -341,7 +773,11 @@ export function BackupPanel() {
               <Info className="text-info mt-0.5 size-4 shrink-0" />
               <div className="min-w-0 flex-1">
                 <p>
-                  Uploading <span className="font-medium">{confluenceFile?.name}</span>: {uploadProgress}%
+                  {isUploading ? "Uploading" : "Upload paused"}{" "}
+                  <span className="font-medium">
+                    {confluenceFile?.name ?? storedConfluenceUpload?.file.name}
+                  </span>
+                  : {uploadProgress}%
                 </p>
                 <div
                   aria-label={`Upload ${uploadProgress}% complete`}
@@ -352,32 +788,186 @@ export function BackupPanel() {
                   role="progressbar"
                 >
                   <div
-                    className="bg-info motion-safe:transition-[width] h-full duration-150"
+                    className="bg-info h-full duration-150 motion-safe:transition-[width]"
                     style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
                 <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
-                  <span>{formatBytes(uploadStats?.loaded ?? 0)} / {formatBytes(uploadStats?.total ?? confluenceFile?.size ?? 0)}</span>
-                  <span>{uploadStats && uploadStats.bytesPerSecond > 0 ? `${formatBytes(uploadStats.bytesPerSecond)}/s` : "Calculating speed…"}</span>
-                  <span>{formatDuration(uploadStats?.secondsRemaining ?? null)}</span>
+                  <span>
+                    {formatBytes(uploadStats?.loaded ?? 0)} /{" "}
+                    {formatBytes(
+                      uploadStats?.total ??
+                        confluenceFile?.size ??
+                        storedConfluenceUpload?.file.size ??
+                        0,
+                    )}
+                  </span>
+                  {isUploading ? (
+                    <>
+                      <span>
+                        {uploadStats && uploadStats.bytesPerSecond > 0
+                          ? `${formatBytes(uploadStats.bytesPerSecond)}/s`
+                          : "Calculating speed…"}
+                      </span>
+                      <span>
+                        {formatDuration(uploadStats?.secondsRemaining ?? null)}
+                      </span>
+                    </>
+                  ) : null}
                 </div>
               </div>
             </div>
           </div>
         ) : null}
 
-        {confluenceArchive ? <div className="mt-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-medium">{confluenceArchive.spaces.length} Space(s) found</p><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={importAllSpaces} onChange={(event) => setImportAllSpaces(event.target.checked)} className="accent-primary size-4" /> Import all spaces</label></div>
-          <div className="border-border max-h-64 overflow-y-auto rounded-md border">
-            {confluenceArchive.spaces.map((space) => <label key={space.key} className="border-border hover:bg-surface-sunken flex cursor-pointer items-center gap-3 border-b px-3 py-2 text-sm last:border-0">
-              <input type="checkbox" disabled={importAllSpaces || space.conflict} checked={selectedSpaces.includes(space.key)} onChange={(event) => setSelectedSpaces((current) => event.target.checked ? [...current, space.key] : current.filter((key) => key !== space.key))} className="accent-primary size-4" />
-              <span className="font-medium">{space.name}</span><span className="text-muted-foreground">{space.key} · {space.page_count} pages</span>{space.conflict ? <Badge variant="warning">existing key: skipped</Badge> : null}
-            </label>)}
+        {confluenceArchive ? (
+          <div className="mt-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">
+                {confluenceArchive.spaces.length} Space(s) found
+              </p>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={importAllSpaces}
+                  onChange={(event) => setImportAllSpaces(event.target.checked)}
+                  className="accent-primary size-4"
+                />{" "}
+                Import all spaces
+              </label>
+            </div>
+            <div className="border-border max-h-64 overflow-y-auto rounded-md border">
+              {confluenceArchive.spaces.map((space) => (
+                <label
+                  key={space.key}
+                  className="border-border hover:bg-surface-sunken flex cursor-pointer items-center gap-3 border-b px-3 py-2 text-sm last:border-0"
+                >
+                  <input
+                    type="checkbox"
+                    disabled={importAllSpaces || space.conflict}
+                    checked={selectedSpaces.includes(space.key)}
+                    onChange={(event) =>
+                      setSelectedSpaces((current) =>
+                        event.target.checked
+                          ? [...current, space.key]
+                          : current.filter((key) => key !== space.key),
+                      )
+                    }
+                    className="accent-primary size-4"
+                  />
+                  <span className="font-medium">{space.name}</span>
+                  <span className="text-muted-foreground">
+                    {space.key} · {space.page_count} pages
+                  </span>
+                  {space.conflict ? (
+                    <Badge variant="warning">existing key: skipped</Badge>
+                  ) : null}
+                </label>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="primary"
+                disabled={
+                  confluencePending ||
+                  (!importAllSpaces && selectedSpaces.length === 0)
+                }
+                onClick={startConfluenceImport}
+              >
+                {confluencePending ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Upload />
+                )}{" "}
+                Start import
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setSelectedSpaces(
+                    confluenceArchive.spaces
+                      .filter((space) => !space.conflict)
+                      .map((space) => space.key),
+                  )
+                }
+              >
+                Select all
+              </Button>
+              <Button variant="ghost" onClick={() => setSelectedSpaces([])}>
+                Clear selection
+              </Button>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2"><Button variant="primary" disabled={confluencePending || (!importAllSpaces && selectedSpaces.length === 0)} onClick={startConfluenceImport}>{confluencePending ? <Loader2 className="animate-spin" /> : <Upload />} Start import</Button><Button variant="secondary" onClick={() => setSelectedSpaces(confluenceArchive.spaces.filter((space) => !space.conflict).map((space) => space.key))}>Select all</Button><Button variant="ghost" onClick={() => setSelectedSpaces([])}>Clear selection</Button></div>
-        </div> : null}
+        ) : null}
 
-        {confluenceJob ? <div className="border-border bg-surface-sunken mt-4 rounded-md border p-4 text-sm"><div className="flex items-center justify-between gap-3"><p className="font-medium">Import {confluenceJob.status} · {confluenceJob.phase}</p><Badge variant={confluenceJob.status === "completed" ? "success" : confluenceJob.status === "failed" ? "danger" : "info"}>{confluenceJob.status}</Badge></div><p className="text-muted-foreground mt-1">{confluenceJob.counters.spaces_completed ?? 0}/{confluenceJob.counters.spaces_total ?? 0} spaces · {confluenceJob.counters.pages_processed ?? 0} pages</p><div className="bg-muted mt-3 h-2 overflow-hidden rounded-full"><div className="bg-primary h-full transition-all" style={{ width: `${Math.min(100, ((confluenceJob.counters.spaces_completed ?? 0) / Math.max(1, confluenceJob.counters.spaces_total ?? 1)) * 100)}%` }} /></div>{!["completed", "failed", "cancelled"].includes(confluenceJob.status) ? <Button className="mt-3" variant="danger" size="sm" onClick={async () => setConfluenceJob(await apiFetch<ConfluenceImportJob>(`/api/v1/confluence-imports/jobs/${confluenceJob.id}/cancel`, { method: "POST" }))}>Cancel</Button> : null}{confluenceLogs.length ? <details className="mt-3"><summary className="cursor-pointer">Import logs ({confluenceLogs.length})</summary><ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs">{confluenceLogs.map((log) => <li key={log.id}><span className="font-medium">{log.level}</span> · {log.entity_label ? `${log.entity_label}: ` : ""}{log.message}</li>)}</ul></details> : null}</div> : null}
+        {confluenceJob ? (
+          <div className="border-border bg-surface-sunken mt-4 rounded-md border p-4 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-medium">
+                Import {confluenceJob.status} · {confluenceJob.phase}
+              </p>
+              <Badge
+                variant={
+                  confluenceJob.status === "completed"
+                    ? "success"
+                    : confluenceJob.status === "failed"
+                      ? "danger"
+                      : "info"
+                }
+              >
+                {confluenceJob.status}
+              </Badge>
+            </div>
+            <p className="text-muted-foreground mt-1">
+              {confluenceJob.counters.spaces_completed ?? 0}/
+              {confluenceJob.counters.spaces_total ?? 0} spaces ·{" "}
+              {confluenceJob.counters.pages_processed ?? 0} pages
+            </p>
+            <div className="bg-muted mt-3 h-2 overflow-hidden rounded-full">
+              <div
+                className="bg-primary h-full transition-all"
+                style={{
+                  width: `${Math.min(100, ((confluenceJob.counters.spaces_completed ?? 0) / Math.max(1, confluenceJob.counters.spaces_total ?? 1)) * 100)}%`,
+                }}
+              />
+            </div>
+            {!["completed", "failed", "cancelled"].includes(
+              confluenceJob.status,
+            ) ? (
+              <Button
+                className="mt-3"
+                variant="danger"
+                size="sm"
+                onClick={async () =>
+                  setConfluenceJob(
+                    await apiFetch<ConfluenceImportJob>(
+                      `/api/v1/confluence-imports/jobs/${confluenceJob.id}/cancel`,
+                      { method: "POST" },
+                    ),
+                  )
+                }
+              >
+                Cancel
+              </Button>
+            ) : null}
+            {confluenceLogs.length ? (
+              <details className="mt-3">
+                <summary className="cursor-pointer">
+                  Import logs ({confluenceLogs.length})
+                </summary>
+                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs">
+                  {confluenceLogs.map((log) => (
+                    <li key={log.id}>
+                      <span className="font-medium">{log.level}</span> ·{" "}
+                      {log.entity_label ? `${log.entity_label}: ` : ""}
+                      {log.message}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {/* -- Import ------------------------------------------------------- */}
@@ -520,6 +1110,26 @@ export function BackupPanel() {
         confirmLabel="Apply import"
         pending={pending === "apply"}
         onConfirm={() => submitImport(false)}
+      />
+      <ConfirmDialog
+        open={leaveTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setLeaveTarget(null);
+        }}
+        title="Pause this upload and leave?"
+        description="The current part will stop. Completed parts and your selected archive stay on this device, so you can resume the upload from this page later."
+        confirmLabel="Pause and leave"
+        onConfirm={leaveWhileUploading}
+      />
+      <ConfirmDialog
+        open={confirmCancelUpload}
+        onOpenChange={setConfirmCancelUpload}
+        title="Cancel this upload?"
+        description="This discards the uploaded parts and removes the saved archive from this browser. You will need to select the file and start again."
+        confirmLabel="Cancel upload"
+        destructive
+        pending={cancelUploadPending}
+        onConfirm={() => void abandonConfluenceUpload()}
       />
     </div>
   );

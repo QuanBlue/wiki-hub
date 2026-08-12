@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import BIGINT, Boolean, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -19,8 +19,9 @@ class ImportArchive(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     object_key: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BIGINT, nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="uploading")
+    multipart_upload_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
     spaces: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[uuid.UUID] = mapped_column(

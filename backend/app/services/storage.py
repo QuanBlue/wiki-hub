@@ -70,6 +70,25 @@ class ObjectStorage(abc.ABC):
     ) -> str: ...
 
     @abc.abstractmethod
+    async def start_multipart_upload(self, key: str, *, content_type: str) -> str: ...
+
+    @abc.abstractmethod
+    async def list_multipart_parts(self, key: str, upload_id: str) -> list[tuple[int, str]]: ...
+
+    @abc.abstractmethod
+    async def presigned_upload_part_url(
+        self, key: str, upload_id: str, part_number: int, *, expires_in: int | None = None
+    ) -> str: ...
+
+    @abc.abstractmethod
+    async def complete_multipart_upload(
+        self, key: str, upload_id: str, parts: list[tuple[int, str]]
+    ) -> None: ...
+
+    @abc.abstractmethod
+    async def abort_multipart_upload(self, key: str, upload_id: str) -> None: ...
+
+    @abc.abstractmethod
     async def ensure_bucket(self) -> None: ...
 
     @abc.abstractmethod
@@ -147,7 +166,7 @@ class S3ObjectStorage(ObjectStorage):
             return await anyio.to_thread.run_sync(lambda: fn(*args, **kwargs))
         except ClientError as exc:
             error_code = exc.response.get("Error", {}).get("Code", "")
-            if error_code in {"NoSuchKey", "404", "NotFound"}:
+            if error_code in {"NoSuchKey", "NoSuchUpload", "404", "NotFound"}:
                 raise NotFoundError("Object not found in storage.") from exc
             logger.error("s3_client_error", code=error_code)
             raise ServiceUnavailableError("Object storage request failed.") from exc
@@ -238,6 +257,76 @@ class S3ObjectStorage(ObjectStorage):
             )
         )
         return str(url)
+
+    async def start_multipart_upload(self, key: str, *, content_type: str) -> str:
+        result = await self._call(
+            self.client.create_multipart_upload,
+            Bucket=self.bucket,
+            Key=key,
+            ContentType=content_type,
+        )
+        return str(result["UploadId"])
+
+    async def list_multipart_parts(self, key: str, upload_id: str) -> list[tuple[int, str]]:
+        parts: list[tuple[int, str]] = []
+        marker: int | None = None
+        while True:
+            params: dict[str, Any] = {
+                "Bucket": self.bucket,
+                "Key": key,
+                "UploadId": upload_id,
+            }
+            if marker is not None:
+                params["PartNumberMarker"] = marker
+            result = await self._call(self.client.list_parts, **params)
+            parts.extend(
+                (int(part["PartNumber"]), str(part["ETag"]))
+                for part in result.get("Parts", [])
+            )
+            if not result.get("IsTruncated"):
+                return parts
+            marker = int(result["NextPartNumberMarker"])
+
+    async def presigned_upload_part_url(
+        self, key: str, upload_id: str, part_number: int, *, expires_in: int | None = None
+    ) -> str:
+        url = await anyio.to_thread.run_sync(
+            lambda: self.signing_client.generate_presigned_url(
+                "upload_part",
+                Params={
+                    "Bucket": self.bucket,
+                    "Key": key,
+                    "UploadId": upload_id,
+                    "PartNumber": part_number,
+                },
+                ExpiresIn=expires_in or settings.s3_presign_ttl_seconds,
+            )
+        )
+        return str(url)
+
+    async def complete_multipart_upload(
+        self, key: str, upload_id: str, parts: list[tuple[int, str]]
+    ) -> None:
+        await self._call(
+            self.client.complete_multipart_upload,
+            Bucket=self.bucket,
+            Key=key,
+            UploadId=upload_id,
+            MultipartUpload={
+                "Parts": [
+                    {"PartNumber": number, "ETag": etag}
+                    for number, etag in sorted(parts)
+                ]
+            },
+        )
+
+    async def abort_multipart_upload(self, key: str, upload_id: str) -> None:
+        await self._call(
+            self.client.abort_multipart_upload,
+            Bucket=self.bucket,
+            Key=key,
+            UploadId=upload_id,
+        )
 
     async def ensure_bucket(self) -> None:
         """Create the bucket when missing. Safe to call repeatedly at startup."""

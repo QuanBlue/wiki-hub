@@ -16,8 +16,26 @@ class UploadInit(BaseModel):
 class UploadTarget(BaseModel):
     archive_id: uuid.UUID
     object_key: str
-    upload_url: str
     max_size_bytes: int
+    part_size_bytes: int
+    uploaded_parts: list[int] = Field(default_factory=list)
+
+
+class UploadPartUrlsRequest(BaseModel):
+    part_numbers: list[int] = Field(min_length=1, max_length=32)
+
+
+class UploadPartUrlsRead(BaseModel):
+    urls: dict[int, str]
+
+
+class UploadProgressRead(BaseModel):
+    archive_id: uuid.UUID
+    filename: str
+    size_bytes: int
+    status: str
+    part_size_bytes: int
+    uploaded_parts: list[int] = Field(default_factory=list)
 
 
 class SpaceCandidate(BaseModel):

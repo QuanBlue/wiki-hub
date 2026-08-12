@@ -30,12 +30,16 @@ def _slug(value: str, occupied: set[str]) -> str:
 
 
 class ConfluenceImportService:
+    # S3 multipart uploads require every non-final part to be at least 5 MiB.
+    # Eight MiB keeps retry costs reasonable without creating too many requests.
+    upload_part_size_bytes = 8 * 1024 * 1024
+
     def __init__(self, session: AsyncSession, storage: ObjectStorage) -> None:
         self.session, self.storage = session, storage
 
     async def start_upload(
         self, *, filename: str, size_bytes: int, actor_id: uuid.UUID
-    ) -> tuple[ImportArchive, str]:
+    ) -> ImportArchive:
         if not filename.lower().endswith(".zip"):
             raise BadRequestError("Choose a .zip archive exported by Confluence.")
         from app.services.site_settings import SiteSettingsService
@@ -55,15 +59,71 @@ class ConfluenceImportService:
         )
         self.session.add(archive)
         await self.session.flush()
-        return archive, await self.storage.presigned_upload_url(
-            archive.object_key, content_type="application/zip", expires_in=3600
+        archive.multipart_upload_id = await self.storage.start_multipart_upload(
+            archive.object_key, content_type="application/zip"
         )
+        await self.session.flush()
+        return archive
 
     async def get_archive(self, archive_id: uuid.UUID) -> ImportArchive:
         archive = await self.session.get(ImportArchive, archive_id)
         if archive is None:
             raise NotFoundError("Import archive was not found.")
         return archive
+
+    async def uploaded_part_numbers(self, archive: ImportArchive) -> list[int]:
+        if not archive.multipart_upload_id:
+            return []
+        return [
+            number
+            for number, _etag in await self.storage.list_multipart_parts(
+                archive.object_key, archive.multipart_upload_id
+            )
+        ]
+
+    async def upload_part_urls(
+        self, archive: ImportArchive, part_numbers: list[int]
+    ) -> dict[int, str]:
+        if archive.status != "uploading" or not archive.multipart_upload_id:
+            raise ConflictError("This archive is not accepting upload parts.")
+        return {
+            part_number: await self.storage.presigned_upload_part_url(
+                archive.object_key, archive.multipart_upload_id, part_number, expires_in=3600
+            )
+            for part_number in part_numbers
+        }
+
+    async def complete_upload(self, archive: ImportArchive) -> ImportArchive:
+        if archive.status != "uploading" or not archive.multipart_upload_id:
+            raise ConflictError("This archive upload has already completed.")
+        parts = await self.storage.list_multipart_parts(
+            archive.object_key, archive.multipart_upload_id
+        )
+        expected_parts = (archive.size_bytes + self.upload_part_size_bytes - 1) // self.upload_part_size_bytes
+        actual_parts = {number for number, _etag in parts}
+        if actual_parts != set(range(1, expected_parts + 1)):
+            raise BadRequestError("The archive upload is incomplete.")
+        await self.storage.complete_multipart_upload(
+            archive.object_key, archive.multipart_upload_id, parts
+        )
+        archive.multipart_upload_id = None
+        archive.status = "uploaded"
+        await self.session.flush()
+        return archive
+
+    async def abort_upload(self, archive: ImportArchive) -> None:
+        if archive.multipart_upload_id:
+            try:
+                await self.storage.abort_multipart_upload(
+                    archive.object_key, archive.multipart_upload_id
+                )
+            except NotFoundError:
+                # MinIO has already removed the multipart session (for example
+                # after a previous abort). Cancellation is still complete.
+                pass
+        archive.multipart_upload_id = None
+        archive.status = "cancelled"
+        await self.session.flush()
 
     async def scan(self, archive: ImportArchive) -> ImportArchive:
         if not await self.storage.exists(archive.object_key):

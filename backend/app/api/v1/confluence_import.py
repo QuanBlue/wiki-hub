@@ -23,6 +23,9 @@ from app.schemas.confluence_import import (
     ImportLogRead,
     SpaceCandidate,
     UploadInit,
+    UploadPartUrlsRead,
+    UploadPartUrlsRequest,
+    UploadProgressRead,
     UploadTarget,
 )
 from app.services.site_settings import SiteSettingsService
@@ -80,17 +83,62 @@ async def enqueue(job_id: uuid.UUID) -> None:
 async def start_upload(
     payload: UploadInit, user: CurrentSuperuser, importer: Service
 ) -> UploadTarget:
-    archive, url = await importer.start_upload(
+    archive = await importer.start_upload(
         filename=payload.filename, size_bytes=payload.size_bytes, actor_id=user.id
     )
     return UploadTarget(
         archive_id=archive.id,
         object_key=archive.object_key,
-        upload_url=url,
         max_size_bytes=(
             await SiteSettingsService(importer.session).get_effective()
         ).max_backup_import_size_bytes,
+        part_size_bytes=importer.upload_part_size_bytes,
     )
+
+
+@router.get("/archives/{archive_id}/upload", response_model=UploadProgressRead)
+async def get_upload_progress(
+    archive_id: uuid.UUID, _user: CurrentSuperuser, importer: Service
+) -> UploadProgressRead:
+    archive = await importer.get_archive(archive_id)
+    return UploadProgressRead(
+        archive_id=archive.id,
+        filename=archive.filename,
+        size_bytes=archive.size_bytes,
+        status=archive.status,
+        part_size_bytes=importer.upload_part_size_bytes,
+        uploaded_parts=await importer.uploaded_part_numbers(archive),
+    )
+
+
+@router.post("/archives/{archive_id}/upload-parts", response_model=UploadPartUrlsRead)
+async def get_upload_part_urls(
+    archive_id: uuid.UUID,
+    payload: UploadPartUrlsRequest,
+    _user: CurrentSuperuser,
+    importer: Service,
+) -> UploadPartUrlsRead:
+    archive = await importer.get_archive(archive_id)
+    max_part = (archive.size_bytes + importer.upload_part_size_bytes - 1) // importer.upload_part_size_bytes
+    if any(number < 1 or number > max_part for number in payload.part_numbers):
+        raise NotFoundError("Upload part not found.")
+    return UploadPartUrlsRead(
+        urls=await importer.upload_part_urls(archive, sorted(set(payload.part_numbers)))
+    )
+
+
+@router.post("/archives/{archive_id}/complete-upload", response_model=ArchiveRead)
+async def complete_upload(
+    archive_id: uuid.UUID, _user: CurrentSuperuser, importer: Service
+) -> ArchiveRead:
+    return archive_read(await importer.complete_upload(await importer.get_archive(archive_id)))
+
+
+@router.delete("/archives/{archive_id}/upload", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_upload(
+    archive_id: uuid.UUID, _user: CurrentSuperuser, importer: Service
+) -> None:
+    await importer.abort_upload(await importer.get_archive(archive_id))
 
 
 @router.post("/archives/{archive_id}/scan", response_model=ArchiveRead)

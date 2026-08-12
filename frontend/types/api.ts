@@ -157,11 +157,58 @@ export interface SiteSettings {
   updated_by_username: string | null;
 }
 
-export interface ConfluenceSpaceCandidate { key: string; name: string; page_count: number; attachment_count: number; conflict: boolean; }
-export interface ConfluenceArchive { id: string; filename: string; size_bytes: number; status: string; error: string | null; spaces: ConfluenceSpaceCandidate[]; }
-export interface ConfluenceUploadTarget { archive_id: string; object_key: string; upload_url: string; max_size_bytes: number; }
-export interface ConfluenceImportJob { id: string; archive_id: string; import_all: boolean; space_keys: string[]; status: string; phase: string; counters: Record<string, number>; cancel_requested: boolean; error: string | null; created_at: string; updated_at: string; }
-export interface ConfluenceImportLog { id: string; created_at: string; level: string; phase: string; entity_type: string | null; entity_label: string | null; message: string; }
+export interface ConfluenceSpaceCandidate {
+  key: string;
+  name: string;
+  page_count: number;
+  attachment_count: number;
+  conflict: boolean;
+}
+export interface ConfluenceArchive {
+  id: string;
+  filename: string;
+  size_bytes: number;
+  status: string;
+  error: string | null;
+  spaces: ConfluenceSpaceCandidate[];
+}
+export interface ConfluenceUploadTarget {
+  archive_id: string;
+  object_key: string;
+  max_size_bytes: number;
+  part_size_bytes: number;
+  uploaded_parts: number[];
+}
+export interface ConfluenceUploadProgress {
+  archive_id: string;
+  filename: string;
+  size_bytes: number;
+  status: string;
+  part_size_bytes: number;
+  uploaded_parts: number[];
+}
+export interface ConfluenceImportJob {
+  id: string;
+  archive_id: string;
+  import_all: boolean;
+  space_keys: string[];
+  status: string;
+  phase: string;
+  counters: Record<string, number>;
+  cancel_requested: boolean;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export interface ConfluenceImportLog {
+  id: string;
+  created_at: string;
+  level: string;
+  phase: string;
+  entity_type: string | null;
+  entity_label: string | null;
+  message: string;
+}
 
 export interface SidebarPermissionsRead {
   permissions: SidebarPermissions;
