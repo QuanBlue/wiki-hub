@@ -5,17 +5,20 @@ from __future__ import annotations
 import re
 import tempfile
 import uuid
+import zipfile
 from pathlib import Path
 
 import anyio
+from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, PayloadTooLargeError
+from app.models.attachment import PageAttachment
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.page import WikiPage
 from app.models.space import Space, SpaceMember, SpaceRole
-from app.modules.import_export.confluence import iter_page_bodies, scan_archive
+from app.modules.import_export.confluence import iter_attachments, iter_page_bodies, scan_archive
 from app.services.storage import ObjectStorage
 
 
@@ -27,6 +30,31 @@ def _slug(value: str, occupied: set[str]) -> str:
         suffix += 1
     occupied.add(candidate)
     return candidate
+
+
+def _link_imported_attachments(content: str, source_page_id: str, urls: dict[tuple[str, str], str]) -> str:
+    """Turn Confluence attachment/image macros into usable WikiHub HTML."""
+    page_urls = {filename: url for (page_id, filename), url in urls.items() if page_id == source_page_id}
+    if not page_urls:
+        return content
+    soup = BeautifulSoup(content, "html.parser")
+    for macro in soup.find_all("ac:image"):
+        attachment = macro.find("ri:attachment")
+        filename = attachment.get("ri:filename") if attachment else None
+        if isinstance(filename, str) and filename in page_urls:
+            image = soup.new_tag("img", src=page_urls[filename], alt=filename)
+            macro.replace_with(image)
+    for macro in soup.find_all("ac:link"):
+        attachment = macro.find("ri:attachment")
+        filename = attachment.get("ri:filename") if attachment else None
+        if isinstance(filename, str) and filename in page_urls:
+            link = soup.new_tag("a", href=page_urls[filename])
+            link.string = macro.get_text(" ", strip=True) or filename
+            macro.replace_with(link)
+    result = str(soup)
+    for filename, url in page_urls.items():
+        result = result.replace(f"/download/attachments/{source_page_id}/{filename}", url)
+    return result
 
 
 class ConfluenceImportService:
@@ -138,7 +166,7 @@ class ConfluenceImportService:
                 "key": item.key,
                 "name": item.name,
                 "page_count": len(item.pages),
-                "attachment_count": 0,
+                "attachment_count": item.attachment_count,
                 "conflict": item.key in existing,
             }
             for item in spaces
@@ -267,6 +295,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             job.phase = "importing"
             await log(session, job, "info", "importing", "Archive ready. Importing selected spaces.")
             await session.commit()
+            imported_pages: dict[str, WikiPage] = {}
             for source_space in scanned:
                 if source_space.key not in selected:
                     continue
@@ -331,6 +360,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     )
                     session.add(page)
                     pages[source_page.source_id] = page
+                    imported_pages[source_page.source_id] = page
                 await session.flush()
                 for source_page in source_space.pages:
                     parent = pages.get(source_page.parent_id or "")
@@ -367,14 +397,50 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     entity_label=space.key,
                 )
                 await session.commit()
+            attachments_imported = 0
+            attachment_urls: dict[tuple[str, str], str] = {}
+            attachment_sources = await anyio.to_thread.run_sync(lambda: list(iter_attachments(path)))
+            with zipfile.ZipFile(path) as source_archive:
+                for source_attachment, archive_member in attachment_sources:
+                    target_page = imported_pages.get(source_attachment.page_id)
+                    if target_page is None:
+                        continue
+                    attachment = PageAttachment(
+                        page_id=target_page.id,
+                        filename=source_attachment.filename[:255],
+                        content_type=source_attachment.content_type[:255],
+                        object_key="",
+                    )
+                    session.add(attachment)
+                    await session.flush()
+                    attachment.object_key = f"attachments/{target_page.id}/{attachment.id}/{source_attachment.filename}"
+                    with source_archive.open(archive_member) as binary:
+                        await storage.put(
+                            attachment.object_key,
+                            binary,
+                            content_type=attachment.content_type,
+                            metadata={"source": "confluence-import"},
+                        )
+                    attachment_urls[(source_attachment.page_id, source_attachment.filename)] = f"/api/v1/attachments/{attachment.id}/content"
+                    attachments_imported += 1
+            if attachment_urls:
+                for source_page_id, target_page in imported_pages.items():
+                    target_page.content = _link_imported_attachments(
+                        target_page.content, source_page_id, attachment_urls
+                    )
+            job.counters = {
+                **job.counters,
+                "attachments_processed": attachments_imported,
+            }
+            await log(
+                session,
+                job,
+                "info",
+                "attachments",
+                f"Imported {attachments_imported} attachments and linked them to their pages.",
+            )
+            await session.commit()
         job.status, job.phase = "completed", "completed"
-        await log(
-            session,
-            job,
-            "warning",
-            "attachments",
-            "Attachments are not imported because WikiHub attachment storage is not available yet.",
-        )
         await session.commit()
     except Exception as exc:  # noqa: BLE001 - persist any worker failure for the operator
         await session.rollback()

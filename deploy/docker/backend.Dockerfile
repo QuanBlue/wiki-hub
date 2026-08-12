@@ -44,7 +44,9 @@ ENV PYTHONUNBUFFERED=1 \
 # the container healthcheck.
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
-    && apt-get install -y --no-install-recommends libpq5 curl fonts-dejavu-core \
+    && apt-get install -y --no-install-recommends \
+        libpq5 curl fonts-dejavu-core libcairo2 libpango-1.0-0 libpangoft2-1.0-0 \
+        libgdk-pixbuf-2.0-0 libffi8 libjpeg62-turbo \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin wikihub
 

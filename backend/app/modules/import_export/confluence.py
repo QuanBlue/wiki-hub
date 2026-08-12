@@ -29,6 +29,15 @@ class ConfluenceSpace:
     key: str
     name: str
     pages: list[ConfluencePage] = field(default_factory=list)
+    attachment_count: int = 0
+
+
+@dataclass(slots=True)
+class ConfluenceAttachment:
+    source_id: str
+    page_id: str
+    filename: str
+    content_type: str
 
 
 def _properties(element: ET.Element) -> dict[str, ET.Element]:
@@ -76,6 +85,7 @@ def scan_archive(path: Path) -> list[ConfluenceSpace]:
 
         spaces: dict[str, ConfluenceSpace] = {}
         pages: list[ConfluencePage] = []
+        attachment_page_ids: list[str] = []
         with stream:
             # Confluence exports are admin-only; iterparse keeps their 300MB XML bounded in memory.
             for _event, element in ET.iterparse(stream, events=("end",)):  # noqa: S314
@@ -106,7 +116,18 @@ def scan_archive(path: Path) -> list[ConfluenceSpace]:
                                 ),
                             )
                         )
+                elif element.get("class") == "Attachment":
+                    attachment_page_id = _reference(props.get("container")) or _reference(
+                        props.get("content")
+                    )
+                    if attachment_page_id:
+                        attachment_page_ids.append(attachment_page_id)
                 element.clear()
+    pages_by_source_id = {page.source_id: page for page in pages}
+    for attachment_page_id in attachment_page_ids:
+        attachment_page = pages_by_source_id.get(attachment_page_id)
+        if attachment_page and attachment_page.space_id in spaces:
+            spaces[attachment_page.space_id].attachment_count += 1
     for page in pages:
         if page.space_id in spaces:
             spaces[page.space_id].pages.append(page)
@@ -130,3 +151,42 @@ def iter_page_bodies(path: Path) -> Iterator[tuple[str, str]]:
                 if page_id and body is not None and body.text:
                     yield page_id, body.text
                 element.clear()
+
+
+def iter_attachments(path: Path) -> Iterator[tuple[ConfluenceAttachment, str]]:
+    """Yield attachment metadata with its ZIP member path, not its binary."""
+    with zipfile.ZipFile(path) as archive:
+        attachments: list[ConfluenceAttachment] = []
+        with archive.open("entities.xml") as stream:
+            for _event, element in ET.iterparse(stream, events=("end",)):  # noqa: S314
+                if element.tag != "object":
+                    continue
+                if element.get("class") == "Attachment":
+                    props = _properties(element)
+                    source_id = element.findtext("id")
+                    page_id = _reference(props.get("container")) or _reference(props.get("content"))
+                    filename = _text(props, "fileName")
+                    if source_id and page_id and filename:
+                        attachments.append(
+                            ConfluenceAttachment(
+                                source_id,
+                                page_id,
+                                filename,
+                                _text(props, "contentType", "application/octet-stream"),
+                            )
+                        )
+                element.clear()
+        names = set(archive.namelist())
+        for attachment in attachments:
+            candidates = (
+                f"attachments/{attachment.source_id}",
+                f"attachments/{attachment.source_id}/{attachment.filename}",
+                f"attachments/{attachment.filename}",
+            )
+            entry = next((candidate for candidate in candidates if candidate in names), None)
+            if entry is None:
+                # Site exports vary between Confluence versions; retain only a
+                # filename suffix fallback, never a broad fuzzy match.
+                entry = next((name for name in names if name.endswith(f"/{attachment.filename}")), None)
+            if entry:
+                yield attachment, entry

@@ -151,9 +151,11 @@ class SpaceService:
         return space
 
     async def update(self, space: Space, payload: SpaceUpdate, user: User) -> Space:
-        await self.require_admin(space, user)
-
         data = payload.model_dump(exclude_unset=True)
+        if set(data) <= {"description"}:
+            await self.require_editor(space, user)
+        else:
+            await self.require_admin(space, user)
         if data.get("name") is not None:
             space.name = str(data["name"]).strip()
         if data.get("description") is not None:

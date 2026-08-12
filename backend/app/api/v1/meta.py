@@ -75,9 +75,7 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
         features=InstanceFeatures(
             local_auth=settings.auth_provider == "local",
             oidc_auth=False,  # OIDC provider is a documented stub in this build
-            # The following three have no implementation yet. They stay False
-            # until the modules land; a UI must not offer them.
-            attachments=False,
+            attachments=True,
             comments=False,
             search=False,
             spaces=True,

@@ -1,128 +1,61 @@
-"""Safe, Unicode-capable PDF export that keeps a page's document structure."""
+"""High-fidelity, safe HTML-to-PDF export for WikiHub pages."""
 
 from __future__ import annotations
 
 from html import escape
-from io import BytesIO
 
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup
 from markdown_it import MarkdownIt
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import cm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import ListFlowable, ListItem, Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle
+from weasyprint import CSS, HTML
 
 from app.models.page import WikiPage
 
-_SANS_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-_SANS_BOLD_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-_MONO_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-_FONTS_REGISTERED = False
+_PRINT_CSS = """
+@page { size: A4; margin: 18mm 17mm; }
+* { box-sizing: border-box; }
+body { color: #172033; font-family: "DejaVu Sans", sans-serif; font-size: 10pt; line-height: 1.7; }
+article { max-width: 100%; }
+h1, h2, h3 { color: #182234; font-weight: 700; line-height: 1.25; page-break-after: avoid; }
+h1 { font-size: 25pt; margin: 0 0 18pt; }
+h2 { font-size: 19pt; margin: 24pt 0 10pt; }
+h3 { font-size: 14pt; margin: 18pt 0 8pt; }
+p { margin: 0 0 10pt; }
+a { color: #216fc0; text-decoration: underline; }
+ul, ol { margin: 0 0 10pt 20pt; padding: 0; }
+li { margin: 4pt 0; }
+code { background: #f1f3f6; border-radius: 3pt; font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; padding: 1pt 3pt; }
+pre { background: #f1f3f6; border: 0.5pt solid #cfd7e3; border-radius: 4pt; font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; line-height: 1.45; margin: 12pt 0; overflow-wrap: anywhere; padding: 10pt; white-space: pre-wrap; }
+pre code { background: transparent; padding: 0; }
+blockquote { border-left: 3pt solid #8ba4bf; color: #4f5f74; margin: 12pt 0; padding: 2pt 0 2pt 12pt; }
+table { border-collapse: collapse; margin: 12pt 0; max-width: 100%; width: 100%; }
+th, td { border: 0.5pt solid #cfd7e3; padding: 6pt 7pt; text-align: left; vertical-align: top; }
+th { background: #f1f3f6; font-weight: 700; }
+img { height: auto; max-width: 100%; page-break-inside: avoid; }
+figure { margin: 12pt 0; page-break-inside: avoid; }
+hr { border: 0; border-top: 0.5pt solid #cfd7e3; margin: 16pt 0; }
+"""
 
 
-def _register_fonts() -> None:
-    global _FONTS_REGISTERED
-    if _FONTS_REGISTERED:
-        return
-    pdfmetrics.registerFont(TTFont("WikiHubSans", _SANS_FONT))
-    pdfmetrics.registerFont(TTFont("WikiHubSansBold", _SANS_BOLD_FONT))
-    # Debian's compact DejaVu package omits Sans Oblique; regular remains a
-    # readable Unicode fallback while ReportLab's <i> preserves emphasis.
-    pdfmetrics.registerFont(TTFont("WikiHubSansItalic", _SANS_FONT))
-    pdfmetrics.registerFont(TTFont("WikiHubMono", _MONO_FONT))
-    _FONTS_REGISTERED = True
-
-
-def _inline_html(node: Tag | NavigableString) -> str:
-    """Translate safe inline page markup to ReportLab's paragraph markup."""
-    if isinstance(node, NavigableString):
-        return escape(str(node))
-    contents = "".join(_inline_html(child) for child in node.children)
-    name = node.name.lower()
-    if name in {"strong", "b"}:
-        return f'<font name="WikiHubSansBold">{contents}</font>'
-    if name in {"em", "i"}:
-        return f"<i>{contents}</i>"
-    if name in {"code", "kbd"}:
-        return f'<font name="WikiHubMono" size="8.5">{contents}</font>'
-    if name == "br":
-        return "<br/>"
-    if name == "a":
-        href = node.get("href", "")
-        if isinstance(href, str) and href.startswith(("https://", "http://", "mailto:")):
-            return f'<link href="{escape(href, quote=True)}" color="#216fc0">{contents}</link>'
-    return contents
-
-
-def _paragraph(element: Tag, style: ParagraphStyle) -> Paragraph | None:
-    markup = "".join(_inline_html(child) for child in element.children).strip()
-    return Paragraph(markup, style) if markup else None
+def _safe_content(page: WikiPage) -> str:
+    content = (
+        MarkdownIt("commonmark", {"html": True}).render(page.content)
+        if page.content_format == "markdown"
+        else page.content
+    )
+    soup = BeautifulSoup(content, "html.parser")
+    for element in soup.find_all(["script", "iframe", "object", "embed", "form", "base"]):
+        element.decompose()
+    for element in soup.find_all(True):
+        for attribute in list(element.attrs):
+            value = str(element.attrs[attribute]).strip().lower()
+            if attribute.lower().startswith("on") or value.startswith("javascript:"):
+                del element.attrs[attribute]
+    return str(soup)
 
 
 def render_page_pdf(page: WikiPage) -> bytes:
-    """Create a direct-download PDF without executing imported page markup."""
-    _register_fonts()
-    buffer = BytesIO()
-    document = SimpleDocTemplate(
-        buffer, pagesize=A4, leftMargin=1.8 * cm, rightMargin=1.8 * cm,
-        topMargin=1.8 * cm, bottomMargin=1.8 * cm, title=page.title,
-    )
-    base = getSampleStyleSheet()
-    body = ParagraphStyle("WikiHubBody", parent=base["BodyText"], fontName="WikiHubSans", fontSize=10, leading=15, spaceAfter=8)
-    title = ParagraphStyle("WikiHubTitle", parent=base["Title"], fontName="WikiHubSansBold", fontSize=22, leading=27, spaceAfter=16)
-    heading_styles = {
-        level: ParagraphStyle(f"WikiHubH{level}", parent=base[f"Heading{level}"], fontName="WikiHubSansBold", spaceBefore=14, spaceAfter=8)
-        for level in range(1, 4)
-    }
-    quote = ParagraphStyle("WikiHubQuote", parent=body, leftIndent=14, borderPadding=8, borderColor=colors.HexColor("#b7c4d4"), borderWidth=1, borderLeft=True)
-    code = ParagraphStyle("WikiHubCode", parent=body, fontName="WikiHubMono", fontSize=8.5, leading=12, leftIndent=8, rightIndent=8, borderPadding=8, borderColor=colors.HexColor("#c8d1dc"), borderWidth=0.5)
-    html = MarkdownIt("commonmark", {"html": True}).render(page.content) if page.content_format == "markdown" else page.content
-    soup = BeautifulSoup(html, "html.parser")
-    story = [Paragraph(escape(page.title), title)]
-
-    for element in soup.contents:
-        if not isinstance(element, Tag) or element.name.lower() in {"script", "style", "iframe", "object", "embed", "form"}:
-            continue
-        name = element.name.lower()
-        if name in {"h1", "h2", "h3"}:
-            paragraph = _paragraph(element, heading_styles[int(name[1])])
-            if paragraph:
-                story.append(paragraph)
-        elif name in {"p", "div", "figure"}:
-            paragraph = _paragraph(element, body)
-            if paragraph:
-                story.append(paragraph)
-        elif name == "blockquote":
-            paragraph = _paragraph(element, quote)
-            if paragraph:
-                story.append(paragraph)
-        elif name == "pre":
-            story.extend([Preformatted(element.get_text(), code, maxLineLength=100), Spacer(1, 4)])
-        elif name in {"ul", "ol"}:
-            items = []
-            for item in element.find_all("li", recursive=False):
-                paragraph = _paragraph(item, body)
-                if paragraph:
-                    items.append(ListItem(paragraph))
-            if items:
-                story.extend([ListFlowable(items, bulletType="1" if name == "ol" else "bullet", leftIndent=18), Spacer(1, 6)])
-        elif name == "table":
-            rows = []
-            for row in element.find_all("tr"):
-                cells = []
-                for cell in row.find_all(["th", "td"], recursive=False):
-                    paragraph = _paragraph(cell, body)
-                    if paragraph:
-                        cells.append(paragraph)
-                if cells:
-                    rows.append(cells)
-            if rows:
-                table = Table(rows, repeatRows=1 if element.find("th") else 0, hAlign="LEFT")
-                table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#b7c4d4")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
-                story.extend([table, Spacer(1, 8)])
-
-    document.build(story)
-    return buffer.getvalue()
+    """Render the same rich HTML structure users see, as a direct download."""
+    document = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{escape(page.title)}</title></head>
+<body><article><h1>{escape(page.title)}</h1>{_safe_content(page)}</article></body></html>"""
+    return HTML(string=document).write_pdf(stylesheets=[CSS(string=_PRINT_CSS)])

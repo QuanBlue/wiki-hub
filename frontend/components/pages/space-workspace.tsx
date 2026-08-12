@@ -1562,7 +1562,10 @@ export function SpaceWorkspace({
           <article
             className={cn(
               "mt-4",
-              !editing && !viewFullWidth && "max-w-[var(--wh-content-max)]",
+              !editing &&
+                !overviewEditing &&
+                !viewFullWidth &&
+                "max-w-[var(--wh-content-max)]",
             )}
           >
             {overviewEditing ? (
@@ -1570,21 +1573,13 @@ export function SpaceWorkspace({
                 <h1 className="text-foreground text-3xl font-semibold tracking-normal">
                   {space.name}
                 </h1>
-                <div className="mt-6 max-w-[var(--wh-content-max)]">
-                  <label htmlFor="space-overview" className="sr-only">
-                    Space overview
-                  </label>
-                  <textarea
-                    id="space-overview"
-                    value={overviewDraft}
-                    onChange={(event) => setOverviewDraft(event.target.value)}
-                    maxLength={2000}
-                    disabled={overviewSavePending}
-                    placeholder="Describe the purpose and scope of this space."
-                    className="border-border bg-surface focus-visible:ring-ring hover:border-border-strong min-h-64 w-full resize-y rounded-md border p-4 text-sm leading-6 transition-colors duration-150 outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50"
+                <div className="mt-6 min-w-0">
+                  <RichTextEditor
+                    content={overviewDraft}
+                    onChange={setOverviewDraft}
                   />
                   <p className="text-muted-foreground mt-2 text-xs">
-                    {overviewDraft.length}/2000 characters
+                    {overviewDraft.length.toLocaleString()}/200,000 characters
                   </p>
                 </div>
               </>

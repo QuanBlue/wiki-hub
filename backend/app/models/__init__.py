@@ -7,6 +7,7 @@ Every model must be imported here: Alembic's autogenerate walks
 from __future__ import annotations
 
 from app.models.audit import AuditAction, AuditLog
+from app.models.attachment import PageAttachment
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.page import PageLike, WikiPage
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
@@ -30,6 +31,7 @@ __all__ = [
     "User",
     "WikiPage",
     "PageLike",
+    "PageAttachment",
     "ImportArchive",
     "ImportJob",
     "ImportLog",

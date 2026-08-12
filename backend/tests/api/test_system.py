@@ -67,8 +67,7 @@ async def test_metadata_reports_unimplemented_features_as_false(
     """
     features = (await client.get("/api/v1/meta")).json()["features"]
 
-    # Not implemented yet - the UI must not offer them.
-    assert features["attachments"] is False
+    assert features["attachments"] is True
     assert features["comments"] is False
     assert features["search"] is False
     # Content import/export needs the Pages domain, which does not exist yet.

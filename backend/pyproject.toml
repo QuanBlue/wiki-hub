@@ -44,7 +44,7 @@ dependencies = [
   # --- observability ---
   "structlog>=24.4",
   "orjson>=3.10",
-  "reportlab>=4.2,<5",
+  "weasyprint>=66,<67",
 ]
 
 [project.optional-dependencies]

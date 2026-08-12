@@ -45,7 +45,7 @@ class SpaceRead(BaseModel):
 class SpaceCreate(BaseModel):
     key: str = Field(min_length=2, max_length=32)
     name: str = Field(min_length=1, max_length=255)
-    description: str = Field(default="", max_length=2000)
+    description: str = Field(default="", max_length=200_000)
     icon: str = Field(default="", max_length=16)
 
     @field_validator("key")
@@ -62,7 +62,7 @@ class SpaceCreate(BaseModel):
 
 class SpaceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=2000)
+    description: str | None = Field(default=None, max_length=200_000)
     icon: str | None = Field(default=None, max_length=16)
     status: SpaceStatus | None = None
 

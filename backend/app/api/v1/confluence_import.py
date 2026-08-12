@@ -226,6 +226,34 @@ async def cancel(job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession)
     if item.status in {"completed", "cancelled", "failed"}:
         raise ConflictError("This import job has already finished.")
     item.cancel_requested = True
+    # A queued ARQ job may sit behind a long-running import. There is no worker
+    # loop to observe the flag yet, so cancel it durably here instead of leaving
+    # the operator staring at an immutable "queued" state.
+    if item.status in {"queued", "retrying"}:
+        item.status = "cancelled"
+        item.phase = "cancelled"
+        session.add(
+            ImportLog(
+                job_id=item.id,
+                level="warning",
+                phase="cancelled",
+                message="Import cancelled before the worker started it.",
+            )
+        )
+    else:
+        session.add(
+            ImportLog(
+                job_id=item.id,
+                level="info",
+                phase=item.phase,
+                message="Cancellation requested. The current import step will stop shortly.",
+            )
+        )
+    await session.flush()
+    # TimestampMixin uses a server-side on-update expression. Refresh before
+    # serialising so async SQLAlchemy does not attempt a lazy attribute load
+    # outside its greenlet context (which previously turned Cancel into a 500).
+    await session.refresh(item)
     return job_read(item)
 
 
