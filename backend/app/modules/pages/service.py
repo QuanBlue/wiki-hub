@@ -15,7 +15,7 @@ from app.models.space import Space, SpaceRole, SpaceStatus
 from app.models.user import User
 from app.modules.spaces.service import SpaceService
 from app.repositories.page import PageRepository
-from app.schemas.page import PageCreate, PageMove, PageRead, PageUpdate
+from app.schemas.page import PageCreate, PageLikeRead, PageMove, PageRead, PageUpdate
 
 logger = get_logger(__name__)
 
@@ -66,6 +66,17 @@ class PageService:
         if page is None:
             raise NotFoundError("Page not found.")
         return page
+
+    async def like_status(self, page: WikiPage, user: User) -> PageLikeRead:
+        return PageLikeRead(
+            liked_by_me=await self.pages.is_liked(page.id, user.id),
+            like_count=await self.pages.like_count(page.id),
+        )
+
+    async def set_like(self, page: WikiPage, user: User, liked: bool) -> PageLikeRead:
+        await self.pages.set_like(page.id, user.id, liked)
+        await self.session.flush()
+        return await self.like_status(page, user)
 
     async def create(self, space: Space, payload: PageCreate, creator: User) -> WikiPage:
         await self.require_editor(space, creator)

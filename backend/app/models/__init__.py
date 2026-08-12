@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from app.models.audit import AuditAction, AuditLog
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.page import WikiPage
+from app.models.page import PageLike, WikiPage
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.site_settings import SINGLETON_ID, SiteSettings
 from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceRole, SpaceStatus
@@ -29,6 +29,7 @@ __all__ = [
     "UUIDPrimaryKeyMixin",
     "User",
     "WikiPage",
+    "PageLike",
     "ImportArchive",
     "ImportJob",
     "ImportLog",

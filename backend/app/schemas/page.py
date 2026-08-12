@@ -25,6 +25,11 @@ class PageRead(BaseModel):
     updated_by_username: str | None = None
 
 
+class PageLikeRead(BaseModel):
+    liked_by_me: bool
+    like_count: int
+
+
 class PageCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     content: str = Field(default="", max_length=200_000)

@@ -5,10 +5,10 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.page import WikiPage
+from app.models.page import PageLike, WikiPage
 
 
 class PageRepository:
@@ -46,3 +46,19 @@ class PageRepository:
     def add(self, page: WikiPage) -> WikiPage:
         self.session.add(page)
         return page
+
+    async def like_count(self, page_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(PageLike).where(PageLike.page_id == page_id)
+        return int((await self.session.execute(stmt)).scalar_one())
+
+    async def is_liked(self, page_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        return await self.session.get(PageLike, {"page_id": page_id, "user_id": user_id}) is not None
+
+    async def set_like(self, page_id: uuid.UUID, user_id: uuid.UUID, liked: bool) -> None:
+        existing = await self.session.get(PageLike, {"page_id": page_id, "user_id": user_id})
+        if liked and existing is None:
+            self.session.add(PageLike(page_id=page_id, user_id=user_id))
+        elif not liked and existing is not None:
+            await self.session.execute(
+                delete(PageLike).where(PageLike.page_id == page_id, PageLike.user_id == user_id)
+            )

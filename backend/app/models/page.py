@@ -57,3 +57,15 @@ class WikiPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     created_by: Mapped[User | None] = relationship(foreign_keys=[created_by_id], lazy="joined")
     updated_by: Mapped[User | None] = relationship(foreign_keys=[updated_by_id], lazy="joined")
+
+
+class PageLike(Base):
+    __tablename__ = "page_likes"
+    __table_args__ = (Index("ix_page_likes_page_id", "page_id"),)
+
+    page_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("pages.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )

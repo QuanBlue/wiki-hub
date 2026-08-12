@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from app.api.deps import CurrentUser, DbSession
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
-from app.schemas.page import PageCreate, PageMove, PageRead, PageUpdate
+from app.schemas.page import PageCreate, PageLikeRead, PageMove, PageRead, PageUpdate
 
 router = APIRouter(prefix="/spaces/{key}/pages", tags=["pages"])
 
@@ -83,6 +83,33 @@ async def get_page(
     space = await space_service.get_by_key(key)
     page = await page_service.get_by_slug(space, slug)
     return page_service.to_read(page)
+
+
+@router.get("/{slug}/like", response_model=PageLikeRead, summary="Get page like status")
+async def get_page_like(
+    key: str, slug: str, user: CurrentUser, page_service: PageServiceDep, space_service: SpaceServiceDep
+) -> PageLikeRead:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    return await page_service.like_status(page, user)
+
+
+@router.put("/{slug}/like", response_model=PageLikeRead, summary="Like a page")
+async def like_page(
+    key: str, slug: str, user: CurrentUser, page_service: PageServiceDep, space_service: SpaceServiceDep
+) -> PageLikeRead:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    return await page_service.set_like(page, user, True)
+
+
+@router.delete("/{slug}/like", response_model=PageLikeRead, summary="Remove page like")
+async def unlike_page(
+    key: str, slug: str, user: CurrentUser, page_service: PageServiceDep, space_service: SpaceServiceDep
+) -> PageLikeRead:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    return await page_service.set_like(page, user, False)
 
 
 @router.patch("/{slug}", response_model=PageRead, summary="Update a page")

@@ -7,6 +7,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
+import { CodeXml } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 type SourceLanguage = "html" | "markdown";
@@ -150,6 +151,13 @@ export function SourceCodeEditor({
 
   return (
     <div className="border-border bg-surface focus-within:ring-ring overflow-hidden rounded-md border shadow-sm transition-[border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-offset-background">
+      <div className="border-border bg-surface-sunken flex items-center gap-2 border-b px-4 py-2.5">
+        <CodeXml className="text-primary size-4" aria-hidden />
+        <p className="text-xs font-semibold tracking-wide uppercase">
+          {language} source
+        </p>
+        <span className="text-muted-foreground ml-auto text-xs">Editable source</span>
+      </div>
       <div ref={host} className="min-h-[calc(100vh-21rem)]" />
     </div>
   );
