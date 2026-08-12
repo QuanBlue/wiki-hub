@@ -49,9 +49,18 @@ services:
     build:
       target: dev
     # /app/node_modules is an anonymous volume so it survives source bind
-    # mounts. Reconcile it from package-lock.json on startup; otherwise a new
-    # dependency can exist in the image but remain hidden behind an old volume.
-    command: ["sh", "-c", "npm ci && npm run dev"]
+    # mounts. Reconcile it only when package-lock.json changed; running npm ci
+    # on every dev start makes the frontend stay unhealthy for several minutes.
+    command:
+      - sh
+      - -c
+      - >-
+        lock_hash=$$(sha256sum package-lock.json | awk '{print $$1}');
+        stamp=/app/node_modules/.wikihub-package-lock;
+        if [ ! -f "$$stamp" ] || [ "$$(cat "$$stamp")" != "$$lock_hash" ]; then
+          npm ci && printf '%s' "$$lock_hash" > "$$stamp";
+        fi;
+        npm run dev
     environment:
       NODE_ENV: development
     volumes:

@@ -38,8 +38,8 @@
 #   1. Verifies docker, the compose plugin and a reachable daemon.
 #   2. Creates .env from .env.example when missing. An existing .env is NEVER
 #      overwritten - your local ports and secrets are safe.
-#   3. Checks the host ports in .env are free, ignoring ports this stack itself
-#      already holds, and aborts with the offending variable names if not.
+#   3. Resolves host-port conflicts by using the next free port, while retaining
+#      ports already held by this stack on a restart.
 #   4. Builds images and starts every service.
 #   5. Waits for postgres, redis, minio, backend, worker and frontend to report
 #      healthy, printing each one as it comes up. On failure it dumps that
@@ -196,10 +196,11 @@ REDIS_PORT="$(env_get REDIS_PORT_HOST 6379)"
 MINIO_PORT="$(env_get MINIO_PORT_HOST 9000)"
 MINIO_CONSOLE_PORT="$(env_get MINIO_CONSOLE_PORT_HOST 9001)"
 
-# --- 3. host port conflicts -------------------------------------------------
-# Ports already published by *our own* project are not conflicts - that is just
-# a stack that is already running and about to be reconciled.
-step "Checking host ports"
+# --- 3. host port selection -------------------------------------------------
+# Ports already published by *our own* project are safe to reuse: that is a
+# stack being reconciled, not another application. Any other listener causes
+# the script to choose the next free port instead of failing the quick-start.
+step "Resolving host ports"
 
 owned_ports="$("${COMPOSE[@]}" ps --format json 2>/dev/null \
     | python3 -c '
@@ -220,29 +221,56 @@ for line in sys.stdin:
 print(" ".join(sorted(out)))
 ' 2>/dev/null || true)"
 
-listening="$(ss -ltnH 2>/dev/null | awk '{print $4}' | sed 's/.*://' | sort -u || true)"
+if command -v ss >/dev/null 2>&1; then
+    listening="$(ss -ltnH 2>/dev/null | awk '{print $4}' | sed 's/.*://' | sort -u || true)"
+else
+    listening="$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {port = $9; sub(/^.*:/, "", port); sub(/[^0-9].*$/, "", port); print port}' | sort -u || true)"
+fi
 
-conflicts=()
-for entry in "FRONTEND_PORT_HOST:$FRONTEND_PORT" "BACKEND_PORT_HOST:$BACKEND_PORT" \
-             "POSTGRES_PORT_HOST:$POSTGRES_PORT" "REDIS_PORT_HOST:$REDIS_PORT" \
-             "MINIO_PORT_HOST:$MINIO_PORT" "MINIO_CONSOLE_PORT_HOST:$MINIO_CONSOLE_PORT"; do
-    name="${entry%%:*}"; port="${entry##*:}"
-    [[ " $owned_ports " == *" $port "* ]] && continue
-    if printf '%s\n' "$listening" | grep -qx "$port"; then
-        conflicts+=("$name=$port")
+port_is_taken() {
+    local port="$1"
+    [[ " $owned_ports " == *" $port "* ]] && return 1
+    printf '%s\n' "$listening" | grep -qx "$port"
+}
+
+next_free_port() {
+    local port="$1" reserved="$2"
+    [[ "$port" =~ ^[0-9]+$ ]] || die "invalid host port: $port"
+    while port_is_taken "$port" || [[ " $reserved " == *" $port "* ]]; do
+        ((port += 1))
+        ((port <= 65535)) || die "could not find a free host port."
+    done
+    printf '%s' "$port"
+}
+
+configured_backend_port="$BACKEND_PORT"
+configured_frontend_port="$FRONTEND_PORT"
+reserved_ports=""
+for name in FRONTEND_PORT BACKEND_PORT POSTGRES_PORT REDIS_PORT MINIO_PORT MINIO_CONSOLE_PORT; do
+    current_port="${!name}"
+    selected_port="$(next_free_port "$current_port" "$reserved_ports")"
+    if [[ "$selected_port" != "$current_port" ]]; then
+        warn "${name} ${current_port} is busy; using ${selected_port} for this run"
     fi
+    printf -v "$name" '%s' "$selected_port"
+    reserved_ports+=" $selected_port"
 done
 
-if [[ ${#conflicts[@]} -gt 0 ]]; then
-    printf '\n%serror:%s these host ports are already taken by something else:\n' "$RED" "$RESET" >&2
-    for c in "${conflicts[@]}"; do printf '    %s\n' "$c" >&2; done
-    printf '\n  Edit %s and pick free ports. If you change BACKEND_PORT_HOST or\n' "$ENV_FILE" >&2
-    printf '  MINIO_PORT_HOST, update NEXT_PUBLIC_API_BASE_URL / \n' >&2
-    printf '  WIKIHUB_S3_PUBLIC_ENDPOINT_URL to match - the browser needs the\n' >&2
-    printf '  host-visible URL.\n' >&2
-    exit 1
+# Compose interpolation reads exported variables before .env. Keep browser URLs
+# correct when their conventional localhost defaults move with the selected port;
+# an explicitly customised URL remains untouched.
+api_base_url="$(env_get NEXT_PUBLIC_API_BASE_URL "")"
+if [[ -z "$api_base_url" || "$api_base_url" == "http://localhost:${configured_backend_port}" ]]; then
+    export NEXT_PUBLIC_API_BASE_URL="http://localhost:${BACKEND_PORT}"
 fi
-ok "no conflicts on ${FRONTEND_PORT}, ${BACKEND_PORT}, ${POSTGRES_PORT}, ${REDIS_PORT}, ${MINIO_PORT}, ${MINIO_CONSOLE_PORT}"
+cors_origins="$(env_get WIKIHUB_CORS_ORIGINS "")"
+if [[ -z "$cors_origins" || "$cors_origins" == "http://localhost:${configured_frontend_port}" ]]; then
+    export WIKIHUB_CORS_ORIGINS="http://localhost:${FRONTEND_PORT}"
+fi
+export FRONTEND_PORT_HOST="$FRONTEND_PORT" BACKEND_PORT_HOST="$BACKEND_PORT"
+export POSTGRES_PORT_HOST="$POSTGRES_PORT" REDIS_PORT_HOST="$REDIS_PORT"
+export MINIO_PORT_HOST="$MINIO_PORT" MINIO_CONSOLE_PORT_HOST="$MINIO_CONSOLE_PORT"
+ok "frontend ${FRONTEND_PORT}; API ${BACKEND_PORT}; Postgres ${POSTGRES_PORT}; Redis ${REDIS_PORT}; MinIO ${MINIO_PORT}/${MINIO_CONSOLE_PORT}"
 
 # --- 4. optional clean slate ------------------------------------------------
 if [[ $FRESH -eq 1 ]]; then

@@ -100,6 +100,10 @@ services:
       WIKIHUB_REDIS_URL: redis://redis:6379/0
       WIKIHUB_S3_ENDPOINT_URL: http://minio:9000
       WIKIHUB_S3_PUBLIC_ENDPOINT_URL: http://localhost:${MINIO_PORT_HOST:-9000}
+      # The quick-start script may choose a different frontend port when 3000
+      # is occupied. Pass its matching CORS origin into the container instead
+      # of leaving the backend bound to the value stored in .env.
+      WIKIHUB_CORS_ORIGINS: ${WIKIHUB_CORS_ORIGINS:-http://localhost:3000}
     depends_on:
       postgres:
         condition: service_healthy
