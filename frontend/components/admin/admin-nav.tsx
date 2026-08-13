@@ -1,6 +1,13 @@
 "use client";
 
-import { Database, FolderCog, HardDrive, ScrollText, SlidersHorizontal, Users } from "lucide-react";
+import {
+  Database,
+  FolderCog,
+  HardDrive,
+  ScrollText,
+  SlidersHorizontal,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 

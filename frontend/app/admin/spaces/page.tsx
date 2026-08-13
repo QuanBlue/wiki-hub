@@ -15,7 +15,8 @@ export default async function AdminSpacesPage() {
       <div>
         <h2 className="text-lg font-semibold">Spaces</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Review and manage documentation spaces. Permanent deletion is available only here.
+          Review and manage documentation spaces. Permanent deletion is
+          available only here.
         </p>
       </div>
 
@@ -32,7 +33,10 @@ export default async function AdminSpacesPage() {
           <tbody>
             {spaces.length === 0 ? (
               <tr>
-                <td colSpan={4} className="text-muted-foreground px-4 py-8 text-center">
+                <td
+                  colSpan={4}
+                  className="text-muted-foreground px-4 py-8 text-center"
+                >
                   No spaces yet.
                 </td>
               </tr>
@@ -43,17 +47,29 @@ export default async function AdminSpacesPage() {
                   className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0"
                 >
                   <td className="px-4 py-3">
-                    <span className="mr-2" aria-hidden>{space.icon || "▦"}</span>
+                    <span className="mr-2" aria-hidden>
+                      {space.icon || "▦"}
+                    </span>
                     <span className="font-medium">{space.name}</span>
-                    <span className="text-muted-foreground ml-2">{space.key}</span>
+                    <span className="text-muted-foreground ml-2">
+                      {space.key}
+                    </span>
                   </td>
-                  <td className="text-muted-foreground px-4 py-3">{space.member_count}</td>
+                  <td className="text-muted-foreground px-4 py-3">
+                    {space.member_count}
+                  </td>
                   <td className="px-4 py-3">
-                    <Badge variant={space.status === "active" ? "success" : "warning"}>
+                    <Badge
+                      variant={
+                        space.status === "active" ? "success" : "warning"
+                      }
+                    >
                       {space.status}
                     </Badge>
                   </td>
-                  <td className="px-4 py-3"><SpaceRowActions space={space} /></td>
+                  <td className="px-4 py-3">
+                    <SpaceRowActions space={space} />
+                  </td>
                 </tr>
               ))
             )}

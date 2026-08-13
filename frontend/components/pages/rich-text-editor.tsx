@@ -4,7 +4,12 @@ import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
-import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
+import {
+  Table,
+  TableCell,
+  TableHeader,
+  TableRow,
+} from "@tiptap/extension-table";
 import { Mark, mergeAttributes } from "@tiptap/core";
 import {
   EditorContent,
@@ -38,7 +43,13 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -161,7 +172,8 @@ function normalizeConfluenceCodeMacros(content: string): string {
       const langMatch = inner.match(
         /<ac:parameter\b[^>]*\bac:name=(?:"language"|'language')[^>]*>([\s\S]*?)<\/ac:parameter>/i,
       );
-      const language = langMatch?.[1]?.trim()?.replace(/[^a-z0-9_-]/gi, "") || "";
+      const language =
+        langMatch?.[1]?.trim()?.replace(/[^a-z0-9_-]/gi, "") || "";
       return `<pre><code${language ? ` class="language-${language}"` : ""}>${escapeHtml(code)}</code></pre>`;
     },
   );
@@ -249,19 +261,25 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
           Paragraph
         </DropdownMenuItem>
         <DropdownMenuItem
-          onSelect={() => editor?.chain().focus().setHeading({ level: 1 }).run()}
+          onSelect={() =>
+            editor?.chain().focus().setHeading({ level: 1 }).run()
+          }
         >
           <Heading1 />
           Heading 1
         </DropdownMenuItem>
         <DropdownMenuItem
-          onSelect={() => editor?.chain().focus().setHeading({ level: 2 }).run()}
+          onSelect={() =>
+            editor?.chain().focus().setHeading({ level: 2 }).run()
+          }
         >
           <Heading2 />
           Heading 2
         </DropdownMenuItem>
         <DropdownMenuItem
-          onSelect={() => editor?.chain().focus().setHeading({ level: 3 }).run()}
+          onSelect={() =>
+            editor?.chain().focus().setHeading({ level: 3 }).run()
+          }
         >
           <Heading3 />
           Heading 3
@@ -478,7 +496,10 @@ function RichTextToolbar({ editor }: { editor: Editor | null }) {
             editor
               ?.chain()
               .focus()
-              .setMark("textStyle", { ...attributes, color: event.target.value })
+              .setMark("textStyle", {
+                ...attributes,
+                color: event.target.value,
+              })
               .run();
             event.currentTarget.value = "";
           }}
@@ -616,7 +637,10 @@ export function RichTextEditor({
   content: string;
   onChange: (html: string) => void;
 }) {
-  const normalizedContent = useMemo(() => normalizeConfluenceCodeMacros(content), [content]);
+  const normalizedContent = useMemo(
+    () => normalizeConfluenceCodeMacros(content),
+    [content],
+  );
   const editor = useEditor({
     immediatelyRender: false,
     extensions: editorExtensions,
@@ -638,7 +662,10 @@ export function RichTextEditor({
 }
 
 export function RichTextContent({ content }: { content: string }) {
-  const normalizedContent = useMemo(() => normalizeConfluenceCodeMacros(content), [content]);
+  const normalizedContent = useMemo(
+    () => normalizeConfluenceCodeMacros(content),
+    [content],
+  );
   const editor = useEditor({
     immediatelyRender: false,
     editable: false,

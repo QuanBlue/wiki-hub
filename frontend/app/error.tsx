@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 
-export default function ErrorPage({ reset }: { error: Error; reset: () => void }) {
+export default function ErrorPage({
+  reset,
+}: {
+  error: Error;
+  reset: () => void;
+}) {
   const router = useRouter();
 
   return (
@@ -27,7 +32,8 @@ export default function ErrorPage({ reset }: { error: Error; reset: () => void }
           This page couldn&apos;t load
         </h1>
         <p className="text-muted-foreground mt-2 text-sm leading-6">
-          Try reloading the page. If the problem continues, return to your previous page and try again.
+          Try reloading the page. If the problem continues, return to your
+          previous page and try again.
         </p>
         <div className="mt-6 flex flex-wrap gap-2">
           <Button type="button" variant="primary" onClick={reset}>

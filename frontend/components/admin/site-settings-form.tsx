@@ -171,15 +171,14 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           className="max-w-40"
         />
         <p className="text-muted-foreground text-xs">
-          Limits large Confluence and backup archives independently from normal attachments.
+          Limits large Confluence and backup archives independently from normal
+          attachments.
         </p>
       </div>
 
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <Label htmlFor="session-ttl-hours">
-            Session lifetime (hours)
-          </Label>
+          <Label htmlFor="session-ttl-hours">Session lifetime (hours)</Label>
           {inherited(settings.overrides.session_ttl_hours !== null)}
         </div>
         <Input
@@ -189,12 +188,17 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           max={8760}
           value={sessionTtlHours}
           onChange={(e) => setSessionTtlHours(e.target.value)}
-          placeholder={settings.effective.session_ttl_hours ? String(settings.effective.session_ttl_hours) : "12"}
+          placeholder={
+            settings.effective.session_ttl_hours
+              ? String(settings.effective.session_ttl_hours)
+              : "12"
+          }
           disabled={pending}
           className="max-w-40"
         />
         <p className="text-muted-foreground text-xs">
-          Duration of the active user session before they must sign in again. Defaults to 12 hours.
+          Duration of the active user session before they must sign in again.
+          Defaults to 12 hours.
         </p>
       </div>
 

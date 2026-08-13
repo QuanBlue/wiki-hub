@@ -49,7 +49,9 @@ const wikiHubEditorTheme = EditorView.theme({
     padding: "0",
     width: "1.25rem",
   },
-  ".cm-foldGutter .cm-gutterElement:hover": { backgroundColor: "var(--surface-selected)" },
+  ".cm-foldGutter .cm-gutterElement:hover": {
+    backgroundColor: "var(--surface-selected)",
+  },
   ".cm-foldGutter span[title]": {
     display: "block",
     fontSize: "0",
@@ -81,12 +83,24 @@ const wikiHubEditorTheme = EditorView.theme({
 });
 
 const wikiHubHighlightStyle = HighlightStyle.define([
-  { tag: [tags.tagName, tags.heading], color: "var(--primary)", fontWeight: "600" },
+  {
+    tag: [tags.tagName, tags.heading],
+    color: "var(--primary)",
+    fontWeight: "600",
+  },
   { tag: tags.attributeName, color: "var(--muted-foreground)" },
   { tag: [tags.string, tags.url], color: "var(--danger)" },
-  { tag: [tags.comment, tags.meta], color: "var(--muted-foreground)", fontStyle: "italic" },
+  {
+    tag: [tags.comment, tags.meta],
+    color: "var(--muted-foreground)",
+    fontStyle: "italic",
+  },
   { tag: [tags.punctuation, tags.bracket], color: "var(--muted-foreground)" },
-  { tag: [tags.keyword, tags.strong], color: "var(--primary)", fontWeight: "600" },
+  {
+    tag: [tags.keyword, tags.strong],
+    color: "var(--primary)",
+    fontWeight: "600",
+  },
 ]);
 
 export function SourceCodeEditor({
@@ -123,10 +137,12 @@ export function SourceCodeEditor({
           wikiHubEditorTheme,
           syntaxHighlighting(wikiHubHighlightStyle),
           EditorView.contentAttributes.of({
-            "aria-label": language === "html" ? "HTML source" : "Markdown source",
+            "aria-label":
+              language === "html" ? "HTML source" : "Markdown source",
           }),
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+            if (update.docChanged)
+              onChangeRef.current(update.state.doc.toString());
           }),
         ],
       }),
@@ -149,13 +165,15 @@ export function SourceCodeEditor({
   }, [value]);
 
   return (
-    <div className="border-border bg-surface focus-within:ring-ring overflow-hidden rounded-md border shadow-sm transition-[border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-offset-background">
+    <div className="border-border bg-surface focus-within:ring-ring focus-within:ring-offset-background overflow-hidden rounded-md border shadow-sm transition-[border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-offset-2">
       <div className="border-border bg-surface-sunken flex items-center gap-2 border-b px-4 py-2.5">
         <CodeXml className="text-primary size-4" aria-hidden />
         <p className="text-xs font-semibold tracking-wide uppercase">
           {language} source
         </p>
-        <span className="text-muted-foreground ml-auto text-xs">Editable source</span>
+        <span className="text-muted-foreground ml-auto text-xs">
+          Editable source
+        </span>
       </div>
       <div
         ref={host}

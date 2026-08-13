@@ -54,7 +54,10 @@ export default async function NotFound() {
         </div>
 
         <div className="border-border bg-surface mt-10 flex items-start gap-3 rounded-lg border p-4 text-left">
-          <BookOpen className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
+          <BookOpen
+            className="text-muted-foreground mt-0.5 size-4 shrink-0"
+            aria-hidden
+          />
           <div>
             <p className="text-sm font-medium">Looking for a document?</p>
             <p className="text-muted-foreground mt-1 text-xs leading-5">
@@ -62,7 +65,10 @@ export default async function NotFound() {
               page.
             </p>
           </div>
-          <ArrowLeft className="text-muted-foreground ml-auto mt-0.5 hidden size-4 shrink-0 sm:block" aria-hidden />
+          <ArrowLeft
+            className="text-muted-foreground mt-0.5 ml-auto hidden size-4 shrink-0 sm:block"
+            aria-hidden
+          />
         </div>
       </section>
     </div>
@@ -71,7 +77,7 @@ export default async function NotFound() {
   if (!user) {
     return (
       <main className="bg-surface-sunken min-h-screen px-5 py-10 sm:px-8">
-        <div className="mx-auto max-w-content">{content}</div>
+        <div className="max-w-content mx-auto">{content}</div>
       </main>
     );
   }
