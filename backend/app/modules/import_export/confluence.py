@@ -117,8 +117,10 @@ def scan_archive(path: Path) -> list[ConfluenceSpace]:
                             )
                         )
                 elif element.get("class") == "Attachment":
-                    attachment_page_id = _reference(props.get("container")) or _reference(
-                        props.get("content")
+                    attachment_page_id = (
+                        _reference(props.get("containerContent"))
+                        or _reference(props.get("container"))
+                        or _reference(props.get("content"))
                     )
                     if attachment_page_id:
                         attachment_page_ids.append(attachment_page_id)
@@ -164,8 +166,12 @@ def iter_attachments(path: Path) -> Iterator[tuple[ConfluenceAttachment, str]]:
                 if element.get("class") == "Attachment":
                     props = _properties(element)
                     source_id = element.findtext("id")
-                    page_id = _reference(props.get("container")) or _reference(props.get("content"))
-                    filename = _text(props, "fileName")
+                    page_id = (
+                        _reference(props.get("containerContent"))
+                        or _reference(props.get("container"))
+                        or _reference(props.get("content"))
+                    )
+                    filename = _text(props, "title") or _text(props, "fileName")
                     if source_id and page_id and filename:
                         attachments.append(
                             ConfluenceAttachment(
@@ -188,5 +194,16 @@ def iter_attachments(path: Path) -> Iterator[tuple[ConfluenceAttachment, str]]:
                 # Site exports vary between Confluence versions; retain only a
                 # filename suffix fallback, never a broad fuzzy match.
                 entry = next((name for name in names if name.endswith(f"/{attachment.filename}")), None)
+            if entry is None:
+                # Confluence Cloud / Server often stores attachments hierarchically by version number
+                # without the filename in the path (e.g. attachments/.../12345/1)
+                attachment_dir = f"/{attachment.source_id}/"
+                versions = [name for name in names if attachment_dir in name and not name.endswith("/")]
+                if versions:
+                    try:
+                        versions.sort(key=lambda x: int(x.split("/")[-1]))
+                    except ValueError:
+                        pass
+                    entry = versions[-1]
             if entry:
                 yield attachment, entry
