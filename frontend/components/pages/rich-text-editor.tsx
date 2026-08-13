@@ -179,6 +179,44 @@ function normalizeConfluenceCodeMacros(content: string): string {
   );
 }
 
+function linkifyPlainTextUrls(content: string): string {
+  if (typeof document === "undefined" || !content) return content;
+  const parsed = document.implementation.createHTMLDocument("");
+  parsed.body.innerHTML = content;
+  const urlPattern = /\bhttps?:\/\/[^\s<]+[^\s<.,:;!?)]/g;
+  const walker = parsed.createTreeWalker(parsed.body, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  let node: Node | null = walker.nextNode();
+  while (node) {
+    const parent = node.parentElement?.tagName;
+    if (parent !== "A" && parent !== "CODE" && parent !== "PRE") {
+      textNodes.push(node as Text);
+    }
+    node = walker.nextNode();
+  }
+  for (const textNode of textNodes) {
+    if (!urlPattern.test(textNode.data)) {
+      urlPattern.lastIndex = 0;
+      continue;
+    }
+    urlPattern.lastIndex = 0;
+    const fragment = parsed.createDocumentFragment();
+    let lastIndex = 0;
+    textNode.data.replace(urlPattern, (url: string, offset: number) => {
+      fragment.append(textNode.data.slice(lastIndex, offset));
+      const anchor = parsed.createElement("a");
+      anchor.href = url;
+      anchor.textContent = url;
+      fragment.append(anchor);
+      lastIndex = offset + url.length;
+      return url;
+    });
+    fragment.append(textNode.data.slice(lastIndex));
+    textNode.replaceWith(fragment);
+  }
+  return parsed.body.innerHTML;
+}
+
 const editorClassName =
   "min-h-[calc(100vh-19rem)] px-5 py-4 text-sm leading-7 outline-none " +
   "[&_p.is-editor-empty:first-child::before]:text-muted-foreground [&_p.is-editor-empty:first-child::before]:pointer-events-none [&_p.is-editor-empty:first-child::before]:float-left [&_p.is-editor-empty:first-child::before]:h-0 [&_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] " +
@@ -191,6 +229,23 @@ const editorClassName =
   "[&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-4 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
   "[&_img]:my-4 [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-border " +
   "[&_.tableWrapper]:my-4 [&_.tableWrapper]:overflow-x-auto [&_table]:w-full [&_table]:border-collapse [&_th]:min-w-24 [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-semibold [&_td]:min-w-24 [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2 [&_.selectedCell]:bg-primary-subtle";
+
+// Imported pages are read like documentation, not like an editor canvas.
+// Keep this separate from editorClassName so editing remains comfortable while
+// imported Confluence pages retain their compact, scan-friendly rhythm.
+const readerClassName =
+  "text-sm leading-[1.45] " +
+  "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 " +
+  "[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-tight " +
+  "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:leading-tight " +
+  "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:leading-tight " +
+  "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-primary/50 [&_a]:transition-colors [&_a]:duration-150 [&_a:hover]:text-primary-hover [&_a:hover]:decoration-primary " +
+  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-0.5 " +
+  "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
+  "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
+  "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
+  "[&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-[42rem] [&_img]:rounded-md [&_img]:border [&_img]:border-border " +
+  "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5";
 
 function ToolbarButton({
   editor,
@@ -663,7 +718,7 @@ export function RichTextEditor({
 
 export function RichTextContent({ content }: { content: string }) {
   const normalizedContent = useMemo(
-    () => normalizeConfluenceCodeMacros(content),
+    () => linkifyPlainTextUrls(normalizeConfluenceCodeMacros(content)),
     [content],
   );
   const editor = useEditor({
@@ -673,7 +728,7 @@ export function RichTextContent({ content }: { content: string }) {
     content: normalizedContent,
     editorProps: {
       attributes: {
-        class: cn(editorClassName, "min-h-0 px-0 py-0"),
+        class: cn(readerClassName, "min-h-0 px-0 py-0"),
       },
     },
   });
