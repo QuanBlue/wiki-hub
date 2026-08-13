@@ -480,15 +480,19 @@ function PageTree({
     }
     return grouped;
   }, [pages]);
-  const [expandedPageIds, setExpandedPageIds] = useState(
-    () =>
-      new Set(
-        [...pagesByParent.entries()]
-          .filter(([, children]) => children.length > 0)
-          .map(([pageId]) => pageId)
-          .filter((pageId): pageId is string => pageId !== null),
-      ),
-  );
+  const [expandedPageIds, setExpandedPageIds] = useState(() => {
+    // Only expand ancestors of the currently active page on first render.
+    // Expanding every folder that has children floods the sidebar with noise.
+    const activePage = pages.find((p) => p.slug === activeSlug);
+    const pageById = new Map(pages.map((p) => [p.id, p]));
+    const ancestorIds = new Set<string>();
+    let parentId = activePage?.parent_id;
+    while (parentId && !ancestorIds.has(parentId)) {
+      ancestorIds.add(parentId);
+      parentId = pageById.get(parentId)?.parent_id;
+    }
+    return ancestorIds;
+  });
 
   useEffect(() => {
     const activePage = pages.find((page) => page.slug === activeSlug);
