@@ -55,7 +55,7 @@ class PageService:
         return [self.to_read(page) for page in pages]
 
     async def list_for_space(
-        self, space: Space, *, limit: int = 100, offset: int = 0
+        self, space: Space, *, limit: int = 10000, offset: int = 0
     ) -> list[PageRead]:
         return self.to_read_many(
             await self.pages.list_for_space(space.id, limit=limit, offset=offset)

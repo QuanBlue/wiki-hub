@@ -33,7 +33,7 @@ async def list_pages(
     _user: CurrentUser,
     page_service: PageServiceDep,
     space_service: SpaceServiceDep,
-    limit: int = Query(default=100, ge=1, le=200),
+    limit: int = Query(default=10000, ge=1, le=10000),
     offset: int = Query(default=0, ge=0),
 ) -> list[PageRead]:
     space = await space_service.get_by_key(key)

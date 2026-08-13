@@ -29,7 +29,7 @@ class PageRepository:
         return await self.get_by_slug(space_id, slug) is not None
 
     async def list_for_space(
-        self, space_id: uuid.UUID, *, limit: int = 100, offset: int = 0
+        self, space_id: uuid.UUID, *, limit: int = 10000, offset: int = 0
     ) -> Sequence[WikiPage]:
         stmt = (
             self._space_query(space_id)
