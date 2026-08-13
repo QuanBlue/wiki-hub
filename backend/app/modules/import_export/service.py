@@ -25,6 +25,10 @@ from app.modules.import_export.confluence import iter_attachments, iter_page_bod
 from app.services.storage import ObjectStorage
 
 
+class ImportCancelled(Exception):
+    """Raised when an import job is cancelled by an administrator."""
+
+
 def _slug(value: str, occupied: set[str]) -> str:
     base = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:240] or "page"
     candidate, suffix = base, 2
@@ -237,6 +241,15 @@ class ConfluenceImportService:
         archive = await self.session.get(ImportArchive, archive_id)
         if archive is None:
             raise NotFoundError("Import archive was not found.")
+        if archive.spaces:
+            existing = set((await self.session.execute(select(Space.key))).scalars())
+            archive.spaces = [
+                {
+                    **item,
+                    "conflict": item.get("key") in existing,
+                }
+                for item in archive.spaces
+            ]
         return archive
 
     async def uploaded_part_numbers(self, archive: ImportArchive) -> list[int]:
@@ -407,6 +420,9 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
 
             async def record_download_progress(downloaded_bytes: int) -> None:
                 nonlocal last_logged_tenth
+                await session.refresh(job)
+                if job.cancel_requested:
+                    raise ImportCancelled("Import cancelled by administrator.")
                 percent = min(100, int(downloaded_bytes * 100 / max(1, archive.size_bytes)))
                 if percent == job.counters.get("download_percent", 0):
                     return
@@ -598,6 +614,13 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             await session.commit()
         job.status, job.phase = "completed", "completed"
         await session.commit()
+    except ImportCancelled as exc:
+        await session.rollback()
+        job = await session.get(ImportJob, job_id)
+        if job:
+            job.status, job.phase = "cancelled", "cancelled"
+            await log(session, job, "warning", "cancelled", str(exc))
+            await session.commit()
     except Exception as exc:  # noqa: BLE001 - persist any worker failure for the operator
         await session.rollback()
         job = await session.get(ImportJob, job_id)

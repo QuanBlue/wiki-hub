@@ -8,16 +8,23 @@ when it is not reachable.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
-
-import pytest
-from httpx import ASGITransport, AsyncClient
 
 # Settings are read at import time, so the test environment must be set first.
-os.environ.setdefault("WIKIHUB_ENV", "test")
-os.environ.setdefault("WIKIHUB_SECRET_KEY", "test-secret-key-for-unit-tests-only-not-real")
-os.environ.setdefault("WIKIHUB_LOG_FORMAT", "console")
-os.environ.setdefault("WIKIHUB_LOG_LEVEL", "WARNING")
+os.environ["WIKIHUB_ENV"] = "test"
+os.environ["WIKIHUB_SECRET_KEY"] = "test-secret-key-for-unit-tests-only-not-real"
+os.environ["WIKIHUB_LOG_FORMAT"] = "console"
+os.environ["WIKIHUB_LOG_LEVEL"] = "WARNING"
+
+from collections.abc import AsyncIterator
+import pytest
+from httpx import ASGITransport, AsyncClient
+import pytest_asyncio
+from app.db.session import dispose_engine
+
+
+@pytest.fixture(scope="session")
+def anyio_backend():
+    return "asyncio"
 
 
 @pytest.fixture(scope="session")
@@ -33,3 +40,9 @@ async def client(app) -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         yield ac
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def cleanup_engine():
+    yield
+    await dispose_engine()

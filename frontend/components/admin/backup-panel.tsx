@@ -499,7 +499,7 @@ export function BackupPanel() {
   const [preparationLogs, setPreparationLogs] = useState<string[]>([]);
   const [preparationLogsExpanded, setPreparationLogsExpanded] = useState(true);
   const [selectedSpaces, setSelectedSpaces] = useState<string[]>([]);
-  const [importAllSpaces, setImportAllSpaces] = useState(true);
+  const [importAllSpaces, setImportAllSpaces] = useState(false);
   const [spaceFilter, setSpaceFilter] = useState("");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadStats, setUploadStats] = useState<UploadStats | null>(null);
@@ -615,7 +615,7 @@ export function BackupPanel() {
   );
   const jobProgressPercent = !confluenceJob
     ? 0
-    : confluenceJob.status === "completed"
+    : confluenceJob.status === "completed" || confluenceJob.status === "cancelled"
       ? 100
       : confluenceJob.status === "queued"
         ? 0
@@ -857,8 +857,8 @@ export function BackupPanel() {
           );
           if (!stillCurrent()) return;
           setConfluenceArchive(archive);
-          setSelectedSpaces(archive.spaces.map((space) => space.key));
-          setImportAllSpaces(true);
+          setSelectedSpaces([]);
+          setImportAllSpaces(false);
           setStoredConfluenceUpload(null);
           setUploadProgress(null);
           setUploadStats(null);
@@ -939,8 +939,8 @@ export function BackupPanel() {
           appendPreparationLog("Archive scan completed. Spaces are ready.");
           await clearStoredUpload();
           setConfluenceArchive(archive);
-          setSelectedSpaces(archive.spaces.map((space) => space.key));
-          setImportAllSpaces(true);
+          setSelectedSpaces([]);
+          setImportAllSpaces(false);
           return;
         }
         if (progress.status === "scanned") {
@@ -955,8 +955,8 @@ export function BackupPanel() {
           if (!stillCurrent()) return;
           await clearStoredUpload();
           setConfluenceArchive(archive);
-          setSelectedSpaces(archive.spaces.map((space) => space.key));
-          setImportAllSpaces(true);
+          setSelectedSpaces([]);
+          setImportAllSpaces(false);
           return;
         }
         if (progress.status !== "uploading") {
@@ -1240,8 +1240,8 @@ export function BackupPanel() {
         appendPreparationLog("Archive scan completed. Spaces are ready.");
         setConfluenceArchive(archive);
         setSpaceFilter("");
-        setSelectedSpaces(archive.spaces.map((space) => space.key));
-        setImportAllSpaces(true);
+        setSelectedSpaces([]);
+        setImportAllSpaces(false);
         toast.success("Archive already uploaded. Choose the Spaces to import.");
         return;
       }
@@ -1354,8 +1354,8 @@ export function BackupPanel() {
       appendPreparationLog("Archive scan completed. Spaces are ready.");
       setConfluenceArchive(archive);
       setSpaceFilter("");
-      setSelectedSpaces(archive.spaces.map((space) => space.key));
-      setImportAllSpaces(true);
+      setSelectedSpaces([]);
+      setImportAllSpaces(false);
       toast.success("Archive scanned. Choose the Spaces to import.");
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -1964,7 +1964,7 @@ export function BackupPanel() {
           </details>
         ) : null}
 
-        {confluenceArchive && !confluenceJob ? (
+        {confluenceArchive && !importInProgress ? (
           <div className="border-border bg-surface-sunken mt-4 flex items-center justify-between gap-3 rounded-md border p-4 text-sm">
             <div>
               <p className="font-semibold">
@@ -1986,7 +1986,16 @@ export function BackupPanel() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => setIsSpaceModalOpen(true)}
+                onClick={() => {
+                  setIsSpaceModalOpen(true);
+                  if (confluenceArchive) {
+                    apiFetch<ConfluenceArchive>(
+                      `/api/v1/confluence-imports/archives/${confluenceArchive.id}`,
+                    )
+                      .then((archive) => setConfluenceArchive(archive))
+                      .catch(() => {});
+                  }
+                }}
               >
                 Select spaces &amp; import
               </Button>
@@ -2253,7 +2262,7 @@ export function BackupPanel() {
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium">
-                  {confluenceArchive.spaces.length} Space(s) found
+                  {selectedSpaces.length}/{confluenceArchive.spaces.length} Space(s) selected
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -2310,7 +2319,7 @@ export function BackupPanel() {
                         {space.key} · {space.page_count} pages
                       </span>
                       {space.conflict ? (
-                        <Badge variant="warning">will replace existing</Badge>
+                        <Badge variant="warning">Existed</Badge>
                       ) : null}
                     </label>
                   ))
@@ -2400,9 +2409,6 @@ export function BackupPanel() {
             <Button
               variant="primary"
               onClick={() => {
-                setConfluenceFile(null);
-                setStoredConfluenceUpload(null);
-                setConfluenceArchive(null);
                 setConfluenceJob(null);
                 setUploadProgress(null);
                 setUploadStats(null);
