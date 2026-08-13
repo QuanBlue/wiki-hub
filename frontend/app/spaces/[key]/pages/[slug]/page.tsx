@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -6,24 +5,13 @@ import { SpaceWorkspace } from "@/components/pages/space-workspace";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/auth";
 import { SITE_NAME } from "@/lib/env";
-import { listPages } from "@/lib/pages";
+import { getPage, listPages } from "@/lib/pages";
 import { getSidebarPreferences } from "@/lib/sidebar-preferences";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
-import { spaceTabTitle } from "@/lib/space-tab-title";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ key: string; slug: string }> };
-
-export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { key } = await params;
-  try {
-    const space = await getSpace(key);
-    return { title: spaceTabTitle(space.name, key) };
-  } catch {
-    return { title: key.toUpperCase() };
-  }
-}
 
 export default async function WikiPageView({ params }: Params) {
   const user = await getCurrentUser();
@@ -34,26 +22,26 @@ export default async function WikiPageView({ params }: Params) {
   let space;
   let pages;
   let members;
+  let page;
   const sidebarPreferences = await getSidebarPreferences();
   try {
-    [space, pages, members] = await Promise.all([
+    [space, pages, members, page] = await Promise.all([
       getSpace(key),
       listPages(key),
       listSpaceMembers(key),
+      getPage(key, slug),
     ]);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
 
-  // The page tree already contains the canonical page records (including the
-  // generated slug). Resolve the route from that same collection so a page
-  // created moments ago cannot fall through to the global 404 while the
-  // individual lookup is catching up. Slugs are case-insensitive in the API.
-  const page = pages.find(
-    (candidate) => candidate.slug.toLowerCase() === slug.toLowerCase(),
-  );
-  if (!page) notFound();
+  // Fetch the selected page directly as the source of truth. The list endpoint
+  // can briefly lag after creation, while the slug endpoint already knows the
+  // newly-created record. Add it to the tree until the list catches up.
+  if (!pages.some((candidate) => candidate.id === page.id)) {
+    pages = [...pages, page];
+  }
 
   return (
     <AppShell

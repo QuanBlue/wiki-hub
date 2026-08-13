@@ -31,3 +31,5 @@ export function getPage(spaceKey: string, slug: string): Promise<WikiPage> {
     `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(slug)}`,
   );
 }
+
+/** Resolve the space home page across both new and legacy imports. */

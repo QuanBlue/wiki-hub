@@ -1,25 +1,18 @@
-import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
+import { AppShell } from "@/components/layout/app-shell";
+import { SpaceWorkspace } from "@/components/pages/space-workspace";
 import { ApiError } from "@/lib/api-client";
+import { SITE_NAME } from "@/lib/env";
 import { getCurrentUser } from "@/lib/auth";
 import { listPages } from "@/lib/pages";
-import { getSpace } from "@/lib/spaces";
-import { spaceTabTitle } from "@/lib/space-tab-title";
+import { findHomePage } from "@/lib/home-page";
+import { getSidebarPreferences } from "@/lib/sidebar-preferences";
+import { getSpace, listSpaceMembers } from "@/lib/spaces";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ key: string }> };
-
-export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { key } = await params;
-  try {
-    const space = await getSpace(key);
-    return { title: spaceTabTitle(space.name, key) };
-  } catch {
-    return { title: key.toUpperCase() };
-  }
-}
 
 export default async function SpaceDetailPage({ params }: Params) {
   const user = await getCurrentUser();
@@ -27,20 +20,25 @@ export default async function SpaceDetailPage({ params }: Params) {
 
   const { key } = await params;
 
+  let space;
   let pages;
+  let members;
+  const sidebarPreferences = await getSidebarPreferences();
   try {
-    await getSpace(key);
-    pages = await listPages(key);
+    [space, pages, members] = await Promise.all([
+      getSpace(key),
+      listPages(key),
+      listSpaceMembers(key),
+    ]);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
 
-  // Find the root page (no parent_id) to use as the space home page.
-  // Fall back to the first page alphabetically if no root page exists.
-  const rootPage =
-    pages.find((p) => p.parent_id === null || p.parent_id === undefined) ??
-    pages[0];
+  // A space home uses the stable slug derived from the space key (for example
+  // QUAN -> /pages/quan). Only fall back to a root page for older spaces that
+  // were created before the explicit home-page convention.
+  const rootPage = findHomePage(pages, key, space.name);
 
   if (rootPage) {
     redirect(
@@ -50,5 +48,24 @@ export default async function SpaceDetailPage({ params }: Params) {
 
   // Space has no pages yet — show a redirect back to itself so the user can
   // create one.  This branch is very rare but ensures the page never crashes.
-  notFound();
+  return (
+    <AppShell
+      siteName={SITE_NAME}
+      user={user}
+      hideSidebar
+      contentClassName="max-w-none px-0 py-0 sm:px-0 sm:py-0"
+    >
+      <SpaceWorkspace
+        space={space}
+        pages={pages}
+        members={members}
+        initialSidebarWidth={sidebarPreferences.spaceWidth}
+        canEdit={
+          user.is_superuser ||
+          space.my_role === "admin" ||
+          space.my_role === "editor"
+        }
+      />
+    </AppShell>
+  );
 }

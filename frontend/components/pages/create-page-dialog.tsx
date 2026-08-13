@@ -60,7 +60,6 @@ export function CreatePageDialog({
       router.push(
         `/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(page.slug)}`,
       );
-      router.refresh();
     } catch (error) {
       toast.error(
         error instanceof ApiError ? error.message : "Could not create page.",

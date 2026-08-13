@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
+from app.models.page import WikiPage
 from app.models.space import Space, SpaceMember, SpaceRole, SpaceStatus
 from app.models.user import User
 from app.repositories.space import SpaceRepository
@@ -145,6 +146,20 @@ class SpaceService:
         space.members.append(SpaceMember(user_id=creator.id, role=SpaceRole.admin))
 
         self.spaces.add(space)
+        await self.session.flush()
+        # Every newly-created space has a stable home route: the space key is
+        # also the home page slug (for example QUAN -> /pages/quan).
+        self.session.add(
+            WikiPage(
+                space_id=space.id,
+                title=space.name,
+                slug=payload.key.lower(),
+                content=space.description,
+                content_format="html",
+                created_by_id=creator.id,
+                updated_by_id=creator.id,
+            )
+        )
         await self.session.flush()
         await self.session.refresh(space)
         logger.info("space_created", key=space.key, by=creator.username)

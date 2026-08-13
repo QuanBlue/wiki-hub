@@ -56,7 +56,7 @@ export const DropdownMenuItem = React.forwardRef<
       className={cn(
         "flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none",
         "transition-colors duration-150 select-none",
-        "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
         "[&_svg]:size-4 [&_svg]:shrink-0",
         destructive
           ? "text-danger data-[highlighted]:bg-danger-bg"

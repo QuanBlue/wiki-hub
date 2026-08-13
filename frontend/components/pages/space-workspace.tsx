@@ -5,9 +5,10 @@ import {
   Clock3,
   CodeXml,
   ChevronDown,
-  ChevronRight,
   Download,
   FileText,
+  Folder,
+  FolderOpen,
   FolderInput,
   Eye,
   EyeOff,
@@ -54,6 +55,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api-client";
 import { apiBaseUrl } from "@/lib/env";
+import { findHomePage } from "@/lib/home-page";
 import { cn } from "@/lib/utils";
 import type {
   PageContentFormat,
@@ -471,18 +473,24 @@ function PageTree({
   activeSlug: string | null;
 }) {
   const storageKey = `${TREE_EXPAND_PREFIX}${spaceKey}`;
+  const homePageId = findHomePage(pages, spaceKey)?.id;
   const pagesByParent = useMemo(() => {
     const pageIds = new Set(pages.map((page) => page.id));
     const grouped = new Map<string | null, WikiPage[]>();
     for (const page of pages) {
+      if (page.id === homePageId) continue;
       const parentId =
-        page.parent_id && pageIds.has(page.parent_id) ? page.parent_id : null;
+        page.parent_id && pageIds.has(page.parent_id)
+          ? page.parent_id === homePageId
+            ? null
+            : page.parent_id
+          : null;
       const siblings = grouped.get(parentId) ?? [];
       siblings.push(page);
       grouped.set(parentId, siblings);
     }
     return grouped;
-  }, [pages]);
+  }, [homePageId, pages]);
   const [expandedPageIds, setExpandedPageIds] = useState<Set<string>>(() => {
     // Restore previously saved expansion state from sessionStorage so that
     // server-side redirects (e.g. clicking the space homepage) don't collapse
@@ -573,30 +581,34 @@ function PageTree({
                 type="button"
                 onClick={() => togglePage(page.id)}
                 aria-expanded={expanded}
-                aria-label={`${expanded ? "Collapse" : "Expand"} ${page.title}`}
+                aria-label={`${expanded ? "Collapse" : "Expand"} folder ${page.title}`}
                 className={cn(
-                  "hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex w-8 shrink-0 cursor-pointer items-center justify-center rounded-l-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                  "text-muted-foreground hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
                   active && "bg-surface-selected text-primary",
                 )}
               >
                 {expanded ? (
-                  <ChevronDown className="size-4" aria-hidden />
+                  <FolderOpen className="size-4" aria-hidden />
                 ) : (
-                  <ChevronRight className="size-4" aria-hidden />
+                  <Folder className="size-4" aria-hidden />
                 )}
               </button>
             ) : (
-              <span className="w-8 shrink-0" aria-hidden />
+              <span
+                className={cn(
+                  "text-muted-foreground flex w-8 shrink-0 items-center justify-center",
+                  active && "text-primary",
+                )}
+                aria-hidden
+              >
+                <FileText className="text-muted-foreground size-4" />
+              </span>
             )}
             <SidebarLink
               href={pageHref(spaceKey, page.slug)}
               active={active}
-              className={cn(
-                "min-w-0 flex-1 rounded-l-none px-0 pr-2",
-                !hasChildren && "rounded-l-md",
-              )}
+              className="min-w-0 flex-1 rounded-md px-0 pr-2"
             >
-              <FileText className="text-muted-foreground size-4 shrink-0" />
               <span className="truncate">{page.title}</span>
             </SidebarLink>
           </div>
@@ -609,18 +621,7 @@ function PageTree({
   }
 
   return (
-    <>
-      {/* If there is exactly one root page (no parent), skip it in the tree:
-          clicking the space name already navigates to that page.  Promote
-          its children to the top level so the sidebar stays clean. */}
-      {(() => {
-        const rootPages = pagesByParent.get(null) ?? [];
-        if (rootPages.length === 1) {
-          return renderPages(rootPages[0].id);
-        }
-        return renderPages(null);
-      })()}
-    </>
+    <>{renderPages(null)}</>
   );
 }
 
@@ -713,6 +714,11 @@ export function SpaceWorkspace({
   }, [space.key]);
 
   const title = currentPage?.title ?? space.name;
+  const homePage = findHomePage(pages, space.key, space.name);
+  const isHomePage = currentPage?.id === homePage?.id;
+  const homeHref = homePage
+    ? pageHref(space.key, homePage.slug)
+    : `/spaces/${encodeURIComponent(space.key)}`;
   const body = currentPage?.content || space.description;
   const activeSlug = currentPage?.slug ?? null;
   const savedPageKey = currentPage ? `${space.key}/${currentPage.slug}` : null;
@@ -1103,7 +1109,7 @@ export function SpaceWorkspace({
                 <SpaceAvatar space={space} />
                 <div className="min-w-0 flex-1 pt-1">
                   <Link
-                    href={`/spaces/${encodeURIComponent(space.key)}`}
+                    href={homeHref}
                     className="hover:text-primary focus-visible:ring-ring block truncate rounded text-sm font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                   >
                     {space.name}
@@ -1200,7 +1206,7 @@ export function SpaceWorkspace({
               <ol className="flex min-w-0 items-center whitespace-nowrap">
                 <li className="shrink-0">
                   <Link
-                    href={`/spaces/${encodeURIComponent(space.key)}`}
+                    href={homeHref}
                     className="text-primary focus-visible:ring-ring rounded hover:underline focus-visible:ring-2 focus-visible:outline-none"
                   >
                     Pages
@@ -1242,7 +1248,7 @@ export function SpaceWorkspace({
               </ol>
             </nav>
 
-            <div className="flex flex-nowrap items-center gap-1">
+            <div className="[&>button]:!text-sm [&>button]:!font-medium [&>button>svg]:text-muted-foreground [&>div>button]:!text-sm [&>div>button]:!font-medium [&>div>button>svg]:text-muted-foreground flex flex-nowrap items-center gap-1">
               {overviewEditing ? (
                 <>
                   <Button
@@ -1315,8 +1321,8 @@ export function SpaceWorkspace({
                 <>
                   <CreatePageDialog
                     spaceKey={space.key}
-                    parentPage={currentPage}
-                    triggerLabel="Create"
+                    parentPage={isHomePage ? null : currentPage}
+                    triggerLabel={isHomePage ? "New" : "Create"}
                     triggerVariant="ghost"
                     triggerSize="sm"
                   />
@@ -1328,7 +1334,10 @@ export function SpaceWorkspace({
                         <ChevronDown />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="min-w-48">
+                      <DropdownMenuContent
+                        align="end"
+                        className="min-w-48 text-sm font-medium text-muted-foreground [&_svg]:text-muted-foreground"
+                      >
                       <DropdownMenuItem onSelect={() => beginEditing("normal")}>
                         <Pencil />
                         Normal editor
@@ -1390,6 +1399,7 @@ export function SpaceWorkspace({
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="!text-sm !font-medium"
                         aria-label="Page width options"
                         aria-haspopup="menu"
                         aria-expanded={viewWidthMenuOpen}
@@ -1412,7 +1422,7 @@ export function SpaceWorkspace({
                             size="sm"
                             role="menuitemradio"
                             aria-checked={viewFullWidth}
-                            className="w-full justify-start"
+                            className="!text-sm !font-medium text-muted-foreground [&_svg]:text-muted-foreground w-full justify-start"
                             onClick={() => {
                               setViewFullWidth(true);
                               setViewWidthMenuOpen(false);
@@ -1421,7 +1431,7 @@ export function SpaceWorkspace({
                             <Maximize2 />
                             Full width
                             {viewFullWidth ? (
-                              <Check className="text-primary ml-auto" />
+                              <Check className="!text-primary ml-auto" />
                             ) : null}
                           </Button>
                           <Button
@@ -1430,7 +1440,7 @@ export function SpaceWorkspace({
                             size="sm"
                             role="menuitemradio"
                             aria-checked={!viewFullWidth}
-                            className="w-full justify-start"
+                            className="!text-sm !font-medium text-muted-foreground [&_svg]:text-muted-foreground w-full justify-start"
                             onClick={() => {
                               setViewFullWidth(false);
                               setViewWidthMenuOpen(false);
@@ -1439,7 +1449,7 @@ export function SpaceWorkspace({
                             <Minimize2 />
                             Normal width
                             {!viewFullWidth ? (
-                              <Check className="text-primary ml-auto" />
+                              <Check className="!text-primary ml-auto" />
                             ) : null}
                           </Button>
                         </div>
@@ -1459,7 +1469,10 @@ export function SpaceWorkspace({
                           <MoreHorizontal />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-52">
+                      <DropdownMenuContent
+                        align="end"
+                        className="min-w-52 text-sm font-medium text-muted-foreground [&_svg]:text-muted-foreground"
+                      >
                         {canEdit && space.status === "active" ? (
                           <DropdownMenuItem
                             onSelect={() => setMovePageOpen(true)}
@@ -1495,10 +1508,10 @@ export function SpaceWorkspace({
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              className="text-danger focus:text-danger"
+                              className="text-danger focus:text-danger [&_svg]:text-danger"
                               onSelect={() => setDeletePageOpen(true)}
                             >
-                              <Trash2 />
+                              <Trash2 className="!text-danger" />
                               Delete page
                             </DropdownMenuItem>
                           </>
@@ -1519,7 +1532,7 @@ export function SpaceWorkspace({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
                       align="end"
-                      className="min-w-48 lg:hidden"
+                      className="min-w-48 text-sm font-medium text-muted-foreground lg:hidden [&_svg]:text-muted-foreground"
                     >
                       {currentPage ? (
                         <DropdownMenuItem onSelect={toggleSavedForLater}>
@@ -1568,10 +1581,10 @@ export function SpaceWorkspace({
                           </DropdownMenuItem>
                           {canEdit && space.status === "active" ? (
                             <DropdownMenuItem
-                              className="text-danger focus:text-danger"
+                              className="text-danger focus:text-danger [&_svg]:text-danger"
                               onSelect={() => setDeletePageOpen(true)}
                             >
-                              <Trash2 />
+                              <Trash2 className="!text-danger" />
                               Delete page
                             </DropdownMenuItem>
                           ) : null}

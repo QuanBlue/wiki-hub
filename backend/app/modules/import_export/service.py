@@ -527,10 +527,49 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     pages[source_page.source_id] = page
                     imported_pages[source_page.source_id] = page
                 await session.flush()
+
+                # Confluence exports can contain several top-level pages. In
+                # WikiHub every imported space has one stable home page so the
+                # page tree has a single root. Prefer an exported page named
+                # after the space; otherwise create a lightweight home page.
+                root_source_pages = [
+                    source_page
+                    for source_page in source_space.pages
+                    if not source_page.parent_id
+                ]
+                home_source = next(
+                    (
+                        source_page
+                        for source_page in root_source_pages
+                        if source_page.title.casefold()
+                        in {source_space.key.casefold(), source_space.name.casefold()}
+                    ),
+                    None,
+                )
+                if home_source:
+                    home_page = pages[home_source.source_id]
+                else:
+                    home_page = WikiPage(
+                        space_id=space.id,
+                        title=source_space.key,
+                        slug=_slug(source_space.key, occupied),
+                        created_by_id=job.created_by_id,
+                        updated_by_id=job.created_by_id,
+                        content_format="html",
+                    )
+                    session.add(home_page)
+                    await session.flush()
+
                 for source_page in source_space.pages:
                     parent = pages.get(source_page.parent_id or "")
                     if parent:
                         pages[source_page.source_id].parent_id = parent.id
+                    # The home page is a navigation destination, not a
+                    # container for imported content. Top-level Confluence
+                    # pages stay at space level; only their own descendants
+                    # retain the imported parent hierarchy.
+                    elif pages[source_page.source_id].id != home_page.id:
+                        pages[source_page.source_id].parent_id = None
                     imported_page = pages[source_page.source_id]
                     if source_page.created_at:
                         imported_page.created_at = source_page.created_at
