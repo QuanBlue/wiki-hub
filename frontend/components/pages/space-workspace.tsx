@@ -690,6 +690,7 @@ export function SpaceWorkspace({
   const [movePageOpen, setMovePageOpen] = useState(false);
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [reloadPending, setReloadPending] = useState(false);
+  const [cancelEditPending, setCancelEditPending] = useState(false);
   const [overviewEditing, setOverviewEditing] = useState(false);
   const [overviewDraft, setOverviewDraft] = useState(space.description);
   const [overviewSavePending, setOverviewSavePending] = useState(false);
@@ -817,6 +818,11 @@ export function SpaceWorkspace({
   }, [hasUnsavedChanges]);
 
   function leaveWithoutSaving() {
+    if (cancelEditPending) {
+      setCancelEditPending(false);
+      cancelEditing();
+      return;
+    }
     if (reloadPending) {
       setReloadPending(false);
       allowUnload.current = true;
@@ -831,6 +837,44 @@ export function SpaceWorkspace({
     } else {
       window.location.assign(destination.href);
     }
+  }
+
+  async function saveBeforeLeave() {
+    const saved = await persistPage();
+    if (!saved) return;
+
+    const destinationHref = leaveHref;
+    const shouldReload = reloadPending;
+    const shouldCancel = cancelEditPending;
+    setLeaveHref(null);
+    setReloadPending(false);
+    setCancelEditPending(false);
+
+    if (shouldCancel) {
+      cancelEditing();
+      router.refresh();
+      return;
+    }
+    if (shouldReload) {
+      allowUnload.current = true;
+      window.location.reload();
+      return;
+    }
+    if (!destinationHref) return;
+    const destination = new URL(destinationHref, window.location.href);
+    if (destination.origin === window.location.origin) {
+      router.push(`${destination.pathname}${destination.search}${destination.hash}`);
+    } else {
+      window.location.assign(destination.href);
+    }
+  }
+
+  function requestCancelEditing() {
+    if (!hasUnsavedChanges) {
+      cancelEditing();
+      return;
+    }
+    setCancelEditPending(true);
   }
 
   function markAutoSaveStatus(status: "idle" | "saving" | "saved") {
@@ -1107,6 +1151,8 @@ export function SpaceWorkspace({
       html: mode === "html" ? prettyHtml(html) : html,
       markdown,
     };
+    setAutoSaveEnabled(true);
+    markAutoSaveStatus("idle");
     setEditMode(mode);
     setPreviewing(false);
     setEditing(true);
@@ -1534,7 +1580,7 @@ export function SpaceWorkspace({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={cancelEditing}
+                    onClick={requestCancelEditing}
                     disabled={savePending}
                   >
                     <X />
@@ -2097,22 +2143,34 @@ export function SpaceWorkspace({
           </article>
 
           <ConfirmDialog
-            open={leaveHref !== null || reloadPending}
+            open={leaveHref !== null || reloadPending || cancelEditPending}
             onOpenChange={(open) => {
               if (!open) {
                 setLeaveHref(null);
                 setReloadPending(false);
+                setCancelEditPending(false);
               }
             }}
-            title={reloadPending ? "Reload site?" : "Leave without saving?"}
+            title={
+              reloadPending
+                ? "Reload site?"
+                : cancelEditPending
+                  ? "Save changes before cancelling?"
+                  : "Save changes before leaving?"
+            }
             description={
               reloadPending
                 ? "Changes you made may not be saved."
-                : "You have unsaved changes. They will be lost if you leave this page."
+                : "You have unsaved changes. Save them before leaving this edit session?"
             }
-            confirmLabel={reloadPending ? "Reload" : "Leave page"}
+            confirmLabel={reloadPending ? "Reload" : "Save and leave"}
             cancelLabel="Stay"
-            onConfirm={leaveWithoutSaving}
+            secondaryLabel={
+              reloadPending ? "Reload without saving" : "Leave without saving"
+            }
+            onSecondary={leaveWithoutSaving}
+            pending={savePending}
+            onConfirm={() => void saveBeforeLeave()}
           />
 
           <ConfirmDialog

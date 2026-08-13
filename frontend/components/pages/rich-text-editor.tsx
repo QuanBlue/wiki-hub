@@ -880,6 +880,7 @@ function RichTextToolbar({
   const [linkTitle, setLinkTitle] = useState("");
   const [linkTarget, setLinkTarget] = useState("_self");
   const linkSelection = useRef<{ from: number; to: number } | null>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
 
   function openLinkDialog() {
     if (!editor) return;
@@ -945,17 +946,20 @@ function RichTextToolbar({
 
   function insertImage() {
     if (!editor) return;
-    const src = window.prompt("Paste an image URL");
-    if (!src?.trim()) return;
-    try {
-      const url = new URL(src);
-      if (url.protocol !== "https:" && url.protocol !== "http:") {
-        throw new Error("unsupported protocol");
-      }
-      editor.chain().focus().setImage({ src: url.href }).run();
-    } catch {
-      window.alert("Use a valid http or https image URL.");
-    }
+    imageInput.current?.click();
+  }
+
+  function handleImageSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!editor || !file || !file.type.startsWith("image/")) return;
+
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result !== "string") return;
+      editor.chain().focus().setImage({ src: reader.result }).run();
+    });
+    reader.readAsDataURL(file);
   }
 
   return (
@@ -964,6 +968,15 @@ function RichTextToolbar({
       role="toolbar"
       aria-label="Page formatting"
     >
+      <input
+        ref={imageInput}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+        onChange={handleImageSelected}
+      />
       <ToolbarButton
         editor={editor}
         label="Bold"

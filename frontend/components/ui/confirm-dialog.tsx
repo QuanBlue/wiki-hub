@@ -22,6 +22,8 @@ export function ConfirmDialog({
   description,
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
+  secondaryLabel,
+  onSecondary,
   destructive = false,
   pending = false,
   onConfirm,
@@ -32,6 +34,8 @@ export function ConfirmDialog({
   description: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   destructive?: boolean;
   pending?: boolean;
   onConfirm: () => void;
@@ -54,6 +58,18 @@ export function ConfirmDialog({
           </AlertDialogPrimitive.Description>
 
           <div className="mt-5 flex flex-wrap justify-end gap-2">
+            {secondaryLabel && onSecondary ? (
+              <AlertDialogPrimitive.Action
+                disabled={pending}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onSecondary();
+                }}
+                className={cn(buttonVariants({ variant: "ghost" }))}
+              >
+                {secondaryLabel}
+              </AlertDialogPrimitive.Action>
+            ) : null}
             <AlertDialogPrimitive.Cancel
               disabled={pending}
               className={cn(buttonVariants({ variant: "secondary" }))}
