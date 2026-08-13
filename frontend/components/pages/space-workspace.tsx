@@ -497,21 +497,28 @@ function PageTree({
   useEffect(() => {
     const activePage = pages.find((page) => page.slug === activeSlug);
     const pageById = new Map(pages.map((page) => [page.id, page]));
-    const ancestorIds = new Set<string>();
+    const idsToExpand = new Set<string>();
     let parentId = activePage?.parent_id;
 
-    while (parentId && !ancestorIds.has(parentId)) {
-      ancestorIds.add(parentId);
+    while (parentId && !idsToExpand.has(parentId)) {
+      idsToExpand.add(parentId);
       parentId = pageById.get(parentId)?.parent_id;
     }
 
-    if (ancestorIds.size === 0) return;
+    // Also expand the active page itself if it has children so they are
+    // immediately visible when the user navigates to a parent page.
+    if (activePage && (pagesByParent.get(activePage.id)?.length ?? 0) > 0) {
+      idsToExpand.add(activePage.id);
+    }
+
+    if (idsToExpand.size === 0) return;
     setExpandedPageIds((current) => {
       const next = new Set(current);
-      for (const pageId of ancestorIds) next.add(pageId);
+      for (const pageId of idsToExpand) next.add(pageId);
       return next;
     });
-  }, [activeSlug, pages]);
+  }, [activeSlug, pages, pagesByParent]);
+
 
   function togglePage(pageId: string) {
     setExpandedPageIds((current) => {
