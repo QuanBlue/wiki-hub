@@ -20,11 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api-client";
 import type {
@@ -174,12 +170,12 @@ function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
 function FileIcon({ name }: { name: string }) {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext))
-    return <FileImage className="text-primary shrink-0 size-4" />;
+    return <FileImage className="text-primary size-4 shrink-0" />;
   if (["zip", "tar", "gz"].includes(ext))
-    return <FileArchive className="text-amber-500 shrink-0 size-4" />;
+    return <FileArchive className="size-4 shrink-0 text-amber-500" />;
   if (["txt", "md", "json", "csv"].includes(ext))
-    return <FileText className="text-muted-foreground shrink-0 size-4" />;
-  return <File className="text-muted-foreground shrink-0 size-4" />;
+    return <FileText className="text-muted-foreground size-4 shrink-0" />;
+  return <File className="text-muted-foreground size-4 shrink-0" />;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +211,7 @@ function FileRow({ node, depth, onDelete, onDownload }: FileRowProps) {
       <button
         aria-label={`Download ${node.name}`}
         title="Download"
-        className="text-muted-foreground hover:text-foreground hover:bg-surface-selected shrink-0 rounded p-1 transition-colors"
+        className="text-muted-foreground hover:text-foreground hover:bg-surface-selected shrink-0 cursor-pointer rounded p-1 transition-colors"
         onClick={() => onDownload(node.path, node.name)}
       >
         <Download className="size-3.5" />
@@ -223,7 +219,7 @@ function FileRow({ node, depth, onDelete, onDownload }: FileRowProps) {
       <button
         aria-label={`Delete ${node.name}`}
         title="Delete"
-        className="text-muted-foreground hover:text-danger hover:bg-danger-bg shrink-0 rounded p-1 transition-colors"
+        className="text-muted-foreground hover:text-danger hover:bg-danger-bg shrink-0 cursor-pointer rounded p-1 transition-colors"
         onClick={() => onDelete(node.path)}
       >
         <Trash2 className="size-3.5" />
@@ -252,20 +248,20 @@ function FolderRow({
   return (
     <>
       <button
-        className="border-border hover:bg-surface-hover flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm last:border-0"
+        className="border-border hover:bg-surface-hover flex w-full cursor-pointer items-center gap-2 border-b px-3 py-2 text-left text-sm last:border-0"
         style={{ paddingLeft: `${depth * 20 + 12}px` }}
         onClick={onToggle}
         aria-expanded={expanded}
       >
         {expanded ? (
-          <ChevronDown className="text-muted-foreground shrink-0 size-3.5" />
+          <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
         ) : (
-          <ChevronRight className="text-muted-foreground shrink-0 size-3.5" />
+          <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
         )}
         {expanded ? (
-          <FolderOpen className="text-primary shrink-0 size-4" />
+          <FolderOpen className="text-primary size-4 shrink-0" />
         ) : (
-          <Folder className="text-primary shrink-0 size-4" />
+          <Folder className="text-primary size-4 shrink-0" />
         )}
         <span className="min-w-0 flex-1 truncate font-medium" title={node.path}>
           {node.name}
@@ -342,7 +338,9 @@ export function StoragePanel() {
       const data = await apiFetch<StorageObject[]>("/api/v1/storage");
       setObjects(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load storage objects.");
+      setError(
+        err instanceof Error ? err.message : "Could not load storage objects.",
+      );
     } finally {
       setLoading(false);
     }
@@ -374,7 +372,9 @@ export function StoragePanel() {
       a.click();
       document.body.removeChild(a);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not generate download URL.");
+      toast.error(
+        err instanceof Error ? err.message : "Could not generate download URL.",
+      );
     }
   }
 
@@ -396,7 +396,9 @@ export function StoragePanel() {
       );
       setDeleteKey(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not delete the object.");
+      toast.error(
+        err instanceof Error ? err.message : "Could not delete the object.",
+      );
     } finally {
       setDeleting(false);
     }
@@ -423,7 +425,7 @@ export function StoragePanel() {
           onClick={() => void fetchObjects()}
           aria-label="Refresh storage list"
         >
-          <RefreshCw className={loading ? "animate-spin size-4" : "size-4"} />
+          <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />
           Refresh
         </Button>
       </div>
@@ -472,7 +474,7 @@ export function StoragePanel() {
 
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-sm">
-            <Loader2 className="text-primary animate-spin size-5" />
+            <Loader2 className="text-primary size-5 animate-spin" />
             Loading storage objects…
           </div>
         ) : error ? (
@@ -530,7 +532,7 @@ export function StoragePanel() {
               onClick={() => void handleDelete()}
             >
               {deleting ? (
-                <Loader2 className="animate-spin size-4" />
+                <Loader2 className="size-4 animate-spin" />
               ) : (
                 <Trash2 className="size-4" />
               )}

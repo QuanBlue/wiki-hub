@@ -377,7 +377,10 @@ async function sha256File(
         if (signal?.aborted) {
           throw new DOMException("Fingerprint cancelled.", "AbortError");
         }
-        const hashBuffer = await window.crypto.subtle.digest("SHA-256", arrayBuffer);
+        const hashBuffer = await window.crypto.subtle.digest(
+          "SHA-256",
+          arrayBuffer,
+        );
         if (signal?.aborted) {
           throw new DOMException("Fingerprint cancelled.", "AbortError");
         }
@@ -389,7 +392,10 @@ async function sha256File(
         return hashHex;
       }
     } catch (error) {
-      console.warn("Native SHA-256 calculation failed, falling back to incremental JS implementation:", error);
+      console.warn(
+        "Native SHA-256 calculation failed, falling back to incremental JS implementation:",
+        error,
+      );
     }
   }
 
@@ -511,7 +517,8 @@ export function BackupPanel() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [confirmApply, setConfirmApply] = useState(false);
   const [confirmDiscardArchive, setConfirmDiscardArchive] = useState(false);
-  const [discardingArchivePending, setDiscardingArchivePending] = useState(false);
+  const [discardingArchivePending, setDiscardingArchivePending] =
+    useState(false);
   const [confirmCancelUpload, setConfirmCancelUpload] = useState(false);
   const [confirmOverwriteSpaces, setConfirmOverwriteSpaces] = useState(false);
   const [cancelUploadPending, setCancelUploadPending] = useState(false);
@@ -526,7 +533,8 @@ export function BackupPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const [isSpaceModalOpen, setIsSpaceModalOpen] = useState(false);
-  const [isImportSuccessModalOpen, setIsImportSuccessModalOpen] = useState(false);
+  const [isImportSuccessModalOpen, setIsImportSuccessModalOpen] =
+    useState(false);
 
   // Modal is opened explicitly by the user clicking "Select spaces & import".
   // Closing happens when a job starts or the archive is discarded.
@@ -564,7 +572,9 @@ export function BackupPanel() {
     const result: ConfluenceImportLog[] = [];
     let foundDownloadLog = false;
     for (const log of confluenceLogs) {
-      if (log.message.startsWith("Downloading archive to worker scratch space:")) {
+      if (
+        log.message.startsWith("Downloading archive to worker scratch space:")
+      ) {
         if (!foundDownloadLog) {
           result.push(log);
           foundDownloadLog = true;
@@ -615,7 +625,8 @@ export function BackupPanel() {
   );
   const jobProgressPercent = !confluenceJob
     ? 0
-    : confluenceJob.status === "completed" || confluenceJob.status === "cancelled"
+    : confluenceJob.status === "completed" ||
+        confluenceJob.status === "cancelled"
       ? 100
       : confluenceJob.status === "queued"
         ? 0
@@ -762,7 +773,10 @@ export function BackupPanel() {
           ),
         ]);
         let finalLogs = logs.items;
-        if (job.status === "completed" && confluenceJob.status !== "completed") {
+        if (
+          job.status === "completed" &&
+          confluenceJob.status !== "completed"
+        ) {
           toast.success("Confluence import completed successfully!");
           const successLog: ConfluenceImportLog = {
             id: "local-success-log",
@@ -787,7 +801,9 @@ export function BackupPanel() {
 
   const restoreActiveConfluenceJob = useCallback(async () => {
     try {
-      const jobs = await apiFetch<ConfluenceImportJob[]>("/api/v1/confluence-imports/jobs");
+      const jobs = await apiFetch<ConfluenceImportJob[]>(
+        "/api/v1/confluence-imports/jobs",
+      );
       const activeJob = jobs.find(
         (job) => !["completed", "failed", "cancelled"].includes(job.status),
       );
@@ -1627,11 +1643,21 @@ export function BackupPanel() {
             ref={confluenceFileInput}
             type="file"
             accept=".zip,application/zip,application/x-zip-compressed"
-            disabled={confluencePending || Boolean(confluenceArchive) || importInProgress}
+            disabled={
+              confluencePending ||
+              Boolean(confluenceArchive) ||
+              importInProgress
+            }
             onChange={(event) => {
               const nextFile = event.target.files?.[0] ?? null;
-              if (nextFile && siteSettings?.effective?.max_backup_import_size_bytes) {
-                if (nextFile.size > siteSettings.effective.max_backup_import_size_bytes) {
+              if (
+                nextFile &&
+                siteSettings?.effective?.max_backup_import_size_bytes
+              ) {
+                if (
+                  nextFile.size >
+                  siteSettings.effective.max_backup_import_size_bytes
+                ) {
                   setConfluenceUploadError(
                     `Archive exceeds the configured ${siteSettings.effective.max_backup_import_size_mb} MB limit.`,
                   );
@@ -1698,7 +1724,11 @@ export function BackupPanel() {
                 : "cursor-pointer",
             )}
             htmlFor="confluence-backup-file"
-            aria-disabled={confluencePending || Boolean(confluenceArchive) || importInProgress}
+            aria-disabled={
+              confluencePending ||
+              Boolean(confluenceArchive) ||
+              importInProgress
+            }
           >
             <span className="border-border bg-surface-sunken shrink-0 border-r px-3 py-2 font-medium">
               Choose file
@@ -1971,7 +2001,8 @@ export function BackupPanel() {
                 Confluence archive ready for import
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
-                {confluenceArchive.spaces.length} spaces found. Choose which spaces to import.
+                {confluenceArchive.spaces.length} spaces found. Choose which
+                spaces to import.
               </p>
             </div>
             <div className="flex shrink-0 gap-2">
@@ -2222,7 +2253,7 @@ export function BackupPanel() {
 
           {report.entries.length > 0 ? (
             <details className="mt-4">
-              <summary className="hover:text-foreground text-muted-foreground cursor-pointer text-sm transition-colors duration-150">
+              <summary className="hover:bg-surface-hover hover:text-foreground text-muted-foreground -mx-1 cursor-pointer rounded px-1 text-sm transition-colors duration-150">
                 Per-item detail ({report.entries.length}
                 {report.entries_truncated ? ", truncated" : ""})
               </summary>
@@ -2262,7 +2293,8 @@ export function BackupPanel() {
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium">
-                  {selectedSpaces.length}/{confluenceArchive.spaces.length} Space(s) selected
+                  {selectedSpaces.length}/{confluenceArchive.spaces.length}{" "}
+                  Space(s) selected
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -2306,7 +2338,8 @@ export function BackupPanel() {
                           const nextSelected = event.target.checked
                             ? [...selectedSpaces, space.key]
                             : selectedSpaces.filter((key) => key !== space.key);
-                          const availableCount = confluenceArchive.spaces.length;
+                          const availableCount =
+                            confluenceArchive.spaces.length;
                           setSelectedSpaces(nextSelected);
                           setImportAllSpaces(
                             nextSelected.length === availableCount,
@@ -2344,7 +2377,9 @@ export function BackupPanel() {
                       );
                       const availableCount = confluenceArchive.spaces.length;
                       setSelectedSpaces(nextSelected);
-                      setImportAllSpaces(nextSelected.length === availableCount);
+                      setImportAllSpaces(
+                        nextSelected.length === availableCount,
+                      );
                     }}
                   >
                     {normalizedSpaceFilter ? "Select visible" : "Select all"}
@@ -2381,7 +2416,7 @@ export function BackupPanel() {
                     onClick={requestConfluenceImport}
                   >
                     {confluencePending ? (
-                      <Loader2 className="animate-spin size-4" />
+                      <Loader2 className="size-4 animate-spin" />
                     ) : (
                       <Upload className="size-4" />
                     )}{" "}
@@ -2402,8 +2437,9 @@ export function BackupPanel() {
           title="Import Completed Successfully"
           description="All selected spaces from your Confluence backup have been successfully imported."
         >
-          <p className="text-sm text-muted-foreground">
-            Do you want to import another Confluence archive or continue with a new import?
+          <p className="text-muted-foreground text-sm">
+            Do you want to import another Confluence archive or continue with a
+            new import?
           </p>
           <DialogFooter>
             <Button

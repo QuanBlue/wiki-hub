@@ -101,7 +101,7 @@ export function UserRowActions({
           className={cn(
             "text-muted-foreground hover:text-foreground cursor-pointer rounded-md p-1.5",
             "transition-colors duration-150",
-            "hover:bg-surface-hover active:bg-surface-selected",
+            "hover:bg-surface-selected active:bg-surface-selected",
             "data-[state=open]:bg-surface-selected data-[state=open]:text-foreground",
             "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
             "disabled:pointer-events-none disabled:opacity-50",
