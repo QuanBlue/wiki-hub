@@ -1271,7 +1271,7 @@ export function SpaceWorkspace({
   const desktopSidebarWidth = collapsed ? 0 : sidebarWidth;
 
   return (
-    <div className="bg-background min-h-[calc(100vh-var(--wh-topbar-height))] md:flex">
+    <div className="bg-background min-h-[calc(100vh-var(--wh-topbar-height))] min-w-0 max-w-full overflow-x-hidden md:flex md:h-[calc(100vh-var(--wh-topbar-height))] md:overflow-hidden">
       <aside
         id="wikihub-sidebar"
         data-sidebar-kind="space"
@@ -1292,10 +1292,9 @@ export function SpaceWorkspace({
       >
         {!collapsed ? (
           <div
-            ref={spaceSidebarScrollRef}
-            className="border-border bg-surface-sunken h-full w-full max-w-full overflow-x-hidden border-r md:w-(--space-sidebar-panel-width) md:overflow-y-auto"
+            className="border-border bg-surface-sunken flex h-full w-full max-w-full flex-col overflow-hidden border-r md:w-(--space-sidebar-panel-width)"
           >
-            <div className="flex min-h-full min-w-0 flex-col px-5 py-4">
+            <div className="flex min-w-0 shrink-0 flex-col px-5 py-4">
               <div className="flex items-start gap-3">
                 <SpaceAvatar space={space} />
                 <div className="min-w-0 flex-1 pt-1">
@@ -1346,6 +1345,11 @@ export function SpaceWorkspace({
                 ) : null}
               </div>
 
+            </div>
+            <div
+              ref={spaceSidebarScrollRef}
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 pb-4"
+            >
               <nav aria-label={`${space.name} page tree`} className="mt-2">
                 <ul className="space-y-0.5">
                   <PageTree
@@ -1382,10 +1386,10 @@ export function SpaceWorkspace({
         ) : null}
       </aside>
 
-      <main className="min-w-0 flex-1">
+      <main className="min-w-0 max-w-full flex-1 overflow-x-hidden md:h-full md:overflow-y-auto md:overscroll-contain">
         <div
           className={cn(
-            "mx-auto px-6 py-5 sm:px-8 lg:px-10",
+            "mx-auto min-w-0 max-w-full overflow-x-hidden px-6 py-5 sm:px-8 lg:px-10",
             editing || viewFullWidth ? "max-w-none" : "max-w-6xl",
           )}
         >

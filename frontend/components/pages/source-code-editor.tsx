@@ -248,7 +248,7 @@ export function SourceCodeEditor({
   }, [value]);
 
   return (
-    <div className="border-border bg-surface focus-within:ring-ring focus-within:ring-offset-background overflow-hidden rounded-md border shadow-sm transition-[border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-offset-2">
+    <div className="border-border bg-surface focus-within:ring-ring focus-within:ring-offset-background min-w-0 max-w-full overflow-hidden rounded-md border shadow-sm transition-[border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-offset-2">
       <div className="border-border bg-surface-sunken flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
         <CodeXml className="text-primary size-4" aria-hidden />
         <p className="text-xs font-semibold tracking-wide uppercase">

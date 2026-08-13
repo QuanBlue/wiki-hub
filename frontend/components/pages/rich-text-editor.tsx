@@ -1210,7 +1210,7 @@ export function RichTextEditor({
       <EditorContent
         editor={editor}
         className={cn(
-          "border-border bg-surface focus-within:ring-ring focus-within:ring-offset-background rounded-b-md border border-t-0 focus-within:ring-2 focus-within:ring-offset-2",
+          "border-border bg-surface focus-within:ring-ring focus-within:ring-offset-background min-w-0 max-w-full overflow-x-auto rounded-b-md border border-t-0 focus-within:ring-2 focus-within:ring-offset-2",
           !wrapText && "[&_p]:whitespace-nowrap [&_h1]:whitespace-nowrap [&_h2]:whitespace-nowrap [&_h3]:whitespace-nowrap",
         )}
       />

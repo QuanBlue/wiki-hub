@@ -192,6 +192,12 @@
     height: auto !important;
   }
 
+  .source-code-editor-host,
+  .source-code-editor-host > .cm-editor {
+    max-width: 100%;
+    min-width: 0;
+  }
+
   .loading-shimmer {
     background: linear-gradient(
       105deg,
