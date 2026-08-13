@@ -13,7 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -481,6 +481,7 @@ export function BackupPanel() {
   const storedConfluenceUploadRef = useRef<StoredConfluenceUpload | null>(null);
   const uploadActiveRef = useRef(false);
   const allowConfirmedLeaveRef = useRef(false);
+  const logsListRef = useRef<HTMLUListElement>(null);
 
   const [includeCredentials, setIncludeCredentials] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -558,6 +559,28 @@ export function BackupPanel() {
   ].join(", ");
   const confluenceArchiveName =
     storedConfluenceUpload?.fileName ?? confluenceFile?.name ?? null;
+
+  const displayConfluenceLogs = useMemo(() => {
+    const result: ConfluenceImportLog[] = [];
+    let foundDownloadLog = false;
+    for (const log of confluenceLogs) {
+      if (log.message.startsWith("Downloading archive to worker scratch space:")) {
+        if (!foundDownloadLog) {
+          result.push(log);
+          foundDownloadLog = true;
+        }
+      } else {
+        result.push(log);
+      }
+    }
+    return result.reverse();
+  }, [confluenceLogs]);
+
+  useEffect(() => {
+    if (logsListRef.current) {
+      logsListRef.current.scrollTop = logsListRef.current.scrollHeight;
+    }
+  }, [displayConfluenceLogs]);
   const confluenceArchiveSize =
     storedConfluenceUpload?.fileSize ?? confluenceFile?.size ?? 0;
   const storedUploadNeedsFile = Boolean(
@@ -597,10 +620,10 @@ export function BackupPanel() {
       : confluenceJob.status === "queued"
         ? 0
         : confluenceJob.phase === "downloading"
-          ? jobDownloadPercent * 0.15
+          ? jobDownloadPercent
           : confluenceJob.phase === "scanning"
-            ? 15
-            : 15 + jobSpacePercent * 0.85;
+            ? 100
+            : jobSpacePercent;
   const jobTitle = !confluenceJob
     ? ""
     : confluenceJob.status === "completed"
@@ -2063,16 +2086,19 @@ export function BackupPanel() {
                 {confluenceCancelPending ? "Cancelling..." : "Cancel"}
               </Button>
             ) : null}
-            {confluenceLogs.length ? (
+            {displayConfluenceLogs.length ? (
               <details
                 className="border-border bg-surface mt-4 rounded-md border"
                 open
               >
                 <summary className="hover:bg-surface-hover cursor-pointer px-3 py-2 text-sm font-medium transition-colors duration-150">
-                  Import activity ({confluenceLogs.length})
+                  Import activity ({displayConfluenceLogs.length})
                 </summary>
-                <ul className="border-border max-h-44 divide-y overflow-y-auto border-t text-xs">
-                  {confluenceLogs.map((log) => (
+                <ul
+                  ref={logsListRef}
+                  className="border-border max-h-44 divide-y overflow-y-auto border-t text-xs"
+                >
+                  {displayConfluenceLogs.map((log) => (
                     <li key={log.id} className="px-3 py-2">
                       <span className="font-medium">{log.level}</span> ·{" "}
                       {log.entity_label ? `${log.entity_label}: ` : ""}
@@ -2229,29 +2255,6 @@ export function BackupPanel() {
                 <p className="text-sm font-medium">
                   {confluenceArchive.spaces.length} Space(s) found
                 </p>
-                <label
-                  className={cn(
-                    "flex items-center gap-2 text-sm",
-                    importInProgress && "cursor-not-allowed opacity-60",
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={importAllSpaces}
-                    disabled={importInProgress}
-                    onChange={(event) => {
-                      const nextImportAll = event.target.checked;
-                      setImportAllSpaces(nextImportAll);
-                      setSelectedSpaces(
-                        nextImportAll
-                          ? confluenceArchive.spaces.map((space) => space.key)
-                          : [],
-                      );
-                    }}
-                    className="accent-primary size-4"
-                  />{" "}
-                  Import all spaces
-                </label>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative min-w-52 flex-1">

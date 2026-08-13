@@ -375,17 +375,17 @@ async def log(
     *,
     entity_type: str | None = None,
     entity_label: str | None = None,
-) -> None:
-    session.add(
-        ImportLog(
-            job_id=job.id,
-            level=level,
-            phase=phase,
-            message=message,
-            entity_type=entity_type,
-            entity_label=entity_label,
-        )
+) -> ImportLog:
+    entry = ImportLog(
+        job_id=job.id,
+        level=level,
+        phase=phase,
+        message=message,
+        entity_type=entity_type,
+        entity_label=entity_label,
     )
+    session.add(entry)
+    return entry
 
 
 async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid.UUID) -> None:
@@ -396,7 +396,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
     if archive is None:
         return
     job.status, job.phase = "running", "downloading"
-    await log(
+    download_log = await log(
         session, job, "info", "downloading", "Downloading archive to worker scratch space: 0%."
     )
     await session.commit()
@@ -418,13 +418,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 }
                 if percent // 10 > last_logged_tenth:
                     last_logged_tenth = percent // 10
-                    await log(
-                        session,
-                        job,
-                        "info",
-                        "downloading",
-                        f"Downloading archive to worker scratch space: {percent}%.",
-                    )
+                    download_log.message = f"Downloading archive to worker scratch space: {percent}%."
                 await session.commit()
 
             await storage.download_to_file(
