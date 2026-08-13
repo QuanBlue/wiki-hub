@@ -570,7 +570,20 @@ function PageTree({
     });
   }
 
-  return <>{renderPages(null)}</>;
+  return (
+    <>
+      {/* If there is exactly one root page (no parent), skip it in the tree:
+          clicking the space name already navigates to that page.  Promote
+          its children to the top level so the sidebar stays clean. */}
+      {(() => {
+        const rootPages = pagesByParent.get(null) ?? [];
+        if (rootPages.length === 1) {
+          return renderPages(rootPages[0].id);
+        }
+        return renderPages(null);
+      })()}
+    </>
+  );
 }
 
 export function SpaceWorkspace({
