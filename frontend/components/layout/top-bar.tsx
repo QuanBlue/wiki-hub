@@ -29,7 +29,7 @@ export function TopBar({ siteName, user }: { siteName: string; user: Me }) {
           <button
             type="button"
             disabled
-            className="border-border bg-surface-sunken text-muted-foreground flex h-8 w-full items-center gap-2 rounded-md border px-2.5 text-left disabled:opacity-70"
+            className="border-border bg-surface-sunken text-muted-foreground hover:bg-surface-hover hover:border-border-strong active:bg-surface-selected flex h-8 w-full items-center gap-2 rounded-md border px-2.5 text-left transition-colors duration-150 disabled:opacity-70 disabled:pointer-events-none"
           >
             <Search className="size-4 shrink-0" />
             <span className="truncate text-xs">Search WikiHub</span>

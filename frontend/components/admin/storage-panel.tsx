@@ -215,7 +215,7 @@ function FileRow({ node, depth, onDelete, onDownload }: FileRowProps) {
       <button
         aria-label={`Download ${node.name}`}
         title="Download"
-        className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1 transition-colors"
+        className="text-muted-foreground hover:text-foreground hover:bg-neutral-200 dark:hover:bg-neutral-700 shrink-0 rounded p-1 transition-colors"
         onClick={() => onDownload(node.path, node.name)}
       >
         <Download className="size-3.5" />
@@ -223,7 +223,7 @@ function FileRow({ node, depth, onDelete, onDownload }: FileRowProps) {
       <button
         aria-label={`Delete ${node.name}`}
         title="Delete"
-        className="text-muted-foreground hover:text-danger shrink-0 rounded p-1 transition-colors"
+        className="text-muted-foreground hover:text-danger hover:bg-neutral-200 dark:hover:bg-neutral-700 shrink-0 rounded p-1 transition-colors"
         onClick={() => onDelete(node.path)}
       >
         <Trash2 className="size-3.5" />
