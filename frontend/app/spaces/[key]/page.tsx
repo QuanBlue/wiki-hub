@@ -1,13 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 
-import { AppShell } from "@/components/layout/app-shell";
 import { SpaceWorkspace } from "@/components/pages/space-workspace";
 import { ApiError } from "@/lib/api-client";
-import { SITE_NAME } from "@/lib/env";
 import { getCurrentUser } from "@/lib/auth";
 import { listPages } from "@/lib/pages";
 import { findHomePage } from "@/lib/home-page";
-import { getSidebarPreferences } from "@/lib/sidebar-preferences";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +20,6 @@ export default async function SpaceDetailPage({ params }: Params) {
   let space;
   let pages;
   let members;
-  const sidebarPreferences = await getSidebarPreferences();
   try {
     [space, pages, members] = await Promise.all([
       getSpace(key),
@@ -49,23 +45,15 @@ export default async function SpaceDetailPage({ params }: Params) {
   // Space has no pages yet — show a redirect back to itself so the user can
   // create one.  This branch is very rare but ensures the page never crashes.
   return (
-    <AppShell
-      siteName={SITE_NAME}
-      user={user}
-      hideSidebar
-      contentClassName="max-w-none px-0 py-0 sm:px-0 sm:py-0"
-    >
-      <SpaceWorkspace
-        space={space}
-        pages={pages}
-        members={members}
-        initialSidebarWidth={sidebarPreferences.spaceWidth}
-        canEdit={
-          user.is_superuser ||
-          space.my_role === "admin" ||
-          space.my_role === "editor"
-        }
-      />
-    </AppShell>
+    <SpaceWorkspace
+      space={space}
+      pages={pages}
+      members={members}
+      canEdit={
+        user.is_superuser ||
+        space.my_role === "admin" ||
+        space.my_role === "editor"
+      }
+    />
   );
 }

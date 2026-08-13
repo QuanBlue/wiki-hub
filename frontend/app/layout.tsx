@@ -82,7 +82,7 @@ export default async function RootLayout({
         } as CSSProperties
       }
     >
-      <head>
+      <head suppressHydrationWarning>
         {/*
           Some browser extensions add `bis_*` and `__processed_*__`
           attributes before React starts. Those attributes do not belong to the
@@ -102,6 +102,13 @@ export default async function RootLayout({
 
             const clean = (element) => {
               if (!(element instanceof Element)) return;
+              if (
+                element instanceof HTMLScriptElement &&
+                element.src.startsWith("chrome-extension://")
+              ) {
+                element.remove();
+                return;
+              }
               for (const attribute of Array.from(element.attributes)) {
                 if (isExtensionMarker(attribute.name)) {
                   element.removeAttribute(attribute.name);
@@ -137,7 +144,9 @@ export default async function RootLayout({
             else document.addEventListener("DOMContentLoaded", start, { once: true });
           })();`}
         </Script>
-        <script
+        <Script
+          id="preload-sidebar-preferences"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `(() => {
               try {
@@ -192,7 +201,10 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body className={`${inter.variable} ${jetbrainsMono.variable}`}>
+      <body
+        className={`${inter.variable} ${jetbrainsMono.variable}`}
+        suppressHydrationWarning
+      >
         <Providers>{children}</Providers>
       </body>
     </html>

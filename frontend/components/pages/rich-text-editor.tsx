@@ -48,8 +48,10 @@ import {
   TableCellsMerge,
   Type,
   Trash2,
+  UnfoldHorizontal,
   Underline,
   Undo2,
+  WrapText,
 } from "lucide-react";
 import {
   useCallback,
@@ -62,14 +64,12 @@ import {
 
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
@@ -865,7 +865,15 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
   );
 }
 
-function RichTextToolbar({ editor }: { editor: Editor | null }) {
+function RichTextToolbar({
+  editor,
+  wrapText,
+  onToggleWrap,
+}: {
+  editor: Editor | null;
+  wrapText: boolean;
+  onToggleWrap: () => void;
+}) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
   const [linkText, setLinkText] = useState("");
@@ -1024,6 +1032,14 @@ function RichTextToolbar({ editor }: { editor: Editor | null }) {
       <AlignmentMenu editor={editor} />
       <ToolbarButton
         editor={editor}
+        label={wrapText ? "Unwrap text" : "Wrap text"}
+        active={wrapText}
+        onClick={onToggleWrap}
+      >
+        {wrapText ? <UnfoldHorizontal /> : <WrapText />}
+      </ToolbarButton>
+      <ToolbarButton
+        editor={editor}
         label="Bulleted list"
         active={editor?.isActive("bulletList")}
         onClick={() => editor?.chain().focus().toggleBulletList().run()}
@@ -1164,6 +1180,7 @@ export function RichTextEditor({
   content: string;
   onChange: (html: string) => void;
 }) {
+  const [wrapText, setWrapText] = useState(true);
   const normalizedContent = useMemo(
     () => normalizeConfluenceCodeMacros(content),
     [content],
@@ -1179,7 +1196,11 @@ export function RichTextEditor({
   return (
     <div>
       {editor ? (
-        <RichTextToolbar editor={editor} />
+        <RichTextToolbar
+          editor={editor}
+          wrapText={wrapText}
+          onToggleWrap={() => setWrapText((current) => !current)}
+        />
       ) : (
         <div
           className="border-border bg-surface-sunken h-10 rounded-t-md border"
@@ -1188,7 +1209,10 @@ export function RichTextEditor({
       )}
       <EditorContent
         editor={editor}
-        className="border-border bg-surface focus-within:ring-ring focus-within:ring-offset-background rounded-b-md border border-t-0 focus-within:ring-2 focus-within:ring-offset-2"
+        className={cn(
+          "border-border bg-surface focus-within:ring-ring focus-within:ring-offset-background rounded-b-md border border-t-0 focus-within:ring-2 focus-within:ring-offset-2",
+          !wrapText && "[&_p]:whitespace-nowrap [&_h1]:whitespace-nowrap [&_h2]:whitespace-nowrap [&_h3]:whitespace-nowrap",
+        )}
       />
       <TableActionsMenu editor={editor} />
     </div>

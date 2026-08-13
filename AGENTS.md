@@ -39,3 +39,12 @@ When modifying the Confluence import and file upload component (`frontend/compon
 ## Button hover rules
 
 All buttons and interactive action icons MUST have a hover effect. Always verify and add hover states (e.g., `hover:bg-accent`, `hover:text-accent-foreground`, or opacity changes) for all clickable elements across all pages.
+
+## In-app notifications and confirmations
+
+Use WikiHub modal components for user-facing notifications, confirmations, and
+leave-without-saving prompts. Do not use `window.alert()` or `window.confirm()`
+for application interactions. The browser's native `beforeunload` dialog is
+allowed only as an unavoidable fallback for browser refresh controls, closing
+tabs/windows, or other unload actions that browsers do not permit web apps to
+replace with custom modals.

@@ -189,11 +189,39 @@
   .source-code-editor-host > .cm-editor,
   .source-code-editor-host .cm-scroller,
   .source-code-editor-host .cm-gutters {
-    height: 100% !important;
+    height: auto !important;
+  }
+
+  .loading-shimmer {
+    background: linear-gradient(
+      105deg,
+      var(--surface-hover) 30%,
+      var(--surface-selected) 45%,
+      var(--surface-hover) 60%
+    );
+    background-size: 250% 100%;
+    animation: wh-loading-shimmer 1.35s ease-in-out infinite;
+  }
+
+  @keyframes wh-loading-shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .loading-shimmer {
+      animation: none;
+    }
   }
 
   .source-code-editor-host .cm-scroller {
     align-items: stretch !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
   }
 
   .source-code-editor-host .cm-gutters {

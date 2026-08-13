@@ -16,6 +16,7 @@ import {
   Minimize2,
   MoreHorizontal,
   Pencil,
+  RefreshCw,
   Share2,
   Star,
   Tag,
@@ -76,6 +77,7 @@ const SAVED_PAGE_KEYS_STORAGE = "wikihub:saved-page-keys";
 const SAVED_PAGE_KEYS_EVENT = "wikihub:saved-pages-changed";
 const SPACE_SIDEBAR_SCROLL_PREFIX = "wikihub:space-sidebar-scroll:";
 let savedPageKeysSnapshot: string[] = [];
+const EMPTY_SAVED_PAGE_KEYS: string[] = [];
 
 function getSavedPageKeys(): string[] {
   if (typeof window === "undefined") return savedPageKeysSnapshot;
@@ -492,20 +494,8 @@ function PageTree({
     return grouped;
   }, [homePageId, pages]);
   const [expandedPageIds, setExpandedPageIds] = useState<Set<string>>(() => {
-    // Restore previously saved expansion state from sessionStorage so that
-    // server-side redirects (e.g. clicking the space homepage) don't collapse
-    // the tree.  Fall back to expanding only ancestors of the active page.
-    if (typeof window !== "undefined") {
-      try {
-        const saved = window.sessionStorage.getItem(storageKey);
-        if (saved) {
-          const ids: unknown = JSON.parse(saved);
-          if (Array.isArray(ids)) return new Set<string>(ids as string[]);
-        }
-      } catch {
-        // Ignore storage errors.
-      }
-    }
+    // Keep the first client render identical to the server render. Browser
+    // storage is restored in an effect below, after hydration completes.
     const activePage = pages.find((p) => p.slug === activeSlug);
     const pageById = new Map(pages.map((p) => [p.id, p]));
     const ancestorIds = new Set<string>();
@@ -516,9 +506,26 @@ function PageTree({
     }
     return ancestorIds;
   });
+  const restoredStorage = useRef(false);
+
+  useEffect(() => {
+    try {
+      const saved = window.sessionStorage.getItem(storageKey);
+      if (!saved) return;
+      const ids: unknown = JSON.parse(saved);
+      if (Array.isArray(ids)) {
+        setExpandedPageIds(new Set<string>(ids as string[]));
+      }
+    } catch {
+      // Ignore storage errors.
+    } finally {
+      restoredStorage.current = true;
+    }
+  }, [storageKey]);
 
   // Persist expansion state whenever it changes.
   useEffect(() => {
+    if (!restoredStorage.current) return;
     try {
       window.sessionStorage.setItem(
         storageKey,
@@ -646,17 +653,7 @@ export function SpaceWorkspace({
   const sidebarWidth = useSyncExternalStore(
     spaceSidebarWidthStore.subscribe,
     spaceSidebarWidthStore.getSnapshot,
-    () => {
-      if (typeof document !== "undefined") {
-        const preloaded = Number.parseFloat(
-          document.documentElement.style.getPropertyValue(
-            "--wh-preloaded-space-sidebar-width",
-          ),
-        );
-        if (Number.isFinite(preloaded)) return clampWidth(preloaded);
-      }
-      return initialSidebarWidth;
-    },
+    () => initialSidebarWidth,
   );
   const [dragging, setDragging] = useState(false);
   const [favorite, setFavorite] = useState(space.is_favorite);
@@ -676,17 +673,40 @@ export function SpaceWorkspace({
   const savedPageKeys = useSyncExternalStore(
     subscribeToSavedPages,
     getSavedPageKeys,
-    () => [],
+    () => EMPTY_SAVED_PAGE_KEYS,
   );
   const [draftContent, setDraftContent] = useState("");
   const [markdownDraft, setMarkdownDraft] = useState("");
   const [savePending, setSavePending] = useState(false);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<
+    "idle" | "saving" | "saved"
+  >("idle");
+  const autoSaveInFlight = useRef(false);
+  const autoSaveResetTimer = useRef<number | null>(null);
+  const allowUnload = useRef(false);
   const [deletePageOpen, setDeletePageOpen] = useState(false);
   const [deletePagePending, setDeletePagePending] = useState(false);
   const [movePageOpen, setMovePageOpen] = useState(false);
+  const [leaveHref, setLeaveHref] = useState<string | null>(null);
+  const [reloadPending, setReloadPending] = useState(false);
   const [overviewEditing, setOverviewEditing] = useState(false);
   const [overviewDraft, setOverviewDraft] = useState(space.description);
   const [overviewSavePending, setOverviewSavePending] = useState(false);
+  const pageEditBaseline = useRef({ html: "", markdown: "" });
+  const overviewEditBaseline = useRef(space.description);
+  const latestPageDraft = useRef({
+    currentPage,
+    draftContent,
+    markdownDraft,
+    editMode,
+  });
+  latestPageDraft.current = {
+    currentPage,
+    draftContent,
+    markdownDraft,
+    editMode,
+  };
 
   // Page routes remount this workspace as the selected slug changes. Keep the
   // reader's place in a long page tree rather than resetting it to the top on
@@ -726,6 +746,17 @@ export function SpaceWorkspace({
     ? savedPageKeys.includes(savedPageKey)
     : false;
   const liked = likeStatus.liked_by_me;
+  const pageEditDirty =
+    editing &&
+    Boolean(currentPage) &&
+    (editMode === "markdown"
+      ? markdownDraft !== pageEditBaseline.current.markdown
+      : draftContent !== pageEditBaseline.current.html);
+  const overviewEditDirty =
+    overviewEditing && overviewDraft !== overviewEditBaseline.current;
+  const hasUnsavedChanges = pageEditDirty || overviewEditDirty;
+  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+  hasUnsavedChangesRef.current = hasUnsavedChanges;
   const author = currentPage?.created_by_username ?? space.created_by_username;
   const updatedBy =
     currentPage?.updated_by_username ?? space.created_by_username;
@@ -748,6 +779,131 @@ export function SpaceWorkspace({
 
     return [...ancestors, currentPage];
   }, [currentPage, pages]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
+    const message = "You have unsaved changes. Leave without saving?";
+    const confirmUnload = (event: BeforeUnloadEvent) => {
+      if (allowUnload.current) return;
+      event.preventDefault();
+      event.returnValue = message;
+    };
+    const confirmInternalNavigation = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+        return;
+
+      const target = event.target;
+      const link =
+        target instanceof Element ? target.closest("a[href]") : null;
+      if (!(link instanceof HTMLAnchorElement)) return;
+      if (link.target && link.target !== "_self") return;
+      if (link.hasAttribute("download")) return;
+
+      const destination = new URL(link.href, window.location.href);
+      if (destination.href === window.location.href) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setLeaveHref(destination.href);
+    };
+
+    window.addEventListener("beforeunload", confirmUnload);
+    document.addEventListener("click", confirmInternalNavigation, true);
+    return () => {
+      window.removeEventListener("beforeunload", confirmUnload);
+      document.removeEventListener("click", confirmInternalNavigation, true);
+    };
+  }, [hasUnsavedChanges]);
+
+  function leaveWithoutSaving() {
+    if (reloadPending) {
+      setReloadPending(false);
+      allowUnload.current = true;
+      window.location.reload();
+      return;
+    }
+    if (!leaveHref) return;
+    const destination = new URL(leaveHref, window.location.href);
+    setLeaveHref(null);
+    if (destination.origin === window.location.origin) {
+      router.push(`${destination.pathname}${destination.search}${destination.hash}`);
+    } else {
+      window.location.assign(destination.href);
+    }
+  }
+
+  function markAutoSaveStatus(status: "idle" | "saving" | "saved") {
+    if (autoSaveResetTimer.current !== null) {
+      window.clearTimeout(autoSaveResetTimer.current);
+      autoSaveResetTimer.current = null;
+    }
+    setAutoSaveStatus(status);
+    if (status === "saved") {
+      autoSaveResetTimer.current = window.setTimeout(() => {
+        setAutoSaveStatus("idle");
+        autoSaveResetTimer.current = null;
+      }, 1000);
+    }
+  }
+
+  useEffect(() => {
+    if (!editing || !autoSaveEnabled) return;
+
+    const interval = window.setInterval(() => {
+      if (!hasUnsavedChangesRef.current || autoSaveInFlight.current) return;
+      markAutoSaveStatus("saving");
+      void persistPage({ announce: false }).then((saved) => {
+        markAutoSaveStatus(saved ? "saved" : "idle");
+      });
+    }, 30_000);
+
+    return () => window.clearInterval(interval);
+  }, [autoSaveEnabled, editing]);
+
+  useEffect(() => {
+    if (!editing) return;
+
+    const saveWithShortcut = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        (!event.ctrlKey && !event.metaKey)
+      ) {
+        return;
+      }
+      if (event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        setReloadPending(true);
+        return;
+      }
+      if (event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      if (!hasUnsavedChanges || savePending || autoSaveInFlight.current) return;
+
+      void persistPage();
+    };
+
+    window.addEventListener("keydown", saveWithShortcut);
+    return () => window.removeEventListener("keydown", saveWithShortcut);
+  }, [
+    currentPage,
+    draftContent,
+    editMode,
+    editing,
+    hasUnsavedChanges,
+    markdownDraft,
+    savePending,
+  ]);
+
+  useEffect(
+    () => () => {
+      if (autoSaveResetTimer.current !== null) {
+        window.clearTimeout(autoSaveResetTimer.current);
+      }
+    },
+    [],
+  );
+
   const compactBreadcrumbPages = useMemo<(WikiPage | null)[]>(() => {
     // Keep the immediate context around the current page while avoiding an
     // ever-growing path in deeply nested imported documentation.
@@ -947,6 +1103,10 @@ export function SpaceWorkspace({
         : currentPage.content;
     setDraftContent(mode === "html" ? prettyHtml(html) : html);
     setMarkdownDraft(markdown);
+    pageEditBaseline.current = {
+      html: mode === "html" ? prettyHtml(html) : html,
+      markdown,
+    };
     setEditMode(mode);
     setPreviewing(false);
     setEditing(true);
@@ -971,6 +1131,7 @@ export function SpaceWorkspace({
 
   function beginOverviewEditing() {
     setOverviewDraft(space.description);
+    overviewEditBaseline.current = space.description;
     setOverviewEditing(true);
   }
 
@@ -1002,30 +1163,60 @@ export function SpaceWorkspace({
     }
   }
 
-  async function savePage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!currentPage) return;
+  async function persistPage({
+    closeEditor = false,
+    announce = true,
+  }: {
+    closeEditor?: boolean;
+    announce?: boolean;
+  } = {}) {
+    const {
+      currentPage: page,
+      draftContent: htmlDraft,
+      markdownDraft: markdownSource,
+      editMode: mode,
+    } = latestPageDraft.current;
+    if (!page || autoSaveInFlight.current) return false;
 
+    autoSaveInFlight.current = true;
     setSavePending(true);
     try {
       const updated = await api.patch<WikiPage>(
-        `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}`,
+        `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(page.slug)}`,
         {
-          content: editMode === "markdown" ? markdownDraft : draftContent,
-          content_format: formatForMode(editMode),
+          content: mode === "markdown" ? markdownSource : htmlDraft,
+          content_format: formatForMode(mode),
         },
       );
-      toast.success(`Saved "${updated.title}".`);
-      setEditing(false);
-      setPreviewing(false);
-      router.refresh();
+      pageEditBaseline.current = {
+        html: htmlDraft,
+        markdown: markdownSource,
+      };
+      if (announce) toast.success(`Saved "${updated.title}".`);
+      if (closeEditor) {
+        setEditing(false);
+        setPreviewing(false);
+        router.refresh();
+      }
+      return true;
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not save this page.",
-      );
+      if (announce) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not save this page.",
+        );
+      }
+      return false;
     } finally {
       setSavePending(false);
+      autoSaveInFlight.current = false;
     }
+  }
+
+  async function savePage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await persistPage({ closeEditor: true });
   }
 
   async function deletePage() {
@@ -1248,7 +1439,7 @@ export function SpaceWorkspace({
               </ol>
             </nav>
 
-            <div className="[&>button]:!text-sm [&>button]:!font-medium [&>button>svg]:text-muted-foreground [&>div>button]:!text-sm [&>div>button]:!font-medium [&>div>button>svg]:text-muted-foreground flex flex-nowrap items-center gap-1">
+            <div className="[&>button]:!text-sm [&>button]:!font-medium [&>div>button]:!text-sm [&>div>button]:!font-medium flex flex-nowrap items-center gap-1">
               {overviewEditing ? (
                 <>
                   <Button
@@ -1263,7 +1454,7 @@ export function SpaceWorkspace({
                   </Button>
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
                     onClick={cancelOverviewEditing}
                     disabled={overviewSavePending}
@@ -1286,14 +1477,53 @@ export function SpaceWorkspace({
                     {previewing ? "Hide live preview" : "Live preview"}
                   </Button>
                   <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-pressed={autoSaveEnabled}
+                    title={
+                      autoSaveEnabled
+                        ? "Auto-save is on. Saves every 30 seconds."
+                        : "Turn on auto-save. Saves every 30 seconds."
+                    }
+                    onClick={() => {
+                      setAutoSaveEnabled((current) => !current);
+                      markAutoSaveStatus("idle");
+                    }}
+                    disabled={savePending}
+                    className={cn(
+                      "min-w-36 bg-surface-hover text-muted-foreground hover:bg-surface-selected hover:text-foreground",
+                      autoSaveEnabled &&
+                        "border-primary/40 bg-surface-selected text-primary hover:bg-surface-hover hover:text-primary",
+                    )}
+                  >
+                    {autoSaveStatus === "saving" ? (
+                      <RefreshCw className="animate-spin [animation-duration:1s]" />
+                    ) : autoSaveStatus === "saved" ? (
+                      <Check />
+                    ) : (
+                      <RefreshCw />
+                    )}
+                    {autoSaveStatus === "saved"
+                      ? "Saved"
+                      : autoSaveEnabled
+                        ? "Auto-save on"
+                        : "Auto-save"}
+                  </Button>
+                  <Button
                     type="submit"
                     form="page-editor-form"
                     variant="primary"
                     size="sm"
                     disabled={savePending}
+                    aria-label={pageEditDirty ? "Save changes" : "Save"}
                   >
                     <Check />
-                    {savePending ? "Saving..." : "Save"}
+                    {savePending
+                      ? "Saving..."
+                      : pageEditDirty
+                        ? "Save*"
+                        : "Save"}
                   </Button>
                   <span aria-hidden className="bg-border mx-1 h-5 w-px" />
                   <Button
@@ -1336,7 +1566,7 @@ export function SpaceWorkspace({
                     </DropdownMenuTrigger>
                       <DropdownMenuContent
                         align="end"
-                        className="min-w-48 text-sm font-medium text-muted-foreground [&_svg]:text-muted-foreground"
+                        className="min-w-48 text-sm font-medium text-muted-foreground"
                       >
                       <DropdownMenuItem onSelect={() => beginEditing("normal")}>
                         <Pencil />
@@ -1471,7 +1701,7 @@ export function SpaceWorkspace({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
                         align="end"
-                        className="min-w-52 text-sm font-medium text-muted-foreground [&_svg]:text-muted-foreground"
+                        className="min-w-52 text-sm font-medium text-muted-foreground"
                       >
                         {canEdit && space.status === "active" ? (
                           <DropdownMenuItem
@@ -1532,7 +1762,7 @@ export function SpaceWorkspace({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
                       align="end"
-                      className="min-w-48 text-sm font-medium text-muted-foreground lg:hidden [&_svg]:text-muted-foreground"
+                      className="min-w-48 text-sm font-medium text-muted-foreground lg:hidden"
                     >
                       {currentPage ? (
                         <DropdownMenuItem onSelect={toggleSavedForLater}>
@@ -1861,6 +2091,25 @@ export function SpaceWorkspace({
               </>
             )}
           </article>
+
+          <ConfirmDialog
+            open={leaveHref !== null || reloadPending}
+            onOpenChange={(open) => {
+              if (!open) {
+                setLeaveHref(null);
+                setReloadPending(false);
+              }
+            }}
+            title={reloadPending ? "Reload site?" : "Leave without saving?"}
+            description={
+              reloadPending
+                ? "Changes you made may not be saved."
+                : "You have unsaved changes. They will be lost if you leave this page."
+            }
+            confirmLabel={reloadPending ? "Reload" : "Leave page"}
+            cancelLabel="Stay"
+            onConfirm={leaveWithoutSaving}
+          />
 
           <ConfirmDialog
             open={conversionMode !== null}

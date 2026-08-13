@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Toaster } from "sonner";
 
 import { ApiError } from "@/lib/api-client";
+import { NavigationLoading } from "@/components/navigation-loading";
 
 function makeQueryClient() {
   return new QueryClient({
@@ -38,6 +39,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         disableTransitionOnChange
       >
         {children}
+        <NavigationLoading />
         <Toaster position="bottom-right" closeButton richColors />
       </ThemeProvider>
     </QueryClientProvider>

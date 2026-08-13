@@ -151,26 +151,13 @@ export function SidebarProvider({
     collapsedStore.subscribe,
     collapsedStore.getSnapshot,
     () => {
-      if (typeof document !== "undefined") {
-        return document.documentElement.dataset.whSidebarCollapsed === "true";
-      }
       return initialCollapsed;
     },
   );
   const sidebarWidth = React.useSyncExternalStore(
     widthStore.subscribe,
     widthStore.getSnapshot,
-    () => {
-      if (typeof document !== "undefined") {
-        const preloaded = Number.parseFloat(
-          document.documentElement.style.getPropertyValue(
-            "--wh-preloaded-sidebar-width",
-          ),
-        );
-        if (Number.isFinite(preloaded)) return preloaded;
-      }
-      return initialSidebarWidth;
-    },
+    () => initialSidebarWidth,
   );
   const [mobileOpen, setMobileOpen] = React.useState(false);
 

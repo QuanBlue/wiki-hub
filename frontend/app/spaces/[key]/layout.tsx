@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 
-import { getSpace } from "@/lib/spaces";
+import { AppShell } from "@/components/layout/app-shell";
+import { getCurrentUser } from "@/lib/auth";
+import { SITE_NAME } from "@/lib/env";
 import { spaceTabTitle } from "@/lib/space-tab-title";
+import { getSpace } from "@/lib/spaces";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +21,22 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   }
 }
 
-export default function SpaceLayout({
+export default async function SpaceRouteLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
-  return children;
+}: {
+  children: React.ReactNode;
+}) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  return (
+    <AppShell
+      siteName={SITE_NAME}
+      user={user}
+      hideSidebar
+      contentClassName="max-w-none px-0 py-0 sm:px-0 sm:py-0"
+    >
+      {children}
+    </AppShell>
+  );
 }
