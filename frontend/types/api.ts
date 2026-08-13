@@ -127,6 +127,7 @@ export interface SiteSettingsOverrides {
   max_backup_import_size_mb: number | null;
   allowed_attachment_types: string[] | null;
   sidebar_permissions: SidebarPermissions | null;
+  session_ttl_hours: number | null;
 }
 
 export interface EffectiveSettings {
@@ -137,6 +138,7 @@ export interface EffectiveSettings {
   max_backup_import_size_bytes: number;
   allowed_attachment_types: string[];
   sidebar_permissions: SidebarPermissions;
+  session_ttl_hours: number;
 }
 
 export type AppRole = "admin" | "member";
@@ -238,4 +240,26 @@ export interface ImportReport {
   users_without_password: string[];
   entries: ImportEntry[];
   entries_truncated: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Storage management
+// ---------------------------------------------------------------------------
+
+export interface StorageObject {
+  key: string;
+  size: number;
+  etag: string | null;
+  last_modified: string | null;
+}
+
+export interface StoragePresignedUrl {
+  url: string;
+  key: string;
+}
+
+export interface StorageDeleteResult {
+  key: string;
+  archive_cleared: boolean;
+  attachment_deleted: boolean;
 }

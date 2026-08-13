@@ -151,22 +151,24 @@ fi
 step "Checking the toolchain"
 
 if [[ $RUN_BACKEND -eq 1 ]]; then
-    [[ -x "$VENV/bin/pytest" ]] \
-        || die "the backend venv is missing or incomplete. Run: make install"
-    if [[ $COVERAGE -eq 1 ]] && ! "$VENV/bin/python" -c "import pytest_cov" 2>/dev/null; then
-        die "pytest-cov is not installed. Run: make install"
+    # Ensure backend container is running
+    docker compose ps --status running --services 2>/dev/null | grep -qx backend \
+        || die "The backend container is not running. Please start the stack first using 'make run'."
+        
+    # Check/install pytest in the container
+    if ! docker compose exec -T backend python -c "import pytest" 2>/dev/null; then
+        step "Installing test runner dependencies in the backend container..."
+        docker compose exec -T --user root backend python -m ensurepip
+        docker compose exec -T --user root backend python -m pip install pytest pytest-asyncio pytest-cov httpx faker
     fi
-    ok "pytest $("$VENV/bin/pytest" --version 2>&1 | head -n1 | awk '{print $2}')"
+    ok "pytest is installed in container"
 fi
 
 if [[ $RUN_FRONTEND -eq 1 ]]; then
-    command -v npm >/dev/null 2>&1 || die "npm is not installed or not on PATH."
-    [[ -d "$FRONTEND_DIR/node_modules" ]] \
-        || die "frontend dependencies are missing. Run: make install-frontend"
-    if [[ $COVERAGE -eq 1 && ! -d "$FRONTEND_DIR/node_modules/@vitest/coverage-v8" ]]; then
-        die "@vitest/coverage-v8 is missing. Run: make install-frontend"
-    fi
-    ok "npm $(npm --version)"
+    # Ensure frontend container is running
+    docker compose ps --status running --services 2>/dev/null | grep -qx frontend \
+        || die "The frontend container is not running. Please start the stack first using 'make run'."
+    ok "frontend container is running and ready"
 fi
 
 # --- 2. database for the integration tests ----------------------------------
@@ -215,9 +217,9 @@ if [[ $RUN_BACKEND -eq 1 && $UNIT_ONLY -eq 0 ]]; then
         fi
 
         if [[ -n "$TEST_DB" ]]; then
-            export WIKIHUB_TEST_DATABASE_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@localhost:${PG_PORT}/${TEST_DB}"
+            # Inside the container, connect using internal 'postgres' host rather than localhost
             INTEGRATION_READY=1
-            ok "integration tests will run against ${TEST_DB} on port ${PG_PORT}"
+            ok "integration tests will run against ${TEST_DB} inside compose network"
         fi
     fi
 
@@ -235,11 +237,12 @@ BACKEND_PCT=""
 if [[ $RUN_BACKEND -eq 1 ]]; then
     step "Backend tests"
 
-    PYTEST=("$VENV/bin/pytest")
+    PYTEST=(pytest)
     [[ -n "$PYTEST_K" ]] && PYTEST+=(-k "$PYTEST_K")
     [[ $UNIT_ONLY -eq 1 ]] && PYTEST+=(-m "not integration" --ignore=tests/integration)
 
     if [[ $COVERAGE -eq 1 ]]; then
+        # Run inside container, paths are relative to /app
         PYTEST+=(--cov=app --cov-report=term-missing:skip-covered --cov-report=json:coverage.json)
         [[ $WANT_HTML -eq 1 ]] && PYTEST+=(--cov-report=html:htmlcov)
         [[ -n "$FAIL_UNDER" ]] && PYTEST+=(--cov-fail-under="$FAIL_UNDER")
@@ -251,17 +254,23 @@ if [[ $RUN_BACKEND -eq 1 ]]; then
     [[ $WATCH -eq 1 ]] && warn "pytest has no built-in watch mode; running once"
     PYTEST+=("${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}")
 
-    if (cd "$BACKEND_DIR" && "${PYTEST[@]}"); then
+    # Set up environment args for database connection
+    ENV_ARGS=()
+    if [[ $INTEGRATION_READY -eq 1 ]]; then
+        ENV_ARGS+=(-e WIKIHUB_TEST_DATABASE_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@postgres:5432/${TEST_DB}")
+    fi
+
+    if docker compose exec -T "${ENV_ARGS[@]+"${ENV_ARGS[@]}"}" backend "${PYTEST[@]}"; then
         BACKEND_STATUS="passed"
     else
         BACKEND_STATUS="FAILED"
     fi
 
     if [[ $COVERAGE -eq 1 && -f "$BACKEND_DIR/coverage.json" ]]; then
-        BACKEND_PCT="$("$VENV/bin/python" - "$BACKEND_DIR/coverage.json" <<'PY'
-import json, sys
+        BACKEND_PCT="$(docker compose exec -T backend python - - <<'PY'
+import json
 try:
-    with open(sys.argv[1]) as fh:
+    with open("coverage.json") as fh:
         print(f"{json.load(fh)['totals']['percent_covered']:.1f}")
 except (OSError, ValueError, KeyError):
     print("")
@@ -286,20 +295,19 @@ if [[ $RUN_FRONTEND -eq 1 ]]; then
     fi
     VITEST+=("${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}")
 
-    if (cd "$FRONTEND_DIR" && "${VITEST[@]}"); then
+    if docker compose exec -T frontend "${VITEST[@]}"; then
         FRONTEND_STATUS="passed"
     else
         FRONTEND_STATUS="FAILED"
     fi
 
-    SUMMARY_JSON="$FRONTEND_DIR/coverage/coverage-summary.json"
-    if [[ $COVERAGE -eq 1 && -f "$SUMMARY_JSON" ]]; then
-        FRONTEND_PCT="$(node -e '
+    if [[ $COVERAGE -eq 1 && -f "$FRONTEND_DIR/coverage/coverage-summary.json" ]]; then
+        FRONTEND_PCT="$(docker compose exec -T frontend node -e '
           try {
-            const t = require(process.argv[1]).total;
+            const t = require("./coverage/coverage-summary.json").total;
             process.stdout.write(t.lines.pct.toFixed(1));
           } catch { process.stdout.write(""); }
-        ' "$SUMMARY_JSON")"
+        ')"
     fi
 fi
 

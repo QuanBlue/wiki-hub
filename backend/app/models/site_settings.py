@@ -41,6 +41,7 @@ class SiteSettings(TimestampMixin, Base):
     max_upload_size_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_backup_import_size_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     allowed_attachment_types: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    session_ttl_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: Per-role visibility for the application navigation. NULL keeps the
     #: conservative built-in policy (knowledge navigation for everyone,
     #: administration for administrators only).

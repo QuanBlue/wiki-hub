@@ -27,3 +27,11 @@ Before creating or changing UI, agents must:
 
 When a request conflicts with this contract, ask for clarification before
 creating a one-off visual style.
+
+## Confluence import rules
+
+When modifying the Confluence import and file upload component (`frontend/components/admin/backup-panel.tsx`):
+
+1. **Upload resume functionality**: Always preserve the ability to resume scans and uploads. Scanned archives (status `"scanned"`) must be restored by fetching from the backend and loading the space selection UI, rather than clearing the upload state or forcing the user to re-upload.
+2. **Page unload warnings**: Always preserve navigation warnings when `confluencePending` is true. Ensure that `uploadActiveRef.current` is set to `confluencePending` to warn users when refreshing or leaving the page during hashing, uploading, or scan finalization.
+3. **Upload hash performance**: Hashing is performed using native `window.crypto.subtle.digest` with standard incremental fallback to keep large archive finger-printing fast. Do not introduce custom JS hashing algorithms that block the UI thread.

@@ -58,6 +58,9 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const [maxBackupImport, setMaxBackupImport] = useState(
     settings.overrides.max_backup_import_size_mb?.toString() ?? "",
   );
+  const [sessionTtlHours, setSessionTtlHours] = useState(
+    settings.overrides.session_ttl_hours?.toString() ?? "",
+  );
   const [types, setTypes] = useState(
     settings.overrides.allowed_attachment_types?.join(", ") ?? "",
   );
@@ -97,6 +100,9 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
             .filter(Boolean)
         : null,
       sidebar_permissions: sidebarPermissions,
+      session_ttl_hours: sessionTtlHours.trim()
+        ? Number(sessionTtlHours)
+        : null,
     });
   }
 
@@ -166,6 +172,29 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
         />
         <p className="text-muted-foreground text-xs">
           Limits large Confluence and backup archives independently from normal attachments.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="session-ttl-hours">
+            Session lifetime (hours)
+          </Label>
+          {inherited(settings.overrides.session_ttl_hours !== null)}
+        </div>
+        <Input
+          id="session-ttl-hours"
+          type="number"
+          min={1}
+          max={8760}
+          value={sessionTtlHours}
+          onChange={(e) => setSessionTtlHours(e.target.value)}
+          placeholder={settings.effective.session_ttl_hours ? String(settings.effective.session_ttl_hours) : "12"}
+          disabled={pending}
+          className="max-w-40"
+        />
+        <p className="text-muted-foreground text-xs">
+          Duration of the active user session before they must sign in again. Defaults to 12 hours.
         </p>
       </div>
 

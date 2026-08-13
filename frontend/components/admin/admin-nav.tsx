@@ -1,6 +1,6 @@
 "use client";
 
-import { Database, FolderCog, ScrollText, SlidersHorizontal, Users } from "lucide-react";
+import { Database, FolderCog, HardDrive, ScrollText, SlidersHorizontal, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -12,6 +12,7 @@ const TABS = [
   { href: "/admin/audit", label: "Audit log", icon: ScrollText },
   { href: "/admin/settings", label: "Settings", icon: SlidersHorizontal },
   { href: "/admin/backup", label: "Backup", icon: Database },
+  { href: "/admin/storage", label: "Storage", icon: HardDrive },
 ];
 
 export function AdminNav() {

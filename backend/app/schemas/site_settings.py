@@ -67,6 +67,7 @@ class SiteSettingsOverrides(BaseModel):
     max_backup_import_size_mb: int | None = None
     allowed_attachment_types: list[str] | None = None
     sidebar_permissions: SidebarPermissions | None = None
+    session_ttl_hours: int | None = None
 
 
 class EffectiveSettings(BaseModel):
@@ -79,6 +80,7 @@ class EffectiveSettings(BaseModel):
     max_backup_import_size_bytes: int
     allowed_attachment_types: list[str]
     sidebar_permissions: SidebarPermissions
+    session_ttl_hours: int
 
 
 class SiteSettingsRead(BaseModel):
@@ -108,6 +110,7 @@ class SiteSettingsUpdate(BaseModel):
     max_backup_import_size_mb: int | None = Field(default=None, ge=1, le=102_400)
     allowed_attachment_types: list[str] | None = Field(default=None, max_length=100)
     sidebar_permissions: SidebarPermissions | None = None
+    session_ttl_hours: int | None = Field(default=None, ge=1, le=8760)
 
     @field_validator("site_name")
     @classmethod
@@ -129,7 +132,7 @@ class SiteSettingsUpdate(BaseModel):
             ext = raw.strip().lower().lstrip(".")
             if not ext:
                 continue
-            if not ext.isalnum():
+            if ext != "*" and not ext.isalnum():
                 raise ValueError(f"'{raw}' is not a valid file extension.")
             if ext not in seen:
                 seen.append(ext)

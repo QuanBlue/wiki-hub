@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import html
 import re
 import tempfile
+import urllib.parse
 import uuid
 import zipfile
 from contextlib import suppress
@@ -34,32 +36,141 @@ def _slug(value: str, occupied: set[str]) -> str:
 
 
 def _link_imported_attachments(
-    content: str, source_page_id: str, urls: dict[tuple[str, str], str]
+    content: str,
+    source_page_id: str,
+    urls: dict[tuple[str, str], str],
+    title_to_page_id: dict[str, str],
 ) -> str:
-    """Turn Confluence attachment/image macros into usable WikiHub HTML."""
-    page_urls = {
-        filename: url for (page_id, filename), url in urls.items() if page_id == source_page_id
-    }
-    if not page_urls:
+    """Turn Confluence attachment/image macros and raw URLs into usable WikiHub HTML."""
+    if not urls:
         return content
     soup = BeautifulSoup(content, "html.parser")
+    
+    # 1. Resolve <ac:image> macros
     for macro in soup.find_all("ac:image"):
         attachment = macro.find("ri:attachment")
         filename = attachment.get("ri:filename") if attachment else None
-        if isinstance(filename, str) and filename in page_urls:
-            image = soup.new_tag("img", src=page_urls[filename], alt=filename)
+        if not isinstance(filename, str):
+            continue
+            
+        # Determine referenced page_id
+        page_ref = macro.find("ri:page")
+        ref_title = page_ref.get("ri:content-title") if page_ref else None
+        target_page_id = title_to_page_id.get(ref_title) if ref_title else source_page_id
+        
+        url = urls.get((target_page_id, filename))
+        if not url:
+            # Fallback: try case-insensitive or space-replace matches
+            url = urls.get((target_page_id, filename.replace("+", " ")))
+        if not url:
+            # Fallback: find any matching filename in urls
+            url = next((u for (pid, fn), u in urls.items() if fn == filename or fn == filename.replace("+", " ")), None)
+            
+        if url:
+            image = soup.new_tag("img", src=url, alt=filename)
+            # Preserve width/height attributes if specified on ac:image
+            for attr in ("width", "height", "ac:width", "ac:height"):
+                val = macro.get(attr)
+                if val:
+                    image[attr.replace("ac:", "")] = val
             macro.replace_with(image)
+            
+    # 2. Resolve <ac:link> macros
     for macro in soup.find_all("ac:link"):
         attachment = macro.find("ri:attachment")
         filename = attachment.get("ri:filename") if attachment else None
-        if isinstance(filename, str) and filename in page_urls:
-            link = soup.new_tag("a", href=page_urls[filename])
+        if not isinstance(filename, str):
+            continue
+            
+        # Determine referenced page_id
+        page_ref = macro.find("ri:page")
+        ref_title = page_ref.get("ri:content-title") if page_ref else None
+        target_page_id = title_to_page_id.get(ref_title) if ref_title else source_page_id
+        
+        url = urls.get((target_page_id, filename))
+        if not url:
+            # Fallback: try case-insensitive or space-replace matches
+            url = urls.get((target_page_id, filename.replace("+", " ")))
+        if not url:
+            # Fallback: find any matching filename in urls
+            url = next((u for (pid, fn), u in urls.items() if fn == filename or fn == filename.replace("+", " ")), None)
+            
+        if url:
+            link = soup.new_tag("a", href=url)
             link.string = macro.get_text(" ", strip=True) or filename
             macro.replace_with(link)
+            
     result = str(soup)
-    for filename, url in page_urls.items():
-        result = result.replace(f"/download/attachments/{source_page_id}/{filename}", url)
+    
+    # 3. Replace raw attachment URLs with query parameters or without
+    # Regex to match "/download/attachments/{page_id}/{filename}" with optional query parameters
+    def replace_url(match: re.Match) -> str:
+        pid = match.group(1)
+        # Unescape/url-decode the filename if it was encoded in the html
+        fn = urllib.parse.unquote_plus(match.group(2))
+        url = urls.get((pid, fn))
+        if not url:
+            # Fallback: find any matching filename in urls
+            url = next((u for (p, f), u in urls.items() if f == fn), None)
+        return url if url else match.group(0)
+        
+    result = re.sub(
+        r"/download/attachments/(\d+)/([^?\"'\s>]+)(?:\?[^\"'\s>]*)?",
+        replace_url,
+        result
+    )
+    
     return result
+
+
+def _normalize_confluence_code_macros(content: str) -> str:
+    """Convert Confluence XML-style code macros into standard HTML <pre><code> blocks."""
+    if "<ac:structured-macro" not in content:
+        return content
+        
+    def replace_macro(match: re.Match) -> str:
+        inner = match.group(1)
+        
+        # 1. Match code body inside ac:plain-text-body (with or without CDATA wrapper)
+        code_match = re.search(
+            r"<ac:plain-text-body\b[^>]*><!\[CDATA\[([\s\S]*?)\]\]></ac:plain-text-body>",
+            inner,
+            re.IGNORECASE
+        )
+        if not code_match:
+            code_match = re.search(
+                r"<ac:plain-text-body\b[^>]*>([\s\S]*?)</ac:plain-text-body>",
+                inner,
+                re.IGNORECASE
+            )
+            
+        if not code_match:
+            return match.group(0)
+            
+        code_text = code_match.group(1)
+        
+        # 2. Match language parameter
+        lang_match = re.search(
+            r"<ac:parameter\b[^>]*\bac:name=(?:\"language\"|'language')[^>]*>([\s\S]*?)</ac:parameter>",
+            inner,
+            re.IGNORECASE
+        )
+        language = ""
+        if lang_match:
+            language = re.sub(r"[^a-z0-9_-]", "", lang_match.group(1).strip().lower())
+            
+        # Escape the code content for HTML
+        escaped_code = html.escape(code_text)
+        
+        class_attr = f' class="language-{language}"' if language else ''
+        return f'<pre><code{class_attr}>{escaped_code}</code></pre>'
+
+    return re.sub(
+        r"<ac:structured-macro\b[^>]*\bac:name=(?:\"code\"|'code')[^>]*>([\s\S]*?)</ac:structured-macro>",
+        replace_macro,
+        content,
+        flags=re.IGNORECASE
+    )
 
 
 class ConfluenceImportService:
@@ -419,12 +530,12 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                         imported_page.updated_at = source_page.created_at
                 await session.flush()
                 # Bodies are streamed in a second pass; only selected page ids are retained.
-                for page_source_id, html in await anyio.to_thread.run_sync(
+                for page_source_id, html_content in await anyio.to_thread.run_sync(
                     lambda: list(iter_page_bodies(path))
                 ):
                     body_page: WikiPage | None = pages.get(page_source_id)
                     if body_page:
-                        body_page.content = html
+                        body_page.content = _normalize_confluence_code_macros(html_content)
                 count = len(pages)
                 job.counters = {
                     **job.counters,
@@ -474,9 +585,10 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     )
                     attachments_imported += 1
             if attachment_urls:
+                title_to_page_id = {page.title: pid for pid, page in imported_pages.items()}
                 for source_page_id, target_page in imported_pages.items():
                     target_page.content = _link_imported_attachments(
-                        target_page.content, source_page_id, attachment_urls
+                        target_page.content, source_page_id, attachment_urls, title_to_page_id
                     )
             job.counters = {
                 **job.counters,

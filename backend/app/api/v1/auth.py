@@ -9,11 +9,13 @@ from app.api.deps import (
     ActingAuthServiceDep,
     AuthServiceDep,
     CurrentUser,
+    DbSession,
     Impersonator,
 )
 from app.core import rate_limit
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.services.site_settings import SiteSettingsService
 from app.schemas.user import (
     ImpersonateRequest,
     LoginRequest,
@@ -25,11 +27,11 @@ from app.schemas.user import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _set_access_cookie(response: Response, token: str) -> None:
+def _set_access_cookie(response: Response, token: str, max_age: int) -> None:
     response.set_cookie(
         key=ACCESS_COOKIE_NAME,
         value=token,
-        max_age=settings.access_token_ttl_seconds,
+        max_age=max_age,
         httponly=True,  # unreadable from JavaScript, so XSS cannot exfiltrate it
         secure=settings.secure_cookies,  # must be True behind HTTPS in production
         samesite="lax",  # blocks the cookie on cross-site POSTs (CSRF defence)
@@ -47,6 +49,7 @@ async def login(
     request: Request,
     response: Response,
     service: AuthServiceDep,
+    session: DbSession,
 ) -> LoginResponse:
     # Throttle per client address *and* per submitted identifier, so one
     # attacker cannot spray many accounts from one host, nor many hosts at one
@@ -58,8 +61,10 @@ async def login(
     )
 
     user = await service.authenticate(payload.username, payload.password)
-    token, expires_at = create_access_token(str(user.id))
-    _set_access_cookie(response, token)
+    effective_settings = await SiteSettingsService(session).get_effective()
+    ttl_seconds = effective_settings.session_ttl_hours * 3600
+    token, expires_at = create_access_token(str(user.id), expires_in=ttl_seconds)
+    _set_access_cookie(response, token, max_age=ttl_seconds)
 
     return LoginResponse(
         access_token=token,
@@ -89,12 +94,17 @@ async def logout(response: Response) -> None:
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Renew the current browser session",
 )
-async def renew(response: Response, user: CurrentUser, impersonator: Impersonator) -> None:
+async def renew(
+    response: Response, user: CurrentUser, impersonator: Impersonator, session: DbSession
+) -> None:
+    effective_settings = await SiteSettingsService(session).get_effective()
+    ttl_seconds = effective_settings.session_ttl_hours * 3600
     token, _expires_at = create_access_token(
         str(user.id),
         impersonator=str(impersonator.id) if impersonator else None,
+        expires_in=ttl_seconds,
     )
-    _set_access_cookie(response, token)
+    _set_access_cookie(response, token, max_age=ttl_seconds)
 
 
 @router.get("/me", response_model=MeRead, summary="The authenticated user")
@@ -114,6 +124,7 @@ async def start_impersonation(
     payload: ImpersonateRequest,
     response: Response,
     service: ActingAuthServiceDep,
+    session: DbSession,
 ) -> LoginResponse:
     """Swap the session cookie for one that speaks as another account.
 
@@ -129,8 +140,12 @@ async def start_impersonation(
     # begin_impersonation refuses an actor-less service, so by here there is one.
     actor = service.actor
     assert actor is not None
-    token, expires_at = create_access_token(str(target.id), impersonator=str(actor.id))
-    _set_access_cookie(response, token)
+    effective_settings = await SiteSettingsService(session).get_effective()
+    ttl_seconds = effective_settings.session_ttl_hours * 3600
+    token, expires_at = create_access_token(
+        str(target.id), impersonator=str(actor.id), expires_in=ttl_seconds
+    )
+    _set_access_cookie(response, token, max_age=ttl_seconds)
 
     return LoginResponse(
         access_token=token,
@@ -147,10 +162,13 @@ async def start_impersonation(
 async def stop_impersonation(
     response: Response,
     service: ActingAuthServiceDep,
+    session: DbSession,
 ) -> LoginResponse:
     admin = await service.end_impersonation()
-    token, expires_at = create_access_token(str(admin.id))
-    _set_access_cookie(response, token)
+    effective_settings = await SiteSettingsService(session).get_effective()
+    ttl_seconds = effective_settings.session_ttl_hours * 3600
+    token, expires_at = create_access_token(str(admin.id), expires_in=ttl_seconds)
+    _set_access_cookie(response, token, max_age=ttl_seconds)
 
     return LoginResponse(
         access_token=token,

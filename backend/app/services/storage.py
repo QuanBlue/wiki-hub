@@ -27,12 +27,16 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+from datetime import datetime
+
+
 @dataclass(slots=True)
 class StoredObject:
     key: str
     size: int
     content_type: str
     etag: str | None = None
+    last_modified: datetime | None = None
 
 
 class ObjectStorage(abc.ABC):
@@ -94,6 +98,9 @@ class ObjectStorage(abc.ABC):
 
     @abc.abstractmethod
     async def abort_multipart_upload(self, key: str, upload_id: str) -> None: ...
+
+    @abc.abstractmethod
+    async def list_objects(self, prefix: str = "") -> list[StoredObject]: ...
 
     @abc.abstractmethod
     async def ensure_bucket(self) -> None: ...
@@ -358,6 +365,40 @@ class S3ObjectStorage(ObjectStorage):
             Key=key,
             UploadId=upload_id,
         )
+
+    async def list_objects(self, prefix: str = "") -> list[StoredObject]:
+        """List all objects in the bucket (up to 10 000 keys)."""
+        objects: list[StoredObject] = []
+        paginator = await anyio.to_thread.run_sync(
+            lambda: self.client.get_paginator("list_objects_v2")
+        )
+        params: dict[str, Any] = {"Bucket": self.bucket}
+        if prefix:
+            params["Prefix"] = prefix
+
+        def _paginate() -> list[dict[str, Any]]:
+            items: list[dict[str, Any]] = []
+            for page in paginator.paginate(**params):
+                items.extend(page.get("Contents", []))
+            return items
+
+        try:
+            raw = await anyio.to_thread.run_sync(_paginate)
+        except (ClientError, BotoCoreError) as exc:
+            logger.error("s3_list_error", error=str(exc))
+            return []
+
+        for item in raw:
+            objects.append(
+                StoredObject(
+                    key=str(item["Key"]),
+                    size=int(item.get("Size", 0)),
+                    content_type="application/octet-stream",
+                    etag=str(item["ETag"]).strip('"') if item.get("ETag") else None,
+                    last_modified=item.get("LastModified"),
+                )
+            )
+        return objects
 
     async def ensure_bucket(self) -> None:
         """Create the bucket when missing. Safe to call repeatedly at startup."""

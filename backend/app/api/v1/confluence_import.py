@@ -108,14 +108,18 @@ async def start_upload(
 async def list_active_uploads(
     user: CurrentSuperuser, session: DbSession, importer: Service
 ) -> list[UploadProgressRead]:
+    """Return in-progress and scanned (ready-for-import) archives for this user.
+
+    Scanned archives are included so that a new tab can restore the space
+    selection UI without the user having to re-upload the archive.
+    """
     archives = (
         (
             await session.execute(
                 select(ImportArchive)
                 .where(
                     ImportArchive.created_by_id == user.id,
-                    ImportArchive.status == "uploading",
-                    ImportArchive.multipart_upload_id.is_not(None),
+                    ImportArchive.status.in_(["uploading", "scanned"]),
                 )
                 .order_by(desc(ImportArchive.updated_at), desc(ImportArchive.created_at))
                 .limit(5)

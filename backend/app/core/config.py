@@ -76,7 +76,7 @@ class Settings(BaseSettings):
 
     # --- security ---------------------------------------------------------
     secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(64))
-    access_token_ttl_seconds: int = 900
+    access_token_ttl_seconds: int = 43200
     refresh_token_ttl_seconds: int = 1_209_600
     jwt_algorithm: str = "HS256"
     cors_origins: CsvList = Field(default_factory=lambda: ["http://localhost:3000"])
@@ -112,25 +112,7 @@ class Settings(BaseSettings):
     #: (see app/services/site_settings.py); this is the fallback.
     #: SVG is deliberately absent - it executes script when served inline.
     attachment_allowed_types: CsvList = Field(
-        default_factory=lambda: [
-            "png",
-            "jpg",
-            "jpeg",
-            "gif",
-            "webp",
-            "pdf",
-            "doc",
-            "docx",
-            "xls",
-            "xlsx",
-            "ppt",
-            "pptx",
-            "txt",
-            "md",
-            "csv",
-            "json",
-            "zip",
-        ]
+        default_factory=lambda: ["*"]
     )
 
     # --- bootstrap admin --------------------------------------------------

@@ -158,9 +158,10 @@ function normalizeConfluenceCodeMacros(content: string): string {
         /<ac:plain-text-body\b[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/ac:plain-text-body>/i,
       )?.[1];
       if (code === undefined) return macro;
-      const language = inner.match(
+      const langMatch = inner.match(
         /<ac:parameter\b[^>]*\bac:name=(?:"language"|'language')[^>]*>([\s\S]*?)<\/ac:parameter>/i,
-      )?.[1].trim().replace(/[^a-z0-9_-]/gi, "");
+      );
+      const language = langMatch?.[1]?.trim()?.replace(/[^a-z0-9_-]/gi, "") || "";
       return `<pre><code${language ? ` class="language-${language}"` : ""}>${escapeHtml(code)}</code></pre>`;
     },
   );

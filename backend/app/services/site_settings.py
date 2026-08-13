@@ -41,6 +41,7 @@ AUDITED_FIELDS = (
     "max_backup_import_size_mb",
     "allowed_attachment_types",
     "sidebar_permissions",
+    "session_ttl_hours",
 )
 
 
@@ -99,6 +100,9 @@ class SiteSettingsService:
             if row and row.sidebar_permissions is not None
             else SidebarPermissions()
         )
+        session_ttl_hours = (row.session_ttl_hours if row else None) or (
+            settings.access_token_ttl_seconds // 3600
+        )
         return EffectiveSettings(
             site_name=site_name,
             max_upload_size_mb=max_mb,
@@ -107,6 +111,7 @@ class SiteSettingsService:
             max_backup_import_size_bytes=import_mb * 1024 * 1024,
             allowed_attachment_types=list(types),
             sidebar_permissions=sidebar_permissions,
+            session_ttl_hours=session_ttl_hours,
         )
 
     async def read(self) -> SiteSettingsRead:
