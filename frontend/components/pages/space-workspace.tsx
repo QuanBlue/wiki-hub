@@ -459,6 +459,8 @@ function SidebarLink({
   );
 }
 
+const TREE_EXPAND_PREFIX = "wikihub:page-tree-expanded:";
+
 function PageTree({
   pages,
   spaceKey,
@@ -468,6 +470,7 @@ function PageTree({
   spaceKey: string;
   activeSlug: string | null;
 }) {
+  const storageKey = `${TREE_EXPAND_PREFIX}${spaceKey}`;
   const pagesByParent = useMemo(() => {
     const pageIds = new Set(pages.map((page) => page.id));
     const grouped = new Map<string | null, WikiPage[]>();
@@ -480,9 +483,21 @@ function PageTree({
     }
     return grouped;
   }, [pages]);
-  const [expandedPageIds, setExpandedPageIds] = useState(() => {
-    // Only expand ancestors of the currently active page on first render.
-    // Expanding every folder that has children floods the sidebar with noise.
+  const [expandedPageIds, setExpandedPageIds] = useState<Set<string>>(() => {
+    // Restore previously saved expansion state from sessionStorage so that
+    // server-side redirects (e.g. clicking the space homepage) don't collapse
+    // the tree.  Fall back to expanding only ancestors of the active page.
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.sessionStorage.getItem(storageKey);
+        if (saved) {
+          const ids: unknown = JSON.parse(saved);
+          if (Array.isArray(ids)) return new Set<string>(ids as string[]);
+        }
+      } catch {
+        // Ignore storage errors.
+      }
+    }
     const activePage = pages.find((p) => p.slug === activeSlug);
     const pageById = new Map(pages.map((p) => [p.id, p]));
     const ancestorIds = new Set<string>();
@@ -493,6 +508,18 @@ function PageTree({
     }
     return ancestorIds;
   });
+
+  // Persist expansion state whenever it changes.
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(
+        storageKey,
+        JSON.stringify([...expandedPageIds]),
+      );
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [expandedPageIds, storageKey]);
 
   useEffect(() => {
     const activePage = pages.find((page) => page.slug === activeSlug);
