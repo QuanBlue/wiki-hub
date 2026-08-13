@@ -1100,15 +1100,6 @@ export function SpaceWorkspace({
 
               <nav aria-label={`${space.name} page tree`} className="mt-2">
                 <ul className="space-y-0.5">
-                  <li>
-                    <SidebarLink
-                      href={`/spaces/${encodeURIComponent(space.key)}`}
-                      active={!activeSlug}
-                    >
-                      <FileText className="size-4 shrink-0" />
-                      <span className="truncate">Overview</span>
-                    </SidebarLink>
-                  </li>
                   <PageTree
                     pages={pages}
                     spaceKey={space.key}

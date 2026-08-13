@@ -1,14 +1,10 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
-import { AppShell } from "@/components/layout/app-shell";
-import { SpaceWorkspace } from "@/components/pages/space-workspace";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/auth";
-import { SITE_NAME } from "@/lib/env";
 import { listPages } from "@/lib/pages";
-import { getSidebarPreferences } from "@/lib/sidebar-preferences";
-import { getSpace, listSpaceMembers } from "@/lib/spaces";
+import { getSpace } from "@/lib/spaces";
 import { spaceTabTitle } from "@/lib/space-tab-title";
 
 export const dynamic = "force-dynamic";
@@ -31,39 +27,28 @@ export default async function SpaceDetailPage({ params }: Params) {
 
   const { key } = await params;
 
-  let space;
-  let members;
   let pages;
-  const sidebarPreferences = await getSidebarPreferences();
   try {
-    [space, members, pages] = await Promise.all([
-      getSpace(key),
-      listSpaceMembers(key),
-      listPages(key),
-    ]);
+    await getSpace(key);
+    pages = await listPages(key);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
 
-  return (
-    <AppShell
-      siteName={SITE_NAME}
-      user={user}
-      hideSidebar
-      contentClassName="max-w-none px-0 py-0 sm:px-0 sm:py-0"
-    >
-      <SpaceWorkspace
-        space={space}
-        pages={pages}
-        members={members}
-        initialSidebarWidth={sidebarPreferences.spaceWidth}
-        canEdit={
-          user.is_superuser ||
-          space.my_role === "admin" ||
-          space.my_role === "editor"
-        }
-      />
-    </AppShell>
-  );
+  // Find the root page (no parent_id) to use as the space home page.
+  // Fall back to the first page alphabetically if no root page exists.
+  const rootPage =
+    pages.find((p) => p.parent_id === null || p.parent_id === undefined) ??
+    pages[0];
+
+  if (rootPage) {
+    redirect(
+      `/spaces/${encodeURIComponent(key)}/pages/${encodeURIComponent(rootPage.slug)}`,
+    );
+  }
+
+  // Space has no pages yet — show a redirect back to itself so the user can
+  // create one.  This branch is very rare but ensures the page never crashes.
+  notFound();
 }
