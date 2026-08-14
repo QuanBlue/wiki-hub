@@ -1680,15 +1680,6 @@ export function SpaceWorkspace({
                     triggerVariant="ghost"
                     triggerSize="sm"
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setHistoryModalOpen(true)}
-                  >
-                    <Clock3 />
-                    Page history
-                  </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" disabled={editing}>
