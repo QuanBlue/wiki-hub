@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 
-import { AdminNav } from "@/components/admin/admin-nav";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { getCurrentUser } from "@/lib/auth";
@@ -45,27 +44,13 @@ export default async function AdminLayout({
     );
   }
 
+  // No page header here: the primary sidebar's Administration group
+  // (components/layout/sidebar.tsx) already shows which section is open, so
+  // a repeated eyebrow/title/description per page was just spending vertical
+  // space admin's dense tables and forms can use instead.
   return (
     <AppShell fullWidth siteName={SITE_NAME} user={user}>
-      {/*
-        Explicit margins rather than `space-y-*`: the gap below the tab strip
-        has to be visibly larger than the one above it, so the tabs read as
-        belonging to the header and the panel below reads as their content.
-        A uniform rhythm makes the active tab look detached from its own page.
-      */}
-      <div>
-        <PageHeader
-          eyebrow="Administration"
-          title="Settings"
-          description="Manage people, safeguards, and the configuration of this WikiHub instance."
-        />
-
-        <div className="mt-6">
-          <AdminNav />
-        </div>
-
-        <div className="mt-8">{children}</div>
-      </div>
+      {children}
     </AppShell>
   );
 }

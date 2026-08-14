@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { BookOpenCheck } from "lucide-react";
+import { FolderTree, History, Search, ShieldCheck } from "lucide-react";
 
 import { LoginForm } from "@/components/auth/login-form";
+import { LogoMark, Wordmark } from "@/components/brand/logo";
 import { SITE_NAME } from "@/lib/env";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -11,79 +12,128 @@ export const metadata: Metadata = { title: "Sign in" };
 // Rendered per request: the login form reads `?next=` from the URL.
 export const dynamic = "force-dynamic";
 
+const highlights = [
+  {
+    icon: FolderTree,
+    title: "Organise with spaces",
+    description:
+      "Group work into spaces with their own page tree, so projects, policies and playbooks stay easy to navigate.",
+  },
+  {
+    icon: Search,
+    title: "Find answers faster",
+    description:
+      "Full-text search across every space turns scattered context into knowledge your team can actually trust.",
+  },
+  {
+    icon: History,
+    title: "Track every change",
+    description:
+      "Full version history on each page lets you compare edits, see who changed what, and restore an earlier draft.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Control who sees what",
+    description:
+      "Space and page-level permissions keep sensitive documentation restricted to the right people.",
+  },
+];
+
 export default function LoginPage() {
   return (
-    <main className="grid min-h-screen lg:grid-cols-2">
-      <section className="relative flex min-h-[45vh] items-center overflow-hidden bg-primary px-6 py-12 text-primary-foreground sm:px-12 lg:min-h-screen lg:px-16 xl:px-24">
-          <div className="absolute -right-16 -top-16 size-56 rounded-full border border-primary-foreground/15" />
-          <div className="absolute -right-4 -top-4 size-32 rounded-full border border-primary-foreground/15" />
+    <main className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,32rem)] xl:grid-cols-[minmax(0,1fr)_minmax(0,36rem)]">
+      <section className="bg-primary text-primary-foreground relative hidden overflow-hidden px-16 py-16 lg:flex lg:items-center xl:px-20">
+        {/* Decorative echo of the brand mark's three converging layers - purely
+            atmospheric, so it is hidden from assistive tech. */}
+        <svg
+          viewBox="0 0 400 400"
+          fill="none"
+          aria-hidden="true"
+          className="text-primary-foreground pointer-events-none absolute -top-24 -right-32 h-120 w-120"
+        >
+          <path
+            d="M90 150 200 95 310 150 200 205Z"
+            stroke="currentColor"
+            strokeOpacity="0.14"
+            strokeWidth="2"
+          />
+          <path
+            d="M90 205 200 260 310 205"
+            stroke="currentColor"
+            strokeOpacity="0.1"
+            strokeWidth="2"
+          />
+          <path
+            d="M90 260 200 315 310 260"
+            stroke="currentColor"
+            strokeOpacity="0.07"
+            strokeWidth="2"
+          />
+        </svg>
 
-          <div className="relative mx-auto w-full max-w-xl">
-            <div className="mb-12 flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-surface text-primary shadow-sm">
-                <BookOpenCheck className="size-5" />
-              </div>
-              <span className="text-lg font-semibold tracking-tight">{SITE_NAME}</span>
-            </div>
-            <p className="mb-3 text-sm font-medium text-primary-foreground/75">Your team&apos;s shared knowledge</p>
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Keep the context behind every decision.
-            </h1>
-            <p className="mt-4 max-w-lg text-base leading-7 text-primary-foreground/75">
-              A calm, organised home for the pages, practices and ideas your team relies on.
-            </p>
+        <div className="relative mx-auto w-full max-w-lg">
+          <Wordmark siteName={SITE_NAME} className="text-lg" />
 
-            <div className="mt-10 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/10 p-4">
-                <span className="mb-3 flex size-7 items-center justify-center rounded-md bg-primary-foreground/15 text-xs font-semibold" aria-hidden="true">01</span>
-                <p className="text-sm font-medium">Organise with spaces</p>
-                <p className="mt-1 text-xs leading-5 text-primary-foreground/65">Keep projects, policies and playbooks easy to navigate.</p>
-              </div>
-              <div className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/10 p-4">
-                <span className="mb-3 flex size-7 items-center justify-center rounded-md bg-primary-foreground/15 text-xs font-semibold" aria-hidden="true">02</span>
-                <p className="text-sm font-medium">Find answers faster</p>
-                <p className="mt-1 text-xs leading-5 text-primary-foreground/65">Turn scattered context into knowledge your team can trust.</p>
-              </div>
-              <div className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/10 p-4 sm:col-span-2">
-                <span className="mb-3 flex size-7 items-center justify-center rounded-md bg-primary-foreground/15 text-xs font-semibold" aria-hidden="true">03</span>
-                <p className="text-sm font-medium">Build a shared source of truth</p>
-                <p className="mt-1 text-xs leading-5 text-primary-foreground/65">Give every decision the page, owner and history it needs.</p>
-              </div>
-            </div>
+          <p className="text-primary-foreground/70 mt-14 text-sm font-medium">
+            Your team&apos;s shared knowledge
+          </p>
+          <h1 className="mt-3 text-4xl leading-tight font-semibold tracking-tight text-balance">
+            Keep the context behind every decision.
+          </h1>
+          <p className="text-primary-foreground/70 mt-4 max-w-md text-[0.9375rem] leading-6">
+            WikiHub is a calm, organised home for the pages, practices and
+            ideas your team relies on — built so documentation stays as easy
+            to find as it was to write.
+          </p>
 
-            <p className="mt-8 text-xs text-primary-foreground/55">Made for focused teams that value clarity.</p>
-          </div>
+          <ul className="mt-12 space-y-5">
+            {highlights.map(({ icon: Icon, title, description }) => (
+              <li key={title} className="flex items-start gap-3.5">
+                <span className="bg-primary-foreground/10 text-primary-foreground mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md">
+                  <Icon className="size-4" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="text-sm font-medium">{title}</p>
+                  <p className="text-primary-foreground/65 mt-0.5 max-w-sm text-[0.8125rem] leading-5">
+                    {description}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <p className="text-primary-foreground/50 border-primary-foreground/15 mt-12 border-t pt-6 text-xs">
+            Made for focused teams that value clarity.
+          </p>
+        </div>
       </section>
 
-      <section className="bg-surface-sunken flex min-h-[55vh] items-center justify-center px-6 py-12 sm:px-12 lg:min-h-screen lg:px-16">
+      <section className="bg-surface-sunken flex min-h-screen items-center justify-center px-6 py-12 sm:px-10">
         <div className="w-full max-w-md">
-          <div className="mb-8 lg:hidden">
-            <p className="text-primary mb-2 flex items-center gap-2 text-sm font-medium">
-              <BookOpenCheck className="size-4" />
-              Your team&apos;s shared knowledge
-            </p>
-            <h1 className="text-3xl font-semibold tracking-tight">Welcome back</h1>
+          <div className="mb-8 flex justify-center lg:hidden">
+            <Wordmark siteName={SITE_NAME} className="text-base" />
           </div>
 
-          <div className="border-border bg-surface rounded-xl border p-6 shadow-lg shadow-black/5 sm:p-8">
-            <div className="mb-7">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="bg-primary-subtle text-primary flex size-9 items-center justify-center rounded-md text-sm font-semibold" aria-hidden="true">WH</div>
-                <span className="text-muted-foreground text-xs">Secure sign in</span>
-              </div>
-              <h2 className="text-xl font-semibold tracking-tight">Welcome back</h2>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Sign in to continue to {SITE_NAME}.
-              </p>
+          <div className="mb-7 flex flex-col items-center text-center lg:items-start lg:text-left">
+            <div className="bg-primary-subtle text-primary hidden size-10 items-center justify-center rounded-lg lg:flex">
+              <LogoMark className="size-5" />
             </div>
-
-            {/* useSearchParams needs a Suspense boundary during prerender. */}
-            <Suspense fallback={null}>
-              <LoginForm />
-            </Suspense>
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight">
+              Welcome back
+            </h2>
+            <p className="text-muted-foreground mt-1.5 text-sm">
+              Sign in to continue to {SITE_NAME}.
+            </p>
           </div>
 
-          <p className="text-muted-foreground mt-5 text-center text-xs">Access your workspace securely</p>
+          {/* useSearchParams needs a Suspense boundary during prerender. */}
+          <Suspense fallback={null}>
+            <LoginForm />
+          </Suspense>
+
+          <p className="text-muted-foreground mt-8 text-center text-xs">
+            Trouble signing in? Contact your workspace admin.
+          </p>
         </div>
       </section>
     </main>

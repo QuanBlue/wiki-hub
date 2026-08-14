@@ -37,8 +37,13 @@ export function UserRowActions({
   const [resetOpen, setResetOpen] = useState(false);
 
   if (user.is_protected) {
+    // The "protected" badge next to the name already explains why (with a
+    // tooltip); repeating the explanation here would just be noise for a
+    // column that otherwise holds a menu.
     return (
-      <span className="text-muted-foreground text-xs">Protected account</span>
+      <div className="flex justify-end">
+        <span className="text-muted-foreground text-sm">—</span>
+      </div>
     );
   }
 

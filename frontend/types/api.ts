@@ -223,21 +223,6 @@ export interface Page<T> {
   offset: number;
 }
 
-export interface AuditLogEntry {
-  id: string;
-  created_at: string;
-  actor_id: string | null;
-  actor_username: string;
-  /** Set when the action was taken through impersonation. */
-  impersonator_username: string | null;
-  action: string;
-  entity_type: string;
-  entity_id: string | null;
-  entity_label: string;
-  details: Record<string, unknown>;
-  ip_address: string | null;
-}
-
 export interface SiteSettingsOverrides {
   site_name: string | null;
   max_upload_size_mb: number | null;
