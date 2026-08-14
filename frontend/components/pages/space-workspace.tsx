@@ -1776,17 +1776,10 @@ export function SpaceWorkspace({
                           </span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={() => setViewFullWidth(true)}>
+                        <DropdownMenuItem onSelect={() => setViewFullWidth((current) => !current)}>
                           <Maximize2 />
                           Full width
                           {viewFullWidth ? (
-                            <Check className="text-primary ml-auto size-4" />
-                          ) : null}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setViewFullWidth(false)}>
-                          <Minimize2 />
-                          Normal width
-                          {!viewFullWidth ? (
                             <Check className="text-primary ml-auto size-4" />
                           ) : null}
                         </DropdownMenuItem>
@@ -1886,20 +1879,11 @@ export function SpaceWorkspace({
                         </>
                       ) : null}
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => setViewFullWidth(true)}>
+                      <DropdownMenuItem onSelect={() => setViewFullWidth((current) => !current)}>
                         <Maximize2 />
                         Full width
                         {viewFullWidth ? (
-                          <Check className="text-primary ml-auto" />
-                        ) : null}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => setViewFullWidth(false)}
-                      >
-                        <Minimize2 />
-                        Normal width
-                        {!viewFullWidth ? (
-                          <Check className="text-primary ml-auto" />
+                          <Check className="text-primary ml-auto size-4" />
                         ) : null}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
