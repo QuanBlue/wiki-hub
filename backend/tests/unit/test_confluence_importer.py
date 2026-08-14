@@ -1,5 +1,17 @@
 import pytest
-from app.modules.import_export.service import _normalize_confluence_code_macros, _link_imported_attachments
+
+from app.modules.import_export.service import (
+    _is_invalid_import_username,
+    _link_imported_attachments,
+    _normalize_confluence_code_macros,
+)
+
+
+def test_invalid_confluence_user_ids_are_not_treated_as_usernames():
+    assert _is_invalid_import_username("8a9e2ef3775bd448017765ec6a120000")
+    assert _is_invalid_import_username(" 8A9E2EF3775BD448017765EC6A120000 ")
+    assert not _is_invalid_import_username("quannt39")
+    assert not _is_invalid_import_username("invalid_user")
 
 def test_normalize_confluence_code_macros_cdata():
     content = """
