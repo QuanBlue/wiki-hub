@@ -41,7 +41,7 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
   return (
     <div className="space-y-4">
       {/* Search & Filter Toolbar */}
-      <div className="border-border bg-surface flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         {/* Search Input */}
         <div className="relative min-w-0 flex-1 max-w-md">
           <Search className="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
