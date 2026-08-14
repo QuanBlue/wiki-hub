@@ -31,6 +31,19 @@ def test_normalize_confluence_code_macros_no_language():
     normalized = _normalize_confluence_code_macros(content)
     assert '<pre><code>plain text code</code></pre>' in normalized
 
+def test_normalize_confluence_code_macros_spaced_cdata():
+    content = """
+    <ac:structured-macro ac:name="code" ac:schema-version="1">
+      <ac:parameter ac:name="language">python</ac:parameter>
+      <ac:plain-text-body><![CDATA[def hello():
+    print("Hello CDATA Spaced")
+]] ></ac:plain-text-body>
+    </ac:structured-macro>
+    """
+    normalized = _normalize_confluence_code_macros(content)
+    assert '<pre><code class="language-python">def hello():\n    print(&quot;Hello CDATA Spaced&quot;)\n</code></pre>' in normalized
+
+
 def test_link_imported_attachments():
     content = """
     <p>Here is an image: <ac:image><ri:attachment ri:filename="test.png" /></ac:image></p>

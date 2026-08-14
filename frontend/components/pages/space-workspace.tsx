@@ -709,6 +709,63 @@ export function SpaceWorkspace({
     editMode,
   };
 
+  const [showHeader, setShowHeader] = useState(true);
+  const [isSticky, setIsSticky] = useState(false);
+  const lastScrollY = useRef(0);
+  const mainContainerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const container = mainContainerRef.current;
+    
+    const handleScroll = (e: Event) => {
+      const target = e.currentTarget;
+      const currentScrollY =
+        target === window
+          ? window.scrollY
+          : target instanceof HTMLElement
+            ? target.scrollTop
+            : (container ? container.scrollTop : window.scrollY);
+      
+      // Hysteresis logic: sticky when scrolled down past 200px, relative when near top (<= 5px)
+      if (currentScrollY > 200) {
+        setIsSticky(true);
+      } else if (currentScrollY <= 5) {
+        setIsSticky(false);
+      }
+      
+      if (currentScrollY <= 5) {
+        setShowHeader(true);
+      } else {
+        const diff = currentScrollY - lastScrollY.current;
+        // Only trigger show/hide on significant scroll movement (> 10px) to prevent sub-pixel trackpad/mouse jitter
+        if (Math.abs(diff) > 10) {
+          const isScrollingUp = diff < 0;
+          setShowHeader(isScrollingUp);
+        }
+      }
+      
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    if (container) {
+      container.addEventListener("scroll", handleScroll, { passive: true });
+    }
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (container) {
+        container.removeEventListener("scroll", handleScroll);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setShowHeader(true);
+    setIsSticky(false);
+    lastScrollY.current = 0;
+  }, [currentPage?.slug]);
+
   // Page routes remount this workspace as the selected slug changes. Keep the
   // reader's place in a long page tree rather than resetting it to the top on
   // every page navigation. sessionStorage keeps this scoped to the current tab
@@ -1432,14 +1489,29 @@ export function SpaceWorkspace({
         ) : null}
       </aside>
 
-      <main className="min-w-0 max-w-full flex-1 overflow-x-hidden md:h-full md:overflow-y-auto md:overscroll-contain">
+      <main
+        ref={mainContainerRef}
+        className="min-w-0 max-w-full flex-1 overflow-x-hidden md:h-full md:overflow-y-auto md:overscroll-contain"
+      >
         <div
           className={cn(
-            "mx-auto min-w-0 max-w-full overflow-x-hidden px-6 py-5 sm:px-8 lg:px-10",
+            "mx-auto min-w-0 max-w-full px-6 pb-5 sm:px-8 lg:px-10",
             editing || viewFullWidth ? "max-w-none" : "max-w-6xl",
           )}
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div
+            className={cn(
+              "flex flex-wrap items-center justify-between gap-3",
+              isSticky ? "transition-all duration-300" : "transition-[transform,opacity,padding] duration-300",
+              "-mx-6 px-6 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10",
+              isSticky
+                ? "sticky top-0 z-30 bg-background border-b border-border shadow-sm py-3"
+                : "relative py-5",
+              showHeader
+                ? "translate-y-0 opacity-100"
+                : "-translate-y-full opacity-0 pointer-events-none",
+            )}
+          >
             <nav
               aria-label="Breadcrumb"
               className="min-w-0 flex-1 overflow-hidden text-sm"
@@ -2091,8 +2163,7 @@ export function SpaceWorkspace({
                 </h1>
                 <p className="text-muted-foreground mt-2 text-xs">
                   Created by {author ?? "unknown"}
-                  {updatedBy ? `, last modified by ${updatedBy}` : ""}
-                  {updatedAt ? ` on ${formatDate(updatedAt)}` : ""}
+                  {updatedAt ? `, last modified on ${formatDate(updatedAt)}` : ""}
                 </p>
 
                 <div className="mt-8 flex flex-wrap items-center justify-between gap-3">

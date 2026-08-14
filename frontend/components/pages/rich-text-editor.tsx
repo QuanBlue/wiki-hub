@@ -188,12 +188,20 @@ function escapeHtml(value: string): string {
 /** Convert Confluence's XML-style code macro into semantic HTML for Tiptap. */
 function normalizeConfluenceCodeMacros(content: string): string {
   return content.replace(
-    /<ac:structured-macro\b[^>]*\bac:name=(?:"code"|'code')[^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    /<ac:structured-macro\b[^>]*\bac:name=(?:"code"|'code')[^]*>([\s\S]*?)<\/ac:structured-macro>/gi,
     (macro, inner: string) => {
-      const code = inner.match(
-        /<ac:plain-text-body\b[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/ac:plain-text-body>/i,
-      )?.[1];
-      if (code === undefined) return macro;
+      const bodyMatch = inner.match(
+        /<ac:plain-text-body\b[^>]*>([\s\S]*?)<\/ac:plain-text-body>/i,
+      );
+      if (!bodyMatch) return macro;
+      let code = bodyMatch[1];
+      
+      // Strip CDATA wrapper if present (handling spaces and HTML entities)
+      if (/^\s*<!\[CDATA\[/i.test(code)) {
+        code = code.replace(/^\s*<!\[CDATA\[/i, "");
+        code = code.replace(/\]\]\s*(?:>?|&gt;)\s*$/i, "");
+      }
+      
       const langMatch = inner.match(
         /<ac:parameter\b[^>]*\bac:name=(?:"language"|'language')[^>]*>([\s\S]*?)<\/ac:parameter>/i,
       );

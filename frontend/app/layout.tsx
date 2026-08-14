@@ -82,15 +82,11 @@ export default async function RootLayout({
         } as CSSProperties
       }
     >
-      <head suppressHydrationWarning>
-        {/*
-          Some browser extensions add `bis_*` and `__processed_*__`
-          attributes before React starts. Those attributes do not belong to the
-          server tree, so React correctly reports a hydration mismatch. Run
-          this before hydration and only remove that extension's markers; the
-          observer also covers elements the extension touches while the page is
-          still streaming.
-        */}
+      <head suppressHydrationWarning />
+      <body
+        className={`${inter.variable} ${jetbrainsMono.variable}`}
+        suppressHydrationWarning
+      >
         <Script
           id="remove-extension-hydration-markers"
           strategy="beforeInteractive"
@@ -200,11 +196,6 @@ export default async function RootLayout({
             })();`,
           }}
         />
-      </head>
-      <body
-        className={`${inter.variable} ${jetbrainsMono.variable}`}
-        suppressHydrationWarning
-      >
         <Providers>{children}</Providers>
       </body>
     </html>

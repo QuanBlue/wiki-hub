@@ -135,23 +135,23 @@ def _normalize_confluence_code_macros(content: str) -> str:
     def replace_macro(match: re.Match) -> str:
         inner = match.group(1)
         
-        # 1. Match code body inside ac:plain-text-body (with or without CDATA wrapper)
+        # 1. Match code body inside ac:plain-text-body
         code_match = re.search(
-            r"<ac:plain-text-body\b[^>]*><!\[CDATA\[([\s\S]*?)\]\]></ac:plain-text-body>",
+            r"<ac:plain-text-body\b[^>]*>([\s\S]*?)</ac:plain-text-body>",
             inner,
             re.IGNORECASE
         )
-        if not code_match:
-            code_match = re.search(
-                r"<ac:plain-text-body\b[^>]*>([\s\S]*?)</ac:plain-text-body>",
-                inner,
-                re.IGNORECASE
-            )
             
         if not code_match:
             return match.group(0)
             
         code_text = code_match.group(1)
+        
+        # Strip CDATA wrapper if present (handling spacing variations and HTML entities like ]] > or ]]> or ]]&gt;)
+        cdata_start_match = re.match(r"^\s*<!\[CDATA\[", code_text, re.IGNORECASE)
+        if cdata_start_match:
+            code_text = re.sub(r"^\s*<!\[CDATA\[", "", code_text, count=1, flags=re.IGNORECASE)
+            code_text = re.sub(r"\]\]\s*(?:>?|&gt;)\s*$", "", code_text, count=1, flags=re.IGNORECASE)
         
         # 2. Match language parameter
         lang_match = re.search(
@@ -184,6 +184,36 @@ class ConfluenceImportService:
 
     def __init__(self, session: AsyncSession, storage: ObjectStorage) -> None:
         self.session, self.storage = session, storage
+        self._user_cache: dict[str, uuid.UUID] = {}
+
+    async def _resolve_or_create_user(self, username: str) -> uuid.UUID:
+        username_lower = username.lower()
+        if username_lower in self._user_cache:
+            return self._user_cache[username_lower]
+
+        from app.models.user import User
+        from sqlalchemy import func
+        result = await self.session.execute(
+            select(User).where(func.lower(User.username) == username_lower)
+        )
+        user = result.scalars().first()
+        if user:
+            self._user_cache[username_lower] = user.id
+            return user.id
+
+        new_user = User(
+            username=username,
+            email=f"{username}@imported.confluence",
+            full_name=username,
+            password_hash=None,
+            is_active=True,
+            is_superuser=False,
+            is_protected=False,
+        )
+        self.session.add(new_user)
+        await self.session.flush()
+        self._user_cache[username_lower] = new_user.id
+        return new_user.id
 
     async def find_reusable_archive(self, *, sha256: str, size_bytes: int) -> ImportArchive | None:
         archives = (
@@ -461,6 +491,18 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             )
             await session.commit()
             imported_pages: dict[str, WikiPage] = {}
+            source_pages_by_id: dict[str, ConfluencePage] = {}
+
+            def restore_timestamps() -> None:
+                for source_id, target_page in imported_pages.items():
+                    src_page = source_pages_by_id.get(source_id)
+                    if src_page:
+                        if src_page.created_at:
+                            target_page.created_at = src_page.created_at
+                        if src_page.updated_at:
+                            target_page.updated_at = src_page.updated_at
+                        elif src_page.created_at:
+                            target_page.updated_at = src_page.created_at
             for source_space in scanned:
                 if source_space.key not in selected:
                     continue
@@ -515,17 +557,28 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 pages: dict[str, WikiPage] = {}
                 occupied: set[str] = set()
                 for source_page in source_space.pages:
+                    creator_id = (
+                        await self._resolve_or_create_user(source_page.creator)
+                        if source_page.creator
+                        else job.created_by_id
+                    )
+                    last_modifier_id = (
+                        await self._resolve_or_create_user(source_page.last_modifier)
+                        if source_page.last_modifier
+                        else creator_id
+                    )
                     page = WikiPage(
                         space_id=space.id,
                         title=source_page.title,
                         slug=_slug(source_page.title, occupied),
-                        created_by_id=job.created_by_id,
-                        updated_by_id=job.created_by_id,
+                        created_by_id=creator_id,
+                        updated_by_id=last_modifier_id,
                         content_format="html",
                     )
                     session.add(page)
                     pages[source_page.source_id] = page
                     imported_pages[source_page.source_id] = page
+                    source_pages_by_id[source_page.source_id] = source_page
                 await session.flush()
 
                 # Confluence exports can contain several top-level pages. In
@@ -600,6 +653,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     entity_type="space",
                     entity_label=space.key,
                 )
+                restore_timestamps()
                 await session.commit()
             attachments_imported = 0
             attachment_urls: dict[tuple[str, str], str] = {}
@@ -639,6 +693,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     target_page.content = _link_imported_attachments(
                         target_page.content, source_page_id, attachment_urls, title_to_page_id
                     )
+                restore_timestamps()
             job.counters = {
                 **job.counters,
                 "attachments_processed": attachments_imported,
