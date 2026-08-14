@@ -1,56 +1,53 @@
 from __future__ import annotations
 
 import zipfile
-from pathlib import Path
 
-from app.modules.import_export.confluence import scan_archive
+import pytest
 
+from app.core.exceptions import BadRequestError
+from app.modules.import_export.confluence import iter_attachments, iter_page_bodies, scan_archive
 
-def test_scan_archive_retains_confluence_page_timestamps(tmp_path: Path) -> None:
-    archive_path = tmp_path / "confluence.zip"
-    entities = """<hibernate-generic>
-  <object class="Space"><id>1</id><property name="key">ENG</property><property name="name">Engineering</property></object>
-  <object class="Page"><id>2</id><property name="title">Release notes</property><property name="space"><id>1</id></property><property name="contentStatus">current</property><property name="creationDate">2024-01-02T03:04:05.000+07:00</property><property name="lastModificationDate">2025-06-07T08:09:10Z</property><property name="creatorName">quannt39</property><property name="lastModifierName">quannt39_modifier</property></object>
-</hibernate-generic>"""
-    with zipfile.ZipFile(archive_path, "w") as archive:
-        archive.writestr("entities.xml", entities)
-
-    page = scan_archive(archive_path)[0].pages[0]
-
-    assert page.created_at is not None
-    assert page.created_at.isoformat() == "2024-01-02T03:04:05+07:00"
-    assert page.updated_at is not None
-    assert page.updated_at.isoformat() == "2025-06-07T08:09:10+00:00"
-    assert page.creator == "quannt39"
-    assert page.last_modifier == "quannt39_modifier"
+XML = """<root>
+<object class="ConfluenceUserImpl"><id>u1</id><property name="name">alice</property></object>
+<object class="Space"><id>s1</id><property name="key">ENG</property><property name="name">Engineering</property></object>
+<object class="Page"><id>p1</id><property name="title">ENG</property><property name="space"><id>s1</id></property><property name="contentStatus">current</property><property name="creator"><id>u1</id></property><property name="creationDate">2024-01-01T10:00:00Z</property></object>
+<object class="Page"><id>p2</id><property name="title">Guide</property><property name="space"><id>s1</id></property><property name="parent"><id>p1</id></property><property name="contentStatus">current</property><property name="creatorName">bob</property><property name="lastModifierName">alice</property><property name="lastModificationDate">bad-date</property></object>
+<object class="Page"><id>old</id><property name="title">Old</property><property name="space"><id>s1</id></property><property name="contentStatus">draft</property></object>
+<object class="BodyContent"><property name="content"><id>p2</id></property><property name="body"><![CDATA[<p>Guide</p>]]></property></object>
+<object class="Attachment"><id>a1</id><property name="title">manual.pdf</property><property name="containerContent"><id>p2</id></property><property name="contentType">application/pdf</property></object>
+</root>"""
 
 
-def test_scan_archive_resolves_referenced_users(tmp_path: Path) -> None:
-    archive_path = tmp_path / "confluence.zip"
-    entities = """<hibernate-generic>
-  <object class="Space"><id>1</id><property name="key">ENG</property><property name="name">Engineering</property></object>
-  <object class="Page">
-    <id>2</id>
-    <property name="title">Release notes</property>
-    <property name="space"><id>1</id></property>
-    <property name="contentStatus">current</property>
-    <property name="creator"><id>user123</id></property>
-    <property name="lastModifier"><id>user456</id></property>
-  </object>
-  <object class="ConfluenceUserImpl">
-    <id>user123</id>
-    <property name="name">referenced_creator</property>
-  </object>
-  <object class="ConfluenceUserImpl">
-    <id>user456</id>
-    <property name="name">referenced_modifier</property>
-  </object>
-</hibernate-generic>"""
-    with zipfile.ZipFile(archive_path, "w") as archive:
-        archive.writestr("entities.xml", entities)
+def _archive(tmp_path):
+    path = tmp_path / "export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", XML)
+        archive.writestr("attachments/a1/manual.pdf", b"pdf")
+    return path
 
-    page = scan_archive(archive_path)[0].pages[0]
 
-    assert page.creator == "referenced_creator"
-    assert page.last_modifier == "referenced_modifier"
+def test_scan_and_iterate_confluence_archive(tmp_path):
+    path = _archive(tmp_path)
+    spaces = scan_archive(path)
+    assert len(spaces) == 1
+    assert spaces[0].key == "ENG" and spaces[0].attachment_count == 1
+    assert [page.title for page in spaces[0].pages] == ["ENG", "Guide"]
+    assert spaces[0].pages[0].creator == "alice"
+    assert list(iter_page_bodies(path)) == [("p2", "<p>Guide</p>")]
+    attachments = list(iter_attachments(path))
+    assert attachments[0][0].filename == "manual.pdf"
+    assert attachments[0][1] == "attachments/a1/manual.pdf"
 
+
+def test_confluence_reader_reports_invalid_archives(tmp_path):
+    bad = tmp_path / "bad.zip"
+    bad.write_bytes(b"not zip")
+    with pytest.raises(BadRequestError):
+        scan_archive(bad)
+    empty = tmp_path / "empty.zip"
+    with zipfile.ZipFile(empty, "w"):
+        pass
+    with pytest.raises(BadRequestError):
+        scan_archive(empty)
+    with pytest.raises(BadRequestError):
+        list(iter_page_bodies(empty))
