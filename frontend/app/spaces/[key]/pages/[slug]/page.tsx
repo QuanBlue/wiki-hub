@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
+import { RecordVisit } from "@/components/pages/record-visit";
 import { SpaceWorkspace } from "@/components/pages/space-workspace";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/auth";
@@ -42,17 +43,25 @@ export default async function WikiPageView({ params }: Params) {
   }
 
   return (
-    <SpaceWorkspace
-      space={space}
-      pages={pages}
-      members={members}
-      groups={groups}
-      currentPage={page}
-      canEdit={page.can_edit === true}
-      canExport={page.can_export === true}
-      canManageRestrictions={
-        user.is_superuser || space.my_permissions?.includes("restrictions") === true
-      }
-    />
+    <>
+      <RecordVisit
+        spaceKey={space.key}
+        spaceName={space.name}
+        slug={page.slug}
+        title={page.title}
+      />
+      <SpaceWorkspace
+        space={space}
+        pages={pages}
+        members={members}
+        groups={groups}
+        currentPage={page}
+        canEdit={page.can_edit === true}
+        canExport={page.can_export === true}
+        canManageRestrictions={
+          user.is_superuser || space.my_permissions?.includes("restrictions") === true
+        }
+      />
+    </>
   );
 }
