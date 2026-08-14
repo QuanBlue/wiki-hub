@@ -1,10 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 
+import { RecordVisit } from "@/components/pages/record-visit";
 import { SpaceWorkspace } from "@/components/pages/space-workspace";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/auth";
 import { getPage, listPages } from "@/lib/pages";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
+import type { Group } from "@/types/api";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,7 @@ export default async function WikiPageView({ params }: Params) {
   let pages;
   let members;
   let page;
+  const groups: Group[] = [];
   try {
     [space, pages, members, page] = await Promise.all([
       getSpace(key),
@@ -40,16 +43,25 @@ export default async function WikiPageView({ params }: Params) {
   }
 
   return (
-    <SpaceWorkspace
-      space={space}
-      pages={pages}
-      members={members}
-      currentPage={page}
-      canEdit={
-        user.is_superuser ||
-        space.my_role === "admin" ||
-        space.my_role === "editor"
-      }
-    />
+    <>
+      <RecordVisit
+        spaceKey={space.key}
+        spaceName={space.name}
+        slug={page.slug}
+        title={page.title}
+      />
+      <SpaceWorkspace
+        space={space}
+        pages={pages}
+        members={members}
+        groups={groups}
+        currentPage={page}
+        canEdit={page.can_edit === true}
+        canExport={page.can_export === true}
+        canManageRestrictions={
+          user.is_superuser || space.my_permissions?.includes("restrictions") === true
+        }
+      />
+    </>
   );
 }

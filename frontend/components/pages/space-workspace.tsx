@@ -39,6 +39,7 @@ import { toast } from "sonner";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
+import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
 import { MovePageDialog } from "@/components/pages/move-page-dialog";
 import { SourceCodeEditor } from "@/components/pages/source-code-editor";
@@ -64,6 +65,7 @@ import { findHomePage } from "@/lib/home-page";
 import { cn } from "@/lib/utils";
 import type {
   PageContentFormat,
+  Group,
   Space,
   SpaceMember,
   WikiPage,
@@ -518,6 +520,7 @@ function PageTree({
       if (!saved) return;
       const ids: unknown = JSON.parse(saved);
       if (Array.isArray(ids)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate persisted tree expansion state
         setExpandedPageIds(new Set<string>(ids as string[]));
       }
     } catch {
@@ -558,6 +561,7 @@ function PageTree({
     }
 
     if (idsToExpand.size === 0) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- expand ancestors discovered from the loaded page tree
     setExpandedPageIds((current) => {
       const next = new Set(current);
       for (const pageId of idsToExpand) next.add(pageId);
@@ -640,16 +644,22 @@ export function SpaceWorkspace({
   space,
   pages,
   members,
+  groups,
   currentPage,
   initialSidebarWidth = DEFAULT_SIDEBAR_WIDTH,
   canEdit,
+  canExport,
+  canManageRestrictions,
 }: {
   space: Space;
   pages: WikiPage[];
   members: SpaceMember[];
+  groups: Group[];
   currentPage?: WikiPage | null;
   initialSidebarWidth?: number;
   canEdit: boolean;
+  canExport: boolean;
+  canManageRestrictions: boolean;
 }) {
   const router = useRouter();
   const spaceSidebarScrollRef = useRef<HTMLDivElement>(null);
@@ -668,7 +678,6 @@ export function SpaceWorkspace({
   const [previewing, setPreviewing] = useState(false);
   const [previewSplit, setPreviewSplit] = useState(50);
   const [viewFullWidth, setViewFullWidth] = useState(true);
-  const [viewWidthMenuOpen, setViewWidthMenuOpen] = useState(false);
   const [likeStatus, setLikeStatus] = useState<PageLikeStatus>({
     liked_by_me: false,
     like_count: 0,
@@ -766,6 +775,7 @@ export function SpaceWorkspace({
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset sticky reader chrome when the active page changes
     setShowHeader(true);
     setIsSticky(false);
     lastScrollY.current = 0;
@@ -1742,6 +1752,14 @@ export function SpaceWorkspace({
                       Share
                     </Button>
                   </div>
+                  {currentPage && canManageRestrictions ? (
+                    <PageRestrictionsDialog
+                      spaceKey={space.key}
+                      page={currentPage}
+                      members={members}
+                      groups={groups}
+                    />
+                  ) : null}
                   {currentPage ? (
                     <DropdownMenu modal={false}>
                       <DropdownMenuTrigger asChild>
@@ -1802,22 +1820,24 @@ export function SpaceWorkspace({
                           </DropdownMenuSubContent>
                         </DropdownMenuSub>
                         <DropdownMenuSeparator />
-                        <DropdownMenuSub>
-                          <DropdownMenuSubTrigger>
-                            <Download />
-                            Export
-                          </DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent className="w-48">
-                            <DropdownMenuItem onSelect={exportPageHtml}>
+                        {canExport ? (
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
                               <Download />
-                              Export HTML
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={exportPagePdf}>
-                              <FileText />
-                              Export PDF
-                            </DropdownMenuItem>
-                          </DropdownMenuSubContent>
-                        </DropdownMenuSub>
+                              Export
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent className="w-48">
+                              <DropdownMenuItem onSelect={exportPageHtml}>
+                                <Download />
+                                Export HTML
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={exportPagePdf}>
+                                <FileText />
+                                Export PDF
+                              </DropdownMenuItem>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                        ) : null}
                         {canEdit && space.status === "active" ? (
                           <>
                             <DropdownMenuSeparator />
@@ -1869,22 +1889,24 @@ export function SpaceWorkspace({
                       {currentPage ? (
                         <>
                           <DropdownMenuSeparator />
-                          <DropdownMenuSub>
-                            <DropdownMenuSubTrigger>
-                              <Download />
-                              Export
-                            </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="w-48">
-                              <DropdownMenuItem onSelect={exportPageHtml}>
+                          {canExport ? (
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger>
                                 <Download />
-                                Export HTML
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={exportPagePdf}>
-                                <FileText />
-                                Export PDF
-                              </DropdownMenuItem>
-                            </DropdownMenuSubContent>
-                          </DropdownMenuSub>
+                                Export
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent className="w-48">
+                                <DropdownMenuItem onSelect={exportPageHtml}>
+                                  <Download />
+                                  Export HTML
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={exportPagePdf}>
+                                  <FileText />
+                                  Export PDF
+                                </DropdownMenuItem>
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                          ) : null}
                           {canEdit && space.status === "active" ? (
                             <DropdownMenuItem
                               onSelect={() => setMovePageOpen(true)}

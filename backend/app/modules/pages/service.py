@@ -12,13 +12,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
 from app.models.page import WikiPage
+from app.models.permission import Permission
 from app.models.revision import PageRevision
-from app.models.space import Space, SpaceRole, SpaceStatus
+from app.models.space import Space, SpaceStatus
 from app.models.user import User
 from app.modules.spaces.service import SpaceService
 from app.repositories.page import PageRepository
 from app.repositories.revision import PageRevisionRepository
-from app.schemas.page import PageCreate, PageLikeRead, PageMove, PageRead, PageRecentItem, PageUpdate
+from app.schemas.page import (
+    PageCreate,
+    PageLikeRead,
+    PageMove,
+    PageRead,
+    PageRecentItem,
+    PageUpdate,
+)
 from app.schemas.revision import PageRevisionDiffChunk, PageRevisionDiffRead, PageRevisionRead
 
 logger = get_logger(__name__)
@@ -35,11 +43,15 @@ class PageService:
         self.revisions = PageRevisionRepository(session)
 
     async def require_editor(self, space: Space, user: User) -> None:
-        if user.is_superuser:
-            return
-        role = await self.spaces.role_of(space, user)
-        if role is None or role.rank < SpaceRole.editor.rank:
-            raise PermissionDeniedError("You need editor access in this space to create pages.")
+        await self.spaces.require_add(space, user)
+
+    async def require_page_editor(self, page: WikiPage, user: User) -> None:
+        if not await self.spaces.permissions.can_edit_page(page, user):
+            raise PermissionDeniedError("You do not have edit access to this page.")
+
+    async def require_page_view(self, page: WikiPage, user: User) -> None:
+        if not await self.spaces.permissions.can_view_page(page, user):
+            raise PermissionDeniedError("You do not have access to this page.")
 
     def to_read(self, page: WikiPage) -> PageRead:
         return PageRead(
@@ -52,19 +64,37 @@ class PageService:
             content_format=page.content_format,
             created_at=page.created_at,
             updated_at=page.updated_at,
-            created_by_username=page.created_by.username if page.created_by else None,
-            updated_by_username=page.updated_by.username if page.updated_by else None,
+            created_by_username=page.created_by_label
+            or (page.created_by.username if page.created_by else None),
+            updated_by_username=page.updated_by_label
+            or (page.updated_by.username if page.updated_by else None),
         )
+
+    async def to_read_for_user(self, page: WikiPage, user: User) -> PageRead:
+        result = self.to_read(page)
+        result.can_edit = await self.spaces.permissions.can_edit_page(page, user)
+        space = await self.session.get(Space, page.space_id)
+        result.can_export = (
+            await self.spaces.permissions.can_view_page(page, user)
+            and space is not None
+            and Permission.export
+            in await self.spaces.permissions.effective_permissions(space, user)
+        )
+        return result
 
     def to_read_many(self, pages: Sequence[WikiPage]) -> list[PageRead]:
         return [self.to_read(page) for page in pages]
 
     async def list_for_space(
-        self, space: Space, *, limit: int = 10000, offset: int = 0
+        self, space: Space, user: User | None = None, *, limit: int = 10000, offset: int = 0
     ) -> list[PageRead]:
-        return self.to_read_many(
-            await self.pages.list_for_space(space.id, limit=limit, offset=offset)
-        )
+        pages = await self.pages.list_for_space(space.id, limit=limit, offset=offset)
+        if user is None:
+            return self.to_read_many(pages)
+        visible = [
+            page for page in pages if await self.spaces.permissions.can_view_page(page, user)
+        ]
+        return [await self.to_read_for_user(page, user) for page in visible]
 
     async def get_by_slug(self, space: Space, slug: str) -> WikiPage:
         page = await self.pages.get_by_slug(space.id, slug)
@@ -128,7 +158,7 @@ class PageService:
     async def update(
         self, space: Space, page: WikiPage, payload: PageUpdate, user: User
     ) -> WikiPage:
-        await self.require_editor(space, user)
+        await self.require_page_editor(page, user)
         data = payload.model_dump(exclude_unset=True)
         if data.get("title") is not None:
             page.title = str(data["title"]).strip()
@@ -163,8 +193,13 @@ class PageService:
                     content_format=r.content_format,
                     created_at=r.created_at,
                     change_summary=r.change_summary,
-                    created_by_username=author_user.username if author_user else None,
-                    created_by_full_name=author_user.full_name if author_user and author_user.full_name else (author_user.username if author_user else "System"),
+                    created_by_username=(
+                        page.created_by_label
+                        or (author_user.username if author_user else None)
+                    ),
+                    created_by_full_name=author_user.full_name
+                    if author_user and author_user.full_name
+                    else (author_user.username if author_user else "System"),
                 )
             )
         return items
@@ -189,8 +224,12 @@ class PageService:
             content_format=rev.content_format,
             created_at=rev.created_at,
             change_summary=rev.change_summary,
-            created_by_username=author_user.username if author_user else None,
-            created_by_full_name=author_user.full_name if author_user and author_user.full_name else (author_user.username if author_user else "System"),
+            created_by_username=(
+                page.created_by_label or (author_user.username if author_user else None)
+            ),
+            created_by_full_name=author_user.full_name
+            if author_user and author_user.full_name
+            else (author_user.username if author_user else "System"),
         )
 
     async def calculate_diff(
@@ -203,7 +242,11 @@ class PageService:
         # Default to_version is latest version, from_version is version prior or same
         latest_rev = revisions[0]
         target_to = to_version if to_version is not None else latest_rev.version
-        target_from = from_version if from_version is not None else (target_to - 1 if target_to > 1 else target_to)
+        target_from = (
+            from_version
+            if from_version is not None
+            else (target_to - 1 if target_to > 1 else target_to)
+        )
 
         rev_from = next((r for r in revisions if r.version == target_from), None)
         rev_to = next((r for r in revisions if r.version == target_to), None)
@@ -230,20 +273,20 @@ class PageService:
                 deleted_text = "\n".join(from_lines[i1:i2])
                 added_text = "\n".join(to_lines[j1:j2])
                 if deleted_text:
-                    deleted_count += (i2 - i1)
+                    deleted_count += i2 - i1
                     chunks.append(PageRevisionDiffChunk(operation="delete", text=deleted_text))
                 if added_text:
-                    added_count += (j2 - j1)
+                    added_count += j2 - j1
                     chunks.append(PageRevisionDiffChunk(operation="add", text=added_text))
             elif tag == "delete":
                 deleted_text = "\n".join(from_lines[i1:i2])
                 if deleted_text:
-                    deleted_count += (i2 - i1)
+                    deleted_count += i2 - i1
                     chunks.append(PageRevisionDiffChunk(operation="delete", text=deleted_text))
             elif tag == "insert":
                 added_text = "\n".join(to_lines[j1:j2])
                 if added_text:
-                    added_count += (j2 - j1)
+                    added_count += j2 - j1
                     chunks.append(PageRevisionDiffChunk(operation="add", text=added_text))
 
         return PageRevisionDiffRead(
@@ -260,7 +303,7 @@ class PageService:
     async def restore_revision(
         self, space: Space, page: WikiPage, version: int, user: User
     ) -> WikiPage:
-        await self.require_editor(space, user)
+        await self.require_page_editor(page, user)
         rev = await self.revisions.get_by_version(page.id, version)
         if rev is None:
             raise NotFoundError(f"Revision version {version} not found.")
@@ -273,13 +316,13 @@ class PageService:
         await self.session.refresh(page)
 
         await self.snapshot_revision(page, user, f"Restored version {version}")
-        logger.info("page_restored", space_key=space.key, slug=page.slug, version=version, by=user.username)
+        logger.info(
+            "page_restored", space_key=space.key, slug=page.slug, version=version, by=user.username
+        )
         return page
 
-    async def move(
-        self, space: Space, page: WikiPage, payload: PageMove, user: User
-    ) -> WikiPage:
-        await self.require_editor(space, user)
+    async def move(self, space: Space, page: WikiPage, payload: PageMove, user: User) -> WikiPage:
+        await self.require_page_editor(page, user)
         destination = await self.spaces.get_by_key(payload.destination_space_key)
         if destination.status is not SpaceStatus.active:
             raise BadRequestError("Pages can only be moved to an active space.")
@@ -339,7 +382,13 @@ class PageService:
         branch of documentation when an editor only intended to remove one
         page. Root children remain root pages.
         """
-        await self.require_editor(space, user)
+        if not await self.spaces.permissions.can_view_page(page, user):
+            raise PermissionDeniedError("You do not have access to this page.")
+        permissions = await self.spaces.permissions.effective_permissions(space, user)
+        if Permission.delete not in permissions and (
+            Permission.delete_own not in permissions or page.created_by_id != user.id
+        ):
+            raise PermissionDeniedError("You need Delete or Delete Own permission in this space.")
         children = await self.pages.list_children(page.id)
         for child in children:
             child.parent_id = page.parent_id
@@ -376,13 +425,18 @@ class PageService:
             suffix += 1
         return candidate
 
-    async def list_recent_pages(self, *, limit: int = 50) -> list[PageRecentItem]:
+    async def list_recent_pages(self, user: User, *, limit: int = 50) -> list[PageRecentItem]:
         pages = await self.pages.list_recent_pages(limit=limit)
+        pages = [
+            page
+            for page in pages
+            if await self.spaces.permissions.can_view_page(page, user)
+        ]
         items: list[PageRecentItem] = []
         for page in pages:
-            user = page.updated_by or page.created_by
-            username = user.username if user else "system"
-            full_name = user.full_name if user and user.full_name else username
+            author = page.updated_by or page.created_by
+            username = author.username if author else "system"
+            full_name = author.full_name if author and author.full_name else username
             items.append(
                 PageRecentItem(
                     id=page.id,

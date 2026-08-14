@@ -16,8 +16,11 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Query, status
+from sqlalchemy import select
 
-from app.api.deps import ActingAuthServiceDep, CurrentSuperuser, CurrentUser
+from app.api.deps import ActingAuthServiceDep, CurrentUser, DbSession
+from app.models.permission import GlobalPermission, Group, GroupMember
+from app.modules.permissions.service import PermissionService
 from app.schemas.pagination import Page
 from app.schemas.user import (
     PasswordChange,
@@ -43,7 +46,8 @@ async def update_own_profile(
 
 @router.get("", response_model=Page[UserRead], summary="List users")
 async def list_users(
-    _admin: CurrentSuperuser,
+    user: CurrentUser,
+    session: DbSession,
     service: ActingAuthServiceDep,
     q: str | None = Query(
         default=None, max_length=128, description="Match username, e-mail or name"
@@ -53,10 +57,25 @@ async def list_users(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> Page[UserRead]:
+    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
     users, total = await service.search_users(
         q=q, status=status_filter, role=role, limit=limit, offset=offset
     )
-    return Page.of([UserRead.model_validate(u) for u in users], total, limit=limit, offset=offset)
+    group_names: dict[uuid.UUID, list[str]] = {item.id: [] for item in users}
+    if users:
+        rows = await session.execute(
+            select(GroupMember.user_id, Group.name)
+            .join(Group, Group.id == GroupMember.group_id)
+            .where(GroupMember.user_id.in_(group_names), Group.is_active.is_(True))
+            .order_by(Group.name)
+        )
+        for user_id, group_name in rows:
+            group_names[user_id].append(group_name)
+    result = [
+        UserRead.model_validate(item).model_copy(update={"groups": group_names[item.id]})
+        for item in users
+    ]
+    return Page.of(result, total, limit=limit, offset=offset)
 
 
 @router.post(
@@ -67,9 +86,11 @@ async def list_users(
 )
 async def create_user(
     payload: UserCreate,
-    _admin: CurrentSuperuser,
+    user: CurrentUser,
+    session: DbSession,
     service: ActingAuthServiceDep,
 ) -> UserRead:
+    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
     user = await service.create_user(payload)
     return UserRead.model_validate(user)
 
@@ -78,9 +99,11 @@ async def create_user(
 async def update_user(
     user_id: uuid.UUID,
     payload: UserUpdate,
-    _admin: CurrentSuperuser,
+    user: CurrentUser,
+    session: DbSession,
     service: ActingAuthServiceDep,
 ) -> UserRead:
+    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
     user = await service.update_user(user_id, payload)
     return UserRead.model_validate(user)
 
@@ -93,7 +116,8 @@ async def update_user(
 async def reset_user_password(
     user_id: uuid.UUID,
     payload: PasswordReset,
-    _admin: CurrentSuperuser,
+    user: CurrentUser,
+    session: DbSession,
     service: ActingAuthServiceDep,
 ) -> UserRead:
     """Set a password without knowing the old one.
@@ -102,8 +126,9 @@ async def reset_user_password(
     administrative action, not a self-service one, and conflating them would
     make the audit trail ambiguous.
     """
-    user = await service.reset_password(user_id, payload.new_password)
-    return UserRead.model_validate(user)
+    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
+    updated = await service.reset_password(user_id, payload.new_password)
+    return UserRead.model_validate(updated)
 
 
 @router.delete(
@@ -113,9 +138,11 @@ async def reset_user_password(
 )
 async def delete_user(
     user_id: uuid.UUID,
-    _admin: CurrentSuperuser,
+    user: CurrentUser,
+    session: DbSession,
     service: ActingAuthServiceDep,
 ) -> None:
+    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
     await service.delete_user(user_id)
 
 

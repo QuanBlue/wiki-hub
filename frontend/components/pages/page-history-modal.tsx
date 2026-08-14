@@ -2,11 +2,9 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
-  ArrowLeftRight,
   Clock,
   Columns,
   Eye,
-  FileCode,
   GitCompare,
   Loader2,
   RotateCcw,
@@ -98,6 +96,7 @@ export function PageHistoryModal({
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- load revisions when the modal opens
       void fetchRevisions();
     } else {
       setRevisions([]);
@@ -112,6 +111,7 @@ export function PageHistoryModal({
     if (!open || fromVersion === null || toVersion === null) return;
 
     if (viewMode === "preview") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- show the preview loading state before the request resolves
       setLoadingPreview(true);
       getPageRevision(spaceKey, slug, toVersion)
         .then((rev) => setPreviewRevision(rev))

@@ -32,6 +32,12 @@ target_metadata = Base.metadata
 
 def _include_object(obj: object, name: str | None, type_: str, *_: object) -> bool:
     """Keep Alembic away from tables it does not own (e.g. extension tables)."""
+    # SQLAlchemy's VARCHAR-backed Enum emits dialect-specific CHECK SQL
+    # (PostgreSQL renders ``ANY`` while metadata renders ``IN``). The project
+    # migrations own those constraints, so comparing them during autogenerate
+    # creates false drift reports without improving safety.
+    if type_ == "check_constraint":
+        return False
     return not (type_ == "table" and name in {"spatial_ref_sys"})
 
 

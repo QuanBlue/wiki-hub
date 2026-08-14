@@ -11,6 +11,8 @@ from datetime import datetime
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field
 
+from app.models.permission import GlobalPermission
+
 
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -30,6 +32,8 @@ class UserRead(BaseModel):
     is_protected: bool
     last_login_at: datetime | None
     created_at: datetime
+    groups: list[str] = Field(default_factory=list)
+    global_permissions: list[GlobalPermission] = Field(default_factory=list)
 
 
 class MeRead(UserRead):

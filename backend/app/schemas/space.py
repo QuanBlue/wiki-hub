@@ -8,7 +8,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.space import SpaceRole, SpaceStatus
+from app.models.space import SpaceRole, SpaceStatus, SpaceVisibility
 
 #: Space keys appear in URLs and must stay stable, so they are restricted to a
 #: conservative character set and normalised to upper case.
@@ -33,6 +33,7 @@ class SpaceRead(BaseModel):
     description: str
     icon: str
     status: SpaceStatus
+    visibility: SpaceVisibility
     created_at: datetime
     updated_at: datetime
     created_by_username: str | None = None
@@ -40,6 +41,7 @@ class SpaceRead(BaseModel):
     is_favorite: bool = False
     #: The requesting user's role, or ``None`` when they are not a member.
     my_role: SpaceRole | None = None
+    my_permissions: list[str] = Field(default_factory=list)
 
 
 class SpaceCreate(BaseModel):
@@ -47,6 +49,7 @@ class SpaceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str = Field(default="", max_length=200_000)
     icon: str = Field(default="", max_length=16)
+    visibility: SpaceVisibility = SpaceVisibility.open
 
     @field_validator("key")
     @classmethod
@@ -65,6 +68,7 @@ class SpaceUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=200_000)
     icon: str | None = Field(default=None, max_length=16)
     status: SpaceStatus | None = None
+    visibility: SpaceVisibility | None = None
 
 
 class SpaceMemberUpsert(BaseModel):

@@ -54,7 +54,10 @@ class TestCreatePage:
         )
 
         assert page.slug == "on-call-runbook"
-        assert [item.title for item in await service.list_for_space(space)] == ["On-call Runbook"]
+        assert {item.title for item in await service.list_for_space(space)} == {
+            "Engineering",
+            "On-call Runbook",
+        }
         assert (await service.get_by_slug(space, "on-call-runbook")).content == (
             "Escalate incidents here."
         )
@@ -97,10 +100,9 @@ class TestCreatePage:
         )
 
         assert child.parent_id == parent.id
-        assert [item.parent_id for item in await service.list_for_space(space)] == [
-            parent.id,
-            None,
-        ]
+        listed = await service.list_for_space(space)
+        assert next(item for item in listed if item.title == "On-call").parent_id == parent.id
+        assert next(item for item in listed if item.title == "Runbooks").parent_id is None
 
     async def test_parent_must_belong_to_the_same_space(self, session: AsyncSession) -> None:
         owner = await _make_user(session)
@@ -142,18 +144,14 @@ class TestCreatePage:
         assert child.space_id == product.id
         assert child.parent_id == moved.id
 
-    async def test_move_cannot_make_a_page_its_own_descendant(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_move_cannot_make_a_page_its_own_descendant(self, session: AsyncSession) -> None:
         owner = await _make_user(session)
         space = await SpaceService(session).create(
             SpaceCreate(key="ENG", name="Engineering"), owner
         )
         service = PageService(session)
         parent = await service.create(space, PageCreate(title="Runbooks"), owner)
-        child = await service.create(
-            space, PageCreate(title="On-call", parent_id=parent.id), owner
-        )
+        child = await service.create(space, PageCreate(title="On-call", parent_id=parent.id), owner)
 
         with pytest.raises(BadRequestError, match="cannot be moved"):
             await service.move(
@@ -187,7 +185,9 @@ class TestUpdatePage:
         assert updated.content == "After"
         assert updated.updated_by_id == editor.id
 
-    async def test_page_content_format_is_saved_with_its_source(self, session: AsyncSession) -> None:
+    async def test_page_content_format_is_saved_with_its_source(
+        self, session: AsyncSession
+    ) -> None:
         owner = await _make_user(session)
         space = await SpaceService(session).create(
             SpaceCreate(key="ENG", name="Engineering"), owner
@@ -217,9 +217,7 @@ class TestUpdatePage:
 
 
 class TestDeletePage:
-    async def test_editor_can_delete_page_and_children_move_to_parent(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_editor_cannot_delete_another_users_page(self, session: AsyncSession) -> None:
         owner = await _make_user(session)
         editor = await _make_user(session)
         spaces = SpaceService(session)
@@ -230,14 +228,15 @@ class TestDeletePage:
         parent = await service.create(
             space, PageCreate(title="On-call", parent_id=grandparent.id), owner
         )
-        child = await service.create(space, PageCreate(title="Escalation", parent_id=parent.id), owner)
+        child = await service.create(
+            space, PageCreate(title="Escalation", parent_id=parent.id), owner
+        )
 
-        moved_children = await service.delete(space, parent, editor)
+        with pytest.raises(PermissionDeniedError):
+            await service.delete(space, parent, editor)
 
-        assert moved_children == 1
-        assert await service.pages.get(parent.id) is None
-        assert child.parent_id == grandparent.id
-        assert child.updated_by_id == editor.id
+        assert await service.pages.get(parent.id) is not None
+        assert child.parent_id == parent.id
 
     async def test_viewer_cannot_delete_a_page(self, session: AsyncSession) -> None:
         owner = await _make_user(session)

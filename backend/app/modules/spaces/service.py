@@ -17,13 +17,16 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError, NotFoundError, PermissionDeniedError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.page import WikiPage
-from app.models.space import Space, SpaceMember, SpaceRole, SpaceStatus
+from app.models.permission import Permission, SpaceUserPermission
+from app.models.space import Space, SpaceMember, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
+from app.modules.permissions.service import ROLE_PERMISSIONS, PermissionService
 from app.repositories.space import SpaceRepository
 from app.repositories.user import UserRepository
 from app.schemas.space import SpaceCreate, SpaceMemberRead, SpaceRead, SpaceUpdate
@@ -36,19 +39,21 @@ class SpaceService:
         self.session = session
         self.spaces = SpaceRepository(session)
         self.users = UserRepository(session)
+        self.permissions = PermissionService(session)
 
     # -- authorization -----------------------------------------------------
     async def role_of(self, space: Space, user: User) -> SpaceRole | None:
-        member = await self.spaces.get_member(space.id, user.id)
-        return member.role if member else None
+        return await self.permissions.role_of(space, user)
 
     async def require_admin(self, space: Space, user: User) -> None:
         """Raise unless ``user`` may administer ``space``."""
-        if user.is_superuser:
-            return
-        role = await self.role_of(space, user)
-        if role is not SpaceRole.admin:
-            raise PermissionDeniedError("You need the administrator role in this space to do that.")
+        await self.permissions.require(space, user, Permission.admin)
+
+    async def require_view(self, space: Space, user: User) -> None:
+        await self.permissions.require(space, user, Permission.view)
+
+    async def require_add(self, space: Space, user: User) -> None:
+        await self.permissions.require(space, user, Permission.add)
 
     # -- persistence helpers -----------------------------------------------
     async def _flush_and_refresh(self, space: Space) -> None:
@@ -79,12 +84,17 @@ class SpaceService:
             description=space.description,
             icon=space.icon,
             status=space.status,
+            visibility=space.visibility,
             created_at=space.created_at,
             updated_at=space.updated_at,
             created_by_username=space.created_by.username if space.created_by else None,
             member_count=len(space.members),
             is_favorite=favorite,
             my_role=await self.role_of(space, user),
+            my_permissions=sorted(
+                permission.value
+                for permission in await self.permissions.effective_permissions(space, user)
+            ),
         )
 
     async def to_read_many(self, spaces: Sequence[Space], user: User) -> list[SpaceRead]:
@@ -107,13 +117,29 @@ class SpaceService:
         spaces = await self.spaces.list_spaces(
             include_archived=include_archived, limit=limit, offset=offset
         )
-        return await self.to_read_many(spaces, user)
+        visible: list[Space] = []
+        for space in spaces:
+            if Permission.view in await self.permissions.effective_permissions(space, user):
+                visible.append(space)
+        return await self.to_read_many(visible, user)
 
     async def list_recent(self, user: User, *, limit: int = 20) -> list[SpaceRead]:
-        return await self.to_read_many(await self.spaces.list_recent(limit=limit), user)
+        spaces = await self.spaces.list_recent(limit=limit)
+        visible = [
+            space
+            for space in spaces
+            if Permission.view in await self.permissions.effective_permissions(space, user)
+        ]
+        return await self.to_read_many(visible, user)
 
     async def list_favorites(self, user: User) -> list[SpaceRead]:
-        return await self.to_read_many(await self.spaces.list_favorites(user.id), user)
+        spaces = await self.spaces.list_favorites(user.id)
+        visible = [
+            space
+            for space in spaces
+            if Permission.view in await self.permissions.effective_permissions(space, user)
+        ]
+        return await self.to_read_many(visible, user)
 
     async def list_members(self, space: Space) -> list[SpaceMemberRead]:
         members = await self.spaces.list_members(space.id)
@@ -140,6 +166,7 @@ class SpaceService:
             description=payload.description.strip(),
             icon=payload.icon.strip(),
             status=SpaceStatus.active,
+            visibility=payload.visibility,
             created_by_id=creator.id,
         )
         # The creator administers the space, so it is never left unmanageable.
@@ -147,6 +174,12 @@ class SpaceService:
 
         self.spaces.add(space)
         await self.session.flush()
+        from app.models.permission import SpaceUserPermission
+
+        self.session.add_all(
+            SpaceUserPermission(space_id=space.id, user_id=creator.id, permission=permission)
+            for permission in ROLE_PERMISSIONS[SpaceRole.admin]
+        )
         # Every newly-created space has a stable home route: the space key is
         # also the home page slug (for example QUAN -> /pages/quan).
         self.session.add(
@@ -168,7 +201,7 @@ class SpaceService:
     async def update(self, space: Space, payload: SpaceUpdate, user: User) -> Space:
         data = payload.model_dump(exclude_unset=True)
         if set(data) <= {"description"}:
-            await self.require_editor(space, user)
+            await self.require_add(space, user)
         else:
             await self.require_admin(space, user)
         if data.get("name") is not None:
@@ -179,6 +212,8 @@ class SpaceService:
             space.icon = str(data["icon"]).strip()
         if data.get("status") is not None:
             space.status = SpaceStatus(data["status"])
+        if data.get("visibility") is not None:
+            space.visibility = SpaceVisibility(data["visibility"])
 
         await self._flush_and_refresh(space)
         logger.info("space_updated", key=space.key, by=user.username)
@@ -219,11 +254,43 @@ class SpaceService:
             raise NotFoundError("User not found.")
 
         member = await self.spaces.get_member(space.id, user_id)
+        direct_admin = await self.session.scalar(
+            select(SpaceUserPermission.space_id).where(
+                SpaceUserPermission.space_id == space.id,
+                SpaceUserPermission.user_id == user_id,
+                SpaceUserPermission.permission == Permission.admin,
+            )
+        )
+        if (
+            ((member is not None and member.role is SpaceRole.admin) or direct_admin is not None)
+            and role is not SpaceRole.admin
+            and not await self.permissions._has_space_admin(
+                space, excluding={"user_id": user_id, "permission": Permission.admin}
+            )
+        ):
+            raise ConflictError(
+                "A Space must retain at least one administrator. Promote another "
+                "administrator before changing this member.",
+                code="last_space_admin",
+            )
         if member is None:
             member = SpaceMember(space_id=space.id, user_id=user_id, role=role)
             self.session.add(member)
         else:
             member.role = role
+
+        # Keep the new additive permission tables in sync with the legacy
+        # membership endpoint during the transition.
+        await self.session.execute(
+            delete(SpaceUserPermission).where(
+                SpaceUserPermission.space_id == space.id,
+                SpaceUserPermission.user_id == user_id,
+            )
+        )
+        for permission in ROLE_PERMISSIONS[role]:
+            self.session.add(
+                SpaceUserPermission(space_id=space.id, user_id=user_id, permission=permission)
+            )
 
         await self.session.flush()
         return SpaceMemberRead(
@@ -235,16 +302,32 @@ class SpaceService:
 
         # Refuse to remove the last administrator: a space with no admin can
         # never be managed again except by a system superuser.
-        members = await self.spaces.list_members(space.id)
-        admins = [m for m in members if m.role is SpaceRole.admin]
-        if len(admins) == 1 and admins[0].user_id == user_id:
+        member = await self.spaces.get_member(space.id, user_id)
+        direct_admin = await self.session.scalar(
+            select(SpaceUserPermission.space_id).where(
+                SpaceUserPermission.space_id == space.id,
+                SpaceUserPermission.user_id == user_id,
+                SpaceUserPermission.permission == Permission.admin,
+            )
+        )
+        if (
+            (member is not None and member.role is SpaceRole.admin) or direct_admin is not None
+        ) and not await self.permissions._has_space_admin(
+            space, excluding={"user_id": user_id, "permission": Permission.admin}
+        ):
             raise ConflictError(
                 "This is the only administrator of the space. Promote another "
-                "member before removing this one.",
+                "administrator before removing this one.",
                 code="last_space_admin",
             )
 
         await self.spaces.remove_member(space.id, user_id)
+        await self.session.execute(
+            delete(SpaceUserPermission).where(
+                SpaceUserPermission.space_id == space.id,
+                SpaceUserPermission.user_id == user_id,
+            )
+        )
         await self.session.flush()
 
     # -- favourites --------------------------------------------------------

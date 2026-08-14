@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { listPages } from "@/lib/pages";
 import { findHomePage } from "@/lib/home-page";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
+import type { Group } from "@/types/api";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function SpaceDetailPage({ params }: Params) {
   let space;
   let pages;
   let members;
+  const groups: Group[] = [];
   try {
     [space, pages, members] = await Promise.all([
       getSpace(key),
@@ -49,10 +51,14 @@ export default async function SpaceDetailPage({ params }: Params) {
       space={space}
       pages={pages}
       members={members}
+      groups={groups}
+      canManageRestrictions={
+        user.is_superuser || space.my_permissions?.includes("restrictions") === true
+      }
+      canExport={space.my_permissions?.includes("export") === true}
       canEdit={
         user.is_superuser ||
-        space.my_role === "admin" ||
-        space.my_role === "editor"
+        space.my_permissions?.includes("add") === true
       }
     />
   );

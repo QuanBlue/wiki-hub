@@ -26,8 +26,10 @@ from app.core.config import settings
 from app.core.exceptions import BadRequestError
 from app.core.logging import get_logger
 from app.models.audit import AuditAction
+from app.models.permission import SpaceUserPermission
 from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceStatus
 from app.models.user import User
+from app.modules.permissions.service import ROLE_PERMISSIONS
 from app.repositories.space import SpaceRepository
 from app.repositories.user import UserRepository
 from app.schemas.backup import (
@@ -349,6 +351,18 @@ class BackupService:
             self.session.add(
                 SpaceMember(space_id=member_space.id, user_id=member_user.id, role=member.role)
             )
+            await self.session.flush()
+            # Authorization now reads additive permission assignments. Keep
+            # the legacy membership row for rollback/backup compatibility,
+            # but restore its effective permissions as well.
+            for permission in ROLE_PERMISSIONS[member.role]:
+                self.session.add(
+                    SpaceUserPermission(
+                        space_id=member_space.id,
+                        user_id=member_user.id,
+                        permission=permission,
+                    )
+                )
             await self.session.flush()
             report.add("space_member", member_label, "created")
 

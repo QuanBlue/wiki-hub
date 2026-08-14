@@ -278,6 +278,9 @@ class AuthService:
                 message="You cannot deactivate your own account.",
             )
             await self._assert_superuser_remains(user)
+            from app.modules.permissions.service import PermissionService
+
+            await PermissionService(self.session).assert_user_can_be_removed(user)
         if data.get("is_superuser") is False:
             self._assert_not_self(
                 user,
@@ -440,6 +443,9 @@ class AuthService:
             message="You cannot delete your own account.",
         )
         await self._assert_superuser_remains(user)
+        from app.modules.permissions.service import PermissionService
+
+        await PermissionService(self.session).assert_user_can_be_removed(user)
 
         # Captured before the row goes away: the audit entry has to outlive it.
         username, user_uuid = user.username, user.id

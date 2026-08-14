@@ -203,7 +203,8 @@ class TestMembership:
         await service.set_member(space, owner, second.id, SpaceRole.admin)
 
         await service.remove_member(space, owner, owner.id)
-        assert await service.role_of(space, owner) is None
+        # Open Spaces grant View to every authenticated user by default.
+        assert await service.role_of(space, owner) is SpaceRole.viewer
 
     async def test_adding_an_unknown_user_is_rejected(self, session: AsyncSession) -> None:
         service = SpaceService(session)

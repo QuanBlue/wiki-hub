@@ -8,6 +8,7 @@ export function NavigationLoading() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- route completion clears the navigation indicator
     setLoading(false);
   }, [pathname]);
 
