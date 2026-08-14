@@ -432,6 +432,7 @@ async def log(
 
 
 async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid.UUID) -> None:
+    service = ConfluenceImportService(session, storage)
     job = await session.get(ImportJob, job_id)
     if job is None or job.status not in {"queued", "retrying"}:
         return
@@ -558,12 +559,12 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 occupied: set[str] = set()
                 for source_page in source_space.pages:
                     creator_id = (
-                        await self._resolve_or_create_user(source_page.creator)
+                        await service._resolve_or_create_user(source_page.creator)
                         if source_page.creator
                         else job.created_by_id
                     )
                     last_modifier_id = (
-                        await self._resolve_or_create_user(source_page.last_modifier)
+                        await service._resolve_or_create_user(source_page.last_modifier)
                         if source_page.last_modifier
                         else creator_id
                     )
