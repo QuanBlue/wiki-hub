@@ -1,6 +1,7 @@
 "use client";
 
 import { Grid2X2, Search, Star, X } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { SpaceCard } from "@/components/spaces/space-card";
@@ -10,8 +11,10 @@ import { cn } from "@/lib/utils";
 import type { Space } from "@/types/api";
 
 export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") === "starred" ? "starred" : "all";
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"all" | "starred">("all");
+  const [tab, setTab] = useState<"all" | "starred">(initialTab);
 
   const starredCount = useMemo(
     () => spaces.filter((s) => s.is_favorite).length,
