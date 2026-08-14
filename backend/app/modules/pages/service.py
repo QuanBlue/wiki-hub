@@ -15,7 +15,7 @@ from app.models.space import Space, SpaceRole, SpaceStatus
 from app.models.user import User
 from app.modules.spaces.service import SpaceService
 from app.repositories.page import PageRepository
-from app.schemas.page import PageCreate, PageLikeRead, PageMove, PageRead, PageUpdate
+from app.schemas.page import PageCreate, PageLikeRead, PageMove, PageRead, PageRecentItem, PageUpdate
 
 logger = get_logger(__name__)
 
@@ -218,3 +218,25 @@ class PageService:
             candidate = f"{slug[:240].strip('-') or 'page'}-{suffix}"
             suffix += 1
         return candidate
+
+    async def list_recent_pages(self, *, limit: int = 50) -> list[PageRecentItem]:
+        pages = await self.pages.list_recent_pages(limit=limit)
+        items: list[PageRecentItem] = []
+        for page in pages:
+            user = page.updated_by or page.created_by
+            username = user.username if user else "system"
+            full_name = user.full_name if user and user.full_name else username
+            items.append(
+                PageRecentItem(
+                    id=page.id,
+                    title=page.title,
+                    slug=page.slug,
+                    space_key=page.space.key,
+                    space_name=page.space.name,
+                    created_at=page.created_at,
+                    updated_at=page.updated_at,
+                    user_username=username,
+                    user_full_name=full_name,
+                )
+            )
+        return items

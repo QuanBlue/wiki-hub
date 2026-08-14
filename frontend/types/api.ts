@@ -33,6 +33,18 @@ export interface SearchResults {
   spaces: SearchResultSpace[];
 }
 
+export interface RecentPageItem {
+  id: string;
+  title: string;
+  slug: string;
+  space_key: string;
+  space_name: string;
+  created_at: string;
+  updated_at: string;
+  user_username: string;
+  user_full_name: string;
+}
+
 export interface InstanceInfo {
   site_name: string;
   version: string;
