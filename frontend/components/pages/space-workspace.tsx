@@ -38,6 +38,7 @@ import {
 import { toast } from "sonner";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
+import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
 import { MovePageDialog } from "@/components/pages/move-page-dialog";
 import { SourceCodeEditor } from "@/components/pages/source-code-editor";
@@ -685,6 +686,7 @@ export function SpaceWorkspace({
   const autoSaveInFlight = useRef(false);
   const autoSaveResetTimer = useRef<number | null>(null);
   const allowUnload = useRef(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [deletePageOpen, setDeletePageOpen] = useState(false);
   const [deletePagePending, setDeletePagePending] = useState(false);
   const [movePageOpen, setMovePageOpen] = useState(false);
@@ -1678,6 +1680,15 @@ export function SpaceWorkspace({
                     triggerVariant="ghost"
                     triggerSize="sm"
                   />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setHistoryModalOpen(true)}
+                  >
+                    <Clock3 />
+                    History
+                  </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" disabled={editing}>
@@ -2277,6 +2288,17 @@ export function SpaceWorkspace({
               pages={pages}
               open={movePageOpen}
               onOpenChange={setMovePageOpen}
+            />
+          ) : null}
+
+          {currentPage ? (
+            <PageHistoryModal
+              open={historyModalOpen}
+              onOpenChange={setHistoryModalOpen}
+              spaceKey={space.key}
+              slug={currentPage.slug}
+              pageTitle={currentPage.title}
+              onRestored={() => router.refresh()}
             />
           ) : null}
 

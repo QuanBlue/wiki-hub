@@ -45,6 +45,35 @@ export interface RecentPageItem {
   user_full_name: string;
 }
 
+export interface PageRevisionItem {
+  id: string;
+  page_id: string;
+  version: number;
+  title: string;
+  content: string;
+  content_format: "html" | "markdown";
+  created_at: string;
+  change_summary: string | null;
+  created_by_username: string | null;
+  created_by_full_name: string | null;
+}
+
+export interface PageRevisionDiffChunk {
+  operation: "add" | "delete" | "equal";
+  text: string;
+}
+
+export interface PageRevisionDiff {
+  from_version: number;
+  to_version: number;
+  title_changed: boolean;
+  from_title: string;
+  to_title: string;
+  chunks: PageRevisionDiffChunk[];
+  added_count: number;
+  deleted_count: number;
+}
+
 export interface InstanceInfo {
   site_name: string;
   version: string;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import re
 import uuid
 from collections.abc import Sequence
@@ -11,11 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
 from app.models.page import WikiPage
+from app.models.revision import PageRevision
 from app.models.space import Space, SpaceRole, SpaceStatus
 from app.models.user import User
 from app.modules.spaces.service import SpaceService
 from app.repositories.page import PageRepository
+from app.repositories.revision import PageRevisionRepository
 from app.schemas.page import PageCreate, PageLikeRead, PageMove, PageRead, PageRecentItem, PageUpdate
+from app.schemas.revision import PageRevisionDiffChunk, PageRevisionDiffRead, PageRevisionRead
 
 logger = get_logger(__name__)
 
@@ -28,6 +32,7 @@ class PageService:
         self.session = session
         self.pages = PageRepository(session)
         self.spaces = SpaceService(session)
+        self.revisions = PageRevisionRepository(session)
 
     async def require_editor(self, space: Space, user: User) -> None:
         if user.is_superuser:
@@ -78,6 +83,23 @@ class PageService:
         await self.session.flush()
         return await self.like_status(page, user)
 
+    async def snapshot_revision(
+        self, page: WikiPage, author: User | None, summary: str | None = None
+    ) -> PageRevision:
+        max_version = await self.revisions.get_max_version(page.id)
+        rev = PageRevision(
+            page_id=page.id,
+            version=max_version + 1,
+            title=page.title,
+            content=page.content,
+            content_format=page.content_format,
+            created_by_id=author.id if author else None,
+            change_summary=summary,
+        )
+        self.revisions.add(rev)
+        await self.session.flush()
+        return rev
+
     async def create(self, space: Space, payload: PageCreate, creator: User) -> WikiPage:
         await self.require_editor(space, creator)
         title = payload.title.strip()
@@ -99,6 +121,7 @@ class PageService:
         self.pages.add(page)
         await self.session.flush()
         await self.session.refresh(page)
+        await self.snapshot_revision(page, creator, "Initial page creation")
         logger.info("page_created", space_key=space.key, slug=page.slug, by=creator.username)
         return page
 
@@ -116,7 +139,141 @@ class PageService:
         page.updated_by_id = user.id
         await self.session.flush()
         await self.session.refresh(page)
+        await self.snapshot_revision(page, user, "Updated content")
         logger.info("page_updated", space_key=space.key, slug=page.slug, by=user.username)
+        return page
+
+    async def list_revisions(self, page: WikiPage) -> list[PageRevisionRead]:
+        revisions = await self.revisions.list_for_page(page.id)
+        # If no revisions exist yet (e.g. legacy pages), snapshot version 1 dynamically
+        if not revisions:
+            first_rev = await self.snapshot_revision(page, page.created_by, "Initial version")
+            revisions = [first_rev]
+
+        items: list[PageRevisionRead] = []
+        for r in revisions:
+            author_user = r.created_by
+            items.append(
+                PageRevisionRead(
+                    id=r.id,
+                    page_id=r.page_id,
+                    version=r.version,
+                    title=r.title,
+                    content=r.content,
+                    content_format=r.content_format,
+                    created_at=r.created_at,
+                    change_summary=r.change_summary,
+                    created_by_username=author_user.username if author_user else None,
+                    created_by_full_name=author_user.full_name if author_user and author_user.full_name else (author_user.username if author_user else "System"),
+                )
+            )
+        return items
+
+    async def get_revision(self, page: WikiPage, version: int) -> PageRevisionRead:
+        rev = await self.revisions.get_by_version(page.id, version)
+        if rev is None:
+            # Check if this is version 1 for a legacy page
+            all_revs = await self.list_revisions(page)
+            for r in all_revs:
+                if r.version == version:
+                    return r
+            raise NotFoundError(f"Revision version {version} not found.")
+
+        author_user = rev.created_by
+        return PageRevisionRead(
+            id=rev.id,
+            page_id=rev.page_id,
+            version=rev.version,
+            title=rev.title,
+            content=rev.content,
+            content_format=rev.content_format,
+            created_at=rev.created_at,
+            change_summary=rev.change_summary,
+            created_by_username=author_user.username if author_user else None,
+            created_by_full_name=author_user.full_name if author_user and author_user.full_name else (author_user.username if author_user else "System"),
+        )
+
+    async def calculate_diff(
+        self, page: WikiPage, from_version: int | None = None, to_version: int | None = None
+    ) -> PageRevisionDiffRead:
+        revisions = await self.list_revisions(page)
+        if not revisions:
+            raise NotFoundError("No revisions available for diff calculation.")
+
+        # Default to_version is latest version, from_version is version prior or same
+        latest_rev = revisions[0]
+        target_to = to_version if to_version is not None else latest_rev.version
+        target_from = from_version if from_version is not None else (target_to - 1 if target_to > 1 else target_to)
+
+        rev_from = next((r for r in revisions if r.version == target_from), None)
+        rev_to = next((r for r in revisions if r.version == target_to), None)
+
+        if rev_from is None:
+            rev_from = revisions[-1]
+        if rev_to is None:
+            rev_to = latest_rev
+
+        from_lines = rev_from.content.splitlines()
+        to_lines = rev_to.content.splitlines()
+
+        matcher = difflib.SequenceMatcher(None, from_lines, to_lines)
+        chunks: list[PageRevisionDiffChunk] = []
+        added_count = 0
+        deleted_count = 0
+
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "equal":
+                text = "\n".join(from_lines[i1:i2])
+                if text:
+                    chunks.append(PageRevisionDiffChunk(operation="equal", text=text))
+            elif tag == "replace":
+                deleted_text = "\n".join(from_lines[i1:i2])
+                added_text = "\n".join(to_lines[j1:j2])
+                if deleted_text:
+                    deleted_count += (i2 - i1)
+                    chunks.append(PageRevisionDiffChunk(operation="delete", text=deleted_text))
+                if added_text:
+                    added_count += (j2 - j1)
+                    chunks.append(PageRevisionDiffChunk(operation="add", text=added_text))
+            elif tag == "delete":
+                deleted_text = "\n".join(from_lines[i1:i2])
+                if deleted_text:
+                    deleted_count += (i2 - i1)
+                    chunks.append(PageRevisionDiffChunk(operation="delete", text=deleted_text))
+            elif tag == "insert":
+                added_text = "\n".join(to_lines[j1:j2])
+                if added_text:
+                    added_count += (j2 - j1)
+                    chunks.append(PageRevisionDiffChunk(operation="add", text=added_text))
+
+        return PageRevisionDiffRead(
+            from_version=rev_from.version,
+            to_version=rev_to.version,
+            title_changed=rev_from.title != rev_to.title,
+            from_title=rev_from.title,
+            to_title=rev_to.title,
+            chunks=chunks,
+            added_count=added_count,
+            deleted_count=deleted_count,
+        )
+
+    async def restore_revision(
+        self, space: Space, page: WikiPage, version: int, user: User
+    ) -> WikiPage:
+        await self.require_editor(space, user)
+        rev = await self.revisions.get_by_version(page.id, version)
+        if rev is None:
+            raise NotFoundError(f"Revision version {version} not found.")
+
+        page.title = rev.title
+        page.content = rev.content
+        page.content_format = rev.content_format
+        page.updated_by_id = user.id
+        await self.session.flush()
+        await self.session.refresh(page)
+
+        await self.snapshot_revision(page, user, f"Restored version {version}")
+        logger.info("page_restored", space_key=space.key, slug=page.slug, version=version, by=user.username)
         return page
 
     async def move(
