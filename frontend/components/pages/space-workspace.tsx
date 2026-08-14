@@ -1802,14 +1802,22 @@ export function SpaceWorkspace({
                           </DropdownMenuSubContent>
                         </DropdownMenuSub>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={exportPageHtml}>
-                          <Download />
-                          Export HTML
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={exportPagePdf}>
-                          <FileText />
-                          Export PDF
-                        </DropdownMenuItem>
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <Download />
+                            Export
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="w-48">
+                            <DropdownMenuItem onSelect={exportPageHtml}>
+                              <Download />
+                              Export HTML
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={exportPagePdf}>
+                              <FileText />
+                              Export PDF
+                            </DropdownMenuItem>
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
                         {canEdit && space.status === "active" ? (
                           <>
                             <DropdownMenuSeparator />
@@ -1861,14 +1869,22 @@ export function SpaceWorkspace({
                       {currentPage ? (
                         <>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem onSelect={exportPageHtml}>
-                            <Download />
-                            Export HTML
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={exportPagePdf}>
-                            <FileText />
-                            Export PDF
-                          </DropdownMenuItem>
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <Download />
+                              Export
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent className="w-48">
+                              <DropdownMenuItem onSelect={exportPageHtml}>
+                                <Download />
+                                Export HTML
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={exportPagePdf}>
+                                <FileText />
+                                Export PDF
+                              </DropdownMenuItem>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
                           {canEdit && space.status === "active" ? (
                             <DropdownMenuItem
                               onSelect={() => setMovePageOpen(true)}
