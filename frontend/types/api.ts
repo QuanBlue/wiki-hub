@@ -10,6 +10,29 @@ export interface InstanceFeatures {
   exports: string[];
 }
 
+export interface SearchResultPage {
+  id: string;
+  title: string;
+  slug: string;
+  space_key: string;
+  space_name: string;
+  snippet: string;
+  updated_at: string | null;
+}
+
+export interface SearchResultSpace {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+}
+
+export interface SearchResults {
+  query: string;
+  pages: SearchResultPage[];
+  spaces: SearchResultSpace[];
+}
+
 export interface InstanceInfo {
   site_name: string;
   version: string;

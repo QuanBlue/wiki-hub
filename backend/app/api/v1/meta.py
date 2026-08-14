@@ -77,7 +77,7 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
             oidc_auth=False,  # OIDC provider is a documented stub in this build
             attachments=True,
             comments=False,
-            search=False,
+            search=True,
             spaces=True,
             audit_log=True,
             backup=True,
