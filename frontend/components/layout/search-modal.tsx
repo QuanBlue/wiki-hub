@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { api } from "@/lib/api";
+import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { SearchResultPage, SearchResultSpace, SearchResults } from "@/types/api";
 
