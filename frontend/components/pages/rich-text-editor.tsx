@@ -16,8 +16,13 @@ import {
   EditorContent,
   useEditor,
   useEditorState,
+  NodeViewWrapper,
+  NodeViewContent,
+  ReactNodeViewRenderer,
   type Editor,
 } from "@tiptap/react";
+import CodeBlock from "@tiptap/extension-code-block";
+import type { NodeViewProps } from "@tiptap/core";
 import {
   Bold,
   AlignCenter,
@@ -147,10 +152,41 @@ const TableHeaderWithBackground = TableHeader.extend({
   },
 });
 
+function CodeBlockWithLines({ node, extension }: NodeViewProps) {
+  const lineCount = (node.textContent || "").split("\n").length;
+  const lines = Array.from({ length: Math.max(1, lineCount) }, (_, i) => i + 1);
+  // Default to a known language if set, though currently we just use the class
+  const language = node.attrs.language || "";
+
+  return (
+    <NodeViewWrapper className="group relative my-4 flex overflow-hidden rounded-md border border-border bg-surface-sunken">
+      <div className="select-none border-r border-border/50 bg-surface-hover/30 px-3 py-4 text-right font-mono text-xs !leading-6 text-muted-foreground/50">
+        {lines.map((line) => (
+          <div key={line} className="h-6">{line}</div>
+        ))}
+      </div>
+      <pre className="!my-0 flex-1 overflow-x-auto !border-0 !bg-transparent !p-4 font-mono text-xs !leading-6">
+        <NodeViewContent
+          as="code"
+          className={cn("whitespace-pre bg-transparent !m-0 !block !p-0 !font-mono !text-xs !leading-6", language ? `language-${language}` : "")}
+        />
+      </pre>
+    </NodeViewWrapper>
+  );
+}
+
+const CustomCodeBlock = CodeBlock.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(CodeBlockWithLines);
+  },
+});
+
 const editorExtensions = [
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
+    codeBlock: false,
   }),
+  CustomCodeBlock,
   Link.configure({
     openOnClick: false,
     autolink: true,
@@ -201,6 +237,9 @@ function normalizeConfluenceCodeMacros(content: string): string {
         code = code.replace(/^\s*<!\[CDATA\[/i, "");
         code = code.replace(/\]\]\s*(?:>?|&gt;)\s*$/i, "");
       }
+      
+      // Remove leading and trailing empty lines that are artifacts of XML formatting
+      code = code.replace(/^\s*[\r\n]+/, "").replace(/[\r\n]+\s*$/, "");
       
       const langMatch = inner.match(
         /<ac:parameter\b[^>]*\bac:name=(?:"language"|'language')[^>]*>([\s\S]*?)<\/ac:parameter>/i,
