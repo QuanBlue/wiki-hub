@@ -1687,7 +1687,7 @@ export function SpaceWorkspace({
                     onClick={() => setHistoryModalOpen(true)}
                   >
                     <Clock3 />
-                    History
+                    Page history
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -1844,12 +1844,9 @@ export function SpaceWorkspace({
                             Move page
                           </DropdownMenuItem>
                         ) : null}
-                        <DropdownMenuItem disabled>
+                        <DropdownMenuItem onSelect={() => setHistoryModalOpen(true)}>
                           <Clock3 />
                           Page history
-                          <span className="text-muted-foreground ml-auto text-xs">
-                            Soon
-                          </span>
                         </DropdownMenuItem>
                         <DropdownMenuItem disabled>
                           <FileText />
@@ -1934,9 +1931,9 @@ export function SpaceWorkspace({
                               Move page
                             </DropdownMenuItem>
                           ) : null}
-                          <DropdownMenuItem disabled>
+                          <DropdownMenuItem onSelect={() => setHistoryModalOpen(true)}>
                             <Clock3 />
-                            Page history (soon)
+                            Page history
                           </DropdownMenuItem>
                           <DropdownMenuItem disabled>
                             <FileText />
