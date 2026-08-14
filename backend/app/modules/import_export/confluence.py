@@ -21,6 +21,8 @@ class ConfluencePage:
     status: str
     created_at: datetime | None
     updated_at: datetime | None
+    creator: str | None = None
+    last_modifier: str | None = None
 
 
 @dataclass(slots=True)
@@ -86,6 +88,8 @@ def scan_archive(path: Path) -> list[ConfluenceSpace]:
         spaces: dict[str, ConfluenceSpace] = {}
         pages: list[ConfluencePage] = []
         attachment_page_ids: list[str] = []
+        user_names: dict[str, str] = {}
+        page_user_refs: list[tuple[ConfluencePage, str | None, str | None]] = []
         with stream:
             # Confluence exports are admin-only; iterparse keeps their 300MB XML bounded in memory.
             for _event, element in ET.iterparse(stream, events=("end",)):  # noqa: S314
@@ -103,19 +107,30 @@ def scan_archive(path: Path) -> list[ConfluenceSpace]:
                     space_id = _reference(props.get("space"))
                     status = _text(props, "contentStatus").lower()
                     if title and space_id and status == "current":
-                        pages.append(
-                            ConfluencePage(
-                                source_id=source_id,
-                                space_id=space_id,
-                                parent_id=_reference(props.get("parent")),
-                                title=title,
-                                status=status,
-                                created_at=_timestamp(props, "creationDate", "createdDate"),
-                                updated_at=_timestamp(
-                                    props, "lastModificationDate", "lastModifiedDate", "modifiedDate"
-                                ),
-                            )
+                        creator_ref = _reference(props.get("creator"))
+                        last_modifier_ref = _reference(props.get("lastModifier"))
+                        creator_name = _text(props, "creatorName")
+                        last_modifier_name = _text(props, "lastModifierName")
+                        
+                        page = ConfluencePage(
+                            source_id=source_id,
+                            space_id=space_id,
+                            parent_id=_reference(props.get("parent")),
+                            title=title,
+                            status=status,
+                            created_at=_timestamp(props, "creationDate", "createdDate"),
+                            updated_at=_timestamp(
+                                props, "lastModificationDate", "lastModifiedDate", "modifiedDate"
+                            ),
+                            creator=creator_name or None,
+                            last_modifier=last_modifier_name or None,
                         )
+                        pages.append(page)
+                        page_user_refs.append((page, creator_ref, last_modifier_ref))
+                elif element.get("class") == "ConfluenceUserImpl" and source_id:
+                    username_val = _text(props, "name")
+                    if username_val:
+                        user_names[source_id] = username_val
                 elif element.get("class") == "Attachment":
                     attachment_page_id = (
                         _reference(props.get("containerContent"))
@@ -125,6 +140,14 @@ def scan_archive(path: Path) -> list[ConfluenceSpace]:
                     if attachment_page_id:
                         attachment_page_ids.append(attachment_page_id)
                 element.clear()
+
+    # Resolve creator and modifier usernames from their referenced IDs
+    for page, creator_ref, last_modifier_ref in page_user_refs:
+        if not page.creator and creator_ref:
+            page.creator = user_names.get(creator_ref)
+        if not page.last_modifier and last_modifier_ref:
+            page.last_modifier = user_names.get(last_modifier_ref)
+
     pages_by_source_id = {page.source_id: page for page in pages}
     for attachment_page_id in attachment_page_ids:
         attachment_page = pages_by_source_id.get(attachment_page_id)
