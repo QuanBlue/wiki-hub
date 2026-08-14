@@ -1,20 +1,13 @@
 "use client";
 
-import { Archive, ArchiveRestore, MoreHorizontal, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { RowActionsMenu, type RowAction } from "@/components/admin/row-actions-menu";
 import { api, ApiError } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
 import type { Space } from "@/types/api";
 
 export function SpaceRowActions({ space }: { space: Space }) {
@@ -66,39 +59,20 @@ export function SpaceRowActions({ space }: { space: Space }) {
     }
   }
 
+  const actions: RowAction[] = [
+    {
+      label: space.status === "active" ? "Archive space" : "Unarchive space",
+      icon: space.status === "active" ? <Archive className="size-4" /> : <ArchiveRestore className="size-4" />,
+      onSelect: () => space.status === "active" ? setConfirmArchiveOpen(true) : void toggleArchive(),
+      disabled: pending,
+    },
+    { separator: true },
+    { label: "Delete space…", icon: <Trash2 className="size-4" />, onSelect: () => setConfirmOpen(true), disabled: pending, destructive: true },
+  ];
+
   return (
     <div className="flex justify-end">
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          className={cn(
-            "text-muted-foreground hover:text-foreground cursor-pointer rounded-md p-1.5",
-            "hover:bg-surface-selected active:bg-surface-selected transition-colors duration-150",
-            "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-            "disabled:pointer-events-none disabled:opacity-50",
-          )}
-          disabled={pending}
-          aria-label={`Actions for ${space.name}`}
-        >
-          <MoreHorizontal className="size-4" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            onSelect={() =>
-              space.status === "active"
-                ? setConfirmArchiveOpen(true)
-                : void toggleArchive()
-            }
-          >
-            {space.status === "active" ? <Archive /> : <ArchiveRestore />}
-            {space.status === "active" ? "Archive space" : "Unarchive space"}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem destructive onSelect={() => setConfirmOpen(true)}>
-            <Trash2 />
-            Delete space…
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <RowActionsMenu label={`Actions for ${space.name}`} actions={actions} />
 
       <ConfirmDialog
         open={confirmArchiveOpen}

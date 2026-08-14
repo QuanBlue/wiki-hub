@@ -6,7 +6,13 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * Filter and pagination controls that write their state into the URL.
@@ -94,16 +100,24 @@ export function ListFilters({
       {filters.map((filter) => (
         <div key={filter.name} className="min-w-36">
           <Select
-            aria-label={filter.label}
-            value={filter.value}
-            onChange={(e) => write({ [filter.name]: e.target.value || null })}
+            value={filter.value || "__all__"}
+            onValueChange={(value) => write({ [filter.name]: value === "__all__" ? null : value })}
           >
-            <option value="">{filter.label}: all</option>
-            {filter.options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
+            <SelectTrigger aria-label={filter.label}>
+              <SelectValue>
+                {filter.value
+                  ? filter.options.find((option) => option.value === filter.value)?.label ?? filter.value
+                  : `${filter.label}: all`}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{filter.label}: all</SelectItem>
+              {filter.options.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
       ))}

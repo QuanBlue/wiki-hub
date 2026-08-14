@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { inputClassName } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
 import type { Space, WikiPage } from "@/types/api";
 
@@ -186,19 +186,25 @@ export function MovePageDialog({
           <div className="space-y-1.5">
             <Label htmlFor="move-page-space">Destination space</Label>
             <Select
-              id="move-page-space"
               value={destinationKey}
-              onChange={(event) => void selectDestination(event.target.value)}
+              onValueChange={(value) => void selectDestination(value)}
               disabled={loading || pending}
             >
+              <SelectTrigger id="move-page-space" aria-label="Destination space">
+                <SelectValue>
+                  {spaces.find((candidate) => candidate.key === destinationKey)?.name ?? space.name}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
               {spaces.length === 0 ? (
-                <option value={space.key}>{space.name}</option>
+                <SelectItem value={space.key}>{space.name}</SelectItem>
               ) : null}
               {spaces.map((candidate) => (
-                <option key={candidate.id} value={candidate.key}>
+                <SelectItem key={candidate.id} value={candidate.key}>
                   {candidate.name} ({candidate.key})
-                </option>
+                </SelectItem>
               ))}
+              </SelectContent>
             </Select>
           </div>
 
