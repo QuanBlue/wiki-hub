@@ -21,12 +21,14 @@ export async function AppShell({
   children,
   contentClassName,
   hideSidebar = false,
+  fullWidth = false,
 }: {
   siteName: string;
   user: Me;
   children: React.ReactNode;
   contentClassName?: string;
   hideSidebar?: boolean;
+  fullWidth?: boolean;
 }) {
   const [sidebarPermissions, sidebarPreferences] = await Promise.all([
     getSidebarPermissions(),
@@ -47,6 +49,7 @@ export async function AppShell({
           hasBanner={user.impersonator !== null}
           contentClassName={contentClassName}
           disableSidebarOffset={hideSidebar}
+          fullWidth={fullWidth}
         >
           {children}
         </AppMain>

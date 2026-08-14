@@ -15,12 +15,14 @@ export function AppMain({
   hasBanner = false,
   contentClassName,
   disableSidebarOffset = false,
+  fullWidth = false,
 }: {
   children: React.ReactNode;
   /** Reserve room for the fixed impersonation bar so it covers no content. */
   hasBanner?: boolean;
   contentClassName?: string;
   disableSidebarOffset?: boolean;
+  fullWidth?: boolean;
 }) {
   const { collapsed, sidebarWidth } = useSidebar();
 
@@ -40,7 +42,7 @@ export function AppMain({
     >
       <div
         className={cn(
-          "max-w-content mx-auto w-full px-5 py-8 sm:px-8 sm:py-10",
+          fullWidth ? "w-full px-6 py-8 sm:px-10 sm:py-10" : "max-w-content mx-auto w-full px-5 py-8 sm:px-8 sm:py-10",
           hasBanner && "pb-24",
           contentClassName,
         )}
