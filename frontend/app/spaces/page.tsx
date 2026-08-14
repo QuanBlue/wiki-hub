@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
@@ -28,7 +29,9 @@ export default async function SpacesPage() {
           actions={<CreateSpaceForm />}
         />
 
-        <SpacesExplorer spaces={spaces} />
+        <Suspense fallback={null}>
+          <SpacesExplorer spaces={spaces} />
+        </Suspense>
       </div>
     </AppShell>
   );

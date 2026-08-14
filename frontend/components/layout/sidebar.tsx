@@ -31,12 +31,6 @@ const PRIMARY_NAV: NavItem[] = [
   { href: "/", label: "Home", icon: Home, permission: "home" },
   { href: "/spaces", label: "Spaces", icon: LayoutGrid, permission: "spaces" },
   { href: "/recent", label: "Recent", icon: Clock, permission: "recent" },
-  {
-    href: "/favorites",
-    label: "Favorites",
-    icon: Star,
-    permission: "favorites",
-  },
 ];
 
 const ADMIN_NAV: NavItem[] = [
