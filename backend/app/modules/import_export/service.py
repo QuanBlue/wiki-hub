@@ -128,53 +128,74 @@ def _link_imported_attachments(
 
 
 def _normalize_confluence_code_macros(content: str) -> str:
-    """Convert Confluence XML-style code macros into standard HTML <pre><code> blocks."""
+    """Convert Confluence XML-style macros (code, callouts/info/warning/note/tip/panel) into HTML elements."""
     if "<ac:structured-macro" not in content:
         return content
         
     def replace_macro(match: re.Match) -> str:
+        macro_tag = match.group(0)
+        macro_name_match = re.search(r'ac:name=(?:"([^"]+)"|\'([^\']+)\')', macro_tag, re.IGNORECASE)
+        if not macro_name_match:
+            return macro_tag
+            
+        macro_name = (macro_name_match.group(1) or macro_name_match.group(2) or "").lower()
         inner = match.group(1)
         
-        # 1. Match code body inside ac:plain-text-body
-        code_match = re.search(
-            r"<ac:plain-text-body\b[^>]*>([\s\S]*?)</ac:plain-text-body>",
-            inner,
-            re.IGNORECASE
-        )
+        # Handle code macro
+        if macro_name == "code":
+            code_match = re.search(
+                r"<ac:plain-text-body\b[^>]*>([\s\S]*?)</ac:plain-text-body>",
+                inner,
+                re.IGNORECASE
+            )
+            if not code_match:
+                return macro_tag
+            code_text = code_match.group(1)
+            if re.match(r"^\s*<!\[CDATA\[", code_text, re.IGNORECASE):
+                code_text = re.sub(r"^\s*<!\[CDATA\[", "", code_text, count=1, flags=re.IGNORECASE)
+                code_text = re.sub(r"\]\]\s*(?:>?|&gt;)\s*$", "", code_text, count=1, flags=re.IGNORECASE)
+            code_text = re.sub(r"^\s*[\r\n]+", "", code_text)
+            code_text = re.sub(r"[\r\n]+\s*$", "", code_text)
             
-        if not code_match:
-            return match.group(0)
+            lang_match = re.search(
+                r"<ac:parameter\b[^>]*\bac:name=(?:\"language\"|'language')[^>]*>([\s\S]*?)</ac:parameter>",
+                inner,
+                re.IGNORECASE
+            )
+            language = ""
+            if lang_match:
+                language = re.sub(r"[^a-z0-9_-]", "", lang_match.group(1).strip().lower())
+            escaped_code = html.escape(code_text)
+            class_attr = f' class="language-{language}"' if language else ''
+            return f'<pre><code{class_attr}>{escaped_code}</code></pre>'
+
+        # Handle callout macros (info, warning, note, tip, panel, expand)
+        if macro_name in {"info", "warning", "note", "tip", "panel", "expand"}:
+            body_match = re.search(
+                r"<ac:rich-text-body\b[^>]*>([\s\S]*?)</ac:rich-text-body>",
+                inner,
+                re.IGNORECASE
+            )
+            body_text = body_match.group(1) if body_match else ""
             
-        code_text = code_match.group(1)
-        
-        # Strip CDATA wrapper if present (handling spacing variations and HTML entities like ]] > or ]]> or ]]&gt;)
-        cdata_start_match = re.match(r"^\s*<!\[CDATA\[", code_text, re.IGNORECASE)
-        if cdata_start_match:
-            code_text = re.sub(r"^\s*<!\[CDATA\[", "", code_text, count=1, flags=re.IGNORECASE)
-            code_text = re.sub(r"\]\]\s*(?:>?|&gt;)\s*$", "", code_text, count=1, flags=re.IGNORECASE)
-        
-        # Remove leading and trailing empty lines that are artifacts of XML formatting
-        code_text = re.sub(r"^\s*[\r\n]+", "", code_text)
-        code_text = re.sub(r"[\r\n]+\s*$", "", code_text)
-        
-        # 2. Match language parameter
-        lang_match = re.search(
-            r"<ac:parameter\b[^>]*\bac:name=(?:\"language\"|'language')[^>]*>([\s\S]*?)</ac:parameter>",
-            inner,
-            re.IGNORECASE
-        )
-        language = ""
-        if lang_match:
-            language = re.sub(r"[^a-z0-9_-]", "", lang_match.group(1).strip().lower())
+            title_match = re.search(
+                r"<ac:parameter\b[^>]*\bac:name=(?:\"title\"|'title')[^>]*>([\s\S]*?)</ac:parameter>",
+                inner,
+                re.IGNORECASE
+            )
+            title_text = title_match.group(1).strip() if title_match else ""
+            title_html = f"<p><strong>{html.escape(title_text)}</strong></p>" if title_text else ""
             
-        # Escape the code content for HTML
-        escaped_code = html.escape(code_text)
-        
-        class_attr = f' class="language-{language}"' if language else ''
-        return f'<pre><code{class_attr}>{escaped_code}</code></pre>'
+            callout_type = macro_name
+            if callout_type == "expand":
+                callout_type = "panel"
+                
+            return f'<div data-type="callout" data-callout-type="{callout_type}" class="callout callout-{callout_type}">{title_html}{body_text}</div>'
+
+        return macro_tag
 
     return re.sub(
-        r"<ac:structured-macro\b[^>]*\bac:name=(?:\"code\"|'code')[^>]*>([\s\S]*?)</ac:structured-macro>",
+        r"<ac:structured-macro\b[^>]*>([\s\S]*?)</ac:structured-macro>",
         replace_macro,
         content,
         flags=re.IGNORECASE

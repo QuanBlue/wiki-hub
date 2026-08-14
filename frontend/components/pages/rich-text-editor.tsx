@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@tiptap/extension-table";
-import { Mark, mergeAttributes } from "@tiptap/core";
+import { Node, Mark, mergeAttributes } from "@tiptap/core";
 import {
   EditorContent,
   useEditor,
@@ -24,6 +24,8 @@ import {
 import CodeBlock from "@tiptap/extension-code-block";
 import type { NodeViewProps } from "@tiptap/core";
 import {
+  AlertCircle,
+  AlertTriangle,
   Bold,
   AlignCenter,
   AlignLeft,
@@ -36,7 +38,9 @@ import {
   Heading2,
   Heading3,
   ImagePlus,
+  Info,
   Italic,
+  Lightbulb,
   Link2,
   List,
   ListOrdered,
@@ -179,6 +183,108 @@ function CodeBlockWithLines({ node, extension }: NodeViewProps) {
   );
 }
 
+function CalloutComponent({ node }: NodeViewProps) {
+  const type = (node.attrs.type || "info").toLowerCase();
+
+  const config = useMemo(() => {
+    switch (type) {
+      case "warning":
+      case "note":
+        return {
+          bg: "bg-amber-500/10 border-amber-500/35 text-foreground dark:bg-amber-500/15",
+          icon: AlertTriangle,
+          iconColor: "text-amber-600 dark:text-amber-400",
+        };
+      case "tip":
+        return {
+          bg: "bg-emerald-500/10 border-emerald-500/30 text-foreground dark:bg-emerald-500/15",
+          icon: Lightbulb,
+          iconColor: "text-emerald-600 dark:text-emerald-400",
+        };
+      case "panel":
+        return {
+          bg: "bg-surface-sunken border-border text-foreground",
+          icon: Info,
+          iconColor: "text-muted-foreground",
+        };
+      case "info":
+      default:
+        return {
+          bg: "bg-blue-500/10 border-blue-500/30 text-foreground dark:bg-blue-500/15",
+          icon: AlertCircle,
+          iconColor: "text-blue-600 dark:text-blue-400",
+        };
+    }
+  }, [type]);
+
+  const IconComponent = config.icon;
+
+  return (
+    <NodeViewWrapper className="my-4">
+      <div className={cn("relative flex items-start gap-3 rounded-md border p-4 transition-colors", config.bg)}>
+        <div className="mt-0.5 select-none flex-shrink-0">
+          <IconComponent className={cn("h-5 w-5", config.iconColor)} />
+        </div>
+        <div className="min-w-0 flex-1 [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+          <NodeViewContent />
+        </div>
+      </div>
+    </NodeViewWrapper>
+  );
+}
+
+const CustomCalloutNode = Node.create({
+  name: "callout",
+  group: "block",
+  content: "block+",
+  defining: true,
+
+  addAttributes() {
+    return {
+      type: {
+        default: "info",
+        parseHTML: (element: HTMLElement) => {
+          const dataType = element.getAttribute("data-callout-type");
+          if (dataType) return dataType;
+          const cls = element.className || "";
+          if (/warning/i.test(cls)) return "warning";
+          if (/note/i.test(cls)) return "note";
+          if (/tip/i.test(cls)) return "tip";
+          if (/panel/i.test(cls)) return "panel";
+          return "info";
+        },
+        renderHTML: (attributes) => ({
+          "data-callout-type": attributes.type,
+        }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [
+      { tag: 'div[data-type="callout"]' },
+      { tag: 'div.callout' },
+      { tag: 'div.confluence-information-macro' },
+      { tag: 'blockquote.callout' },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, {
+        "data-type": "callout",
+        class: `callout callout-${HTMLAttributes["data-callout-type"] || "info"}`,
+      }),
+      0,
+    ];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(CalloutComponent);
+  },
+});
+
 const CustomCodeBlock = CodeBlock.extend({
   addNodeView() {
     return ReactNodeViewRenderer(CodeBlockWithLines);
@@ -191,6 +297,7 @@ const editorExtensions = [
     codeBlock: false,
   }),
   CustomCodeBlock,
+  CustomCalloutNode,
   Link.configure({
     openOnClick: false,
     autolink: true,
@@ -225,32 +332,55 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Convert Confluence's XML-style code macro into semantic HTML for Tiptap. */
+/** Convert Confluence's XML-style code & callout macros into semantic HTML for Tiptap. */
 function normalizeConfluenceCodeMacros(content: string): string {
   let res = content.replace(
-    /<ac:structured-macro\b[^>]*\bac:name=(?:"code"|'code')[^]*>([\s\S]*?)<\/ac:structured-macro>/gi,
+    /<ac:structured-macro\b[^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
     (macro, inner: string) => {
-      const bodyMatch = inner.match(
-        /<ac:plain-text-body\b[^>]*>([\s\S]*?)<\/ac:plain-text-body>/i,
-      );
-      if (!bodyMatch) return macro;
-      let code = bodyMatch[1];
-      
-      // Strip CDATA wrapper if present (handling spaces and HTML entities)
-      if (/^\s*<!\[CDATA\[/i.test(code)) {
-        code = code.replace(/^\s*<!\[CDATA\[/i, "");
-        code = code.replace(/\]\]\s*(?:>?|&gt;)\s*$/i, "");
+      const nameMatch = macro.match(/ac:name=(?:"([^"]+)"|'([^']+)');?/i);
+      const name = (nameMatch?.[1] || nameMatch?.[2] || "").toLowerCase();
+
+      if (name === "code") {
+        const bodyMatch = inner.match(
+          /<ac:plain-text-body\b[^>]*>([\s\S]*?)<\/ac:plain-text-body>/i,
+        );
+        if (!bodyMatch) return macro;
+        let code = bodyMatch[1];
+        
+        if (/^\s*<!\[CDATA\[/i.test(code)) {
+          code = code.replace(/^\s*<!\[CDATA\[/i, "");
+          code = code.replace(/\]\]\s*(?:>?|&gt;)\s*$/i, "");
+        }
+        
+        code = code
+          .replace(/^(?:[ \t]*[\r\n]|&#10;|&#13;|&NewLine;)+/, "")
+          .replace(/(?:[\r\n][ \t]*|&#10;|&#13;|&NewLine;)+$/, "");
+        
+        const langMatch = inner.match(
+          /<ac:parameter\b[^>]*\bac:name=(?:"language"|'language')[^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        );
+        const language =
+          langMatch?.[1]?.trim()?.replace(/[^a-z0-9_-]/gi, "") || "";
+        return `<pre><code${language ? ` class="language-${language}"` : ""}>${escapeHtml(code)}</code></pre>`;
       }
-      
-      // Remove leading and trailing empty lines that are artifacts of XML formatting
-      code = code.replace(/^(?:[ \t]*[\r\n]|&#10;|&#13;|&NewLine;)+/, "").replace(/(?:[\r\n][ \t]*|&#10;|&#13;|&NewLine;)+$/, "");
-      
-      const langMatch = inner.match(
-        /<ac:parameter\b[^>]*\bac:name=(?:"language"|'language')[^>]*>([\s\S]*?)<\/ac:parameter>/i,
-      );
-      const language =
-        langMatch?.[1]?.trim()?.replace(/[^a-z0-9_-]/gi, "") || "";
-      return `<pre><code${language ? ` class="language-${language}"` : ""}>${escapeHtml(code)}</code></pre>`;
+
+      if (["info", "warning", "note", "tip", "panel", "expand"].includes(name)) {
+        const bodyMatch = inner.match(
+          /<ac:rich-text-body\b[^>]*>([\s\S]*?)<\/ac:rich-text-body>/i,
+        );
+        const body = bodyMatch ? bodyMatch[1] : "";
+        
+        const titleMatch = inner.match(
+          /<ac:parameter\b[^>]*\bac:name=(?:"title"|'title')[^>]*>([\s\S]*?)<\/ac:parameter>/i,
+        );
+        const title = titleMatch ? titleMatch[1].trim() : "";
+        const titleHtml = title ? `<p><strong>${escapeHtml(title)}</strong></p>` : "";
+        
+        const type = name === "expand" ? "panel" : name;
+        return `<div data-type="callout" data-callout-type="${type}" class="callout callout-${type}">${titleHtml}${body}</div>`;
+      }
+
+      return macro;
     },
   );
 
@@ -258,9 +388,11 @@ function normalizeConfluenceCodeMacros(content: string): string {
   res = res.replace(
     /(<pre\b[^>]*><code\b[^>]*>)([\s\S]*?)(<\/code><\/pre>)/gi,
     (_match, open, code, close) => {
-      const trimmedCode = code.replace(/^(?:[ \t]*[\r\n]|&#10;|&#13;|&NewLine;)+/, "").replace(/(?:[\r\n][ \t]*|&#10;|&#13;|&NewLine;)+$/, "");
+      const trimmedCode = code
+        .replace(/^(?:[ \t]*[\r\n]|&#10;|&#13;|&NewLine;)+/, "")
+        .replace(/(?:[\r\n][ \t]*|&#10;|&#13;|&NewLine;)+$/, "");
       return `${open}${trimmedCode}${close}`;
-    }
+    },
   );
 
   return res;
