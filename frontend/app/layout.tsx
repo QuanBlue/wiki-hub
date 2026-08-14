@@ -88,113 +88,14 @@ export default async function RootLayout({
         suppressHydrationWarning
       >
         <Script
-          id="remove-extension-hydration-markers"
+          src="/remove-extension-hydration-markers.js"
+          id="remove-extension-hydration-markers-external"
           strategy="beforeInteractive"
-        >
-          {`(() => {
-            const isExtensionMarker = (name) =>
-              name.startsWith("bis_") ||
-              /^__processed_[a-f0-9-]+__$/.test(name);
-
-            const clean = (element) => {
-              if (!(element instanceof Element)) return;
-              if (
-                element instanceof HTMLScriptElement &&
-                element.src.startsWith("chrome-extension://")
-              ) {
-                element.remove();
-                return;
-              }
-              for (const attribute of Array.from(element.attributes)) {
-                if (isExtensionMarker(attribute.name)) {
-                  element.removeAttribute(attribute.name);
-                }
-              }
-            };
-
-            const cleanTree = (root) => {
-              clean(root);
-              if (!(root instanceof Element)) return;
-              root.querySelectorAll("*").forEach(clean);
-            };
-
-            const start = () => {
-              cleanTree(document.documentElement);
-              const observer = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                  if (mutation.type === "attributes") clean(mutation.target);
-                  for (const node of mutation.addedNodes) cleanTree(node);
-                }
-              });
-              observer.observe(document.documentElement, {
-                attributes: true,
-                childList: true,
-                subtree: true,
-              });
-              window.addEventListener("load", () => observer.disconnect(), {
-                once: true,
-              });
-            };
-
-            if (document.documentElement) start();
-            else document.addEventListener("DOMContentLoaded", start, { once: true });
-          })();`}
-        </Script>
+        />
         <Script
+          src="/preload-sidebar-preferences.js"
           id="preload-sidebar-preferences"
           strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{
-            __html: `(() => {
-              try {
-                const root = document.documentElement;
-                const storedCollapsed = window.localStorage.getItem(
-                  "wikihub:sidebar-collapsed",
-                );
-                const collapsed =
-                  storedCollapsed === null
-                    ? root.dataset.whSidebarCollapsed === "true"
-                    : storedCollapsed === "true";
-                const storedAppWidth = window.localStorage.getItem(
-                  "wikihub:sidebar-width",
-                );
-                const storedSpaceWidth = window.localStorage.getItem(
-                  "wikihub:space-sidebar-width",
-                );
-                const appWidth =
-                  storedAppWidth === null
-                    ? Number.parseFloat(
-                        root.style.getPropertyValue(
-                          "--wh-preloaded-sidebar-width",
-                        ),
-                      )
-                    : Number(storedAppWidth);
-                const spaceWidth =
-                  storedSpaceWidth === null
-                    ? Number.parseFloat(
-                        root.style.getPropertyValue(
-                          "--wh-preloaded-space-sidebar-width",
-                        ),
-                      )
-                    : Number(storedSpaceWidth);
-                const isSpaceWorkspace = /^\\/spaces\\/[^/]+/.test(
-                  window.location.pathname,
-                );
-                root.dataset.whSidebarCollapsed = String(collapsed);
-                root.dataset.whSpaceWorkspace = String(isSpaceWorkspace);
-                root.dataset.whSidebarHydrated = "false";
-                root.style.setProperty(
-                  "--wh-preloaded-sidebar-width",
-                  \`\${Number.isFinite(appWidth) ? Math.min(520, Math.max(0, appWidth)) : 256}px\`,
-                );
-                root.style.setProperty(
-                  "--wh-preloaded-space-sidebar-width",
-                  \`\${Number.isFinite(spaceWidth) ? Math.min(520, Math.max(200, spaceWidth)) : 320}px\`,
-                );
-              } catch {
-                // Storage can be blocked; the React sidebar store has the same fallback.
-              }
-            })();`,
-          }}
         />
         <Providers>{children}</Providers>
       </body>
