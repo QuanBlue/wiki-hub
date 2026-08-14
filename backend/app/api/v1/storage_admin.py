@@ -95,11 +95,15 @@ async def presign_download(
     _admin: CurrentSuperuser,
     storage: StorageDep,
     key: str = Query(..., description="The S3 object key to presign"),
+    inline: bool = Query(
+        default=False,
+        description="Return an inline URL for browser previews instead of a download URL",
+    ),
 ) -> PresignedUrlRead:
     """Generate a short-lived presigned URL so the browser can download the
     file directly from S3 without routing the bytes through the API server."""
     # Derive a friendly filename for Content-Disposition
-    filename = unquote(key.rsplit("/", 1)[-1])
+    filename = None if inline else unquote(key.rsplit("/", 1)[-1])
     url = await storage.presigned_url(key, download_as=filename)
     return PresignedUrlRead(url=url, key=key)
 

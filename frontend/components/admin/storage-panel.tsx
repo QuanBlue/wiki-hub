@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  Eye,
   File,
   FileArchive,
   FileImage,
@@ -178,6 +179,26 @@ function FileIcon({ name }: { name: string }) {
   return <File className="text-muted-foreground size-4 shrink-0" />;
 }
 
+type PreviewKind = "image" | "text" | "unsupported";
+
+function previewKind(name: string): PreviewKind {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg", "ico"].includes(ext)) {
+    return "image";
+  }
+  if (
+    [
+      "txt", "md", "markdown", "json", "csv", "tsv", "log", "js", "jsx",
+      "ts", "tsx", "css", "scss", "html", "xml", "yaml", "yml", "toml",
+      "ini", "env", "conf", "lock", "map", "py", "rb", "go", "rs", "java", "kt", "sql", "sh",
+      "bash", "zsh", "bat", "ps1", "graphql", "proto", "hcl", "tf", "dockerfile",
+    ].includes(ext) || name.toLowerCase() === "dockerfile"
+  ) {
+    return "text";
+  }
+  return "unsupported";
+}
+
 // ---------------------------------------------------------------------------
 // Tree row components
 // ---------------------------------------------------------------------------
@@ -187,27 +208,38 @@ interface FileRowProps {
   depth: number;
   onDelete: (key: string) => void;
   onDownload: (key: string, name: string) => void;
+  onPreview: (node: FileNode) => void;
 }
 
-function FileRow({ node, depth, onDelete, onDownload }: FileRowProps) {
+function FileRow({ node, depth, onDelete, onDownload, onPreview }: FileRowProps) {
   return (
     <div
       className="border-border hover:bg-surface-hover flex items-center gap-2 border-b px-3 py-2 text-sm last:border-0"
       style={{ paddingLeft: `${depth * 20 + 12}px` }}
     >
       <FileIcon name={node.name} />
-      <span
-        className="min-w-0 flex-1 truncate font-mono text-xs"
-        title={node.path}
+      <button
+        type="button"
+        className="text-foreground hover:text-primary min-w-0 flex-1 cursor-pointer truncate text-left font-mono text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        title={`Preview ${node.path}`}
+        onClick={() => onPreview(node)}
       >
         {node.name}
-      </span>
+      </button>
       <span className="text-muted-foreground w-20 shrink-0 text-right text-xs tabular-nums">
         {formatBytes(node.size)}
       </span>
       <span className="text-muted-foreground hidden w-36 shrink-0 text-right text-xs sm:block">
         {formatDate(node.last_modified)}
       </span>
+      <button
+        aria-label={`Preview ${node.name}`}
+        title="Preview"
+        className="text-muted-foreground hover:text-foreground hover:bg-surface-selected shrink-0 cursor-pointer rounded p-1 transition-colors"
+        onClick={() => onPreview(node)}
+      >
+        <Eye className="size-3.5" />
+      </button>
       <button
         aria-label={`Download ${node.name}`}
         title="Download"
@@ -235,6 +267,7 @@ interface FolderRowProps {
   onToggle: () => void;
   onDelete: (key: string) => void;
   onDownload: (key: string, name: string) => void;
+  onPreview: (node: FileNode) => void;
 }
 
 function FolderRow({
@@ -244,6 +277,7 @@ function FolderRow({
   onToggle,
   onDelete,
   onDownload,
+  onPreview,
 }: FolderRowProps) {
   return (
     <>
@@ -280,6 +314,7 @@ function FolderRow({
               depth={depth + 1}
               onDelete={onDelete}
               onDownload={onDownload}
+              onPreview={onPreview}
             />
           ) : (
             <FileRow
@@ -288,6 +323,7 @@ function FolderRow({
               depth={depth + 1}
               onDelete={onDelete}
               onDownload={onDownload}
+              onPreview={onPreview}
             />
           ),
         )}
@@ -300,11 +336,13 @@ function FolderRowWrapper({
   depth,
   onDelete,
   onDownload,
+  onPreview,
 }: {
   node: FolderNode;
   depth: number;
   onDelete: (key: string) => void;
   onDownload: (key: string, name: string) => void;
+  onPreview: (node: FileNode) => void;
 }) {
   const [expanded, setExpanded] = useState(depth === 0);
   return (
@@ -315,6 +353,7 @@ function FolderRowWrapper({
       onToggle={() => setExpanded((v) => !v)}
       onDelete={onDelete}
       onDownload={onDownload}
+      onPreview={onPreview}
     />
   );
 }
@@ -330,6 +369,11 @@ export function StoragePanel() {
   const [query, setQuery] = useState("");
   const [deleteKey, setDeleteKey] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [previewNode, setPreviewNode] = useState<FileNode | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const fetchObjects = useCallback(async () => {
     setLoading(true);
@@ -349,6 +393,47 @@ export function StoragePanel() {
   useEffect(() => {
     void fetchObjects();
   }, [fetchObjects]);
+
+  useEffect(() => {
+    if (!previewNode) return;
+
+    let active = true;
+    const kind = previewKind(previewNode.name);
+    setPreviewUrl(null);
+    setPreviewText(null);
+    setPreviewError(null);
+    setPreviewLoading(kind !== "unsupported");
+
+    if (kind === "unsupported") return;
+
+    void (async () => {
+      try {
+        const { url } = await apiFetch<StoragePresignedUrl>(
+          `/api/v1/storage/presign?key=${encodeURIComponent(previewNode.path)}&inline=true`,
+        );
+        if (!active) return;
+        if (kind === "image") {
+          setPreviewUrl(url);
+        } else {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error("Could not load the file content.");
+          setPreviewText(await response.text());
+        }
+      } catch (err) {
+        if (active) {
+          setPreviewError(
+            err instanceof Error ? err.message : "Could not load the preview.",
+          );
+        }
+      } finally {
+        if (active) setPreviewLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [previewNode]);
 
   const tree = useMemo(() => buildTree(objects), [objects]);
   const filtered = useMemo(() => filterTree(tree, query), [tree, query]);
@@ -469,7 +554,7 @@ export function StoragePanel() {
             Last modified
           </span>
           {/* action buttons placeholder */}
-          <span className="w-16 shrink-0" />
+          <span className="w-24 shrink-0" />
         </div>
 
         {loading ? (
@@ -493,6 +578,7 @@ export function StoragePanel() {
                   depth={0}
                   onDelete={setDeleteKey}
                   onDownload={handleDownload}
+                  onPreview={setPreviewNode}
                 />
               ) : (
                 <FileRow
@@ -501,6 +587,7 @@ export function StoragePanel() {
                   depth={0}
                   onDelete={setDeleteKey}
                   onDownload={handleDownload}
+                  onPreview={setPreviewNode}
                 />
               ),
             )}
@@ -537,6 +624,64 @@ export function StoragePanel() {
                 <Trash2 className="size-4" />
               )}
               {deleting ? "Deleting…" : "Delete permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={previewNode !== null}
+        onOpenChange={(open) => {
+          if (!open) setPreviewNode(null);
+        }}
+      >
+        <DialogContent
+          title={previewNode?.name ?? "File preview"}
+          description={previewNode?.path}
+          className="max-w-4xl"
+        >
+          {previewNode && previewKind(previewNode.name) === "unsupported" ? (
+            <div className="bg-surface-sunken border-border rounded-lg border border-dashed px-6 py-12 text-center">
+              <FileArchive className="text-muted-foreground mx-auto size-8" />
+              <p className="mt-3 text-sm font-medium">Preview is not available</p>
+              <p className="text-muted-foreground mt-1 text-sm">
+                This file type cannot be viewed in WikiHub. Download it to open it with a compatible application.
+              </p>
+            </div>
+          ) : previewLoading ? (
+            <div className="text-muted-foreground flex items-center justify-center gap-2 py-16 text-sm">
+              <Loader2 className="text-primary size-5 animate-spin" />
+              Loading preview…
+            </div>
+          ) : previewError ? (
+            <div className="border-danger/30 bg-danger/10 text-danger rounded-lg border px-4 py-8 text-center text-sm">
+              {previewError}
+            </div>
+          ) : previewUrl ? (
+            <div className="bg-surface-sunken flex max-h-[70vh] items-center justify-center overflow-auto rounded-lg p-4">
+              <img
+                src={previewUrl}
+                alt={previewNode?.name ?? "Object preview"}
+                className="max-h-[64vh] max-w-full object-contain"
+              />
+            </div>
+          ) : previewText !== null ? (
+            <pre className="bg-surface-sunken border-border max-h-[70vh] overflow-auto rounded-lg border p-4 font-mono text-xs leading-6 whitespace-pre-wrap">
+              {previewText}
+            </pre>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              disabled={!previewNode}
+              onClick={() => {
+                if (previewNode) {
+                  void handleDownload(previewNode.path, previewNode.name);
+                }
+              }}
+            >
+              <Download className="size-4" />
+              Download file
             </Button>
           </DialogFooter>
         </DialogContent>
