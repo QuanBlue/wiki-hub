@@ -20,7 +20,31 @@ import { cn } from "@/lib/utils";
 export const DropdownMenu = DropdownMenuPrimitive.Root;
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 export const DropdownMenuSub = DropdownMenuPrimitive.Sub;
-export const DropdownMenuSubTrigger = DropdownMenuPrimitive.SubTrigger;
+
+export const DropdownMenuSubTrigger = React.forwardRef<
+  React.ComponentRef<typeof DropdownMenuPrimitive.SubTrigger>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubTrigger> & {
+    inset?: boolean;
+  }
+>(function DropdownMenuSubTrigger({ className, inset, children, ...props }, ref) {
+  return (
+    <DropdownMenuPrimitive.SubTrigger
+      ref={ref}
+      className={cn(
+        "flex cursor-pointer select-none items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none",
+        "transition-colors duration-150",
+        "data-[state=open]:bg-surface-hover data-[highlighted]:bg-surface-hover data-[highlighted]:text-foreground",
+        "[&_svg]:size-4 [&_svg]:shrink-0",
+        inset && "pl-8",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+      <ChevronRight className="ml-auto size-4 text-muted-foreground" />
+    </DropdownMenuPrimitive.SubTrigger>
+  );
+});
 
 export const DropdownMenuContent = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.Content>,
