@@ -69,7 +69,7 @@ async def test_metadata_reports_unimplemented_features_as_false(
 
     assert features["attachments"] is True
     assert features["comments"] is False
-    assert features["search"] is False
+    assert features["search"] is True
     # Content import/export needs the Pages domain, which does not exist yet.
     assert features["imports"] == []
     assert features["exports"] == []

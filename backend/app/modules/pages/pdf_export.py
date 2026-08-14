@@ -6,8 +6,6 @@ from html import escape
 
 from bs4 import BeautifulSoup
 from markdown_it import MarkdownIt
-from weasyprint import CSS, HTML
-
 from app.models.page import WikiPage
 
 _PRINT_CSS = """
@@ -55,6 +53,8 @@ def _safe_content(page: WikiPage) -> str:
 
 def render_page_pdf(page: WikiPage) -> bytes:
     """Render the same rich HTML structure users see, as a direct download."""
+    from weasyprint import CSS, HTML
+
     document = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>{escape(page.title)}</title></head>
 <body><article><h1>{escape(page.title)}</h1>{_safe_content(page)}</article></body></html>"""
