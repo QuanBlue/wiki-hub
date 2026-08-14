@@ -1,7 +1,7 @@
 "use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { BookOpen, FileText, Grid2X2, Loader2, Search, X } from "lucide-react";
+import { FileText, Grid2X2, Loader2, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -71,6 +71,7 @@ export function SearchModal({
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset transient dialog state when it closes
       setQuery("");
       setResults(null);
       setSelectedIndex(0);
@@ -90,6 +91,7 @@ export function SearchModal({
   useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear results when the query becomes empty
       setResults(null);
       setLoading(false);
       return;

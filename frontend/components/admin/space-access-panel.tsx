@@ -30,22 +30,32 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
   const [userId, setUserId] = useState("");
   const [effectiveUserId, setEffectiveUserId] = useState(users[0]?.id ?? "");
   const [effectivePermissions, setEffectivePermissions] = useState<EffectiveSpacePermissions | null>(null);
+  const [effectivePermissionsUserId, setEffectivePermissionsUserId] = useState("");
   const [effectiveLoading, setEffectiveLoading] = useState(false);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (!effectiveUserId) {
-      setEffectivePermissions(null);
       return;
     }
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- show the inspector loading state before its request resolves
     setEffectiveLoading(true);
     void api.get<EffectiveSpacePermissions>(`/api/v1/spaces/${encodeURIComponent(space.key)}/permissions/effective/${effectiveUserId}`)
-      .then((result) => { if (!cancelled) setEffectivePermissions(result); })
+      .then((result) => {
+        if (!cancelled) {
+          setEffectivePermissions(result);
+          setEffectivePermissionsUserId(effectiveUserId);
+        }
+      })
       .catch((error) => { if (!cancelled) toast.error(error instanceof ApiError ? error.message : "Could not load effective permissions."); })
       .finally(() => { if (!cancelled) setEffectiveLoading(false); });
     return () => { cancelled = true; };
   }, [effectiveUserId, space.key]);
+
+  const visibleEffectivePermissions = effectivePermissionsUserId === effectiveUserId
+    ? effectivePermissions
+    : null;
 
   async function setVisibilityValue(value: typeof visibility) {
     setPending(true);
@@ -118,8 +128,8 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
         </Select>
       </div>
       <div className="mt-3 flex min-h-8 flex-wrap items-center gap-2">
-        {effectiveLoading ? <span className="text-muted-foreground text-sm">Loading...</span> : effectivePermissions?.permissions.map((permission) => <Badge key={permission} variant="subtle">{permission.replaceAll("_", " ")}</Badge>)}
-        {!effectiveLoading && effectivePermissions && effectivePermissions.permissions.length === 0 ? <span className="text-muted-foreground text-sm">No effective permissions.</span> : null}
+        {effectiveLoading ? <span className="text-muted-foreground text-sm">Loading...</span> : visibleEffectivePermissions?.permissions.map((permission) => <Badge key={permission} variant="subtle">{permission.replaceAll("_", " ")}</Badge>)}
+        {!effectiveLoading && visibleEffectivePermissions && visibleEffectivePermissions.permissions.length === 0 ? <span className="text-muted-foreground text-sm">No effective permissions.</span> : null}
       </div>
     </div>
   </div>;

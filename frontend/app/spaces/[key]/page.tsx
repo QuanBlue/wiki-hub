@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { listPages } from "@/lib/pages";
 import { findHomePage } from "@/lib/home-page";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
+import type { Group } from "@/types/api";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function SpaceDetailPage({ params }: Params) {
   let space;
   let pages;
   let members;
-  const groups = [];
+  const groups: Group[] = [];
   try {
     [space, pages, members] = await Promise.all([
       getSpace(key),

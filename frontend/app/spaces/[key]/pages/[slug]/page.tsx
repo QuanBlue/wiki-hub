@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/auth";
 import { getPage, listPages } from "@/lib/pages";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
+import type { Group } from "@/types/api";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function WikiPageView({ params }: Params) {
   let pages;
   let members;
   let page;
-  const groups = [];
+  const groups: Group[] = [];
   try {
     [space, pages, members, page] = await Promise.all([
       getSpace(key),

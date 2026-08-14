@@ -146,6 +146,9 @@ async def test_system_admin_group_bypasses_space_and_global_checks(
     permissions = PermissionService(session)
 
     assert await permissions.is_system_admin(system_admin)
+    assert set(await permissions.global_permissions(system_admin)) == {
+        GlobalPermission.system_admin
+    }
     assert await permissions.has_global(system_admin, GlobalPermission.manage_users)
     assert await permissions.effective_permissions(space, system_admin) == set(Permission)
 
@@ -290,3 +293,23 @@ async def test_deactivating_last_space_admin_is_rejected(
     await spaces.set_member(space, owner, second_admin.id, SpaceRole.admin)
     updated = await account_service.update_user(owner.id, UserUpdate(is_active=False))
     assert not updated.is_active
+
+
+async def test_legacy_membership_cannot_remove_the_last_space_admin(
+    session: AsyncSession,
+) -> None:
+    owner = await _user(session, "owner")
+    second_admin = await _user(session, "admin")
+    spaces = SpaceService(session)
+    space = await spaces.create(
+        SpaceCreate(key=f"ROLE{uuid.uuid4().hex[:5]}", name="Role safety"), owner
+    )
+
+    with pytest.raises(ConflictError, match="administrator"):
+        await spaces.set_member(space, owner, owner.id, SpaceRole.viewer)
+
+    await spaces.set_member(space, owner, second_admin.id, SpaceRole.admin)
+    await spaces.set_member(space, owner, owner.id, SpaceRole.viewer)
+
+    with pytest.raises(ConflictError, match="administrator"):
+        await spaces.remove_member(space, second_admin, second_admin.id)

@@ -391,6 +391,7 @@ export function StoragePanel() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch objects when the storage panel mounts
     void fetchObjects();
   }, [fetchObjects]);
 
@@ -399,6 +400,7 @@ export function StoragePanel() {
 
     let active = true;
     const kind = previewKind(previewNode.name);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset preview state for the newly selected object
     setPreviewUrl(null);
     setPreviewText(null);
     setPreviewError(null);

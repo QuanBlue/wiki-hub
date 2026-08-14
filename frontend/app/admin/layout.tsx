@@ -22,7 +22,9 @@ export default async function AdminLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  if (!user.is_superuser) {
+  const isSystemAdmin = user.is_superuser || user.global_permissions.includes("system_admin");
+
+  if (!isSystemAdmin) {
     return (
       <AppShell fullWidth siteName={SITE_NAME} user={user}>
         <div className="space-y-6">

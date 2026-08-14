@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
-import { listGroupMembers } from "@/lib/groups";
+import { listGroupMembers } from "@/lib/group-members";
 import type { GlobalPermission, Group, GroupMember, User } from "@/types/api";
 
 const GLOBAL_PERMISSIONS = [

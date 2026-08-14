@@ -540,6 +540,7 @@ export function BackupPanel() {
   // Closing happens when a job starts or the archive is discarded.
   useEffect(() => {
     if (confluenceJob || !confluenceArchive) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- close a user-opened modal when its source job/archive disappears
       setIsSpaceModalOpen(false);
     }
   }, [confluenceArchive, confluenceJob]);
@@ -828,6 +829,7 @@ export function BackupPanel() {
   // Import work is server-side once queued. Restore the most recent active job
   // whenever this panel mounts so navigation and refresh never hide progress.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restore persisted server state on mount
     void restoreActiveConfluenceJob();
   }, [restoreActiveConfluenceJob]);
 
