@@ -7,8 +7,10 @@ from collections.abc import Sequence
 
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.page import PageLike, WikiPage
+from app.models.space import Space
 
 
 class PageRepository:
@@ -69,3 +71,18 @@ class PageRepository:
             await self.session.execute(
                 delete(PageLike).where(PageLike.page_id == page_id, PageLike.user_id == user_id)
             )
+
+    async def list_recent_pages(self, *, limit: int = 50) -> Sequence[WikiPage]:
+        stmt = (
+            select(WikiPage)
+            .join(WikiPage.space)
+            .where(Space.status != "archived")
+            .options(
+                selectinload(WikiPage.space),
+                selectinload(WikiPage.created_by),
+                selectinload(WikiPage.updated_by),
+            )
+            .order_by(WikiPage.updated_at.desc())
+            .limit(limit)
+        )
+        return (await self.session.execute(stmt)).scalars().unique().all()

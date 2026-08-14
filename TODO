@@ -5,8 +5,6 @@
    -> Giải quyết cái này
 
 
-4. Các page import không có hình ảnh, file đính kèm, code hiển thị sai 
-
 5. Tính năng page history cho phép restore lại và xem ai đã chỉnh những gì, có diff check + live review diff
 
 6. thêm group để add user vào các group để phân quyền dễ hơn, một người dùng có thể trong nhiều group khác nhau

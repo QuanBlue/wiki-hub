@@ -10,9 +10,10 @@ from app.api.deps import CurrentUser, DbSession
 from app.modules.pages.service import PageService
 from app.modules.pages.pdf_export import render_page_pdf
 from app.modules.spaces.service import SpaceService
-from app.schemas.page import PageCreate, PageLikeRead, PageMove, PageRead, PageUpdate
+from app.schemas.page import PageCreate, PageLikeRead, PageMove, PageRead, PageRecentItem, PageUpdate
 
 router = APIRouter(prefix="/spaces/{key}/pages", tags=["pages"])
+standalone_router = APIRouter(prefix="/pages", tags=["pages"])
 
 
 def get_page_service(session: DbSession) -> PageService:
@@ -160,3 +161,16 @@ async def delete_page(
     space = await space_service.get_by_key(key)
     page = await page_service.get_by_slug(space, slug)
     await page_service.delete(space, page, user)
+
+
+@standalone_router.get(
+    "/recent",
+    response_model=list[PageRecentItem],
+    summary="Recently updated pages across all active spaces",
+)
+async def list_recent_pages_global(
+    _user: CurrentUser,
+    page_service: PageServiceDep,
+    limit: int = Query(default=50, ge=1, le=100),
+) -> list[PageRecentItem]:
+    return await page_service.list_recent_pages(limit=limit)

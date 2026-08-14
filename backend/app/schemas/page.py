@@ -25,6 +25,18 @@ class PageRead(BaseModel):
     updated_by_username: str | None = None
 
 
+class PageRecentItem(BaseModel):
+    id: uuid.UUID
+    title: str
+    slug: str
+    space_key: str
+    space_name: str
+    created_at: datetime
+    updated_at: datetime
+    user_username: str
+    user_full_name: str
+
+
 class PageLikeRead(BaseModel):
     liked_by_me: bool
     like_count: int

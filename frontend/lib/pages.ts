@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 
 import { api } from "@/lib/api-client";
 import { ACCESS_COOKIE_NAME } from "@/lib/auth";
-import type { WikiPage } from "@/types/api";
+import type { RecentPageItem, WikiPage } from "@/types/api";
 
 async function authHeaders(): Promise<Record<string, string>> {
   const token = (await cookies()).get(ACCESS_COOKIE_NAME)?.value;
@@ -24,6 +24,10 @@ export function listPages(spaceKey: string): Promise<WikiPage[]> {
   return get<WikiPage[]>(
     `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages`,
   );
+}
+
+export function listRecentPages(limit = 50): Promise<RecentPageItem[]> {
+  return get<RecentPageItem[]>(`/api/v1/pages/recent?limit=${limit}`);
 }
 
 export function getPage(spaceKey: string, slug: string): Promise<WikiPage> {
