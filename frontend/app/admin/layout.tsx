@@ -24,7 +24,7 @@ export default async function AdminLayout({
 
   if (!user.is_superuser) {
     return (
-      <AppShell siteName={SITE_NAME} user={user}>
+      <AppShell fullWidth siteName={SITE_NAME} user={user}>
         <div className="space-y-6">
           <PageHeader
             eyebrow="Administration"
@@ -44,7 +44,7 @@ export default async function AdminLayout({
   }
 
   return (
-    <AppShell siteName={SITE_NAME} user={user}>
+    <AppShell fullWidth siteName={SITE_NAME} user={user}>
       {/*
         Explicit margins rather than `space-y-*`: the gap below the tab strip
         has to be visibly larger than the one above it, so the tabs read as
