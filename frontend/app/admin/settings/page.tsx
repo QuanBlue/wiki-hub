@@ -19,7 +19,7 @@ export default async function AdminSettingsPage() {
         </p>
       </div>
 
-      <div className="border-border bg-surface max-w-2xl rounded-xl border p-5 shadow-sm">
+      <div>
         <SiteSettingsForm settings={settings} />
       </div>
     </div>

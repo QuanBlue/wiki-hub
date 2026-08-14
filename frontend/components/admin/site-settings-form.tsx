@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, RotateCcw, ShieldCheck } from "lucide-react";
+import { HardDrive, Loader2, RotateCcw, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -20,7 +20,6 @@ const NAVIGATION_ITEMS: Array<{
   { key: "home", label: "Home", description: "Workspace overview" },
   { key: "spaces", label: "Spaces", description: "Browse team knowledge" },
   { key: "recent", label: "Recent", description: "Recently updated spaces" },
-  { key: "favorites", label: "Favorites", description: "Starred spaces" },
   {
     key: "settings",
     label: "Settings",
@@ -40,15 +39,6 @@ const ROLE_OPTIONS: Array<{ value: AppRole; label: string }> = [
   { value: "admin", label: "Admin" },
 ];
 
-/**
- * Each field shows its effective value and whether that came from an explicit
- * setting or from the environment. Without that distinction an administrator
- * cannot tell a deliberate choice from a default, and "Reset" would look like a
- * no-op.
- *
- * Sending `null` is how a value is reset — an empty string would be a different
- * (invalid) setting, not an absence.
- */
 export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const router = useRouter();
   const [siteName, setSiteName] = useState(settings.overrides.site_name ?? "");
@@ -74,7 +64,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     setError(null);
     try {
       await api.patch<SiteSettings>("/api/v1/settings", payload);
-      toast.success("Settings saved.");
+      toast.success("Settings saved successfully.");
       router.refresh();
     } catch (err) {
       setError(
@@ -112,9 +102,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     checked: boolean,
   ) {
     setSidebarPermissions((current) => {
-      const roles = current[item];
-      // A sidebar item with no eligible role can never be reached again. Keep
-      // one selected directly in the UI as well as in the API validator.
+      const roles = current[item] || [];
       if (!checked && roles.length === 1) return current;
       return {
         ...current,
@@ -125,244 +113,279 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     });
   }
 
-  const inherited = (overridden: boolean) =>
+  const inheritedTag = (overridden: boolean) =>
     overridden ? null : (
-      <span className="text-muted-foreground text-xs">
-        inherited from the environment
+      <span className="text-muted-foreground text-[11px] font-normal italic">
+        (inherited from environment)
       </span>
     );
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="site-name">Site name</Label>
-          {inherited(settings.overrides.site_name !== null)}
+      {/* Card 1: General Workspace Settings */}
+      <section className="border-border bg-surface rounded-xl border p-5 space-y-4">
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <SlidersHorizontal className="size-4 text-primary" />
+          <h3 className="font-semibold text-foreground text-sm">General Workspace</h3>
         </div>
-        <Input
-          id="site-name"
-          value={siteName}
-          onChange={(e) => setSiteName(e.target.value)}
-          placeholder={settings.effective.site_name}
-          disabled={pending}
-        />
-        <p className="text-muted-foreground text-xs">
-          Currently showing as <strong>{settings.effective.site_name}</strong>.
-          Leave empty to use the environment value.
-        </p>
-      </div>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="max-backup-import">
-            Maximum backup/import archive size (MB)
-          </Label>
-          {inherited(settings.overrides.max_backup_import_size_mb !== null)}
+        <div className="grid gap-6 sm:grid-cols-2">
+          {/* Site Name */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="site-name" className="text-xs font-semibold">
+                Site Name
+              </Label>
+              {inheritedTag(settings.overrides.site_name !== null)}
+            </div>
+            <Input
+              id="site-name"
+              value={siteName}
+              onChange={(e) => setSiteName(e.target.value)}
+              placeholder={settings.effective.site_name}
+              disabled={pending}
+              className="text-xs"
+            />
+            <p className="text-muted-foreground text-[11px]">
+              Currently showing as <strong className="text-foreground">{settings.effective.site_name}</strong>. Leave empty for default.
+            </p>
+          </div>
+
+          {/* Session Lifetime */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="session-ttl-hours" className="text-xs font-semibold">
+                Session Lifetime (hours)
+              </Label>
+              {inheritedTag(settings.overrides.session_ttl_hours !== null)}
+            </div>
+            <Input
+              id="session-ttl-hours"
+              type="number"
+              min={1}
+              max={8760}
+              value={sessionTtlHours}
+              onChange={(e) => setSessionTtlHours(e.target.value)}
+              placeholder={
+                settings.effective.session_ttl_hours
+                  ? String(settings.effective.session_ttl_hours)
+                  : "12"
+              }
+              disabled={pending}
+              className="text-xs"
+            />
+            <p className="text-muted-foreground text-[11px]">
+              Duration of user sessions before re-authentication is required. Default: 12h.
+            </p>
+          </div>
         </div>
-        <Input
-          id="max-backup-import"
-          type="number"
-          min={1}
-          max={102400}
-          value={maxBackupImport}
-          onChange={(e) => setMaxBackupImport(e.target.value)}
-          placeholder={String(settings.effective.max_backup_import_size_mb)}
-          disabled={pending}
-          className="max-w-40"
-        />
-        <p className="text-muted-foreground text-xs">
-          Limits large Confluence and backup archives independently from normal
-          attachments.
-        </p>
-      </div>
+      </section>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="session-ttl-hours">Session lifetime (hours)</Label>
-          {inherited(settings.overrides.session_ttl_hours !== null)}
+      {/* Card 2: Storage & File Quotas */}
+      <section className="border-border bg-surface rounded-xl border p-5 space-y-4">
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <HardDrive className="size-4 text-info" />
+          <h3 className="font-semibold text-foreground text-sm">Storage &amp; File Quotas</h3>
         </div>
-        <Input
-          id="session-ttl-hours"
-          type="number"
-          min={1}
-          max={8760}
-          value={sessionTtlHours}
-          onChange={(e) => setSessionTtlHours(e.target.value)}
-          placeholder={
-            settings.effective.session_ttl_hours
-              ? String(settings.effective.session_ttl_hours)
-              : "12"
-          }
-          disabled={pending}
-          className="max-w-40"
-        />
-        <p className="text-muted-foreground text-xs">
-          Duration of the active user session before they must sign in again.
-          Defaults to 12 hours.
-        </p>
-      </div>
 
-      <section
-        aria-labelledby="sidebar-permissions-heading"
-        className="border-border bg-surface-sunken space-y-4 rounded-lg border p-4"
-      >
-        <div className="flex gap-3">
-          <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-md">
-            <ShieldCheck className="size-4" />
-          </span>
-          <div>
-            <h3 id="sidebar-permissions-heading" className="font-medium">
-              Sidebar access
-            </h3>
-            <p className="text-muted-foreground mt-0.5 text-sm">
-              Choose which instance roles can see each navigation item. Space
-              membership still controls access to content inside a space.
+        <div className="grid gap-6 sm:grid-cols-2">
+          {/* Max Backup Import */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="max-backup-import" className="text-xs font-semibold">
+                Max Confluence / Backup Archive (MB)
+              </Label>
+              {inheritedTag(settings.overrides.max_backup_import_size_mb !== null)}
+            </div>
+            <Input
+              id="max-backup-import"
+              type="number"
+              min={1}
+              max={102400}
+              value={maxBackupImport}
+              onChange={(e) => setMaxBackupImport(e.target.value)}
+              placeholder={String(settings.effective.max_backup_import_size_mb)}
+              disabled={pending}
+              className="text-xs"
+            />
+            <p className="text-muted-foreground text-[11px]">
+              Limits large Confluence backup imports independently from standard attachments.
+            </p>
+          </div>
+
+          {/* Max Upload */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="max-upload" className="text-xs font-semibold">
+                Max Single Attachment Upload (MB)
+              </Label>
+              {inheritedTag(settings.overrides.max_upload_size_mb !== null)}
+            </div>
+            <Input
+              id="max-upload"
+              type="number"
+              min={1}
+              max={10240}
+              value={maxUpload}
+              onChange={(e) => setMaxUpload(e.target.value)}
+              placeholder={String(settings.effective.max_upload_size_mb)}
+              disabled={pending}
+              className="text-xs"
+            />
+            <p className="text-muted-foreground text-[11px]">
+              Maximum allowed size per individual attachment upload.
             </p>
           </div>
         </div>
 
-        <div className="border-border overflow-hidden rounded-md border">
-          <div className="bg-surface grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-3 border-b px-3 py-2 text-xs font-medium">
-            <span>Navigation item</span>
-            <span className="w-16 text-center">Member</span>
-            <span className="w-16 text-center">Admin</span>
+        {/* Allowed Types */}
+        <div className="space-y-1.5 pt-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="allowed-types" className="text-xs font-semibold">
+              Allowed Attachment Extensions
+            </Label>
+            {inheritedTag(settings.overrides.allowed_attachment_types !== null)}
           </div>
-          {NAVIGATION_ITEMS.map((item) => (
-            <div
-              key={item.key}
-              className="border-border bg-surface grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 border-b px-3 py-2.5 last:border-b-0"
-            >
-              <div>
-                <p className="text-sm font-medium">{item.label}</p>
-                <p className="text-muted-foreground text-xs">
-                  {item.description}
-                </p>
-              </div>
-              {ROLE_OPTIONS.map((role) => {
-                const checked = sidebarPermissions[item.key].includes(
-                  role.value,
-                );
-                const isLastRole = sidebarPermissions[item.key].length === 1;
-                const disabled =
-                  pending || item.fixed || (checked && isLastRole);
-                return (
-                  <label
-                    key={role.value}
-                    className="flex w-16 justify-center"
-                    title={
-                      item.fixed
-                        ? "Administrative navigation is restricted to administrators."
-                        : undefined
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={disabled}
-                      onChange={(event) =>
-                        toggleNavigationRole(
-                          item.key,
-                          role.value,
-                          event.target.checked,
-                        )
-                      }
-                      aria-label={`${role.label} can access ${item.label}`}
-                      className="accent-primary focus-visible:ring-ring border-border size-4 rounded focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                  </label>
-                );
-              })}
-            </div>
-          ))}
+          <Input
+            id="allowed-types"
+            value={types}
+            onChange={(e) => setTypes(e.target.value)}
+            placeholder={settings.effective.allowed_attachment_types.join(", ")}
+            disabled={pending}
+            className="text-xs"
+          />
+          <p className="text-muted-foreground text-[11px]">
+            Comma-separated file extensions. (SVG is excluded by default for script security).
+          </p>
         </div>
-        <p className="text-muted-foreground text-xs">
-          Settings and backups remain administrator-only because those routes
-          change instance-level data.
-        </p>
       </section>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="max-upload">Maximum upload size (MB)</Label>
-          {inherited(settings.overrides.max_upload_size_mb !== null)}
+      {/* Card 3: Sidebar Navigation Access Control */}
+      <section
+        aria-labelledby="sidebar-permissions-heading"
+        className="border-border bg-surface space-y-4 rounded-xl border p-5"
+      >
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <ShieldCheck className="size-4 text-warning" />
+          <div>
+            <h3 id="sidebar-permissions-heading" className="font-semibold text-foreground text-sm">
+              Sidebar Access Control
+            </h3>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              Configure navigation item visibility per instance role. Space permissions still apply inside spaces.
+            </p>
+          </div>
         </div>
-        <Input
-          id="max-upload"
-          type="number"
-          min={1}
-          max={10240}
-          value={maxUpload}
-          onChange={(e) => setMaxUpload(e.target.value)}
-          placeholder={String(settings.effective.max_upload_size_mb)}
-          disabled={pending}
-          className="max-w-40"
-        />
-      </div>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="allowed-types">Allowed attachment types</Label>
-          {inherited(settings.overrides.allowed_attachment_types !== null)}
+        <div className="border-border overflow-hidden rounded-lg border">
+          <div className="bg-surface-sunken grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-4 border-b border-border px-4 py-2.5 text-xs font-semibold text-foreground">
+            <span>Navigation Area</span>
+            <span className="w-20 text-center">Member</span>
+            <span className="w-20 text-center">Admin</span>
+          </div>
+          {NAVIGATION_ITEMS.map((item) => {
+            const roles = sidebarPermissions[item.key] || [];
+            return (
+              <div
+                key={item.key}
+                className="border-border bg-surface grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 border-b px-4 py-3 last:border-b-0"
+              >
+                <div>
+                  <p className="text-xs font-semibold text-foreground">{item.label}</p>
+                  <p className="text-muted-foreground text-[11px]">
+                    {item.description}
+                  </p>
+                </div>
+                {ROLE_OPTIONS.map((role) => {
+                  const checked = roles.includes(role.value);
+                  const isLastRole = roles.length === 1;
+                  const disabled =
+                    pending || item.fixed || (checked && isLastRole);
+                  return (
+                    <label
+                      key={role.value}
+                      className="flex w-20 justify-center cursor-pointer"
+                      title={
+                        item.fixed
+                          ? "Administrative navigation is restricted to administrators."
+                          : undefined
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={(event) =>
+                          toggleNavigationRole(
+                            item.key,
+                            role.value,
+                            event.target.checked,
+                          )
+                        }
+                        aria-label={`${role.label} can access ${item.label}`}
+                        className="accent-primary focus-visible:ring-ring border-border size-4 rounded cursor-pointer focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
-        <Input
-          id="allowed-types"
-          value={types}
-          onChange={(e) => setTypes(e.target.value)}
-          placeholder={settings.effective.allowed_attachment_types.join(", ")}
-          disabled={pending}
-        />
-        <p className="text-muted-foreground text-xs">
-          Comma-separated file extensions. SVG is intentionally excluded by
-          default — it can execute script when served inline.
-        </p>
-      </div>
+      </section>
 
+      {/* Error alert */}
       {error ? (
         <p
           role="alert"
-          className="border-danger/30 bg-danger/10 text-danger rounded-md border px-3 py-2 text-sm"
+          className="border-danger/30 bg-danger/10 text-danger rounded-lg border px-4 py-2.5 text-xs font-medium"
         >
           {error}
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" variant="primary" disabled={pending}>
-          {pending ? <Loader2 className="animate-spin" /> : null}
-          Save settings
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={pending}
-          onClick={() => {
-            setSiteName("");
-            setMaxUpload("");
-            setMaxBackupImport("");
-            setTypes("");
-            void save({
-              site_name: null,
-              max_upload_size_mb: null,
-              max_backup_import_size_mb: null,
-              allowed_attachment_types: null,
-              sidebar_permissions: null,
-            });
-          }}
-        >
-          <RotateCcw />
-          Reset all to environment
-        </Button>
-      </div>
+      {/* Actions Bar */}
+      <div className="border-border bg-surface flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" variant="primary" size="sm" disabled={pending}>
+            {pending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            Save settings
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={pending}
+            onClick={() => {
+              setSiteName("");
+              setMaxUpload("");
+              setMaxBackupImport("");
+              setTypes("");
+              setSessionTtlHours("");
+              void save({
+                site_name: null,
+                max_upload_size_mb: null,
+                max_backup_import_size_mb: null,
+                allowed_attachment_types: null,
+                sidebar_permissions: null,
+                session_ttl_hours: null,
+              });
+            }}
+          >
+            <RotateCcw className="size-3.5" />
+            Reset all to environment
+          </Button>
+        </div>
 
-      {settings.updated_at ? (
-        <p className="text-muted-foreground text-xs">
-          Last changed {new Date(settings.updated_at).toLocaleString()}
-          {settings.updated_by_username
-            ? ` by ${settings.updated_by_username}`
-            : ""}
-          .
-        </p>
-      ) : null}
+        {settings.updated_at ? (
+          <p className="text-muted-foreground text-[11px]">
+            Last changed {new Date(settings.updated_at).toLocaleString()}
+            {settings.updated_by_username
+              ? ` by ${settings.updated_by_username}`
+              : ""}
+          </p>
+        ) : null}
+      </div>
     </form>
   );
 }
