@@ -23,6 +23,7 @@ from app.modules.pages.service import PageService
 from app.modules.permissions.service import PermissionService
 from app.modules.spaces.service import SpaceService
 from app.schemas.page import PageCreate
+from app.schemas.permission import GroupCreate, GroupUpdate
 from app.schemas.space import SpaceCreate, SpaceUpdate
 from app.schemas.user import UserCreate, UserUpdate
 
@@ -313,3 +314,52 @@ async def test_legacy_membership_cannot_remove_the_last_space_admin(
 
     with pytest.raises(ConflictError, match="administrator"):
         await spaces.remove_member(space, second_admin, second_admin.id)
+
+
+async def test_group_lifecycle_owner_permissions_and_page_restrictions(
+    session: AsyncSession,
+) -> None:
+    owner = await _user(session, "owner")
+    member = await _user(session, "member")
+    admin = await _user(session, "admin", superuser=True)
+    permissions = PermissionService(session)
+    payload = GroupCreate(name=_name("team"), description=" Team ", owner_id=owner.id)
+    group = await permissions.create_group(payload, admin)
+    assert group.owner_id == owner.id
+    assert await permissions.can_manage_group(group, owner)
+
+    await permissions.update_group(
+        group,
+        GroupUpdate(name=" renamed ", description=" updated ", owner_id=member.id, is_active=True),
+        owner,
+    )
+    assert group.name == "renamed" and group.owner_id == member.id and group.is_active
+    await permissions.set_group_member(group, owner.id, admin, True)
+    await permissions.set_group_member(group, owner.id, admin, False)
+    await permissions.set_group_global_permission(
+        group, GlobalPermission.manage_users, admin, True
+    )
+    assert await permissions.has_global(member, GlobalPermission.manage_users)
+    await permissions.set_group_global_permission(
+        group, GlobalPermission.manage_users, admin, False
+    )
+
+    space = await SpaceService(session).create(
+        SpaceCreate(key=f"RESTR{uuid.uuid4().hex[:5]}", name="Restrictions"), owner
+    )
+    page = await PageService(session).create(space, PageCreate(title="Restricted"), owner)
+    await permissions.set_page_restriction(
+        page, member.id, PageRestrictionPermission.view, owner, group=False, present=True
+    )
+    await permissions.set_page_restriction(
+        page, group.id, PageRestrictionPermission.edit, owner, group=True, present=True
+    )
+    rows = await permissions.list_page_restrictions(page, owner)
+    assert {row["principal_type"] for row in rows} == {"user", "group"}
+    await permissions.set_page_restriction(
+        page, member.id, PageRestrictionPermission.view, owner, group=False, present=False
+    )
+    await permissions.set_page_restriction(
+        page, group.id, PageRestrictionPermission.edit, owner, group=True, present=False
+    )
+    await permissions.delete_group(group, admin)
