@@ -153,6 +153,10 @@ def _normalize_confluence_code_macros(content: str) -> str:
             code_text = re.sub(r"^\s*<!\[CDATA\[", "", code_text, count=1, flags=re.IGNORECASE)
             code_text = re.sub(r"\]\]\s*(?:>?|&gt;)\s*$", "", code_text, count=1, flags=re.IGNORECASE)
         
+        # Remove leading and trailing empty lines that are artifacts of XML formatting
+        code_text = re.sub(r"^\s*[\r\n]+", "", code_text)
+        code_text = re.sub(r"[\r\n]+\s*$", "", code_text)
+        
         # 2. Match language parameter
         lang_match = re.search(
             r"<ac:parameter\b[^>]*\bac:name=(?:\"language\"|'language')[^>]*>([\s\S]*?)</ac:parameter>",
