@@ -2163,7 +2163,9 @@ export function SpaceWorkspace({
                 </h1>
                 <p className="text-muted-foreground mt-2 text-xs">
                   Created by {author ?? "unknown"}
-                  {updatedAt ? `, last modified on ${formatDate(updatedAt)}` : ""}
+                  {updatedAt
+                    ? `, last modified ${updatedBy ? `by ${updatedBy} ` : ""}on ${formatDate(updatedAt)}`
+                    : ""}
                 </p>
 
                 <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
