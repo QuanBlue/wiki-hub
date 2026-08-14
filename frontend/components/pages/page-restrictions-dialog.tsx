@@ -60,6 +60,7 @@ export function PageRestrictionsDialog({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- show loading state while the dialog fetches its principals
     setLoading(true);
     const pagePath = `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(page.slug)}`;
     void Promise.all([

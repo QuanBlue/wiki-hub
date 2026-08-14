@@ -78,6 +78,7 @@ export function MovePageDialog({
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initialize the form from the page when the dialog opens
     setDestinationKey(space.key);
     setDestinationPages(pages);
     setParentId(page.parent_id ?? "");

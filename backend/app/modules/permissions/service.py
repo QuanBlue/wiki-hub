@@ -62,6 +62,20 @@ class PermissionService:
             user, GlobalPermission.system_admin
         )
 
+    async def global_permissions(self, user: User) -> list[GlobalPermission]:
+        """Return the effective global capabilities for the current user."""
+        if user.is_superuser:
+            return list(GlobalPermission)
+        return list(
+            await self.session.scalars(
+                select(GroupGlobalPermission.permission)
+                .join(GroupMember, GroupMember.group_id == GroupGlobalPermission.group_id)
+                .join(Group, Group.id == GroupMember.group_id)
+                .where(GroupMember.user_id == user.id, Group.is_active.is_(True))
+                .distinct()
+            )
+        )
+
     async def effective_permissions(self, space: Space, user: User) -> set[Permission]:
         if await self.is_system_admin(user):
             return set(ALL_SPACE_PERMISSIONS)
@@ -90,16 +104,6 @@ class PermissionService:
                 )
             )
         )
-        # Keep old rows effective during rolling upgrades and for imported data.
-        from app.models.space import SpaceMember
-
-        legacy = await self.session.scalar(
-            select(SpaceMember.role).where(
-                SpaceMember.space_id == space.id, SpaceMember.user_id == user.id
-            )
-        )
-        if legacy is not None:
-            permissions.update(ROLE_PERMISSIONS[legacy])
         return permissions
 
     async def require(self, space: Space, user: User, permission: Permission) -> None:

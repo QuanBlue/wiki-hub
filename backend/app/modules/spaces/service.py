@@ -17,13 +17,13 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.page import WikiPage
-from app.models.permission import Permission
+from app.models.permission import Permission, SpaceUserPermission
 from app.models.space import Space, SpaceMember, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
 from app.modules.permissions.service import ROLE_PERMISSIONS, PermissionService
@@ -254,6 +254,25 @@ class SpaceService:
             raise NotFoundError("User not found.")
 
         member = await self.spaces.get_member(space.id, user_id)
+        direct_admin = await self.session.scalar(
+            select(SpaceUserPermission.space_id).where(
+                SpaceUserPermission.space_id == space.id,
+                SpaceUserPermission.user_id == user_id,
+                SpaceUserPermission.permission == Permission.admin,
+            )
+        )
+        if (
+            ((member is not None and member.role is SpaceRole.admin) or direct_admin is not None)
+            and role is not SpaceRole.admin
+            and not await self.permissions._has_space_admin(
+                space, excluding={"user_id": user_id, "permission": Permission.admin}
+            )
+        ):
+            raise ConflictError(
+                "A Space must retain at least one administrator. Promote another "
+                "administrator before changing this member.",
+                code="last_space_admin",
+            )
         if member is None:
             member = SpaceMember(space_id=space.id, user_id=user_id, role=role)
             self.session.add(member)
@@ -262,8 +281,6 @@ class SpaceService:
 
         # Keep the new additive permission tables in sync with the legacy
         # membership endpoint during the transition.
-        from app.models.permission import SpaceUserPermission
-
         await self.session.execute(
             delete(SpaceUserPermission).where(
                 SpaceUserPermission.space_id == space.id,
@@ -285,18 +302,26 @@ class SpaceService:
 
         # Refuse to remove the last administrator: a space with no admin can
         # never be managed again except by a system superuser.
-        members = await self.spaces.list_members(space.id)
-        admins = [m for m in members if m.role is SpaceRole.admin]
-        if len(admins) == 1 and admins[0].user_id == user_id:
+        member = await self.spaces.get_member(space.id, user_id)
+        direct_admin = await self.session.scalar(
+            select(SpaceUserPermission.space_id).where(
+                SpaceUserPermission.space_id == space.id,
+                SpaceUserPermission.user_id == user_id,
+                SpaceUserPermission.permission == Permission.admin,
+            )
+        )
+        if (
+            (member is not None and member.role is SpaceRole.admin) or direct_admin is not None
+        ) and not await self.permissions._has_space_admin(
+            space, excluding={"user_id": user_id, "permission": Permission.admin}
+        ):
             raise ConflictError(
                 "This is the only administrator of the space. Promote another "
-                "member before removing this one.",
+                "administrator before removing this one.",
                 code="last_space_admin",
             )
 
         await self.spaces.remove_member(space.id, user_id)
-        from app.models.permission import SpaceUserPermission
-
         await self.session.execute(
             delete(SpaceUserPermission).where(
                 SpaceUserPermission.space_id == space.id,

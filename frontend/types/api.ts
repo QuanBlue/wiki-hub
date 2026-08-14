@@ -95,6 +95,7 @@ export interface User {
   last_login_at: string | null;
   created_at: string;
   groups: string[];
+  global_permissions: GlobalPermission[];
 }
 
 /**

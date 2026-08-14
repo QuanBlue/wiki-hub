@@ -520,6 +520,7 @@ function PageTree({
       if (!saved) return;
       const ids: unknown = JSON.parse(saved);
       if (Array.isArray(ids)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate persisted tree expansion state
         setExpandedPageIds(new Set<string>(ids as string[]));
       }
     } catch {
@@ -560,6 +561,7 @@ function PageTree({
     }
 
     if (idsToExpand.size === 0) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- expand ancestors discovered from the loaded page tree
     setExpandedPageIds((current) => {
       const next = new Set(current);
       for (const pageId of idsToExpand) next.add(pageId);
@@ -676,7 +678,6 @@ export function SpaceWorkspace({
   const [previewing, setPreviewing] = useState(false);
   const [previewSplit, setPreviewSplit] = useState(50);
   const [viewFullWidth, setViewFullWidth] = useState(true);
-  const [viewWidthMenuOpen, setViewWidthMenuOpen] = useState(false);
   const [likeStatus, setLikeStatus] = useState<PageLikeStatus>({
     liked_by_me: false,
     like_count: 0,
@@ -774,6 +775,7 @@ export function SpaceWorkspace({
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset sticky reader chrome when the active page changes
     setShowHeader(true);
     setIsSticky(false);
     lastScrollY.current = 0;

@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@tiptap/extension-table";
-import { Node, Mark, mergeAttributes } from "@tiptap/core";
+import { Node as TiptapNode, Mark, mergeAttributes } from "@tiptap/core";
 import {
   EditorContent,
   useEditor,
@@ -163,7 +163,7 @@ const TableHeaderWithBackground = TableHeader.extend({
   },
 });
 
-function CodeBlockWithLines({ node, extension }: NodeViewProps) {
+function CodeBlockWithLines({ node, extension: _extension }: NodeViewProps) {
   let text = node.textContent || "";
   if (text.endsWith("\n")) {
     text = text.slice(0, -1);
@@ -182,7 +182,6 @@ function CodeBlockWithLines({ node, extension }: NodeViewProps) {
       </div>
       <pre className="!my-0 flex-1 overflow-x-auto !border-0 !bg-transparent !p-4 font-mono text-xs !leading-6">
         <NodeViewContent
-          as="code"
           className={cn("whitespace-pre bg-transparent !m-0 !block !p-0 !font-mono !text-xs !leading-6", language ? `language-${language}` : "")}
         />
       </pre>
@@ -240,7 +239,7 @@ function CalloutComponent({ node }: NodeViewProps) {
   );
 }
 
-const CustomCalloutNode = Node.create({
+const CustomCalloutNode = TiptapNode.create({
   name: "callout",
   group: "block",
   content: "block+",
@@ -987,6 +986,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
     editor.on("transaction", updatePosition);
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- position the floating table toolbar on first render
     updatePosition();
 
     return () => {

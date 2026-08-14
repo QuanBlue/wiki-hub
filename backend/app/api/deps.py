@@ -13,6 +13,7 @@ from app.core.security import decode_access_token, decode_token_identity
 from app.db.session import get_session_factory
 from app.models.user import User
 from app.modules.auth.service import AuthService
+from app.modules.permissions.service import PermissionService
 from app.services.audit import ClientInfo
 
 #: Name of the httpOnly cookie holding the access token. Cookies ignore the port
@@ -106,8 +107,8 @@ async def get_current_user(request: Request, service: AuthServiceDep) -> User:
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-async def get_current_superuser(user: CurrentUser) -> User:
-    if not user.is_superuser:
+async def get_current_superuser(user: CurrentUser, session: DbSession) -> User:
+    if not await PermissionService(session).is_system_admin(user):
         raise PermissionDeniedError("This action requires administrator privileges.")
     return user
 

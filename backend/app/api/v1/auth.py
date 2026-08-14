@@ -15,7 +15,7 @@ from app.api.deps import (
 from app.core import rate_limit
 from app.core.config import settings
 from app.core.security import create_access_token
-from app.services.site_settings import SiteSettingsService
+from app.modules.permissions.service import PermissionService
 from app.schemas.user import (
     ImpersonateRequest,
     LoginRequest,
@@ -23,6 +23,7 @@ from app.schemas.user import (
     MeRead,
     UserRead,
 )
+from app.services.site_settings import SiteSettingsService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -108,9 +109,12 @@ async def renew(
 
 
 @router.get("/me", response_model=MeRead, summary="The authenticated user")
-async def me(user: CurrentUser, impersonator: Impersonator) -> MeRead:
+async def me(user: CurrentUser, impersonator: Impersonator, session: DbSession) -> MeRead:
+    global_permissions = await PermissionService(session).global_permissions(user)
     return MeRead(
-        **UserRead.model_validate(user).model_dump(),
+        **UserRead.model_validate(user).model_copy(
+            update={"global_permissions": global_permissions}
+        ).model_dump(),
         impersonator=UserRead.model_validate(impersonator) if impersonator else None,
     )
 
