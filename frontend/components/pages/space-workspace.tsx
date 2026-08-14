@@ -1738,77 +1738,6 @@ export function SpaceWorkspace({
                       <Share2 />
                       Share
                     </Button>
-                    <div
-                      className="relative"
-                      onBlur={(event) => {
-                        const next = event.relatedTarget;
-                        if (
-                          !(next instanceof Node) ||
-                          !event.currentTarget.contains(next)
-                        ) {
-                          setViewWidthMenuOpen(false);
-                        }
-                      }}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="!text-sm !font-medium"
-                        aria-label="Page width options"
-                        aria-haspopup="menu"
-                        aria-expanded={viewWidthMenuOpen}
-                        title="Page width options"
-                        onClick={() => setViewWidthMenuOpen((open) => !open)}
-                      >
-                        <Maximize2 />
-                        View
-                        <ChevronDown />
-                      </Button>
-                      {viewWidthMenuOpen ? (
-                        <div
-                          role="menu"
-                          aria-label="Page width"
-                          className="border-border bg-surface absolute top-full right-0 z-20 mt-1 w-44 rounded-lg border p-1 shadow-lg"
-                        >
-                          <Button
-                            type="button"
-                            variant="subtle"
-                            size="sm"
-                            role="menuitemradio"
-                            aria-checked={viewFullWidth}
-                            className="!text-sm !font-medium text-muted-foreground [&_svg]:text-muted-foreground w-full justify-start"
-                            onClick={() => {
-                              setViewFullWidth(true);
-                              setViewWidthMenuOpen(false);
-                            }}
-                          >
-                            <Maximize2 />
-                            Full width
-                            {viewFullWidth ? (
-                              <Check className="!text-primary ml-auto" />
-                            ) : null}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="subtle"
-                            size="sm"
-                            role="menuitemradio"
-                            aria-checked={!viewFullWidth}
-                            className="!text-sm !font-medium text-muted-foreground [&_svg]:text-muted-foreground w-full justify-start"
-                            onClick={() => {
-                              setViewFullWidth(false);
-                              setViewWidthMenuOpen(false);
-                            }}
-                          >
-                            <Minimize2 />
-                            Normal width
-                            {!viewFullWidth ? (
-                              <Check className="!text-primary ml-auto" />
-                            ) : null}
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
                   </div>
                   {currentPage ? (
                     <DropdownMenu>
@@ -1845,6 +1774,21 @@ export function SpaceWorkspace({
                           <span className="text-muted-foreground ml-auto text-xs">
                             Soon
                           </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => setViewFullWidth(true)}>
+                          <Maximize2 />
+                          Full width
+                          {viewFullWidth ? (
+                            <Check className="text-primary ml-auto size-4" />
+                          ) : null}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setViewFullWidth(false)}>
+                          <Minimize2 />
+                          Normal width
+                          {!viewFullWidth ? (
+                            <Check className="text-primary ml-auto size-4" />
+                          ) : null}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={exportPageHtml}>
