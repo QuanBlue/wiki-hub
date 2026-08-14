@@ -52,6 +52,7 @@ export function SearchModal({
   const [loading, setLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // Global Ctrl+K / Cmd+K keyboard shortcut
   useEffect(() => {
@@ -73,8 +74,17 @@ export function SearchModal({
       setQuery("");
       setResults(null);
       setSelectedIndex(0);
+      itemRefs.current = [];
     }
   }, [open]);
+
+  // Auto scroll selected item into view on keyboard navigation
+  useEffect(() => {
+    const el = itemRefs.current[selectedIndex];
+    if (el) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selectedIndex]);
 
   // Debounced search query fetching
   useEffect(() => {
@@ -230,6 +240,9 @@ export function SearchModal({
                         return (
                           <li key={space.id}>
                             <button
+                              ref={(el) => {
+                                itemRefs.current[itemIndex] = el;
+                              }}
                               type="button"
                               onClick={() => selectItem({ kind: "space", data: space })}
                               onMouseEnter={() => setSelectedIndex(itemIndex)}
@@ -277,6 +290,9 @@ export function SearchModal({
                         return (
                           <li key={page.id}>
                             <button
+                              ref={(el) => {
+                                itemRefs.current[itemIndex] = el;
+                              }}
                               type="button"
                               onClick={() => selectItem({ kind: "page", data: page })}
                               onMouseEnter={() => setSelectedIndex(itemIndex)}
