@@ -153,7 +153,11 @@ const TableHeaderWithBackground = TableHeader.extend({
 });
 
 function CodeBlockWithLines({ node, extension }: NodeViewProps) {
-  const lineCount = (node.textContent || "").split("\n").length;
+  let text = node.textContent || "";
+  if (text.endsWith("\n")) {
+    text = text.slice(0, -1);
+  }
+  const lineCount = text.split("\n").length;
   const lines = Array.from({ length: Math.max(1, lineCount) }, (_, i) => i + 1);
   // Default to a known language if set, though currently we just use the class
   const language = node.attrs.language || "";
@@ -223,7 +227,7 @@ function escapeHtml(value: string): string {
 
 /** Convert Confluence's XML-style code macro into semantic HTML for Tiptap. */
 function normalizeConfluenceCodeMacros(content: string): string {
-  return content.replace(
+  let res = content.replace(
     /<ac:structured-macro\b[^>]*\bac:name=(?:"code"|'code')[^]*>([\s\S]*?)<\/ac:structured-macro>/gi,
     (macro, inner: string) => {
       const bodyMatch = inner.match(
@@ -239,7 +243,7 @@ function normalizeConfluenceCodeMacros(content: string): string {
       }
       
       // Remove leading and trailing empty lines that are artifacts of XML formatting
-      code = code.replace(/^\s*[\r\n]+/, "").replace(/[\r\n]+\s*$/, "");
+      code = code.replace(/^(?:[ \t]*[\r\n]|&#10;|&#13;|&NewLine;)+/, "").replace(/(?:[\r\n][ \t]*|&#10;|&#13;|&NewLine;)+$/, "");
       
       const langMatch = inner.match(
         /<ac:parameter\b[^>]*\bac:name=(?:"language"|'language')[^>]*>([\s\S]*?)<\/ac:parameter>/i,
@@ -249,6 +253,17 @@ function normalizeConfluenceCodeMacros(content: string): string {
       return `<pre><code${language ? ` class="language-${language}"` : ""}>${escapeHtml(code)}</code></pre>`;
     },
   );
+
+  // Strip leading and trailing newlines from any existing <pre><code>...</code></pre> blocks
+  res = res.replace(
+    /(<pre\b[^>]*><code\b[^>]*>)([\s\S]*?)(<\/code><\/pre>)/gi,
+    (_match, open, code, close) => {
+      const trimmedCode = code.replace(/^(?:[ \t]*[\r\n]|&#10;|&#13;|&NewLine;)+/, "").replace(/(?:[\r\n][ \t]*|&#10;|&#13;|&NewLine;)+$/, "");
+      return `${open}${trimmedCode}${close}`;
+    }
+  );
+
+  return res;
 }
 
 function linkifyPlainTextUrls(content: string): string {
