@@ -20,6 +20,7 @@ export default async function SpaceDetailPage({ params }: Params) {
   let space;
   let pages;
   let members;
+  const groups = [];
   try {
     [space, pages, members] = await Promise.all([
       getSpace(key),
@@ -49,10 +50,14 @@ export default async function SpaceDetailPage({ params }: Params) {
       space={space}
       pages={pages}
       members={members}
+      groups={groups}
+      canManageRestrictions={
+        user.is_superuser || space.my_permissions?.includes("restrictions") === true
+      }
+      canExport={space.my_permissions?.includes("export") === true}
       canEdit={
         user.is_superuser ||
-        space.my_role === "admin" ||
-        space.my_role === "editor"
+        space.my_permissions?.includes("add") === true
       }
     />
   );

@@ -121,19 +121,23 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     );
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-8">
+      <div className="grid gap-6 xl:grid-cols-2">
       {/* Card 1: General Workspace Settings */}
-      <section className="border-border bg-surface rounded-xl border p-5 space-y-4">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
+      <section id="general-settings" className="border-border bg-surface rounded-xl border p-6 shadow-sm space-y-5">
+        <div className="flex items-center gap-2 border-b border-border pb-4">
           <SlidersHorizontal className="size-4 text-primary" />
-          <h3 className="font-semibold text-foreground text-sm">General Workspace</h3>
+          <div>
+            <h3 className="font-semibold text-foreground">General Workspace</h3>
+            <p className="text-muted-foreground mt-0.5 text-xs">Identity and session behaviour for this instance.</p>
+          </div>
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2">
           {/* Site Name */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label htmlFor="site-name" className="text-xs font-semibold">
+              <Label htmlFor="site-name" className="text-sm font-semibold">
                 Site Name
               </Label>
               {inheritedTag(settings.overrides.site_name !== null)}
@@ -144,7 +148,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               onChange={(e) => setSiteName(e.target.value)}
               placeholder={settings.effective.site_name}
               disabled={pending}
-              className="text-xs"
+              className="text-sm"
             />
             <p className="text-muted-foreground text-[11px]">
               Currently showing as <strong className="text-foreground">{settings.effective.site_name}</strong>. Leave empty for default.
@@ -154,7 +158,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           {/* Session Lifetime */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label htmlFor="session-ttl-hours" className="text-xs font-semibold">
+              <Label htmlFor="session-ttl-hours" className="text-sm font-semibold">
                 Session Lifetime (hours)
               </Label>
               {inheritedTag(settings.overrides.session_ttl_hours !== null)}
@@ -172,7 +176,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                   : "12"
               }
               disabled={pending}
-              className="text-xs"
+              className="text-sm"
             />
             <p className="text-muted-foreground text-[11px]">
               Duration of user sessions before re-authentication is required. Default: 12h.
@@ -182,17 +186,20 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
       </section>
 
       {/* Card 2: Storage & File Quotas */}
-      <section className="border-border bg-surface rounded-xl border p-5 space-y-4">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
+      <section id="storage-settings" className="border-border bg-surface rounded-xl border p-6 shadow-sm space-y-5">
+        <div className="flex items-center gap-2 border-b border-border pb-4">
           <HardDrive className="size-4 text-info" />
-          <h3 className="font-semibold text-foreground text-sm">Storage &amp; File Quotas</h3>
+          <div>
+            <h3 className="font-semibold text-foreground">Storage &amp; File Quotas</h3>
+            <p className="text-muted-foreground mt-0.5 text-xs">Control imports and attachment limits.</p>
+          </div>
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2">
           {/* Max Backup Import */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label htmlFor="max-backup-import" className="text-xs font-semibold">
+              <Label htmlFor="max-backup-import" className="text-sm font-semibold">
                 Max Confluence / Backup Archive (MB)
               </Label>
               {inheritedTag(settings.overrides.max_backup_import_size_mb !== null)}
@@ -206,7 +213,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               onChange={(e) => setMaxBackupImport(e.target.value)}
               placeholder={String(settings.effective.max_backup_import_size_mb)}
               disabled={pending}
-              className="text-xs"
+              className="text-sm"
             />
             <p className="text-muted-foreground text-[11px]">
               Limits large Confluence backup imports independently from standard attachments.
@@ -216,7 +223,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           {/* Max Upload */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label htmlFor="max-upload" className="text-xs font-semibold">
+              <Label htmlFor="max-upload" className="text-sm font-semibold">
                 Max Single Attachment Upload (MB)
               </Label>
               {inheritedTag(settings.overrides.max_upload_size_mb !== null)}
@@ -230,7 +237,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               onChange={(e) => setMaxUpload(e.target.value)}
               placeholder={String(settings.effective.max_upload_size_mb)}
               disabled={pending}
-              className="text-xs"
+              className="text-sm"
             />
             <p className="text-muted-foreground text-[11px]">
               Maximum allowed size per individual attachment upload.
@@ -241,7 +248,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
         {/* Allowed Types */}
         <div className="space-y-1.5 pt-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="allowed-types" className="text-xs font-semibold">
+            <Label htmlFor="allowed-types" className="text-sm font-semibold">
               Allowed Attachment Extensions
             </Label>
             {inheritedTag(settings.overrides.allowed_attachment_types !== null)}
@@ -252,23 +259,25 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
             onChange={(e) => setTypes(e.target.value)}
             placeholder={settings.effective.allowed_attachment_types.join(", ")}
             disabled={pending}
-            className="text-xs"
+            className="text-sm"
           />
           <p className="text-muted-foreground text-[11px]">
             Comma-separated file extensions. (SVG is excluded by default for script security).
           </p>
         </div>
       </section>
+      </div>
 
       {/* Card 3: Sidebar Navigation Access Control */}
       <section
+        id="sidebar-settings"
         aria-labelledby="sidebar-permissions-heading"
-        className="border-border bg-surface space-y-4 rounded-xl border p-5"
+        className="border-border bg-surface space-y-5 rounded-xl border p-6 shadow-sm"
       >
-        <div className="flex items-center gap-2 border-b border-border pb-3">
+        <div className="flex items-center gap-2 border-b border-border pb-4">
           <ShieldCheck className="size-4 text-warning" />
           <div>
-            <h3 id="sidebar-permissions-heading" className="font-semibold text-foreground text-sm">
+            <h3 id="sidebar-permissions-heading" className="font-semibold text-foreground">
               Sidebar Access Control
             </h3>
             <p className="text-muted-foreground mt-0.5 text-xs">
@@ -345,7 +354,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
       ) : null}
 
       {/* Actions Bar */}
-      <div className="border-border bg-surface flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="border-border bg-surface flex flex-col gap-4 rounded-xl border p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" variant="primary" size="sm" disabled={pending}>
             {pending ? <Loader2 className="size-3.5 animate-spin" /> : null}

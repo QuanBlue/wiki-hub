@@ -36,11 +36,15 @@ async def list_revisions(
     space_service: SpaceServiceDep,
 ) -> list[PageRevisionRead]:
     space = await space_service.get_by_key(key)
+    await space_service.require_view(space, _user)
     page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, _user)
     return await page_service.list_revisions(page)
 
 
-@router.get("/diff", response_model=PageRevisionDiffRead, summary="Calculate visual diff between revisions")
+@router.get(
+    "/diff", response_model=PageRevisionDiffRead, summary="Calculate visual diff between revisions"
+)
 async def get_revision_diff(
     key: str,
     slug: str,
@@ -51,7 +55,9 @@ async def get_revision_diff(
     to_version: int | None = Query(default=None, ge=1),
 ) -> PageRevisionDiffRead:
     space = await space_service.get_by_key(key)
+    await space_service.require_view(space, _user)
     page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, _user)
     return await page_service.calculate_diff(page, from_version=from_version, to_version=to_version)
 
 
@@ -65,11 +71,17 @@ async def get_revision(
     space_service: SpaceServiceDep,
 ) -> PageRevisionRead:
     space = await space_service.get_by_key(key)
+    await space_service.require_view(space, _user)
     page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, _user)
     return await page_service.get_revision(page, version)
 
 
-@router.post("/{version}/restore", response_model=PageRead, summary="Restore page content to a specific version")
+@router.post(
+    "/{version}/restore",
+    response_model=PageRead,
+    summary="Restore page content to a specific version",
+)
 async def restore_revision(
     key: str,
     slug: str,
@@ -81,4 +93,4 @@ async def restore_revision(
     space = await space_service.get_by_key(key)
     page = await page_service.get_by_slug(space, slug)
     restored = await page_service.restore_revision(space, page, version, user)
-    return page_service.to_read(restored)
+    return await page_service.to_read_for_user(restored, user)

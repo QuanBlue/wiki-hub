@@ -20,6 +20,7 @@ export default async function WikiPageView({ params }: Params) {
   let pages;
   let members;
   let page;
+  const groups = [];
   try {
     [space, pages, members, page] = await Promise.all([
       getSpace(key),
@@ -44,11 +45,12 @@ export default async function WikiPageView({ params }: Params) {
       space={space}
       pages={pages}
       members={members}
+      groups={groups}
       currentPage={page}
-      canEdit={
-        user.is_superuser ||
-        space.my_role === "admin" ||
-        space.my_role === "editor"
+      canEdit={page.can_edit === true}
+      canExport={page.can_export === true}
+      canManageRestrictions={
+        user.is_superuser || space.my_permissions?.includes("restrictions") === true
       }
     />
   );

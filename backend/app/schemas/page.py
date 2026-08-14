@@ -23,6 +23,8 @@ class PageRead(BaseModel):
     updated_at: datetime
     created_by_username: str | None = None
     updated_by_username: str | None = None
+    can_edit: bool = False
+    can_export: bool = False
 
 
 class PageRecentItem(BaseModel):

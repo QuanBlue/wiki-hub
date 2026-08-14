@@ -9,10 +9,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.exceptions import NotFoundError, PermissionDeniedError
+from app.core.exceptions import NotFoundError
 from app.models.attachment import PageAttachment
 from app.models.page import WikiPage
+from app.models.permission import Permission
 from app.models.space import Space
+from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
 from app.services.storage import ObjectStorage, S3ObjectStorage
 
@@ -42,9 +44,11 @@ async def read_attachment(
     space = await session.get(Space, page.space_id)
     if space is None:
         raise NotFoundError("Attachment space not found.")
-    if not _user.is_superuser and await SpaceService(session).role_of(space, _user) is None:
-        raise PermissionDeniedError("You do not have access to this attachment.")
-    inline = attachment.content_type.startswith("image/") or attachment.content_type == "application/pdf"
+    await SpaceService(session).permissions.require(space, _user, Permission.view)
+    await PageService(session).require_page_view(page, _user)
+    inline = (
+        attachment.content_type.startswith("image/") or attachment.content_type == "application/pdf"
+    )
     disposition = "inline" if inline else "attachment"
     filename = re.sub(r"[\r\n\\\"]", "", attachment.filename)
     return Response(

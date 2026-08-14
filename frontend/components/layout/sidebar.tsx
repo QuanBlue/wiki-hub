@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  DatabaseBackup,
   Home,
   LayoutGrid,
   Settings,
@@ -37,12 +36,6 @@ const ADMIN_NAV: NavItem[] = [
     label: "Settings",
     icon: Settings,
     permission: "settings",
-  },
-  {
-    href: "/admin/backup",
-    label: "Backups",
-    icon: DatabaseBackup,
-    permission: "backups",
   },
 ];
 

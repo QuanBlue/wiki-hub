@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { SpaceRowActions } from "@/components/admin/space-row-actions";
 import { Badge } from "@/components/ui/badge";
 import { listSpaces } from "@/lib/spaces";
+import Link from "next/link";
 
 export const metadata: Metadata = { title: "Spaces" };
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export default async function AdminSpacesPage() {
                     <span className="mr-2" aria-hidden>
                       {space.icon || "▦"}
                     </span>
-                    <span className="font-medium">{space.name}</span>
+                    <Link className="font-medium text-primary hover:text-primary-hover" href={`/admin/spaces/${encodeURIComponent(space.key)}`}>{space.name}</Link>
                     <span className="text-muted-foreground ml-2">
                       {space.key}
                     </span>

@@ -30,6 +30,7 @@ class UserRead(BaseModel):
     is_protected: bool
     last_login_at: datetime | None
     created_at: datetime
+    groups: list[str] = Field(default_factory=list)
 
 
 class MeRead(UserRead):

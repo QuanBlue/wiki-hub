@@ -6,14 +6,35 @@ Every model must be imported here: Alembic's autogenerate walks
 
 from __future__ import annotations
 
-from app.models.audit import AuditAction, AuditLog
 from app.models.attachment import PageAttachment
+from app.models.audit import AuditAction, AuditLog
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.page import PageLike, WikiPage
-from app.models.revision import PageRevision
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
+from app.models.page import PageLike, WikiPage
+from app.models.permission import (
+    GlobalPermission,
+    Group,
+    GroupGlobalPermission,
+    GroupMember,
+    Permission,
+    SpaceGroupPermission,
+    SpaceUserPermission,
+)
+from app.models.restriction import (
+    PageGroupRestriction,
+    PageRestrictionPermission,
+    PageUserRestriction,
+)
+from app.models.revision import PageRevision
 from app.models.site_settings import SINGLETON_ID, SiteSettings
-from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceRole, SpaceStatus
+from app.models.space import (
+    Space,
+    SpaceFavorite,
+    SpaceMember,
+    SpaceRole,
+    SpaceStatus,
+    SpaceVisibility,
+)
 from app.models.user import User
 
 __all__ = [
@@ -21,20 +42,31 @@ __all__ = [
     "AuditAction",
     "AuditLog",
     "Base",
+    "GlobalPermission",
+    "Group",
+    "GroupGlobalPermission",
+    "GroupMember",
+    "ImportArchive",
+    "ImportJob",
+    "ImportLog",
+    "PageAttachment",
+    "PageGroupRestriction",
+    "PageLike",
+    "PageRestrictionPermission",
+    "PageRevision",
+    "PageUserRestriction",
+    "Permission",
     "SiteSettings",
     "Space",
     "SpaceFavorite",
+    "SpaceGroupPermission",
     "SpaceMember",
     "SpaceRole",
     "SpaceStatus",
+    "SpaceUserPermission",
+    "SpaceVisibility",
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
     "User",
     "WikiPage",
-    "PageLike",
-    "PageRevision",
-    "PageAttachment",
-    "ImportArchive",
-    "ImportJob",
-    "ImportLog",
 ]

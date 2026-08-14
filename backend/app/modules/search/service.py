@@ -13,7 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.page import WikiPage
+from app.models.permission import Permission
 from app.models.space import Space, SpaceStatus
+from app.models.user import User
+from app.modules.permissions.service import PermissionService
 from app.repositories.filters import ilike_contains
 
 
@@ -47,12 +50,12 @@ def extract_snippet(content: str, query: str, max_len: int = 140) -> str:
     """Extract a clean plain-text snippet centered around query term."""
     if not content:
         return ""
-    
+
     # Strip HTML tags & unescape entities
     plain = re.sub(r"<[^>]+>", " ", content)
     plain = html.unescape(plain)
     plain = re.sub(r"\s+", " ", plain).strip()
-    
+
     if not plain:
         return ""
 
@@ -65,7 +68,7 @@ def extract_snippet(content: str, query: str, max_len: int = 140) -> str:
 
     start = max(0, idx - 40)
     end = min(len(plain), idx + len(query) + 80)
-    
+
     snippet = plain[start:end]
     if start > 0:
         snippet = "..." + snippet
@@ -79,7 +82,7 @@ class SearchService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def search(self, query: str, limit: int = 20) -> SearchResults:
+    async def search(self, query: str, user: User, limit: int = 20) -> SearchResults:
         query_trimmed = query.strip()
         if not query_trimmed:
             return SearchResults(query="", pages=[], spaces=[])
@@ -99,6 +102,12 @@ class SearchService:
         )
         spaces_result = await self.session.execute(spaces_stmt)
         matched_spaces = list(spaces_result.scalars().all())
+        permissions = PermissionService(self.session)
+        matched_spaces = [
+            space
+            for space in matched_spaces
+            if Permission.view in await permissions.effective_permissions(space, user)
+        ]
 
         space_results = [
             SearchResultSpace(
@@ -126,6 +135,11 @@ class SearchService:
         )
         pages_result = await self.session.execute(pages_stmt)
         matched_pages = list(pages_result.scalars().all())
+        visible_pages = []
+        for page in matched_pages:
+            if await permissions.can_view_page(page, user):
+                visible_pages.append(page)
+        matched_pages = visible_pages
 
         page_results = [
             SearchResultPage(
