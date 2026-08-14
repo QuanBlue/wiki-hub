@@ -18,7 +18,12 @@ import { cn } from "@/lib/utils";
  * state Radix drives from both the pointer and the keyboard, so styling it
  * covers arrow-key navigation for free.
  */
-export const DropdownMenu = DropdownMenuPrimitive.Root;
+export function DropdownMenu({
+  modal = false,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Root>) {
+  return <DropdownMenuPrimitive.Root modal={modal} {...props} />;
+}
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 export const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 

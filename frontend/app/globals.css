@@ -158,6 +158,8 @@
   html {
     /* Scroll targets must clear the fixed top bar. */
     scroll-padding-top: calc(var(--wh-topbar-height) + 1rem);
+    /* Keep the viewport width stable while portalled menus open. */
+    scrollbar-gutter: stable;
   }
 
   body {

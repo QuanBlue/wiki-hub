@@ -1683,7 +1683,7 @@ export function SpaceWorkspace({
                     triggerVariant="ghost"
                     triggerSize="sm"
                   />
-                  <DropdownMenu>
+                  <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" disabled={editing}>
                         <Pencil />
@@ -1743,7 +1743,7 @@ export function SpaceWorkspace({
                     </Button>
                   </div>
                   {currentPage ? (
-                    <DropdownMenu>
+                    <DropdownMenu modal={false}>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="ghost"
@@ -1833,7 +1833,7 @@ export function SpaceWorkspace({
                       </DropdownMenuContent>
                     </DropdownMenu>
                   ) : null}
-                  <DropdownMenu>
+                  <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="ghost"

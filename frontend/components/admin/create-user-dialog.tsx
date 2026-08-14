@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
-import { Select } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
 import type { User } from "@/types/api";
 
@@ -146,13 +146,17 @@ export function CreateUserDialog() {
             <div className="space-y-1.5">
               <Label htmlFor="new-role">Role</Label>
               <Select
-                id="new-role"
                 value={role}
-                onChange={(e) => setRole(e.target.value)}
+                onValueChange={setRole}
                 disabled={pending}
               >
-                <option value="member">Member</option>
-                <option value="admin">Administrator</option>
+                <SelectTrigger id="new-role" aria-label="Role">
+                  <SelectValue>{role === "admin" ? "Administrator" : "Member"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="admin">Administrator</SelectItem>
+                </SelectContent>
               </Select>
               {role === "admin" ? (
                 <p className="text-muted-foreground text-xs">

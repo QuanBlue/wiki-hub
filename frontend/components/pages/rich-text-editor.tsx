@@ -80,6 +80,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 const TableCellWithBackground = TableCell.extend({
@@ -509,7 +516,7 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
     }) ?? undefined;
 
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -578,7 +585,7 @@ function AlignmentMenu({ editor }: { editor: Editor | null }) {
         : AlignLeft;
 
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -684,7 +691,7 @@ function ColorMenu({
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -756,6 +763,7 @@ function TablePicker({ editor }: { editor: Editor | null }) {
 
   return (
     <DropdownMenu
+      modal={false}
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
@@ -831,7 +839,7 @@ function CellColorMenu({ editor }: { editor: Editor | null }) {
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -1351,15 +1359,18 @@ function RichTextToolbar({
               <label htmlFor="link-target" className="text-sm font-medium">
                 Open link in...
               </label>
-              <select
-                id="link-target"
+              <Select
                 value={linkTarget}
-                onChange={(event) => setLinkTarget(event.target.value)}
-                className="border-border bg-surface h-9 w-full rounded-md border px-3 text-sm transition-[color,background-color,border-color,box-shadow] duration-150 hover:border-border-strong focus-visible:ring-ring focus-visible:border-border-strong focus-visible:ring-2 focus-visible:outline-none"
+                onValueChange={setLinkTarget}
               >
-                <option value="_self">Current window</option>
-                <option value="_blank">New window</option>
-              </select>
+                <SelectTrigger id="link-target" aria-label="Open link in">
+                  <SelectValue>{linkTarget === "_blank" ? "New window" : "Current window"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_self">Current window</SelectItem>
+                  <SelectItem value="_blank">New window</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <DialogFooter>
               <Button

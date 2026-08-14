@@ -68,7 +68,7 @@ export function UserMenu({ user }: { user: Me }) {
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger
         className={cn(
           "group flex cursor-pointer items-center gap-2 rounded-md py-1 pr-1.5 pl-1 text-sm",

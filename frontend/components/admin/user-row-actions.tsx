@@ -1,27 +1,14 @@
 "use client";
 
-import {
-  KeyRound,
-  MoreHorizontal,
-  Trash2,
-  UserCheck,
-  UserX,
-} from "lucide-react";
+import { KeyRound, Trash2, UserCheck, UserX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { ResetPasswordDialog } from "@/components/admin/reset-password-dialog";
+import { RowActionsMenu, type RowAction } from "@/components/admin/row-actions-menu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { api, ApiError } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
 import type { User } from "@/types/api";
 
 /**
@@ -94,72 +81,18 @@ export function UserRowActions({
     }
   }
 
+  const actions: RowAction[] = [
+    { label: "Set a new password", icon: <KeyRound className="size-4" />, onSelect: () => setResetOpen(true), disabled: pending !== null },
+    user.is_active
+      ? { label: "Deactivate account", icon: <UserX className="size-4" />, onSelect: () => void setActive(false), disabled: pending !== null || isSelf, title: isSelf ? "You cannot deactivate your own account" : undefined }
+      : { label: "Activate account", icon: <UserCheck className="size-4" />, onSelect: () => void setActive(true), disabled: pending !== null },
+    { separator: true },
+    { label: "Delete user…", icon: <Trash2 className="size-4" />, onSelect: () => setConfirmDelete(true), disabled: pending !== null || isSelf, destructive: true, title: isSelf ? "You cannot delete your own account" : undefined },
+  ];
+
   return (
     <div className="flex justify-end">
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          className={cn(
-            "text-muted-foreground hover:text-foreground cursor-pointer rounded-md p-1.5",
-            "transition-colors duration-150",
-            "hover:bg-surface-selected active:bg-surface-selected",
-            "data-[state=open]:bg-surface-selected data-[state=open]:text-foreground",
-            "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-            "disabled:pointer-events-none disabled:opacity-50",
-          )}
-          disabled={pending !== null}
-          aria-label={`Actions for ${user.username}`}
-          title={`Actions for ${user.username}`}
-        >
-          <MoreHorizontal className="size-4" />
-        </DropdownMenuTrigger>
-
-        <DropdownMenuContent
-          align="end"
-          // Two items open a dialog. Without this, the menu's own restore-focus
-          // on close races the dialog's focus trap and the dialog can open with
-          // focus back on the row's trigger button.
-          onCloseAutoFocus={(event) => {
-            if (resetOpen || confirmDelete) event.preventDefault();
-          }}
-        >
-          <DropdownMenuItem onSelect={() => setResetOpen(true)}>
-            <KeyRound />
-            Set a new password
-          </DropdownMenuItem>
-
-          {user.is_active ? (
-            <DropdownMenuItem
-              // The backend refuses self-deactivation with 409; say so here
-              // rather than letting the click fail.
-              disabled={isSelf}
-              title={
-                isSelf ? "You cannot deactivate your own account" : undefined
-              }
-              onSelect={() => void setActive(false)}
-            >
-              <UserX />
-              Deactivate account
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem onSelect={() => void setActive(true)}>
-              <UserCheck />
-              Activate account
-            </DropdownMenuItem>
-          )}
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuItem
-            destructive
-            disabled={isSelf}
-            title={isSelf ? "You cannot delete your own account" : undefined}
-            onSelect={() => setConfirmDelete(true)}
-          >
-            <Trash2 />
-            Delete user…
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <RowActionsMenu label={`Actions for ${user.username}`} actions={actions} />
 
       <ResetPasswordDialog
         user={user}
