@@ -49,6 +49,8 @@ class WikiPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    created_by_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     space: Mapped[Space] = relationship()
     parent: Mapped[WikiPage | None] = relationship(

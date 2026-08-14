@@ -7,6 +7,7 @@ import {
   ScrollText,
   SlidersHorizontal,
   Users,
+  UsersRound,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 const TABS = [
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/groups", label: "Groups", icon: UsersRound },
   { href: "/admin/spaces", label: "Spaces", icon: FolderCog },
   { href: "/admin/audit", label: "Audit log", icon: ScrollText },
   { href: "/admin/settings", label: "Settings", icon: SlidersHorizontal },

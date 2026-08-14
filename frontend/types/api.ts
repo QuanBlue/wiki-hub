@@ -94,6 +94,7 @@ export interface User {
   is_protected: boolean;
   last_login_at: string | null;
   created_at: string;
+  groups: string[];
 }
 
 /**
@@ -115,6 +116,20 @@ export interface LoginResponse {
 
 export type SpaceStatus = "active" | "archived";
 export type SpaceRole = "viewer" | "editor" | "admin";
+export type SpaceVisibility = "open" | "restricted";
+export type SpacePermission =
+  | "view"
+  | "add"
+  | "delete"
+  | "delete_own"
+  | "restrictions"
+  | "export"
+  | "admin";
+export type GlobalPermission =
+  | "create_space"
+  | "manage_users"
+  | "manage_groups"
+  | "system_admin";
 export type PageContentFormat = "html" | "markdown";
 
 export interface Space {
@@ -124,6 +139,7 @@ export interface Space {
   description: string;
   icon: string;
   status: SpaceStatus;
+  visibility: SpaceVisibility;
   created_at: string;
   updated_at: string;
   created_by_username: string | null;
@@ -131,6 +147,7 @@ export interface Space {
   is_favorite: boolean;
   /** The current user's role in this space, or null if not a member. */
   my_role: SpaceRole | null;
+  my_permissions?: string[];
 }
 
 export interface SpaceMember {
@@ -138,6 +155,39 @@ export interface SpaceMember {
   username: string;
   full_name: string;
   role: SpaceRole;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  description: string;
+  owner_id: string;
+  owner_username: string | null;
+  is_active: boolean;
+  member_count: number;
+  created_at: string;
+  updated_at: string;
+  global_permissions: GlobalPermission[];
+}
+
+export interface GroupMember {
+  user_id: string;
+  username: string;
+  full_name: string;
+}
+
+export interface SpacePermissionAssignment {
+  space_id: string;
+  principal_id: string;
+  principal_type: "user" | "group";
+  principal_name: string;
+  permissions: SpacePermission[];
+}
+
+export interface EffectiveSpacePermissions {
+  space_id: string;
+  permissions: SpacePermission[];
+  visibility: SpaceVisibility;
 }
 
 export interface WikiPage {
@@ -152,6 +202,8 @@ export interface WikiPage {
   updated_at: string;
   created_by_username: string | null;
   updated_by_username: string | null;
+  can_edit?: boolean;
+  can_export?: boolean;
 }
 
 export type DependencyStatus = "ok" | "error" | "timeout";

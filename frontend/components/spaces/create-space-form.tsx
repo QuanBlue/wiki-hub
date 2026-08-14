@@ -7,6 +7,13 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
 import type { Space } from "@/types/api";
 
@@ -25,6 +32,7 @@ export function CreateSpaceForm() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [visibility, setVisibility] = useState<"open" | "restricted">("open");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -33,6 +41,7 @@ export function CreateSpaceForm() {
   function reset() {
     setName("");
     setDescription("");
+    setVisibility("open");
     setError(null);
   }
 
@@ -46,6 +55,7 @@ export function CreateSpaceForm() {
         name: name.trim(),
         description: description.trim(),
         icon: "",
+        visibility,
       });
       toast.success(`Space "${space.name}" created.`);
       setOpen(false);
@@ -117,6 +127,18 @@ export function CreateSpaceForm() {
             placeholder="What lives in this space?"
             disabled={pending}
           />
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor="space-visibility" className="text-sm font-medium">Access</label>
+          <Select value={visibility} onValueChange={(value) => setVisibility(value as "open" | "restricted")} disabled={pending}>
+            <SelectTrigger id="space-visibility" aria-label="Space access">
+              <SelectValue>{visibility === "open" ? "Open to signed-in users" : "Restricted to assigned users/groups"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">Open to signed-in users</SelectItem>
+              <SelectItem value="restricted">Restricted to assigned users/groups</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

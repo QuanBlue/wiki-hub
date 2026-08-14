@@ -8,13 +8,29 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1 import attachments, audit_logs, auth, backup, confluence_import, meta, pages, revisions, search, site_settings, spaces, storage_admin, users
+from app.api.v1 import (
+    attachments,
+    audit_logs,
+    auth,
+    backup,
+    confluence_import,
+    groups,
+    meta,
+    pages,
+    revisions,
+    search,
+    site_settings,
+    spaces,
+    storage_admin,
+    users,
+)
 
 api_router = APIRouter()
 
 api_router.include_router(meta.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
+api_router.include_router(groups.router)
 api_router.include_router(spaces.router)
 api_router.include_router(pages.router)
 api_router.include_router(pages.standalone_router)

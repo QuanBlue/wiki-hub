@@ -31,7 +31,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.user import User
 
 
-def _enum_column(enum_cls: type[StrEnum], name: str) -> SAEnum:
+def _enum_column(enum_cls: type[StrEnum], name: str, *, length: int = 16) -> SAEnum:
     """A VARCHAR-backed enum that round-trips to the Python member.
 
     A plain ``String`` column would load back as ``str``, so ``role is
@@ -44,7 +44,8 @@ def _enum_column(enum_cls: type[StrEnum], name: str) -> SAEnum:
         enum_cls,
         name=name,
         native_enum=False,
-        length=16,
+        length=length,
+        create_constraint=True,
         validate_strings=True,
         values_callable=lambda e: [member.value for member in e],
     )
@@ -53,6 +54,11 @@ def _enum_column(enum_cls: type[StrEnum], name: str) -> SAEnum:
 class SpaceStatus(StrEnum):
     active = "active"
     archived = "archived"
+
+
+class SpaceVisibility(StrEnum):
+    open = "open"
+    restricted = "restricted"
 
 
 class SpaceRole(StrEnum):
@@ -85,6 +91,12 @@ class Space(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         _enum_column(SpaceStatus, "space_status"),
         nullable=False,
         default=SpaceStatus.active,
+    )
+    visibility: Mapped[SpaceVisibility] = mapped_column(
+        _enum_column(SpaceVisibility, "space_visibility", length=10),
+        nullable=False,
+        default=SpaceVisibility.open,
+        server_default=SpaceVisibility.open.value,
     )
 
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(

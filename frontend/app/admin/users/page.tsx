@@ -82,6 +82,7 @@ export default async function AdminUsersPage({
             <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
               <th className="px-4 py-3 font-medium">User</th>
               <th className="px-4 py-3 font-medium">E-mail</th>
+              <th className="px-4 py-3 font-medium">Groups</th>
               <th className="px-4 py-3 font-medium">Role</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 text-right font-medium">Actions</th>
@@ -91,7 +92,7 @@ export default async function AdminUsersPage({
             {page.items.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="text-muted-foreground px-4 py-8 text-center"
                 >
                   No users match these filters.
@@ -116,6 +117,19 @@ export default async function AdminUsersPage({
                   </td>
                   <td className="text-muted-foreground px-4 py-3">
                     {user.email}
+                  </td>
+                  <td className="px-4 py-3">
+                    {user.groups.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {user.groups.map((group) => (
+                          <Badge key={group} variant="neutral">
+                            {group}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {user.is_superuser ? "Administrator" : "Member"}

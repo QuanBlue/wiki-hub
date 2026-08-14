@@ -13,7 +13,7 @@ from pathlib import Path
 
 import anyio
 from bs4 import BeautifulSoup
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, PayloadTooLargeError
@@ -21,7 +21,12 @@ from app.models.attachment import PageAttachment
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.page import WikiPage
 from app.models.space import Space, SpaceMember, SpaceRole
-from app.modules.import_export.confluence import iter_attachments, iter_page_bodies, scan_archive
+from app.modules.import_export.confluence import (
+    ConfluencePage,
+    iter_attachments,
+    iter_page_bodies,
+    scan_archive,
+)
 from app.services.storage import ObjectStorage
 
 
@@ -69,7 +74,7 @@ def _link_imported_attachments(
         # Determine referenced page_id
         page_ref = macro.find("ri:page")
         ref_title = page_ref.get("ri:content-title") if page_ref else None
-        target_page_id = title_to_page_id.get(ref_title) if ref_title else source_page_id
+        target_page_id = (title_to_page_id.get(ref_title) if ref_title else None) or source_page_id
         
         url = urls.get((target_page_id, filename))
         if not url:
@@ -77,7 +82,14 @@ def _link_imported_attachments(
             url = urls.get((target_page_id, filename.replace("+", " ")))
         if not url:
             # Fallback: find any matching filename in urls
-            url = next((u for (pid, fn), u in urls.items() if fn == filename or fn == filename.replace("+", " ")), None)
+            url = next(
+                (
+                    u
+                    for (_pid, fn), u in urls.items()
+                    if fn == filename or fn == filename.replace("+", " ")
+                ),
+                None,
+            )
             
         if url:
             image = soup.new_tag("img", src=url, alt=filename)
@@ -98,7 +110,7 @@ def _link_imported_attachments(
         # Determine referenced page_id
         page_ref = macro.find("ri:page")
         ref_title = page_ref.get("ri:content-title") if page_ref else None
-        target_page_id = title_to_page_id.get(ref_title) if ref_title else source_page_id
+        target_page_id = (title_to_page_id.get(ref_title) if ref_title else None) or source_page_id
         
         url = urls.get((target_page_id, filename))
         if not url:
@@ -106,7 +118,14 @@ def _link_imported_attachments(
             url = urls.get((target_page_id, filename.replace("+", " ")))
         if not url:
             # Fallback: find any matching filename in urls
-            url = next((u for (pid, fn), u in urls.items() if fn == filename or fn == filename.replace("+", " ")), None)
+            url = next(
+                (
+                    u
+                    for (_pid, fn), u in urls.items()
+                    if fn == filename or fn == filename.replace("+", " ")
+                ),
+                None,
+            )
             
         if url:
             link = soup.new_tag("a", href=url)
@@ -137,13 +156,15 @@ def _link_imported_attachments(
 
 
 def _normalize_confluence_code_macros(content: str) -> str:
-    """Convert Confluence XML-style macros (code, callouts/info/warning/note/tip/panel) into HTML elements."""
+    """Convert Confluence XML-style macros into HTML elements."""
     if "<ac:structured-macro" not in content:
         return content
         
     def replace_macro(match: re.Match) -> str:
         macro_tag = match.group(0)
-        macro_name_match = re.search(r'ac:name=(?:"([^"]+)"|\'([^\']+)\')', macro_tag, re.IGNORECASE)
+        macro_name_match = re.search(
+            r'ac:name=(?:"([^"]+)"|\'([^\']+)\')', macro_tag, re.IGNORECASE
+        )
         if not macro_name_match:
             return macro_tag
             
@@ -160,11 +181,22 @@ def _normalize_confluence_code_macros(content: str) -> str:
             if not code_match:
                 return macro_tag
             code_text = code_match.group(1)
+            preserve_terminal_newline = bool(
+                re.search(r"\r?\n\s*\]\]\s*(?:>?|&gt;)\s*$", code_text)
+            )
             if re.match(r"^\s*<!\[CDATA\[", code_text, re.IGNORECASE):
                 code_text = re.sub(r"^\s*<!\[CDATA\[", "", code_text, count=1, flags=re.IGNORECASE)
-                code_text = re.sub(r"\]\]\s*(?:>?|&gt;)\s*$", "", code_text, count=1, flags=re.IGNORECASE)
+                code_text = re.sub(
+                    r"\]\]\s*(?:>?|&gt;)\s*$",
+                    "",
+                    code_text,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
             code_text = re.sub(r"^\s*[\r\n]+", "", code_text)
             code_text = re.sub(r"[\r\n]+\s*$", "", code_text)
+            if preserve_terminal_newline:
+                code_text += "\n"
             
             lang_match = re.search(
                 r"<ac:parameter\b[^>]*\bac:name=(?:\"language\"|'language')[^>]*>([\s\S]*?)</ac:parameter>",
@@ -199,7 +231,10 @@ def _normalize_confluence_code_macros(content: str) -> str:
             if callout_type == "expand":
                 callout_type = "panel"
                 
-            return f'<div data-type="callout" data-callout-type="{callout_type}" class="callout callout-{callout_type}">{title_html}{body_text}</div>'
+            return (
+                f'<div data-type="callout" data-callout-type="{callout_type}" '
+                f'class="callout callout-{callout_type}">{title_html}{body_text}</div>'
+            )
 
         return macro_tag
 
@@ -220,16 +255,15 @@ class ConfluenceImportService:
         self.session, self.storage = session, storage
         self._user_cache: dict[str, uuid.UUID] = {}
 
-    async def _resolve_or_create_user(self, username: str) -> uuid.UUID:
+    async def _resolve_or_create_user(self, username: str) -> uuid.UUID | None:
         normalized_username = username.strip()
         if _is_invalid_import_username(normalized_username):
-            normalized_username = INVALID_IMPORT_USERNAME
+            return None
         username_lower = normalized_username.lower()
         if username_lower in self._user_cache:
             return self._user_cache[username_lower]
 
         from app.models.user import User
-        from sqlalchemy import func
         result = await self.session.execute(
             select(User).where(func.lower(User.username) == username_lower)
         )
@@ -476,6 +510,10 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
     archive = await session.get(ImportArchive, job.archive_id)
     if archive is None:
         return
+    assert job is not None
+    assert archive is not None
+    current_job: ImportJob = job
+    current_archive: ImportArchive = archive
     job.status, job.phase = "running", "downloading"
     download_log = await log(
         session, job, "info", "downloading", "Downloading archive to worker scratch space: 0%."
@@ -488,21 +526,23 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
 
             async def record_download_progress(downloaded_bytes: int) -> None:
                 nonlocal last_logged_tenth
-                await session.refresh(job)
-                if job.cancel_requested:
+                await session.refresh(current_job)
+                if current_job.cancel_requested:
                     raise ImportCancelled("Import cancelled by administrator.")
-                percent = min(100, int(downloaded_bytes * 100 / max(1, archive.size_bytes)))
-                if percent == job.counters.get("download_percent", 0):
+                percent = min(100, int(downloaded_bytes * 100 / max(1, current_archive.size_bytes)))
+                if percent == current_job.counters.get("download_percent", 0):
                     return
-                job.counters = {
-                    **job.counters,
-                    "downloaded_bytes": min(downloaded_bytes, archive.size_bytes),
-                    "download_total_bytes": archive.size_bytes,
+                current_job.counters = {
+                    **current_job.counters,
+                    "downloaded_bytes": min(downloaded_bytes, current_archive.size_bytes),
+                    "download_total_bytes": current_archive.size_bytes,
                     "download_percent": percent,
                 }
                 if percent // 10 > last_logged_tenth:
                     last_logged_tenth = percent // 10
-                    download_log.message = f"Downloading archive to worker scratch space: {percent}%."
+                    download_log.message = (
+                        f"Downloading archive to worker scratch space: {percent}%."
+                    )
                 await session.commit()
 
             await storage.download_to_file(
@@ -595,6 +635,13 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 pages: dict[str, WikiPage] = {}
                 occupied: set[str] = set()
                 for source_page in source_space.pages:
+                    creator_is_invalid = bool(
+                        source_page.creator and _is_invalid_import_username(source_page.creator)
+                    )
+                    modifier_is_invalid = bool(
+                        source_page.last_modifier
+                        and _is_invalid_import_username(source_page.last_modifier)
+                    ) or (not source_page.last_modifier and creator_is_invalid)
                     creator_id = (
                         await service._resolve_or_create_user(source_page.creator)
                         if source_page.creator
@@ -611,6 +658,8 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                         slug=_slug(source_page.title, occupied),
                         created_by_id=creator_id,
                         updated_by_id=last_modifier_id,
+                        created_by_label=INVALID_IMPORT_USERNAME if creator_is_invalid else None,
+                        updated_by_label=INVALID_IMPORT_USERNAME if modifier_is_invalid else None,
                         content_format="html",
                     )
                     session.add(page)

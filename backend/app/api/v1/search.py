@@ -58,4 +58,4 @@ async def search(
     q: str = Query(default="", description="Search query string"),
     limit: int = Query(default=20, ge=1, le=50),
 ) -> SearchResults:
-    return await service.search(query=q, limit=limit)
+    return await service.search(query=q, user=user, limit=limit)
