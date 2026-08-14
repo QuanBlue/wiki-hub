@@ -14,6 +14,31 @@ type SearchItem =
   | { kind: "space"; data: SearchResultSpace }
   | { kind: "page"; data: SearchResultPage };
 
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query.trim() || !text) return <>{text}</>;
+
+  const trimmed = query.trim();
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.toLowerCase() === trimmed.toLowerCase() ? (
+          <mark
+            key={index}
+            className="bg-primary/25 text-primary font-bold rounded-xs px-0.5 py-0.2"
+          >
+            {part}
+          </mark>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
 export function SearchModal({
   open,
   onOpenChange,
@@ -217,10 +242,12 @@ export function SearchModal({
                             >
                               <div className="flex items-center gap-3 min-w-0">
                                 <Grid2X2 className="size-4 shrink-0 text-muted-foreground" />
-                                <span className="font-medium text-sm truncate">{space.name}</span>
+                                <span className="font-medium text-sm truncate">
+                                  <HighlightText text={space.name} query={query} />
+                                </span>
                                 {space.description ? (
                                   <span className="text-muted-foreground text-xs truncate max-w-xs">
-                                    — {space.description}
+                                    — <HighlightText text={space.description} query={query} />
                                   </span>
                                 ) : null}
                               </div>
@@ -263,10 +290,12 @@ export function SearchModal({
                               <div className="flex items-start gap-3 min-w-0 flex-1 pr-3">
                                 <FileText className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
                                 <div className="min-w-0 flex-1">
-                                  <div className="font-medium text-sm truncate">{page.title}</div>
+                                  <div className="font-medium text-sm truncate">
+                                    <HighlightText text={page.title} query={query} />
+                                  </div>
                                   {page.snippet ? (
                                     <div className="text-muted-foreground mt-0.5 text-xs line-clamp-2 leading-relaxed">
-                                      {page.snippet}
+                                      <HighlightText text={page.snippet} query={query} />
                                     </div>
                                   ) : null}
                                 </div>
