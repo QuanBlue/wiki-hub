@@ -23,7 +23,7 @@ export default async function SpacesPage() {
     <AppShell fullWidth siteName={SITE_NAME} user={user}>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Knowledge library"
+          className="pb-2"
           title="Spaces"
           description="Spaces are the shared homes for your teams, projects, and documentation."
           actions={<CreateSpaceForm />}

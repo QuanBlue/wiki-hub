@@ -29,6 +29,15 @@ class ImportCancelled(Exception):
     """Raised when an import job is cancelled by an administrator."""
 
 
+INVALID_IMPORT_USERNAME = "invalid_user"
+_INVALID_IMPORT_USERNAME = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
+
+
+def _is_invalid_import_username(username: str) -> bool:
+    """Return whether Confluence supplied an internal id instead of a name."""
+    return bool(_INVALID_IMPORT_USERNAME.fullmatch(username.strip()))
+
+
 def _slug(value: str, occupied: set[str]) -> str:
     base = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:240] or "page"
     candidate, suffix = base, 2
@@ -212,7 +221,10 @@ class ConfluenceImportService:
         self._user_cache: dict[str, uuid.UUID] = {}
 
     async def _resolve_or_create_user(self, username: str) -> uuid.UUID:
-        username_lower = username.lower()
+        normalized_username = username.strip()
+        if _is_invalid_import_username(normalized_username):
+            normalized_username = INVALID_IMPORT_USERNAME
+        username_lower = normalized_username.lower()
         if username_lower in self._user_cache:
             return self._user_cache[username_lower]
 
@@ -227,9 +239,9 @@ class ConfluenceImportService:
             return user.id
 
         new_user = User(
-            username=username,
-            email=f"{username}@imported.confluence",
-            full_name=username,
+            username=normalized_username,
+            email=f"{normalized_username}@imported.confluence",
+            full_name=normalized_username,
             password_hash=None,
             is_active=True,
             is_superuser=False,
