@@ -53,6 +53,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api-client";
@@ -1776,13 +1779,28 @@ export function SpaceWorkspace({
                           </span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={() => setViewFullWidth((current) => !current)}>
-                          <Maximize2 />
-                          Full width
-                          {viewFullWidth ? (
-                            <Check className="text-primary ml-auto size-4" />
-                          ) : null}
-                        </DropdownMenuItem>
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <Maximize2 />
+                            View
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="w-48">
+                            <DropdownMenuItem onSelect={() => setViewFullWidth(true)}>
+                              <Maximize2 />
+                              Full width
+                              {viewFullWidth ? (
+                                <Check className="text-primary ml-auto size-4" />
+                              ) : null}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setViewFullWidth(false)}>
+                              <Minimize2 />
+                              Normal width
+                              {!viewFullWidth ? (
+                                <Check className="text-primary ml-auto size-4" />
+                              ) : null}
+                            </DropdownMenuItem>
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={exportPageHtml}>
                           <Download />
@@ -1879,13 +1897,28 @@ export function SpaceWorkspace({
                         </>
                       ) : null}
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => setViewFullWidth((current) => !current)}>
-                        <Maximize2 />
-                        Full width
-                        {viewFullWidth ? (
-                          <Check className="text-primary ml-auto size-4" />
-                        ) : null}
-                      </DropdownMenuItem>
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <Maximize2 />
+                          View
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="w-48">
+                          <DropdownMenuItem onSelect={() => setViewFullWidth(true)}>
+                            <Maximize2 />
+                            Full width
+                            {viewFullWidth ? (
+                              <Check className="text-primary ml-auto size-4" />
+                            ) : null}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setViewFullWidth(false)}>
+                            <Minimize2 />
+                            Normal width
+                            {!viewFullWidth ? (
+                              <Check className="text-primary ml-auto size-4" />
+                            ) : null}
+                          </DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </>
