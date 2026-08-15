@@ -63,6 +63,21 @@ export interface PageRevisionDiffChunk {
   text: string;
 }
 
+export interface PageRevisionDiffSegment {
+  operation: "add" | "delete" | "equal";
+  text: string;
+}
+
+export interface PageRevisionDiffLine {
+  operation: "add" | "delete" | "equal" | "replace";
+  old_line_number: number | null;
+  new_line_number: number | null;
+  old_text: string | null;
+  new_text: string | null;
+  old_segments: PageRevisionDiffSegment[];
+  new_segments: PageRevisionDiffSegment[];
+}
+
 export interface PageRevisionDiff {
   from_version: number;
   to_version: number;
@@ -72,6 +87,18 @@ export interface PageRevisionDiff {
   chunks: PageRevisionDiffChunk[];
   added_count: number;
   deleted_count: number;
+  lines: PageRevisionDiffLine[];
+}
+
+export interface PageDraft {
+  id: string;
+  page_id: string;
+  content: string;
+  content_format: "html" | "markdown";
+  edit_mode: "normal" | "markdown" | "html";
+  base_updated_at: string;
+  updated_at: string;
+  is_conflict: boolean;
 }
 
 export interface InstanceInfo {

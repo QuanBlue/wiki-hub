@@ -24,6 +24,7 @@ from app.schemas.page import (
     PageRecentItem,
     PageUpdate,
 )
+from app.schemas.draft import PageDraftRead, PageDraftUpsert
 from app.schemas.permission import GroupRead, PageRestrictionRead
 from app.schemas.user import UserRead
 
@@ -184,6 +185,46 @@ async def update_page(
     page = await page_service.get_by_slug(space, slug)
     updated = await page_service.update(space, page, payload, user)
     return await page_service.to_read_for_user(updated, user)
+
+
+@router.get("/{slug}/draft", response_model=PageDraftRead | None, summary="Get the current user's page draft")
+async def get_page_draft(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> PageDraftRead | None:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    return await page_service.get_draft(page, user)
+
+
+@router.put("/{slug}/draft", response_model=PageDraftRead, summary="Save the current user's page draft")
+async def save_page_draft(
+    key: str,
+    slug: str,
+    payload: PageDraftUpsert,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> PageDraftRead:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    return await page_service.save_draft(page, user, payload)
+
+
+@router.delete("/{slug}/draft", status_code=status.HTTP_204_NO_CONTENT, summary="Discard the current user's page draft")
+async def delete_page_draft(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    await page_service.discard_draft(page, user)
 
 
 @router.delete(

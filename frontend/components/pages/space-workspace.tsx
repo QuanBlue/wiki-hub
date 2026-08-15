@@ -61,10 +61,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api-client";
 import { apiBaseUrl } from "@/lib/env";
+import {
+  clearLocalPageDraft,
+  discardPageDraft,
+  getLocalPageDraft,
+  getPageDraft,
+  saveLocalPageDraft,
+  savePageDraft,
+} from "@/lib/drafts";
 import { findHomePage } from "@/lib/home-page";
 import { cn } from "@/lib/utils";
 import type {
   PageContentFormat,
+  PageDraft,
   Group,
   Space,
   SpaceMember,
@@ -697,8 +706,13 @@ export function SpaceWorkspace({
   >("idle");
   const autoSaveInFlight = useRef(false);
   const autoSaveResetTimer = useRef<number | null>(null);
+  const draftSaveTimer = useRef<number | null>(null);
+  const draftSaveInFlight = useRef<Promise<boolean> | null>(null);
   const allowUnload = useRef(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [recoveryDraft, setRecoveryDraft] = useState<PageDraft | null>(null);
+  const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
+  const [discardDraftPending, setDiscardDraftPending] = useState(false);
   const [deletePageOpen, setDeletePageOpen] = useState(false);
   const [deletePagePending, setDeletePagePending] = useState(false);
   const [movePageOpen, setMovePageOpen] = useState(false);
@@ -709,6 +723,7 @@ export function SpaceWorkspace({
   const [overviewDraft, setOverviewDraft] = useState(space.description);
   const [overviewSavePending, setOverviewSavePending] = useState(false);
   const pageEditBaseline = useRef({ html: "", markdown: "" });
+  const pageEditDirtyRef = useRef(false);
   const overviewEditBaseline = useRef(space.description);
   const latestPageDraft = useRef({
     currentPage,
@@ -722,6 +737,39 @@ export function SpaceWorkspace({
     markdownDraft,
     editMode,
   };
+
+  useEffect(() => {
+    if (!currentPage || !currentPage.can_edit) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear page-scoped recovery state when navigation changes page
+      setRecoveryDraft(null);
+      return;
+    }
+
+    let active = true;
+    void getPageDraft(space.key, currentPage.slug)
+      .then((draft) => {
+        if (!active) return;
+        const localDraft = getLocalPageDraft(space.key, currentPage.slug);
+        if (localDraft && (!draft || localDraft.saved_at > draft.updated_at)) {
+          setRecoveryDraft({
+            ...localDraft,
+            id: `local-${currentPage.id}`,
+            page_id: currentPage.id,
+            updated_at: localDraft.saved_at,
+            is_conflict: localDraft.base_updated_at !== currentPage.updated_at,
+          });
+          return;
+        }
+        setRecoveryDraft(draft);
+      })
+      .catch(() => {
+        if (active) setRecoveryDraft(null);
+      })
+
+    return () => {
+      active = false;
+    };
+  }, [currentPage?.can_edit, currentPage?.slug, space.key]);
 
   const [showHeader, setShowHeader] = useState(true);
   const [isSticky, setIsSticky] = useState(false);
@@ -825,6 +873,7 @@ export function SpaceWorkspace({
     (editMode === "markdown"
       ? markdownDraft !== pageEditBaseline.current.markdown
       : draftContent !== pageEditBaseline.current.html);
+  pageEditDirtyRef.current = pageEditDirty;
   const overviewEditDirty =
     overviewEditing && overviewDraft !== overviewEditBaseline.current;
   const hasUnsavedChanges = pageEditDirty || overviewEditDirty;
@@ -859,6 +908,9 @@ export function SpaceWorkspace({
     const message = "You have unsaved changes. Leave without saving?";
     const confirmUnload = (event: BeforeUnloadEvent) => {
       if (allowUnload.current) return;
+      // The debounce timer may not have fired before a refresh or tab close.
+      // Keep the newest editor state in flight while the document unloads.
+      void persistDraft({ keepalive: true });
       event.preventDefault();
       event.returnValue = message;
     };
@@ -892,18 +944,28 @@ export function SpaceWorkspace({
   function leaveWithoutSaving() {
     if (cancelEditPending) {
       setCancelEditPending(false);
-      cancelEditing();
+      if (draftSaveTimer.current !== null) {
+        window.clearTimeout(draftSaveTimer.current);
+        draftSaveTimer.current = null;
+      }
+      void discardCurrentDraft().finally(() => cancelEditing());
       return;
     }
     if (reloadPending) {
       setReloadPending(false);
-      allowUnload.current = true;
-      window.location.reload();
+      void persistDraft().finally(() => {
+        allowUnload.current = true;
+        window.location.reload();
+      });
       return;
     }
     if (!leaveHref) return;
     const destination = new URL(leaveHref, window.location.href);
     setLeaveHref(null);
+    void persistDraft().finally(() => navigateTo(destination));
+  }
+
+  function navigateTo(destination: URL) {
     if (destination.origin === window.location.origin) {
       router.push(`${destination.pathname}${destination.search}${destination.hash}`);
     } else {
@@ -947,6 +1009,136 @@ export function SpaceWorkspace({
       return;
     }
     setCancelEditPending(true);
+  }
+
+  async function persistDraft({ keepalive = false }: { keepalive?: boolean } = {}): Promise<boolean> {
+    const previousRequest = draftSaveInFlight.current;
+    if (previousRequest) {
+      await previousRequest;
+    }
+
+    const {
+      currentPage: page,
+      draftContent: htmlDraft,
+      markdownDraft: markdownSource,
+      editMode: mode,
+    } = latestPageDraft.current;
+    if (!page || !pageEditDirtyRef.current) return true;
+
+    const request = savePageDraft(space.key, page.slug, {
+        content: mode === "markdown" ? markdownSource : htmlDraft,
+        content_format: formatForMode(mode),
+        edit_mode: mode,
+        base_updated_at: page.updated_at,
+      }, { keepalive })
+      .then(() => true)
+      .catch(() => false);
+    draftSaveInFlight.current = request;
+    try {
+      return await request;
+    } finally {
+      if (draftSaveInFlight.current === request) {
+        draftSaveInFlight.current = null;
+      }
+    }
+  }
+
+  async function discardCurrentDraft(): Promise<void> {
+    const page = latestPageDraft.current.currentPage;
+    if (!page) return;
+    if (draftSaveInFlight.current) {
+      await draftSaveInFlight.current;
+    }
+    try {
+      await discardPageDraft(space.key, page.slug);
+      clearLocalPageDraft(space.key, page.slug);
+    } catch {
+      toast.error("Could not discard the draft.");
+    }
+  }
+
+  function openRecoveryDraft() {
+    if (!currentPage || !recoveryDraft) return;
+    // Recovered drafts always reopen in the rich-text editor. The source
+    // editor remains an explicit user choice for a fresh edit session.
+    const mode = "normal" as const;
+    const markdown =
+      recoveryDraft.content_format === "markdown"
+        ? recoveryDraft.content
+        : htmlToMarkdown(recoveryDraft.content);
+    const html =
+      recoveryDraft.content_format === "markdown"
+        ? markdownToHtml(recoveryDraft.content)
+        : recoveryDraft.content;
+    const serverMarkdown =
+      currentPage.content_format === "markdown"
+        ? prettyMarkdownEmbeddedHtml(currentPage.content)
+        : htmlToMarkdown(currentPage.content);
+    const serverHtml =
+      currentPage.content_format === "markdown"
+        ? markdownToHtml(currentPage.content)
+        : currentPage.content;
+
+    setDraftContent(html);
+    setMarkdownDraft(markdown);
+    latestPageDraft.current.draftContent = html;
+    latestPageDraft.current.markdownDraft = markdown;
+    latestPageDraft.current.editMode = mode;
+    pageEditBaseline.current = {
+      html: serverHtml,
+      markdown: serverMarkdown,
+    };
+    pageEditDirtyRef.current = html !== serverHtml || markdown !== serverMarkdown;
+    setEditMode(mode);
+    setPreviewing(false);
+    setEditing(true);
+    setRecoveryDraft(null);
+  }
+
+  function updateDraftContent(nextContent: string) {
+    latestPageDraft.current.draftContent = nextContent;
+    pageEditDirtyRef.current = nextContent !== pageEditBaseline.current.html;
+    if (currentPage) {
+      saveLocalPageDraft(space.key, currentPage.slug, {
+        content: nextContent,
+        content_format: formatForMode(editMode),
+        edit_mode: editMode,
+        base_updated_at: currentPage.updated_at,
+      });
+    }
+    setDraftContent(nextContent);
+  }
+
+  function updateMarkdownDraft(nextContent: string) {
+    latestPageDraft.current.markdownDraft = nextContent;
+    pageEditDirtyRef.current = nextContent !== pageEditBaseline.current.markdown;
+    if (currentPage) {
+      saveLocalPageDraft(space.key, currentPage.slug, {
+        content: nextContent,
+        content_format: formatForMode(editMode),
+        edit_mode: editMode,
+        base_updated_at: currentPage.updated_at,
+      });
+    }
+    setMarkdownDraft(nextContent);
+  }
+
+  async function discardRecoveryDraft() {
+    if (!currentPage) return;
+    setDiscardDraftPending(true);
+    try {
+      await discardPageDraft(space.key, currentPage.slug);
+      clearLocalPageDraft(space.key, currentPage.slug);
+      setRecoveryDraft(null);
+      setDiscardDraftOpen(false);
+      toast.success("Unreleased draft discarded.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not discard the draft.",
+      );
+    } finally {
+      setDiscardDraftPending(false);
+    }
   }
 
   function markAutoSaveStatus(status: "idle" | "saving" | "saved") {
@@ -1016,9 +1208,29 @@ export function SpaceWorkspace({
       if (autoSaveResetTimer.current !== null) {
         window.clearTimeout(autoSaveResetTimer.current);
       }
+      if (draftSaveTimer.current !== null) {
+        window.clearTimeout(draftSaveTimer.current);
+      }
     },
     [],
   );
+
+  useEffect(() => {
+    if (!editing || !pageEditDirty || !currentPage) return;
+    if (draftSaveTimer.current !== null) {
+      window.clearTimeout(draftSaveTimer.current);
+    }
+    draftSaveTimer.current = window.setTimeout(() => {
+      void persistDraft();
+      draftSaveTimer.current = null;
+    }, 700);
+    return () => {
+      if (draftSaveTimer.current !== null) {
+        window.clearTimeout(draftSaveTimer.current);
+        draftSaveTimer.current = null;
+      }
+    };
+  }, [currentPage, draftContent, editMode, editing, markdownDraft, pageEditDirty]);
 
   const compactBreadcrumbPages = useMemo<(WikiPage | null)[]>(() => {
     // Keep the immediate context around the current page while avoiding an
@@ -1217,8 +1429,13 @@ export function SpaceWorkspace({
       sourceFormat === "markdown"
         ? markdownToHtml(currentPage.content)
         : currentPage.content;
-    setDraftContent(mode === "html" ? prettyHtml(html) : html);
+    const nextHtml = mode === "html" ? prettyHtml(html) : html;
+    setDraftContent(nextHtml);
     setMarkdownDraft(markdown);
+    latestPageDraft.current.draftContent = nextHtml;
+    latestPageDraft.current.markdownDraft = markdown;
+    latestPageDraft.current.editMode = mode;
+    pageEditDirtyRef.current = false;
     pageEditBaseline.current = {
       html: mode === "html" ? prettyHtml(html) : html,
       markdown,
@@ -1232,6 +1449,10 @@ export function SpaceWorkspace({
 
   function beginEditing(mode: EditMode) {
     if (!currentPage) return;
+    if (recoveryDraft) {
+      openRecoveryDraft();
+      return;
+    }
     if (currentPage.content_format !== formatForMode(mode)) {
       setConversionMode(mode);
       return;
@@ -1244,6 +1465,9 @@ export function SpaceWorkspace({
     setConversionMode(null);
     setDraftContent("");
     setMarkdownDraft("");
+    latestPageDraft.current.draftContent = "";
+    latestPageDraft.current.markdownDraft = "";
+    pageEditDirtyRef.current = false;
     setPreviewing(false);
   }
 
@@ -1310,6 +1534,9 @@ export function SpaceWorkspace({
         html: htmlDraft,
         markdown: markdownSource,
       };
+      pageEditDirtyRef.current = false;
+      clearLocalPageDraft(space.key, page.slug);
+      setRecoveryDraft(null);
       if (announce) toast.success(`Saved "${updated.title}".`);
       if (closeEditor) {
         setEditing(false);
@@ -1964,6 +2191,35 @@ export function SpaceWorkspace({
             </div>
           </div>
 
+          {recoveryDraft && !editing && !overviewEditing ? (
+            <div className="border-warning/30 bg-warning-bg text-warning mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-sm">Draft not released</p>
+                <p className="mt-0.5 text-xs">
+                  This draft was last saved on {formatDate(recoveryDraft.updated_at)} and has not been saved to the page.
+                  {recoveryDraft.is_conflict
+                    ? " The page has changed since this draft was created."
+                    : ""}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button type="button" size="sm" variant="secondary" onClick={openRecoveryDraft}>
+                  <Pencil />
+                  Open editor
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setDiscardDraftOpen(true)}
+                  disabled={discardDraftPending}
+                >
+                  Discard draft
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           <article
             className={cn(
               "mt-4",
@@ -2016,7 +2272,7 @@ export function SpaceWorkspace({
                     {editMode === "normal" ? (
                       <RichTextEditor
                         content={draftContent}
-                        onChange={setDraftContent}
+                        onChange={updateDraftContent}
                       />
                     ) : (
                       <SourceCodeEditor
@@ -2026,9 +2282,9 @@ export function SpaceWorkspace({
                         }
                         onChange={(value) => {
                           if (editMode === "markdown") {
-                            setMarkdownDraft(value);
+                            updateMarkdownDraft(value);
                           } else {
-                            setDraftContent(value);
+                            updateDraftContent(value);
                           }
                         }}
                       />
@@ -2266,6 +2522,19 @@ export function SpaceWorkspace({
               setConversionMode(null);
               openEditor(mode);
             }}
+          />
+
+          <ConfirmDialog
+            open={discardDraftOpen}
+            onOpenChange={(open) => {
+              if (!open) setDiscardDraftOpen(false);
+            }}
+            title="Discard unreleased draft?"
+            description="This removes the saved draft and restores the page to its current server content."
+            confirmLabel="Discard draft"
+            destructive
+            pending={discardDraftPending}
+            onConfirm={() => void discardRecoveryDraft()}
           />
 
           {currentPage ? (

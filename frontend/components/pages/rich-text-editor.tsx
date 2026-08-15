@@ -339,7 +339,7 @@ function escapeHtml(value: string): string {
 }
 
 /** Convert Confluence's XML-style code & callout macros into semantic HTML for Tiptap. */
-function normalizeConfluenceCodeMacros(content: string): string {
+export function normalizeConfluenceCodeMacros(content: string): string {
   let res = content.replace(
     /<ac:structured-macro\b[^>]*>([\s\S]*?)<\/ac:structured-macro>/gi,
     (macro, inner: string) => {
@@ -404,7 +404,7 @@ function normalizeConfluenceCodeMacros(content: string): string {
   return res;
 }
 
-function linkifyPlainTextUrls(content: string): string {
+export function linkifyPlainTextUrls(content: string): string {
   if (typeof document === "undefined" || !content) return content;
   const parsed = document.implementation.createHTMLDocument("");
   parsed.body.innerHTML = content;
@@ -458,7 +458,7 @@ const editorClassName =
 // Imported pages are read like documentation, not like an editor canvas.
 // Keep this separate from editorClassName so editing remains comfortable while
 // imported Confluence pages retain their compact, scan-friendly rhythm.
-const readerClassName =
+export const readerClassName =
   "text-sm leading-[1.45] " +
   "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 " +
   "[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-tight " +
@@ -1403,12 +1403,23 @@ export function RichTextEditor({
     () => normalizeConfluenceCodeMacros(content),
     [content],
   );
+  const lastEmittedHtml = useRef(normalizedContent);
+  const emitEditorContent = useCallback(
+    (updatedEditor: Editor) => {
+      const nextHtml = updatedEditor.getHTML();
+      if (nextHtml === lastEmittedHtml.current) return;
+      lastEmittedHtml.current = nextHtml;
+      onChange(nextHtml);
+    },
+    [onChange],
+  );
   const editor = useEditor({
     immediatelyRender: false,
     extensions: editorExtensions,
     content: normalizedContent,
     editorProps: { attributes: { class: editorClassName } },
-    onUpdate: ({ editor: updatedEditor }) => onChange(updatedEditor.getHTML()),
+    onUpdate: ({ editor: updatedEditor }) => emitEditorContent(updatedEditor),
+    onTransaction: ({ editor: updatedEditor }) => emitEditorContent(updatedEditor),
   });
 
   return (

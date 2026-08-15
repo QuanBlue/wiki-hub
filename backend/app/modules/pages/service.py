@@ -7,10 +7,12 @@ import re
 import uuid
 from collections.abc import Sequence
 
+from bs4 import BeautifulSoup
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
+from app.models.draft import PageDraft
 from app.models.page import WikiPage
 from app.models.permission import Permission
 from app.models.revision import PageRevision
@@ -18,6 +20,7 @@ from app.models.space import Space, SpaceStatus
 from app.models.user import User
 from app.modules.spaces.service import SpaceService
 from app.repositories.page import PageRepository
+from app.repositories.draft import PageDraftRepository
 from app.repositories.revision import PageRevisionRepository
 from app.schemas.page import (
     PageCreate,
@@ -27,7 +30,14 @@ from app.schemas.page import (
     PageRecentItem,
     PageUpdate,
 )
-from app.schemas.revision import PageRevisionDiffChunk, PageRevisionDiffRead, PageRevisionRead
+from app.schemas.draft import PageDraftRead, PageDraftUpsert
+from app.schemas.revision import (
+    PageRevisionDiffChunk,
+    PageRevisionDiffLine,
+    PageRevisionDiffRead,
+    PageRevisionDiffSegment,
+    PageRevisionRead,
+)
 
 logger = get_logger(__name__)
 
@@ -41,6 +51,7 @@ class PageService:
         self.pages = PageRepository(session)
         self.spaces = SpaceService(session)
         self.revisions = PageRevisionRepository(session)
+        self.drafts = PageDraftRepository(session)
 
     async def require_editor(self, space: Space, user: User) -> None:
         await self.spaces.require_add(space, user)
@@ -170,8 +181,56 @@ class PageService:
         await self.session.flush()
         await self.session.refresh(page)
         await self.snapshot_revision(page, user, "Updated content")
+        draft = await self.drafts.get(page.id, user.id)
+        if draft is not None:
+            await self.drafts.delete(draft)
         logger.info("page_updated", space_key=space.key, slug=page.slug, by=user.username)
         return page
+
+    async def get_draft(self, page: WikiPage, user: User) -> PageDraftRead | None:
+        await self.require_page_editor(page, user)
+        draft = await self.drafts.get(page.id, user.id)
+        if draft is None:
+            return None
+        return PageDraftRead(
+            id=draft.id,
+            page_id=draft.page_id,
+            content=draft.content,
+            content_format=draft.content_format,
+            edit_mode=draft.edit_mode,
+            base_updated_at=draft.base_updated_at,
+            updated_at=draft.updated_at,
+            is_conflict=draft.base_updated_at != page.updated_at,
+        )
+
+    async def save_draft(
+        self, page: WikiPage, user: User, payload: PageDraftUpsert
+    ) -> PageDraftRead:
+        await self.require_page_editor(page, user)
+        draft = await self.drafts.get(page.id, user.id)
+        if draft is None:
+            draft = self.drafts.add(PageDraft(page_id=page.id, user_id=user.id))
+        draft.content = payload.content
+        draft.content_format = payload.content_format
+        draft.edit_mode = payload.edit_mode
+        draft.base_updated_at = payload.base_updated_at
+        await self.session.flush()
+        return PageDraftRead(
+            id=draft.id,
+            page_id=draft.page_id,
+            content=draft.content,
+            content_format=draft.content_format,
+            edit_mode=draft.edit_mode,
+            base_updated_at=draft.base_updated_at,
+            updated_at=draft.updated_at,
+            is_conflict=draft.base_updated_at != page.updated_at,
+        )
+
+    async def discard_draft(self, page: WikiPage, user: User) -> None:
+        await self.require_page_editor(page, user)
+        draft = await self.drafts.get(page.id, user.id)
+        if draft is not None:
+            await self.drafts.delete(draft)
 
     async def list_revisions(self, page: WikiPage) -> list[PageRevisionRead]:
         revisions = await self.revisions.list_for_page(page.id)
@@ -256,19 +315,92 @@ class PageService:
         if rev_to is None:
             rev_to = latest_rev
 
-        from_lines = rev_from.content.splitlines()
-        to_lines = rev_to.content.splitlines()
+        def diff_lines(content: str, content_format: str) -> list[str]:
+            if content_format != "html":
+                return content.splitlines()
+
+            soup = BeautifulSoup(content, "html.parser")
+            block_tags = (
+                "p",
+                "h1",
+                "h2",
+                "h3",
+                "h4",
+                "h5",
+                "h6",
+                "li",
+                "blockquote",
+                "pre",
+                "tr",
+                "div",
+            )
+            lines: list[str] = []
+            for block in soup.find_all(block_tags):
+                if block.find_parent(block_tags):
+                    continue
+                text = block.get_text(" ", strip=True)
+                if text:
+                    lines.append(text)
+
+            if lines:
+                return lines
+            return [line.strip() for line in soup.get_text("\n").splitlines() if line.strip()]
+
+        from_lines = diff_lines(rev_from.content, rev_from.content_format)
+        to_lines = diff_lines(rev_to.content, rev_to.content_format)
 
         matcher = difflib.SequenceMatcher(None, from_lines, to_lines)
         chunks: list[PageRevisionDiffChunk] = []
+        lines: list[PageRevisionDiffLine] = []
         added_count = 0
         deleted_count = 0
+
+        def char_segments(old_text: str, new_text: str) -> tuple[
+            list[PageRevisionDiffSegment], list[PageRevisionDiffSegment]
+        ]:
+            old_segments: list[PageRevisionDiffSegment] = []
+            new_segments: list[PageRevisionDiffSegment] = []
+            char_matcher = difflib.SequenceMatcher(None, old_text, new_text)
+            for char_tag, old_start, old_end, new_start, new_end in char_matcher.get_opcodes():
+                if char_tag == "equal":
+                    old_segments.append(
+                        PageRevisionDiffSegment(operation="equal", text=old_text[old_start:old_end])
+                    )
+                    new_segments.append(
+                        PageRevisionDiffSegment(operation="equal", text=new_text[new_start:new_end])
+                    )
+                elif char_tag in {"delete", "replace"}:
+                    if old_start != old_end:
+                        old_segments.append(
+                            PageRevisionDiffSegment(operation="delete", text=old_text[old_start:old_end])
+                        )
+                    if new_start != new_end:
+                        new_segments.append(
+                            PageRevisionDiffSegment(operation="add", text=new_text[new_start:new_end])
+                        )
+                elif char_tag == "insert" and new_start != new_end:
+                    new_segments.append(
+                        PageRevisionDiffSegment(operation="add", text=new_text[new_start:new_end])
+                    )
+            return old_segments, new_segments
 
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag == "equal":
                 text = "\n".join(from_lines[i1:i2])
                 if text:
                     chunks.append(PageRevisionDiffChunk(operation="equal", text=text))
+                for offset, line_text in enumerate(from_lines[i1:i2]):
+                    lines.append(
+                        PageRevisionDiffLine(
+                            operation="equal",
+                            old_line_number=i1 + offset + 1,
+                            new_line_number=j1 + offset + 1,
+                            old_text=line_text,
+                            new_text=line_text,
+                            old_segments=[PageRevisionDiffSegment(operation="equal", text=line_text)],
+                            new_segments=[PageRevisionDiffSegment(operation="equal", text=line_text)],
+                        )
+                    )
             elif tag == "replace":
                 deleted_text = "\n".join(from_lines[i1:i2])
                 added_text = "\n".join(to_lines[j1:j2])
@@ -278,16 +410,70 @@ class PageService:
                 if added_text:
                     added_count += j2 - j1
                     chunks.append(PageRevisionDiffChunk(operation="add", text=added_text))
+                pair_count = min(i2 - i1, j2 - j1)
+                for offset in range(pair_count):
+                    old_text = from_lines[i1 + offset]
+                    new_text = to_lines[j1 + offset]
+                    old_segments, new_segments = char_segments(old_text, new_text)
+                    lines.append(
+                        PageRevisionDiffLine(
+                            operation="replace",
+                            old_line_number=i1 + offset + 1,
+                            new_line_number=j1 + offset + 1,
+                            old_text=old_text,
+                            new_text=new_text,
+                            old_segments=old_segments,
+                            new_segments=new_segments,
+                        )
+                    )
+                for offset in range(pair_count, i2 - i1):
+                    old_text = from_lines[i1 + offset]
+                    lines.append(
+                        PageRevisionDiffLine(
+                            operation="delete",
+                            old_line_number=i1 + offset + 1,
+                            old_text=old_text,
+                            old_segments=[PageRevisionDiffSegment(operation="delete", text=old_text)],
+                        )
+                    )
+                for offset in range(pair_count, j2 - j1):
+                    new_text = to_lines[j1 + offset]
+                    lines.append(
+                        PageRevisionDiffLine(
+                            operation="add",
+                            new_line_number=j1 + offset + 1,
+                            new_text=new_text,
+                            new_segments=[PageRevisionDiffSegment(operation="add", text=new_text)],
+                        )
+                    )
             elif tag == "delete":
                 deleted_text = "\n".join(from_lines[i1:i2])
                 if deleted_text:
                     deleted_count += i2 - i1
                     chunks.append(PageRevisionDiffChunk(operation="delete", text=deleted_text))
+                for offset, line_text in enumerate(from_lines[i1:i2]):
+                    lines.append(
+                        PageRevisionDiffLine(
+                            operation="delete",
+                            old_line_number=i1 + offset + 1,
+                            old_text=line_text,
+                            old_segments=[PageRevisionDiffSegment(operation="delete", text=line_text)],
+                        )
+                    )
             elif tag == "insert":
                 added_text = "\n".join(to_lines[j1:j2])
                 if added_text:
                     added_count += j2 - j1
                     chunks.append(PageRevisionDiffChunk(operation="add", text=added_text))
+                for offset, line_text in enumerate(to_lines[j1:j2]):
+                    lines.append(
+                        PageRevisionDiffLine(
+                            operation="add",
+                            new_line_number=j1 + offset + 1,
+                            new_text=line_text,
+                            new_segments=[PageRevisionDiffSegment(operation="add", text=line_text)],
+                        )
+                    )
 
         return PageRevisionDiffRead(
             from_version=rev_from.version,
@@ -298,6 +484,7 @@ class PageService:
             chunks=chunks,
             added_count=added_count,
             deleted_count=deleted_count,
+            lines=lines,
         )
 
     async def restore_revision(

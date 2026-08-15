@@ -9,6 +9,7 @@ from __future__ import annotations
 from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction, AuditLog
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.draft import PageDraft
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.page import PageLike, WikiPage
 from app.models.permission import (
@@ -50,6 +51,7 @@ __all__ = [
     "ImportJob",
     "ImportLog",
     "PageAttachment",
+    "PageDraft",
     "PageGroupRestriction",
     "PageLike",
     "PageRestrictionPermission",
