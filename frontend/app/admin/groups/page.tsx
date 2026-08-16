@@ -14,8 +14,12 @@ export default async function AdminGroupsPage() {
   ]);
 
   return (
-    <div className="space-y-5">
-      <div><h2 className="text-lg font-semibold">Groups</h2><p className="text-muted-foreground mt-1 text-sm">Organize users and reuse access across documentation spaces.</p></div>
+    <div className="space-y-6">
+      <header className="border-border border-b pb-5">
+        <p className="text-primary text-xs font-semibold tracking-[0.08em] uppercase">Administration</p>
+        <h2 className="mt-1 text-xl font-semibold tracking-tight">Groups</h2>
+        <p className="text-muted-foreground mt-1 max-w-2xl text-sm">Organize people into reusable teams for workspace and space access.</p>
+      </header>
       <GroupManager initialGroups={groups} users={users.items} />
     </div>
   );

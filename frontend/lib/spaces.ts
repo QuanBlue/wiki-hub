@@ -23,9 +23,13 @@ async function get<T>(path: string): Promise<T> {
   });
 }
 
-export function listSpaces(includeArchived = false): Promise<Space[]> {
+export function listSpaces(
+  includeArchived = false,
+  limit = 100,
+  offset = 0,
+): Promise<Space[]> {
   return get<Space[]>(
-    `/api/v1/spaces${includeArchived ? "?include_archived=true" : ""}`,
+    `/api/v1/spaces?include_archived=${includeArchived}&limit=${limit}&offset=${offset}`,
   );
 }
 

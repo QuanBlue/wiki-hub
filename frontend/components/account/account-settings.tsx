@@ -35,8 +35,8 @@ export function AccountSettings({ user }: { user: Me }) {
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: AccountTab) {
     const currentIndex = tabs.findIndex((tab) => tab.id === currentTab);
-    const nextIndex = event.key === "ArrowRight" ? (currentIndex + 1) % tabs.length
-      : event.key === "ArrowLeft" ? (currentIndex - 1 + tabs.length) % tabs.length
+    const nextIndex = event.key === "ArrowDown" ? (currentIndex + 1) % tabs.length
+      : event.key === "ArrowUp" ? (currentIndex - 1 + tabs.length) % tabs.length
         : -1;
 
     if (nextIndex === -1) return;
@@ -47,8 +47,12 @@ export function AccountSettings({ user }: { user: Me }) {
   }
 
   return (
-    <div>
-      <div role="tablist" aria-label="Account settings" className="border-border flex gap-1 border-b">
+    <div className="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
+      <aside role="tablist" aria-label="Account settings" className="border-border border-r pr-5 lg:sticky lg:top-24">
+        <p className="text-muted-foreground px-2 text-[10px] font-semibold uppercase tracking-[0.08em]">
+          Personal settings
+        </p>
+        <div className="mt-3 space-y-1">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -66,11 +70,11 @@ export function AccountSettings({ user }: { user: Me }) {
               onClick={() => selectTab(tab.id)}
               onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
               className={cn(
-                "relative inline-flex h-10 items-center gap-2 px-3 text-sm font-medium",
-                "transition-colors duration-150 hover:text-foreground focus-visible:z-10 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-normal",
+                "transition-colors duration-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 isActive
-                  ? "text-primary after:bg-primary after:absolute after:right-3 after:bottom-0 after:left-3 after:h-0.5"
-                  : "text-muted-foreground hover:bg-surface-hover",
+                  ? "bg-surface-selected text-primary hover:bg-surface-hover font-medium"
+                  : "text-foreground hover:bg-surface-hover",
               )}
             >
               <Icon className="size-4" aria-hidden />
@@ -78,10 +82,12 @@ export function AccountSettings({ user }: { user: Me }) {
             </button>
           );
         })}
-      </div>
+        </div>
+      </aside>
 
+      <div className="min-w-0">
       {activeTab === "profile" ? (
-        <section id="profile-panel" role="tabpanel" aria-labelledby="profile-tab" className="pt-8">
+        <section id="profile-panel" role="tabpanel" aria-labelledby="profile-tab">
           {profileEditing ? (
             <ProfileForm
               user={user}
@@ -93,7 +99,7 @@ export function AccountSettings({ user }: { user: Me }) {
           )}
         </section>
       ) : activeTab === "security" ? (
-        <section id="security-panel" role="tabpanel" aria-labelledby="security-tab" className="pt-8">
+        <section id="security-panel" role="tabpanel" aria-labelledby="security-tab">
           {passwordEditing ? (
             <div>
               <div className="mb-6">
@@ -139,10 +145,11 @@ export function AccountSettings({ user }: { user: Me }) {
           )}
         </section>
       ) : (
-        <section id="sessions-panel" role="tabpanel" aria-labelledby="sessions-tab" className="pt-8">
+        <section id="sessions-panel" role="tabpanel" aria-labelledby="sessions-tab">
           <SessionsPanel />
         </section>
       )}
+      </div>
     </div>
   );
 }

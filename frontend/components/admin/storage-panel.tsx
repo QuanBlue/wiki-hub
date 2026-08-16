@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   Download,
@@ -11,7 +12,6 @@ import {
   FileText,
   Folder,
   FolderOpen,
-  HardDrive,
   Loader2,
   RefreshCw,
   Search,
@@ -22,6 +22,11 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api-client";
 import type {
@@ -173,7 +178,7 @@ function FileIcon({ name }: { name: string }) {
   if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext))
     return <FileImage className="text-primary size-4 shrink-0" />;
   if (["zip", "tar", "gz"].includes(ext))
-    return <FileArchive className="size-4 shrink-0 text-amber-500" />;
+    return <FileArchive className="text-warning size-4 shrink-0" />;
   if (["txt", "md", "json", "csv"].includes(ext))
     return <FileText className="text-muted-foreground size-4 shrink-0" />;
   return <File className="text-muted-foreground size-4 shrink-0" />;
@@ -235,7 +240,7 @@ function FileRow({ node, depth, onDelete, onDownload, onPreview }: FileRowProps)
       <button
         aria-label={`Preview ${node.name}`}
         title="Preview"
-        className="text-muted-foreground hover:text-foreground hover:bg-surface-selected shrink-0 cursor-pointer rounded p-1 transition-colors"
+        className="text-muted-foreground hover:text-foreground hover:bg-surface-selected focus-visible:ring-ring shrink-0 cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
         onClick={() => onPreview(node)}
       >
         <Eye className="size-3.5" />
@@ -243,7 +248,7 @@ function FileRow({ node, depth, onDelete, onDownload, onPreview }: FileRowProps)
       <button
         aria-label={`Download ${node.name}`}
         title="Download"
-        className="text-muted-foreground hover:text-foreground hover:bg-surface-selected shrink-0 cursor-pointer rounded p-1 transition-colors"
+        className="text-muted-foreground hover:text-foreground hover:bg-surface-selected focus-visible:ring-ring shrink-0 cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
         onClick={() => onDownload(node.path, node.name)}
       >
         <Download className="size-3.5" />
@@ -251,7 +256,7 @@ function FileRow({ node, depth, onDelete, onDownload, onPreview }: FileRowProps)
       <button
         aria-label={`Delete ${node.name}`}
         title="Delete"
-        className="text-muted-foreground hover:text-danger hover:bg-danger-bg shrink-0 cursor-pointer rounded p-1 transition-colors"
+        className="text-muted-foreground hover:text-danger hover:bg-danger-bg focus-visible:ring-ring shrink-0 cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
         onClick={() => onDelete(node.path)}
       >
         <Trash2 className="size-3.5" />
@@ -282,7 +287,7 @@ function FolderRow({
   return (
     <>
       <button
-        className="border-border hover:bg-surface-hover flex w-full cursor-pointer items-center gap-2 border-b px-3 py-2 text-left text-sm last:border-0"
+        className="border-border hover:bg-surface-hover focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 border-b px-3 py-2 text-left text-sm transition-colors duration-150 last:border-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
         style={{ paddingLeft: `${depth * 20 + 12}px` }}
         onClick={onToggle}
         aria-expanded={expanded}
@@ -362,11 +367,134 @@ function FolderRowWrapper({
 // Main panel
 // ---------------------------------------------------------------------------
 
+type FilterOption = {
+  id: string;
+  label: string;
+};
+
+function MultiFilter({
+  label,
+  allLabel,
+  selected,
+  options,
+  onChange,
+}: {
+  label: string;
+  allLabel: string;
+  selected: string[];
+  options: FilterOption[];
+  onChange: (selected: string[]) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const matchingOptions = useMemo(
+    () =>
+      options.filter((option) =>
+        option.label.toLowerCase().includes(search.trim().toLowerCase()),
+      ),
+    [options, search],
+  );
+  const selectedLabel =
+    selected.length === 0
+      ? allLabel
+      : selected.length === 1
+        ? options.find((option) => option.id === selected[0])?.label ?? allLabel
+        : `${selected.length} selected`;
+
+  function toggle(id: string) {
+    onChange(
+      selected.includes(id)
+        ? selected.filter((value) => value !== id)
+        : [...selected, id],
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <p className="text-muted-foreground px-1 text-[11px] font-medium">
+        {label}
+      </p>
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (!open) setSearch("");
+        }}
+      >
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="border-border bg-surface hover:border-border-strong focus-visible:ring-ring flex h-10 w-40 cursor-pointer items-center justify-between gap-2 rounded-md border px-3 text-left text-sm transition-[color,background-color,border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+            aria-label={`Filter by ${label.toLowerCase()}`}
+          >
+            <span className="truncate">{selectedLabel}</span>
+            <ChevronDown className="text-muted-foreground size-4 shrink-0" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="w-72 p-2"
+          onCloseAutoFocus={() => setSearch("")}
+        >
+          <div
+            className="border-border border-b pb-2"
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <div className="relative">
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={`Search ${label.toLowerCase()}...`}
+                className="h-8 pl-8 text-xs"
+                aria-label={`Search ${label.toLowerCase()} options`}
+              />
+            </div>
+          </div>
+          <div className="max-h-64 overflow-y-auto py-1">
+            <label className="hover:bg-surface-hover flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors duration-150">
+              <input
+                type="checkbox"
+                checked={selected.length === 0}
+                onChange={() => onChange([])}
+                className="accent-primary size-4 cursor-pointer"
+              />
+              <span className="font-medium">{allLabel}</span>
+            </label>
+            {matchingOptions.map((option) => (
+              <label
+                key={option.id}
+                className="hover:bg-surface-hover flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors duration-150"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.includes(option.id)}
+                  onChange={() => toggle(option.id)}
+                  className="accent-primary size-4 cursor-pointer"
+                />
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                {selected.includes(option.id) ? (
+                  <Check className="text-primary size-4 shrink-0" aria-hidden />
+                ) : null}
+              </label>
+            ))}
+            {matchingOptions.length === 0 ? (
+              <p className="text-muted-foreground px-2 py-3 text-xs">
+                No matching options.
+              </p>
+            ) : null}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 export function StoragePanel() {
   const [objects, setObjects] = useState<StorageObject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [kindFilters, setKindFilters] = useState<string[]>([]);
+  const [spaceFilters, setSpaceFilters] = useState<string[]>([]);
+  const [pageFilters, setPageFilters] = useState<string[]>([]);
   const [deleteKey, setDeleteKey] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [previewNode, setPreviewNode] = useState<FileNode | null>(null);
@@ -437,7 +565,55 @@ export function StoragePanel() {
     };
   }, [previewNode]);
 
-  const tree = useMemo(() => buildTree(objects), [objects]);
+  const spaces = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          objects
+            .filter((object) => object.space_id && object.space_name)
+            .map((object) => [
+              object.space_id as string,
+              { id: object.space_id as string, name: object.space_name as string },
+            ]),
+        ).values(),
+      ).sort((a, b) => a.name.localeCompare(b.name)),
+    [objects],
+  );
+  const pages = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          objects
+            .filter(
+              (object) =>
+                object.page_id &&
+                object.page_title &&
+                (spaceFilters.length === 0 ||
+                  (object.space_id !== null &&
+                    spaceFilters.includes(object.space_id))),
+            )
+            .map((object) => [
+              object.page_id as string,
+              { id: object.page_id as string, title: object.page_title as string },
+            ]),
+        ).values(),
+      ).sort((a, b) => a.title.localeCompare(b.title)),
+    [objects, spaceFilters],
+  );
+  const scopedObjects = useMemo(
+    () =>
+      objects.filter(
+        (object) =>
+          (kindFilters.length === 0 || kindFilters.includes(object.kind)) &&
+          (spaceFilters.length === 0 ||
+            (object.space_id !== null &&
+              spaceFilters.includes(object.space_id))) &&
+          (pageFilters.length === 0 ||
+            (object.page_id !== null && pageFilters.includes(object.page_id))),
+      ),
+    [kindFilters, objects, pageFilters, spaceFilters],
+  );
+  const tree = useMemo(() => buildTree(scopedObjects), [scopedObjects]);
   const filtered = useMemo(() => filterTree(tree, query), [tree, query]);
 
   const totalSize = useMemo(
@@ -493,57 +669,97 @@ export function StoragePanel() {
 
   return (
     <>
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <HardDrive className="text-primary size-5" />
-            <h2 className="text-base font-semibold">Object storage</h2>
+      {!loading && !error ? (
+        <section className="border-border bg-surface-raised flex max-w-md items-center gap-5 rounded-lg border px-4 py-3 shadow-sm">
+          <div className="border-border shrink-0 border-r pr-5">
+            <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-[0.08em]">
+              Storage overview
+            </p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Current bucket usage
+            </p>
           </div>
-          <p className="text-muted-foreground mt-1 text-sm">
-            All files stored in the configured S3 bucket. Deleting a file is
-            permanent and also removes its database record.
+          <div className="flex divide-x">
+            <div className="pr-5">
+                <p className="text-muted-foreground text-[11px]">Objects</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">{objects.length}</p>
+            </div>
+            <div className="pl-5">
+                <p className="text-muted-foreground text-[11px]">Storage used</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">{formatBytes(totalSize)}</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
+      <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-end">
+        <div className="flex flex-wrap gap-2">
+          <MultiFilter
+            label="Type"
+            allLabel="All types"
+            selected={kindFilters}
+            onChange={setKindFilters}
+            options={[
+              { id: "page_attachment", label: "Page files" },
+              { id: "avatar", label: "Avatars" },
+              { id: "import_archive", label: "Import archives" },
+              { id: "other", label: "Other objects" },
+            ]}
+          />
+          <MultiFilter
+            label="Space"
+            allLabel="All spaces"
+            selected={spaceFilters}
+            onChange={(selected) => {
+              setSpaceFilters(selected);
+              setPageFilters([]);
+            }}
+            options={spaces.map((space) => ({
+              id: space.id,
+              label: space.name,
+            }))}
+          />
+          <MultiFilter
+            label="Page"
+            allLabel="All pages"
+            selected={pageFilters}
+            onChange={setPageFilters}
+            options={pages.map((page) => ({
+              id: page.id,
+              label: page.title,
+            }))}
+          />
+        </div>
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-muted-foreground px-1 text-[11px] font-medium">
+            Search
           </p>
+          <div className="relative">
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+            <Input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter by path or filename..."
+              className="pl-9"
+              aria-label="Filter storage objects"
+            />
+          </div>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={loading}
-          onClick={() => void fetchObjects()}
-          aria-label="Refresh storage list"
-        >
-          <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />
-          Refresh
-        </Button>
-      </div>
-
-      {/* Summary bar */}
-      {!loading && !error && (
-        <div className="bg-surface-sunken border-border mt-4 flex flex-wrap gap-x-6 gap-y-2 rounded-lg border px-4 py-3 text-sm">
-          <span>
-            <span className="text-muted-foreground">Objects:</span>{" "}
-            <span className="font-medium tabular-nums">{objects.length}</span>
-          </span>
-          <span>
-            <span className="text-muted-foreground">Total size:</span>{" "}
-            <span className="font-medium tabular-nums">
-              {formatBytes(totalSize)}
-            </span>
-          </span>
+        <div className="space-y-1">
+          <p className="text-muted-foreground px-1 text-[11px] font-medium">
+            Actions
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={loading}
+            onClick={() => void fetchObjects()}
+            aria-label="Refresh storage list"
+          >
+            <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />
+            Refresh
+          </Button>
         </div>
-      )}
-
-      {/* Search */}
-      <div className="relative mt-4">
-        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-        <Input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter by path or filename…"
-          className="pl-9"
-          aria-label="Filter storage objects"
-        />
       </div>
 
       {/* Tree */}

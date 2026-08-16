@@ -7,19 +7,19 @@ export const dynamic = "force-dynamic";
 
 export default function AdminStoragePage() {
   return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-semibold">Object storage</h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Browse, download and delete files stored in the S3 bucket. Removing a
-          Confluence archive also clears its duplicate-detection hash so the
-          same file can be re-imported.
+    <div className="space-y-6">
+      <header className="border-border border-b pb-5">
+        <p className="text-primary text-xs font-semibold tracking-[0.08em] uppercase">
+          Administration
         </p>
-      </div>
-
-      <div className="border-border bg-surface rounded-xl border p-5 shadow-sm">
-        <StoragePanel />
-      </div>
+        <h2 className="mt-1 text-xl font-semibold tracking-tight">
+          Object storage
+        </h2>
+        <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
+          Browse and manage files held in the workspace storage bucket.
+        </p>
+      </header>
+      <StoragePanel />
     </div>
   );
 }

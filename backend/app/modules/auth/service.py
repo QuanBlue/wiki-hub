@@ -99,9 +99,9 @@ class AuthService:
     async def authenticate(self, identifier: str, password: str) -> User:
         """Verify credentials and return the user.
 
-        Every failure path raises the *same* error: revealing whether an account
-        exists, or is merely disabled, hands an attacker a user enumeration
-        oracle.
+        Unknown accounts and invalid credentials share one generic error. Once
+        credentials have been verified, an inactive account receives a clear
+        recovery message so its owner knows to contact an administrator.
         """
         invalid = AuthenticationError("Incorrect username or password.")
 
@@ -117,7 +117,11 @@ class AuthService:
 
         if not user.is_active:
             logger.info("login_failed", username=user.username, reason="inactive")
-            raise invalid
+            raise AuthenticationError(
+                "This account has been deactivated. Contact your workspace "
+                "administrator to reactivate it.",
+                code="account_inactive",
+            )
 
         # Transparently upgrade the stored hash when Argon2 parameters change.
         if user.password_hash and needs_rehash(user.password_hash):

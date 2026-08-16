@@ -1578,16 +1578,21 @@ export function BackupPanel() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* -- Export ------------------------------------------------------- */}
-      <section className="border-border bg-surface rounded-xl border p-5 shadow-sm">
-        <h2 className="text-base font-semibold">Export</h2>
+      <section className="border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm">
+        <h2 className="flex items-center gap-2.5 text-base font-semibold">
+          <span className="bg-primary-subtle text-primary flex size-8 items-center justify-center rounded-md">
+            <Download className="size-4" />
+          </span>
+          Create a backup
+        </h2>
         <p className="text-muted-foreground mt-1 text-sm">
           Downloads every account, space, membership and favourite as one JSON
           file. Page content is not included — that domain does not exist yet.
         </p>
 
-        <label className="mt-4 flex items-start gap-2.5">
+        <label className="border-border bg-surface-sunken mt-4 flex max-w-3xl items-start gap-3 rounded-md border p-3">
           <input
             type="checkbox"
             checked={includeCredentials}
@@ -1618,17 +1623,19 @@ export function BackupPanel() {
             ) : (
               <Download />
             )}
-            {isDownloading ? "Downloading..." : "Download backup"}
+            {isDownloading ? "Preparing backup..." : "Download backup"}
           </Button>
         </div>
       </section>
 
       {/* -- Confluence import ------------------------------------------ */}
-      <section className="border-border bg-surface rounded-xl border p-5 shadow-sm">
+      <section className="border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="flex items-center gap-2 text-base font-semibold">
-              <FileArchive className="text-primary size-4" />
+            <h2 className="flex items-center gap-2.5 text-base font-semibold">
+              <span className="bg-primary-subtle text-primary flex size-8 items-center justify-center rounded-md">
+                <FileArchive className="size-4" />
+              </span>
               Import from Confluence
             </h2>
             <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
@@ -2158,8 +2165,13 @@ export function BackupPanel() {
       </section>
 
       {/* -- Import ------------------------------------------------------- */}
-      <section className="border-border bg-surface rounded-xl border p-5 shadow-sm">
-        <h2 className="text-base font-semibold">Restore</h2>
+      <section className="border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm">
+        <h2 className="flex items-center gap-2.5 text-base font-semibold">
+          <span className="bg-primary-subtle text-primary flex size-8 items-center justify-center rounded-md">
+            <Upload className="size-4" />
+          </span>
+          Restore a backup
+        </h2>
         <p className="text-muted-foreground mt-1 text-sm">
           Upload a backup to preview what it would change. Existing usernames
           and space keys are <strong>skipped, never overwritten</strong>, and
@@ -2216,7 +2228,7 @@ export function BackupPanel() {
 
       {/* -- Report ------------------------------------------------------- */}
       {report ? (
-        <section className="border-border bg-surface rounded-xl border p-5 shadow-sm">
+        <section className="border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold">
               {report.dry_run ? "Preview" : "Import result"}

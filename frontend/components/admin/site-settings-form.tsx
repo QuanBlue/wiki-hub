@@ -1,6 +1,6 @@
 "use client";
 
-import { HardDrive, Loader2, RotateCcw, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { HardDrive, Loader2, RotateCcw, ShieldCheck, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -39,6 +39,16 @@ const ROLE_OPTIONS: Array<{ value: AppRole; label: string }> = [
   { value: "admin", label: "Admin" },
 ];
 
+const SETTINGS_TABS: Array<{
+  id: "general" | "storage" | "sidebar";
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { id: "general", label: "General workspace", icon: SlidersHorizontal },
+  { id: "storage", label: "Storage & quotas", icon: HardDrive },
+  { id: "sidebar", label: "Sidebar access", icon: ShieldCheck },
+];
+
 export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const router = useRouter();
   const [siteName, setSiteName] = useState(settings.overrides.site_name ?? "");
@@ -56,6 +66,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   );
   const [sidebarPermissions, setSidebarPermissions] =
     useState<SidebarPermissions>(settings.effective.sidebar_permissions);
+  const [activeTab, setActiveTab] = useState<"general" | "storage" | "sidebar">("general");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -121,10 +132,34 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     );
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
-      <div className="grid gap-6 xl:grid-cols-2">
+    <form onSubmit={handleSubmit}>
+      <div className="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
+      <aside role="tablist" aria-label="Instance settings" className="border-border border-r pr-5 lg:sticky lg:top-24">
+        <p className="text-muted-foreground px-2 text-[10px] font-semibold uppercase tracking-[0.08em]">Settings sections</p>
+        <div className="mt-3 space-y-1">
+        {SETTINGS_TABS.map(({ id, label, icon: Icon }) => {
+          const selected = activeTab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setActiveTab(id)}
+              className={selected ? "bg-surface-selected text-primary hover:bg-surface-hover focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none" : "text-foreground hover:bg-surface-hover focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"}
+            >
+              <Icon className="size-4" />
+              {label}
+            </button>
+          );
+        })}
+        </div>
+        <p className="border-border text-muted-foreground mt-5 border-t px-2 pt-4 text-xs leading-relaxed">Changes apply immediately after saving.</p>
+      </aside>
+
+      <div className="min-w-0 space-y-6">
       {/* Card 1: General Workspace Settings */}
-      <section id="general-settings" className="border-border bg-surface rounded-xl border p-6 shadow-sm space-y-5">
+      <section id="general-settings" role="tabpanel" className={activeTab === "general" ? "border-border bg-surface space-y-5 rounded-xl border p-6 shadow-sm" : "hidden"}>
         <div className="flex items-center gap-2 border-b border-border pb-4">
           <SlidersHorizontal className="size-4 text-primary" />
           <div>
@@ -186,7 +221,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
       </section>
 
       {/* Card 2: Storage & File Quotas */}
-      <section id="storage-settings" className="border-border bg-surface rounded-xl border p-6 shadow-sm space-y-5">
+      <section id="storage-settings" role="tabpanel" className={activeTab === "storage" ? "border-border bg-surface space-y-5 rounded-xl border p-6 shadow-sm" : "hidden"}>
         <div className="flex items-center gap-2 border-b border-border pb-4">
           <HardDrive className="size-4 text-info" />
           <div>
@@ -266,13 +301,12 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           </p>
         </div>
       </section>
-      </div>
 
       {/* Card 3: Sidebar Navigation Access Control */}
       <section
         id="sidebar-settings"
         aria-labelledby="sidebar-permissions-heading"
-        className="border-border bg-surface space-y-5 rounded-xl border p-6 shadow-sm"
+        className={activeTab === "sidebar" ? "border-border bg-surface space-y-5 rounded-xl border p-6 shadow-sm" : "hidden"}
       >
         <div className="flex items-center gap-2 border-b border-border pb-4">
           <ShieldCheck className="size-4 text-warning" />
@@ -394,6 +428,8 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               : ""}
           </p>
         ) : null}
+      </div>
+      </div>
       </div>
     </form>
   );

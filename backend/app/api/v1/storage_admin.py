@@ -19,6 +19,9 @@ from app.api.deps import CurrentSuperuser, DbSession
 from app.core.exceptions import NotFoundError
 from app.models.attachment import PageAttachment
 from app.models.import_job import ImportArchive
+from app.models.page import WikiPage
+from app.models.space import Space
+from app.models.user import User
 from app.services.storage import ObjectStorage, S3ObjectStorage, StoredObject
 
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -35,6 +38,16 @@ def get_storage() -> ObjectStorage:
 StorageDep = Annotated[ObjectStorage, Depends(get_storage)]
 
 
+def storage_kind(key: str) -> str:
+    if key.startswith("attachments/"):
+        return "page_attachment"
+    if key.startswith("avatars/"):
+        return "avatar"
+    if key.startswith("confluence-imports/"):
+        return "import_archive"
+    return "other"
+
+
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
@@ -44,14 +57,33 @@ class StorageObjectRead(BaseModel):
     size: int
     etag: str | None
     last_modified: str | None
+    kind: str
+    space_id: str | None = None
+    space_name: str | None = None
+    page_id: str | None = None
+    page_title: str | None = None
 
     @classmethod
-    def from_stored(cls, obj: StoredObject) -> "StorageObjectRead":
+    def from_stored(
+        cls,
+        obj: StoredObject,
+        *,
+        kind: str = "other",
+        space_id: str | None = None,
+        space_name: str | None = None,
+        page_id: str | None = None,
+        page_title: str | None = None,
+    ) -> "StorageObjectRead":
         return cls(
             key=obj.key,
             size=obj.size,
             etag=obj.etag,
             last_modified=obj.last_modified.isoformat() if obj.last_modified else None,
+            kind=kind,
+            space_id=space_id,
+            space_name=space_name,
+            page_id=page_id,
+            page_title=page_title,
         )
 
 
@@ -74,6 +106,7 @@ class DeleteResult(BaseModel):
 async def list_storage_objects(
     _admin: CurrentSuperuser,
     storage: StorageDep,
+    session: DbSession = None,  # type: ignore[assignment]
     prefix: str = Query(default="", description="Optional key prefix to filter"),
 ) -> list[StorageObjectRead]:
     """Return every object stored in the configured S3 bucket.
@@ -83,7 +116,61 @@ async def list_storage_objects(
     complexity of server-side hierarchy navigation.
     """
     objects = await storage.list_objects(prefix=prefix)
-    return [StorageObjectRead.from_stored(o) for o in objects]
+    if session is None:
+        return [
+            StorageObjectRead.from_stored(obj, kind=storage_kind(obj.key))
+            for obj in objects
+        ]
+
+    attachment_rows = (
+        await session.execute(
+            select(
+                PageAttachment.object_key,
+                WikiPage.id,
+                WikiPage.title,
+                Space.id,
+                Space.name,
+            )
+            .join(WikiPage, PageAttachment.page_id == WikiPage.id)
+            .join(Space, WikiPage.space_id == Space.id)
+        )
+    ).all()
+    attachments = {
+        object_key: {
+            "page_id": str(page_id),
+            "page_title": page_title,
+            "space_id": str(space_id),
+            "space_name": space_name,
+        }
+        for object_key, page_id, page_title, space_id, space_name in attachment_rows
+    }
+    avatar_keys = set(
+        (
+            await session.scalars(
+                select(User.avatar_object_key).where(User.avatar_object_key.is_not(None))
+            )
+        ).all()
+    )
+    archive_keys = set((await session.scalars(select(ImportArchive.object_key))).all())
+
+    result: list[StorageObjectRead] = []
+    for obj in objects:
+        attachment = attachments.get(obj.key)
+        if attachment is not None:
+            result.append(
+                StorageObjectRead.from_stored(
+                    obj,
+                    kind="page_attachment",
+                    **attachment,
+                )
+            )
+        elif obj.key in avatar_keys:
+            result.append(StorageObjectRead.from_stored(obj, kind="avatar"))
+        elif obj.key in archive_keys:
+            result.append(StorageObjectRead.from_stored(obj, kind="import_archive"))
+        else:
+            result.append(StorageObjectRead.from_stored(obj, kind=storage_kind(obj.key)))
+    return result
 
 
 @router.get(

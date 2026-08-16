@@ -16,7 +16,7 @@ export default async function AccountPage() {
 
   return (
     <AppShell siteName={SITE_NAME} user={user} fullWidth>
-      <div className="mx-auto max-w-5xl space-y-8">
+      <div className="w-full space-y-8">
         <header className="border-border border-b pb-5">
           <h1 className="text-2xl font-semibold tracking-tight">Your account</h1>
           <p className="text-muted-foreground mt-1 text-sm">

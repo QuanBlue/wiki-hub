@@ -77,8 +77,10 @@ async def test_authentication_and_user_lookup_paths(monkeypatch: pytest.MonkeyPa
     with pytest.raises(AuthenticationError):
         await svc.authenticate("alice", "pw")
     active.is_active = False
-    with pytest.raises(AuthenticationError):
+    with pytest.raises(AuthenticationError) as inactive_error:
         await svc.authenticate("alice", "pw")
+    assert inactive_error.value.code == "account_inactive"
+    assert "deactivated" in inactive_error.value.message
     active.is_active = True
     assert await svc.authenticate("alice", "pw") is active
     assert active.last_login_at is not None

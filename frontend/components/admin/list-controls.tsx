@@ -1,6 +1,6 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
@@ -129,10 +129,12 @@ export function PaginationControls({
   total,
   limit,
   offset,
+  pageSizes,
 }: {
   total: number;
   limit: number;
   offset: number;
+  pageSizes?: number[];
 }) {
   const write = useParamWriter();
 
@@ -140,28 +142,60 @@ export function PaginationControls({
   const to = Math.min(offset + limit, total);
   const hasPrevious = offset > 0;
   const hasNext = offset + limit < total;
+  const page = total === 0 ? 0 : Math.floor(offset / limit) + 1;
+  const pageCount = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-muted-foreground text-sm" aria-live="polite">
         {total === 0 ? "No results" : `Showing ${from}–${to} of ${total}`}
       </p>
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
+        {pageSizes ? (
+          <div className="flex items-center gap-2">
+            <label htmlFor="page-size" className="text-muted-foreground text-xs">
+              Rows per page
+            </label>
+            <Select
+              value={String(limit)}
+              onValueChange={(value) => write({ limit: value })}
+            >
+              <SelectTrigger id="page-size" className="h-8 w-20" aria-label="Rows per page">
+                <SelectValue>{limit}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {pageSizes.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        <span className="text-muted-foreground hidden text-xs sm:inline">
+          Page {page} of {pageCount}
+        </span>
+        <span className="border-border h-5 border-l" aria-hidden />
         <Button
           variant="secondary"
-          size="sm"
+          size="icon"
           disabled={!hasPrevious}
           onClick={() => write({ offset: String(Math.max(0, offset - limit)) })}
+          aria-label="Previous page"
+          title="Previous page"
         >
-          Previous
+          <ChevronLeft />
         </Button>
         <Button
           variant="secondary"
-          size="sm"
+          size="icon"
           disabled={!hasNext}
           onClick={() => write({ offset: String(offset + limit) })}
+          aria-label="Next page"
+          title="Next page"
         >
-          Next
+          <ChevronRight />
         </Button>
       </div>
     </div>

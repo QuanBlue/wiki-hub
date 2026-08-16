@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -17,7 +17,9 @@ export function LoginForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const accountInactive = errorCode === "account_inactive";
 
   /**
    * Only same-origin relative paths are honoured, so a crafted
@@ -34,6 +36,7 @@ export function LoginForm() {
     event.preventDefault();
     setPending(true);
     setError(null);
+    setErrorCode(null);
 
     try {
       // The response also sets the httpOnly session cookie; the body is only
@@ -48,11 +51,12 @@ export function LoginForm() {
       router.replace(safeNextPath());
       router.refresh();
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : "Could not reach the server. Please try again.",
-      );
+      if (err instanceof ApiError) {
+        setError(err.message);
+        setErrorCode(err.code);
+      } else {
+        setError("Could not reach the server. Please try again.");
+      }
       setPassword("");
       setPending(false);
     }
@@ -95,8 +99,15 @@ export function LoginForm() {
       {error ? (
         <p
           role="alert"
-          className="border-danger/30 bg-danger/10 text-danger rounded-md border px-3 py-2 text-sm"
+          className={
+            accountInactive
+              ? "border-warning/30 bg-warning-bg text-warning flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
+              : "border-danger/30 bg-danger/10 text-danger rounded-md border px-3 py-2 text-sm"
+          }
         >
+          {accountInactive ? (
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+          ) : null}
           {error}
         </p>
       ) : null}
