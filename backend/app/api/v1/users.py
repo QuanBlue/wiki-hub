@@ -15,11 +15,14 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, Request, Response, UploadFile, status
 from sqlalchemy import select
 
 from app.api.deps import ActingAuthServiceDep, CurrentUser, DbSession
+from app.core.config import settings
+from app.core.exceptions import BadRequestError, PayloadTooLargeError, UnsupportedMediaTypeError
 from app.models.permission import GlobalPermission, Group, GroupMember
+from app.models.user import User
 from app.modules.permissions.service import PermissionService
 from app.schemas.pagination import Page
 from app.schemas.user import (
@@ -30,8 +33,34 @@ from app.schemas.user import (
     UserRead,
     UserUpdate,
 )
+from app.services.storage import ObjectStorage, S3ObjectStorage
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+AVATAR_EXTENSIONS = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+}
+MAX_AVATAR_BYTES = 5 * 1024 * 1024
+
+
+def get_storage() -> ObjectStorage:
+    return S3ObjectStorage()
+
+
+def avatar_endpoint(request: Request, user_id: uuid.UUID) -> str:
+    return f"{str(request.base_url).rstrip('/')}{settings.api_v1_prefix}/users/{user_id}/avatar"
+
+
+async def remove_avatar_object(user: object, storage: ObjectStorage) -> None:
+    key = getattr(user, "avatar_object_key", None)
+    if key:
+        await storage.delete(key)
+        user.avatar_object_key = None
+        user.avatar_content_type = None
 
 
 @router.patch("/me", response_model=UserRead, summary="Update your profile")
@@ -42,6 +71,64 @@ async def update_own_profile(
 ) -> UserRead:
     updated = await service.update_own_profile(user.id, payload)
     return UserRead.model_validate(updated)
+
+
+@router.post("/me/avatar", response_model=UserRead, summary="Upload your profile picture")
+async def upload_own_avatar(
+    request: Request,
+    file: UploadFile,
+    user: CurrentUser,
+    session: DbSession,
+    storage: ObjectStorage = Depends(get_storage),
+) -> UserRead:
+    content_type = (file.content_type or "").lower()
+    if content_type not in AVATAR_TYPES:
+        raise UnsupportedMediaTypeError("Avatar must be a JPEG, PNG, GIF, or WebP image.")
+    data = await file.read(MAX_AVATAR_BYTES + 1)
+    if len(data) > MAX_AVATAR_BYTES:
+        raise PayloadTooLargeError("Profile pictures must be 5 MB or smaller.")
+    if not data:
+        raise BadRequestError("The profile picture is empty.")
+
+    key = f"avatars/{user.id}/{uuid.uuid4()}.{AVATAR_EXTENSIONS[content_type]}"
+    await storage.put(key, data, content_type=content_type)
+    old_key = user.avatar_object_key
+    user.avatar_object_key = key
+    user.avatar_content_type = content_type
+    user.avatar_url = avatar_endpoint(request, user.id)
+    if old_key and old_key != key:
+        await storage.delete(old_key)
+    await session.flush()
+    return UserRead.model_validate(user)
+
+
+@router.delete("/me/avatar", response_model=UserRead, summary="Remove your profile picture")
+async def delete_own_avatar(
+    user: CurrentUser,
+    session: DbSession,
+    storage: ObjectStorage = Depends(get_storage),
+) -> UserRead:
+    await remove_avatar_object(user, storage)
+    user.avatar_url = None
+    await session.flush()
+    return UserRead.model_validate(user)
+
+
+@router.get("/{user_id}/avatar", summary="Read a user profile picture")
+async def read_avatar(
+    user_id: uuid.UUID,
+    _viewer: CurrentUser,
+    session: DbSession,
+    storage: ObjectStorage = Depends(get_storage),
+) -> Response:
+    avatar_user = await session.get(User, user_id)
+    if avatar_user is None or not avatar_user.avatar_object_key:
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+    return Response(
+        content=await storage.get(avatar_user.avatar_object_key),
+        media_type=avatar_user.avatar_content_type or "image/png",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 @router.get("", response_model=Page[UserRead], summary="List users")

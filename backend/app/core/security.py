@@ -67,6 +67,7 @@ class TokenIdentity:
     """
 
     subject: uuid.UUID
+    jti: str
     impersonator: uuid.UUID | None = None
 
     @property
@@ -122,6 +123,7 @@ def decode_token_identity(token: str) -> TokenIdentity:
 
     try:
         subject = uuid.UUID(str(payload["sub"]))
+        jti = str(uuid.UUID(str(payload["jti"])))
     except (KeyError, ValueError) as exc:
         raise AuthenticationError("Invalid authentication token.") from exc
 
@@ -138,7 +140,7 @@ def decode_token_identity(token: str) -> TokenIdentity:
         except (KeyError, ValueError, TypeError) as exc:
             raise AuthenticationError("Invalid authentication token.") from exc
 
-    return TokenIdentity(subject=subject, impersonator=impersonator)
+    return TokenIdentity(subject=subject, jti=jti, impersonator=impersonator)
 
 
 def decode_access_token(token: str) -> uuid.UUID:

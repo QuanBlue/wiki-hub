@@ -87,7 +87,7 @@ export function UserRowActions({
   }
 
   const actions: RowAction[] = [
-    { label: "Set a new password", icon: <KeyRound className="size-4" />, onSelect: () => setResetOpen(true), disabled: pending !== null },
+    { label: "Reset password", icon: <KeyRound className="size-4" />, onSelect: () => setResetOpen(true), disabled: pending !== null },
     user.is_active
       ? { label: "Deactivate account", icon: <UserX className="size-4" />, onSelect: () => void setActive(false), disabled: pending !== null || isSelf, title: isSelf ? "You cannot deactivate your own account" : undefined }
       : { label: "Activate account", icon: <UserCheck className="size-4" />, onSelect: () => void setActive(true), disabled: pending !== null },
@@ -99,11 +99,7 @@ export function UserRowActions({
     <div className="flex justify-end">
       <RowActionsMenu label={`Actions for ${user.username}`} actions={actions} />
 
-      <ResetPasswordDialog
-        user={user}
-        open={resetOpen}
-        onOpenChange={setResetOpen}
-      />
+      {resetOpen ? <ResetPasswordDialog user={user} open onOpenChange={setResetOpen} /> : null}
 
       <ConfirmDialog
         open={confirmDelete}

@@ -37,6 +37,7 @@ from app.models.space import (
     SpaceVisibility,
 )
 from app.models.user import User
+from app.models.user_session import UserSession
 
 __all__ = [
     "SINGLETON_ID",
@@ -70,5 +71,6 @@ __all__ = [
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
     "User",
+    "UserSession",
     "WikiPage",
 ]

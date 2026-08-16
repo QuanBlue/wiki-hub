@@ -40,6 +40,16 @@ When modifying the Confluence import and file upload component (`frontend/compon
 
 All buttons and interactive action icons MUST have a hover effect. Always verify and add hover states (e.g., `hover:bg-accent`, `hover:text-accent-foreground`, or opacity changes) for all clickable elements across all pages.
 
+## Scrollbar consistency
+
+All scrollable surfaces use the global scrollbar treatment in
+`frontend/app/globals.css`: a compact neutral-grey thumb, transparent track,
+no arrow buttons, and token-based light/dark colours. Do not add component-level
+scrollbar colours, dimensions, or browser-specific scrollbar rules. If the
+shared treatment needs to change, update it globally and retain parity for
+Firefox (`scrollbar-width`/`scrollbar-color`) and WebKit browsers
+(`::-webkit-scrollbar`).
+
 ## In-app notifications and confirmations
 
 Use WikiHub modal components for user-facing notifications, confirmations, and

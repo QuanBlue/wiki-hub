@@ -37,7 +37,10 @@ PROTECTED_ACCOUNT_MESSAGE = (
 
 #: Fields worth recording in the audit trail when an account changes. An
 #: explicit allowlist - `password_hash` must never appear in a diff.
-AUDITED_USER_FIELDS = ("email", "full_name", "avatar_url", "is_active", "is_superuser")
+AUDITED_USER_FIELDS = (
+    "email", "full_name", "avatar_url", "bio", "pronouns", "profile_url",
+    "social_links", "company", "is_active", "is_superuser",
+)
 
 
 class AuthService:
@@ -289,7 +292,7 @@ class AuthService:
             )
             await self._assert_superuser_remains(user)
 
-        before = {field: getattr(user, field) for field in AUDITED_USER_FIELDS}
+        before = {field: getattr(user, field, None) for field in AUDITED_USER_FIELDS}
         if "email" in data and data["email"] is not None:
             email = str(data["email"]).strip().lower()
             existing = await self.users.get_by_email(email)
@@ -305,7 +308,7 @@ class AuthService:
 
         await self.session.flush()
 
-        after = {field: getattr(user, field) for field in AUDITED_USER_FIELDS}
+        after = {field: getattr(user, field, None) for field in AUDITED_USER_FIELDS}
         diff = AuditService.changes(before, after, AUDITED_USER_FIELDS)
 
         # Emit the specific intent alongside the generic update, so the log can
@@ -351,7 +354,7 @@ class AuthService:
             )
 
         data = payload.model_dump(exclude_unset=True)
-        before = {field: getattr(user, field) for field in AUDITED_USER_FIELDS}
+        before = {field: getattr(user, field, None) for field in AUDITED_USER_FIELDS}
         if "email" in data and data["email"] is not None:
             email = str(data["email"]).strip().lower()
             existing = await self.users.get_by_email(email)
@@ -362,9 +365,18 @@ class AuthService:
             user.full_name = str(data["full_name"]).strip()
         if "avatar_url" in data:
             user.avatar_url = str(data["avatar_url"]) if data["avatar_url"] else None
+        for field in ("bio", "pronouns", "profile_url", "company"):
+            if field in data:
+                setattr(user, field, str(data[field]).strip() if data[field] else "")
+        if "social_links" in data and data["social_links"] is not None:
+            user.social_links = [
+                str(link).strip()
+                for link in data["social_links"]
+                if str(link).strip()
+            ]
 
         await self.session.flush()
-        after = {field: getattr(user, field) for field in AUDITED_USER_FIELDS}
+        after = {field: getattr(user, field, None) for field in AUDITED_USER_FIELDS}
         diff = AuditService.changes(before, after, AUDITED_USER_FIELDS)
         if diff:
             await self.audit.record(

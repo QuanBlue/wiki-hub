@@ -115,6 +115,11 @@ export interface User {
   email: string;
   full_name: string;
   avatar_url: string | null;
+  bio: string;
+  pronouns: string;
+  profile_url: string;
+  social_links: string[];
+  company: string;
   is_active: boolean;
   is_superuser: boolean;
   /** The built-in administrator: immutable and undeletable through the API. */
@@ -140,6 +145,17 @@ export interface LoginResponse {
   token_type: string;
   expires_at: string;
   user: User;
+}
+
+export interface AccountSession {
+  id: string;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  is_current: boolean;
+  is_admin_session: boolean;
 }
 
 export type SpaceStatus = "active" | "archived";

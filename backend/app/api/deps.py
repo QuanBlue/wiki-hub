@@ -13,6 +13,7 @@ from app.core.security import decode_access_token, decode_token_identity
 from app.db.session import get_session_factory
 from app.models.user import User
 from app.modules.auth.service import AuthService
+from app.modules.auth.sessions import SessionService
 from app.modules.permissions.service import PermissionService
 from app.services.audit import ClientInfo
 
@@ -100,8 +101,11 @@ async def get_current_user(request: Request, service: AuthServiceDep) -> User:
     token = _extract_token(request)
     if not token:
         raise AuthenticationError("Authentication is required.")
-    user_id = decode_access_token(token)
-    return await service.get_active_user(user_id)
+    identity = decode_token_identity(token)
+    await SessionService(service.session).require_active(
+        user_id=identity.subject, token_jti=identity.jti
+    )
+    return await service.get_active_user(identity.subject)
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

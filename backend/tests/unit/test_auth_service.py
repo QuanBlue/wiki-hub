@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.exceptions import (
     AuthenticationError,
@@ -14,14 +15,26 @@ from app.core.exceptions import (
 )
 from app.modules.auth import service as auth_module
 from app.modules.auth.service import AuthService
-from app.schemas.user import SelfProfileUpdate, UserCreate, UserUpdate
+from app.schemas.user import (
+    PasswordChange,
+    PasswordReset,
+    SelfProfileUpdate,
+    UserCreate,
+    UserUpdate,
+)
 
 
 def user(**overrides):
     values = {
-        "id": uuid.uuid4(), "username": "alice", "email": "alice@example.com",
-        "full_name": "Alice", "avatar_url": None, "password_hash": "hash",
-        "is_active": True, "is_superuser": False, "is_protected": False,
+        "id": uuid.uuid4(),
+        "username": "alice",
+        "email": "alice@example.com",
+        "full_name": "Alice",
+        "avatar_url": None,
+        "password_hash": "hash",
+        "is_active": True,
+        "is_superuser": False,
+        "is_protected": False,
         "last_login_at": None,
     }
     values.update(overrides)
@@ -37,10 +50,24 @@ def service(actor=None, impersonator=None) -> AuthService:
     return result
 
 
+def test_password_change_rules() -> None:
+    valid = PasswordChange(current_password="current", new_password="Stronger8")
+    assert valid.new_password == "Stronger8"
+
+    with pytest.raises(ValidationError):
+        PasswordChange(current_password="current", new_password="lowercase8")
+    with pytest.raises(ValidationError):
+        PasswordChange(current_password="current", new_password="NoNumbers")
+    with pytest.raises(ValidationError):
+        PasswordReset(new_password="123456a@")
+
+
 @pytest.mark.asyncio
 async def test_authentication_and_user_lookup_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     svc = service()
-    monkeypatch.setattr(auth_module, "verify_password", Mock(side_effect=[False, False, True, True]))
+    monkeypatch.setattr(
+        auth_module, "verify_password", Mock(side_effect=[False, False, True, True])
+    )
     monkeypatch.setattr(auth_module, "needs_rehash", Mock(return_value=False))
     active = user()
     svc.users.get_by_identifier = AsyncMock(side_effect=[None, active, active, active])
@@ -102,7 +129,9 @@ async def test_impersonation_guards_and_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_update_profile_and_password_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_create_update_profile_and_password_operations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(auth_module, "hash_password", lambda value: f"hashed:{value}")
     monkeypatch.setattr(auth_module, "verify_password", lambda value, hashed: value == "old")
     svc = service()
@@ -120,7 +149,9 @@ async def test_create_update_profile_and_password_operations(monkeypatch: pytest
 
     target = user()
     svc.users.get = AsyncMock(return_value=target)
-    updated = await svc.update_user(target.id, UserUpdate(email=" NEW@EXAMPLE.COM ", full_name=" New Name ", is_active=False))
+    updated = await svc.update_user(
+        target.id, UserUpdate(email=" NEW@EXAMPLE.COM ", full_name=" New Name ", is_active=False)
+    )
     assert updated.email == "new@example.com" and updated.full_name == "New Name"
     assert svc.audit.record.await_count >= 2
 
@@ -128,13 +159,20 @@ async def test_create_update_profile_and_password_operations(monkeypatch: pytest
     profile = await svc.update_own_profile(
         target.id,
         SelfProfileUpdate(
-            email="PROFILE@example.com",
+            email="profile@wikihub.local",
             full_name=" Profile",
             avatar_url="https://avatar.example",
+            bio="Profile biography",
+            pronouns="they/them",
+            profile_url="https://example.com",
+            social_links=["https://github.com/example", "https://example.org"],
+            company="Product",
         ),
     )
-    assert profile.email == "profile@example.com"
+    assert profile.email == "profile@wikihub.local"
     assert profile.full_name == "Profile" and str(profile.avatar_url) == "https://avatar.example/"
+    assert profile.bio == "Profile biography" and profile.company == "Product"
+    assert profile.social_links == ["https://github.com/example", "https://example.org/"]
     svc.users.get_by_email = AsyncMock(return_value=user(id=uuid.uuid4()))
     with pytest.raises(ConflictError, match="E-mail"):
         await svc.update_own_profile(target.id, SelfProfileUpdate(email="taken@example.com"))
@@ -199,11 +237,15 @@ async def test_auth_conflict_and_failure_branches(monkeypatch: pytest.MonkeyPatc
 
     svc.users.get_by_username = AsyncMock(return_value=target)
     with pytest.raises(ConflictError, match="Username"):
-        await svc.create_user(UserCreate(username="New", email="new@example.com", full_name="N", password="password"))
+        await svc.create_user(
+            UserCreate(username="New", email="new@example.com", full_name="N", password="password")
+        )
     svc.users.get_by_username = AsyncMock(return_value=None)
     svc.users.get_by_email = AsyncMock(return_value=target)
     with pytest.raises(ConflictError, match="E-mail"):
-        await svc.create_user(UserCreate(username="New", email="new@example.com", full_name="N", password="password"))
+        await svc.create_user(
+            UserCreate(username="New", email="new@example.com", full_name="N", password="password")
+        )
 
     svc.users.get = AsyncMock(return_value=target)
     svc.actor = target

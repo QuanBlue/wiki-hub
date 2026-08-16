@@ -8,19 +8,22 @@ from app.api.deps import (
     ACCESS_COOKIE_NAME,
     ActingAuthServiceDep,
     AuthServiceDep,
+    ClientInfoDep,
     CurrentUser,
     DbSession,
     Impersonator,
 )
 from app.core import rate_limit
 from app.core.config import settings
-from app.core.security import create_access_token
+from app.core.security import create_access_token, decode_token_identity
+from app.modules.auth.sessions import SessionService
 from app.modules.permissions.service import PermissionService
 from app.schemas.user import (
     ImpersonateRequest,
     LoginRequest,
     LoginResponse,
     MeRead,
+    SessionRead,
     UserRead,
 )
 from app.services.site_settings import SiteSettingsService
@@ -51,6 +54,7 @@ async def login(
     response: Response,
     service: AuthServiceDep,
     session: DbSession,
+    client: ClientInfoDep,
 ) -> LoginResponse:
     # Throttle per client address *and* per submitted identifier, so one
     # attacker cannot spray many accounts from one host, nor many hosts at one
@@ -65,6 +69,12 @@ async def login(
     effective_settings = await SiteSettingsService(session).get_effective()
     ttl_seconds = effective_settings.session_ttl_hours * 3600
     token, expires_at = create_access_token(str(user.id), expires_in=ttl_seconds)
+    await SessionService(session).create(
+        user_id=user.id,
+        token_jti=decode_token_identity(token).jti,
+        expires_at=expires_at,
+        client=client,
+    )
     _set_access_cookie(response, token, max_age=ttl_seconds)
 
     return LoginResponse(
@@ -96,14 +106,27 @@ async def logout(response: Response) -> None:
     summary="Renew the current browser session",
 )
 async def renew(
-    response: Response, user: CurrentUser, impersonator: Impersonator, session: DbSession
+    response: Response,
+    user: CurrentUser,
+    impersonator: Impersonator,
+    session: DbSession,
+    request: Request,
+    client: ClientInfoDep,
 ) -> None:
     effective_settings = await SiteSettingsService(session).get_effective()
     ttl_seconds = effective_settings.session_ttl_hours * 3600
-    token, _expires_at = create_access_token(
+    identity = decode_token_identity(request.cookies.get(ACCESS_COOKIE_NAME, ""))
+    await SessionService(session).revoke(user_id=user.id, token_jti=identity.jti)
+    token, expires_at = create_access_token(
         str(user.id),
         impersonator=str(impersonator.id) if impersonator else None,
         expires_in=ttl_seconds,
+    )
+    await SessionService(session).create(
+        user_id=user.id,
+        token_jti=decode_token_identity(token).jti,
+        expires_at=expires_at,
+        client=client,
     )
     _set_access_cookie(response, token, max_age=ttl_seconds)
 
@@ -112,11 +135,42 @@ async def renew(
 async def me(user: CurrentUser, impersonator: Impersonator, session: DbSession) -> MeRead:
     global_permissions = await PermissionService(session).global_permissions(user)
     return MeRead(
-        **UserRead.model_validate(user).model_copy(
-            update={"global_permissions": global_permissions}
-        ).model_dump(),
+        **UserRead.model_validate(user)
+        .model_copy(update={"global_permissions": global_permissions})
+        .model_dump(),
         impersonator=UserRead.model_validate(impersonator) if impersonator else None,
     )
+
+
+@router.get("/sessions", response_model=list[SessionRead], summary="List active browser sessions")
+async def list_sessions(
+    request: Request, user: CurrentUser, session: DbSession
+) -> list[SessionRead]:
+    identity = decode_token_identity(request.cookies.get(ACCESS_COOKIE_NAME, ""))
+    rows = await SessionService(session).list_for_user(user.id, identity.jti)
+    return [
+        SessionRead(
+            id=row.id,
+            created_at=row.created_at,
+            last_seen_at=row.last_seen_at,
+            expires_at=row.expires_at,
+            ip_address=row.ip_address,
+            user_agent=row.user_agent,
+            is_current=row.token_jti == identity.jti,
+            is_admin_session=row.impersonator_id is not None,
+        )
+        for row in rows
+    ]
+
+
+@router.post(
+    "/sessions/revoke-others",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Sign out all other browser sessions",
+)
+async def revoke_other_sessions(request: Request, user: CurrentUser, session: DbSession) -> None:
+    identity = decode_token_identity(request.cookies.get(ACCESS_COOKIE_NAME, ""))
+    await SessionService(session).revoke_others(user_id=user.id, current_jti=identity.jti)
 
 
 @router.post(
@@ -129,6 +183,7 @@ async def start_impersonation(
     response: Response,
     service: ActingAuthServiceDep,
     session: DbSession,
+    client: ClientInfoDep,
 ) -> LoginResponse:
     """Swap the session cookie for one that speaks as another account.
 
@@ -149,6 +204,13 @@ async def start_impersonation(
     token, expires_at = create_access_token(
         str(target.id), impersonator=str(actor.id), expires_in=ttl_seconds
     )
+    await SessionService(session).create(
+        user_id=target.id,
+        token_jti=decode_token_identity(token).jti,
+        expires_at=expires_at,
+        client=client,
+        impersonator_id=actor.id,
+    )
     _set_access_cookie(response, token, max_age=ttl_seconds)
 
     return LoginResponse(
@@ -165,13 +227,27 @@ async def start_impersonation(
 )
 async def stop_impersonation(
     response: Response,
+    request: Request,
     service: ActingAuthServiceDep,
     session: DbSession,
+    client: ClientInfoDep,
 ) -> LoginResponse:
     admin = await service.end_impersonation()
+    identity = decode_token_identity(request.cookies.get(ACCESS_COOKIE_NAME, ""))
+    if service.actor is not None:
+        await SessionService(session).revoke(
+            user_id=service.actor.id,
+            token_jti=identity.jti,
+        )
     effective_settings = await SiteSettingsService(session).get_effective()
     ttl_seconds = effective_settings.session_ttl_hours * 3600
     token, expires_at = create_access_token(str(admin.id), expires_in=ttl_seconds)
+    await SessionService(session).create(
+        user_id=admin.id,
+        token_jti=decode_token_identity(token).jti,
+        expires_at=expires_at,
+        client=client,
+    )
     _set_access_cookie(response, token, max_age=ttl_seconds)
 
     return LoginResponse(

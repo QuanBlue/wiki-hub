@@ -23,9 +23,11 @@ import type { Me, Page, User } from "@/types/api";
 export function SwitchAccountMenu({
   currentUser,
   canSwitch,
+  onSwitched,
 }: {
   currentUser: Me;
   canSwitch: boolean;
+  onSwitched: () => void;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
@@ -64,6 +66,7 @@ export function SwitchAccountMenu({
       await api.post<unknown>("/api/v1/auth/impersonate", {
         user_id: user.id,
       });
+      onSwitched();
       // The cookie changed, so every server-rendered page is now stale.
       router.replace("/");
       router.refresh();

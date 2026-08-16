@@ -6,10 +6,11 @@ outside world sees. ``password_hash`` deliberately has no representation here.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.permission import GlobalPermission
 
@@ -27,6 +28,11 @@ class UserRead(BaseModel):
     email: str
     full_name: str
     avatar_url: str | None
+    bio: str
+    pronouns: str
+    profile_url: str
+    social_links: list[str] = Field(default_factory=list)
+    company: str
     is_active: bool
     is_superuser: bool
     is_protected: bool
@@ -65,9 +71,35 @@ class UserUpdate(BaseModel):
 class SelfProfileUpdate(BaseModel):
     """Fields an account owner may change without admin privileges."""
 
-    email: EmailStr | None = None
+    # The seeded administrator may use an internal address such as
+    # admin@wikihub.local. EmailStr rejects special-use TLDs, so self-service
+    # profile updates use a conservative syntax check for this field.
+    email: str | None = Field(default=None, max_length=320)
     full_name: str | None = Field(default=None, max_length=255)
     avatar_url: AnyHttpUrl | None = Field(default=None, max_length=2048)
+    bio: str | None = Field(default=None, max_length=500)
+    pronouns: str | None = Field(default=None, max_length=64)
+    profile_url: AnyHttpUrl | None = Field(default=None, max_length=2048)
+    social_links: list[AnyHttpUrl] | None = Field(default=None, max_length=2)
+    company: str | None = Field(default=None, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def validate_profile_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
+            raise ValueError("Enter a valid email address.")
+        return normalized
+
+
+def validate_password_strength(value: str) -> str:
+    if not (re.search(r"[a-z]", value) and re.search(r"[A-Z]", value)):
+        raise ValueError("Include an uppercase and lowercase letter.")
+    if not re.search(r"[0-9]|[^A-Za-z0-9]", value):
+        raise ValueError("Include a number or special character.")
+    return value
 
 
 class PasswordChange(BaseModel):
@@ -75,6 +107,11 @@ class PasswordChange(BaseModel):
 
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password_strength(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class PasswordReset(BaseModel):
@@ -85,6 +122,11 @@ class PasswordReset(BaseModel):
     """
 
     new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password_strength(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class ImpersonateRequest(BaseModel):
@@ -108,3 +150,14 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"  # noqa: S105 - a scheme name, not a credential
     expires_at: datetime
     user: UserRead
+
+
+class SessionRead(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    last_seen_at: datetime
+    expires_at: datetime
+    ip_address: str | None
+    user_agent: str | None
+    is_current: bool
+    is_admin_session: bool
