@@ -1,3 +1,6 @@
+import zipfile
+
+from app.modules.import_export.confluence import iter_attachments, scan_archive
 from app.modules.import_export.service import (
     _is_invalid_import_username,
     _link_imported_attachments,
@@ -136,3 +139,26 @@ def test_link_imported_attachments():
     assert '<img alt="other.png" src="/attachments/456/other.png"/>' in result
     assert 'href="/attachments/123/raw.txt"' in result
     assert 'src="/attachments/123/my-image.png"' in result
+
+
+def test_confluence_scan_resolves_referenced_users_and_attachment_fallbacks(tmp_path):
+    entities = """
+    <root>
+      <object class="Space"><id>s1</id><property name="key">ENG</property><property name="name">Engineering</property></object>
+      <object class="ConfluenceUserImpl"><id>u1</id><property name="name">alice</property></object>
+      <object class="Page"><id>p1</id><property name="title">Home</property><property name="space"><id>s1</id></property><property name="contentStatus">current</property><property name="creator"><id>u1</id></property><property name="lastModifier"><id>u1</id></property></object>
+      <object class="Attachment"><id>a1</id><property name="title">doc.txt</property><property name="containerContent"><id>p1</id></property></object>
+      <object class="Attachment"><id>a2</id><property name="title">img.png</property><property name="containerContent"><id>p1</id></property></object>
+    </root>
+    """
+    path = tmp_path / "export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", entities)
+        archive.writestr("nested/doc.txt", b"doc")
+        archive.writestr("x/a2/a", b"new")
+
+    spaces = scan_archive(path)
+    assert spaces[0].pages[0].creator == "alice"
+    assert spaces[0].attachment_count == 2
+    attachments = list(iter_attachments(path))
+    assert {entry for _item, entry in attachments} == {"nested/doc.txt", "x/a2/a"}

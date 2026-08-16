@@ -1,5 +1,5 @@
 import difflib
-import pytest
+
 from app.schemas.revision import PageRevisionDiffChunk, PageRevisionDiffRead
 
 
