@@ -2,6 +2,7 @@
 
 import {
   Database,
+  BookOpen,
   FolderCog,
   HardDrive,
   Home,
@@ -34,6 +35,13 @@ const OVERVIEW_NAV: NavItem[] = [
   { href: "/", label: "Home", icon: Home, permission: "home" },
   { href: "/spaces", label: "Spaces", icon: LayoutGrid, permission: "spaces" },
 ];
+
+const HELP_NAV: NavItem = {
+  href: "/help",
+  label: "Help",
+  icon: BookOpen,
+  permission: "home",
+};
 
 // All administration sections gate on the same "settings" permission - they
 // are one cluster only superusers reach (app/admin/layout.tsx enforces the
@@ -275,7 +283,10 @@ export function Sidebar({
     setMobileOpen,
   } = useSidebar();
   const [dragging, setDragging] = useState(false);
-  const role = user.is_superuser || user.global_permissions.includes("system_admin") ? "admin" : "member";
+  const role =
+    user.is_superuser || user.global_permissions.includes("system_admin")
+      ? "admin"
+      : "member";
   const overviewItems = OVERVIEW_NAV.filter((item) =>
     permissions[item.permission].includes(role),
   );
@@ -389,6 +400,14 @@ export function Sidebar({
         <NavSection
           title="Administration"
           items={adminItems}
+          pathname={pathname}
+          collapsed={railCollapsed}
+          onNavigate={onNavigate}
+        />
+
+        <NavSection
+          title="Resources"
+          items={[HELP_NAV]}
           pathname={pathname}
           collapsed={railCollapsed}
           onNavigate={onNavigate}

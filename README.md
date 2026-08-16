@@ -213,6 +213,7 @@ knowing that user's password. The rules:
 | [`docs/architecture.md`](docs/architecture.md) | System design and module layout |
 | [`docs/development.md`](docs/development.md) | Day-to-day workflow and conventions |
 | [`docs/design-system.md`](docs/design-system.md) | Visual language and layout tokens |
+| [`docs/user-guide.md`](docs/user-guide.md) | Hướng dẫn sử dụng WikiHub bằng tiếng Việt |
 | [`docs/adr/`](docs/adr/) | Architecture decision records |
 
 `database.md`, `api.md`, `authentication.md`, `permissions.md`,
