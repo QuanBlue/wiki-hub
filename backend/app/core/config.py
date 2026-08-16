@@ -111,9 +111,7 @@ class Settings(BaseSettings):
     #: Default attachment allowlist. Overridable at runtime from the admin UI
     #: (see app/services/site_settings.py); this is the fallback.
     #: SVG is deliberately absent - it executes script when served inline.
-    attachment_allowed_types: CsvList = Field(
-        default_factory=lambda: ["*"]
-    )
+    attachment_allowed_types: CsvList = Field(default_factory=lambda: ["*"])
 
     # --- bootstrap admin --------------------------------------------------
     # Seeded once by `python -m scripts.seed` as a *protected* account: it can

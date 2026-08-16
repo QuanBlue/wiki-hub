@@ -39,9 +39,7 @@ class PermissionService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def _has_group_global_permission(
-        self, user: User, permission: GlobalPermission
-    ) -> bool:
+    async def _has_group_global_permission(self, user: User, permission: GlobalPermission) -> bool:
         return (
             await self.session.scalar(
                 select(GroupGlobalPermission.group_id)
@@ -352,10 +350,10 @@ class PermissionService:
             if group
             else await self.session.get(User, principal_id)
         )
-        if principal is None or (
-            group and isinstance(principal, Group) and not principal.is_active
-        ) or (
-            not group and isinstance(principal, User) and not principal.is_active
+        if (
+            principal is None
+            or (group and isinstance(principal, Group) and not principal.is_active)
+            or (not group and isinstance(principal, User) and not principal.is_active)
         ):
             raise NotFoundError("Permission principal not found.")
         model = SpaceGroupPermission if group else SpaceUserPermission
@@ -375,14 +373,24 @@ class PermissionService:
         await self.session.flush()
 
     async def _has_space_admin(self, space: Space, *, excluding: dict[str, object]) -> bool:
-        user_query = select(SpaceUserPermission.space_id).where(
-            SpaceUserPermission.space_id == space.id,
-            SpaceUserPermission.permission == Permission.admin,
-        ).join(User, User.id == SpaceUserPermission.user_id).where(User.is_active.is_(True))
-        group_query = select(SpaceGroupPermission.space_id).where(
-            SpaceGroupPermission.space_id == space.id,
-            SpaceGroupPermission.permission == Permission.admin,
-        ).join(Group, Group.id == SpaceGroupPermission.group_id).where(Group.is_active.is_(True))
+        user_query = (
+            select(SpaceUserPermission.space_id)
+            .where(
+                SpaceUserPermission.space_id == space.id,
+                SpaceUserPermission.permission == Permission.admin,
+            )
+            .join(User, User.id == SpaceUserPermission.user_id)
+            .where(User.is_active.is_(True))
+        )
+        group_query = (
+            select(SpaceGroupPermission.space_id)
+            .where(
+                SpaceGroupPermission.space_id == space.id,
+                SpaceGroupPermission.permission == Permission.admin,
+            )
+            .join(Group, Group.id == SpaceGroupPermission.group_id)
+            .where(Group.is_active.is_(True))
+        )
         if "user_id" in excluding:
             user_query = user_query.where(SpaceUserPermission.user_id != excluding["user_id"])
         if "group_id" in excluding:
@@ -495,9 +503,7 @@ class PermissionService:
         permissions = await self.effective_permissions(space, user)
         if Permission.view in permissions and Permission.restrictions in permissions:
             return
-        raise PermissionDeniedError(
-            "You need View and Restrictions permission in this space."
-        )
+        raise PermissionDeniedError("You need View and Restrictions permission in this space.")
 
     async def set_page_restriction(
         self,
@@ -515,10 +521,10 @@ class PermissionService:
             if group
             else await self.session.get(User, principal_id)
         )
-        if principal is None or (
-            group and isinstance(principal, Group) and not principal.is_active
-        ) or (
-            not group and isinstance(principal, User) and not principal.is_active
+        if (
+            principal is None
+            or (group and isinstance(principal, Group) and not principal.is_active)
+            or (not group and isinstance(principal, User) and not principal.is_active)
         ):
             raise NotFoundError("Restriction principal not found.")
         model = PageGroupRestriction if group else PageUserRestriction

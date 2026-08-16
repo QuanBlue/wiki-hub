@@ -41,9 +41,9 @@ async def test_storage_operations_and_presigned_urls(storage: S3ObjectStorage, t
     storage._signing_client = signing
 
     client.put_object.return_value = {"ETag": '"etag"'}
-    assert await storage.put("a", b"data", content_type="text/plain", metadata={"x": "y"}) == StoredObject(
-        key="a", size=4, content_type="text/plain", etag='"etag"'
-    )
+    assert await storage.put(
+        "a", b"data", content_type="text/plain", metadata={"x": "y"}
+    ) == StoredObject(key="a", size=4, content_type="text/plain", etag='"etag"')
     client.put_object.assert_called_once()
 
     body = Mock()
@@ -84,11 +84,17 @@ async def test_storage_operations_and_presigned_urls(storage: S3ObjectStorage, t
 
     signing.generate_presigned_url.side_effect = ["get-url", "put-url", "part-url"]
     assert await storage.presigned_url("a", expires_in=10, download_as='bad"name\\\r') == "get-url"
-    assert await storage.presigned_upload_url("a", content_type="text/plain", expires_in=11) == "put-url"
+    assert (
+        await storage.presigned_upload_url("a", content_type="text/plain", expires_in=11)
+        == "put-url"
+    )
     assert await storage.presigned_upload_part_url("a", "upload", 2, expires_in=12) == "part-url"
 
     client.create_multipart_upload.return_value = {"UploadId": "upload"}
-    assert await storage.start_multipart_upload("a", content_type="application/octet-stream") == "upload"
+    assert (
+        await storage.start_multipart_upload("a", content_type="application/octet-stream")
+        == "upload"
+    )
 
     client.list_parts.side_effect = [
         {"Parts": [{"PartNumber": 2, "ETag": "b"}], "IsTruncated": True, "NextPartNumberMarker": 2},
@@ -128,6 +134,7 @@ async def test_storage_listing_bucket_health_and_error_translation(
 
     client.head_bucket.side_effect = BotoCoreError()
     assert await storage.health() is False
+
 
 @pytest.mark.asyncio
 async def test_storage_call_maps_client_errors_and_global_override(

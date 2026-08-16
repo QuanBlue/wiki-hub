@@ -25,7 +25,5 @@ async def test_invalid_confluence_actor_is_not_persisted(
     invalid_username = "8a9e2ef3775bd448017765ec6a120000"
 
     assert await service._resolve_or_create_user(invalid_username) is None
-    assert (
-        await session.scalar(select(User).where(User.username == invalid_username))
-    ) is None
+    assert (await session.scalar(select(User).where(User.username == invalid_username))) is None
     assert INVALID_IMPORT_USERNAME == "invalid_user"

@@ -8,17 +8,26 @@ without change.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+import uuid
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Annotated
 
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 from pydantic import ValidationError
 
 from app.api.deps import ClientInfoDep, CurrentSuperuser, DbSession, Impersonator
 from app.core.config import settings
-from app.core.exceptions import BadRequestError, PayloadTooLargeError
+from app.core.exceptions import BadRequestError, PayloadTooLargeError, ServiceUnavailableError
+from app.models.backup_job import BackupJob
+from app.modules.backup.jobs import create_export_job
 from app.modules.backup.service import BackupService
-from app.schemas.backup import BackupDocument, ImportReport
+from app.schemas.backup import BackupDocument, BackupExportCreate, BackupJobRead, ImportReport
+from app.services.storage import get_storage
 
 router = APIRouter(prefix="/backup", tags=["backup"])
 
@@ -36,6 +45,38 @@ def get_backup_service(
 
 
 BackupServiceDep = Annotated[BackupService, Depends(get_backup_service)]
+
+
+async def _enqueue(job_id: uuid.UUID) -> None:
+    try:
+        pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        await pool.enqueue_job("run_backup_job", str(job_id))
+        await pool.aclose()
+    except Exception as exc:
+        raise ServiceUnavailableError(
+            "Backup worker queue is unavailable; the export was not started."
+        ) from exc
+
+
+async def _job_read(job: BackupJob) -> BackupJobRead:
+    return BackupJobRead(
+        id=job.id,
+        kind=job.kind,
+        status=job.status,
+        phase=job.phase,
+        counters=job.counters,
+        include_credentials=job.include_credentials,
+        confluence_profile=job.confluence_profile,
+        output_filename=job.output_filename,
+        download_url=(
+            await get_storage().presigned_url(job.output_key, download_as=job.output_filename)
+            if job.status == "complete" and job.output_key and job.output_filename
+            else None
+        ),
+        error=job.error,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
 
 
 @router.get(
@@ -79,7 +120,13 @@ async def import_backup(
     Multipart rather than a JSON body: a large document sent as a request body
     would be fully materialised and validated in memory before the handler runs.
     """
-    raw = await file.read()
+    if not file.filename or not file.filename.lower().endswith(".json"):
+        raise BadRequestError("Choose a .json file created by WikiHub.", code="invalid_backup_file")
+
+    # Do not materialise an unbounded multipart upload in memory. UploadFile
+    # may already be spooled to disk, but read() with no limit would still pull
+    # an attacker-controlled file into this process before we can reject it.
+    raw = await file.read(MAX_BACKUP_UPLOAD_BYTES + 1)
     if len(raw) > MAX_BACKUP_UPLOAD_BYTES:
         raise PayloadTooLargeError(
             f"Backup exceeds the {MAX_BACKUP_UPLOAD_BYTES // (1024 * 1024)} MB limit."
@@ -103,3 +150,88 @@ async def import_backup(
         ) from exc
 
     return await service.import_document(document, dry_run=dry_run)
+
+
+@router.post("/import-zip", response_model=ImportReport, summary="Restore a full WikiHub ZIP")
+async def import_full_backup_zip(
+    service: BackupServiceDep,
+    file: Annotated[UploadFile, File(description="A full .zip produced by a WikiHub export job")],
+    dry_run: Annotated[bool, Form(description="Verify and preview without writing.")] = True,
+    overwrite_space_keys: Annotated[
+        str, Form(description="JSON array of conflicting space keys to replace.")
+    ] = "[]",
+) -> ImportReport:
+    """Stage ZIP bytes locally only long enough for strict scan/apply.
+
+    Large, resumable production uploads use the archive/job endpoints; this
+    endpoint also keeps the restore operation usable in compact deployments.
+    """
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        raise BadRequestError("Choose a .zip file created by WikiHub.", code="invalid_backup_file")
+    try:
+        overwrite_keys = json.loads(overwrite_space_keys)
+    except json.JSONDecodeError as exc:
+        raise BadRequestError(
+            "Overwrite space selection is invalid.", code="invalid_backup_overwrite"
+        ) from exc
+    if not isinstance(overwrite_keys, list) or not all(
+        isinstance(item, str) for item in overwrite_keys
+    ):
+        raise BadRequestError(
+            "Overwrite space selection is invalid.", code="invalid_backup_overwrite"
+        )
+    staged_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="wikihub-restore-", suffix=".zip", delete=False
+        ) as staged:
+            staged_path = staged.name
+            total = 0
+            while chunk := await file.read(1024 * 1024):
+                total += len(chunk)
+                if total > settings.max_import_size_bytes:
+                    raise PayloadTooLargeError(
+                        "Backup archive exceeds the configured import limit."
+                    )
+                staged.write(chunk)
+        return await service.restore_full_package(
+            staged_path,
+            get_storage(),
+            dry_run=dry_run,
+            overwrite_space_keys=set(overwrite_keys),
+        )
+    finally:
+        await file.close()
+        if staged_path:
+            with suppress(FileNotFoundError):
+                os.unlink(staged_path)
+
+
+@router.post("/jobs", response_model=BackupJobRead, status_code=201)
+async def create_backup_export(
+    payload: BackupExportCreate, user: CurrentSuperuser, session: DbSession
+) -> BackupJobRead:
+    """Queue a full WikiHub ZIP or a separately compatible DC XML export."""
+    try:
+        job = await create_export_job(
+            session,
+            actor_id=user.id,
+            kind=payload.kind,
+            include_credentials=payload.include_credentials,
+            confluence_profile=payload.confluence_profile,
+            space_keys=payload.space_keys,
+        )
+    except ValueError as exc:
+        raise BadRequestError(str(exc), code="invalid_backup_export") from exc
+    await _enqueue(job.id)
+    return await _job_read(job)
+
+
+@router.get("/jobs/{job_id}", response_model=BackupJobRead)
+async def get_backup_job(
+    job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession
+) -> BackupJobRead:
+    job = await session.get(BackupJob, job_id)
+    if job is None:
+        raise BadRequestError("Backup job was not found.", code="backup_job_not_found")
+    return await _job_read(job)

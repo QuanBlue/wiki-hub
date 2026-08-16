@@ -6,6 +6,7 @@ from html import escape
 
 from bs4 import BeautifulSoup
 from markdown_it import MarkdownIt
+
 from app.models.page import WikiPage
 
 _PRINT_CSS = """
@@ -21,10 +22,14 @@ p { margin: 0 0 10pt; }
 a { color: #216fc0; text-decoration: underline; }
 ul, ol { margin: 0 0 10pt 20pt; padding: 0; }
 li { margin: 4pt 0; }
-code { background: #f1f3f6; border-radius: 3pt; font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; padding: 1pt 3pt; }
-pre { background: #f1f3f6; border: 0.5pt solid #cfd7e3; border-radius: 4pt; font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; line-height: 1.45; margin: 12pt 0; overflow-wrap: anywhere; padding: 10pt; white-space: pre-wrap; }
+code { background: #f1f3f6; border-radius: 3pt; font-family: "DejaVu Sans Mono", monospace;
+  font-size: 8.5pt; padding: 1pt 3pt; }
+pre { background: #f1f3f6; border: 0.5pt solid #cfd7e3; border-radius: 4pt;
+  font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; line-height: 1.45;
+  margin: 12pt 0; overflow-wrap: anywhere; padding: 10pt; white-space: pre-wrap; }
 pre code { background: transparent; padding: 0; }
-blockquote { border-left: 3pt solid #8ba4bf; color: #4f5f74; margin: 12pt 0; padding: 2pt 0 2pt 12pt; }
+blockquote { border-left: 3pt solid #8ba4bf; color: #4f5f74; margin: 12pt 0;
+  padding: 2pt 0 2pt 12pt; }
 table { border-collapse: collapse; margin: 12pt 0; max-width: 100%; width: 100%; }
 th, td { border: 0.5pt solid #cfd7e3; padding: 6pt 7pt; text-align: left; vertical-align: top; }
 th { background: #f1f3f6; font-weight: 700; }

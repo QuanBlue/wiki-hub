@@ -59,7 +59,8 @@ def test_error_response_and_registered_handlers() -> None:
 
     http_response = asyncio.run(
         app.exception_handlers[StarletteHTTPException](
-            _request(), StarletteHTTPException(418, detail={"ignored": True}, headers={"x-test": "1"})
+            _request(),
+            StarletteHTTPException(418, detail={"ignored": True}, headers={"x-test": "1"}),
         )
     )
     assert http_response.status_code == 418
@@ -80,7 +81,11 @@ async def test_health_probes_and_readiness(monkeypatch: pytest.MonkeyPatch) -> N
     session_factory = Mock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=session)))
     monkeypatch.setattr(health, "get_session_factory", Mock(return_value=session_factory))
     monkeypatch.setattr(health, "get_redis", Mock(return_value=SimpleNamespace(ping=AsyncMock())))
-    monkeypatch.setattr(health, "get_storage", Mock(return_value=SimpleNamespace(health=AsyncMock(return_value=True))))
+    monkeypatch.setattr(
+        health,
+        "get_storage",
+        Mock(return_value=SimpleNamespace(health=AsyncMock(return_value=True))),
+    )
     assert await health._check_database() == "ok"
     assert await health._check_redis() == "ok"
     assert await health._check_storage() == "ok"
@@ -128,7 +133,13 @@ async def test_request_and_security_middleware_paths(monkeypatch: pytest.MonkeyP
     sent: list[dict] = []
 
     async def app(scope, receive, send):
-        await send({"type": "http.response.start", "status": 200, "headers": [(b"x-frame-options", b"custom")]})
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"x-frame-options", b"custom")],
+            }
+        )
         await send({"type": "http.response.body", "body": b"ok"})
 
     async def capture(message):
@@ -144,6 +155,7 @@ async def test_request_and_security_middleware_paths(monkeypatch: pytest.MonkeyP
     assert b"content-security-policy" in headers
 
     docs_sent: list[dict] = []
+
     async def capture_docs(message):
         docs_sent.append(message)
 
@@ -151,6 +163,7 @@ async def test_request_and_security_middleware_paths(monkeypatch: pytest.MonkeyP
     assert b"content-security-policy" not in dict(docs_sent[0]["headers"])
 
     non_http: list[dict] = []
+
     async def capture_non_http(message):
         non_http.append(message)
 
@@ -175,8 +188,13 @@ def test_dependency_token_and_client_helpers(monkeypatch: pytest.MonkeyPatch) ->
     assert deps._extract_token(cookie_request) == "cookie"
     assert deps._extract_token(_request()) is None
 
-    service = Mock(get_active_user=AsyncMock(return_value="user"))
-    monkeypatch.setattr(deps, "decode_access_token", lambda token: "id")
+    service = Mock(get_active_user=AsyncMock(return_value="user"), session=Mock())
+    monkeypatch.setattr(
+        deps,
+        "decode_token_identity",
+        lambda _token: SimpleNamespace(subject="id", jti="session-id"),
+    )
+    monkeypatch.setattr(deps.SessionService, "require_active", AsyncMock())
     assert asyncio.run(deps.get_current_user(request, service)) == "user"
     assert asyncio.run(deps.get_optional_user(request, service)) == "user"
 

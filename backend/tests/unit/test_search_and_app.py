@@ -30,20 +30,30 @@ def test_extract_snippet_handles_empty_query_and_matches() -> None:
 
 @pytest.mark.asyncio
 async def test_search_returns_visible_spaces_and_pages(monkeypatch: pytest.MonkeyPatch) -> None:
-    visible_space = SimpleNamespace(
-        id="space-1", key="ENG", name="Engineering", description=None
-    )
+    visible_space = SimpleNamespace(id="space-1", key="ENG", name="Engineering", description=None)
     hidden_space = SimpleNamespace(id="space-2", key="OPS", name="Ops", description="Ops")
     visible_page = SimpleNamespace(
-        id="page-1", title="Runbook", slug="runbook", content="<p>Deploy runbook</p>",
-        updated_at=datetime.now(UTC), space=visible_space,
+        id="page-1",
+        title="Runbook",
+        slug="runbook",
+        content="<p>Deploy runbook</p>",
+        updated_at=datetime.now(UTC),
+        space=visible_space,
     )
     hidden_page = SimpleNamespace(
-        id="page-2", title="Secret", slug="secret", content="secret", updated_at=None,
+        id="page-2",
+        title="Secret",
+        slug="secret",
+        content="secret",
+        updated_at=None,
         space=hidden_space,
     )
-    first = Mock(scalars=Mock(return_value=Mock(all=Mock(return_value=[visible_space, hidden_space]))))
-    second = Mock(scalars=Mock(return_value=Mock(all=Mock(return_value=[visible_page, hidden_page]))))
+    first = Mock(
+        scalars=Mock(return_value=Mock(all=Mock(return_value=[visible_space, hidden_space])))
+    )
+    second = Mock(
+        scalars=Mock(return_value=Mock(all=Mock(return_value=[visible_page, hidden_page])))
+    )
     session = Mock(execute=AsyncMock(side_effect=[first, second]))
     permissions = SimpleNamespace(
         effective_permissions=AsyncMock(side_effect=[[Permission.view], []]),
@@ -91,6 +101,7 @@ def test_create_app_and_lifespan(monkeypatch: pytest.MonkeyPatch) -> None:
     close_redis = AsyncMock()
     monkeypatch.setattr("app.main.dispose_engine", dispose)
     monkeypatch.setattr("app.main.close_redis", close_redis)
+
     async def run_lifespan() -> None:
         async with lifespan(app):
             pass
@@ -103,4 +114,7 @@ def test_create_app_and_lifespan(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_production_security_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "env", Environment.production)
     middleware = SecurityHeadersMiddleware(lambda *_args: None)
-    assert (b"strict-transport-security", b"max-age=31536000; includeSubDomains") in middleware._headers
+    assert (
+        b"strict-transport-security",
+        b"max-age=31536000; includeSubDomains",
+    ) in middleware._headers

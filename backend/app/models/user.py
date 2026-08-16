@@ -48,21 +48,15 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     avatar_object_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     avatar_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    bio: Mapped[str] = mapped_column(
-        Text, nullable=False, default="", server_default=""
-    )
-    pronouns: Mapped[str] = mapped_column(
-        String(64), nullable=False, default="", server_default=""
-    )
+    bio: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    pronouns: Mapped[str] = mapped_column(String(64), nullable=False, default="", server_default="")
     profile_url: Mapped[str] = mapped_column(
         String(2048), nullable=False, default="", server_default=""
     )
     social_links: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default="[]"
     )
-    company: Mapped[str] = mapped_column(
-        String(255), nullable=False, default="", server_default=""
-    )
+    company: Mapped[str] = mapped_column(String(255), nullable=False, default="", server_default="")
 
     #: Argon2id hash. NULL for users that authenticate only through an external
     #: identity provider - those accounts must never fall back to a password.

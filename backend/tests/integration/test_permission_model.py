@@ -140,9 +140,7 @@ async def test_system_admin_group_bypasses_space_and_global_checks(
         owner,
     )
     group = await _group(session, owner, system_admin)
-    session.add(
-        GroupGlobalPermission(group_id=group.id, permission=GlobalPermission.system_admin)
-    )
+    session.add(GroupGlobalPermission(group_id=group.id, permission=GlobalPermission.system_admin))
     await session.flush()
     permissions = PermissionService(session)
 
@@ -336,9 +334,7 @@ async def test_group_lifecycle_owner_permissions_and_page_restrictions(
     assert group.name == "renamed" and group.owner_id == member.id and group.is_active
     await permissions.set_group_member(group, owner.id, admin, True)
     await permissions.set_group_member(group, owner.id, admin, False)
-    await permissions.set_group_global_permission(
-        group, GlobalPermission.manage_users, admin, True
-    )
+    await permissions.set_group_global_permission(group, GlobalPermission.manage_users, admin, True)
     assert await permissions.has_global(member, GlobalPermission.manage_users)
     await permissions.set_group_global_permission(
         group, GlobalPermission.manage_users, admin, False

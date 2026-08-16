@@ -62,11 +62,19 @@ def test_report_builder_counts_and_truncation(monkeypatch: pytest.MonkeyPatch) -
 async def test_export_document_without_credentials() -> None:
     svc = service()
     empty = Mock(scalars=Mock(return_value=[]))
-    svc.session.execute = AsyncMock(side_effect=[empty, empty, empty, empty])
+    svc.session.execute = AsyncMock(side_effect=[empty] * 16)
     result = await svc.export_document()
     assert result.wikihub_backup.includes_credentials is False
     assert result.wikihub_backup.counts == {
-        "users": 0, "spaces": 0, "space_members": 0, "space_favorites": 0
+        "users": 0,
+        "spaces": 0,
+        "space_members": 0,
+        "space_favorites": 0,
+        "groups": 0,
+        "pages": 0,
+        "page_revisions": 0,
+        "page_likes": 0,
+        "page_restrictions": 0,
     }
     svc.audit.record.assert_awaited_once()
 
@@ -76,20 +84,44 @@ async def test_export_document_serializes_relations_and_credentials() -> None:
     svc = service()
     user_id, space_id = uuid4(), uuid4()
     user = SimpleNamespace(
-        id=user_id, username="alice", email="alice@example.com", full_name="Alice",
-        is_active=True, is_superuser=False, is_protected=False, last_login_at=None,
-        created_at=None, password_hash="hash",
+        id=user_id,
+        username="alice",
+        email="alice@example.com",
+        full_name="Alice",
+        is_active=True,
+        is_superuser=False,
+        is_protected=False,
+        last_login_at=None,
+        created_at=None,
+        password_hash="hash",
+        bio="",
+        pronouns="",
+        profile_url="",
+        social_links=[],
+        company="",
+        avatar_url=None,
+        avatar_object_key=None,
     )
     space = SimpleNamespace(
-        id=space_id, key="ENG", name="Engineering", description="Docs", icon="book",
-        status="active", created_at=None, updated_at=None, created_by_id=user_id,
+        id=space_id,
+        key="ENG",
+        name="Engineering",
+        description="Docs",
+        icon="book",
+        status="active",
+        visibility="open",
+        created_at=None,
+        updated_at=None,
+        created_by_id=user_id,
     )
     member = SimpleNamespace(space_id=space_id, user_id=user_id, role=SpaceRole.viewer)
     favorite = SimpleNamespace(space_id=space_id, user_id=user_id)
     results = [
-        Mock(scalars=Mock(return_value=[user])), Mock(scalars=Mock(return_value=[space])),
-        Mock(scalars=Mock(return_value=[member])), Mock(scalars=Mock(return_value=[favorite])),
-    ]
+        Mock(scalars=Mock(return_value=[user])),
+        Mock(scalars=Mock(return_value=[space])),
+        Mock(scalars=Mock(return_value=[member])),
+        Mock(scalars=Mock(return_value=[favorite])),
+    ] + [Mock(scalars=Mock(return_value=[]))] * 12
     svc.session.execute = AsyncMock(side_effect=results)
     result = await svc.export_document(include_credentials=True)
     assert result.users[0].password_hash == "hash"
@@ -116,6 +148,21 @@ async def test_import_document_validates_savepoint_and_audits() -> None:
     bad = SimpleNamespace(wikihub_backup=SimpleNamespace(version=99))
     with pytest.raises(BadRequestError, match="Unsupported backup version"):
         await svc.import_document(bad)
+
+
+@pytest.mark.asyncio
+async def test_import_document_rolls_back_a_partial_restore_on_error() -> None:
+    svc = service()
+    savepoint = Mock(is_active=True, rollback=AsyncMock(), commit=AsyncMock())
+    svc.session.begin_nested = AsyncMock(return_value=savepoint)
+    svc._apply = AsyncMock(side_effect=RuntimeError("late database failure"))
+
+    with pytest.raises(RuntimeError, match="late database failure"):
+        await svc.import_document(document(), dry_run=False)
+
+    savepoint.rollback.assert_awaited_once()
+    savepoint.commit.assert_not_awaited()
+    svc.audit.record.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -150,15 +197,27 @@ async def test_apply_covers_conflicts_memberships_favourites_and_settings() -> N
 
     incoming = document()
     incoming.users = [
-        BackupUser(id="00000000-0000-0000-0000-000000000001", username="root", email="x@example.com"),
-        BackupUser(id="00000000-0000-0000-0000-000000000002", username="existing", email="x@example.com"),
-        BackupUser(id="00000000-0000-0000-0000-000000000003", username="new", email="new@example.com"),
-        BackupUser(id="00000000-0000-0000-0000-000000000004", username="email", email="existing@example.com"),
+        BackupUser(
+            id="00000000-0000-0000-0000-000000000001", username="root", email="x@example.com"
+        ),
+        BackupUser(
+            id="00000000-0000-0000-0000-000000000002", username="existing", email="x@example.com"
+        ),
+        BackupUser(
+            id="00000000-0000-0000-0000-000000000003", username="new", email="new@example.com"
+        ),
+        BackupUser(
+            id="00000000-0000-0000-0000-000000000004",
+            username="email",
+            email="existing@example.com",
+        ),
     ]
     incoming.spaces = [
         BackupSpace(id="00000000-0000-0000-0000-000000000010", key="existing", name="Exists"),
         BackupSpace(
-            id="00000000-0000-0000-0000-000000000011", key="eng", name="Engineering",
+            id="00000000-0000-0000-0000-000000000011",
+            key="eng",
+            name="Engineering",
             created_by_username="creator",
         ),
     ]
@@ -202,7 +261,12 @@ async def test_apply_creates_space_and_new_site_settings() -> None:
     svc.site_settings.update = AsyncMock()
     incoming = document()
     incoming.spaces = [
-        BackupSpace(id="00000000-0000-0000-0000-000000000012", key=" eng ", name=" Engineering ", created_by_username="creator")
+        BackupSpace(
+            id="00000000-0000-0000-0000-000000000012",
+            key=" eng ",
+            name=" Engineering ",
+            created_by_username="creator",
+        )
     ]
     incoming.site_settings = BackupSiteSettings(site_name="Imported")
     report = _ReportBuilder()

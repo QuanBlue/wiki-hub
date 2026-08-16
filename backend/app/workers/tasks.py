@@ -11,6 +11,7 @@ from typing import Any
 
 from app.core.logging import get_logger
 from app.db.session import session_scope
+from app.modules.backup.jobs import run_backup_job as execute_backup_job
 from app.modules.import_export.service import run_import
 from app.services.storage import get_storage
 
@@ -35,3 +36,11 @@ async def run_confluence_import(ctx: dict[str, Any], job_id: str) -> None:
 
     async with session_scope() as session:
         await run_import(session, get_storage(), uuid.UUID(job_id))
+
+
+async def run_backup_job(ctx: dict[str, Any], job_id: str) -> None:
+    """Build exports off-request; job rows make retries/status durable."""
+    import uuid
+
+    async with session_scope() as session:
+        await execute_backup_job(session, get_storage(), uuid.UUID(job_id))

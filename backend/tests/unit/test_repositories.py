@@ -59,7 +59,11 @@ async def test_page_and_revision_repositories_cover_reads_and_writes() -> None:
 
     revision_session = Mock()
     revision_session.execute = AsyncMock(
-        side_effect=[_scalars(["revision"]), Mock(scalar_one_or_none=Mock(return_value="one")), Mock(scalar_one_or_none=Mock(return_value=2))]
+        side_effect=[
+            _scalars(["revision"]),
+            Mock(scalar_one_or_none=Mock(return_value="one")),
+            Mock(scalar_one_or_none=Mock(return_value=2)),
+        ]
     )
     revisions = PageRevisionRepository(revision_session)
     assert list(await revisions.list_for_page(page_id)) == ["revision"]
@@ -75,9 +79,12 @@ async def test_space_repository_covers_memberships_favourites_and_listing() -> N
     session.execute = AsyncMock(
         side_effect=[
             Mock(scalar_one_or_none=Mock(return_value="by-key")),
-            _scalars(["spaces"]), _scalars(["recent"]), _scalars(["favorite"]),
+            _scalars(["spaces"]),
+            _scalars(["recent"]),
+            _scalars(["favorite"]),
             Mock(scalar_one=Mock(return_value=4)),
-            Mock(scalar_one_or_none=Mock(return_value="member")), _scalars(["member"]),
+            Mock(scalar_one_or_none=Mock(return_value="member")),
+            _scalars(["member"]),
             Mock(),
             Mock(scalar_one_or_none=Mock(return_value=None)),
             _scalars(["id-1"]),
@@ -116,8 +123,11 @@ async def test_user_and_audit_repositories_cover_filters_and_pagination() -> Non
             Mock(scalar_one_or_none=Mock(return_value="email")),
             Mock(scalar_one_or_none=Mock(return_value="identifier")),
             Mock(scalar_one_or_none=Mock(return_value="protected")),
-            _scalars(["user"]), Mock(scalar_one=Mock(return_value=2)),
-            Mock(scalar_one=Mock(return_value=1)), Mock(scalar_one=Mock(return_value=1)), _scalars(["user"]),
+            _scalars(["user"]),
+            Mock(scalar_one=Mock(return_value=2)),
+            Mock(scalar_one=Mock(return_value=1)),
+            Mock(scalar_one=Mock(return_value=1)),
+            _scalars(["user"]),
         ]
     )
     users = UserRepository(session)
@@ -131,9 +141,7 @@ async def test_user_and_audit_repositories_cover_filters_and_pagination() -> Non
     assert await users.count() == 2
     assert await users.count_active_superusers() == 1
     assert await users.search(q="x", status="active", role="admin") == (["user"], 1)
-    session.execute = AsyncMock(
-        side_effect=[Mock(scalar_one=Mock(return_value=0)), _scalars([])]
-    )
+    session.execute = AsyncMock(side_effect=[Mock(scalar_one=Mock(return_value=0)), _scalars([])])
     assert await users.search(status="disabled", role="member") == ([], 0)
     user = Mock()
     assert users.add(user) is user
@@ -143,5 +151,8 @@ async def test_user_and_audit_repositories_cover_filters_and_pagination() -> Non
         side_effect=[Mock(scalar_one=Mock(return_value=5)), _scalars(["audit"])]
     )
     audit = AuditLogRepository(audit_session)
-    assert await audit.search(action="login", entity_type="user", q="admin", limit=1) == (["audit"], 5)
+    assert await audit.search(action="login", entity_type="user", q="admin", limit=1) == (
+        ["audit"],
+        5,
+    )
     assert audit.add(user) is user

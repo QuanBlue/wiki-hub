@@ -25,7 +25,9 @@ def make_service() -> SpaceService:
     result.permissions = Mock()
     result.permissions.require = AsyncMock()
     result.permissions.role_of = AsyncMock(return_value=SpaceRole.admin)
-    result.permissions.effective_permissions = AsyncMock(return_value={Permission.view, Permission.add, Permission.admin})
+    result.permissions.effective_permissions = AsyncMock(
+        return_value={Permission.view, Permission.add, Permission.admin}
+    )
     result.permissions._has_space_admin = AsyncMock(return_value=True)
     result.spaces = Mock()
     result.users = Mock()
@@ -34,9 +36,15 @@ def make_service() -> SpaceService:
 
 def space():
     return SimpleNamespace(
-        id=uuid.uuid4(), key="ENG", name="Engineering", description="Docs", icon="book",
-        status=SpaceStatus.active, visibility=SpaceVisibility.open,
-        created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+        id=uuid.uuid4(),
+        key="ENG",
+        name="Engineering",
+        description="Docs",
+        icon="book",
+        status=SpaceStatus.active,
+        visibility=SpaceVisibility.open,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
         created_by=SimpleNamespace(username="alice"),
         members=[],
     )
@@ -69,7 +77,9 @@ async def test_space_reads_serialization_and_listing() -> None:
     service.spaces.list_favorites = AsyncMock(return_value=[current])
     assert len(await service.list_favorites(actor)) == 1
     member = SimpleNamespace(
-        user_id=actor.id, user=SimpleNamespace(username="alice", full_name="Alice"), role=SpaceRole.viewer
+        user_id=actor.id,
+        user=SimpleNamespace(username="alice", full_name="Alice"),
+        role=SpaceRole.viewer,
     )
     service.spaces.list_members = AsyncMock(return_value=[member])
     assert (await service.list_members(current))[0].username == "alice"
@@ -90,7 +100,9 @@ async def test_space_create_update_archive_delete_and_favourites() -> None:
 
     await service.update(created, SpaceUpdate(description=" New "), actor)
     await service.update(
-        created, SpaceUpdate(name="New", icon="x", status="archived", visibility="restricted"), actor
+        created,
+        SpaceUpdate(name="New", icon="x", status="archived", visibility="restricted"),
+        actor,
     )
     assert created.status is SpaceStatus.archived
     await service.archive(created, actor)

@@ -17,10 +17,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.space import SpaceRole, SpaceStatus
+from app.models.permission import GlobalPermission, Permission
+from app.models.restriction import PageRestrictionPermission
+from app.models.space import SpaceRole, SpaceStatus, SpaceVisibility
 
 #: Only version this build can read.
-BACKUP_VERSION: Literal[1] = 1
+# Version 2 adds the knowledge and access-control data that make a workspace
+# backup useful in practice.  Version 1 remains accepted for restores.
+BACKUP_VERSION: Literal[2] = 2
+SUPPORTED_BACKUP_VERSIONS = frozenset({1, 2})
 
 
 class BackupUser(BaseModel):
@@ -40,6 +45,15 @@ class BackupUser(BaseModel):
     created_at: datetime | None = None
     #: Argon2 hash. Only populated when the export explicitly opted in.
     password_hash: str | None = None
+    bio: str = ""
+    pronouns: str = ""
+    profile_url: str = ""
+    social_links: list[str] = Field(default_factory=list)
+    company: str = ""
+    # Object-storage avatar bytes are deliberately not represented as a URL:
+    # an internal avatar URL points at the source instance and would be broken
+    # after restore. External URLs remain safe to preserve.
+    avatar_url: str | None = None
 
 
 class BackupSpace(BaseModel):
@@ -51,6 +65,7 @@ class BackupSpace(BaseModel):
     description: str = ""
     icon: str = ""
     status: SpaceStatus = SpaceStatus.active
+    visibility: SpaceVisibility = SpaceVisibility.open
     created_at: datetime | None = None
     updated_at: datetime | None = None
     created_by_username: str | None = None
@@ -67,6 +82,99 @@ class BackupSpaceFavorite(BaseModel):
     space_key: str
 
 
+class BackupGroup(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str = ""
+    owner_username: str
+    is_active: bool = True
+
+
+class BackupGroupMember(BaseModel):
+    group_name: str
+    username: str
+
+
+class BackupGroupGlobalPermission(BaseModel):
+    group_name: str
+    permission: GlobalPermission
+
+
+class BackupSpaceUserPermission(BaseModel):
+    space_key: str
+    username: str
+    permission: Permission
+
+
+class BackupSpaceGroupPermission(BaseModel):
+    space_key: str
+    group_name: str
+    permission: Permission
+
+
+class BackupPage(BaseModel):
+    id: uuid.UUID
+    space_key: str
+    slug: str
+    title: str
+    content: str = ""
+    content_format: str = "html"
+    parent_slug: str | None = None
+    created_by_username: str | None = None
+    updated_by_username: str | None = None
+    created_by_label: str | None = None
+    updated_by_label: str | None = None
+
+
+class BackupPageRevision(BaseModel):
+    page_space_key: str
+    page_slug: str
+    version: int
+    title: str
+    content: str = ""
+    content_format: str = "html"
+    created_by_username: str | None = None
+    change_summary: str | None = None
+
+
+class BackupPageLike(BaseModel):
+    page_space_key: str
+    page_slug: str
+    username: str
+
+
+class BackupPageUserRestriction(BaseModel):
+    page_space_key: str
+    page_slug: str
+    username: str
+    permission: PageRestrictionPermission
+
+
+class BackupPageGroupRestriction(BaseModel):
+    page_space_key: str
+    page_slug: str
+    group_name: str
+    permission: PageRestrictionPermission
+
+
+class BackupAttachment(BaseModel):
+    page_space_key: str
+    page_slug: str
+    filename: str
+    content_type: str
+    object_path: str
+    sha256: str
+    size_bytes: int
+
+
+class BackupAvatar(BaseModel):
+    username: str
+    content_type: str
+    object_path: str
+    sha256: str
+    size_bytes: int
+
+
 class BackupSiteSettings(BaseModel):
     site_name: str | None = None
     max_upload_size_mb: int | None = None
@@ -75,7 +183,7 @@ class BackupSiteSettings(BaseModel):
 
 
 class BackupMeta(BaseModel):
-    version: Literal[1] = BACKUP_VERSION
+    version: Literal[1, 2] = BACKUP_VERSION
     exported_at: datetime
     app_version: str
     site_name: str
@@ -89,6 +197,18 @@ class BackupDocument(BaseModel):
     spaces: list[BackupSpace] = Field(default_factory=list)
     space_members: list[BackupSpaceMember] = Field(default_factory=list)
     space_favorites: list[BackupSpaceFavorite] = Field(default_factory=list)
+    groups: list[BackupGroup] = Field(default_factory=list)
+    group_members: list[BackupGroupMember] = Field(default_factory=list)
+    group_global_permissions: list[BackupGroupGlobalPermission] = Field(default_factory=list)
+    space_user_permissions: list[BackupSpaceUserPermission] = Field(default_factory=list)
+    space_group_permissions: list[BackupSpaceGroupPermission] = Field(default_factory=list)
+    pages: list[BackupPage] = Field(default_factory=list)
+    page_revisions: list[BackupPageRevision] = Field(default_factory=list)
+    page_likes: list[BackupPageLike] = Field(default_factory=list)
+    page_user_restrictions: list[BackupPageUserRestriction] = Field(default_factory=list)
+    page_group_restrictions: list[BackupPageGroupRestriction] = Field(default_factory=list)
+    attachments: list[BackupAttachment] = Field(default_factory=list)
+    avatars: list[BackupAvatar] = Field(default_factory=list)
     site_settings: BackupSiteSettings | None = None
 
 
@@ -118,3 +238,27 @@ class ImportReport(BaseModel):
     users_without_password: list[str] = Field(default_factory=list)
     entries: list[ImportEntry] = Field(default_factory=list)
     entries_truncated: bool = False
+
+
+class BackupExportCreate(BaseModel):
+    """Request one of the two explicitly separated export artifacts."""
+
+    kind: Literal["full_export", "confluence_export"]
+    include_credentials: bool = False
+    confluence_profile: Literal["dc-8", "dc-9"] | None = None
+    space_keys: list[str] = Field(default_factory=list, max_length=5000)
+
+
+class BackupJobRead(BaseModel):
+    id: uuid.UUID
+    kind: str
+    status: str
+    phase: str
+    counters: dict[str, int] = Field(default_factory=dict)
+    include_credentials: bool = False
+    confluence_profile: str | None = None
+    output_filename: str | None = None
+    download_url: str | None = None
+    error: str | None = None
+    created_at: datetime
+    updated_at: datetime

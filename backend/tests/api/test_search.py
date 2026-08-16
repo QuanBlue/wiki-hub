@@ -1,8 +1,8 @@
 """Tests for search endpoints and search service."""
 
-import pytest
 from httpx import AsyncClient
-from app.modules.search.service import extract_snippet, SearchService, SearchResults
+
+from app.modules.search.service import extract_snippet
 
 
 def test_extract_snippet_basic() -> None:

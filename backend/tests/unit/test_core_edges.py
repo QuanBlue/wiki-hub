@@ -19,7 +19,9 @@ from app.schemas.site_settings import SidebarPermissions, SiteSettingsUpdate
 from app.schemas.space import SpaceCreate
 
 
-def test_config_parsers_validators_and_production_hardening(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_parsers_validators_and_production_hardening(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     assert config._split_csv("a, b,,c") == ["a", "b", "c"]
     assert config._split_csv("   ") == []
     assert config._split_csv('["a", 2]') == ["a", "2"]
@@ -44,7 +46,10 @@ def test_config_parsers_validators_and_production_hardening(monkeypatch: pytest.
 
 
 def test_logging_security_and_small_schema_edges() -> None:
-    assert app_logging.scrub_value({"nested": {"password": "secret"}})["nested"]["password"] == app_logging.REDACTED
+    assert (
+        app_logging.scrub_value({"nested": {"password": "secret"}})["nested"]["password"]
+        == app_logging.REDACTED
+    )
     app_logging.request_id_ctx.set("request")
     app_logging.user_id_ctx.set("user")
     event = app_logging._add_context(None, "event", {})
@@ -63,7 +68,9 @@ def test_logging_security_and_small_schema_edges() -> None:
     assert Page.of(["a"], 2, limit=1, offset=0).has_more
     assert not Page.of(["a"], 1, limit=1, offset=0).has_more
     assert SiteSettingsUpdate(allowed_attachment_types=None).allowed_attachment_types is None
-    assert SiteSettingsUpdate(allowed_attachment_types=["png", "png", "jpg"]).allowed_attachment_types == ["png", "jpg"]
+    assert SiteSettingsUpdate(
+        allowed_attachment_types=["png", "png", "jpg"]
+    ).allowed_attachment_types == ["png", "jpg"]
     assert SiteSettingsUpdate(site_name=None).site_name is None
     assert SpaceCreate(key="eng-1", name="Engineering").key == "ENG_1"
     assert SidebarPermissions(home=["admin", "admin"]).home == ["admin"]

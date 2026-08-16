@@ -19,9 +19,10 @@ from app.models.revision import PageRevision
 from app.models.space import Space, SpaceStatus
 from app.models.user import User
 from app.modules.spaces.service import SpaceService
-from app.repositories.page import PageRepository
 from app.repositories.draft import PageDraftRepository
+from app.repositories.page import PageRepository
 from app.repositories.revision import PageRevisionRepository
+from app.schemas.draft import PageDraftRead, PageDraftUpsert
 from app.schemas.page import (
     PageCreate,
     PageLikeRead,
@@ -30,7 +31,6 @@ from app.schemas.page import (
     PageRecentItem,
     PageUpdate,
 )
-from app.schemas.draft import PageDraftRead, PageDraftUpsert
 from app.schemas.revision import (
     PageRevisionDiffChunk,
     PageRevisionDiffLine,
@@ -253,8 +253,7 @@ class PageService:
                     created_at=r.created_at,
                     change_summary=r.change_summary,
                     created_by_username=(
-                        page.created_by_label
-                        or (author_user.username if author_user else None)
+                        page.created_by_label or (author_user.username if author_user else None)
                     ),
                     created_by_full_name=author_user.full_name
                     if author_user and author_user.full_name
@@ -355,9 +354,9 @@ class PageService:
         added_count = 0
         deleted_count = 0
 
-        def char_segments(old_text: str, new_text: str) -> tuple[
-            list[PageRevisionDiffSegment], list[PageRevisionDiffSegment]
-        ]:
+        def char_segments(
+            old_text: str, new_text: str
+        ) -> tuple[list[PageRevisionDiffSegment], list[PageRevisionDiffSegment]]:
             old_segments: list[PageRevisionDiffSegment] = []
             new_segments: list[PageRevisionDiffSegment] = []
             char_matcher = difflib.SequenceMatcher(None, old_text, new_text)
@@ -372,11 +371,15 @@ class PageService:
                 elif char_tag in {"delete", "replace"}:
                     if old_start != old_end:
                         old_segments.append(
-                            PageRevisionDiffSegment(operation="delete", text=old_text[old_start:old_end])
+                            PageRevisionDiffSegment(
+                                operation="delete", text=old_text[old_start:old_end]
+                            )
                         )
                     if new_start != new_end:
                         new_segments.append(
-                            PageRevisionDiffSegment(operation="add", text=new_text[new_start:new_end])
+                            PageRevisionDiffSegment(
+                                operation="add", text=new_text[new_start:new_end]
+                            )
                         )
                 elif char_tag == "insert" and new_start != new_end:
                     new_segments.append(
@@ -397,8 +400,12 @@ class PageService:
                             new_line_number=j1 + offset + 1,
                             old_text=line_text,
                             new_text=line_text,
-                            old_segments=[PageRevisionDiffSegment(operation="equal", text=line_text)],
-                            new_segments=[PageRevisionDiffSegment(operation="equal", text=line_text)],
+                            old_segments=[
+                                PageRevisionDiffSegment(operation="equal", text=line_text)
+                            ],
+                            new_segments=[
+                                PageRevisionDiffSegment(operation="equal", text=line_text)
+                            ],
                         )
                     )
             elif tag == "replace":
@@ -433,7 +440,9 @@ class PageService:
                             operation="delete",
                             old_line_number=i1 + offset + 1,
                             old_text=old_text,
-                            old_segments=[PageRevisionDiffSegment(operation="delete", text=old_text)],
+                            old_segments=[
+                                PageRevisionDiffSegment(operation="delete", text=old_text)
+                            ],
                         )
                     )
                 for offset in range(pair_count, j2 - j1):
@@ -457,7 +466,9 @@ class PageService:
                             operation="delete",
                             old_line_number=i1 + offset + 1,
                             old_text=line_text,
-                            old_segments=[PageRevisionDiffSegment(operation="delete", text=line_text)],
+                            old_segments=[
+                                PageRevisionDiffSegment(operation="delete", text=line_text)
+                            ],
                         )
                     )
             elif tag == "insert":
@@ -614,11 +625,7 @@ class PageService:
 
     async def list_recent_pages(self, user: User, *, limit: int = 50) -> list[PageRecentItem]:
         pages = await self.pages.list_recent_pages(limit=limit)
-        pages = [
-            page
-            for page in pages
-            if await self.spaces.permissions.can_view_page(page, user)
-        ]
+        pages = [page for page in pages if await self.spaces.permissions.can_view_page(page, user)]
         items: list[PageRecentItem] = []
         for page in pages:
             author = page.updated_by or page.created_by

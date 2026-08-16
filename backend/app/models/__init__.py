@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction, AuditLog
+from app.models.backup_job import BackupArchive, BackupJob
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.draft import PageDraft
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
@@ -43,6 +44,8 @@ __all__ = [
     "SINGLETON_ID",
     "AuditAction",
     "AuditLog",
+    "BackupArchive",
+    "BackupJob",
     "Base",
     "GlobalPermission",
     "Group",

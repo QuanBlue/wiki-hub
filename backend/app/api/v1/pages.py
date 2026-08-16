@@ -16,6 +16,7 @@ from app.models.user import User
 from app.modules.pages.pdf_export import render_page_pdf
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
+from app.schemas.draft import PageDraftRead, PageDraftUpsert
 from app.schemas.page import (
     PageCreate,
     PageLikeRead,
@@ -24,7 +25,6 @@ from app.schemas.page import (
     PageRecentItem,
     PageUpdate,
 )
-from app.schemas.draft import PageDraftRead, PageDraftUpsert
 from app.schemas.permission import GroupRead, PageRestrictionRead
 from app.schemas.user import UserRead
 
@@ -187,7 +187,11 @@ async def update_page(
     return await page_service.to_read_for_user(updated, user)
 
 
-@router.get("/{slug}/draft", response_model=PageDraftRead | None, summary="Get the current user's page draft")
+@router.get(
+    "/{slug}/draft",
+    response_model=PageDraftRead | None,
+    summary="Get the current user's page draft",
+)
 async def get_page_draft(
     key: str,
     slug: str,
@@ -200,7 +204,9 @@ async def get_page_draft(
     return await page_service.get_draft(page, user)
 
 
-@router.put("/{slug}/draft", response_model=PageDraftRead, summary="Save the current user's page draft")
+@router.put(
+    "/{slug}/draft", response_model=PageDraftRead, summary="Save the current user's page draft"
+)
 async def save_page_draft(
     key: str,
     slug: str,
@@ -214,7 +220,11 @@ async def save_page_draft(
     return await page_service.save_draft(page, user, payload)
 
 
-@router.delete("/{slug}/draft", status_code=status.HTTP_204_NO_CONTENT, summary="Discard the current user's page draft")
+@router.delete(
+    "/{slug}/draft",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Discard the current user's page draft",
+)
 async def delete_page_draft(
     key: str,
     slug: str,
@@ -279,8 +289,14 @@ async def list_page_restriction_users(
     page = await page_service.get_by_slug(space, slug)
     await space_service.permissions.require_page_restriction_admin(page, user)
     users = (
-        await session.execute(select(User).where(User.is_active.is_(True)).order_by(User.username))
-    ).scalars().all()
+        (
+            await session.execute(
+                select(User).where(User.is_active.is_(True)).order_by(User.username)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return [UserRead.model_validate(item) for item in users]
 
 
@@ -301,8 +317,10 @@ async def list_page_restriction_groups(
     page = await page_service.get_by_slug(space, slug)
     await space_service.permissions.require_page_restriction_admin(page, user)
     groups = (
-        await session.execute(select(Group).where(Group.is_active.is_(True)).order_by(Group.name))
-    ).scalars().all()
+        (await session.execute(select(Group).where(Group.is_active.is_(True)).order_by(Group.name)))
+        .scalars()
+        .all()
+    )
     return [await group_read(session, group) for group in groups]
 
 

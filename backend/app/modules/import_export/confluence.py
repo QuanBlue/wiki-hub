@@ -5,6 +5,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Iterator
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -111,7 +112,7 @@ def scan_archive(path: Path) -> list[ConfluenceSpace]:
                         last_modifier_ref = _reference(props.get("lastModifier"))
                         creator_name = _text(props, "creatorName")
                         last_modifier_name = _text(props, "lastModifierName")
-                        
+
                         page = ConfluencePage(
                             source_id=source_id,
                             space_id=space_id,
@@ -216,17 +217,26 @@ def iter_attachments(path: Path) -> Iterator[tuple[ConfluenceAttachment, str]]:
             if entry is None:
                 # Site exports vary between Confluence versions; retain only a
                 # filename suffix fallback, never a broad fuzzy match.
-                entry = next((name for name in names if name.endswith(f"/{attachment.filename}")), None)
+                entry = next(
+                    (
+                        name
+                        for name in names
+                        if name.endswith(f"/{attachment.filename}")
+                    ),
+                    None,
+                )
             if entry is None:
-                # Confluence Cloud / Server often stores attachments hierarchically by version number
+                # Confluence exports may store attachments by version number
                 # without the filename in the path (e.g. attachments/.../12345/1)
                 attachment_dir = f"/{attachment.source_id}/"
-                versions = [name for name in names if attachment_dir in name and not name.endswith("/")]
+                versions = [
+                    name
+                    for name in names
+                    if attachment_dir in name and not name.endswith("/")
+                ]
                 if versions:
-                    try:
+                    with suppress(ValueError):
                         versions.sort(key=lambda x: int(x.split("/")[-1]))
-                    except ValueError:
-                        pass
                     entry = versions[-1]
             if entry:
                 yield attachment, entry

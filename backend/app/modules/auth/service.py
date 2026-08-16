@@ -38,8 +38,16 @@ PROTECTED_ACCOUNT_MESSAGE = (
 #: Fields worth recording in the audit trail when an account changes. An
 #: explicit allowlist - `password_hash` must never appear in a diff.
 AUDITED_USER_FIELDS = (
-    "email", "full_name", "avatar_url", "bio", "pronouns", "profile_url",
-    "social_links", "company", "is_active", "is_superuser",
+    "email",
+    "full_name",
+    "avatar_url",
+    "bio",
+    "pronouns",
+    "profile_url",
+    "social_links",
+    "company",
+    "is_active",
+    "is_superuser",
 )
 
 
@@ -374,9 +382,7 @@ class AuthService:
                 setattr(user, field, str(data[field]).strip() if data[field] else "")
         if "social_links" in data and data["social_links"] is not None:
             user.social_links = [
-                str(link).strip()
-                for link in data["social_links"]
-                if str(link).strip()
+                str(link).strip() for link in data["social_links"] if str(link).strip()
             ]
 
         await self.session.flush()

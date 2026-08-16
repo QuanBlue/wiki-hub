@@ -29,19 +29,23 @@ def test_link_imported_attachments_returns_unchanged_content_without_urls():
 
 def test_link_imported_attachments_keeps_unresolved_macros_and_supports_fallbacks():
     content = (
-        '<ac:image><ri:attachment /></ac:image>'
+        "<ac:image><ri:attachment /></ac:image>"
         '<ac:link><ri:attachment ri:filename="encoded+name.txt" /></ac:link>'
         '<img src="/download/attachments/1/unmatched.txt?x=1" />'
     )
     result = _link_imported_attachments(
         content,
         "1",
-        {("other", "encoded name.txt"): "/files/name.txt", ("other", "unmatched.txt"): "/files/unmatched.txt"},
+        {
+            ("other", "encoded name.txt"): "/files/name.txt",
+            ("other", "unmatched.txt"): "/files/unmatched.txt",
+        },
         {},
     )
     assert "ac:image" in result
     assert 'href="/files/name.txt"' in result
     assert 'src="/files/unmatched.txt"' in result
+
 
 def test_normalize_confluence_code_macros_cdata():
     content = """
@@ -52,20 +56,23 @@ def test_normalize_confluence_code_macros_cdata():
     </ac:structured-macro>
     """
     normalized = _normalize_confluence_code_macros(content)
-    assert '<pre><code class="language-python">def hello():\n    print(&quot;Hello CDATA&quot;)</code></pre>' in normalized
+    assert (
+        '<pre><code class="language-python">def hello():\n    print(&quot;Hello CDATA&quot;)</code></pre>'
+        in normalized
+    )
 
 
 def test_normalize_confluence_macros_handles_callouts_unknown_and_malformed_macros():
     content = (
         '<ac:structured-macro ac:name="info">'
         '<ac:parameter ac:name="title">A &amp; B</ac:parameter>'
-        '<ac:rich-text-body><p>Body</p></ac:rich-text-body>'
-        '</ac:structured-macro>'
+        "<ac:rich-text-body><p>Body</p></ac:rich-text-body>"
+        "</ac:structured-macro>"
         '<ac:structured-macro ac:name="expand">'
-        '<ac:rich-text-body>Details</ac:rich-text-body>'
-        '</ac:structured-macro>'
+        "<ac:rich-text-body>Details</ac:rich-text-body>"
+        "</ac:structured-macro>"
         '<ac:structured-macro ac:name="unknown"><p>Keep</p></ac:structured-macro>'
-        '<ac:structured-macro><p>No name</p></ac:structured-macro>'
+        "<ac:structured-macro><p>No name</p></ac:structured-macro>"
         '<ac:structured-macro ac:name="code"><p>No body</p></ac:structured-macro>'
     )
     normalized = _normalize_confluence_code_macros(content)
@@ -79,6 +86,7 @@ def test_normalize_confluence_macros_handles_callouts_unknown_and_malformed_macr
 def test_normalize_confluence_macros_returns_plain_content_without_macros():
     assert _normalize_confluence_code_macros("<p>plain</p>") == "<p>plain</p>"
 
+
 def test_normalize_confluence_code_macros_no_cdata():
     content = """
     <ac:structured-macro ac:name="code" ac:schema-version="1">
@@ -87,7 +95,11 @@ def test_normalize_confluence_code_macros_no_cdata():
     </ac:structured-macro>
     """
     normalized = _normalize_confluence_code_macros(content)
-    assert '<pre><code class="language-javascript">console.log(&quot;Hello No CDATA&quot;);</code></pre>' in normalized
+    assert (
+        '<pre><code class="language-javascript">console.log(&quot;Hello No CDATA&quot;);</code></pre>'
+        in normalized
+    )
+
 
 def test_normalize_confluence_code_macros_no_language():
     content = """
@@ -96,7 +108,8 @@ def test_normalize_confluence_code_macros_no_language():
     </ac:structured-macro>
     """
     normalized = _normalize_confluence_code_macros(content)
-    assert '<pre><code>plain text code</code></pre>' in normalized
+    assert "<pre><code>plain text code</code></pre>" in normalized
+
 
 def test_normalize_confluence_code_macros_spaced_cdata():
     content = """
@@ -108,7 +121,10 @@ def test_normalize_confluence_code_macros_spaced_cdata():
     </ac:structured-macro>
     """
     normalized = _normalize_confluence_code_macros(content)
-    assert '<pre><code class="language-python">def hello():\n    print(&quot;Hello CDATA Spaced&quot;)\n</code></pre>' in normalized
+    assert (
+        '<pre><code class="language-python">def hello():\n    print(&quot;Hello CDATA Spaced&quot;)\n</code></pre>'
+        in normalized
+    )
 
 
 def test_link_imported_attachments():
@@ -130,9 +146,9 @@ def test_link_imported_attachments():
         "Other Page": "456",
         "Current Page": "123",
     }
-    
+
     result = _link_imported_attachments(content, "123", urls, title_to_page_id)
-    
+
     # BeautifulSoup will output normalized tags
     assert '<img alt="test.png" src="/attachments/123/test.png"/>' in result
     assert '<a href="/attachments/123/doc.pdf">doc.pdf</a>' in result

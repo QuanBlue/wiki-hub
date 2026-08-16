@@ -33,6 +33,20 @@ export function listSpaces(
   );
 }
 
+/** Fetch the full space directory for administrative search and local paging. */
+export async function listAllSpaces(includeArchived = false): Promise<Space[]> {
+  const spaces: Space[] = [];
+  const limit = 200;
+  let offset = 0;
+
+  while (true) {
+    const batch = await listSpaces(includeArchived, limit, offset);
+    spaces.push(...batch);
+    if (batch.length < limit) return spaces;
+    offset += batch.length;
+  }
+}
+
 export function listRecentSpaces(): Promise<Space[]> {
   return get<Space[]>("/api/v1/spaces/recent");
 }

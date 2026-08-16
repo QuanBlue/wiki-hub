@@ -134,7 +134,7 @@ export function AccountSettings({ user }: { user: Me }) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <h3 className="font-semibold">Single sign-on (SSO)</h3>
-                    <p className="text-muted-foreground mt-1 text-sm">Sign in with your organization’s identity provider.</p>
+                    <p className="text-muted-foreground mt-1 text-sm">Sign in with your organization&apos;s identity provider.</p>
                   </div>
                   <span className="border-primary/30 bg-primary-subtle text-primary rounded-md border px-2 py-1 text-xs font-medium">
                     Incoming feature

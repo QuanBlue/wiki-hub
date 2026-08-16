@@ -28,24 +28,45 @@ async def test_run_import_imports_space_pages_and_completes(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     user = await AuthService(session).create_user(
-        UserCreate(username=f"worker{uuid.uuid4().hex[:8]}", email=f"worker{uuid.uuid4().hex[:8]}@example.com", password="password-1234")
+        UserCreate(
+            username=f"worker{uuid.uuid4().hex[:8]}",
+            email=f"worker{uuid.uuid4().hex[:8]}@example.com",
+            password="password-1234",
+        )
     )
     archive = ImportArchive(
-        object_key=f"imports/{uuid.uuid4()}.zip", filename="export.zip", size_bytes=10,
-        sha256="a" * 64, status="scanned", created_by_id=user.id,
+        object_key=f"imports/{uuid.uuid4()}.zip",
+        filename="export.zip",
+        size_bytes=10,
+        sha256="a" * 64,
+        status="scanned",
+        created_by_id=user.id,
         spaces=[{"key": "ENG", "name": "Engineering", "page_count": 1}],
     )
     session.add(archive)
     await session.flush()
     job = ImportJob(
-        archive_id=archive.id, created_by_id=user.id, import_all=True,
-        space_keys=[], overwrite_existing=False, status="queued", phase="queued", counters={}
+        archive_id=archive.id,
+        created_by_id=user.id,
+        import_all=True,
+        space_keys=[],
+        overwrite_existing=False,
+        status="queued",
+        phase="queued",
+        counters={},
     )
     session.add(job)
     await session.flush()
     source = ConfluencePage(
-        source_id="p1", space_id="s1", parent_id=None, title="Home", status="current",
-        created_at=None, updated_at=None, creator="missing-import-user", last_modifier=None,
+        source_id="p1",
+        space_id="s1",
+        parent_id=None,
+        title="Home",
+        status="current",
+        created_at=None,
+        updated_at=None,
+        creator="missing-import-user",
+        last_modifier=None,
     )
     space = ConfluenceSpace(source_id="s1", key="ENG", name="Engineering", pages=[source])
     monkeypatch.setattr(import_module, "scan_archive", lambda _path: [space])

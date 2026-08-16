@@ -72,7 +72,7 @@ export function SessionsPanel() {
         </Button>
       </div>
 
-      {loading ? <div className="text-muted-foreground mt-6 flex items-center gap-2 text-sm"><Loader2 className="size-4 animate-spin" />Loading sessions…</div> : null}
+      {loading ? <div className="text-muted-foreground mt-6 flex items-center gap-2 text-sm"><Loader2 className="size-4 animate-spin" />Loading sessions&hellip;</div> : null}
       {error ? <p role="alert" className="border-danger/30 bg-danger/10 text-danger mt-6 rounded-md border px-3 py-2 text-sm">{error}</p> : null}
       {!loading && !error ? (
         <div className="border-border mt-6 overflow-hidden rounded-lg border">

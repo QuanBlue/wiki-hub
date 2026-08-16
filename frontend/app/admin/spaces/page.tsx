@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import { ListFilters, PaginationControls } from "@/components/admin/list-controls";
 import { SpaceRowActions } from "@/components/admin/space-row-actions";
 import { Badge } from "@/components/ui/badge";
-import { listSpaces } from "@/lib/spaces";
+import { listAllSpaces } from "@/lib/spaces";
 
 export const metadata: Metadata = { title: "Spaces" };
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ export default async function AdminSpacesPage({
     ? requestedLimit
     : PAGE_SIZE;
   const offset = Number.parseInt(rawOffset || "0", 10) || 0;
-  const spaces = await listSpaces(true, 200);
+  const spaces = await listAllSpaces(true);
   const active = spaces.filter((space) => space.status === "active").length;
   const archived = spaces.length - active;
   const members = spaces.reduce((total, space) => total + space.member_count, 0);

@@ -67,8 +67,13 @@ async def test_draft_lifecycle_and_conflict_flag() -> None:
     service.drafts.get.assert_awaited_once_with(page_id, user_id)
 
     draft = SimpleNamespace(
-        id=uuid.uuid4(), page_id=page_id, content="x", content_format="markdown",
-        edit_mode="markdown", base_updated_at=page.updated_at, updated_at=page.updated_at,
+        id=uuid.uuid4(),
+        page_id=page_id,
+        content="x",
+        content_format="markdown",
+        edit_mode="markdown",
+        base_updated_at=page.updated_at,
+        updated_at=page.updated_at,
     )
     service.drafts.get = AsyncMock(return_value=draft)
     loaded = await service.get_draft(page, user)
@@ -96,27 +101,35 @@ async def test_draft_missing_returns_none_and_discard_is_noop() -> None:
 async def test_calculate_diff_covers_html_plain_and_all_line_operations() -> None:
     service = _service()
     page = SimpleNamespace(id=uuid.uuid4())
-    service.list_revisions = AsyncMock(return_value=[
-        _revision(2, "same\nnew line\nadded", "markdown"),
-        _revision(1, "same\nold line\nremoved", "markdown"),
-    ])
+    service.list_revisions = AsyncMock(
+        return_value=[
+            _revision(2, "same\nnew line\nadded", "markdown"),
+            _revision(1, "same\nold line\nremoved", "markdown"),
+        ]
+    )
     diff = await service.calculate_diff(page)
     assert {line.operation for line in diff.lines} == {"equal", "replace"}
-    assert any(segment.operation == "delete" for line in diff.lines for segment in line.old_segments)
+    assert any(
+        segment.operation == "delete" for line in diff.lines for segment in line.old_segments
+    )
     assert any(segment.operation == "add" for line in diff.lines for segment in line.new_segments)
 
-    service.list_revisions = AsyncMock(return_value=[
-        _revision(2, "<p>same</p><p>new</p>", "html"),
-        _revision(1, "<p>same</p><p>old</p>", "html"),
-    ])
+    service.list_revisions = AsyncMock(
+        return_value=[
+            _revision(2, "<p>same</p><p>new</p>", "html"),
+            _revision(1, "<p>same</p><p>old</p>", "html"),
+        ]
+    )
     html_diff = await service.calculate_diff(page, from_version=1, to_version=2)
     assert html_diff.lines[0].operation == "equal"
     assert html_diff.lines[1].operation == "replace"
 
-    service.list_revisions = AsyncMock(return_value=[
-        _revision(2, "<span>text only</span>", "html"),
-        _revision(1, "<span>text</span>", "html"),
-    ])
+    service.list_revisions = AsyncMock(
+        return_value=[
+            _revision(2, "<span>text only</span>", "html"),
+            _revision(1, "<span>text</span>", "html"),
+        ]
+    )
     fallback = await service.calculate_diff(page, from_version=1, to_version=2)
     assert fallback.lines
 
@@ -140,10 +153,12 @@ async def test_calculate_diff_covers_nested_html_and_unbalanced_operations() -> 
     page = SimpleNamespace(id=uuid.uuid4())
 
     async def calculate(old: str, new: str, content_format: str = "markdown"):
-        service.list_revisions = AsyncMock(return_value=[
-            _revision(2, new, content_format),
-            _revision(1, old, content_format),
-        ])
+        service.list_revisions = AsyncMock(
+            return_value=[
+                _revision(2, new, content_format),
+                _revision(1, old, content_format),
+            ]
+        )
         return await service.calculate_diff(page, from_version=1, to_version=2)
 
     deleted = await calculate("keep\nremoved", "keep")
@@ -159,7 +174,9 @@ async def test_calculate_diff_covers_nested_html_and_unbalanced_operations() -> 
     assert any(line.operation == "add" for line in more_new.lines)
 
     char_insert = await calculate("cat", "cats")
-    assert any(segment.operation == "add" for line in char_insert.lines for segment in line.new_segments)
+    assert any(
+        segment.operation == "add" for line in char_insert.lines for segment in line.new_segments
+    )
 
     nested = await calculate(
         "<div><p>one</p><p>two</p></div>",
@@ -173,7 +190,11 @@ async def test_calculate_diff_covers_nested_html_and_unbalanced_operations() -> 
 async def test_update_removes_existing_draft_after_snapshot() -> None:
     service = _service()
     page = SimpleNamespace(
-        id=uuid.uuid4(), slug="old", title="Old", content="old", content_format="html",
+        id=uuid.uuid4(),
+        slug="old",
+        title="Old",
+        content="old",
+        content_format="html",
         updated_by_id=None,
     )
     space = SimpleNamespace(key="ENG")
@@ -205,8 +226,13 @@ async def test_draft_repository_and_api_wrappers_delegate() -> None:
     space_service = Mock(get_by_key=AsyncMock(return_value=space))
 
     assert await pages_api.get_page_draft("ENG", "home", user, draft_service, space_service) is None
-    assert await pages_api.save_page_draft("ENG", "home", Mock(), user, draft_service, space_service) == "saved"
-    assert await pages_api.delete_page_draft("ENG", "home", user, draft_service, space_service) is None
+    assert (
+        await pages_api.save_page_draft("ENG", "home", Mock(), user, draft_service, space_service)
+        == "saved"
+    )
+    assert (
+        await pages_api.delete_page_draft("ENG", "home", user, draft_service, space_service) is None
+    )
     draft_service.get_draft.assert_awaited_once_with(page, user)
     draft_service.save_draft.assert_awaited_once()
     draft_service.discard_draft.assert_awaited_once_with(page, user)
@@ -246,12 +272,24 @@ async def test_revision_api_wrappers_authorize_and_delegate() -> None:
         require_view=AsyncMock(),
     )
 
-    assert await revisions_api.list_revisions("ENG", "home", user, page_service, space_service) == revisions
-    assert await revisions_api.get_revision_diff(
-        "ENG", "home", user, page_service, space_service, from_version=1, to_version=2
-    ) == diff
-    assert await revisions_api.get_revision("ENG", "home", 1, user, page_service, space_service) == revisions[0]
-    assert await revisions_api.restore_revision("ENG", "home", 1, user, page_service, space_service) == "page-read"
+    assert (
+        await revisions_api.list_revisions("ENG", "home", user, page_service, space_service)
+        == revisions
+    )
+    assert (
+        await revisions_api.get_revision_diff(
+            "ENG", "home", user, page_service, space_service, from_version=1, to_version=2
+        )
+        == diff
+    )
+    assert (
+        await revisions_api.get_revision("ENG", "home", 1, user, page_service, space_service)
+        == revisions[0]
+    )
+    assert (
+        await revisions_api.restore_revision("ENG", "home", 1, user, page_service, space_service)
+        == "page-read"
+    )
     assert revisions_api.get_page_service(Mock())
     assert revisions_api.get_space_service(Mock())
     assert space_service.require_view.await_count == 3

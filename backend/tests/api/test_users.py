@@ -6,15 +6,13 @@ import uuid
 
 from httpx import AsyncClient
 
-from app.core.security import create_access_token
 from app.models.user import User
 
 
 async def test_user_listing_includes_active_group_names(
-    client: AsyncClient, api_user: User
+    client: AsyncClient, api_user: User, api_access_token: str
 ) -> None:
-    token, _ = create_access_token(str(api_user.id))
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {api_access_token}"}
     group_name = f"Users API {uuid.uuid4().hex[:8]}"
 
     created = await client.post(

@@ -16,9 +16,11 @@ os.environ["WIKIHUB_LOG_FORMAT"] = "console"
 os.environ["WIKIHUB_LOG_LEVEL"] = "WARNING"
 
 from collections.abc import AsyncIterator
+
 import pytest
-from httpx import ASGITransport, AsyncClient
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+
 from app.db.session import dispose_engine
 
 

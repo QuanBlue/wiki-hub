@@ -13,6 +13,7 @@ from __future__ import annotations
 import abc
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import IO, Any
 
 import anyio
@@ -27,7 +28,9 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-from datetime import datetime
+def _open_binary_for_write(path: str) -> IO[bytes]:
+    """Open a destination from a worker thread for streamed downloads."""
+    return open(path, "wb")
 
 
 @dataclass(slots=True)
@@ -231,13 +234,14 @@ class S3ObjectStorage(ObjectStorage):
         result = await self._call(self.client.get_object, Bucket=self.bucket, Key=key)
         body = result["Body"]
         downloaded = 0
+        destination = await anyio.to_thread.run_sync(_open_binary_for_write, path)
         try:
-            with open(path, "wb") as destination:
-                while chunk := await anyio.to_thread.run_sync(body.read, 8 * 1024 * 1024):
-                    destination.write(chunk)
-                    downloaded += len(chunk)
-                    await on_progress(downloaded)
+            while chunk := await anyio.to_thread.run_sync(body.read, 8 * 1024 * 1024):
+                await anyio.to_thread.run_sync(destination.write, chunk)
+                downloaded += len(chunk)
+                await on_progress(downloaded)
         finally:
+            await anyio.to_thread.run_sync(destination.close)
             await anyio.to_thread.run_sync(body.close)
 
     async def upload_file(
@@ -318,8 +322,7 @@ class S3ObjectStorage(ObjectStorage):
                 params["PartNumberMarker"] = marker
             result = await self._call(self.client.list_parts, **params)
             parts.extend(
-                (int(part["PartNumber"]), str(part["ETag"]))
-                for part in result.get("Parts", [])
+                (int(part["PartNumber"]), str(part["ETag"])) for part in result.get("Parts", [])
             )
             if not result.get("IsTruncated"):
                 return parts
@@ -351,10 +354,7 @@ class S3ObjectStorage(ObjectStorage):
             Key=key,
             UploadId=upload_id,
             MultipartUpload={
-                "Parts": [
-                    {"PartNumber": number, "ETag": etag}
-                    for number, etag in sorted(parts)
-                ]
+                "Parts": [{"PartNumber": number, "ETag": etag} for number, etag in sorted(parts)]
             },
         )
 

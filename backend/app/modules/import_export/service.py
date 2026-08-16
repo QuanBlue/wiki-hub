@@ -63,19 +63,19 @@ def _link_imported_attachments(
     if not urls:
         return content
     soup = BeautifulSoup(content, "html.parser")
-    
+
     # 1. Resolve <ac:image> macros
     for macro in soup.find_all("ac:image"):
         attachment = macro.find("ri:attachment")
         filename = attachment.get("ri:filename") if attachment else None
         if not isinstance(filename, str):
             continue
-            
+
         # Determine referenced page_id
         page_ref = macro.find("ri:page")
         ref_title = page_ref.get("ri:content-title") if page_ref else None
         target_page_id = (title_to_page_id.get(ref_title) if ref_title else None) or source_page_id
-        
+
         url = urls.get((target_page_id, filename))
         if not url:
             # Fallback: try case-insensitive or space-replace matches
@@ -90,7 +90,7 @@ def _link_imported_attachments(
                 ),
                 None,
             )
-            
+
         if url:
             image = soup.new_tag("img", src=url, alt=filename)
             # Preserve width/height attributes if specified on ac:image
@@ -99,19 +99,19 @@ def _link_imported_attachments(
                 if val:
                     image[attr.replace("ac:", "")] = val
             macro.replace_with(image)
-            
+
     # 2. Resolve <ac:link> macros
     for macro in soup.find_all("ac:link"):
         attachment = macro.find("ri:attachment")
         filename = attachment.get("ri:filename") if attachment else None
         if not isinstance(filename, str):
             continue
-            
+
         # Determine referenced page_id
         page_ref = macro.find("ri:page")
         ref_title = page_ref.get("ri:content-title") if page_ref else None
         target_page_id = (title_to_page_id.get(ref_title) if ref_title else None) or source_page_id
-        
+
         url = urls.get((target_page_id, filename))
         if not url:
             # Fallback: try case-insensitive or space-replace matches
@@ -126,14 +126,14 @@ def _link_imported_attachments(
                 ),
                 None,
             )
-            
+
         if url:
             link = soup.new_tag("a", href=url)
             link.string = macro.get_text(" ", strip=True) or filename
             macro.replace_with(link)
-            
+
     result = str(soup)
-    
+
     # 3. Replace raw attachment URLs with query parameters or without
     # Regex to match "/download/attachments/{page_id}/{filename}" with optional query parameters
     def replace_url(match: re.Match) -> str:
@@ -145,13 +145,11 @@ def _link_imported_attachments(
             # Fallback: find any matching filename in urls
             url = next((u for (p, f), u in urls.items() if f == fn), None)
         return url if url else match.group(0)
-        
+
     result = re.sub(
-        r"/download/attachments/(\d+)/([^?\"'\s>]+)(?:\?[^\"'\s>]*)?",
-        replace_url,
-        result
+        r"/download/attachments/(\d+)/([^?\"'\s>]+)(?:\?[^\"'\s>]*)?", replace_url, result
     )
-    
+
     return result
 
 
@@ -159,7 +157,7 @@ def _normalize_confluence_code_macros(content: str) -> str:
     """Convert Confluence XML-style macros into HTML elements."""
     if "<ac:structured-macro" not in content:
         return content
-        
+
     def replace_macro(match: re.Match) -> str:
         macro_tag = match.group(0)
         macro_name_match = re.search(
@@ -167,16 +165,14 @@ def _normalize_confluence_code_macros(content: str) -> str:
         )
         if not macro_name_match:
             return macro_tag
-            
+
         macro_name = (macro_name_match.group(1) or macro_name_match.group(2) or "").lower()
         inner = match.group(1)
-        
+
         # Handle code macro
         if macro_name == "code":
             code_match = re.search(
-                r"<ac:plain-text-body\b[^>]*>([\s\S]*?)</ac:plain-text-body>",
-                inner,
-                re.IGNORECASE
+                r"<ac:plain-text-body\b[^>]*>([\s\S]*?)</ac:plain-text-body>", inner, re.IGNORECASE
             )
             if not code_match:
                 return macro_tag
@@ -197,40 +193,38 @@ def _normalize_confluence_code_macros(content: str) -> str:
             code_text = re.sub(r"[\r\n]+\s*$", "", code_text)
             if preserve_terminal_newline:
                 code_text += "\n"
-            
+
             lang_match = re.search(
                 r"<ac:parameter\b[^>]*\bac:name=(?:\"language\"|'language')[^>]*>([\s\S]*?)</ac:parameter>",
                 inner,
-                re.IGNORECASE
+                re.IGNORECASE,
             )
             language = ""
             if lang_match:
                 language = re.sub(r"[^a-z0-9_-]", "", lang_match.group(1).strip().lower())
             escaped_code = html.escape(code_text)
-            class_attr = f' class="language-{language}"' if language else ''
-            return f'<pre><code{class_attr}>{escaped_code}</code></pre>'
+            class_attr = f' class="language-{language}"' if language else ""
+            return f"<pre><code{class_attr}>{escaped_code}</code></pre>"
 
         # Handle callout macros (info, warning, note, tip, panel, expand)
         if macro_name in {"info", "warning", "note", "tip", "panel", "expand"}:
             body_match = re.search(
-                r"<ac:rich-text-body\b[^>]*>([\s\S]*?)</ac:rich-text-body>",
-                inner,
-                re.IGNORECASE
+                r"<ac:rich-text-body\b[^>]*>([\s\S]*?)</ac:rich-text-body>", inner, re.IGNORECASE
             )
             body_text = body_match.group(1) if body_match else ""
-            
+
             title_match = re.search(
                 r"<ac:parameter\b[^>]*\bac:name=(?:\"title\"|'title')[^>]*>([\s\S]*?)</ac:parameter>",
                 inner,
-                re.IGNORECASE
+                re.IGNORECASE,
             )
             title_text = title_match.group(1).strip() if title_match else ""
             title_html = f"<p><strong>{html.escape(title_text)}</strong></p>" if title_text else ""
-            
+
             callout_type = macro_name
             if callout_type == "expand":
                 callout_type = "panel"
-                
+
             return (
                 f'<div data-type="callout" data-callout-type="{callout_type}" '
                 f'class="callout callout-{callout_type}">{title_html}{body_text}</div>'
@@ -242,7 +236,7 @@ def _normalize_confluence_code_macros(content: str) -> str:
         r"<ac:structured-macro\b[^>]*>([\s\S]*?)</ac:structured-macro>",
         replace_macro,
         content,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
 
 
@@ -264,6 +258,7 @@ class ConfluenceImportService:
             return self._user_cache[username_lower]
 
         from app.models.user import User
+
         result = await self.session.execute(
             select(User).where(func.lower(User.username) == username_lower)
         )
@@ -581,6 +576,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                             target_page.updated_at = src_page.updated_at
                         elif src_page.created_at:
                             target_page.updated_at = src_page.created_at
+
             for source_space in scanned:
                 if source_space.key not in selected:
                     continue
@@ -673,9 +669,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 # page tree has a single root. Prefer an exported page named
                 # after the space; otherwise create a lightweight home page.
                 root_source_pages = [
-                    source_page
-                    for source_page in source_space.pages
-                    if not source_page.parent_id
+                    source_page for source_page in source_space.pages if not source_page.parent_id
                 ]
                 home_source = next(
                     (

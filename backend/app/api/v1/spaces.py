@@ -231,16 +231,20 @@ async def list_permissions(
 
 
 @router.get("/{key}/permissions/principals/users", response_model=list[UserRead])
-async def list_permission_users(
-    key: str, user: CurrentUser, session: DbSession
-) -> list[UserRead]:
+async def list_permission_users(key: str, user: CurrentUser, session: DbSession) -> list[UserRead]:
     """List active users that a Space administrator may assign permissions to."""
     space_service = SpaceService(session)
     space = await space_service.get_by_key(key)
     await space_service.require_admin(space, user)
     users = (
-        await session.execute(select(User).where(User.is_active.is_(True)).order_by(User.username))
-    ).scalars().all()
+        (
+            await session.execute(
+                select(User).where(User.is_active.is_(True)).order_by(User.username)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return [UserRead.model_validate(item) for item in users]
 
 
@@ -253,8 +257,10 @@ async def list_permission_groups(
     space = await space_service.get_by_key(key)
     await space_service.require_admin(space, user)
     groups = (
-        await session.execute(select(Group).where(Group.is_active.is_(True)).order_by(Group.name))
-    ).scalars().all()
+        (await session.execute(select(Group).where(Group.is_active.is_(True)).order_by(Group.name)))
+        .scalars()
+        .all()
+    )
     return [await group_read(session, group) for group in groups]
 
 

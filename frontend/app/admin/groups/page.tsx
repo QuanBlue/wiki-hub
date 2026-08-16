@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { GroupManager } from "@/components/admin/group-manager";
-import { listUsers } from "@/lib/admin";
+import { listAllUsers } from "@/lib/admin";
 import { listGroups } from "@/lib/groups";
 
 export const metadata: Metadata = { title: "Groups" };
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminGroupsPage() {
   const [groups, users] = await Promise.all([
     listGroups(),
-    listUsers({ limit: 200 }),
+    listAllUsers(),
   ]);
 
   return (
@@ -20,7 +20,7 @@ export default async function AdminGroupsPage() {
         <h2 className="mt-1 text-xl font-semibold tracking-tight">Groups</h2>
         <p className="text-muted-foreground mt-1 max-w-2xl text-sm">Organize people into reusable teams for workspace and space access.</p>
       </header>
-      <GroupManager initialGroups={groups} users={users.items} />
+      <GroupManager initialGroups={groups} users={users} />
     </div>
   );
 }

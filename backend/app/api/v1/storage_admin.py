@@ -31,6 +31,7 @@ router = APIRouter(prefix="/storage", tags=["storage"])
 # Dependency
 # ---------------------------------------------------------------------------
 
+
 def get_storage() -> ObjectStorage:
     return S3ObjectStorage()
 
@@ -51,6 +52,7 @@ def storage_kind(key: str) -> str:
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
+
 
 class StorageObjectRead(BaseModel):
     key: str
@@ -73,7 +75,7 @@ class StorageObjectRead(BaseModel):
         space_name: str | None = None,
         page_id: str | None = None,
         page_title: str | None = None,
-    ) -> "StorageObjectRead":
+    ) -> StorageObjectRead:
         return cls(
             key=obj.key,
             size=obj.size,
@@ -102,6 +104,7 @@ class DeleteResult(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("", response_model=list[StorageObjectRead], summary="List all S3 objects")
 async def list_storage_objects(
     _admin: CurrentSuperuser,
@@ -117,10 +120,7 @@ async def list_storage_objects(
     """
     objects = await storage.list_objects(prefix=prefix)
     if session is None:
-        return [
-            StorageObjectRead.from_stored(obj, kind=storage_kind(obj.key))
-            for obj in objects
-        ]
+        return [StorageObjectRead.from_stored(obj, kind=storage_kind(obj.key)) for obj in objects]
 
     attachment_rows = (
         await session.execute(
@@ -223,9 +223,7 @@ async def delete_storage_object(
     attachment_deleted = False
 
     # --- Confluence import archive ------------------------------------------
-    archive = await session.scalar(
-        select(ImportArchive).where(ImportArchive.object_key == key)
-    )
+    archive = await session.scalar(select(ImportArchive).where(ImportArchive.object_key == key))
     if archive is not None:
         archive.sha256 = None
         archive.status = "cancelled"

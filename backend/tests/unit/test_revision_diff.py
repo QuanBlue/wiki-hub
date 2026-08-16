@@ -29,20 +29,20 @@ def calculate_test_diff(
             deleted_text = "\n".join(from_lines[i1:i2])
             added_text = "\n".join(to_lines[j1:j2])
             if deleted_text:
-                deleted_count += (i2 - i1)
+                deleted_count += i2 - i1
                 chunks.append(PageRevisionDiffChunk(operation="delete", text=deleted_text))
             if added_text:
-                added_count += (j2 - j1)
+                added_count += j2 - j1
                 chunks.append(PageRevisionDiffChunk(operation="add", text=added_text))
         elif tag == "delete":
             deleted_text = "\n".join(from_lines[i1:i2])
             if deleted_text:
-                deleted_count += (i2 - i1)
+                deleted_count += i2 - i1
                 chunks.append(PageRevisionDiffChunk(operation="delete", text=deleted_text))
         elif tag == "insert":
             added_text = "\n".join(to_lines[j1:j2])
             if added_text:
-                added_count += (j2 - j1)
+                added_count += j2 - j1
                 chunks.append(PageRevisionDiffChunk(operation="add", text=added_text))
 
     return PageRevisionDiffRead(

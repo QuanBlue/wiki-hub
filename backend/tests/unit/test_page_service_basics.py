@@ -33,9 +33,19 @@ def page():
     now = datetime.now(UTC)
     creator = SimpleNamespace(username="alice", full_name="Alice")
     return SimpleNamespace(
-        id=uuid.uuid4(), space_id=uuid.uuid4(), parent_id=None, title="Title", slug="title",
-        content="Body", content_format="html", created_at=now, updated_at=now,
-        created_by_label=None, updated_by_label=None, created_by=creator, updated_by=creator,
+        id=uuid.uuid4(),
+        space_id=uuid.uuid4(),
+        parent_id=None,
+        title="Title",
+        slug="title",
+        content="Body",
+        content_format="html",
+        created_at=now,
+        updated_at=now,
+        created_by_label=None,
+        updated_by_label=None,
+        created_by=creator,
+        updated_by=creator,
     )
 
 
@@ -112,8 +122,14 @@ async def test_page_create_and_revision_read_paths() -> None:
     assert current.title == "Updated" and current.content_format == "markdown"
 
     revision = SimpleNamespace(
-        id=uuid.uuid4(), page_id=current.id, version=1, title="Title", content="Body",
-        content_format="html", created_at=datetime.now(UTC), change_summary="initial",
+        id=uuid.uuid4(),
+        page_id=current.id,
+        version=1,
+        title="Title",
+        content="Body",
+        content_format="html",
+        created_at=datetime.now(UTC),
+        change_summary="initial",
         created_by=SimpleNamespace(username="alice", full_name="Alice"),
     )
     service.revisions.list_for_page = AsyncMock(return_value=[revision])
@@ -128,9 +144,17 @@ async def test_page_create_and_revision_read_paths() -> None:
     with pytest.raises(NotFoundError):
         await service.get_revision(current, 9)
 
-    legacy = SimpleNamespace(version=1, created_by=None, id=uuid.uuid4(), page_id=current.id,
-                             title=current.title, content=current.content, content_format="html",
-                             created_at=datetime.now(UTC), change_summary="legacy")
+    legacy = SimpleNamespace(
+        version=1,
+        created_by=None,
+        id=uuid.uuid4(),
+        page_id=current.id,
+        title=current.title,
+        content=current.content,
+        content_format="html",
+        created_at=datetime.now(UTC),
+        change_summary="legacy",
+    )
     service.revisions.list_for_page = AsyncMock(return_value=[])
     service.snapshot_revision = AsyncMock(return_value=legacy)
     service.list_revisions = PageService.list_revisions.__get__(service)
@@ -162,7 +186,9 @@ async def test_page_restore_move_delete_slugs_and_recent() -> None:
     assert service.unique_slug_from_occupied("", set()) == ""
 
     destination = SimpleNamespace(id=uuid.uuid4(), key="OPS", status=SpaceStatus.active)
-    child = SimpleNamespace(id=uuid.uuid4(), parent_id=current.id, space_id=space.id, slug="child", updated_by_id=None)
+    child = SimpleNamespace(
+        id=uuid.uuid4(), parent_id=current.id, space_id=space.id, slug="child", updated_by_id=None
+    )
     service.spaces.get_by_key = AsyncMock(return_value=destination)
     service.pages.list_all_for_space = AsyncMock(side_effect=[[current, child, child], []])
     moved = await service.move(space, current, PageMove(destination_space_key="OPS"), actor)

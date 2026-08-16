@@ -80,7 +80,9 @@ class SessionService:
             .values(revoked_at=datetime.now(UTC))
         )
         await self.session.flush()
-        return int(result.rowcount or 0)
+        # SQLAlchemy annotates ``AsyncSession.execute`` broadly as Result,
+        # while UPDATE statements return a cursor result with ``rowcount``.
+        return int(getattr(result, "rowcount", 0) or 0)
 
     async def revoke(self, *, user_id: uuid.UUID, token_jti: str) -> None:
         await self.session.execute(

@@ -45,9 +45,7 @@ class SiteSettings(TimestampMixin, Base):
     #: Per-role visibility for the application navigation. NULL keeps the
     #: conservative built-in policy (knowledge navigation for everyone,
     #: administration for administrators only).
-    sidebar_permissions: Mapped[dict[str, list[str]] | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    sidebar_permissions: Mapped[dict[str, list[str]] | None] = mapped_column(JSONB, nullable=True)
 
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True),

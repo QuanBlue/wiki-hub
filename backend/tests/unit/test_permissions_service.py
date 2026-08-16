@@ -79,7 +79,9 @@ async def test_group_and_removal_rules() -> None:
     service.session.get.return_value = group
     assert await service.get_group(group.id) is group
     assert await service.can_manage_group(group, actor) is True
-    await service.update_group(group, GroupUpdate(name="Renamed", description="D", is_active=False), actor)
+    await service.update_group(
+        group, GroupUpdate(name="Renamed", description="D", is_active=False), actor
+    )
     assert group.name == "Renamed" and group.is_active is False
 
     service.session.scalar.side_effect = [None, None, None]
@@ -110,20 +112,28 @@ async def test_page_visibility_and_restriction_helpers() -> None:
     service._principal_has_restriction = AsyncMock(return_value=True)
     assert await service.can_edit_page(page, actor) is True
 
-    service.effective_permissions = AsyncMock(return_value={Permission.view, Permission.restrictions})
+    service.effective_permissions = AsyncMock(
+        return_value={Permission.view, Permission.restrictions}
+    )
     await service.require_page_restriction_admin(page, actor)
     service.effective_permissions = AsyncMock(return_value={Permission.view})
     with pytest.raises(PermissionDeniedError):
         await service.require_page_restriction_admin(page, actor)
 
     service.session.scalar.side_effect = [None, None]
-    assert await PermissionService._restriction_rows_exist(
-        service, page.id, PageRestrictionPermission.view
-    ) is False
+    assert (
+        await PermissionService._restriction_rows_exist(
+            service, page.id, PageRestrictionPermission.view
+        )
+        is False
+    )
     service.session.scalar.side_effect = [object(), None]
-    assert await PermissionService._restriction_rows_exist(
-        service, page.id, PageRestrictionPermission.view
-    ) is True
+    assert (
+        await PermissionService._restriction_rows_exist(
+            service, page.id, PageRestrictionPermission.view
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -137,14 +147,30 @@ async def test_page_restriction_listing_and_missing_space() -> None:
 
     space = SimpleNamespace(id=page.space_id, visibility=SpaceVisibility.open)
     service.session.get.return_value = space
-    service.effective_permissions = AsyncMock(return_value={Permission.view, Permission.restrictions})
+    service.effective_permissions = AsyncMock(
+        return_value={Permission.view, Permission.restrictions}
+    )
     service.session.execute.side_effect = [
-        Mock(all=Mock(return_value=[
-            (SimpleNamespace(permission=PageRestrictionPermission.view), SimpleNamespace(id="u", username="user"))
-        ])),
-        Mock(all=Mock(return_value=[
-            (SimpleNamespace(permission=PageRestrictionPermission.edit), SimpleNamespace(id="g", name="group"))
-        ])),
+        Mock(
+            all=Mock(
+                return_value=[
+                    (
+                        SimpleNamespace(permission=PageRestrictionPermission.view),
+                        SimpleNamespace(id="u", username="user"),
+                    )
+                ]
+            )
+        ),
+        Mock(
+            all=Mock(
+                return_value=[
+                    (
+                        SimpleNamespace(permission=PageRestrictionPermission.edit),
+                        SimpleNamespace(id="g", name="group"),
+                    )
+                ]
+            )
+        ),
     ]
     rows = await service.list_page_restrictions(page, actor)
     assert {row["principal_type"] for row in rows} == {"user", "group"}
@@ -256,7 +282,9 @@ async def test_group_lifecycle_and_space_admin_removal_checks() -> None:
     service.can_manage_group = AsyncMock(return_value=True)
     service.session.get = AsyncMock(return_value=owner)
     service.session.scalar = AsyncMock(side_effect=[None, None])
-    await service.update_group(group, GroupUpdate(owner_id=owner.id, name="Renamed", is_active=False), actor)
+    await service.update_group(
+        group, GroupUpdate(owner_id=owner.id, name="Renamed", is_active=False), actor
+    )
     assert group.name == "Renamed"
     service.session.scalar = AsyncMock(return_value=SimpleNamespace())
     with pytest.raises(ConflictError):
@@ -286,9 +314,13 @@ async def test_group_lifecycle_and_space_admin_removal_checks() -> None:
     await service.assert_user_can_be_removed(owner)
 
     service.session.scalar = AsyncMock(side_effect=[object(), None])
-    assert await service._has_space_admin(SimpleNamespace(id=space_id), excluding={"user_id": owner.id})
+    assert await service._has_space_admin(
+        SimpleNamespace(id=space_id), excluding={"user_id": owner.id}
+    )
     service.session.scalar = AsyncMock(side_effect=[None, object()])
-    assert await service._has_space_admin(SimpleNamespace(id=space_id), excluding={"group_id": uuid.uuid4()})
+    assert await service._has_space_admin(
+        SimpleNamespace(id=space_id), excluding={"group_id": uuid.uuid4()}
+    )
     service.session.scalar = AsyncMock(side_effect=[None, None])
     assert not await service._has_space_admin(SimpleNamespace(id=space_id), excluding={})
 
@@ -301,13 +333,9 @@ async def test_page_restriction_principal_and_visibility_branches() -> None:
     space = SimpleNamespace(id=page.space_id, visibility=SpaceVisibility.open)
 
     service.session.scalar = AsyncMock(side_effect=[object(), None])
-    assert await service._principal_has_restriction(
-        page.id, actor, PageRestrictionPermission.view
-    )
+    assert await service._principal_has_restriction(page.id, actor, PageRestrictionPermission.view)
     service.session.scalar = AsyncMock(side_effect=[None, object()])
-    assert await service._principal_has_restriction(
-        page.id, actor, PageRestrictionPermission.edit
-    )
+    assert await service._principal_has_restriction(page.id, actor, PageRestrictionPermission.edit)
 
     parent = SimpleNamespace(id=uuid.uuid4(), parent_id=None)
     page.parent_id = parent.id

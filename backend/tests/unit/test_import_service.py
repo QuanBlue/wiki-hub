@@ -87,7 +87,9 @@ async def test_upload_lifecycle_and_archive_conflicts(monkeypatch: pytest.Monkey
     with pytest.raises(PayloadTooLargeError):
         await service.start_upload(filename="archive.zip", size_bytes=11, actor_id=uuid.uuid4())
 
-    archive = await service.start_upload(filename="archive.zip", size_bytes=1, actor_id=uuid.uuid4())
+    archive = await service.start_upload(
+        filename="archive.zip", size_bytes=1, actor_id=uuid.uuid4()
+    )
     archive.status = "uploading"
     assert archive.status == "uploading"
     assert archive.multipart_upload_id == "upload-1"
@@ -123,7 +125,9 @@ async def test_upload_reuse_and_job_validation() -> None:
     storage = Mock()
     storage.exists = AsyncMock(return_value=True)
     service = ConfluenceImportService(session, storage)
-    archive = SimpleNamespace(object_key="key", status="uploaded", sha256="hash", size_bytes=3, multipart_upload_id=None)
+    archive = SimpleNamespace(
+        object_key="key", status="uploaded", sha256="hash", size_bytes=3, multipart_upload_id=None
+    )
     session.execute.return_value = _ScalarResult([archive])
     assert await service.find_reusable_archive(sha256="hash", size_bytes=3) is archive
 
@@ -136,10 +140,24 @@ async def test_upload_reuse_and_job_validation() -> None:
         created_by_id=uuid.uuid4(),
     )
     with pytest.raises(BadRequestError):
-        await service.create_job(scanned, import_all=False, space_keys=[], overwrite_existing=False, actor_id=uuid.uuid4())
+        await service.create_job(
+            scanned,
+            import_all=False,
+            space_keys=[],
+            overwrite_existing=False,
+            actor_id=uuid.uuid4(),
+        )
     with pytest.raises(BadRequestError):
-        await service.create_job(scanned, import_all=False, space_keys=["NOPE"], overwrite_existing=False, actor_id=uuid.uuid4())
-    job = await service.create_job(scanned, import_all=True, space_keys=[], overwrite_existing=True, actor_id=uuid.uuid4())
+        await service.create_job(
+            scanned,
+            import_all=False,
+            space_keys=["NOPE"],
+            overwrite_existing=False,
+            actor_id=uuid.uuid4(),
+        )
+    job = await service.create_job(
+        scanned, import_all=True, space_keys=[], overwrite_existing=True, actor_id=uuid.uuid4()
+    )
     assert job.import_all is True
     assert job.counters["pages_total"] == 2
 
@@ -147,9 +165,12 @@ async def test_upload_reuse_and_job_validation() -> None:
     assert await service.find_reusable_archive(sha256="hash", size_bytes=3) is None
     service.find_reusable_archive = AsyncMock(return_value=archive)
     session.execute.return_value = Mock(scalar_one_or_none=Mock(return_value=None))
-    assert await service.start_upload(
-        filename="archive.zip", size_bytes=3, actor_id=uuid.uuid4(), sha256="hash"
-    ) is archive
+    assert (
+        await service.start_upload(
+            filename="archive.zip", size_bytes=3, actor_id=uuid.uuid4(), sha256="hash"
+        )
+        is archive
+    )
 
     broken = SimpleNamespace(
         object_key="key", status="uploading", multipart_upload_id="upload", size_bytes=10
@@ -157,11 +178,16 @@ async def test_upload_reuse_and_job_validation() -> None:
     storage.list_multipart_parts = AsyncMock(return_value=[])
     with pytest.raises(BadRequestError):
         await service.complete_upload(broken)
-    await service.abort_upload(SimpleNamespace(object_key="key", multipart_upload_id=None, status="uploaded"))
+    await service.abort_upload(
+        SimpleNamespace(object_key="key", multipart_upload_id=None, status="uploaded")
+    )
     with pytest.raises(ConflictError):
         await service.create_job(
-            SimpleNamespace(status="uploaded", spaces=[]), import_all=True,
-            space_keys=[], overwrite_existing=False, actor_id=uuid.uuid4()
+            SimpleNamespace(status="uploaded", spaces=[]),
+            import_all=True,
+            space_keys=[],
+            overwrite_existing=False,
+            actor_id=uuid.uuid4(),
         )
 
 
@@ -192,9 +218,11 @@ async def test_scan_paths_and_log(monkeypatch: pytest.MonkeyPatch, tmp_path) -> 
 
     archive.status = "uploaded"
     storage.exists = AsyncMock(return_value=True)
+
     async def download(_key, target):
         with zipfile.ZipFile(target, "w"):
             pass
+
     storage.download_to_file = AsyncMock(side_effect=download)
     monkeypatch.setattr(import_module, "scan_archive", lambda _path: [])
     await service.scan(archive)
@@ -227,14 +255,14 @@ def test_import_markup_helpers_cover_macros_and_fallbacks() -> None:
 
     code = (
         '<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">Python!</ac:parameter>'
-        '<ac:plain-text-body><![CDATA[print(1)]]></ac:plain-text-body></ac:structured-macro>'
+        "<ac:plain-text-body><![CDATA[print(1)]]></ac:plain-text-body></ac:structured-macro>"
     )
     assert "language-python" in _normalize_confluence_code_macros(code)
-    assert "data-callout-type=\"panel\"" in _normalize_confluence_code_macros(
+    assert 'data-callout-type="panel"' in _normalize_confluence_code_macros(
         '<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">More</ac:parameter>'
-        '<ac:rich-text-body><p>Body</p></ac:rich-text-body></ac:structured-macro>'
+        "<ac:rich-text-body><p>Body</p></ac:rich-text-body></ac:structured-macro>"
     )
-    assert _normalize_confluence_code_macros('<ac:structured-macro>raw</ac:structured-macro>')
+    assert _normalize_confluence_code_macros("<ac:structured-macro>raw</ac:structured-macro>")
     assert 'ac:name="unknown"' in _normalize_confluence_code_macros(
         '<ac:structured-macro ac:name="unknown"><p>keep</p></ac:structured-macro>'
     )
@@ -242,19 +270,23 @@ def test_import_markup_helpers_cover_macros_and_fallbacks() -> None:
         '<ac:structured-macro ac:name="code"><p>missing body</p></ac:structured-macro>'
     )
     unresolved = _link_imported_attachments(
-        '<ac:image><ri:attachment /></ac:image><ac:link><ri:attachment /></ac:link>',
-        "42", {("other", "x.txt"): "/x"}, {},
+        "<ac:image><ri:attachment /></ac:image><ac:link><ri:attachment /></ac:link>",
+        "42",
+        {("other", "x.txt"): "/x"},
+        {},
     )
     assert "ac:image" in unresolved and "ac:link" in unresolved
     fallback = _link_imported_attachments(
         '<ac:image><ri:attachment ri:filename="x.txt" /></ac:image>'
         '<ac:link><ri:attachment ri:filename="y.txt" /></ac:link>',
-        "42", {("other", "x.txt"): "/x", ("other", "y.txt"): "/y"}, {},
+        "42",
+        {("other", "x.txt"): "/x", ("other", "y.txt"): "/y"},
+        {},
     )
     assert 'src="/x"' in fallback and 'href="/y"' in fallback
     newline_code = (
         '<ac:structured-macro ac:name="code"><ac:plain-text-body>'
-        '<![CDATA[hello\n]]></ac:plain-text-body></ac:structured-macro>'
+        "<![CDATA[hello\n]]></ac:plain-text-body></ac:structured-macro>"
     )
     assert _normalize_confluence_code_macros(newline_code).endswith("</code></pre>")
 
@@ -340,17 +372,29 @@ async def test_run_import_creates_space_pages_and_bodies(monkeypatch: pytest.Mon
 
     session.flush = AsyncMock(side_effect=flush)
     job = SimpleNamespace(
-        id=uuid.uuid4(), archive_id=uuid.uuid4(), status="queued", phase="queued",
-        import_all=True, space_keys=[], overwrite_existing=False, created_by_id=uuid.uuid4(),
-        cancel_requested=False, counters={"download_percent": 0, "spaces_completed": 0, "pages_processed": 0},
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        import_all=True,
+        space_keys=[],
+        overwrite_existing=False,
+        created_by_id=uuid.uuid4(),
+        cancel_requested=False,
+        counters={"download_percent": 0, "spaces_completed": 0, "pages_processed": 0},
     )
     archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
     session.get.side_effect = [job, archive]
     session.execute = AsyncMock(return_value=Mock(scalar_one_or_none=Mock(return_value=None)))
 
     source_page = ConfluencePage(
-        source_id="page-1", space_id="space-1", parent_id=None, title="ENG",
-        status="current", created_at=None, updated_at=None,
+        source_id="page-1",
+        space_id="space-1",
+        parent_id=None,
+        title="ENG",
+        status="current",
+        created_at=None,
+        updated_at=None,
     )
     source_space = ConfluenceSpace("space-1", "ENG", "Engineering", [source_page])
 
@@ -362,11 +406,16 @@ async def test_run_import_creates_space_pages_and_bodies(monkeypatch: pytest.Mon
     storage.download_to_file = AsyncMock(side_effect=download)
     monkeypatch.setattr(import_module, "scan_archive", lambda _path: [source_space])
     monkeypatch.setattr(
-        import_module, "iter_page_bodies",
-        lambda _path: [("page-1", '<p>body</p><ac:image><ri:attachment ri:filename="doc.txt" /></ac:image>')],
+        import_module,
+        "iter_page_bodies",
+        lambda _path: [
+            ("page-1", '<p>body</p><ac:image><ri:attachment ri:filename="doc.txt" /></ac:image>')
+        ],
     )
     attachment = ConfluenceAttachment("att-1", "page-1", "doc.txt", "text/plain")
-    monkeypatch.setattr(import_module, "iter_attachments", lambda _path: [(attachment, "attachments/att-1")])
+    monkeypatch.setattr(
+        import_module, "iter_attachments", lambda _path: [(attachment, "attachments/att-1")]
+    )
     storage.put = AsyncMock()
 
     await import_module.run_import(session, storage, job.id)
@@ -407,9 +456,16 @@ async def test_run_import_handles_home_creation_parenting_timestamps_and_cancel(
     child = ConfluencePage("child", "space", "root", "Child", "current", created, updated)
     source_space = ConfluenceSpace("space", "ENG", "Engineering", [root, child])
     job = SimpleNamespace(
-        id=uuid.uuid4(), archive_id=uuid.uuid4(), status="queued", phase="queued",
-        import_all=True, space_keys=[], overwrite_existing=False, created_by_id=uuid.uuid4(),
-        cancel_requested=False, counters={"download_percent": 0, "spaces_completed": 0, "pages_processed": 0},
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        import_all=True,
+        space_keys=[],
+        overwrite_existing=False,
+        created_by_id=uuid.uuid4(),
+        cancel_requested=False,
+        counters={"download_percent": 0, "spaces_completed": 0, "pages_processed": 0},
     )
     archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
     session.get = AsyncMock(side_effect=[job, archive])
@@ -423,7 +479,8 @@ async def test_run_import_handles_home_creation_parenting_timestamps_and_cancel(
     monkeypatch.setattr(import_module, "scan_archive", lambda _path: [source_space])
     monkeypatch.setattr(import_module, "iter_page_bodies", lambda _path: [])
     monkeypatch.setattr(
-        import_module, "iter_attachments",
+        import_module,
+        "iter_attachments",
         lambda _path: [(ConfluenceAttachment("unknown", "missing", "x", "text/plain"), "unused")],
     )
     await import_module.run_import(session, storage, job.id)
@@ -437,8 +494,14 @@ async def test_run_import_handles_home_creation_parenting_timestamps_and_cancel(
     cancel_session.rollback = AsyncMock()
     cancel_session.refresh = AsyncMock()
     cancelled_job = SimpleNamespace(
-        id=uuid.uuid4(), archive_id=uuid.uuid4(), status="queued", phase="queued",
-        import_all=True, space_keys=[], cancel_requested=True, counters={"download_percent": 0},
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        import_all=True,
+        space_keys=[],
+        cancel_requested=True,
+        counters={"download_percent": 0},
     )
     cancel_archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
     cancel_session.get = AsyncMock(side_effect=[cancelled_job, cancel_archive])
@@ -448,7 +511,9 @@ async def test_run_import_handles_home_creation_parenting_timestamps_and_cancel(
 
 
 @pytest.mark.asyncio
-async def test_run_import_skips_existing_space_without_overwrite(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_import_skips_existing_space_without_overwrite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = Mock()
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
@@ -456,9 +521,16 @@ async def test_run_import_skips_existing_space_without_overwrite(monkeypatch: py
     session.delete = AsyncMock()
     session.flush = AsyncMock()
     job = SimpleNamespace(
-        id=uuid.uuid4(), archive_id=uuid.uuid4(), status="queued", phase="queued",
-        import_all=True, space_keys=[], overwrite_existing=False, created_by_id=uuid.uuid4(),
-        cancel_requested=False, counters={"download_percent": 0, "spaces_completed": 0},
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        import_all=True,
+        space_keys=[],
+        overwrite_existing=False,
+        created_by_id=uuid.uuid4(),
+        cancel_requested=False,
+        counters={"download_percent": 0, "spaces_completed": 0},
     )
     archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
     session.get = AsyncMock(side_effect=[job, archive])
@@ -497,8 +569,12 @@ async def test_run_import_persists_cancelled_and_failed_states() -> None:
         session.rollback = AsyncMock()
         session.refresh = AsyncMock()
         job = SimpleNamespace(
-            id=uuid.uuid4(), archive_id=uuid.uuid4(), status="queued", phase="queued",
-            counters={"download_percent": 0}, cancel_requested=False,
+            id=uuid.uuid4(),
+            archive_id=uuid.uuid4(),
+            status="queued",
+            phase="queued",
+            counters={"download_percent": 0},
+            cancel_requested=False,
         )
         archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
         final_job = SimpleNamespace(id=job.id, status="queued", phase="queued")
@@ -517,8 +593,12 @@ async def test_run_import_persists_cancelled_and_failed_states() -> None:
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
     progress_job = SimpleNamespace(
-        id=uuid.uuid4(), archive_id=uuid.uuid4(), status="queued", phase="queued",
-        counters={"download_percent": 0}, cancel_requested=False,
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        counters={"download_percent": 0},
+        cancel_requested=False,
     )
     archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
     final_job = SimpleNamespace(id=progress_job.id, status="queued", phase="queued")

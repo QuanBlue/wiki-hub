@@ -10,13 +10,28 @@ from __future__ import annotations
 
 import json
 import uuid
+from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AuthenticationError, BadRequestError
-from app.models.space import SpaceRole
+from app.models.attachment import PageAttachment
+from app.models.page import PageLike, WikiPage
+from app.models.permission import (
+    GlobalPermission,
+    Group,
+    GroupGlobalPermission,
+    GroupMember,
+    Permission,
+    SpaceGroupPermission,
+)
+from app.models.restriction import PageGroupRestriction, PageRestrictionPermission
+from app.models.revision import PageRevision
+from app.models.space import Space, SpaceRole, SpaceVisibility
 from app.models.user import User
 from app.modules.auth.service import AuthService
 from app.modules.backup.service import BackupService
@@ -24,6 +39,7 @@ from app.modules.spaces.service import SpaceService
 from app.schemas.backup import BackupDocument
 from app.schemas.space import SpaceCreate
 from app.schemas.user import UserCreate
+from app.services.storage import ObjectStorage
 from tests.integration.conftest import unique
 
 pytestmark = pytest.mark.integration
@@ -59,7 +75,22 @@ async def _count(session: AsyncSession, model: type) -> int:
 
 async def _wipe(session: AsyncSession) -> None:
     """Empty the instance, child tables first."""
-    for table in ("space_favorites", "space_members", "spaces", "users"):
+    for table in (
+        "page_group_restrictions",
+        "page_user_restrictions",
+        "page_likes",
+        "page_revisions",
+        "pages",
+        "space_group_permissions",
+        "space_user_permissions",
+        "group_global_permissions",
+        "group_members",
+        "groups",
+        "space_favorites",
+        "space_members",
+        "spaces",
+        "users",
+    ):
         await session.execute(text(f"DELETE FROM {table}"))
     await session.flush()
     session.expunge_all()
@@ -98,6 +129,224 @@ class TestExport:
 
 
 class TestRoundTrip:
+    async def test_full_zip_restores_attachment_and_internal_avatar(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        page = WikiPage(space_id=space.id, title="Files", slug="files", content="<p>files</p>")
+        session.add(page)
+        await session.flush()
+        session.add(
+            PageAttachment(
+                page_id=page.id,
+                filename="guide.txt",
+                content_type="text/plain",
+                object_key="attachments/source-guide.txt",
+            )
+        )
+        alice.avatar_object_key = "avatars/source-alice.png"
+        alice.avatar_content_type = "image/png"
+        alice.avatar_url = "/api/v1/users/source/avatar"
+        objects = {
+            "attachments/source-guide.txt": b"important file bytes",
+            "avatars/source-alice.png": b"avatar bytes",
+        }
+
+        async def get(key: str) -> bytes:
+            return objects[key]
+
+        async def put(key: str, data: bytes, **_kwargs: object) -> None:
+            objects[key] = data
+
+        async def delete(key: str) -> None:
+            objects.pop(key, None)
+
+        storage = cast(ObjectStorage, SimpleNamespace(get=get, put=put, delete=delete))
+        archive = str(tmp_path / "full.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
+        await _wipe(session)
+
+        report = await BackupService(session).restore_full_package(archive, storage, dry_run=False)
+        restored_page = (
+            await session.execute(select(WikiPage).where(WikiPage.slug == "files"))
+        ).scalar_one()
+        restored_attachment = (
+            await session.execute(
+                select(PageAttachment).where(PageAttachment.page_id == restored_page.id)
+            )
+        ).scalar_one()
+        restored_alice = await AuthService(session).users.get_by_username("alice")
+        assert objects[restored_attachment.object_key] == b"important file bytes"
+        assert restored_alice is not None
+        assert restored_alice.avatar_object_key is not None
+        assert objects[restored_alice.avatar_object_key] == b"avatar bytes"
+        assert report.created["attachment"] == 1
+        assert report.created["avatar"] == 1
+
+    async def test_full_zip_overwrite_replaces_pages_but_keeps_space_membership(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        seeded = await _seed_instance(session)
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        source_page = WikiPage(
+            space_id=space.id, title="Source", slug="home", content="source content"
+        )
+        session.add(source_page)
+        await session.flush()
+        session.add(
+            PageAttachment(
+                page_id=source_page.id,
+                filename="source.txt",
+                content_type="text/plain",
+                object_key="attachments/source.txt",
+            )
+        )
+        objects = {"attachments/source.txt": b"source"}
+
+        async def get(key: str) -> bytes:
+            return objects[key]
+
+        async def put(key: str, data: bytes, **_kwargs: object) -> None:
+            objects[key] = data
+
+        async def delete_object(key: str) -> None:
+            objects.pop(key, None)
+
+        storage = cast(ObjectStorage, SimpleNamespace(get=get, put=put, delete=delete_object))
+        archive = str(tmp_path / "overwrite.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
+
+        await session.execute(
+            delete(PageAttachment).where(PageAttachment.page_id == source_page.id)
+        )
+        await session.execute(delete(WikiPage).where(WikiPage.id == source_page.id))
+        target_page = WikiPage(
+            space_id=space.id, title="Target", slug="home", content="target content"
+        )
+        session.add(target_page)
+        await session.flush()
+        session.add(
+            PageAttachment(
+                page_id=target_page.id,
+                filename="old.txt",
+                content_type="text/plain",
+                object_key="attachments/old.txt",
+            )
+        )
+        objects["attachments/old.txt"] = b"old"
+
+        await BackupService(session).restore_full_package(
+            archive, storage, dry_run=False, overwrite_space_keys={"ENG"}
+        )
+        restored = (
+            await session.execute(
+                select(WikiPage).where(WikiPage.space_id == space.id, WikiPage.slug == "home")
+            )
+        ).scalar_one()
+        assert restored.content == "source content"
+        assert await SpaceService(session).role_of(space, seeded["bob"]) is SpaceRole.editor  # type: ignore[arg-type]
+        attachment = (
+            await session.execute(
+                select(PageAttachment).where(PageAttachment.page_id == restored.id)
+            )
+        ).scalar_one()
+        assert objects[attachment.object_key] == b"source"
+        assert "attachments/old.txt" not in objects
+
+    async def test_restores_pages_groups_permissions_and_profile_fields(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        bob: User = seeded["bob"]  # type: ignore[assignment]
+        space = seeded["space"]
+        space.visibility = SpaceVisibility.restricted
+        alice.bio = "Knowledge keeper"
+        alice.pronouns = "she/her"
+        alice.profile_url = "https://example.com/alice"
+        alice.social_links = ["https://example.com/alice/social"]
+        alice.company = "WikiHub"
+
+        group = Group(name="Authors", description="Writers", owner_id=alice.id)
+        session.add(group)
+        await session.flush()
+        session.add_all(
+            [
+                GroupMember(group_id=group.id, user_id=bob.id),
+                GroupGlobalPermission(group_id=group.id, permission=GlobalPermission.manage_groups),
+                SpaceGroupPermission(
+                    space_id=space.id, group_id=group.id, permission=Permission.view
+                ),
+            ]
+        )
+        parent = WikiPage(
+            space_id=space.id,
+            title="Overview",
+            slug="overview",
+            content="Parent content",
+            created_by_id=alice.id,
+            updated_by_id=alice.id,
+        )
+        session.add(parent)
+        await session.flush()
+        child = WikiPage(
+            space_id=space.id,
+            parent_id=parent.id,
+            title="Child",
+            slug="child",
+            content="Child content",
+            created_by_id=bob.id,
+            updated_by_id=bob.id,
+        )
+        session.add(child)
+        await session.flush()
+        session.add_all(
+            [
+                PageRevision(
+                    page_id=child.id,
+                    version=1,
+                    title="Child",
+                    content="Child content",
+                    created_by_id=bob.id,
+                    change_summary="Initial version",
+                ),
+                PageLike(page_id=child.id, user_id=alice.id),
+                PageGroupRestriction(
+                    page_id=child.id,
+                    group_id=group.id,
+                    permission=PageRestrictionPermission.view,
+                ),
+            ]
+        )
+        await session.flush()
+
+        document = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        assert document.wikihub_backup.version == 2
+        assert len(document.pages) >= 2
+        assert document.groups[0].name == "Authors"
+        await _wipe(session)
+
+        report = await BackupService(session).import_document(document, dry_run=False)
+
+        restored_alice = await AuthService(session).users.get_by_username("alice")
+        assert restored_alice is not None and restored_alice.bio == "Knowledge keeper"
+        restored_space = await SpaceService(session).get_by_key("ENG")
+        assert restored_space.visibility is SpaceVisibility.restricted
+        restored_child = (
+            await session.execute(select(WikiPage).where(WikiPage.slug == "child"))
+        ).scalar_one()
+        restored_parent = (
+            await session.execute(select(WikiPage).where(WikiPage.slug == "overview"))
+        ).scalar_one()
+        assert restored_child.parent_id == restored_parent.id
+        assert report.created["group"] == 1
+        assert report.created["page"] == len(document.pages)
+        assert report.created["page_revision"] == 1
+        assert report.created["page_like"] == 1
+        assert report.created["page_group_restriction"] == 1
+
     async def test_restores_into_an_empty_instance(self, session: AsyncSession) -> None:
         """The behaviour the whole feature exists for."""
         seeded = await _seed_instance(session)
@@ -162,6 +411,34 @@ class TestRoundTrip:
 
 
 class TestDryRun:
+    async def test_late_restore_error_rolls_back_every_written_row(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seeded = await _seed_instance(session)
+        document = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        await _wipe(session)
+        service = BackupService(session)
+
+        async def write_then_fail(*_args: object) -> None:
+            session.add(
+                User(
+                    username="partial",
+                    email="partial@example.com",
+                    full_name="Partial",
+                    is_active=True,
+                    is_superuser=False,
+                    is_protected=False,
+                )
+            )
+            await session.flush()
+            raise RuntimeError("forced late restore failure")
+
+        monkeypatch.setattr(service, "_apply", write_then_fail)
+        with pytest.raises(RuntimeError, match="forced late restore failure"):
+            await service.import_document(document, dry_run=False)
+
+        assert await _count(session, User) == 0
+
     async def test_changes_nothing(self, session: AsyncSession) -> None:
         seeded = await _seed_instance(session)
         doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]

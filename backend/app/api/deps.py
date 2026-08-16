@@ -9,7 +9,7 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AuthenticationError, PermissionDeniedError
-from app.core.security import decode_access_token, decode_token_identity
+from app.core.security import decode_token_identity
 from app.db.session import get_session_factory
 from app.models.user import User
 from app.modules.auth.service import AuthService
@@ -141,11 +141,13 @@ ActingAuthServiceDep = Annotated[AuthService, Depends(get_acting_auth_service)]
 
 async def get_optional_user(request: Request, service: AuthServiceDep) -> User | None:
     """Current user when a valid token is present, ``None`` otherwise."""
-    token = _extract_token(request)
-    if not token:
+    if not _extract_token(request):
         return None
     try:
-        return await service.get_active_user(decode_access_token(token))
+        # Optional authentication must still honour server-side revocation.
+        # Without this, a token invalidated by sign-out or a security response
+        # could keep granting optional-user behaviour until its JWT expiry.
+        return await get_current_user(request, service)
     except AuthenticationError:
         return None
 

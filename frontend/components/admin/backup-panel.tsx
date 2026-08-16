@@ -23,7 +23,6 @@ import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiFetch } from "@/lib/api-client";
-import { PUBLIC_API_BASE_URL } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import type {
   ConfluenceArchive,
@@ -47,6 +46,16 @@ type HashStats = {
   total: number;
   bytesPerSecond: number;
   secondsRemaining: number | null;
+};
+
+type PortableBackupJob = {
+  id: string;
+  kind: "full_export" | "confluence_export";
+  status: "queued" | "running" | "complete" | "failed" | "cancelled";
+  phase: string;
+  output_filename: string | null;
+  download_url: string | null;
+  error: string | null;
 };
 
 type StoredConfluenceUpload = {
@@ -513,8 +522,12 @@ export function BackupPanel() {
   const [isUploading, setIsUploading] = useState(false);
   const [confluencePending, setConfluencePending] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
+  const [overwriteBackupSpaces, setOverwriteBackupSpaces] = useState<string[]>([]);
   const [pending, setPending] = useState<"preview" | "apply" | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [confluenceExportProfile, setConfluenceExportProfile] = useState("");
+  const [portableBackupJob, setPortableBackupJob] =
+    useState<PortableBackupJob | null>(null);
   const [confirmApply, setConfirmApply] = useState(false);
   const [confirmDiscardArchive, setConfirmDiscardArchive] = useState(false);
   const [discardingArchivePending, setDiscardingArchivePending] =
@@ -668,14 +681,6 @@ export function BackupPanel() {
     setPreparationLogs((current) => [...current, `${time} - ${message}`]);
   }, []);
 
-  // A real link, not a fetch: the browser handles the Content-Disposition
-  // attachment itself, the session cookie rides along, and right-click
-  // "save as" works. Fetching the JSON into memory only to re-wrap it in a
-  // blob URL would buy nothing.
-  const exportHref = `${PUBLIC_API_BASE_URL}/api/v1/backup/export${
-    includeCredentials ? "?include_credentials=true" : ""
-  }`;
-
   useEffect(() => {
     uploadActiveRef.current = confluencePending;
   }, [confluencePending]);
@@ -723,29 +728,23 @@ export function BackupPanel() {
     };
   }, []);
 
-  async function downloadBackup() {
+  async function createPortableExport(
+    kind: "full_export" | "confluence_export",
+  ) {
     if (isDownloading) return;
-
     setIsDownloading(true);
     try {
-      const response = await fetch(exportHref, { credentials: "include" });
-      if (!response.ok) {
-        throw new Error(`Download failed with status ${response.status}.`);
-      }
-
-      const blob = await response.blob();
-      const filename =
-        response.headers
-          .get("Content-Disposition")
-          ?.match(/filename="?([^";]+)"?/i)?.[1] ?? "wikihub-backup.json";
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      const job = await apiFetch<PortableBackupJob>("/api/v1/backup/jobs", {
+        method: "POST",
+        body: JSON.stringify({
+          kind,
+          include_credentials: kind === "full_export" && includeCredentials,
+          confluence_profile:
+            kind === "confluence_export" ? confluenceExportProfile : null,
+        }),
+      });
+      setPortableBackupJob(job);
+      toast.success("Backup export queued. It will continue in the background.");
     } catch (downloadError) {
       toast.error(
         downloadError instanceof Error
@@ -756,6 +755,25 @@ export function BackupPanel() {
       setIsDownloading(false);
     }
   }
+
+  useEffect(() => {
+    if (!portableBackupJob || ["complete", "failed", "cancelled"].includes(portableBackupJob.status)) {
+      return;
+    }
+    const timer = window.setInterval(async () => {
+      try {
+        const job = await apiFetch<PortableBackupJob>(
+          `/api/v1/backup/jobs/${portableBackupJob.id}`,
+        );
+        setPortableBackupJob(job);
+        if (job.status === "complete") toast.success("Backup export is ready to download.");
+        if (job.status === "failed") toast.error(job.error ?? "Backup export failed.");
+      } catch {
+        // Keep polling on a transient request failure; the job itself is durable.
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [portableBackupJob]);
 
   useEffect(() => {
     if (
@@ -1554,8 +1572,14 @@ export function BackupPanel() {
       const form = new FormData();
       form.append("file", file);
       form.append("dry_run", String(dryRun));
+      if (file.name.toLocaleLowerCase().endsWith(".zip")) {
+        form.append("overwrite_space_keys", JSON.stringify(overwriteBackupSpaces));
+      }
 
-      const result = await apiFetch<ImportReport>("/api/v1/backup/import", {
+      const endpoint = file.name.toLocaleLowerCase().endsWith(".zip")
+        ? "/api/v1/backup/import-zip"
+        : "/api/v1/backup/import";
+      const result = await apiFetch<ImportReport>(endpoint, {
         method: "POST",
         rawBody: form,
       });
@@ -1585,11 +1609,11 @@ export function BackupPanel() {
           <span className="bg-primary-subtle text-primary flex size-8 items-center justify-center rounded-md">
             <Download className="size-4" />
           </span>
-          Create a backup
+          Export workspace data
         </h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Downloads every account, space, membership and favourite as one JSON
-          file. Page content is not included — that domain does not exist yet.
+          Choose a portable WikiHub restore package or a separate Confluence
+          Data Center content export. The two formats are intentionally not interchangeable.
         </p>
 
         <label className="border-border bg-surface-sunken mt-4 flex max-w-3xl items-start gap-3 rounded-md border p-3">
@@ -1610,22 +1634,62 @@ export function BackupPanel() {
           </span>
         </label>
 
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button
             type="button"
             variant="primary"
             disabled={isDownloading}
             aria-busy={isDownloading}
-            onClick={() => void downloadBackup()}
+            onClick={() => void createPortableExport("full_export")}
           >
             {isDownloading ? (
               <Loader2 className="animate-spin" />
             ) : (
               <Download />
             )}
-            {isDownloading ? "Preparing backup..." : "Download backup"}
+            {isDownloading ? "Queueing export..." : "Create full backup ZIP"}
           </Button>
+          <div className="border-border flex items-end gap-2 rounded-md border p-2">
+            <Label className="grid gap-1 text-xs font-medium">
+              Confluence Data Center profile
+              <select
+                value={confluenceExportProfile}
+                onChange={(event) => setConfluenceExportProfile(event.target.value)}
+                className="border-input bg-background h-9 rounded-md border px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">Choose target version</option>
+                <option value="dc-8">Data Center 8.x</option>
+                <option value="dc-9">Data Center 9.x</option>
+              </select>
+            </Label>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={isDownloading || !confluenceExportProfile}
+              onClick={() => void createPortableExport("confluence_export")}
+            >
+              <FileArchive /> Export DC XML
+            </Button>
+          </div>
         </div>
+        {portableBackupJob && (
+          <div className="border-border bg-surface-sunken mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm">
+            <span className="text-muted-foreground">
+              {portableBackupJob.status === "complete"
+                ? "Export is ready."
+                : portableBackupJob.status === "failed"
+                  ? portableBackupJob.error ?? "Export failed."
+                  : "Export is running in the background…"}
+            </span>
+            {portableBackupJob.download_url && portableBackupJob.output_filename && (
+              <Button asChild variant="secondary">
+                <a href={portableBackupJob.download_url} download={portableBackupJob.output_filename}>
+                  <Download /> Download {portableBackupJob.output_filename}
+                </a>
+              </Button>
+            )}
+          </div>
+        )}
       </section>
 
       {/* -- Confluence import ------------------------------------------ */}
@@ -2173,9 +2237,9 @@ export function BackupPanel() {
           Restore a backup
         </h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Upload a backup to preview what it would change. Existing usernames
-          and space keys are <strong>skipped, never overwritten</strong>, and
-          the built-in administrator is always left untouched.
+          Upload a trusted WikiHub JSON backup or full ZIP to preview its changes. Existing
+          records are <strong>skipped, never overwritten</strong>, and the
+          built-in administrator is always left untouched.
         </p>
 
         <div className="mt-4 space-y-2">
@@ -2184,10 +2248,26 @@ export function BackupPanel() {
             id="backup-file"
             ref={fileInput}
             type="file"
-            accept="application/json,.json"
+            accept="application/json,.json,application/zip,.zip"
             onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null);
+              const selectedFile = e.target.files?.[0] ?? null;
+              if (
+                selectedFile &&
+                siteSettings?.effective?.max_backup_import_size_bytes &&
+                selectedFile.size >
+                  siteSettings.effective.max_backup_import_size_bytes
+              ) {
+                setFile(null);
+                setReport(null);
+                setError(
+                  `Backup exceeds the configured ${siteSettings.effective.max_backup_import_size_mb} MB limit.`,
+                );
+                e.target.value = "";
+                return;
+              }
+              setFile(selectedFile);
               setReport(null);
+              setOverwriteBackupSpaces([]);
               setError(null);
             }}
             className="border-border bg-surface file:bg-surface-sunken file:text-foreground hover:border-border-strong block w-full max-w-md cursor-pointer rounded-md border text-sm transition-colors duration-150 file:mr-3 file:cursor-pointer file:border-0 file:px-3 file:py-2 file:text-sm"
@@ -2224,6 +2304,40 @@ export function BackupPanel() {
             Apply import
           </Button>
         </div>
+        {report?.dry_run &&
+        file?.name.toLocaleLowerCase().endsWith(".zip") &&
+        report.entries.some(
+          (entry) => entry.kind === "space" && entry.reason === "key_exists",
+        ) ? (
+          <div className="border-warning/30 bg-warning-bg mt-4 rounded-md border p-3 text-sm">
+            <p className="font-medium">Conflicting spaces</p>
+            <p className="text-muted-foreground mt-1">
+              Leave unchecked to skip. Selecting overwrite replaces only page content,
+              revisions, restrictions and attachments; destination membership and permissions stay unchanged.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+              {report.entries
+                .filter((entry) => entry.kind === "space" && entry.reason === "key_exists")
+                .map((entry) => (
+                  <label key={entry.label} className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={overwriteBackupSpaces.includes(entry.label)}
+                      onChange={(event) =>
+                        setOverwriteBackupSpaces((current) =>
+                          event.target.checked
+                            ? [...current, entry.label]
+                            : current.filter((key) => key !== entry.label),
+                        )
+                      }
+                      className="accent-primary size-4"
+                    />
+                    Overwrite {entry.label}
+                  </label>
+                ))}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {/* -- Report ------------------------------------------------------- */}

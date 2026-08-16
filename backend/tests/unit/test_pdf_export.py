@@ -8,7 +8,7 @@ def test_pdf_export_sanitizes_html_and_renders(monkeypatch):
     page = SimpleNamespace(
         title="<Title>",
         content_format="markdown",
-        content="# Heading\n\n<script>alert(1)</script><a href=\"javascript:bad()\" onclick=\"bad()\">link</a>",
+        content='# Heading\n\n<script>alert(1)</script><a href="javascript:bad()" onclick="bad()">link</a>',
     )
     safe = pdf_export._safe_content(page)
     assert "script" not in safe and "javascript:" not in safe and "onclick" not in safe
