@@ -306,3 +306,36 @@ describe("RichTextEditor images", () => {
     });
   });
 });
+
+describe("RichTextEditor tables", () => {
+  it("resizes a row from its lower edge and persists the height", async () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <RichTextEditor
+        content="<table><tbody><tr><td>First row</td><td>Value</td></tr><tr><td>Second row</td><td>Value</td></tr></tbody></table>"
+        onChange={onChange}
+      />,
+    );
+
+    const row = container.querySelector("tr") as HTMLTableRowElement;
+    expect(row).not.toBeNull();
+    Object.defineProperty(row, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: 20, bottom: 60, height: 40 }),
+    });
+
+    fireEvent.mouseMove(row, { clientY: 56 });
+    expect(row).toHaveClass("wikihub-row-resize-target");
+
+    fireEvent.mouseDown(row, { button: 0, clientY: 56 });
+    fireEvent.mouseMove(window, { clientY: 92 });
+    expect(row).toHaveStyle({ height: "76px" });
+    fireEvent.mouseUp(window);
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining("height: 76px"),
+      );
+    });
+  });
+});

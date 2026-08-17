@@ -7,7 +7,7 @@
 
 
 7. Trang 1 Thông tin chung - File list hiển thị sai
-8. Trong edit normal chỉnh lại edit bảng, cho phép kéo thu độ rộng của cột, nhưng khi kéo thì không hiển thị đúng vị trí cột, gây khó khăn cho người dùng trong việc chỉnh sửa bảng. Cần cải thiện giao diện kéo thả để hiển thị chính xác vị trí cột khi thay đổi kích thước.
+8. (doing) Trong edit normal chỉnh lại edit bảng, cho phép kéo thu độ rộng của cột, nhưng khi kéo thì không hiển thị đúng vị trí cột, gây khó khăn cho người dùng trong việc chỉnh sửa bảng. Cần cải thiện giao diện kéo thả để hiển thị chính xác vị trí cột khi thay đổi kích thước.
 9. (doing) Thêm tính năng kéo thả hình/file vào trong edit pannel
 10. Thêm upload file vào trong edit pannel (có thể kéo thả vào), 
 11. cho nhấn vào hình/file trong edit pannel để hiển thị thông tin chi tiết của file qua 1 modal , bao gồm tên file, kích thước, ngày tạo, và các thông tin liên quan khác. Điều này giúp người dùng dễ dàng quản lý và truy cập thông tin về các file đã upload. Nếu là hình thì xem hình rõ hơn, nếu là file txt, code,... thì có thể hiện nội dung code (có line)

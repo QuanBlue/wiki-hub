@@ -11,7 +11,13 @@ import {
   TableHeader,
   TableRow,
 } from "@tiptap/extension-table";
-import { Node as TiptapNode, Mark, mergeAttributes } from "@tiptap/core";
+import {
+  Extension,
+  Node as TiptapNode,
+  Mark,
+  mergeAttributes,
+} from "@tiptap/core";
+import { Plugin } from "@tiptap/pm/state";
 import {
   EditorContent,
   useEditor,
@@ -35,6 +41,7 @@ import {
   Columns3,
   Code2,
   Crop,
+  Ellipsis,
   Heading1,
   Heading2,
   Heading3,
@@ -162,6 +169,157 @@ const TableHeaderWithBackground = TableHeader.extend({
             : {},
       },
     };
+  },
+});
+
+function normaliseTableRowHeight(value: unknown): number | null {
+  const height = Number.parseFloat(String(value ?? ""));
+  return Number.isFinite(height) && height >= 32 && height <= 2000
+    ? Math.round(height)
+    : null;
+}
+
+const TableRowWithHeight = TableRow.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      height: {
+        default: null,
+        parseHTML: (element) => normaliseTableRowHeight(element.style.height),
+        renderHTML: (attributes) => {
+          const height = normaliseTableRowHeight(attributes.height);
+          return height ? { style: `height: ${height}px` } : {};
+        },
+      },
+    };
+  },
+});
+
+const TABLE_ROW_RESIZE_ZONE = 8;
+
+function tableRowPosition(view: Editor["view"], row: HTMLTableRowElement) {
+  const domPosition = view.posAtDOM(row, 0);
+  // `posAtDOM(row, 0)` is normally just inside the row; look back over the
+  // table boundary to get the position at which the tableRow node starts.
+  for (let offset = 0; offset <= 3; offset += 1) {
+    const position = Math.max(0, domPosition - offset);
+    if (view.state.doc.nodeAt(position)?.type.name === "tableRow") {
+      return position;
+    }
+  }
+  return null;
+}
+
+/** Adds row-height resizing to Tiptap's built-in column-resize support. */
+const TableRowResize = Extension.create({
+  name: "tableRowResize",
+  addProseMirrorPlugins() {
+    let activeResize:
+      | {
+          row: HTMLTableRowElement;
+          position: number;
+          startY: number;
+          startHeight: number;
+        }
+      | undefined;
+    let disposeDrag = () => undefined;
+
+    const clearRowHover = (view: Editor["view"]) => {
+      view.dom
+        .querySelectorAll("tr.wikihub-row-resize-target")
+        .forEach((row) => row.classList.remove("wikihub-row-resize-target"));
+    };
+
+    return [
+      new Plugin({
+        props: {
+          handleDOMEvents: {
+            mousemove: (view, event) => {
+              if (activeResize || !view.editable) return false;
+              const target = event.target as HTMLElement | null;
+              const row = target?.closest("tr") as HTMLTableRowElement | null;
+              clearRowHover(view);
+              if (!row || !view.dom.contains(row)) return false;
+              const bounds = row.getBoundingClientRect();
+              if (bounds.bottom - event.clientY <= TABLE_ROW_RESIZE_ZONE) {
+                row.classList.add("wikihub-row-resize-target");
+              }
+              return false;
+            },
+            mouseleave: (view) => {
+              if (!activeResize) clearRowHover(view);
+              return false;
+            },
+            mousedown: (view, event) => {
+              if (!view.editable || event.button !== 0) return false;
+              const target = event.target as HTMLElement | null;
+              const row = target?.closest("tr") as HTMLTableRowElement | null;
+              if (!row || !view.dom.contains(row)) return false;
+              const bounds = row.getBoundingClientRect();
+              if (bounds.bottom - event.clientY > TABLE_ROW_RESIZE_ZONE) {
+                return false;
+              }
+              const position = tableRowPosition(view, row);
+              if (position === null) return false;
+
+              event.preventDefault();
+              clearRowHover(view);
+              activeResize = {
+                row,
+                position,
+                startY: event.clientY,
+                startHeight: Math.max(bounds.height, 32),
+              };
+              const initialCursor = document.body.style.cursor;
+              document.body.style.cursor = "row-resize";
+
+              const move = (moveEvent: MouseEvent) => {
+                if (!activeResize) return;
+                const height = Math.max(
+                  32,
+                  Math.min(
+                    2000,
+                    activeResize.startHeight +
+                      moveEvent.clientY -
+                      activeResize.startY,
+                  ),
+                );
+                activeResize.row.style.height = `${Math.round(height)}px`;
+              };
+              const end = () => {
+                if (!activeResize) return;
+                const { row: resizedRow, position: rowPosition } = activeResize;
+                const height = normaliseTableRowHeight(resizedRow.style.height);
+                const node = view.state.doc.nodeAt(rowPosition);
+                if (node && height) {
+                  view.dispatch(
+                    view.state.tr.setNodeMarkup(rowPosition, undefined, {
+                      ...node.attrs,
+                      height,
+                    }),
+                  );
+                }
+                activeResize = undefined;
+                document.body.style.cursor = initialCursor;
+                disposeDrag();
+              };
+              disposeDrag = () => {
+                window.removeEventListener("mousemove", move);
+                window.removeEventListener("mouseup", end);
+              };
+              window.addEventListener("mousemove", move);
+              window.addEventListener("mouseup", end, { once: true });
+              return true;
+            },
+          },
+        },
+        view: () => ({
+          destroy: () => {
+            disposeDrag();
+          },
+        }),
+      }),
+    ];
   },
 });
 
@@ -1229,9 +1387,10 @@ const editorExtensions = [
     resizable: true,
     cellMinWidth: 96,
   }),
-  TableRow,
+  TableRowWithHeight,
   TableHeaderWithBackground,
   TableCellWithBackground,
+  TableRowResize,
   Placeholder.configure({
     placeholder: "Write your documentation here...",
   }),
@@ -1412,6 +1571,31 @@ function ToolbarButton({
       disabled={!editor || disabled}
       onClick={onClick}
       className={cn(active && "bg-surface-selected text-primary")}
+    >
+      {children}
+    </Button>
+  );
+}
+
+function OverflowToolbarButton({
+  label,
+  active = false,
+  disabled = false,
+  onClick,
+  children,
+}: Omit<React.ComponentProps<typeof ToolbarButton>, "editor">) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={label}
+      title={label}
+      aria-pressed={active || undefined}
+      disabled={disabled}
+      className={cn(active && "bg-surface-selected text-primary")}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
     >
       {children}
     </Button>
@@ -1993,6 +2177,56 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
   );
 }
 
+function MoreFormattingMenu({
+  hasActions,
+  children,
+}: {
+  hasActions: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="More formatting actions"
+          title="More formatting actions"
+        >
+          <Ellipsis />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="w-auto max-w-[calc(100vw-1rem)] p-1"
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        {hasActions ? (
+          <div
+            role="toolbar"
+            aria-label="Hidden formatting actions"
+            className="flex max-w-56 flex-wrap gap-0.5"
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest("button")) {
+                setOpen(false);
+              }
+            }}
+          >
+            {children}
+          </div>
+        ) : (
+          <p className="text-muted-foreground px-2 py-1.5 text-xs">
+            All actions are visible
+          </p>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function RichTextToolbar({
   editor,
   wrapText,
@@ -2017,8 +2251,37 @@ function RichTextToolbar({
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const toolbarActionsRef = useRef<HTMLDivElement>(null);
+  const [visibleOverflowActionCount, setVisibleOverflowActionCount] =
+    useState(8);
+  const [toolbarMeasureVersion, setToolbarMeasureVersion] = useState(0);
 
-  function openLinkDialog() {
+  useLayoutEffect(() => {
+    const toolbar = toolbarActionsRef.current;
+    if (!toolbar) return;
+    if (
+      toolbar.scrollWidth > toolbar.clientWidth + 1 &&
+      visibleOverflowActionCount > 0
+    ) {
+      setVisibleOverflowActionCount((count) => count - 1);
+    }
+  }, [toolbarMeasureVersion, visibleOverflowActionCount]);
+
+  useLayoutEffect(() => {
+    const toolbar = toolbarActionsRef.current;
+    if (!toolbar || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      // Recalculate from the full action set. Layout effects run before paint,
+      // so this doesn't make the editor toolbar jump while its container grows.
+      setVisibleOverflowActionCount(8);
+      setToolbarMeasureVersion((version) => version + 1);
+    });
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, []);
+
+  const openLinkDialog = useCallback(() => {
     if (!editor) return;
     const { from, to } = editor.state.selection;
     const attributes = editor.getAttributes("link");
@@ -2028,7 +2291,7 @@ function RichTextToolbar({
     setLinkTarget((attributes.target as string | undefined) ?? "_self");
     setLinkText(editor.state.doc.textBetween(from, to, " "));
     setLinkOpen(true);
-  }
+  }, [editor]);
 
   function saveLink(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2080,10 +2343,10 @@ function RichTextToolbar({
     setLinkOpen(false);
   }
 
-  function insertAttachment() {
+  const insertAttachment = useCallback(() => {
     if (!editor) return;
     attachmentInput.current?.click();
-  }
+  }, [editor]);
 
   async function insertFiles(files: File[]) {
     if (!editor || files.length === 0) return;
@@ -2167,7 +2430,7 @@ function RichTextToolbar({
 
   return (
     <div
-      className="border-border bg-surface-sunken flex flex-wrap items-center gap-0.5 rounded-t-md border px-1 py-1"
+      className="border-border bg-surface-sunken flex flex-nowrap items-center gap-1 overflow-hidden rounded-t-md border px-1 py-1 [&>button]:shrink-0"
       role="toolbar"
       aria-label="Page formatting"
     >
@@ -2180,152 +2443,259 @@ function RichTextToolbar({
         aria-hidden
         onChange={handleAttachmentSelected}
       />
-      <ToolbarButton
-        editor={editor}
-        label="Bold"
-        active={editor?.isActive("bold")}
-        onClick={() => editor?.chain().focus().toggleBold().run()}
+      <div
+        ref={toolbarActionsRef}
+        className="flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden [&>button]:shrink-0"
       >
-        <Bold />
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Italic"
-        active={editor?.isActive("italic")}
-        onClick={() => editor?.chain().focus().toggleItalic().run()}
-      >
-        <Italic />
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Underline"
-        active={editor?.isActive("underline")}
-        onClick={() => editor?.chain().focus().toggleMark("underline").run()}
-      >
-        <Underline />
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Strikethrough"
-        active={editor?.isActive("strike")}
-        onClick={() => editor?.chain().focus().toggleStrike().run()}
-      >
-        <Strikethrough />
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Inline code"
-        active={editor?.isActive("code")}
-        onClick={() => editor?.chain().focus().toggleCode().run()}
-      >
-        <Code2 />
-      </ToolbarButton>
-      <ColorMenu editor={editor} kind="text" />
-      <ColorMenu editor={editor} kind="highlight" />
-      <ToolbarButton
-        editor={editor}
-        label="Clear text colour and highlight"
-        onClick={() => {
-          if (!editor) return;
-          const markType = editor.schema.marks.textStyle;
-          if (!markType) return;
+        <ToolbarButton
+          editor={editor}
+          label="Bold"
+          active={editor?.isActive("bold")}
+          onClick={() => editor?.chain().focus().toggleBold().run()}
+        >
+          <Bold />
+        </ToolbarButton>
+        <ToolbarButton
+          editor={editor}
+          label="Italic"
+          active={editor?.isActive("italic")}
+          onClick={() => editor?.chain().focus().toggleItalic().run()}
+        >
+          <Italic />
+        </ToolbarButton>
+        <ToolbarButton
+          editor={editor}
+          label="Underline"
+          active={editor?.isActive("underline")}
+          onClick={() => editor?.chain().focus().toggleMark("underline").run()}
+        >
+          <Underline />
+        </ToolbarButton>
+        <ToolbarButton
+          editor={editor}
+          label="Strikethrough"
+          active={editor?.isActive("strike")}
+          onClick={() => editor?.chain().focus().toggleStrike().run()}
+        >
+          <Strikethrough />
+        </ToolbarButton>
+        <ToolbarButton
+          editor={editor}
+          label="Inline code"
+          active={editor?.isActive("code")}
+          onClick={() => editor?.chain().focus().toggleCode().run()}
+        >
+          <Code2 />
+        </ToolbarButton>
+        <ColorMenu editor={editor} kind="text" />
+        <ColorMenu editor={editor} kind="highlight" />
+        <ToolbarButton
+          editor={editor}
+          label="Clear text colour and highlight"
+          onClick={() => {
+            if (!editor) return;
+            const markType = editor.schema.marks.textStyle;
+            if (!markType) return;
 
-          const { from, to } = editor.state.selection;
-          if (from === to) {
-            editor.commands.unsetMark("textStyle", {
-              extendEmptyMarkRange: true,
-            });
-          } else {
-            editor.view.dispatch(
-              editor.state.tr.removeMark(from, to, markType),
-            );
-            editor.view.focus();
-          }
-        }}
-      >
-        <RemoveFormatting />
-      </ToolbarButton>
-      <span aria-hidden className="bg-border mx-1 h-5 w-px" />
-      <HeadingMenu editor={editor} />
-      <AlignmentMenu editor={editor} />
-      <ToolbarButton
-        editor={editor}
-        label={wrapText ? "Unwrap text" : "Wrap text"}
-        active={wrapText}
-        onClick={onToggleWrap}
-      >
-        {wrapText ? <UnfoldHorizontal /> : <WrapText />}
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Bulleted list"
-        active={editor?.isActive("bulletList")}
-        onClick={() => editor?.chain().focus().toggleBulletList().run()}
-      >
-        <List />
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Numbered list"
-        active={editor?.isActive("orderedList")}
-        onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-      >
-        <ListOrdered />
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Quote"
-        active={editor?.isActive("blockquote")}
-        onClick={() => editor?.chain().focus().toggleBlockquote().run()}
-      >
-        <Quote />
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Code block"
-        active={editor?.isActive("codeBlock")}
-        onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
-      >
-        <Code2 className="fill-current" />
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Insert divider"
-        onClick={() => editor?.chain().focus().setHorizontalRule().run()}
-      >
-        <Minus />
-      </ToolbarButton>
-      <span aria-hidden className="bg-border mx-1 h-5 w-px" />
-      <ToolbarButton editor={editor} label="Add link" onClick={openLinkDialog}>
-        <Link2 />
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Upload image or file"
-        disabled={uploading}
-        onClick={insertAttachment}
-      >
-        {uploading ? <ImagePlus className="animate-pulse" /> : <Paperclip />}
-      </ToolbarButton>
-      <span aria-hidden className="bg-border mx-1 h-5 w-px" />
-      <TablePicker editor={editor} />
-      <span aria-hidden className="bg-border mx-1 h-5 w-px" />
-      <ToolbarButton
-        editor={editor}
-        label="Undo"
-        disabled={!editor?.can().undo()}
-        onClick={() => editor?.chain().focus().undo().run()}
-      >
-        <Undo2 />
-      </ToolbarButton>
-      <ToolbarButton
-        editor={editor}
-        label="Redo"
-        disabled={!editor?.can().redo()}
-        onClick={() => editor?.chain().focus().redo().run()}
-      >
-        <Redo2 />
-      </ToolbarButton>
+            const { from, to } = editor.state.selection;
+            if (from === to) {
+              editor.commands.unsetMark("textStyle", {
+                extendEmptyMarkRange: true,
+              });
+            } else {
+              editor.view.dispatch(
+                editor.state.tr.removeMark(from, to, markType),
+              );
+              editor.view.focus();
+            }
+          }}
+        >
+          <RemoveFormatting />
+        </ToolbarButton>
+        <span aria-hidden className="bg-border mx-1 h-5 w-px" />
+        <HeadingMenu editor={editor} />
+        <AlignmentMenu editor={editor} />
+        {visibleOverflowActionCount > 0 ? (
+          <ToolbarButton
+            editor={editor}
+            label={wrapText ? "Unwrap text" : "Wrap text"}
+            active={wrapText}
+            onClick={onToggleWrap}
+          >
+            {wrapText ? <UnfoldHorizontal /> : <WrapText />}
+          </ToolbarButton>
+        ) : null}
+        {visibleOverflowActionCount > 1 ? (
+          <ToolbarButton
+            editor={editor}
+            label="Bulleted list"
+            active={editor?.isActive("bulletList")}
+            onClick={() => editor?.chain().focus().toggleBulletList().run()}
+          >
+            <List />
+          </ToolbarButton>
+        ) : null}
+        {visibleOverflowActionCount > 2 ? (
+          <ToolbarButton
+            editor={editor}
+            label="Numbered list"
+            active={editor?.isActive("orderedList")}
+            onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+          >
+            <ListOrdered />
+          </ToolbarButton>
+        ) : null}
+        {visibleOverflowActionCount > 3 ? (
+          <ToolbarButton
+            editor={editor}
+            label="Quote"
+            active={editor?.isActive("blockquote")}
+            onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+          >
+            <Quote />
+          </ToolbarButton>
+        ) : null}
+        {visibleOverflowActionCount > 4 ? (
+          <ToolbarButton
+            editor={editor}
+            label="Code block"
+            active={editor?.isActive("codeBlock")}
+            onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
+          >
+            <Code2 className="fill-current" />
+          </ToolbarButton>
+        ) : null}
+        {visibleOverflowActionCount > 5 ? (
+          <ToolbarButton
+            editor={editor}
+            label="Insert divider"
+            onClick={() => editor?.chain().focus().setHorizontalRule().run()}
+          >
+            <Minus />
+          </ToolbarButton>
+        ) : null}
+        {visibleOverflowActionCount > 6 ? (
+          <ToolbarButton
+            editor={editor}
+            label="Add link"
+            onClick={openLinkDialog}
+          >
+            <Link2 />
+          </ToolbarButton>
+        ) : null}
+        {visibleOverflowActionCount > 7 ? (
+          <ToolbarButton
+            editor={editor}
+            label="Upload image or file"
+            disabled={uploading}
+            onClick={insertAttachment}
+          >
+            {uploading ? (
+              <ImagePlus className="animate-pulse" />
+            ) : (
+              <Paperclip />
+            )}
+          </ToolbarButton>
+        ) : null}
+        <TablePicker editor={editor} />
+      </div>
+      <div className="border-border ml-auto flex shrink-0 items-center gap-1 border-l pl-1">
+        <ToolbarButton
+          editor={editor}
+          label="Undo"
+          disabled={!editor?.can().undo()}
+          onClick={() => editor?.chain().focus().undo().run()}
+        >
+          <Undo2 />
+        </ToolbarButton>
+        <ToolbarButton
+          editor={editor}
+          label="Redo"
+          disabled={!editor?.can().redo()}
+          onClick={() => editor?.chain().focus().redo().run()}
+        >
+          <Redo2 />
+        </ToolbarButton>
+        {visibleOverflowActionCount < 8 ? (
+          <MoreFormattingMenu hasActions>
+            {visibleOverflowActionCount < 1 ? (
+              <OverflowToolbarButton
+                label={wrapText ? "Unwrap text" : "Wrap text"}
+                active={wrapText}
+                onClick={onToggleWrap}
+              >
+                {wrapText ? <UnfoldHorizontal /> : <WrapText />}
+              </OverflowToolbarButton>
+            ) : null}
+            {visibleOverflowActionCount < 2 ? (
+              <OverflowToolbarButton
+                label="Bulleted list"
+                active={editor?.isActive("bulletList")}
+                onClick={() => editor?.chain().focus().toggleBulletList().run()}
+              >
+                <List />
+              </OverflowToolbarButton>
+            ) : null}
+            {visibleOverflowActionCount < 3 ? (
+              <OverflowToolbarButton
+                label="Numbered list"
+                active={editor?.isActive("orderedList")}
+                onClick={() =>
+                  editor?.chain().focus().toggleOrderedList().run()
+                }
+              >
+                <ListOrdered />
+              </OverflowToolbarButton>
+            ) : null}
+            {visibleOverflowActionCount < 4 ? (
+              <OverflowToolbarButton
+                label="Quote"
+                active={editor?.isActive("blockquote")}
+                onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+              >
+                <Quote />
+              </OverflowToolbarButton>
+            ) : null}
+            {visibleOverflowActionCount < 5 ? (
+              <OverflowToolbarButton
+                label="Code block"
+                active={editor?.isActive("codeBlock")}
+                onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
+              >
+                <Code2 className="fill-current" />
+              </OverflowToolbarButton>
+            ) : null}
+            {visibleOverflowActionCount < 6 ? (
+              <OverflowToolbarButton
+                label="Insert divider"
+                onClick={() =>
+                  editor?.chain().focus().setHorizontalRule().run()
+                }
+              >
+                <Minus />
+              </OverflowToolbarButton>
+            ) : null}
+            {visibleOverflowActionCount < 7 ? (
+              <OverflowToolbarButton label="Add link" onClick={openLinkDialog}>
+                <Link2 />
+              </OverflowToolbarButton>
+            ) : null}
+            {visibleOverflowActionCount < 8 ? (
+              <OverflowToolbarButton
+                label={uploading ? "Uploading file" : "Upload image or file"}
+                disabled={uploading}
+                onClick={insertAttachment}
+              >
+                {uploading ? (
+                  <ImagePlus className="animate-pulse" />
+                ) : (
+                  <Paperclip />
+                )}
+              </OverflowToolbarButton>
+            ) : null}
+          </MoreFormattingMenu>
+        ) : null}
+      </div>
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
         <DialogContent title="Chèn/sửa liên kết" className="max-w-xl">
           <form onSubmit={saveLink} className="space-y-4" noValidate>

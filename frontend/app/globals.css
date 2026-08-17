@@ -309,4 +309,41 @@
   .wh-scroll {
     scrollbar-gutter: stable;
   }
+
+  /* Table columns are resized by Tiptap's table plugin. The handle is a
+     pointer-event-free guide while ProseMirror owns the drag interaction. */
+  .ProseMirror.resize-cursor {
+    cursor: col-resize;
+  }
+
+  .ProseMirror .column-resize-handle {
+    position: absolute;
+    z-index: 10;
+    top: 0;
+    right: -2px;
+    bottom: -2px;
+    width: 4px;
+    pointer-events: none;
+    background: var(--primary);
+    opacity: 0.85;
+  }
+
+  .ProseMirror tr.wikihub-row-resize-target > th,
+  .ProseMirror tr.wikihub-row-resize-target > td {
+    position: relative;
+    cursor: row-resize;
+  }
+
+  .ProseMirror tr.wikihub-row-resize-target > th::after,
+  .ProseMirror tr.wikihub-row-resize-target > td::after {
+    position: absolute;
+    z-index: 11;
+    right: -1px;
+    bottom: -2px;
+    left: -1px;
+    height: 3px;
+    pointer-events: none;
+    content: "";
+    background: var(--primary);
+  }
 }
