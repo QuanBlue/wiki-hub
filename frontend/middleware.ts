@@ -18,8 +18,33 @@ const ACCESS_COOKIE_NAME = "wikihub_access";
 /** Routes reachable without a session. */
 const PUBLIC_PATHS = ["/login"];
 
+/** API requests must reach the backend, including unauthenticated login calls. */
+export function isApiRequestPath(pathname: string): boolean {
+  return pathname.startsWith("/api/");
+}
+
+/** Assets and Next runtime endpoints must never be turned into a login page. */
+export function bypassesSessionGuard(pathname: string): boolean {
+  return (
+    isApiRequestPath(pathname) ||
+    pathname.startsWith("/_next/") ||
+    pathname === "/favicon.ico" ||
+    /\.(?:js|mjs|css|map|json|svg|png|jpe?g|gif|webp|ico|woff2?|ttf|eot)$/i.test(
+      pathname,
+    )
+  );
+}
+
 export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+
+  // API requests are proxied to the backend by next.config.ts. They must never
+  // be redirected to /login here: the login request itself has no cookie yet,
+  // and the backend is the authority that returns its 401/Set-Cookie response.
+  if (bypassesSessionGuard(pathname)) {
+    return NextResponse.next();
+  }
+
   const hasSession = Boolean(request.cookies.get(ACCESS_COOKIE_NAME)?.value);
   const isPublic = PUBLIC_PATHS.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`),
@@ -45,6 +70,6 @@ export const config = {
    * breaking the login page's own JavaScript.
    */
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!api/|_next/|favicon.ico|.*\\.(?:js|mjs|css|map|json|svg|png|jpe?g|gif|webp|ico|woff2?|ttf|eot)$).*)",
   ],
 };
