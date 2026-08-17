@@ -171,9 +171,27 @@ async def get_upload_part_urls(
     ) // importer.upload_part_size_bytes
     if any(number < 1 or number > max_part for number in payload.part_numbers):
         raise NotFoundError("Upload part not found.")
-    return UploadPartUrlsRead(
-        urls=await importer.upload_part_urls(archive, sorted(set(payload.part_numbers)))
-    )
+    # Keep resumable uploads same-origin. Direct MinIO URLs contain a
+    # localhost/internal hostname and cannot work when WikiHub is public.
+    from urllib.parse import quote
+
+    if archive.status != "uploading" or not archive.multipart_upload_id:
+        # The service remains the authority for invalid/reused archives. This
+        # branch also keeps lightweight service doubles informative in tests.
+        return UploadPartUrlsRead(
+            urls=await importer.upload_part_urls(archive, sorted(set(payload.part_numbers)))
+        )
+    urls = {
+        number: (
+            "/api/v1/storage/object?key="
+            + quote(archive.object_key, safe="")
+            + "&upload_id="
+            + quote(archive.multipart_upload_id, safe="")
+            + f"&part_number={number}"
+        )
+        for number in sorted(set(payload.part_numbers))
+    }
+    return UploadPartUrlsRead(urls=urls)
 
 
 @router.post("/archives/{archive_id}/complete-upload", response_model=ArchiveRead)

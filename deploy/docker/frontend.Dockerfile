@@ -16,11 +16,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
 
-# NEXT_PUBLIC_* values are inlined at build time, so the browser-facing API URL
-# has to be known here. Override with --build-arg for a non-localhost deployment.
+# NEXT_PUBLIC_* values are inlined at build time. The API proxy destination is
+# also resolved while Next.js builds, so keep the container-internal backend
+# URL available here; browser requests themselves use the current origin.
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ARG API_INTERNAL_BASE_URL=http://backend:8000
 ARG NEXT_PUBLIC_SITE_NAME=WikiHub
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
+    API_INTERNAL_BASE_URL=$API_INTERNAL_BASE_URL \
     NEXT_PUBLIC_SITE_NAME=$NEXT_PUBLIC_SITE_NAME
 
 RUN npm run build

@@ -161,7 +161,7 @@ async def test_storage_attachment_backup_and_settings_wrappers(
     assert (await storage_admin.list_storage_objects(user, storage))[0].key == "a/b.txt"
     assert (
         await storage_admin.presign_download(user, storage, key="a%20b.txt", inline=False)
-    ).url == "https://download"
+    ).url == "/api/v1/storage/object?key=a%2520b.txt&download_as=a%20b.txt"
     deleted = await storage_admin.delete_storage_object(user, storage, session, key="a/b.txt")
     assert not deleted.archive_cleared and not deleted.attachment_deleted
 

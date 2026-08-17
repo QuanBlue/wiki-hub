@@ -72,9 +72,10 @@ docker compose up -d
 
 If something already owns 3000/5432/6379/8000/9000 on your machine, change the
 `*_PORT_HOST` values in `.env`. Only the host-side mapping moves; containers keep
-talking to each other on standard ports. If you change `BACKEND_PORT_HOST` or
-`MINIO_PORT_HOST`, update `NEXT_PUBLIC_API_BASE_URL` to match — the browser needs
-the host-visible URL.
+talking to each other on standard ports. Browser API requests use the current
+WikiHub origin and are proxied by Next.js, so this also works when the frontend
+is opened through a reverse proxy or an ngrok URL. `API_INTERNAL_BASE_URL` is
+the only URL used for server-side requests inside Docker.
 
 ## Local development (without Docker)
 

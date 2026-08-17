@@ -100,9 +100,8 @@ services:
       WIKIHUB_REDIS_URL: redis://redis:6379/0
       WIKIHUB_S3_ENDPOINT_URL: http://minio:9000
       WIKIHUB_S3_PUBLIC_ENDPOINT_URL: http://localhost:${MINIO_PORT_HOST:-9000}
-      # The quick-start script may choose a different frontend port when 3000
-      # is occupied. Pass its matching CORS origin into the container instead
-      # of leaving the backend bound to the value stored in .env.
+      # The UI uses the same-origin Next.js proxy. Keep this for external API
+      # clients and local development only; public UI domains need no entry.
       WIKIHUB_CORS_ORIGINS: ${WIKIHUB_CORS_ORIGINS:-http://localhost:3000}
     depends_on:
       postgres:
@@ -153,6 +152,7 @@ services:
       dockerfile: deploy/docker/frontend.Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+        API_INTERNAL_BASE_URL: http://backend:8000
         NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-WikiHub}
     restart: unless-stopped
     environment:

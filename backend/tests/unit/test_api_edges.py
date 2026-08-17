@@ -303,7 +303,7 @@ async def test_storage_and_dependency_edges(monkeypatch: pytest.MonkeyPatch) -> 
     assert objects[0].key == "a/b.txt"
     assert (
         await storage_admin.presign_download(user, storage, key="a/b.txt", inline=False)
-    ).url == "https://download"
+    ).url == "/api/v1/storage/object?key=a%2Fb.txt&download_as=b.txt"
 
     session = Mock(
         scalar=AsyncMock(side_effect=[None, None]), flush=AsyncMock(), delete=AsyncMock()

@@ -8,10 +8,11 @@ file can be re-uploaded without a hash conflict.
 
 from __future__ import annotations
 
+import mimetypes
 from typing import Annotated
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -92,6 +93,20 @@ class StorageObjectRead(BaseModel):
 class PresignedUrlRead(BaseModel):
     url: str
     key: str
+
+
+def storage_proxy_url(
+    key: str, *, download_as: str | None = None, inline: bool = False
+) -> str:
+    """Build a browser URL that stays on the public WikiHub origin."""
+    from urllib.parse import quote
+
+    url = "/api/v1/storage/object?key=" + quote(key, safe="")
+    if download_as:
+        url += "&download_as=" + quote(download_as, safe="")
+    if inline:
+        url += "&inline=true"
+    return url
 
 
 class DeleteResult(BaseModel):
@@ -187,12 +202,47 @@ async def presign_download(
         description="Return an inline URL for browser previews instead of a download URL",
     ),
 ) -> PresignedUrlRead:
-    """Generate a short-lived presigned URL so the browser can download the
-    file directly from S3 without routing the bytes through the API server."""
+    """Return a same-origin URL so arbitrary public hosts work without exposing MinIO."""
     # Derive a friendly filename for Content-Disposition
     filename = None if inline else unquote(key.rsplit("/", 1)[-1])
-    url = await storage.presigned_url(key, download_as=filename)
+    if not await storage.exists(key):
+        raise NotFoundError(f"Object '{key}' was not found in storage.")
+    url = storage_proxy_url(key, download_as=filename, inline=inline)
     return PresignedUrlRead(url=url, key=key)
+
+
+@router.get("/object", response_class=Response, summary="Read an admin storage object")
+async def read_storage_object(
+    _admin: CurrentSuperuser,
+    storage: StorageDep,
+    key: str = Query(...),
+    download_as: str | None = Query(default=None),
+    inline: bool = Query(default=False),
+) -> Response:
+    if not await storage.exists(key):
+        raise NotFoundError(f"Object '{key}' was not found in storage.")
+    filename = (unquote(download_as) if download_as else key.rsplit("/", 1)[-1])
+    filename = filename.replace("\r", "").replace("\n", "").replace('"', "").replace("\\", "")
+    disposition = "inline" if inline else "attachment"
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return Response(
+        content=await storage.get(key),
+        media_type=media_type,
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
+    )
+
+
+@router.put("/object", response_class=Response, summary="Upload a storage multipart part")
+async def upload_storage_part(
+    request: Request,
+    _admin: CurrentSuperuser,
+    storage: StorageDep,
+    key: str = Query(...),
+    upload_id: str = Query(...),
+    part_number: int = Query(..., ge=1),
+) -> Response:
+    etag = await storage.upload_part(key, upload_id, part_number, await request.body())
+    return Response(status_code=200, headers={"ETag": etag})
 
 
 @router.delete("", response_model=DeleteResult, summary="Delete an S3 object")

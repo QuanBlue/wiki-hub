@@ -59,6 +59,11 @@ class ObjectStorage(abc.ABC):
     async def get(self, key: str) -> bytes: ...
 
     @abc.abstractmethod
+    async def upload_part(
+        self, key: str, upload_id: str, part_number: int, data: bytes
+    ) -> str: ...
+
+    @abc.abstractmethod
     async def download_to_file(
         self,
         key: str,
@@ -215,6 +220,19 @@ class S3ObjectStorage(ObjectStorage):
         result = await self._call(self.client.get_object, Bucket=self.bucket, Key=key)
         body = result["Body"]
         return await anyio.to_thread.run_sync(body.read)
+
+    async def upload_part(
+        self, key: str, upload_id: str, part_number: int, data: bytes
+    ) -> str:
+        result = await self._call(
+            self.client.upload_part,
+            Bucket=self.bucket,
+            Key=key,
+            UploadId=upload_id,
+            PartNumber=part_number,
+            Body=data,
+        )
+        return str(result.get("ETag", ""))
 
     async def download_to_file(
         self,

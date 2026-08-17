@@ -14,6 +14,7 @@ import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Annotated
+from urllib.parse import quote
 
 from arq import create_pool
 from arq.connections import RedisSettings
@@ -69,7 +70,10 @@ async def _job_read(job: BackupJob) -> BackupJobRead:
         confluence_profile=job.confluence_profile,
         output_filename=job.output_filename,
         download_url=(
-            await get_storage().presigned_url(job.output_key, download_as=job.output_filename)
+            "/api/v1/storage/object?key="
+            + quote(job.output_key, safe="")
+            + "&download_as="
+            + quote(job.output_filename, safe="")
             if job.status == "complete" and job.output_key and job.output_filename
             else None
         ),
