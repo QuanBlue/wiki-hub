@@ -109,6 +109,7 @@ async def test_openapi_schema_is_generated(client: AsyncClient) -> None:
     schema = response.json()
     assert schema["info"]["version"]
     assert "/api/v1/meta" in schema["paths"]
+    assert "/api/v1/spaces/{key}/pages/{slug}/attachments" in schema["paths"]
 
 
 @pytest.mark.parametrize("path", ["/docs", "/redoc"])

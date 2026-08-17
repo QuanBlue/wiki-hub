@@ -4,21 +4,30 @@ from __future__ import annotations
 
 import re
 import uuid
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
+from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import (
+    BadRequestError,
+    NotFoundError,
+    PayloadTooLargeError,
+    UnsupportedMediaTypeError,
+)
 from app.models.attachment import PageAttachment
 from app.models.page import WikiPage
 from app.models.permission import Permission
 from app.models.space import Space
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
+from app.services.site_settings import SiteSettingsService
 from app.services.storage import ObjectStorage, S3ObjectStorage
 
 router = APIRouter(prefix="/attachments", tags=["attachments"])
+upload_router = APIRouter(tags=["attachments"])
 
 
 def get_storage() -> ObjectStorage:
@@ -26,6 +35,80 @@ def get_storage() -> ObjectStorage:
 
 
 StorageDep = Annotated[ObjectStorage, Depends(get_storage)]
+
+
+class AttachmentUploadRead(BaseModel):
+    id: uuid.UUID
+    filename: str
+    content_type: str
+    content_url: str
+
+
+def _safe_filename(filename: str | None) -> str:
+    name = Path(filename or "").name.strip()
+    if not name or name in {".", ".."}:
+        raise BadRequestError("The attachment must have a filename.")
+    return name[:255]
+
+
+def _allowed_attachment(filename: str, allowed_extensions: list[str]) -> bool:
+    extension = Path(filename).suffix.lower().lstrip(".")
+    return "*" in allowed_extensions or (bool(extension) and extension in allowed_extensions)
+
+
+@upload_router.post(
+    "/spaces/{key}/pages/{slug}/attachments",
+    response_model=AttachmentUploadRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a page attachment",
+)
+async def upload_attachment(
+    key: str,
+    slug: str,
+    file: Annotated[UploadFile, File(description="A file to insert into the page")],
+    user: CurrentUser,
+    session: DbSession,
+    storage: StorageDep,
+) -> AttachmentUploadRead:
+    """Store an editor upload and return the authenticated URL to embed in page content."""
+    space = await SpaceService(session).get_by_key(key)
+    page = await PageService(session).get_by_slug(space, slug)
+    await PageService(session).require_page_editor(page, user)
+
+    filename = _safe_filename(file.filename)
+    content_type = (file.content_type or "application/octet-stream").lower()
+    # SVG is active content when displayed inline; never accept it as an image attachment.
+    if content_type == "image/svg+xml" or filename.lower().endswith(".svg"):
+        raise UnsupportedMediaTypeError("SVG files cannot be uploaded as page attachments.")
+
+    effective = await SiteSettingsService(session).get_effective()
+    if not _allowed_attachment(filename, effective.allowed_attachment_types):
+        raise UnsupportedMediaTypeError("This file type is not allowed by workspace settings.")
+    data = await file.read(effective.max_upload_size_bytes + 1)
+    if not data:
+        raise BadRequestError("The attachment is empty.")
+    if len(data) > effective.max_upload_size_bytes:
+        raise PayloadTooLargeError(
+            f"Attachments must be {effective.max_upload_size_mb} MB or smaller."
+        )
+
+    attachment_id = uuid.uuid4()
+    attachment = PageAttachment(
+        id=attachment_id,
+        page_id=page.id,
+        filename=filename,
+        content_type=content_type,
+        object_key=f"attachments/{page.id}/{attachment_id}/{filename}",
+    )
+    session.add(attachment)
+    await storage.put(attachment.object_key, data, content_type=content_type)
+    await session.flush()
+    return AttachmentUploadRead(
+        id=attachment.id,
+        filename=attachment.filename,
+        content_type=attachment.content_type,
+        content_url=f"/api/v1/attachments/{attachment.id}/content",
+    )
 
 
 @router.get("/{attachment_id}/content", response_class=Response, summary="Read a page attachment")

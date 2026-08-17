@@ -117,6 +117,62 @@ async def test_attachment_endpoint_errors_and_success(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
+async def test_editor_attachment_upload_validates_and_stores_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = _user()
+    page = SimpleNamespace(id=uuid.uuid4())
+    session = Mock(add=Mock(), flush=AsyncMock())
+    storage = Mock(put=AsyncMock())
+
+    class _SpaceService:
+        def __init__(self, _session):
+            pass
+
+        get_by_key = AsyncMock(return_value=SimpleNamespace())
+
+    class _PageService:
+        def __init__(self, _session):
+            pass
+
+        get_by_slug = AsyncMock(return_value=page)
+        require_page_editor = AsyncMock()
+
+    class _SettingsService:
+        def __init__(self, _session):
+            pass
+
+        get_effective = AsyncMock(
+            return_value=SimpleNamespace(
+                allowed_attachment_types=["png", "pdf"],
+                max_upload_size_bytes=10,
+                max_upload_size_mb=1,
+            )
+        )
+
+    monkeypatch.setattr(attachments, "SpaceService", _SpaceService)
+    monkeypatch.setattr(attachments, "PageService", _PageService)
+    monkeypatch.setattr(attachments, "SiteSettingsService", _SettingsService)
+    image = UploadFile(
+        filename="diagram.png",
+        file=io.BytesIO(b"image"),
+        headers=Headers({"content-type": "image/png"}),
+    )
+    uploaded = await attachments.upload_attachment("ENG", "guide", image, user, session, storage)
+    assert uploaded.filename == "diagram.png"
+    assert uploaded.content_url.endswith(f"/{uploaded.id}/content")
+    storage.put.assert_awaited_once()
+
+    disallowed = UploadFile(
+        filename="unsafe.svg",
+        file=io.BytesIO(b"<svg/ >"),
+        headers=Headers({"content-type": "image/svg+xml"}),
+    )
+    with pytest.raises(UnsupportedMediaTypeError):
+        await attachments.upload_attachment("ENG", "guide", disallowed, user, session, storage)
+
+
+@pytest.mark.asyncio
 async def test_simple_read_endpoints_and_backup_validation() -> None:
     service = Mock(search=AsyncMock(return_value=Page.of([], 0, limit=10, offset=0)))
     assert (await audit_logs.list_audit_logs(_user(), service, limit=10, offset=0)).total == 0

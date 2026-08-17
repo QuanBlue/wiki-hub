@@ -170,10 +170,7 @@ export type SpacePermission =
   | "export"
   | "admin";
 export type GlobalPermission =
-  | "create_space"
-  | "manage_users"
-  | "manage_groups"
-  | "system_admin";
+  "create_space" | "manage_users" | "manage_groups" | "system_admin";
 export type PageContentFormat = "html" | "markdown";
 
 export interface Space {
@@ -406,6 +403,13 @@ export interface StorageObject {
 export interface StoragePresignedUrl {
   url: string;
   key: string;
+}
+
+export interface PageAttachmentUpload {
+  id: string;
+  filename: string;
+  content_type: string;
+  content_url: string;
 }
 
 export interface StorageDeleteResult {

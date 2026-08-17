@@ -75,6 +75,7 @@ import type {
   PageContentFormat,
   PageDraft,
   Group,
+  PageAttachmentUpload,
   Space,
   SpaceMember,
   WikiPage,
@@ -578,7 +579,6 @@ function PageTree({
     });
   }, [activeSlug, pages, pagesByParent]);
 
-
   function togglePage(pageId: string) {
     setExpandedPageIds((current) => {
       const next = new Set(current);
@@ -644,9 +644,7 @@ function PageTree({
     });
   }
 
-  return (
-    <>{renderPages(null)}</>
-  );
+  return <>{renderPages(null)}</>;
 }
 
 export function SpaceWorkspace({
@@ -764,7 +762,7 @@ export function SpaceWorkspace({
       })
       .catch(() => {
         if (active) setRecoveryDraft(null);
-      })
+      });
 
     return () => {
       active = false;
@@ -778,7 +776,7 @@ export function SpaceWorkspace({
 
   useEffect(() => {
     const container = mainContainerRef.current;
-    
+
     const handleScroll = (e: Event) => {
       const target = e.currentTarget;
       const currentScrollY =
@@ -786,15 +784,17 @@ export function SpaceWorkspace({
           ? window.scrollY
           : target instanceof HTMLElement
             ? target.scrollTop
-            : (container ? container.scrollTop : window.scrollY);
-      
+            : container
+              ? container.scrollTop
+              : window.scrollY;
+
       // Hysteresis logic: sticky when scrolled down past 200px, relative when near top (<= 5px)
       if (currentScrollY > 200) {
         setIsSticky(true);
       } else if (currentScrollY <= 5) {
         setIsSticky(false);
       }
-      
+
       if (currentScrollY <= 5) {
         setShowHeader(true);
       } else {
@@ -805,7 +805,7 @@ export function SpaceWorkspace({
           setShowHeader(isScrollingUp);
         }
       }
-      
+
       lastScrollY.current = currentScrollY;
     };
 
@@ -920,8 +920,7 @@ export function SpaceWorkspace({
         return;
 
       const target = event.target;
-      const link =
-        target instanceof Element ? target.closest("a[href]") : null;
+      const link = target instanceof Element ? target.closest("a[href]") : null;
       if (!(link instanceof HTMLAnchorElement)) return;
       if (link.target && link.target !== "_self") return;
       if (link.hasAttribute("download")) return;
@@ -967,7 +966,9 @@ export function SpaceWorkspace({
 
   function navigateTo(destination: URL) {
     if (destination.origin === window.location.origin) {
-      router.push(`${destination.pathname}${destination.search}${destination.hash}`);
+      router.push(
+        `${destination.pathname}${destination.search}${destination.hash}`,
+      );
     } else {
       window.location.assign(destination.href);
     }
@@ -997,7 +998,9 @@ export function SpaceWorkspace({
     if (!destinationHref) return;
     const destination = new URL(destinationHref, window.location.href);
     if (destination.origin === window.location.origin) {
-      router.push(`${destination.pathname}${destination.search}${destination.hash}`);
+      router.push(
+        `${destination.pathname}${destination.search}${destination.hash}`,
+      );
     } else {
       window.location.assign(destination.href);
     }
@@ -1011,7 +1014,9 @@ export function SpaceWorkspace({
     setCancelEditPending(true);
   }
 
-  async function persistDraft({ keepalive = false }: { keepalive?: boolean } = {}): Promise<boolean> {
+  async function persistDraft({
+    keepalive = false,
+  }: { keepalive?: boolean } = {}): Promise<boolean> {
     const previousRequest = draftSaveInFlight.current;
     if (previousRequest) {
       await previousRequest;
@@ -1025,12 +1030,17 @@ export function SpaceWorkspace({
     } = latestPageDraft.current;
     if (!page || !pageEditDirtyRef.current) return true;
 
-    const request = savePageDraft(space.key, page.slug, {
+    const request = savePageDraft(
+      space.key,
+      page.slug,
+      {
         content: mode === "markdown" ? markdownSource : htmlDraft,
         content_format: formatForMode(mode),
         edit_mode: mode,
         base_updated_at: page.updated_at,
-      }, { keepalive })
+      },
+      { keepalive },
+    )
       .then(() => true)
       .catch(() => false);
     draftSaveInFlight.current = request;
@@ -1088,7 +1098,8 @@ export function SpaceWorkspace({
       html: serverHtml,
       markdown: serverMarkdown,
     };
-    pageEditDirtyRef.current = html !== serverHtml || markdown !== serverMarkdown;
+    pageEditDirtyRef.current =
+      html !== serverHtml || markdown !== serverMarkdown;
     setEditMode(mode);
     setPreviewing(false);
     setEditing(true);
@@ -1109,9 +1120,24 @@ export function SpaceWorkspace({
     setDraftContent(nextContent);
   }
 
+  async function uploadPageAttachment(
+    file: File,
+  ): Promise<PageAttachmentUpload> {
+    if (!currentPage)
+      throw new Error("Open a page before uploading an attachment.");
+    const form = new FormData();
+    form.append("file", file);
+    return api.post<PageAttachmentUpload>(
+      `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/attachments`,
+      undefined,
+      { rawBody: form },
+    );
+  }
+
   function updateMarkdownDraft(nextContent: string) {
     latestPageDraft.current.markdownDraft = nextContent;
-    pageEditDirtyRef.current = nextContent !== pageEditBaseline.current.markdown;
+    pageEditDirtyRef.current =
+      nextContent !== pageEditBaseline.current.markdown;
     if (currentPage) {
       saveLocalPageDraft(space.key, currentPage.slug, {
         content: nextContent,
@@ -1173,10 +1199,7 @@ export function SpaceWorkspace({
     if (!editing) return;
 
     const saveWithShortcut = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        (!event.ctrlKey && !event.metaKey)
-      ) {
+      if (event.defaultPrevented || (!event.ctrlKey && !event.metaKey)) {
         return;
       }
       if (event.key.toLowerCase() === "r") {
@@ -1230,7 +1253,14 @@ export function SpaceWorkspace({
         draftSaveTimer.current = null;
       }
     };
-  }, [currentPage, draftContent, editMode, editing, markdownDraft, pageEditDirty]);
+  }, [
+    currentPage,
+    draftContent,
+    editMode,
+    editing,
+    markdownDraft,
+    pageEditDirty,
+  ]);
 
   const compactBreadcrumbPages = useMemo<(WikiPage | null)[]>(() => {
     // Keep the immediate context around the current page while avoiding an
@@ -1547,9 +1577,7 @@ export function SpaceWorkspace({
     } catch (error) {
       if (announce) {
         toast.error(
-          error instanceof Error
-            ? error.message
-            : "Could not save this page.",
+          error instanceof Error ? error.message : "Could not save this page.",
         );
       }
       return false;
@@ -1616,7 +1644,7 @@ export function SpaceWorkspace({
   const desktopSidebarWidth = collapsed ? 0 : sidebarWidth;
 
   return (
-    <div className="bg-background min-h-[calc(100vh-var(--wh-topbar-height))] min-w-0 max-w-full overflow-x-hidden md:flex md:h-[calc(100vh-var(--wh-topbar-height))] md:overflow-hidden">
+    <div className="bg-background min-h-[calc(100vh-var(--wh-topbar-height))] max-w-full min-w-0 overflow-x-hidden md:flex md:h-[calc(100vh-var(--wh-topbar-height))] md:overflow-hidden">
       <aside
         id="wikihub-sidebar"
         data-sidebar-kind="space"
@@ -1636,9 +1664,7 @@ export function SpaceWorkspace({
         }
       >
         {!collapsed ? (
-          <div
-            className="border-border bg-surface-sunken flex h-full w-full max-w-full flex-col overflow-hidden border-r md:w-(--space-sidebar-panel-width)"
-          >
+          <div className="border-border bg-surface-sunken flex h-full w-full max-w-full flex-col overflow-hidden border-r md:w-(--space-sidebar-panel-width)">
             <div className="flex min-w-0 shrink-0 flex-col px-5 py-4">
               <div className="flex items-start gap-3">
                 <SpaceAvatar space={space} />
@@ -1689,7 +1715,6 @@ export function SpaceWorkspace({
                   />
                 ) : null}
               </div>
-
             </div>
             <div
               ref={spaceSidebarScrollRef}
@@ -1733,25 +1758,27 @@ export function SpaceWorkspace({
 
       <main
         ref={mainContainerRef}
-        className="min-w-0 max-w-full flex-1 overflow-x-hidden md:h-full md:overflow-y-auto md:overscroll-contain"
+        className="max-w-full min-w-0 flex-1 overflow-x-hidden md:h-full md:overflow-y-auto md:overscroll-contain"
       >
         <div
           className={cn(
-            "mx-auto min-w-0 max-w-full px-6 pb-5 sm:px-8 lg:px-10",
+            "mx-auto max-w-full min-w-0 px-6 pb-5 sm:px-8 lg:px-10",
             editing || viewFullWidth ? "max-w-none" : "max-w-6xl",
           )}
         >
           <div
             className={cn(
               "flex flex-wrap items-center justify-between gap-3",
-              isSticky ? "transition-all duration-300" : "transition-[transform,opacity,padding] duration-300",
+              isSticky
+                ? "transition-all duration-300"
+                : "transition-[transform,opacity,padding] duration-300",
               "-mx-6 px-6 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10",
               isSticky
-                ? "sticky top-0 z-30 bg-background border-b border-border shadow-sm py-3"
+                ? "bg-background border-border sticky top-0 z-30 border-b py-3 shadow-sm"
                 : "relative py-5",
               showHeader
                 ? "translate-y-0 opacity-100"
-                : "-translate-y-full opacity-0 pointer-events-none",
+                : "pointer-events-none -translate-y-full opacity-0",
             )}
           >
             <nav
@@ -1803,7 +1830,7 @@ export function SpaceWorkspace({
               </ol>
             </nav>
 
-            <div className="[&>button]:!text-sm [&>button]:!font-medium [&>div>button]:!text-sm [&>div>button]:!font-medium flex flex-nowrap items-center gap-1">
+            <div className="flex flex-nowrap items-center gap-1 [&>button]:!text-sm [&>button]:!font-medium [&>div>button]:!text-sm [&>div>button]:!font-medium">
               {overviewEditing ? (
                 <>
                   <Button
@@ -1856,7 +1883,7 @@ export function SpaceWorkspace({
                     }}
                     disabled={savePending}
                     className={cn(
-                      "min-w-36 bg-surface-hover text-muted-foreground hover:bg-surface-selected hover:text-foreground",
+                      "bg-surface-hover text-muted-foreground hover:bg-surface-selected hover:text-foreground min-w-36",
                       autoSaveEnabled &&
                         "border-primary/40 bg-surface-selected text-primary hover:bg-surface-hover hover:text-primary",
                     )}
@@ -1928,10 +1955,10 @@ export function SpaceWorkspace({
                         <ChevronDown />
                       </Button>
                     </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="min-w-48 text-sm font-medium text-muted-foreground"
-                      >
+                    <DropdownMenuContent
+                      align="end"
+                      className="text-muted-foreground min-w-48 text-sm font-medium"
+                    >
                       <DropdownMenuItem onSelect={() => beginEditing("normal")}>
                         <Pencil />
                         Normal editor
@@ -2002,7 +2029,7 @@ export function SpaceWorkspace({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
                         align="end"
-                        className="min-w-52 text-sm font-medium text-muted-foreground"
+                        className="text-muted-foreground min-w-52 text-sm font-medium"
                       >
                         {canEdit && space.status === "active" ? (
                           <DropdownMenuItem
@@ -2012,7 +2039,9 @@ export function SpaceWorkspace({
                             Move page
                           </DropdownMenuItem>
                         ) : null}
-                        <DropdownMenuItem onSelect={() => setHistoryModalOpen(true)}>
+                        <DropdownMenuItem
+                          onSelect={() => setHistoryModalOpen(true)}
+                        >
                           <Clock3 />
                           Page history
                         </DropdownMenuItem>
@@ -2030,14 +2059,18 @@ export function SpaceWorkspace({
                             View
                           </DropdownMenuSubTrigger>
                           <DropdownMenuSubContent className="w-48">
-                            <DropdownMenuItem onSelect={() => setViewFullWidth(true)}>
+                            <DropdownMenuItem
+                              onSelect={() => setViewFullWidth(true)}
+                            >
                               <Maximize2 />
                               Full width
                               {viewFullWidth ? (
                                 <Check className="text-primary ml-auto size-4" />
                               ) : null}
                             </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => setViewFullWidth(false)}>
+                            <DropdownMenuItem
+                              onSelect={() => setViewFullWidth(false)}
+                            >
                               <Minimize2 />
                               Normal width
                               {!viewFullWidth ? (
@@ -2093,7 +2126,7 @@ export function SpaceWorkspace({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
                       align="end"
-                      className="min-w-48 text-sm font-medium text-muted-foreground lg:hidden"
+                      className="text-muted-foreground min-w-48 text-sm font-medium lg:hidden"
                     >
                       {currentPage ? (
                         <DropdownMenuItem onSelect={toggleSavedForLater}>
@@ -2142,7 +2175,9 @@ export function SpaceWorkspace({
                               Move page
                             </DropdownMenuItem>
                           ) : null}
-                          <DropdownMenuItem onSelect={() => setHistoryModalOpen(true)}>
+                          <DropdownMenuItem
+                            onSelect={() => setHistoryModalOpen(true)}
+                          >
                             <Clock3 />
                             Page history
                           </DropdownMenuItem>
@@ -2168,14 +2203,18 @@ export function SpaceWorkspace({
                           View
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="w-48">
-                          <DropdownMenuItem onSelect={() => setViewFullWidth(true)}>
+                          <DropdownMenuItem
+                            onSelect={() => setViewFullWidth(true)}
+                          >
                             <Maximize2 />
                             Full width
                             {viewFullWidth ? (
                               <Check className="text-primary ml-auto size-4" />
                             ) : null}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => setViewFullWidth(false)}>
+                          <DropdownMenuItem
+                            onSelect={() => setViewFullWidth(false)}
+                          >
                             <Minimize2 />
                             Normal width
                             {!viewFullWidth ? (
@@ -2194,16 +2233,23 @@ export function SpaceWorkspace({
           {recoveryDraft && !editing && !overviewEditing ? (
             <div className="border-warning/30 bg-warning-bg text-warning mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3">
               <div className="min-w-0">
-                <p className="font-semibold text-sm">Draft not released</p>
+                <p className="text-sm font-semibold">Draft not released</p>
                 <p className="mt-0.5 text-xs">
-                  This draft was last saved on {formatDate(recoveryDraft.updated_at)} and has not been saved to the page.
+                  This draft was last saved on{" "}
+                  {formatDate(recoveryDraft.updated_at)} and has not been saved
+                  to the page.
                   {recoveryDraft.is_conflict
                     ? " The page has changed since this draft was created."
                     : ""}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button type="button" size="sm" variant="secondary" onClick={openRecoveryDraft}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={openRecoveryDraft}
+                >
                   <Pencil />
                   Open editor
                 </Button>
@@ -2273,6 +2319,7 @@ export function SpaceWorkspace({
                       <RichTextEditor
                         content={draftContent}
                         onChange={updateDraftContent}
+                        onUploadFile={uploadPageAttachment}
                       />
                     ) : (
                       <SourceCodeEditor

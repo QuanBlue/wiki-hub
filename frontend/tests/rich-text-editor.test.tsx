@@ -1,0 +1,308 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+import { RichTextEditor } from "@/components/pages/rich-text-editor";
+
+describe("RichTextEditor images", () => {
+  it("renders a resize handle and persists a width after dragging it", async () => {
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content={
+          '<img src="/api/v1/attachments/example/content" alt="Diagram" width="600">'
+        }
+        onChange={onChange}
+      />,
+    );
+
+    const image = await screen.findByAltText("Diagram");
+    Object.defineProperties(image, {
+      naturalWidth: { configurable: true, value: 1200 },
+      naturalHeight: { configurable: true, value: 800 },
+    });
+    fireEvent.load(image);
+    fireEvent.mouseEnter(image);
+
+    const handle = await screen.findByRole("button", {
+      name: "Resize image from right",
+    });
+    expect(handle).toBeVisible();
+    expect(
+      screen.getAllByRole("button", { name: /Resize image from (left|right)/ }),
+    ).toHaveLength(2);
+    expect(
+      screen.getByRole("button", { name: "Align image center" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Add image caption" }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Crop image" })).toBeVisible();
+    expect(image).toHaveAttribute("draggable", "true");
+
+    fireEvent.mouseLeave(image);
+    fireEvent.mouseEnter(
+      screen.getByRole("toolbar", { name: "Image options" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Align image center" }));
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('data-alignment="center"'),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add image caption" }));
+    fireEvent.change(screen.getByLabelText("Caption"), {
+      target: { value: "System diagram" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save caption" }));
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('data-caption="System diagram"'),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Crop image" }));
+    expect(screen.getByRole("dialog", { name: "Crop image" })).toBeVisible();
+    expect(
+      screen.getAllByRole("button", { name: /Resize crop from/ }),
+    ).toHaveLength(8);
+    const cropPreview = screen.getByAltText("Crop preview").parentElement;
+    Object.defineProperty(cropPreview, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 600, height: 480 }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining("data-crop="),
+      );
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('data-crop-width-final="true"'),
+      );
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('width="540"'),
+      );
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('data-crop-source-aspect-ratio="1.25"'),
+      );
+    });
+    expect(screen.getByRole("button", { name: "Crop image" })).toBeVisible();
+
+    fireEvent.mouseDown(handle, { clientX: 100 });
+    fireEvent.mouseMove(window, { clientX: 180 });
+    fireEvent.mouseUp(window);
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(expect.stringContaining('width="'));
+    });
+  });
+
+  it("renders a saved crop at the selected size and source aspect ratio", async () => {
+    render(
+      <RichTextEditor
+        content={`<img src="/api/v1/attachments/example/content" alt="Cropped diagram" width="180" data-crop='{"x":0.3,"y":0.2,"width":0.3,"height":0.5}' data-crop-width-final="true" data-crop-source-aspect-ratio="1.5">`}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const image = await screen.findByAltText("Cropped diagram");
+    expect(image.parentElement).toHaveStyle({
+      width: "180px",
+      height: "200px",
+    });
+    expect(image).toHaveStyle({
+      width: "600px",
+      height: "400px",
+      left: "-180px",
+      top: "-80px",
+    });
+  });
+
+  it("corrects the size and position of crops saved by the earlier editor", async () => {
+    render(
+      <RichTextEditor
+        content={`<img src="/api/v1/attachments/example/content" alt="Legacy cropped diagram" width="600" data-crop='{"x":0.3,"y":0.2,"width":0.3,"height":0.5}'>`}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const image = await screen.findByAltText("Legacy cropped diagram");
+    Object.defineProperties(image, {
+      naturalWidth: { configurable: true, value: 1200 },
+      naturalHeight: { configurable: true, value: 800 },
+    });
+    fireEvent.load(image);
+
+    await waitFor(() => {
+      expect(image.parentElement).toHaveStyle({
+        width: "180px",
+        height: "200px",
+      });
+    });
+    expect(image).toHaveStyle({
+      width: "600px",
+      height: "400px",
+      left: "-180px",
+      top: "-80px",
+    });
+  });
+
+  it("resizes the visible crop frame without jumping to the hidden source size", async () => {
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content={`<img src="/api/v1/attachments/example/content" alt="Resizable cropped diagram" width="600" data-crop='{"x":0.3,"y":0.2,"width":0.3,"height":0.5}' data-crop-source-aspect-ratio="1.5">`}
+        onChange={onChange}
+      />,
+    );
+
+    const image = await screen.findByAltText("Resizable cropped diagram");
+    const cropFrame = image.parentElement as HTMLDivElement;
+    Object.defineProperty(cropFrame, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 180, height: 200 }),
+    });
+    Object.defineProperty(cropFrame.closest(".ProseMirror"), "clientWidth", {
+      configurable: true,
+      value: 600,
+    });
+
+    fireEvent.mouseEnter(image);
+    const rightHandle = await screen.findByRole("button", {
+      name: "Resize image from right",
+    });
+    expect(rightHandle).toHaveClass("right-0");
+    expect(
+      screen.getByRole("button", { name: "Resize image from left" }),
+    ).toHaveClass("left-0");
+
+    fireEvent.mouseDown(rightHandle, { clientX: 180, clientY: 100 });
+    await waitFor(() => {
+      expect(cropFrame).toHaveStyle({ width: "180px" });
+    });
+
+    fireEvent.mouseMove(window, { clientX: 180, clientY: 40 });
+    await waitFor(() => {
+      expect(cropFrame).toHaveStyle({ width: "180px" });
+    });
+
+    fireEvent.mouseMove(window, { clientX: 220, clientY: 100 });
+    await waitFor(() => {
+      expect(cropFrame).toHaveStyle({ width: "220px" });
+    });
+    fireEvent.mouseUp(window);
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('width="220"'),
+      );
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('data-crop-width-final="true"'),
+      );
+    });
+  });
+
+  it("does not start image resize while dragging the crop selection", async () => {
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content='<img src="/api/v1/attachments/example/content" alt="Crop interaction diagram" width="600">'
+        onChange={onChange}
+      />,
+    );
+
+    const image = await screen.findByAltText("Crop interaction diagram");
+    const figure = image.closest("figure") as HTMLElement;
+    Object.defineProperty(figure, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 0, right: 600, top: 0, bottom: 400 }),
+    });
+    fireEvent.mouseEnter(image);
+    fireEvent.click(screen.getByRole("button", { name: "Crop image" }));
+
+    const cropPreview = screen.getByAltText("Crop preview").parentElement;
+    const cropSelection = cropPreview?.querySelector(".cursor-move");
+    expect(cropSelection).not.toBeNull();
+    Object.defineProperty(cropPreview, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 0, top: 0, width: 600, height: 400 }),
+    });
+    Object.defineProperty(cropSelection as Element, "setPointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    onChange.mockClear();
+    fireEvent(
+      cropSelection as Element,
+      new MouseEvent("pointerdown", {
+        bubbles: true,
+        clientX: 30,
+        clientY: 20,
+      }),
+    );
+    fireEvent(
+      window,
+      new MouseEvent("pointermove", {
+        bubbles: true,
+        clientX: 90,
+        clientY: 20,
+      }),
+    );
+    await waitFor(() => {
+      expect(
+        Number.parseFloat((cropSelection as HTMLElement).style.left),
+      ).toBeGreaterThan(5);
+    });
+    fireEvent(
+      window,
+      new MouseEvent("pointerup", {
+        bubbles: true,
+        clientX: 90,
+        clientY: 20,
+      }),
+    );
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps both resize bars usable when an image fills the editor width", async () => {
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content='<img src="/api/v1/attachments/example/content" alt="Full width diagram" width="600">'
+        onChange={onChange}
+      />,
+    );
+
+    const image = await screen.findByAltText("Full width diagram");
+    const imageFrame = image.parentElement as HTMLDivElement;
+    Object.defineProperty(imageFrame, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 600, height: 400 }),
+    });
+    Object.defineProperty(imageFrame.closest(".ProseMirror"), "clientWidth", {
+      configurable: true,
+      value: 600,
+    });
+
+    fireEvent.mouseEnter(image);
+    const rightHandle = await screen.findByRole("button", {
+      name: "Resize image from right",
+    });
+    const leftHandle = screen.getByRole("button", {
+      name: "Resize image from left",
+    });
+    expect(rightHandle).toHaveClass("right-0");
+    expect(leftHandle).toHaveClass("left-0");
+
+    fireEvent.mouseDown(rightHandle, { clientX: 600, clientY: 200 });
+    fireEvent.mouseMove(window, { clientX: 560, clientY: 200 });
+    fireEvent.mouseUp(window);
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('width="560"'),
+      );
+    });
+  });
+});
