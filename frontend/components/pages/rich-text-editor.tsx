@@ -18,6 +18,7 @@ import {
   mergeAttributes,
 } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
+import { TableMap } from "@tiptap/pm/tables";
 import {
   EditorContent,
   useEditor,
@@ -196,6 +197,226 @@ const TableRowWithHeight = TableRow.extend({
 });
 
 const TABLE_ROW_RESIZE_ZONE = 8;
+const TABLE_COLUMN_RESIZE_ZONE = 8;
+const TABLE_CELL_MIN_WIDTH = 96;
+
+type TableColumnResizeState = {
+  table: HTMLTableElement;
+  tableNode: ReturnType<Editor["state"]["doc"]["nodeAt"]>;
+  tableStart: number;
+  leftColumn: number;
+  rightColumn: number;
+  startX: number;
+  startLeftWidth: number;
+  startRightWidth: number;
+  widths: number[];
+};
+
+function tableContextAtCell(view: Editor["view"], cell: HTMLElement) {
+  const $position = view.state.doc.resolve(view.posAtDOM(cell, 0));
+  for (let depth = $position.depth; depth > 0; depth -= 1) {
+    const node = $position.node(depth);
+    if (node.type.name === "table") {
+      return { node, start: $position.start(depth) };
+    }
+  }
+  return null;
+}
+
+function persistTableColumnWidths(
+  view: Editor["view"],
+  table: NonNullable<TableColumnResizeState["tableNode"]>,
+  tableStart: number,
+  widths: number[],
+) {
+  const map = TableMap.get(table);
+  const transaction = view.state.tr;
+
+  widths.forEach((width, column) => {
+    for (let row = 0; row < map.height; row += 1) {
+      const mapIndex = row * map.width + column;
+      if (row && map.map[mapIndex] === map.map[mapIndex - map.width]) {
+        continue;
+      }
+      const cellOffset = map.map[mapIndex];
+      const cell = table.nodeAt(cellOffset);
+      if (!cell) continue;
+      const attributes = cell.attrs;
+      const widthIndex =
+        attributes.colspan === 1 ? 0 : column - map.colCount(cellOffset);
+      if (widthIndex < 0 || widthIndex >= attributes.colspan) continue;
+
+      const columnWidths = attributes.colwidth
+        ? attributes.colwidth.slice()
+        : Array(attributes.colspan).fill(0);
+      if (columnWidths[widthIndex] === width) continue;
+      columnWidths[widthIndex] = width;
+      transaction.setNodeMarkup(tableStart + cellOffset, undefined, {
+        ...attributes,
+        colwidth: columnWidths,
+      });
+    }
+  });
+
+  if (transaction.docChanged) view.dispatch(transaction);
+}
+
+/**
+ * Keeps a table's overall width stable while a boundary moves. Tiptap's
+ * default column plugin changes only one column, which lets every remaining
+ * auto-sized column redistribute and makes unrelated boundaries drift.
+ */
+const TableColumnResize = Extension.create({
+  name: "tableColumnResize",
+  addProseMirrorPlugins() {
+    let activeResize: TableColumnResizeState | undefined;
+    let disposeDrag = () => undefined;
+
+    const clearColumnHover = (view: Editor["view"]) => {
+      view.dom
+        .querySelectorAll(".wikihub-column-resize-target")
+        .forEach((cell) =>
+          cell.classList.remove("wikihub-column-resize-target"),
+        );
+    };
+
+    const setColumnHover = (table: HTMLTableElement, column: number) => {
+      table.querySelectorAll("tr").forEach((row) => {
+        const cell = row.children.item(column) as HTMLElement | null;
+        cell?.classList.add("wikihub-column-resize-target");
+      });
+    };
+
+    const resizeTarget = (event: MouseEvent) => {
+      const cell = (event.target as HTMLElement | null)?.closest(
+        "th, td",
+      ) as HTMLTableCellElement | null;
+      const table = cell?.closest("table") as HTMLTableElement | null;
+      if (!cell || !table || cell.colSpan !== 1) return null;
+      const rowCells = Array.from(
+        table.querySelector("tr")?.children ?? [],
+      ) as HTMLElement[];
+      const cellIndex = rowCells.indexOf(cell);
+      if (cellIndex < 0 || rowCells.length < 2) return null;
+
+      const bounds = cell.getBoundingClientRect();
+      const nearLeft = event.clientX - bounds.left <= TABLE_COLUMN_RESIZE_ZONE;
+      const nearRight =
+        bounds.right - event.clientX <= TABLE_COLUMN_RESIZE_ZONE;
+      const leftColumn = nearRight ? cellIndex : nearLeft ? cellIndex - 1 : -1;
+      if (leftColumn < 0 || leftColumn >= rowCells.length - 1) return null;
+      return { table, leftColumn, rightColumn: leftColumn + 1, rowCells };
+    };
+
+    return [
+      new Plugin({
+        props: {
+          handleDOMEvents: {
+            mousemove: (view, event) => {
+              if (activeResize || !view.editable) return false;
+              clearColumnHover(view);
+              const target = resizeTarget(event);
+              if (target) setColumnHover(target.table, target.leftColumn);
+              return false;
+            },
+            mouseleave: (view) => {
+              if (!activeResize) clearColumnHover(view);
+              return false;
+            },
+            mousedown: (view, event) => {
+              if (!view.editable || event.button !== 0) return false;
+              const target = resizeTarget(event);
+              if (!target) return false;
+              const context = tableContextAtCell(
+                view,
+                target.rowCells[target.leftColumn],
+              );
+              if (!context) return false;
+
+              const columns = Array.from(target.table.querySelectorAll("col"));
+              const widths = target.rowCells.map((cell) =>
+                Math.max(
+                  TABLE_CELL_MIN_WIDTH,
+                  Math.round(cell.getBoundingClientRect().width),
+                ),
+              );
+              if (columns.length !== widths.length) return false;
+
+              event.preventDefault();
+              clearColumnHover(view);
+              const tableWidth = Math.round(
+                target.table.getBoundingClientRect().width,
+              );
+              target.table.style.width = `${tableWidth}px`;
+              target.table.style.minWidth = "";
+              columns.forEach((column, index) => {
+                column.style.width = `${widths[index]}px`;
+              });
+
+              activeResize = {
+                table: target.table,
+                tableNode: context.node,
+                tableStart: context.start,
+                leftColumn: target.leftColumn,
+                rightColumn: target.rightColumn,
+                startX: event.clientX,
+                startLeftWidth: widths[target.leftColumn],
+                startRightWidth: widths[target.rightColumn],
+                widths,
+              };
+              const initialCursor = document.body.style.cursor;
+              document.body.style.cursor = "col-resize";
+
+              const move = (moveEvent: MouseEvent) => {
+                if (!activeResize) return;
+                const delta = moveEvent.clientX - activeResize.startX;
+                const minDelta =
+                  TABLE_CELL_MIN_WIDTH - activeResize.startLeftWidth;
+                const maxDelta =
+                  activeResize.startRightWidth - TABLE_CELL_MIN_WIDTH;
+                const boundedDelta = Math.max(
+                  minDelta,
+                  Math.min(maxDelta, delta),
+                );
+                activeResize.widths[activeResize.leftColumn] = Math.round(
+                  activeResize.startLeftWidth + boundedDelta,
+                );
+                activeResize.widths[activeResize.rightColumn] = Math.round(
+                  activeResize.startRightWidth - boundedDelta,
+                );
+                const columns = activeResize.table.querySelectorAll("col");
+                columns[activeResize.leftColumn].style.width =
+                  `${activeResize.widths[activeResize.leftColumn]}px`;
+                columns[activeResize.rightColumn].style.width =
+                  `${activeResize.widths[activeResize.rightColumn]}px`;
+              };
+              const end = () => {
+                if (!activeResize) return;
+                const { tableNode, tableStart, widths } = activeResize;
+                if (tableNode) {
+                  persistTableColumnWidths(view, tableNode, tableStart, widths);
+                }
+                activeResize = undefined;
+                document.body.style.cursor = initialCursor;
+                disposeDrag();
+              };
+              disposeDrag = () => {
+                window.removeEventListener("mousemove", move);
+                window.removeEventListener("mouseup", end);
+              };
+              window.addEventListener("mousemove", move);
+              window.addEventListener("mouseup", end, { once: true });
+              return true;
+            },
+          },
+        },
+        view: () => ({
+          destroy: () => disposeDrag(),
+        }),
+      }),
+    ];
+  },
+});
 
 function tableRowPosition(view: Editor["view"], row: HTMLTableRowElement) {
   const domPosition = view.posAtDOM(row, 0);
@@ -1384,12 +1605,13 @@ const editorExtensions = [
   UnderlineMark,
   TextAlign.configure({ types: ["heading", "paragraph"] }),
   Table.configure({
-    resizable: true,
-    cellMinWidth: 96,
+    resizable: false,
+    cellMinWidth: TABLE_CELL_MIN_WIDTH,
   }),
   TableRowWithHeight,
   TableHeaderWithBackground,
   TableCellWithBackground,
+  TableColumnResize,
   TableRowResize,
   Placeholder.configure({
     placeholder: "Write your documentation here...",

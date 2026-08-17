@@ -310,8 +310,7 @@
     scrollbar-gutter: stable;
   }
 
-  /* Table columns are resized by Tiptap's table plugin. The handle is a
-     pointer-event-free guide while ProseMirror owns the drag interaction. */
+  /* Table resize guides are pointer-event-free; ProseMirror owns the drag. */
   .ProseMirror.resize-cursor {
     cursor: col-resize;
   }
@@ -324,6 +323,26 @@
     bottom: -2px;
     width: 4px;
     pointer-events: none;
+    background: var(--primary);
+    opacity: 0.85;
+  }
+
+  .ProseMirror th.wikihub-column-resize-target,
+  .ProseMirror td.wikihub-column-resize-target {
+    position: relative;
+    cursor: col-resize;
+  }
+
+  .ProseMirror th.wikihub-column-resize-target::after,
+  .ProseMirror td.wikihub-column-resize-target::after {
+    position: absolute;
+    z-index: 11;
+    top: -1px;
+    right: -2px;
+    bottom: -1px;
+    width: 4px;
+    pointer-events: none;
+    content: "";
     background: var(--primary);
     opacity: 0.85;
   }

@@ -6,7 +6,7 @@ import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/auth";
 import { findPageByRouteSlug, getPage, listPages } from "@/lib/pages";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
-import type { Group } from "@/types/api";
+import type { Group, SpaceMember } from "@/types/api";
 
 export const dynamic = "force-dynamic";
 
@@ -20,18 +20,23 @@ export default async function WikiPageView({ params }: Params) {
 
   let space;
   let pages;
-  let members;
+  let members: SpaceMember[] = [];
   let page;
   const groups: Group[] = [];
   try {
-    [space, pages, members] = await Promise.all([
-      getSpace(key),
-      listPages(key),
-      listSpaceMembers(key),
-    ]);
+    [space, pages] = await Promise.all([getSpace(key), listPages(key)]);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
+  }
+
+  try {
+    members = await listSpaceMembers(key);
+  } catch (error) {
+    // Membership is supporting metadata. Older API instances may not expose
+    // this endpoint yet, but that must never turn an otherwise valid page into
+    // a 404 route.
+    if (!(error instanceof ApiError) || error.status !== 404) throw error;
   }
 
   try {
