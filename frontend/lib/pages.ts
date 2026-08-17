@@ -36,4 +36,25 @@ export function getPage(spaceKey: string, slug: string): Promise<WikiPage> {
   );
 }
 
+/**
+ * Resolve a page from the already-loaded space tree when a direct page URL is
+ * temporarily stale. Imported data can retain a differently cased or encoded
+ * slug even though the list endpoint still exposes the page correctly.
+ */
+export function findPageByRouteSlug(
+  pages: WikiPage[],
+  routeSlug: string,
+): WikiPage | undefined {
+  let normalizedSlug = routeSlug;
+  try {
+    normalizedSlug = decodeURIComponent(routeSlug);
+  } catch {
+    // Keep the raw route segment when it is not valid URI encoding.
+  }
+  normalizedSlug = normalizedSlug.trim().toLocaleLowerCase();
+  return pages.find(
+    (page) => page.slug.trim().toLocaleLowerCase() === normalizedSlug,
+  );
+}
+
 /** Resolve the space home page across both new and legacy imports. */

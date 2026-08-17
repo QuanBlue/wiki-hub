@@ -4,7 +4,7 @@ import { RecordVisit } from "@/components/pages/record-visit";
 import { SpaceWorkspace } from "@/components/pages/space-workspace";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/auth";
-import { getPage, listPages } from "@/lib/pages";
+import { findPageByRouteSlug, getPage, listPages } from "@/lib/pages";
 import { getSpace, listSpaceMembers } from "@/lib/spaces";
 import type { Group } from "@/types/api";
 
@@ -24,15 +24,27 @@ export default async function WikiPageView({ params }: Params) {
   let page;
   const groups: Group[] = [];
   try {
-    [space, pages, members, page] = await Promise.all([
+    [space, pages, members] = await Promise.all([
       getSpace(key),
       listPages(key),
       listSpaceMembers(key),
-      getPage(key, slug),
     ]);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
+  }
+
+  try {
+    page = await getPage(key, slug);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404) throw error;
+
+    // The navigation tree already came from this space and is a valid source
+    // of page data. Prefer it over showing a false 404 when imported or
+    // legacy slugs differ only in encoding/case at the detail endpoint.
+    const listedPage = findPageByRouteSlug(pages, slug);
+    if (!listedPage) notFound();
+    page = listedPage;
   }
 
   // Fetch the selected page directly as the source of truth. The list endpoint
@@ -59,7 +71,8 @@ export default async function WikiPageView({ params }: Params) {
         canEdit={page.can_edit === true}
         canExport={page.can_export === true}
         canManageRestrictions={
-          user.is_superuser || space.my_permissions?.includes("restrictions") === true
+          user.is_superuser ||
+          space.my_permissions?.includes("restrictions") === true
         }
       />
     </>
