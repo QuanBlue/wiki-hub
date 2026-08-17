@@ -136,7 +136,7 @@ export function SearchModal({
         router.push(`/spaces/${encodeURIComponent(item.data.key)}`);
       } else {
         router.push(
-          `/spaces/${encodeURIComponent(item.data.space_key)}/${encodeURIComponent(item.data.slug)}`,
+          `/spaces/${encodeURIComponent(item.data.space_key)}/pages/${encodeURIComponent(item.data.slug)}`,
         );
       }
     },

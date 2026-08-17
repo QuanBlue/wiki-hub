@@ -100,7 +100,7 @@ export function SavedPagesList() {
         return (
           <li key={key}>
             <Link
-              href={`/spaces/${encodeURIComponent(spaceKey)}/${encodeURIComponent(slug)}`}
+              href={`/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(slug)}`}
               className="hover:bg-surface-hover flex items-center gap-3 px-4 py-3 transition-colors duration-150 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2"
             >
               <FileText className="text-muted-foreground size-4 shrink-0" aria-hidden />
