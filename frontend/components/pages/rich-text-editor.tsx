@@ -17,7 +17,7 @@ import {
   Mark,
   mergeAttributes,
 } from "@tiptap/core";
-import { Plugin } from "@tiptap/pm/state";
+import { NodeSelection, Plugin } from "@tiptap/pm/state";
 import { TableMap } from "@tiptap/pm/tables";
 import {
   EditorContent,
@@ -1227,14 +1227,15 @@ function ResizableImageComponent({
 
   function prepareImageMove(event: React.DragEvent<HTMLDivElement>) {
     if (!canResize || (event.target as HTMLElement).closest("button")) return;
-    // ProseMirror only removes the source node after a drop when the dragged
-    // node is selected before its own drag handler runs. Capture phase makes
-    // this happen before the editor's bubbling handler builds the drag slice.
     selectImage();
+    const position = typeof getPos === "function" ? getPos() : undefined;
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.dropEffect = "move";
     event.currentTarget.dispatchEvent(
-      new CustomEvent("wikihub:internal-image-drag-start", { bubbles: true }),
+      new CustomEvent("wikihub:internal-image-drag-start", {
+        bubbles: true,
+        detail: { pos: position },
+      }),
     );
   }
 
@@ -1330,7 +1331,7 @@ function ResizableImageComponent({
       {showImageTools ? (
         <>
           <div
-            className="border-border bg-surface-raised absolute -top-12 right-0 z-20 flex h-9 items-center gap-0.5 rounded-md border p-1 shadow-sm"
+            className="border-border bg-surface-raised/95 backdrop-blur-sm absolute top-2 right-2 z-20 flex h-9 items-center gap-0.5 rounded-md border p-1 shadow-md"
             role="toolbar"
             aria-label="Image options"
             onMouseEnter={keepImageToolsVisible}
@@ -1874,16 +1875,17 @@ export function linkifyPlainTextUrls(content: string): string {
 }
 
 const editorClassName =
-  "min-h-[calc(100vh-19rem)] px-5 py-4 text-sm leading-7 outline-none " +
+  "min-h-[calc(100vh-19rem)] px-5 py-4 text-sm leading-[1.45] outline-none " +
+  "[&_p]:my-2 [&_p:first-child]:mt-0 " +
   "[&_p.is-editor-empty:first-child::before]:text-muted-foreground [&_p.is-editor-empty:first-child::before]:pointer-events-none [&_p.is-editor-empty:first-child::before]:float-left [&_p.is-editor-empty:first-child::before]:h-0 [&_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] " +
-  "[&_h1]:mt-8 [&_h1]:mb-4 [&_h1]:text-3xl [&_h1]:font-semibold " +
-  "[&_h2]:mt-7 [&_h2]:mb-3 [&_h2]:text-2xl [&_h2]:font-semibold " +
-  "[&_h3]:mt-6 [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-semibold " +
-  "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 " +
-  "[&_blockquote]:my-4 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground " +
+  "[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-tight " +
+  "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:leading-tight " +
+  "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:leading-tight " +
+  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-0.5 " +
+  "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
   "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
-  "[&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-4 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
-  "[&_img]:my-4 [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-border " +
+  "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
+  "[&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-md " +
   // Table rhythm (margin, padding, line-height) is kept identical to
   // readerClassName below so a table is the same height in the editor and in
   // the live preview. Only the editor-only min-w-24 differs, so columns stay
@@ -1904,7 +1906,7 @@ export const readerClassName =
   "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
   "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
   "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
-  "[&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-[42rem] [&_img]:rounded-md [&_img]:border [&_img]:border-border " +
+  "[&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-[42rem] [&_img]:rounded-md " +
   "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5";
 
 function ToolbarButton({
@@ -3391,6 +3393,7 @@ export function RichTextEditor({
     };
   }, []);
   const internalImageDragRef = useRef(false);
+  const draggedImagePosRef = useRef<number | null>(null);
   const normalizedContent = useMemo(
     () => normalizeConfluenceCodeMacros(content),
     [content],
@@ -3411,10 +3414,46 @@ export function RichTextEditor({
     content: normalizedContent,
     editorProps: {
       attributes: { class: editorClassName },
-      // An image dragged inside the editor is a reordering action. Explicitly
-      // opt out of ProseMirror's platform copy modifier so it never leaves the
-      // source image behind after a drop.
-      dragCopies: () => false,
+      handleDrop(view, event) {
+        if (
+          internalImageDragRef.current &&
+          typeof draggedImagePosRef.current === "number"
+        ) {
+          const fromPos = draggedImagePosRef.current;
+          const dropCoords = view.posAtCoords({
+            left: event.clientX,
+            top: event.clientY,
+          });
+          if (dropCoords) {
+            const node = view.state.doc.nodeAt(fromPos);
+            if (node && node.type.name === "image") {
+              event.preventDefault();
+              event.stopPropagation();
+              internalImageDragRef.current = false;
+              const posToMove = draggedImagePosRef.current;
+              draggedImagePosRef.current = null;
+
+              const targetPos = dropCoords.pos;
+              if (
+                targetPos >= posToMove &&
+                targetPos <= posToMove + node.nodeSize
+              ) {
+                return true;
+              }
+              const tr = view.state.tr;
+              tr.delete(posToMove, posToMove + node.nodeSize);
+              const mappedTargetPos = tr.mapping.map(targetPos);
+              tr.insert(mappedTargetPos, node);
+              tr.setSelection(NodeSelection.create(tr.doc, mappedTargetPos));
+              view.dispatch(tr);
+              return true;
+            }
+          }
+          internalImageDragRef.current = false;
+          draggedImagePosRef.current = null;
+        }
+        return false;
+      },
     },
     onUpdate: ({ editor: updatedEditor }) => emitEditorContent(updatedEditor),
     onTransaction: ({ editor: updatedEditor }) =>
@@ -3445,7 +3484,12 @@ export function RichTextEditor({
         setDraggingFiles(true);
     };
     const onDragOver = (event: DragEvent) => {
-      if (!isFileDrag(event) || internalImageDragRef.current) return;
+      if (internalImageDragRef.current) {
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+        return;
+      }
+      if (!isFileDrag(event)) return;
       // This must run in native capture phase. ProseMirror consumes bubbling
       // events, and without preventDefault Chrome navigates to the dropped file.
       event.preventDefault();
@@ -3461,12 +3505,12 @@ export function RichTextEditor({
       setDraggingFiles(false);
     };
     const onDrop = (event: DragEvent) => {
-      if (!event.dataTransfer?.files.length) return;
       if (internalImageDragRef.current) {
         internalImageDragRef.current = false;
         setDraggingFiles(false);
         return;
       }
+      if (!event.dataTransfer?.files.length) return;
       event.preventDefault();
       event.stopPropagation();
       setDraggingFiles(false);
@@ -3477,12 +3521,19 @@ export function RichTextEditor({
       if (position) editor?.commands.setTextSelection(position.pos);
       void handleDroppedFiles(event.dataTransfer.files);
     };
-    const onInternalImageDragStart = () => {
+    const onInternalImageDragStart = (
+      event: Event,
+    ) => {
       internalImageDragRef.current = true;
+      const customEvt = event as CustomEvent<{ pos?: number }>;
+      if (typeof customEvt.detail?.pos === "number") {
+        draggedImagePosRef.current = customEvt.detail.pos;
+      }
       setDraggingFiles(false);
     };
     const onInternalImageDragEnd = () => {
       internalImageDragRef.current = false;
+      draggedImagePosRef.current = null;
       setDraggingFiles(false);
     };
 

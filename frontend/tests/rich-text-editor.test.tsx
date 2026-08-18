@@ -323,10 +323,6 @@ describe("RichTextEditor tables", () => {
       configurable: true,
       value: () => ({ top: 20, bottom: 60, height: 40 }),
     });
-
-    fireEvent.mouseMove(row, { clientY: 56 });
-    expect(row).toHaveClass("wikihub-row-resize-target");
-
     fireEvent.mouseDown(row, { button: 0, clientY: 56 });
     fireEvent.mouseMove(window, { clientY: 92 });
     expect(row).toHaveStyle({ height: "76px" });

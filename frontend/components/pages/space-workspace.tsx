@@ -1187,7 +1187,7 @@ export function SpaceWorkspace({
     const interval = window.setInterval(() => {
       if (!hasUnsavedChangesRef.current || autoSaveInFlight.current) return;
       markAutoSaveStatus("saving");
-      void persistPage({ announce: false }).then((saved) => {
+      void persistDraft().then((saved) => {
         markAutoSaveStatus(saved ? "saved" : "idle");
       });
     }, 30_000);

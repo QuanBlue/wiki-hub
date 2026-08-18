@@ -388,4 +388,11 @@
     cursor: row-resize !important;
     content: "";
   }
+
+  /* Prevent image wrapper and selected node outline from stretching to full width */
+  .ProseMirror .react-renderer.node-image {
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: top;
+  }
 }
