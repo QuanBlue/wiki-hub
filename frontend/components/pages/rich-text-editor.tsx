@@ -3221,7 +3221,7 @@ function RichTextToolbar({
         ) : null}
       </div>
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
-        <DialogContent title="Chèn/sửa liên kết" className="max-w-xl">
+        <DialogContent title="Insert or edit link" className="max-w-xl">
           <form onSubmit={saveLink} className="space-y-4" noValidate>
             <div className="space-y-1.5">
               <label htmlFor="link-url" className="text-sm font-medium">
@@ -3237,7 +3237,7 @@ function RichTextToolbar({
             </div>
             <div className="space-y-1.5">
               <label htmlFor="link-text" className="text-sm font-medium">
-                Nội dung hiển thị
+                Link text
               </label>
               <Input
                 id="link-text"
@@ -3248,13 +3248,13 @@ function RichTextToolbar({
             </div>
             <div className="space-y-1.5">
               <label htmlFor="link-title" className="text-sm font-medium">
-                Tiêu đề
+                Title
               </label>
               <Input
                 id="link-title"
                 value={linkTitle}
                 onChange={(event) => setLinkTitle(event.target.value)}
-                placeholder="Không bắt buộc"
+                placeholder="Optional"
               />
             </div>
             <div className="space-y-1.5">
@@ -3279,10 +3279,10 @@ function RichTextToolbar({
                 variant="secondary"
                 onClick={() => setLinkOpen(false)}
               >
-                Hủy bỏ
+                Cancel
               </Button>
               <Button type="submit" variant="primary">
-                Lưu
+                Save
               </Button>
             </DialogFooter>
           </form>
@@ -3739,7 +3739,22 @@ function AttachmentDetailsModal({
       setError(null);
       try {
         const response = await fetch(`/api/v1/attachments/${attachmentId}`);
-        if (!response.ok) throw new Error("Could not retrieve file details.");
+        if (!response.ok) {
+          // The API answers failures in a standard envelope. Surfacing its
+          // message separates a genuinely missing attachment (a link left
+          // behind in a local draft after the record was deleted) from a
+          // permission or connectivity problem - all three used to read as
+          // the same unhelpful sentence.
+          const envelope = (await response.json().catch(() => null)) as {
+            error?: { message?: string };
+          } | null;
+          throw new Error(
+            envelope?.error?.message ??
+              (response.status === 404
+                ? "This attachment no longer exists."
+                : `Could not retrieve file details (HTTP ${response.status}).`),
+          );
+        }
         const data = (await response.json()) as AttachmentMetadata;
         setMetadata(data);
 
@@ -3847,16 +3862,16 @@ function AttachmentDetailsModal({
 
   return (
     <Dialog open={!!attachmentId} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent title="Chi tiết file đính kèm" className="max-w-3xl">
+      <DialogContent title="Attachment details" className="max-w-3xl">
         {loading ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2">
             <Loader2 className="text-muted-foreground size-8 animate-spin" />
-            <p className="text-muted-foreground text-sm">Đang tải chi tiết...</p>
+            <p className="text-muted-foreground text-sm">Loading details...</p>
           </div>
         ) : error ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2 text-danger">
             <p className="text-sm font-semibold">{error}</p>
-            <Button variant="secondary" onClick={onClose}>Đóng</Button>
+            <Button variant="secondary" onClick={onClose}>Close</Button>
           </div>
         ) : metadata ? (
           <div className="space-y-4">
@@ -3867,22 +3882,22 @@ function AttachmentDetailsModal({
                 <span className="break-all">{metadata.filename}</span>
               </div>
               <div>
-                <span className="font-semibold text-foreground">Dung lượng: </span>
+                <span className="font-semibold text-foreground">Size: </span>
                 <span>{formatSize(metadata.size_bytes)}</span>
               </div>
               <div>
-                <span className="font-semibold text-foreground">Loại: </span>
+                <span className="font-semibold text-foreground">Type: </span>
                 <span>{metadata.content_type}</span>
               </div>
               <div>
-                <span className="font-semibold text-foreground">Đã tải lên: </span>
+                <span className="font-semibold text-foreground">Uploaded: </span>
                 <span>{formatDate(metadata.created_at)}</span>
               </div>
             </div>
 
             <div className="border-border overflow-hidden rounded-lg border">
               <div className="bg-surface-sunken flex items-center justify-between border-b px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                <span>Xem trước</span>
+                <span>Preview</span>
                 {textContent !== null && (
                   <div className="flex items-center gap-3 normal-case tracking-normal">
                     <div className="flex items-center gap-1.5">
@@ -3896,7 +3911,7 @@ function AttachmentDetailsModal({
                             setActiveMatchIdx(0);
                           }}
                           onKeyDown={handleSearchInputKeyDown}
-                          placeholder="Tìm kiếm nội dung..."
+                          placeholder="Search content..."
                           className="h-7 w-40 pl-7 pr-2 text-xs"
                         />
                       </div>
@@ -3913,7 +3928,7 @@ function AttachmentDetailsModal({
                               )
                             }
                             className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
-                            title="Kết quả trước"
+                            title="Previous match"
                           >
                             <ChevronDown className="size-4 rotate-180" />
                           </button>
@@ -3923,7 +3938,7 @@ function AttachmentDetailsModal({
                               setActiveMatchIdx((prev) => (prev + 1) % matches.length)
                             }
                             className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
-                            title="Kết quả tiếp theo"
+                            title="Next match"
                           >
                             <ChevronDown className="size-4" />
                           </button>
@@ -3939,7 +3954,7 @@ function AttachmentDetailsModal({
                           ? "bg-primary-subtle text-primary border-primary-subtle font-medium"
                           : "text-muted-foreground hover:text-foreground",
                       )}
-                      title={wrapLines ? "Tắt tự động xuống hàng" : "Bật tự động xuống hàng"}
+                      title={wrapLines ? "Disable line wrapping" : "Enable line wrapping"}
                     >
                       <WrapText className="size-4" />
                     </button>
@@ -3985,7 +4000,7 @@ function AttachmentDetailsModal({
                 ) : textLoading ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-4">
                     <Loader2 className="text-muted-foreground size-5 animate-spin" />
-                    <span className="text-muted-foreground text-xs">Đang tải nội dung...</span>
+                    <span className="text-muted-foreground text-xs">Loading content...</span>
                   </div>
                 ) : isPdf ? (
                   <object
@@ -3996,7 +4011,7 @@ function AttachmentDetailsModal({
                     <div className="text-center p-4">
                       <FileText className="text-muted-foreground mx-auto size-12" />
                       <p className="text-muted-foreground mt-2 text-sm">
-                        Trình duyệt không hỗ trợ xem trực tiếp PDF.
+                        Your browser cannot display this PDF inline.
                       </p>
                       <a
                         href={contentUrl}
@@ -4004,7 +4019,7 @@ function AttachmentDetailsModal({
                         rel="noreferrer"
                         className="text-primary hover:underline mt-1 inline-block text-sm"
                       >
-                        Mở PDF trong tab mới
+                        Open the PDF in a new tab
                       </a>
                     </div>
                   </object>
@@ -4012,7 +4027,7 @@ function AttachmentDetailsModal({
                   <div className="text-center py-6">
                     <FileText className="text-muted-foreground mx-auto size-12" />
                     <p className="text-muted-foreground mt-2 text-sm">
-                      Không hỗ trợ xem trước định dạng này.
+                      No preview available for this file type.
                     </p>
                   </div>
                 )}
@@ -4021,12 +4036,12 @@ function AttachmentDetailsModal({
 
             <DialogFooter>
               <Button type="button" variant="secondary" onClick={onClose}>
-                Đóng
+                Close
               </Button>
               <Button asChild>
                 <a href={contentUrl} download={metadata.filename} className="gap-1.5">
                   <Download className="size-4" />
-                  <span>Tải file về</span>
+                  <span>Download</span>
                 </a>
               </Button>
             </DialogFooter>
