@@ -4,6 +4,7 @@ import {
   Check,
   Clock3,
   CodeXml,
+  Columns2,
   ChevronDown,
   Download,
   FileText,
@@ -16,6 +17,7 @@ import {
   Minimize2,
   MoreHorizontal,
   Pencil,
+  RectangleHorizontal,
   RefreshCw,
   Share2,
   Star,
@@ -710,6 +712,13 @@ export function SpaceWorkspace({
   const [conversionMode, setConversionMode] = useState<EditMode | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewSplit, setPreviewSplit] = useState(50);
+  // "split" keeps the editor beside the preview; "full" hands the whole width
+  // to the preview so a page can be read the way it will actually look. The
+  // editor stays mounted either way - unmounting it would throw away the
+  // caret and the undo history every time the layout changed.
+  const [previewLayout, setPreviewLayout] = useState<"split" | "full">("split");
+  const splitPreview = previewing && previewLayout === "split";
+  const fullPreview = previewing && previewLayout === "full";
   const [viewFullWidth, setViewFullWidth] = useState(true);
   const [likeStatus, setLikeStatus] = useState<PageLikeStatus>({
     liked_by_me: false,
@@ -2319,18 +2328,18 @@ export function SpaceWorkspace({
                 <div
                   className={cn(
                     "min-w-0",
-                    previewing &&
+                    splitPreview &&
                       "xl:grid xl:[grid-template-columns:var(--live-preview-columns)]",
                   )}
                   style={
-                    previewing
+                    splitPreview
                       ? ({
                           "--live-preview-columns": `minmax(0, ${previewSplit}fr) 12px minmax(0, ${100 - previewSplit}fr)`,
                         } as CSSProperties)
                       : undefined
                   }
                 >
-                  <div className="min-w-0">
+                  <div className={cn("min-w-0", fullPreview && "hidden")}>
                     {editMode === "normal" ? (
                       <RichTextEditor
                         content={draftContent}
@@ -2356,87 +2365,94 @@ export function SpaceWorkspace({
 
                   {previewing ? (
                     <>
-                      <button
-                        type="button"
-                        role="separator"
-                        aria-label="Resize editor and live preview panels"
-                        aria-orientation="vertical"
-                        aria-valuemin={MIN_PREVIEW_SPLIT}
-                        aria-valuemax={MAX_PREVIEW_SPLIT}
-                        aria-valuenow={previewSplit}
-                        onPointerDown={(event) => {
-                          event.currentTarget.setPointerCapture(
-                            event.pointerId,
-                          );
-                          document.body.style.cursor = "col-resize";
-                          document.body.style.userSelect = "none";
-                        }}
-                        onPointerMove={(event) => {
-                          if (
-                            !event.currentTarget.hasPointerCapture(
+                      {splitPreview ? (
+                        <button
+                          type="button"
+                          role="separator"
+                          aria-label="Resize editor and live preview panels"
+                          aria-orientation="vertical"
+                          aria-valuemin={MIN_PREVIEW_SPLIT}
+                          aria-valuemax={MAX_PREVIEW_SPLIT}
+                          aria-valuenow={previewSplit}
+                          onPointerDown={(event) => {
+                            event.currentTarget.setPointerCapture(
                               event.pointerId,
+                            );
+                            document.body.style.cursor = "col-resize";
+                            document.body.style.userSelect = "none";
+                          }}
+                          onPointerMove={(event) => {
+                            if (
+                              !event.currentTarget.hasPointerCapture(
+                                event.pointerId,
+                              )
                             )
-                          )
-                            return;
-                          const container = event.currentTarget.parentElement;
-                          if (!container) return;
-                          const bounds = container.getBoundingClientRect();
-                          const next = Math.round(
-                            ((event.clientX - bounds.left) / bounds.width) *
-                              100,
-                          );
-                          setPreviewSplit(
-                            Math.min(
-                              MAX_PREVIEW_SPLIT,
-                              Math.max(MIN_PREVIEW_SPLIT, next),
-                            ),
-                          );
-                        }}
-                        onPointerUp={(event) => {
-                          event.currentTarget.releasePointerCapture(
-                            event.pointerId,
-                          );
-                          document.body.style.cursor = "";
-                          document.body.style.userSelect = "";
-                        }}
-                        onPointerCancel={() => {
-                          document.body.style.cursor = "";
-                          document.body.style.userSelect = "";
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "ArrowLeft") {
-                            event.preventDefault();
-                            setPreviewSplit((current) =>
-                              Math.max(MIN_PREVIEW_SPLIT, current - 2),
+                              return;
+                            const container = event.currentTarget.parentElement;
+                            if (!container) return;
+                            const bounds = container.getBoundingClientRect();
+                            const next = Math.round(
+                              ((event.clientX - bounds.left) / bounds.width) *
+                                100,
                             );
-                          }
-                          if (event.key === "ArrowRight") {
-                            event.preventDefault();
-                            setPreviewSplit((current) =>
-                              Math.min(MAX_PREVIEW_SPLIT, current + 2),
+                            setPreviewSplit(
+                              Math.min(
+                                MAX_PREVIEW_SPLIT,
+                                Math.max(MIN_PREVIEW_SPLIT, next),
+                              ),
                             );
-                          }
-                          if (event.key === "Home") {
-                            event.preventDefault();
-                            setPreviewSplit(MIN_PREVIEW_SPLIT);
-                          }
-                          if (event.key === "End") {
-                            event.preventDefault();
-                            setPreviewSplit(MAX_PREVIEW_SPLIT);
-                          }
-                        }}
-                        className="group focus-visible:ring-ring relative hidden cursor-col-resize touch-none items-stretch justify-center outline-none select-none focus-visible:ring-2 focus-visible:ring-offset-2 xl:flex"
-                      >
-                        <span className="bg-border group-hover:bg-border-strong group-active:bg-primary h-full w-px transition-colors duration-150" />
-                        <span
-                          aria-hidden
-                          className="border-border-strong bg-surface-raised text-muted-foreground group-hover:border-primary group-hover:text-primary group-active:bg-primary group-active:text-primary-foreground absolute top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded border text-xs font-semibold shadow-sm transition-[color,background-color,border-color] duration-150"
+                          }}
+                          onPointerUp={(event) => {
+                            event.currentTarget.releasePointerCapture(
+                              event.pointerId,
+                            );
+                            document.body.style.cursor = "";
+                            document.body.style.userSelect = "";
+                          }}
+                          onPointerCancel={() => {
+                            document.body.style.cursor = "";
+                            document.body.style.userSelect = "";
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "ArrowLeft") {
+                              event.preventDefault();
+                              setPreviewSplit((current) =>
+                                Math.max(MIN_PREVIEW_SPLIT, current - 2),
+                              );
+                            }
+                            if (event.key === "ArrowRight") {
+                              event.preventDefault();
+                              setPreviewSplit((current) =>
+                                Math.min(MAX_PREVIEW_SPLIT, current + 2),
+                              );
+                            }
+                            if (event.key === "Home") {
+                              event.preventDefault();
+                              setPreviewSplit(MIN_PREVIEW_SPLIT);
+                            }
+                            if (event.key === "End") {
+                              event.preventDefault();
+                              setPreviewSplit(MAX_PREVIEW_SPLIT);
+                            }
+                          }}
+                          className="group focus-visible:ring-ring relative hidden cursor-col-resize touch-none items-stretch justify-center outline-none select-none focus-visible:ring-2 focus-visible:ring-offset-2 xl:flex"
                         >
-                          ⋮
-                        </span>
-                      </button>
+                          <span className="bg-border group-hover:bg-border-strong group-active:bg-primary h-full w-px transition-colors duration-150" />
+                          <span
+                            aria-hidden
+                            className="border-border-strong bg-surface-raised text-muted-foreground group-hover:border-primary group-hover:text-primary group-active:bg-primary group-active:text-primary-foreground absolute top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded border text-xs font-semibold shadow-sm transition-[color,background-color,border-color] duration-150"
+                          >
+                            ⋮
+                          </span>
+                        </button>
+                      ) : null}
 
-                      <div className="mt-6 min-w-0 xl:mt-0 xl:flex">
+                      <div
+                        className={cn(
+                          "min-w-0 xl:flex",
+                          splitPreview ? "mt-6 xl:mt-0" : "mt-0",
+                        )}
+                      >
                         <section
                           aria-label="Live page preview"
                           className="border-border bg-surface-raised min-w-0 rounded-md border shadow-sm xl:h-full xl:flex-1"
@@ -2446,9 +2462,47 @@ export function SpaceWorkspace({
                             <p className="text-xs font-semibold tracking-wide uppercase">
                               Live preview
                             </p>
-                            <span className="text-muted-foreground ml-auto text-xs">
+                            <span className="text-muted-foreground ml-auto hidden text-xs sm:inline">
                               Updates as you type
                             </span>
+                            <div
+                              role="group"
+                              aria-label="Live preview layout"
+                              className="border-border bg-surface-raised ml-auto flex items-center gap-0.5 rounded-md border p-0.5 sm:ml-3"
+                            >
+                              <Button
+                                type="button"
+                                variant={
+                                  previewLayout === "split"
+                                    ? "secondary"
+                                    : "ghost"
+                                }
+                                size="sm"
+                                className="h-6 gap-1 px-2 text-xs"
+                                aria-pressed={previewLayout === "split"}
+                                title="Editor and preview side by side"
+                                onClick={() => setPreviewLayout("split")}
+                              >
+                                <Columns2 />
+                                Split
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={
+                                  previewLayout === "full"
+                                    ? "secondary"
+                                    : "ghost"
+                                }
+                                size="sm"
+                                className="h-6 gap-1 px-2 text-xs"
+                                aria-pressed={previewLayout === "full"}
+                                title="Preview alone, across the full width"
+                                onClick={() => setPreviewLayout("full")}
+                              >
+                                <RectangleHorizontal />
+                                Full
+                              </Button>
+                            </div>
                           </div>
                           <div className="p-5">
                             {(
