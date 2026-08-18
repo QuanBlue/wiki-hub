@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { RichTextEditor } from "@/components/pages/rich-text-editor";
+import {
+  RichTextContent,
+  RichTextEditor,
+} from "@/components/pages/rich-text-editor";
 
 describe("RichTextEditor images", () => {
   it("renders a resize handle and persists a width after dragging it", async () => {
@@ -394,6 +397,87 @@ describe("RichTextEditor tables", () => {
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith(
         expect.stringContaining("height: 76px"),
+      );
+    });
+  });
+});
+
+describe("RichTextEditor attachments", () => {
+  const attachmentHref =
+    "/api/v1/attachments/11111111-1111-1111-1111-111111111111/content";
+
+  it("renders a stored attachment link as a tile in the editor", async () => {
+    render(
+      <RichTextEditor
+        content={`<p><a href="${attachmentHref}">jmx_exporter.jar</a></p>`}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const link = await screen.findByRole("link", { name: "jmx_exporter.jar" });
+    // A node view wrapper is what separates the tile from a plain link mark.
+    expect(link.closest("[data-node-view-wrapper]")).not.toBeNull();
+    expect(link).toHaveAttribute("title", "jmx_exporter.jar");
+    // Dragging an anchor is a browser default; leaving it on would duplicate
+    // the tile on drop, exactly as it used to for images.
+    expect(link).toHaveAttribute("draggable", "false");
+    expect(link.querySelector("svg")).not.toBeNull();
+  });
+
+  it("renders the same tile on a saved page", async () => {
+    render(
+      <RichTextContent
+        content={`<p><a href="${attachmentHref}">jmx_exporter_config.yaml</a></p>`}
+      />,
+    );
+
+    const link = await screen.findByRole("link", {
+      name: "jmx_exporter_config.yaml",
+    });
+    expect(link.closest("[data-node-view-wrapper]")).not.toBeNull();
+    expect(link.querySelector("svg")).not.toBeNull();
+  });
+
+  it("leaves an attachment link written into a sentence as a link", async () => {
+    render(
+      <RichTextEditor
+        content={`<p>see <a href="${attachmentHref}">this document</a> first</p>`}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const link = await screen.findByRole("link", { name: "this document" });
+    expect(link.closest("[data-node-view-wrapper]")).toBeNull();
+  });
+
+  it("inserts an uploaded file as an attachment tile that round-trips", async () => {
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content="<p></p>"
+        onChange={onChange}
+        onUploadFile={async () => ({
+          id: "11111111-1111-1111-1111-111111111111",
+          filename: "runbook.pdf",
+          content_type: "application/pdf",
+          content_url: attachmentHref,
+        })}
+      />,
+    );
+
+    const editable = document.querySelector(".ProseMirror") as HTMLElement;
+    fireEvent(
+      editable,
+      new CustomEvent("wikihub:editor-files", {
+        detail: [new File(["x"], "runbook.pdf", { type: "application/pdf" })],
+      }),
+    );
+
+    const link = await screen.findByRole("link", { name: "runbook.pdf" });
+    expect(link.closest("[data-node-view-wrapper]")).not.toBeNull();
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('data-attachment="runbook.pdf"'),
       );
     });
   });

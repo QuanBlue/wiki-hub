@@ -75,6 +75,13 @@ import {
   Undo2,
   WrapText,
   FileText,
+  FileArchive,
+  FileAudio,
+  FileCode,
+  FileImage,
+  FileSpreadsheet,
+  FileVideo,
+  File as FileIcon,
   Download,
   Loader2,
   Search,
@@ -87,6 +94,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -1725,6 +1733,172 @@ const CustomCodeBlock = CodeBlock.extend({
   },
 });
 
+/** Matches the URL shape the API hands out for a stored attachment. */
+const ATTACHMENT_HREF = /\/api\/v1\/attachments\/[a-f0-9-]{36}/i;
+
+/**
+ * Attachment links never navigate: a capture listener turns a click on one
+ * into the preview modal. Anything guarding real navigation has to know that,
+ * or it will challenge a click that was only ever going to open a dialog.
+ */
+export function isAttachmentHref(href: string) {
+  return ATTACHMENT_HREF.test(href);
+}
+/** A trailing ".ext" is what separates a filename from ordinary link prose. */
+const FILENAME_EXTENSION = /\.[A-Za-z0-9]{1,8}$/;
+
+// Elements rather than component references: building a component during a
+// render is what react-hooks/static-components warns about, and an element
+// created once at module scope is reusable as-is.
+const ATTACHMENT_ICON_CLASS = "size-7";
+const ATTACHMENT_ICONS: [RegExp, ReactNode][] = [
+  [
+    /\.(zip|jar|war|ear|tar|gz|tgz|bz2|xz|7z|rar)$/i,
+    <FileArchive className={ATTACHMENT_ICON_CLASS} aria-hidden key="archive" />,
+  ],
+  [
+    /\.(png|jpe?g|gif|webp|svg|bmp|ico|tiff?)$/i,
+    <FileImage className={ATTACHMENT_ICON_CLASS} aria-hidden key="image" />,
+  ],
+  [
+    /\.(mp4|mov|avi|mkv|webm|wmv|flv)$/i,
+    <FileVideo className={ATTACHMENT_ICON_CLASS} aria-hidden key="video" />,
+  ],
+  [
+    /\.(mp3|wav|flac|ogg|m4a|aac)$/i,
+    <FileAudio className={ATTACHMENT_ICON_CLASS} aria-hidden key="audio" />,
+  ],
+  [
+    /\.(csv|xlsx?|xlsm|ods)$/i,
+    <FileSpreadsheet
+      className={ATTACHMENT_ICON_CLASS}
+      aria-hidden
+      key="sheet"
+    />,
+  ],
+  [
+    /\.(ya?ml|json|xml|toml|ini|conf|properties|sh|bash|ps1|sql|py|java|go|rs|ts|tsx|js|jsx|css|html?)$/i,
+    <FileCode className={ATTACHMENT_ICON_CLASS} aria-hidden key="code" />,
+  ],
+  [
+    /\.(pdf|docx?|odt|rtf|txt|md|log)$/i,
+    <FileText className={ATTACHMENT_ICON_CLASS} aria-hidden key="text" />,
+  ],
+];
+const GENERIC_ATTACHMENT_ICON = (
+  <FileIcon className={ATTACHMENT_ICON_CLASS} aria-hidden />
+);
+
+function attachmentIcon(filename: string) {
+  const match = ATTACHMENT_ICONS.find(([pattern]) => pattern.test(filename));
+  return match ? match[1] : GENERIC_ATTACHMENT_ICON;
+}
+
+/**
+ * A Confluence-style attachment tile. The <a> is kept as the innermost
+ * clickable element on purpose: the capture listeners that open the preview
+ * modal find their target with `closest("a")`, so the tile inherits that
+ * behaviour in the editor and on a saved page alike.
+ */
+function AttachmentTile({ node, selected }: NodeViewProps) {
+  const filename = String(node.attrs.filename ?? "attachment");
+  const href = String(node.attrs.href ?? "");
+  const icon = attachmentIcon(filename);
+  return (
+    <NodeViewWrapper as="span" className="mr-2 mb-2 inline-block align-top">
+      <a
+        href={href}
+        title={filename}
+        // Attachment links are intercepted and opened in a modal, so they must
+        // never be given target="_blank".
+        target="_self"
+        contentEditable={false}
+        draggable={false}
+        className={cn(
+          "group/attachment border-border bg-surface-raised hover:border-primary focus-visible:ring-ring flex w-24 flex-col items-center gap-1.5 rounded-md border p-2 shadow-sm transition-colors !no-underline focus-visible:ring-2 focus-visible:outline-none",
+          selected && "border-primary ring-primary/40 ring-2",
+        )}
+      >
+        <span className="bg-surface-sunken text-muted-foreground group-hover/attachment:text-primary flex h-14 w-full items-center justify-center rounded transition-colors">
+          {icon}
+        </span>
+        <span className="text-foreground w-full truncate text-center text-[11px] leading-tight">
+          {filename}
+        </span>
+      </a>
+    </NodeViewWrapper>
+  );
+}
+
+const AttachmentNode = TiptapNode.create({
+  name: "attachment",
+  group: "inline",
+  inline: true,
+  atom: true,
+  // Anchors are draggable by default in every browser, and tiptap's node view
+  // hides dragstart from ProseMirror, so a dragged tile would be pasted as a
+  // copy while the original stayed put - the same fault images used to have.
+  // Nothing here needs dragging, so it is switched off on both levels.
+  draggable: false,
+
+  addAttributes() {
+    return {
+      href: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("href"),
+      },
+      filename: {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute("data-attachment") ||
+          element.textContent?.trim() ||
+          "attachment",
+      },
+    };
+  },
+
+  parseHTML() {
+    // Priority has to clear the Link mark's, or an attachment would be parsed
+    // as ordinary linked text before this rule is ever consulted.
+    return [
+      { tag: "a[data-attachment]", priority: 1100 },
+      {
+        // Pages written before this node existed - and everything imported
+        // from Confluence, whose view-file macro becomes a bare <a> - carry no
+        // marker attribute. Recognise them by their href, but only when the
+        // link text reads as a filename: that leaves a deliberate inline link
+        // to an attachment inside a sentence looking like a link.
+        tag: "a[href]",
+        priority: 1100,
+        getAttrs: (element) => {
+          const href = element.getAttribute("href") ?? "";
+          if (!ATTACHMENT_HREF.test(href)) return false;
+          const text = element.textContent?.trim() ?? "";
+          return FILENAME_EXTENSION.test(text) ? null : false;
+        },
+      },
+    ];
+  },
+
+  renderHTML({ node }) {
+    const filename = String(node.attrs.filename ?? "attachment");
+    return [
+      "a",
+      mergeAttributes({
+        href: node.attrs.href,
+        title: filename,
+        target: "_self",
+        "data-attachment": filename,
+      }),
+      filename,
+    ];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(AttachmentTile);
+  },
+});
+
 const editorExtensions = [
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
@@ -1737,6 +1911,7 @@ const editorExtensions = [
     autolink: true,
     defaultProtocol: "https",
   }),
+  AttachmentNode,
   ResizableImage.configure({
     allowBase64: false,
   }),
@@ -2868,20 +3043,11 @@ function RichTextToolbar({
             .chain()
             .focus()
             .insertContent({
-              type: "text",
-              text: uploaded.filename,
-              marks: [
-                {
-                  type: "link",
-                  attrs: {
-                    href: uploaded.content_url,
-                    title: uploaded.filename,
-                    // No target="_blank" — attachment links are intercepted
-                    // by the native capture listener and must NOT open new tabs.
-                    target: "_self",
-                  },
-                },
-              ],
+              type: "attachment",
+              attrs: {
+                href: uploaded.content_url,
+                filename: uploaded.filename,
+              },
             })
             .run();
         }
