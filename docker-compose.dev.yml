@@ -83,6 +83,17 @@ services:
       # Watchpack polling is reliable for Docker bind mounts on Windows.
       WATCHPACK_POLLING: "true"
       WATCHPACK_POLLING_INTERVAL: "500"
+    # The image's healthcheck requests `/` without following redirects, so the
+    # middleware's 307 to /login satisfies it. That answer needs no route to be
+    # compiled, so the container reports healthy - and run.sh announces the
+    # stack is up - while every real page still 404s. Follow the redirect so
+    # "healthy" means a page actually rendered.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsSL http://localhost:3000/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 20s
+      start_period: 180s
+      retries: 10
     volumes:
       # Source from the host...
       - ./frontend:/app
