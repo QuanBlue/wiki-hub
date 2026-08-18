@@ -44,6 +44,7 @@ import { CreatePageDialog } from "@/components/pages/create-page-dialog";
 import { MovePageDialog } from "@/components/pages/move-page-dialog";
 import { SourceCodeEditor } from "@/components/pages/source-code-editor";
 import {
+  isAttachmentHref,
   RichTextContent,
   RichTextEditor,
 } from "@/components/pages/rich-text-editor";
@@ -87,6 +88,31 @@ const SPACE_SIDEBAR_WIDTH_COOKIE = "wikihub_space_sidebar_width";
 const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 520;
 const DEFAULT_SIDEBAR_WIDTH = 320;
+
+/**
+ * Where a click would actually take the reader, or null when it takes them
+ * nowhere. Exported so the unsaved-changes guard's decision can be tested
+ * without standing up the whole workspace.
+ */
+export function navigationTargetOf(event: MouseEvent): URL | null {
+  if (event.defaultPrevented || event.button !== 0) return null;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+    return null;
+
+  const target = event.target;
+  const link = target instanceof Element ? target.closest("a[href]") : null;
+  if (!(link instanceof HTMLAnchorElement)) return null;
+  if (link.target && link.target !== "_self") return null;
+  if (link.hasAttribute("download")) return null;
+  // An attachment link opens the preview modal and leaves the page where it
+  // is, so challenging it would be asking about a departure that is not
+  // happening. The editor's own capture listener handles the click.
+  if (isAttachmentHref(link.getAttribute("href") ?? "")) return null;
+
+  const destination = new URL(link.href, window.location.href);
+  if (destination.href === window.location.href) return null;
+  return destination;
+}
 const MIN_PREVIEW_SPLIT = 30;
 const MAX_PREVIEW_SPLIT = 70;
 const SAVED_PAGE_KEYS_STORAGE = "wikihub:saved-page-keys";
@@ -915,18 +941,8 @@ export function SpaceWorkspace({
       event.returnValue = message;
     };
     const confirmInternalNavigation = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-        return;
-
-      const target = event.target;
-      const link = target instanceof Element ? target.closest("a[href]") : null;
-      if (!(link instanceof HTMLAnchorElement)) return;
-      if (link.target && link.target !== "_self") return;
-      if (link.hasAttribute("download")) return;
-
-      const destination = new URL(link.href, window.location.href);
-      if (destination.href === window.location.href) return;
+      const destination = navigationTargetOf(event);
+      if (!destination) return;
       event.preventDefault();
       event.stopPropagation();
       setLeaveHref(destination.href);
