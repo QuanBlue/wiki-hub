@@ -91,6 +91,7 @@ class PageService:
             and Permission.export
             in await self.spaces.permissions.effective_permissions(space, user)
         )
+        result.is_restricted = await self.spaces.permissions.page_view_is_restricted(page)
         return result
 
     def to_read_many(self, pages: Sequence[WikiPage]) -> list[PageRead]:

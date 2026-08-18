@@ -465,6 +465,19 @@ class PermissionService:
             )
         ) is not None
 
+    async def page_view_is_restricted(self, page: WikiPage) -> bool:
+        """True when a view restriction narrows who may read this page.
+
+        Restrictions inherit, so the whole ancestor chain counts: a child of a
+        restricted page is every bit as closed even with no rows of its own.
+        This answers "is this page restricted", not "may this user read it" -
+        callers wanting the latter want :meth:`can_view_page`.
+        """
+        for ancestor in await self._page_chain(page):
+            if await self._restriction_rows_exist(ancestor.id, PageRestrictionPermission.view):
+                return True
+        return False
+
     async def can_view_page(self, page: WikiPage, user: User) -> bool:
         if await self.is_system_admin(user):
             return True

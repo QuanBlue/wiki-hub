@@ -25,6 +25,9 @@ class PageRead(BaseModel):
     updated_by_username: str | None = None
     can_edit: bool = False
     can_export: bool = False
+    # True when a view restriction on this page or an ancestor narrows who may
+    # read it. Independent of the space's own visibility.
+    is_restricted: bool = False
 
 
 class PageRecentItem(BaseModel):

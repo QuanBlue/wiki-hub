@@ -9,10 +9,12 @@ import {
   Download,
   FileText,
   Folder,
+  Globe,
   FolderOpen,
   FolderInput,
   Eye,
   EyeOff,
+  Lock,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -80,6 +82,7 @@ import type {
   Group,
   PageAttachmentUpload,
   Space,
+  SpaceVisibility,
   SpaceMember,
   WikiPage,
 } from "@/types/api";
@@ -115,6 +118,66 @@ export function navigationTargetOf(event: MouseEvent): URL | null {
   if (destination.href === window.location.href) return null;
   return destination;
 }
+
+/**
+ * Whether a page is closed to the world at large, and why. Two independent
+ * things can close it - a view restriction on the page (or an ancestor) and a
+ * restricted space - so the reason is spelled out rather than left to a guess.
+ */
+type PageAccess = { restricted: boolean; label: string };
+
+function pageAccessOf(
+  page: Pick<WikiPage, "is_restricted"> | null | undefined,
+  visibility: SpaceVisibility,
+): PageAccess {
+  const pageRestricted = page?.is_restricted === true;
+  const spaceRestricted = visibility === "restricted";
+  if (pageRestricted && spaceRestricted)
+    return {
+      restricted: true,
+      label: "Private: a restricted page inside a restricted space",
+    };
+  if (pageRestricted)
+    return {
+      restricted: true,
+      label: "Private: only the people this page names can read it",
+    };
+  if (spaceRestricted)
+    return {
+      restricted: true,
+      label: "Private: only members of this restricted space can read it",
+    };
+  return {
+    restricted: false,
+    label: "Public: everyone with access to this site can read it",
+  };
+}
+
+function PageAccessIcon({ access }: { access: PageAccess }) {
+  return (
+    <span
+      role="img"
+      aria-label={access.label}
+      title={access.label}
+      // Flex centring puts the icon on the middle of the line box, which sits
+      // about 0.16em above the middle of the letters themselves - the line box
+      // reserves room for ascenders and descenders that most text never uses,
+      // so a centred icon reads as floating high. Nudging by that much lands
+      // it on the x-height middle, where `vertical-align: middle` would put it
+      // if this were not a flex child.
+      // Both states share one colour: the padlock marks what a page is, not a
+      // problem to be drawn to, and the shape already carries the difference.
+      className="text-muted-foreground inline-flex shrink-0 translate-y-[0.16em] items-center"
+    >
+      {access.restricted ? (
+        <Lock className="size-3.5" aria-hidden />
+      ) : (
+        <Globe className="size-3.5" aria-hidden />
+      )}
+    </span>
+  );
+}
+
 const MIN_PREVIEW_SPLIT = 30;
 const MAX_PREVIEW_SPLIT = 70;
 const SAVED_PAGE_KEYS_STORAGE = "wikihub:saved-page-keys";
@@ -719,6 +782,10 @@ export function SpaceWorkspace({
   const [previewLayout, setPreviewLayout] = useState<"split" | "full">("split");
   const splitPreview = previewing && previewLayout === "split";
   const fullPreview = previewing && previewLayout === "full";
+  const currentPageAccess = useMemo(
+    () => pageAccessOf(currentPage, space.visibility),
+    [currentPage, space.visibility],
+  );
   const [viewFullWidth, setViewFullWidth] = useState(true);
   const [likeStatus, setLikeStatus] = useState<PageLikeStatus>({
     liked_by_me: false,
@@ -1835,11 +1902,14 @@ export function SpaceWorkspace({
                         …
                       </span>
                     ) : page.id === currentPage?.id ? (
-                      <span
-                        className="text-muted-foreground max-w-56 truncate"
-                        title={page.title}
-                      >
-                        {page.title}
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span
+                          className="text-muted-foreground max-w-56 truncate"
+                          title={page.title}
+                        >
+                          {page.title}
+                        </span>
+                        <PageAccessIcon access={currentPageAccess} />
                       </span>
                     ) : (
                       <Link

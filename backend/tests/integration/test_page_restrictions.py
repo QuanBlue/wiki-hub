@@ -155,3 +155,57 @@ async def test_page_restriction_is_respected_by_search_and_recent(
     recent_ids = {item.id for item in await pages.list_recent_pages(outsider)}
     assert public_page.id in recent_ids
     assert private_page.id not in recent_ids
+
+
+async def test_is_restricted_reports_inherited_view_restrictions(
+    session: AsyncSession,
+) -> None:
+    """The flag answers "is this page closed", not "may this user read it".
+
+    An owner who can read everything still needs to see that a page is
+    restricted, and a child inherits its parent's restriction without owning
+    any rows of its own.
+    """
+    owner = await _user(session, "owner")
+    reader = await _user(session, "reader")
+    spaces = SpaceService(session)
+    space = await spaces.create(SpaceCreate(key="FLAG", name="Flags"), owner)
+    await spaces.set_member(space, owner, reader.id, SpaceRole.editor)
+
+    pages = PageService(session)
+    parent = await pages.create(space, PageCreate(title="Parent"), owner)
+    child = await pages.create(space, PageCreate(title="Child", parent_id=parent.id), owner)
+    sibling = await pages.create(space, PageCreate(title="Sibling"), owner)
+
+    assert (await pages.to_read_for_user(parent, owner)).is_restricted is False
+    assert (await pages.to_read_for_user(child, owner)).is_restricted is False
+
+    permissions = PermissionService(session)
+    await permissions.set_page_restriction(
+        parent, reader.id, PageRestrictionPermission.view, owner, group=False, present=True
+    )
+
+    assert (await pages.to_read_for_user(parent, owner)).is_restricted is True
+    # Inherited: the child carries no restriction rows of its own.
+    assert (await pages.to_read_for_user(child, owner)).is_restricted is True
+    assert (await pages.to_read_for_user(sibling, owner)).is_restricted is False
+
+
+async def test_is_restricted_ignores_edit_only_restrictions(
+    session: AsyncSession,
+) -> None:
+    """An edit restriction narrows who may write, not who may read."""
+    owner = await _user(session, "owner")
+    editor = await _user(session, "editor")
+    spaces = SpaceService(session)
+    space = await spaces.create(SpaceCreate(key="EDITF", name="Edit flags"), owner)
+    await spaces.set_member(space, owner, editor.id, SpaceRole.editor)
+
+    pages = PageService(session)
+    page = await pages.create(space, PageCreate(title="Locked for editing"), owner)
+    permissions = PermissionService(session)
+    await permissions.set_page_restriction(
+        page, editor.id, PageRestrictionPermission.edit, owner, group=False, present=True
+    )
+
+    assert (await pages.to_read_for_user(page, owner)).is_restricted is False

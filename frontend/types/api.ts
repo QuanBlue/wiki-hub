@@ -245,6 +245,8 @@ export interface WikiPage {
   updated_by_username: string | null;
   can_edit?: boolean;
   can_export?: boolean;
+  /** A view restriction on this page or an ancestor narrows who may read it. */
+  is_restricted?: boolean;
 }
 
 export type DependencyStatus = "ok" | "error" | "timeout";
