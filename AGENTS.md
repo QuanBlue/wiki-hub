@@ -99,3 +99,24 @@ If you inherited a stale volume from a previous run, destroy it once:
 `--fresh` runs `docker compose down -v`, which removes all anonymous volumes
 including any leftover `.next` volume. Your database and MinIO data are also
 wiped, so only run it when a clean slate is acceptable.
+
+### The consequence: `.next/dev/lock` must be cleared at startup
+
+Keeping `.next` on the bind mount has one side effect worth knowing about.
+`next dev` writes its own PID into `.next/dev/lock` to stop two dev servers
+sharing a directory. Because that file now lives on the host, it outlives the
+container that wrote it. Container PIDs are small and get reused, so the next
+start usually finds *some* live process at the recorded PID, decides another
+dev server owns `/app`, and exits:
+
+```
+⨯ Another next dev server is already running.
+- PID: 35
+```
+
+The container then restart-loops until `run.sh` gives up with
+`timed out after 240s waiting for: frontend`.
+
+The frontend service therefore runs `rm -f /app/.next/dev/lock` before
+`npm run dev:docker`. Nothing can legitimately hold that lock at the moment
+the container starts, so removing it is always safe. Do not drop that step.

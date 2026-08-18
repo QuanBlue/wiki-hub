@@ -165,6 +165,23 @@ docker info >/dev/null 2>&1 \
     || die "the Docker daemon is not reachable. Start Docker and retry."
 ok "docker $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?') with compose plugin"
 
+# Compose status is parsed with Python further down. `python3` is not a safe
+# name to hardcode: on Windows it resolves to the Microsoft Store stub, which
+# exits non-zero after printing an install advert. Probe each candidate by
+# actually running it, so a stub is rejected rather than accepted by name, and
+# fail here with a clear message instead of deep inside a wait loop.
+PYTHON_BIN=""
+for candidate in python3 python py; do
+    if command -v "$candidate" >/dev/null 2>&1 \
+        && "$candidate" -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' \
+            >/dev/null 2>&1; then
+        PYTHON_BIN="$candidate"
+        break
+    fi
+done
+[[ -n "$PYTHON_BIN" ]] || die "python 3 is required (tried: python3, python, py)."
+ok "python via '$PYTHON_BIN'"
+
 if [[ $STOP_ONLY -eq 1 ]]; then
     step "Stopping WikiHub"
     "${COMPOSE[@]}" down
@@ -207,7 +224,7 @@ MINIO_CONSOLE_PORT="$(env_get MINIO_CONSOLE_PORT_HOST 9001)"
 step "Resolving host ports"
 
 owned_ports="$("${COMPOSE[@]}" ps --format json 2>/dev/null \
-    | python3 -c '
+    | "$PYTHON_BIN" -c '
 import json, sys
 out = set()
 for line in sys.stdin:
@@ -227,8 +244,22 @@ print(" ".join(sorted(out)))
 
 if command -v ss >/dev/null 2>&1; then
     listening="$(ss -ltnH 2>/dev/null | awk '{print $4}' | sed 's/.*://' | sort -u || true)"
-else
+elif command -v lsof >/dev/null 2>&1; then
     listening="$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {port = $9; sub(/^.*:/, "", port); sub(/[^0-9].*$/, "", port); print port}' | sort -u || true)"
+elif command -v netstat >/dev/null 2>&1; then
+    # Git Bash on Windows ships neither ss nor lsof, only Windows' own netstat.
+    # Without this branch `listening` stays empty, every port looks free, and
+    # the conflict avoidance below silently does nothing - the stack then dies
+    # on "Bind for 0.0.0.0:5432 failed: port is already allocated".
+    # The local address is the first field ending in :<digits> in both the
+    # Windows (LISTENING) and Linux (LISTEN) layouts; the foreign address is
+    # :* or :0 and never matches first.
+    listening="$(netstat -ano 2>/dev/null \
+        | awk '/LISTENING|LISTEN/ { for (i = 1; i <= NF; i++) if ($i ~ /:[0-9]+$/) { sub(/.*:/, "", $i); print $i; break } }' \
+        | sort -u || true)"
+else
+    warn "no ss, lsof or netstat found; cannot detect busy host ports"
+    listening=""
 fi
 
 port_is_taken() {
@@ -344,7 +375,7 @@ PYEOF
 while :; do
     status_json="$("${COMPOSE[@]}" ps --format json 2>/dev/null || true)"
 
-    eval "$(printf '%s' "$status_json" | python3 -c "$PY_HEALTH" 2>/dev/null \
+    eval "$(printf '%s' "$status_json" | "$PYTHON_BIN" -c "$PY_HEALTH" 2>/dev/null \
         || printf 'READY_LIST="" PENDING_LIST="starting" UNHEALTHY_LIST=""\n')"
 
     for svc in $READY_LIST; do
@@ -381,7 +412,7 @@ printf '%s' "$CLEAR_LINE"
 
 # minio-init must have completed cleanly, otherwise uploads fail later.
 init_exit="$("${COMPOSE[@]}" ps -a --format json 2>/dev/null \
-    | python3 -c '
+    | "$PYTHON_BIN" -c '
 import json, sys
 for line in sys.stdin:
     line = line.strip()

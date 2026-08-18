@@ -58,10 +58,20 @@ services:
     # /app/node_modules is an anonymous volume so it survives source bind
     # mounts. Reconcile it only when package-lock.json changed; running npm ci
     # on every dev start makes the frontend stay unhealthy for several minutes.
+    #
+    # The `rm -f .next/dev/lock` first is required, not tidiness. `next dev`
+    # records its own PID there, and .next lives on the host bind mount (see
+    # the volumes note below), so the file outlives the container. PIDs inside
+    # a container are small and get reused, so the next start finds a live
+    # process at the recorded PID, concludes another dev server owns the
+    # directory, and exits - leaving the container restart-looping until the
+    # healthcheck times out. Nothing can legitimately hold the lock at the
+    # moment this container starts.
     command:
       - sh
       - -c
       - >-
+        rm -f /app/.next/dev/lock;
         lock_hash=$$(sha256sum package-lock.json | awk '{print $$1}');
         stamp=/app/node_modules/.wikihub-package-lock;
         if [ ! -f "$$stamp" ] || [ "$$(cat "$$stamp")" != "$$lock_hash" ]; then
