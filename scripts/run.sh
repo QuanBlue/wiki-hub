@@ -93,6 +93,12 @@ ok()   { printf '  %s✓%s %s\n' "$GREEN" "$RESET" "$*"; }
 warn() { printf '  %s!%s %s\n' "$YELLOW" "$RESET" "$*"; }
 die()  { printf '\n%serror:%s %s\n' "$RED" "$RESET" "$*" >&2; exit 1; }
 
+# The transient progress line below ends in \r, so whatever prints next lands on
+# top of it and any surplus characters survive. Erase it before every permanent
+# line - otherwise a short "✓ frontend" over "waiting: frontend" reads as
+# "frontendrontend".
+clear_progress() { [[ -n "$CLEAR_LINE" ]] && printf '\r%s' "$CLEAR_LINE"; return 0; }
+
 usage() {
     cat <<'EOF'
 WikiHub - start the whole stack with one command.
@@ -381,11 +387,13 @@ while :; do
     for svc in $READY_LIST; do
         if [[ -z "${reported[$svc]:-}" ]]; then
             reported[$svc]=1
+            clear_progress
             ok "$svc"
         fi
     done
 
     if [[ -n "$UNHEALTHY_LIST" ]]; then
+        clear_progress
         printf '\n%serror:%s unhealthy: %s\n' "$RED" "$RESET" "$UNHEALTHY_LIST" >&2
         for svc in $UNHEALTHY_LIST; do
             printf '\n%s--- last 40 log lines: %s ---%s\n' "$DIM" "$svc" "$RESET" >&2
@@ -397,6 +405,7 @@ while :; do
     [[ -z "$PENDING_LIST" ]] && break
 
     if (( SECONDS >= deadline )); then
+        clear_progress
         printf '\n%serror:%s timed out after %ss waiting for: %s\n' \
             "$RED" "$RESET" "$HEALTH_TIMEOUT" "$PENDING_LIST" >&2
         printf '  Inspect with:  docker compose logs -f %s\n' "${PENDING_LIST%% *}" >&2
@@ -408,7 +417,7 @@ while :; do
     fi
     sleep 3
 done
-printf '%s' "$CLEAR_LINE"
+clear_progress
 
 # minio-init must have completed cleanly, otherwise uploads fail later.
 init_exit="$("${COMPOSE[@]}" ps -a --format json 2>/dev/null \
