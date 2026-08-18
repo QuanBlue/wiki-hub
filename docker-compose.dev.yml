@@ -76,8 +76,10 @@ services:
     volumes:
       # Source from the host...
       - ./frontend:/app
-      # ...but keep the container's own node_modules and build cache. Anonymous
-      # volumes shadow the bind mount, so host artifacts (built for a different
-      # platform, or absent entirely) can never break the container.
+      # node_modules stays in an anonymous volume so the Linux-built packages
+      # are never shadowed by Windows host artifacts or a missing directory.
+      # NOTE: /app/.next is intentionally NOT an anonymous volume so that
+      # `next dev` always compiles from the live bind-mount. Keeping a stale
+      # .next volume caused 404s after code changes because the old route
+      # manifest remained active even after the source was updated on the host.
       - /app/node_modules
-      - /app/.next

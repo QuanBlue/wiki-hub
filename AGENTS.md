@@ -58,3 +58,44 @@ for application interactions. The browser's native `beforeunload` dialog is
 allowed only as an unavoidable fallback for browser refresh controls, closing
 tabs/windows, or other unload actions that browsers do not permit web apps to
 replace with custom modals.
+
+## Docker dev volume rules (`docker-compose.dev.yml`)
+
+**Never** add `/app/.next` as an anonymous volume in the frontend dev service.
+
+### Why this causes 404s after code changes
+
+In dev mode (`./scripts/run.sh --dev`), the host `./frontend` directory is
+bind-mounted into the container at `/app`. When `/app/.next` is also declared as
+an anonymous Docker volume, Docker creates a volume-backed directory that
+**shadows** the bind-mount for that sub-path. The anonymous volume persists
+between container restarts (even after `--build`) because only `--fresh` (`down
+-v`) deletes volumes. If the volume was seeded from an older image or an
+earlier run, the Next.js dev server starts with a stale route manifest that does
+not match the current source, causing every page route to return 404.
+
+### The correct setup
+
+Only `/app/node_modules` should be an anonymous volume (to preserve the
+Linux-built packages from the image and prevent Windows host artifacts from
+shadowing them). The `.next` directory must **not** be an anonymous volume so
+that `next dev` always compiles from the live bind-mounted source:
+
+```yaml
+volumes:
+  - ./frontend:/app      # host source
+  - /app/node_modules    # Linux node_modules (anonymous, correct)
+  # /app/.next must NOT appear here
+```
+
+### When you still see 404 after this fix
+
+If you inherited a stale volume from a previous run, destroy it once:
+
+```bash
+./scripts/run.sh --dev --fresh
+```
+
+`--fresh` runs `docker compose down -v`, which removes all anonymous volumes
+including any leftover `.next` volume. Your database and MinIO data are also
+wiped, so only run it when a clean slate is acceptable.

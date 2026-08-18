@@ -57,10 +57,13 @@ import {
   Palette,
   Paperclip,
   Pilcrow,
+  Plus,
   Quote,
   Redo2,
   RemoveFormatting,
   Rows3,
+  BetweenHorizontalEnd,
+  BetweenVerticalEnd,
   SquareSplitHorizontal,
   Strikethrough,
   Table2,
@@ -87,6 +90,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -293,9 +299,9 @@ const TableColumnResize = Extension.create({
       ) as HTMLTableCellElement | null;
       const table = cell?.closest("table") as HTMLTableElement | null;
       if (!cell || !table || cell.colSpan !== 1) return null;
-      const rowCells = Array.from(
-        table.querySelector("tr")?.children ?? [],
-      ) as HTMLElement[];
+      const row = cell.parentElement as HTMLTableRowElement | null;
+      if (!row) return null;
+      const rowCells = Array.from(row.children) as HTMLElement[];
       const cellIndex = rowCells.indexOf(cell);
       if (cellIndex < 0 || rowCells.length < 2) return null;
 
@@ -451,19 +457,36 @@ const TableRowResize = Extension.create({
         .forEach((row) => row.classList.remove("wikihub-row-resize-target"));
     };
 
+    const resizeTarget = (event: MouseEvent) => {
+      const row = (event.target as HTMLElement | null)?.closest(
+        "tr",
+      ) as HTMLTableRowElement | null;
+      const table = row?.closest("table") as HTMLTableElement | null;
+      if (!row || !table) return null;
+      const rows = Array.from(table.querySelectorAll("tr"));
+      const rowIndex = rows.indexOf(row);
+      if (rowIndex < 0 || rows.length < 2) return null;
+
+      const bounds = row.getBoundingClientRect();
+      const nearTop = event.clientY - bounds.top <= TABLE_ROW_RESIZE_ZONE;
+      const nearBottom = bounds.bottom - event.clientY <= TABLE_ROW_RESIZE_ZONE;
+      const upperRowIndex = nearBottom ? rowIndex : nearTop ? rowIndex - 1 : -1;
+      if (upperRowIndex < 0 || upperRowIndex >= rows.length - 1) return null;
+      return { table, upperRowIndex, lowerRowIndex: upperRowIndex + 1, rows };
+    };
+
     return [
       new Plugin({
         props: {
           handleDOMEvents: {
             mousemove: (view, event) => {
               if (activeResize || !view.editable) return false;
-              const target = event.target as HTMLElement | null;
-              const row = target?.closest("tr") as HTMLTableRowElement | null;
               clearRowHover(view);
-              if (!row || !view.dom.contains(row)) return false;
-              const bounds = row.getBoundingClientRect();
-              if (bounds.bottom - event.clientY <= TABLE_ROW_RESIZE_ZONE) {
-                row.classList.add("wikihub-row-resize-target");
+              const target = resizeTarget(event);
+              if (target) {
+                target.rows[target.upperRowIndex].classList.add(
+                  "wikihub-row-resize-target",
+                );
               }
               return false;
             },
@@ -473,20 +496,19 @@ const TableRowResize = Extension.create({
             },
             mousedown: (view, event) => {
               if (!view.editable || event.button !== 0) return false;
-              const target = event.target as HTMLElement | null;
-              const row = target?.closest("tr") as HTMLTableRowElement | null;
-              if (!row || !view.dom.contains(row)) return false;
-              const bounds = row.getBoundingClientRect();
-              if (bounds.bottom - event.clientY > TABLE_ROW_RESIZE_ZONE) {
-                return false;
-              }
-              const position = tableRowPosition(view, row);
+              const target = resizeTarget(event);
+              if (!target) return false;
+              
+              const upperRow = target.rows[target.upperRowIndex];
+              const position = tableRowPosition(view, upperRow);
               if (position === null) return false;
 
               event.preventDefault();
               clearRowHover(view);
+              
+              const bounds = upperRow.getBoundingClientRect();
               activeResize = {
-                row,
+                row: upperRow,
                 position,
                 startY: event.clientY,
                 startHeight: Math.max(bounds.height, 32),
@@ -2251,11 +2273,15 @@ function TableActionButton({
   editor,
   label,
   onClick,
+  destructive,
+  disabled,
   children,
 }: {
   editor: Editor | null;
   label: string;
   onClick: () => void;
+  destructive?: boolean;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -2265,9 +2291,12 @@ function TableActionButton({
       size="sm"
       aria-label={label}
       title={label}
-      disabled={!editor}
+      disabled={disabled || !editor}
       onClick={onClick}
-      className="h-8 gap-1.5 px-2"
+      className={cn(
+        "h-8 gap-1.5 px-2",
+        destructive && "text-danger hover:bg-danger-bg hover:text-danger active:bg-danger-bg/85"
+      )}
     >
       {children}
       <span>{label}</span>
@@ -2284,11 +2313,37 @@ type TableMenuPosition = { left: number; top: number };
  */
 function TableActionsMenu({ editor }: { editor: Editor | null }) {
   const [position, setPosition] = useState<TableMenuPosition | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hoveredTable, setHoveredTable] = useState({ rows: 0, cols: 0 });
+  const maxRows = 8;
+  const maxCols = 10;
+
+  function insertTable(rows: number, cols: number) {
+    if (!editor || rows < 1 || cols < 1) return;
+    editor
+      .chain()
+      .focus()
+      .insertTable({ rows, cols, withHeaderRow: true })
+      .run();
+    setHoveredTable({ rows: 0, cols: 0 });
+  }
 
   const updatePosition = useCallback(() => {
+    if (!editor) return;
+
+    // The menu should remain visible if the editor is focused, OR if the focus
+    // has moved to a menu/dialog associated with the table action toolbar.
+    const isFocused =
+      editor.isFocused ||
+      (typeof document !== "undefined" &&
+        (document.activeElement?.closest('[role="menu"]') !== null ||
+          document.activeElement?.closest('[data-radix-menu-content]') !== null ||
+          containerRef.current?.querySelector('[data-state="open"]') !== null ||
+          containerRef.current?.contains(document.activeElement) === true));
+
     // A restored selection can be inside a table as soon as edit mode opens.
     // Only surface table controls after the user actually focuses that table.
-    if (!editor?.isFocused || !editor.isActive("table")) {
+    if (!isFocused || !editor.isActive("table")) {
       setPosition(null);
       return;
     }
@@ -2333,6 +2388,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
 
   return (
     <div
+      ref={containerRef}
       className="border-border bg-surface-raised fixed z-50 flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-0.5 rounded-md border p-1 shadow-lg"
       style={position}
       role="toolbar"
@@ -2347,35 +2403,8 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
     >
       <TableActionButton
         editor={editor}
-        label="Add row"
-        onClick={() => editor?.chain().focus().addRowAfter().run()}
-      >
-        <Rows3 />
-      </TableActionButton>
-      <TableActionButton
-        editor={editor}
-        label="Add column"
-        onClick={() => editor?.chain().focus().addColumnAfter().run()}
-      >
-        <Columns3 />
-      </TableActionButton>
-      <TableActionButton
-        editor={editor}
-        label="Delete row"
-        onClick={() => editor?.chain().focus().deleteRow().run()}
-      >
-        <Rows3 />
-      </TableActionButton>
-      <TableActionButton
-        editor={editor}
-        label="Delete column"
-        onClick={() => editor?.chain().focus().deleteColumn().run()}
-      >
-        <Columns3 />
-      </TableActionButton>
-      <TableActionButton
-        editor={editor}
         label="Merge selected cells"
+        disabled={!editor?.can().mergeCells()}
         onClick={() => editor?.chain().focus().mergeCells().run()}
       >
         <TableCellsMerge />
@@ -2383,18 +2412,128 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
       <TableActionButton
         editor={editor}
         label="Split cell"
+        disabled={!editor?.can().splitCell()}
         onClick={() => editor?.chain().focus().splitCell().run()}
       >
         <SquareSplitHorizontal />
       </TableActionButton>
       <CellColorMenu editor={editor} />
-      <TableActionButton
-        editor={editor}
-        label="Delete table"
-        onClick={() => editor?.chain().focus().deleteTable().run()}
-      >
-        <Trash2 />
-      </TableActionButton>
+
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!editor}
+            className="h-8 gap-1.5 px-2"
+          >
+            <Plus />
+            <span>Add</span>
+            <ChevronDown className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-40 p-1">
+          <DropdownMenuItem
+            className="text-muted-foreground data-[highlighted]:text-foreground"
+            onClick={() => editor?.chain().focus().addRowAfter().run()}
+          >
+            <BetweenHorizontalEnd />
+            <span>Add row</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-muted-foreground data-[highlighted]:text-foreground"
+            onClick={() => editor?.chain().focus().addColumnAfter().run()}
+          >
+            <BetweenVerticalEnd />
+            <span>Add column</span>
+          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="text-muted-foreground data-[highlighted]:text-foreground">
+              <Table2 />
+              <span>Add table</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-[13.5rem] p-2">
+              <div className="text-muted-foreground mb-2 flex items-center justify-between px-1 text-xs">
+                <span>Select table size</span>
+                <span className="text-foreground font-medium tabular-nums">
+                  {hoveredTable.rows}×{hoveredTable.cols}
+                </span>
+              </div>
+              <div
+                role="grid"
+                aria-label="Table size"
+                className="border-border grid grid-cols-10 overflow-hidden rounded-sm border"
+                onPointerDown={(event) => event.preventDefault()}
+                onPointerLeave={() => setHoveredTable({ rows: 0, cols: 0 })}
+              >
+                {Array.from({ length: maxRows * maxCols }, (_, index) => {
+                  const row = Math.floor(index / maxCols) + 1;
+                  const col = (index % maxCols) + 1;
+                  const selected = row <= hoveredTable.rows && col <= hoveredTable.cols;
+                  return (
+                    <button
+                      key={`${row}-${col}`}
+                      type="button"
+                      role="gridcell"
+                      aria-label={`${row} rows by ${col} columns`}
+                      className={cn(
+                        "border-border h-5 w-5 border-r border-b transition-colors duration-100 last:border-r-0",
+                        "hover:bg-primary-subtle hover:border-primary focus-visible:ring-ring focus-visible:z-10 focus-visible:ring-2 focus-visible:outline-none",
+                        selected && "bg-primary-subtle border-primary",
+                      )}
+                      onPointerEnter={() => setHoveredTable({ rows: row, cols: col })}
+                      onClick={() => insertTable(row, col)}
+                    />
+                  );
+                })}
+              </div>
+              <p className="text-muted-foreground mt-2 px-1 text-[11px]">
+                Click a cell to insert
+              </p>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!editor}
+            className="h-8 gap-1.5 px-2 text-danger hover:bg-danger-bg hover:text-danger active:bg-danger-bg/85"
+          >
+            <Trash2 />
+            <span>Delete</span>
+            <ChevronDown className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-40 p-1">
+          <DropdownMenuItem
+            destructive
+            onClick={() => editor?.chain().focus().deleteRow().run()}
+          >
+            <Trash2 />
+            <span>Delete row</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            destructive
+            onClick={() => editor?.chain().focus().deleteColumn().run()}
+          >
+            <Trash2 />
+            <span>Delete column</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            destructive
+            onClick={() => editor?.chain().focus().deleteTable().run()}
+          >
+            <Trash2 />
+            <span>Delete table</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -2471,11 +2610,12 @@ function RichTextToolbar({
   const [linkTarget, setLinkTarget] = useState("_self");
   const linkSelection = useRef<{ from: number; to: number } | null>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const toolbarActionsRef = useRef<HTMLDivElement>(null);
   const [visibleOverflowActionCount, setVisibleOverflowActionCount] =
-    useState(8);
+    useState(9);
   const [toolbarMeasureVersion, setToolbarMeasureVersion] = useState(0);
 
   useLayoutEffect(() => {
@@ -2496,7 +2636,7 @@ function RichTextToolbar({
     const observer = new ResizeObserver(() => {
       // Recalculate from the full action set. Layout effects run before paint,
       // so this doesn't make the editor toolbar jump while its container grows.
-      setVisibleOverflowActionCount(8);
+      setVisibleOverflowActionCount(9);
       setToolbarMeasureVersion((version) => version + 1);
     });
     observer.observe(toolbar);
@@ -2568,6 +2708,11 @@ function RichTextToolbar({
   const insertAttachment = useCallback(() => {
     if (!editor) return;
     attachmentInput.current?.click();
+  }, [editor]);
+
+  const insertImage = useCallback(() => {
+    if (!editor) return;
+    imageInput.current?.click();
   }, [editor]);
 
   async function insertFiles(files: File[]) {
@@ -2656,6 +2801,16 @@ function RichTextToolbar({
       role="toolbar"
       aria-label="Page formatting"
     >
+      <input
+        ref={imageInput}
+        type="file"
+        accept="image/*"
+        multiple
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+        onChange={handleAttachmentSelected}
+      />
       <input
         ref={attachmentInput}
         type="file"
@@ -2808,12 +2963,26 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 7 ? (
           <ToolbarButton
             editor={editor}
-            label="Upload image or file"
+            label="Insert image"
+            disabled={uploading}
+            onClick={insertImage}
+          >
+            {uploading ? (
+              <ImagePlus className="animate-pulse" />
+            ) : (
+              <ImagePlus />
+            )}
+          </ToolbarButton>
+        ) : null}
+        {visibleOverflowActionCount > 8 ? (
+          <ToolbarButton
+            editor={editor}
+            label="Upload file"
             disabled={uploading}
             onClick={insertAttachment}
           >
             {uploading ? (
-              <ImagePlus className="animate-pulse" />
+              <Paperclip className="animate-pulse" />
             ) : (
               <Paperclip />
             )}
@@ -2838,7 +3007,7 @@ function RichTextToolbar({
         >
           <Redo2 />
         </ToolbarButton>
-        {visibleOverflowActionCount < 8 ? (
+        {visibleOverflowActionCount < 9 ? (
           <MoreFormattingMenu hasActions>
             {visibleOverflowActionCount < 1 ? (
               <OverflowToolbarButton
@@ -2904,12 +3073,25 @@ function RichTextToolbar({
             ) : null}
             {visibleOverflowActionCount < 8 ? (
               <OverflowToolbarButton
-                label={uploading ? "Uploading file" : "Upload image or file"}
+                label={uploading ? "Uploading image" : "Insert image"}
+                disabled={uploading}
+                onClick={insertImage}
+              >
+                {uploading ? (
+                  <ImagePlus className="animate-pulse" />
+                ) : (
+                  <ImagePlus />
+                )}
+              </OverflowToolbarButton>
+            ) : null}
+            {visibleOverflowActionCount < 9 ? (
+              <OverflowToolbarButton
+                label={uploading ? "Uploading file" : "Upload file"}
                 disabled={uploading}
                 onClick={insertAttachment}
               >
                 {uploading ? (
-                  <ImagePlus className="animate-pulse" />
+                  <Paperclip className="animate-pulse" />
                 ) : (
                   <Paperclip />
                 )}

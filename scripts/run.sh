@@ -110,6 +110,8 @@ Options:
                    applies with no rebuild.
   --fresh          docker compose down -v first. DESTROYS every volume:
                    database, Redis and uploaded attachments.
+  --clean-frontend Destroys only the frontend container and its volumes (clears
+                   node_modules and Next.js cache) without touching the database.
   --rebuild        Rebuild images from scratch. Needed after a dependency
                    change (pyproject.toml / package.json).
   --no-build       Skip building; reuse existing images. Fastest restart.
@@ -134,6 +136,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --dev)      DEV_MODE=1 ;;
         --fresh)    FRESH=1 ;;
+        --clean-frontend) CLEAN_FRONTEND=1 ;;
         --rebuild)  FORCE_BUILD=1 ;;
         --no-build) DO_BUILD=0 ;;
         --logs)     FOLLOW_LOGS=1 ;;
@@ -277,7 +280,11 @@ ok "frontend ${FRONTEND_PORT}; API ${BACKEND_PORT}; Postgres ${POSTGRES_PORT}; R
 if [[ $FRESH -eq 1 ]]; then
     step "Removing containers and data volumes (--fresh)"
     "${COMPOSE[@]}" down -v --remove-orphans
-    ok "volumes removed"
+    ok "all volumes removed"
+elif [[ ${CLEAN_FRONTEND:-0} -eq 1 ]]; then
+    step "Removing frontend container and volumes (--clean-frontend)"
+    "${COMPOSE[@]}" down frontend -v
+    ok "frontend volumes removed"
 fi
 
 # --- 5. start ---------------------------------------------------------------
