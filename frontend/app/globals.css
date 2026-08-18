@@ -327,37 +327,22 @@
     opacity: 0.85;
   }
 
-  /* Keyframe for the resize-handle fade-in pop */
-  @keyframes wh-resize-handle-in {
-    from {
-      opacity: 0;
-      transform: scaleX(0.5);
-    }
-    to {
-      opacity: 1;
-      transform: scaleX(1);
-    }
-  }
-
-  @keyframes wh-resize-handle-row-in {
-    from {
-      opacity: 0;
-      transform: scaleY(0.5);
-    }
-    to {
-      opacity: 1;
-      transform: scaleY(1);
-    }
-  }
-
   .ProseMirror th,
   .ProseMirror td {
     position: relative;
   }
 
-  /* Wide transparent hover zone for column resize (hitbox) */
-  .ProseMirror th::before,
-  .ProseMirror td::before {
+  /* Column resize affordance. Scoped to the editable view: the live preview
+     renders the same ProseMirror markup read-only, where a resize cursor and
+     hover guide would promise an interaction that does not exist there.
+
+     The pseudo-element is a wide invisible hitbox straddling the cell's right
+     edge, and the guide line lives inside it as a gradient so the halo hugs
+     the 2px line. A box-shadow would instead ring the whole 16px band - a
+     heavy glowing slab, seamed at every cell join. Opacity is what fades,
+     because gradients are background-images and cannot be transitioned. */
+  .ProseMirror[contenteditable="true"] th::before,
+  .ProseMirror[contenteditable="true"] td::before {
     position: absolute;
     z-index: 50;
     top: 0;
@@ -366,34 +351,34 @@
     width: 16px;
     cursor: col-resize !important;
     content: "";
-    background: transparent;
-    transition: background 150ms ease, box-shadow 150ms ease;
-  }
-
-  /* Hide resizer for the last column */
-  .ProseMirror th:last-child::before,
-  .ProseMirror td:last-child::before {
-    display: none;
-  }
-
-  /* Visible indicator – thin glowing line on the right edge on hover */
-  .ProseMirror th::before:hover,
-  .ProseMirror td::before:hover {
+    opacity: 0;
     background: linear-gradient(
       to right,
-      transparent 7px,
+      transparent 6px,
+      color-mix(in srgb, var(--primary) 35%, transparent) 6px,
       var(--primary) 7px,
       var(--primary) 9px,
-      transparent 9px
+      color-mix(in srgb, var(--primary) 35%, transparent) 9px,
+      transparent 10px
     );
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent),
-      0 0 6px 1px color-mix(in srgb, var(--primary) 40%, transparent);
+    transition: opacity 120ms ease;
   }
 
-  /* Wide transparent hover zone for row resize (hitbox) */
-  .ProseMirror tr > th::after,
-  .ProseMirror tr > td::after {
+  /* Driven by the class TableColumnResize puts on the column under the
+     pointer, so it marks exactly the edge mousedown would grab - including
+     the table's outer right edge. (A `::before:hover` selector cannot work:
+     :hover after a pseudo-element never matches.) */
+  .ProseMirror[contenteditable="true"] th.wikihub-column-resize-target::before,
+  .ProseMirror[contenteditable="true"] td.wikihub-column-resize-target::before {
+    opacity: 1;
+  }
+
+  /* Row resize affordance. Deliberately has no guide line: a row boundary
+     spans the table's full width, so an accent line there reads as a heavy
+     bar rather than the slim guide the column axis gets. The cursor alone
+     signals that the edge is draggable. */
+  .ProseMirror[contenteditable="true"] tr > th::after,
+  .ProseMirror[contenteditable="true"] tr > td::after {
     position: absolute;
     z-index: 50;
     right: 0;
@@ -402,28 +387,5 @@
     height: 16px;
     cursor: row-resize !important;
     content: "";
-    background: transparent;
-    transition: background 150ms ease, box-shadow 150ms ease;
-  }
-
-  /* Hide resizer for the last row */
-  .ProseMirror tr:last-child > th::after,
-  .ProseMirror tr:last-child > td::after {
-    display: none;
-  }
-
-  /* Visible indicator – thin glowing line on the bottom edge on hover */
-  .ProseMirror tr > th::after:hover,
-  .ProseMirror tr > td::after:hover {
-    background: linear-gradient(
-      to bottom,
-      transparent 7px,
-      var(--primary) 7px,
-      var(--primary) 9px,
-      transparent 9px
-    );
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent),
-      0 0 6px 1px color-mix(in srgb, var(--primary) 40%, transparent);
   }
 }

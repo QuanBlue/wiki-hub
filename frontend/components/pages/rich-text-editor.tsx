@@ -39,7 +39,6 @@ import {
   AlignRight,
   Check,
   ChevronDown,
-  Columns3,
   Code2,
   Crop,
   Ellipsis,
@@ -61,7 +60,6 @@ import {
   Quote,
   Redo2,
   RemoveFormatting,
-  Rows3,
   BetweenHorizontalEnd,
   BetweenVerticalEnd,
   SquareSplitHorizontal,
@@ -74,6 +72,10 @@ import {
   Underline,
   Undo2,
   WrapText,
+  FileText,
+  Download,
+  Loader2,
+  Search,
 } from "lucide-react";
 import {
   useCallback,
@@ -200,21 +202,56 @@ const TableRowWithHeight = TableRow.extend({
       },
     };
   },
+
+  // Rendering rows through a node view lets TableRowResize preview a drag by
+  // writing `<tr>.style.height` directly, the way TableColumnResize previews
+  // on `<col>.style.width`. Without `ignoreMutation`, ProseMirror's DOM
+  // observer would see that style change (it is the very thing `height` parses
+  // from) as an unexpected edit and redraw the row back. Previewing in the DOM
+  // rather than dispatching per frame is what keeps the drag smooth: every
+  // transaction re-serialises the whole document through onTransaction and
+  // re-renders the live preview.
+  addNodeView() {
+    return ({ node }) => {
+      const dom = document.createElement("tr");
+      const applyHeight = (source: typeof node) => {
+        const height = normaliseTableRowHeight(source.attrs.height);
+        dom.style.height = height ? `${height}px` : "";
+      };
+      applyHeight(node);
+      return {
+        dom,
+        contentDOM: dom,
+        // Only the row's own attributes are ignored; child mutations still
+        // have to reach ProseMirror so typing inside cells is read normally.
+        ignoreMutation: (mutation) =>
+          mutation.type === "attributes" && mutation.target === dom,
+        update: (updated) => {
+          if (updated.type !== node.type) return false;
+          applyHeight(updated);
+          return true;
+        },
+      };
+    };
+  },
 });
 
 const TABLE_ROW_RESIZE_ZONE = 8;
 const TABLE_COLUMN_RESIZE_ZONE = 8;
 const TABLE_CELL_MIN_WIDTH = 96;
+const TABLE_ROW_MIN_HEIGHT = 32;
 
 type TableColumnResizeState = {
   table: HTMLTableElement;
   tableNode: ReturnType<Editor["state"]["doc"]["nodeAt"]>;
   tableStart: number;
   leftColumn: number;
-  rightColumn: number;
+  /** null while dragging the table's outer right edge, which has no neighbour. */
+  rightColumn: number | null;
   startX: number;
   startLeftWidth: number;
   startRightWidth: number;
+  startTableWidth: number;
   widths: number[];
 };
 
@@ -310,8 +347,13 @@ const TableColumnResize = Extension.create({
       const nearRight =
         bounds.right - event.clientX <= TABLE_COLUMN_RESIZE_ZONE;
       const leftColumn = nearRight ? cellIndex : nearLeft ? cellIndex - 1 : -1;
-      if (leftColumn < 0 || leftColumn >= rowCells.length - 1) return null;
-      return { table, leftColumn, rightColumn: leftColumn + 1, rowCells };
+      // The table's outer *left* edge has nothing to its left to resize, so it
+      // stays inert. Its outer right edge does resize the last column - there
+      // is simply no neighbour to trade width with, so the table itself grows.
+      if (leftColumn < 0) return null;
+      const rightColumn =
+        leftColumn + 1 < rowCells.length ? leftColumn + 1 : null;
+      return { table, leftColumn, rightColumn, rowCells };
     };
 
     return [
@@ -367,7 +409,9 @@ const TableColumnResize = Extension.create({
                 rightColumn: target.rightColumn,
                 startX: event.clientX,
                 startLeftWidth: widths[target.leftColumn],
-                startRightWidth: widths[target.rightColumn],
+                startRightWidth:
+                  target.rightColumn === null ? 0 : widths[target.rightColumn],
+                startTableWidth: tableWidth,
                 widths,
               };
               const initialCursor = document.body.style.cursor;
@@ -375,26 +419,37 @@ const TableColumnResize = Extension.create({
 
               const move = (moveEvent: MouseEvent) => {
                 if (!activeResize) return;
+                const { leftColumn, rightColumn } = activeResize;
                 const delta = moveEvent.clientX - activeResize.startX;
                 const minDelta =
                   TABLE_CELL_MIN_WIDTH - activeResize.startLeftWidth;
+                // Dragging the outer right edge widens the table instead of
+                // borrowing from a neighbour, so nothing caps how far it goes.
                 const maxDelta =
-                  activeResize.startRightWidth - TABLE_CELL_MIN_WIDTH;
+                  rightColumn === null
+                    ? Number.POSITIVE_INFINITY
+                    : activeResize.startRightWidth - TABLE_CELL_MIN_WIDTH;
                 const boundedDelta = Math.max(
                   minDelta,
                   Math.min(maxDelta, delta),
                 );
-                activeResize.widths[activeResize.leftColumn] = Math.round(
+                activeResize.widths[leftColumn] = Math.round(
                   activeResize.startLeftWidth + boundedDelta,
                 );
-                activeResize.widths[activeResize.rightColumn] = Math.round(
+                const columns = activeResize.table.querySelectorAll("col");
+                columns[leftColumn].style.width =
+                  `${activeResize.widths[leftColumn]}px`;
+                if (rightColumn === null) {
+                  activeResize.table.style.width = `${
+                    activeResize.startTableWidth + boundedDelta
+                  }px`;
+                  return;
+                }
+                activeResize.widths[rightColumn] = Math.round(
                   activeResize.startRightWidth - boundedDelta,
                 );
-                const columns = activeResize.table.querySelectorAll("col");
-                columns[activeResize.leftColumn].style.width =
-                  `${activeResize.widths[activeResize.leftColumn]}px`;
-                columns[activeResize.rightColumn].style.width =
-                  `${activeResize.widths[activeResize.rightColumn]}px`;
+                columns[rightColumn].style.width =
+                  `${activeResize.widths[rightColumn]}px`;
               };
               const end = () => {
                 if (!activeResize) return;
@@ -437,7 +492,50 @@ function tableRowPosition(view: Editor["view"], row: HTMLTableRowElement) {
   return null;
 }
 
-/** Adds row-height resizing to Tiptap's built-in column-resize support. */
+/** Commits a finished row drag. Called once, on release. */
+function persistTableRowHeight(
+  view: Editor["view"],
+  position: number,
+  height: number,
+) {
+  const node = view.state.doc.nodeAt(position);
+  if (!node || node.attrs.height === height) return;
+  view.dispatch(
+    view.state.tr.setNodeMarkup(position, undefined, {
+      ...node.attrs,
+      height,
+    }),
+  );
+}
+
+/**
+ * The tallest a row's own content needs, ignoring any height already applied
+ * to it. Used as the drag floor: clamping anywhere below this leaves a dead
+ * zone where the pointer keeps moving but the row - held open by its content,
+ * since a row renders at `max(its own height, its tallest cell)` - visibly
+ * cannot, which is what makes a drag feel like it stopped tracking.
+ *
+ * Clearing the height to measure is safe because TableRowWithHeight's node
+ * view ignores its own attribute mutations, and it is restored before this
+ * returns, so the browser never paints the intermediate state.
+ */
+function measureTableRowContentHeight(row: HTMLTableRowElement) {
+  const previous = row.style.height;
+  row.style.height = "";
+  const natural = Math.max(
+    TABLE_ROW_MIN_HEIGHT,
+    Math.ceil(row.getBoundingClientRect().height),
+  );
+  row.style.height = previous;
+  return natural;
+}
+
+/**
+ * Adds row-height resizing to Tiptap's built-in column-resize support.
+ *
+ * Mirrors TableColumnResize's shape: the drag is previewed purely in the DOM
+ * and committed with a single transaction on release.
+ */
 const TableRowResize = Extension.create({
   name: "tableRowResize",
   addProseMirrorPlugins() {
@@ -447,15 +545,11 @@ const TableRowResize = Extension.create({
           position: number;
           startY: number;
           startHeight: number;
+          minHeight: number;
+          dragged: boolean;
         }
       | undefined;
     let disposeDrag = () => undefined;
-
-    const clearRowHover = (view: Editor["view"]) => {
-      view.dom
-        .querySelectorAll("tr.wikihub-row-resize-target")
-        .forEach((row) => row.classList.remove("wikihub-row-resize-target"));
-    };
 
     const resizeTarget = (event: MouseEvent) => {
       const row = (event.target as HTMLElement | null)?.closest(
@@ -471,80 +565,81 @@ const TableRowResize = Extension.create({
       const nearTop = event.clientY - bounds.top <= TABLE_ROW_RESIZE_ZONE;
       const nearBottom = bounds.bottom - event.clientY <= TABLE_ROW_RESIZE_ZONE;
       const upperRowIndex = nearBottom ? rowIndex : nearTop ? rowIndex - 1 : -1;
-      if (upperRowIndex < 0 || upperRowIndex >= rows.length - 1) return null;
-      return { table, upperRowIndex, lowerRowIndex: upperRowIndex + 1, rows };
+      // Only the table's outer *top* edge is inert - it has no row above it to
+      // resize. The bottom edge resizes the last row like any other boundary,
+      // since a drag only ever changes the row above it.
+      if (upperRowIndex < 0) return null;
+      return { table, upperRowIndex, rows };
     };
 
     return [
       new Plugin({
         props: {
           handleDOMEvents: {
-            mousemove: (view, event) => {
-              if (activeResize || !view.editable) return false;
-              clearRowHover(view);
-              const target = resizeTarget(event);
-              if (target) {
-                target.rows[target.upperRowIndex].classList.add(
-                  "wikihub-row-resize-target",
-                );
-              }
-              return false;
-            },
-            mouseleave: (view) => {
-              if (!activeResize) clearRowHover(view);
-              return false;
-            },
+            // No hover tracking here: the row boundary has no accent line to
+            // light up, so the CSS hitbox's row-resize cursor is the whole
+            // affordance and mousemove has nothing to do.
             mousedown: (view, event) => {
               if (!view.editable || event.button !== 0) return false;
               const target = resizeTarget(event);
               if (!target) return false;
-              
+
               const upperRow = target.rows[target.upperRowIndex];
               const position = tableRowPosition(view, upperRow);
               if (position === null) return false;
 
               event.preventDefault();
-              clearRowHover(view);
-              
+
               const bounds = upperRow.getBoundingClientRect();
               activeResize = {
                 row: upperRow,
                 position,
                 startY: event.clientY,
-                startHeight: Math.max(bounds.height, 32),
+                // Start from what the row currently shows, so the boundary
+                // sits under the pointer from the very first frame.
+                startHeight: Math.max(
+                  TABLE_ROW_MIN_HEIGHT,
+                  Math.round(bounds.height),
+                ),
+                minHeight: measureTableRowContentHeight(upperRow),
+                dragged: false,
               };
               const initialCursor = document.body.style.cursor;
               document.body.style.cursor = "row-resize";
 
               const move = (moveEvent: MouseEvent) => {
                 if (!activeResize) return;
-                const height = Math.max(
-                  32,
-                  Math.min(
-                    2000,
-                    activeResize.startHeight +
-                      moveEvent.clientY -
-                      activeResize.startY,
+                const height = Math.round(
+                  Math.max(
+                    activeResize.minHeight,
+                    Math.min(
+                      2000,
+                      activeResize.startHeight +
+                        moveEvent.clientY -
+                        activeResize.startY,
+                    ),
                   ),
                 );
-                activeResize.row.style.height = `${Math.round(height)}px`;
+                activeResize.dragged = true;
+                activeResize.row.style.height = `${height}px`;
               };
               const end = () => {
                 if (!activeResize) return;
-                const { row: resizedRow, position: rowPosition } = activeResize;
-                const height = normaliseTableRowHeight(resizedRow.style.height);
-                const node = view.state.doc.nodeAt(rowPosition);
-                if (node && height) {
-                  view.dispatch(
-                    view.state.tr.setNodeMarkup(rowPosition, undefined, {
-                      ...node.attrs,
-                      height,
-                    }),
-                  );
-                }
+                const {
+                  row: resizedRow,
+                  position: rowPosition,
+                  dragged,
+                } = activeResize;
                 activeResize = undefined;
                 document.body.style.cursor = initialCursor;
                 disposeDrag();
+
+                // A press that never moved the boundary must leave the
+                // document untouched rather than committing the height the
+                // row happened to be rendering.
+                if (!dragged) return;
+                const height = normaliseTableRowHeight(resizedRow.style.height);
+                if (height) persistTableRowHeight(view, rowPosition, height);
               };
               disposeDrag = () => {
                 window.removeEventListener("mousemove", move);
@@ -1291,6 +1386,25 @@ function ResizableImageComponent({
             >
               <Crop className="size-4" aria-hidden />
             </button>
+            <button
+              type="button"
+              aria-label="Image details"
+              title="Image details"
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => {
+                const src = String(node.attrs.src ?? "");
+                const match = src.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
+                if (match) {
+                  const event = new CustomEvent("wikihub:view-file-details", {
+                    detail: match[1],
+                  });
+                  document.dispatchEvent(event);
+                }
+              }}
+              className="hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+            >
+              <Info className="size-4" aria-hidden />
+            </button>
           </div>
           <Dialog open={captionOpen} onOpenChange={setCaptionOpen}>
             <DialogContent title="Image caption" className="max-w-md">
@@ -1770,7 +1884,11 @@ const editorClassName =
   "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
   "[&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-4 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
   "[&_img]:my-4 [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-border " +
-  "[&_.tableWrapper]:my-4 [&_.tableWrapper]:overflow-x-auto [&_table]:w-full [&_table]:border-collapse [&_th]:min-w-24 [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-semibold [&_td]:min-w-24 [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2 [&_.selectedCell]:bg-primary-subtle";
+  // Table rhythm (margin, padding, line-height) is kept identical to
+  // readerClassName below so a table is the same height in the editor and in
+  // the live preview. Only the editor-only min-w-24 differs, so columns stay
+  // comfortably grabbable while editing.
+  "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_table]:w-full [&_table]:border-collapse [&_th]:min-w-24 [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_th]:leading-[1.45] [&_td]:min-w-24 [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5 [&_td]:leading-[1.45] [&_.selectedCell]:bg-primary-subtle";
 
 // Imported pages are read like documentation, not like an editor canvas.
 // Keep this separate from editorClassName so editing remains comfortable while
@@ -3192,7 +3310,45 @@ export function RichTextEditor({
 }) {
   const [wrapText, setWrapText] = useState(true);
   const [draggingFiles, setDraggingFiles] = useState(false);
+  const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleViewDetails = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      setSelectedAttachmentId(id);
+    };
+    document.addEventListener("wikihub:view-file-details", handleViewDetails);
+    return () => {
+      document.removeEventListener("wikihub:view-file-details", handleViewDetails);
+    };
+  }, []);
+
+  useEffect(() => {
+    const container = editorContainerRef.current;
+    if (!container) return;
+
+    const handleNativeClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element) {
+        const link = target.closest("a");
+        if (link) {
+          const href = link.getAttribute("href") || link.href || "";
+          const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
+          if (match) {
+            event.preventDefault();
+            event.stopPropagation();
+            setSelectedAttachmentId(match[1]);
+          }
+        }
+      }
+    };
+
+    container.addEventListener("click", handleNativeClick, true);
+    return () => {
+      container.removeEventListener("click", handleNativeClick, true);
+    };
+  }, []);
   const internalImageDragRef = useRef(false);
   const normalizedContent = useMemo(
     () => normalizeConfluenceCodeMacros(content),
@@ -3346,11 +3502,18 @@ export function RichTextEditor({
           Drop images or files to upload
         </div>
       ) : null}
+      <AttachmentDetailsModal
+        attachmentId={selectedAttachmentId}
+        onClose={() => setSelectedAttachmentId(null)}
+      />
     </div>
   );
 }
 
 export function RichTextContent({ content }: { content: string }) {
+  const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+
   const normalizedContent = useMemo(
     () => linkifyPlainTextUrls(normalizeConfluenceCodeMacros(content)),
     [content],
@@ -3373,5 +3536,444 @@ export function RichTextContent({ content }: { content: string }) {
     }
   }, [editor, normalizedContent]);
 
-  return <EditorContent editor={editor} />;
+  useEffect(() => {
+    const container = editorContainerRef.current;
+    if (!container) return;
+
+    const handleNativeClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element) {
+        const link = target.closest("a");
+        if (link) {
+          const href = link.getAttribute("href") || link.href || "";
+          const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
+          if (match) {
+            event.preventDefault();
+            event.stopPropagation();
+            setSelectedAttachmentId(match[1]);
+          }
+        }
+      }
+    };
+
+    container.addEventListener("click", handleNativeClick, true);
+    return () => {
+      container.removeEventListener("click", handleNativeClick, true);
+    };
+  }, []);
+
+  return (
+    <div ref={editorContainerRef} className="relative">
+      <EditorContent editor={editor} />
+      <AttachmentDetailsModal
+        attachmentId={selectedAttachmentId}
+        onClose={() => setSelectedAttachmentId(null)}
+      />
+    </div>
+  );
+}
+
+type AttachmentMetadata = {
+  id: string;
+  page_id: string;
+  filename: string;
+  content_type: string;
+  created_at: string;
+  size_bytes: number;
+};
+
+function escapeRegExp(string: string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function HighlightedText({
+  text,
+  query,
+  lineIdx,
+  activeMatchIdx,
+  matches,
+}: {
+  text: string;
+  query: string;
+  lineIdx: number;
+  activeMatchIdx: number;
+  matches: { lineIdx: number; charIdx: number }[];
+}) {
+  if (!query) return <>{text || " "}</>;
+
+  const parts = text.split(new RegExp(`(${escapeRegExp(query)})`, "gi"));
+  let charOffset = 0;
+
+  return (
+    <>
+      {parts.map((part, partIdx) => {
+        const isMatch = part.toLowerCase() === query.toLowerCase();
+        const startOffset = charOffset;
+        charOffset += part.length;
+
+        if (isMatch) {
+          const globalIdx = matches.findIndex(
+            (m) => m.lineIdx === lineIdx && m.charIdx === startOffset,
+          );
+          const isActive = globalIdx === activeMatchIdx;
+
+          return (
+            <mark
+              key={partIdx}
+              className={cn(
+                "rounded-sm px-0.5 font-semibold",
+                isActive
+                  ? "bg-warning text-warning-foreground ring-2 ring-warning"
+                  : "bg-yellow-200 dark:bg-yellow-800 text-foreground",
+              )}
+            >
+              {part}
+            </mark>
+          );
+        }
+        return <span key={partIdx}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+function AttachmentDetailsModal({
+  attachmentId,
+  onClose,
+}: {
+  attachmentId: string | null;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [metadata, setMetadata] = useState<AttachmentMetadata | null>(null);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const [textLoading, setTextLoading] = useState(false);
+  const [wrapLines, setWrapLines] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!attachmentId) {
+      setMetadata(null);
+      setTextContent(null);
+      setError(null);
+      setSearchQuery("");
+      setActiveMatchIdx(0);
+      return;
+    }
+
+    async function fetchDetails() {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/v1/attachments/${attachmentId}`);
+        if (!response.ok) {
+          throw new Error("Could not retrieve file details.");
+        }
+        const data = (await response.json()) as AttachmentMetadata;
+        setMetadata(data);
+
+        // If it's a text/code file, fetch its raw content!
+        const isText =
+          data.content_type.startsWith("text/") ||
+          /\.(txt|py|js|ts|tsx|jsx|json|css|html|md|sh|yml|yaml|xml|ini|conf)$/i.test(
+            data.filename,
+          );
+        if (isText) {
+          setTextLoading(true);
+          try {
+            const contentUrl = `/api/v1/attachments/${attachmentId}/content`;
+            const contentRes = await fetch(contentUrl);
+            if (contentRes.ok) {
+              const text = await contentRes.text();
+              setTextContent(text);
+            }
+          } catch (e) {
+            console.error("Error reading file content", e);
+          } finally {
+            setTextLoading(false);
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "An error occurred.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void fetchDetails();
+  }, [attachmentId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    if (attachmentId) {
+      window.addEventListener("keydown", handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [attachmentId]);
+
+  if (!attachmentId) return null;
+
+  const contentUrl = `/api/v1/attachments/${attachmentId}/content`;
+
+  // Format file size helper
+  const formatSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
+  const formatDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString();
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const isImage = metadata ? metadata.content_type.startsWith("image/") : false;
+  const isPdf = metadata ? metadata.content_type === "application/pdf" : false;
+  const lines = textContent !== null ? textContent.split(/\r?\n/) : [];
+
+  // Compute all matches
+  const matches = useMemo(() => {
+    if (!searchQuery || !textContent) return [];
+    const queryLower = searchQuery.toLowerCase();
+    const allMatches: { lineIdx: number; charIdx: number }[] = [];
+
+    lines.forEach((line, lineIdx) => {
+      let charIdx = line.toLowerCase().indexOf(queryLower);
+      while (charIdx !== -1) {
+        allMatches.push({ lineIdx, charIdx });
+        charIdx = line.toLowerCase().indexOf(queryLower, charIdx + 1);
+      }
+    });
+
+    return allMatches;
+  }, [searchQuery, textContent, lines]);
+
+  const handleSearchInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (matches.length === 0) return;
+      if (event.shiftKey) {
+        setActiveMatchIdx((prev) => (prev - 1 + matches.length) % matches.length);
+      } else {
+        setActiveMatchIdx((prev) => (prev + 1) % matches.length);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (matches.length > 0 && matches[activeMatchIdx]) {
+      const lineIdx = matches[activeMatchIdx].lineIdx;
+      const element = document.querySelector(`[data-line-idx="${lineIdx}"]`);
+      if (element) {
+        element.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    }
+  }, [activeMatchIdx, matches]);
+
+  return (
+    <Dialog open={!!attachmentId} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent title="Chi tiết file đính kèm" className="max-w-3xl">
+        {loading ? (
+          <div className="flex h-48 flex-col items-center justify-center gap-2">
+            <Loader2 className="text-muted-foreground size-8 animate-spin" />
+            <p className="text-muted-foreground text-sm">Đang tải chi tiết...</p>
+          </div>
+        ) : error ? (
+          <div className="flex h-48 flex-col items-center justify-center gap-2 text-danger">
+            <p className="text-sm font-semibold">{error}</p>
+            <Button variant="secondary" onClick={onClose}>
+              Đóng
+            </Button>
+          </div>
+        ) : metadata ? (
+          <div className="space-y-4">
+            {/* Compact details bar */}
+            <div className="bg-surface-sunken flex flex-wrap gap-x-6 gap-y-2 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground">
+              <div>
+                <span className="font-semibold text-foreground">File: </span>
+                <span className="break-all">{metadata.filename}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-foreground">Dung lượng: </span>
+                <span>{formatSize(metadata.size_bytes)}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-foreground">Loại: </span>
+                <span>{metadata.content_type}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-foreground">Đã tải lên: </span>
+                <span>{formatDate(metadata.created_at)}</span>
+              </div>
+            </div>
+
+            <div className="border-border overflow-hidden rounded-lg border">
+              <div className="bg-surface-sunken flex items-center justify-between border-b px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <span>Xem trước</span>
+                {textContent !== null && (
+                  <div className="flex items-center gap-3 normal-case tracking-normal">
+                    {/* Search bar */}
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative">
+                        <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          ref={searchInputRef}
+                          value={searchQuery}
+                          onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setActiveMatchIdx(0);
+                          }}
+                          onKeyDown={handleSearchInputKeyDown}
+                          placeholder="Tìm kiếm nội dung..."
+                          className="h-7 w-40 pl-7 pr-2 text-xs"
+                        />
+                      </div>
+                      {matches.length > 0 && (
+                        <div className="flex items-center gap-1 text-muted-foreground text-xs select-none">
+                          <span className="font-medium text-foreground">
+                            {activeMatchIdx + 1}/{matches.length}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveMatchIdx(
+                                (prev) => (prev - 1 + matches.length) % matches.length,
+                              )
+                            }
+                            className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
+                            title="Kết quả trước"
+                          >
+                            <ChevronDown className="size-4 rotate-180" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveMatchIdx((prev) => (prev + 1) % matches.length)
+                            }
+                            className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
+                            title="Kết quả tiếp theo"
+                          >
+                            <ChevronDown className="size-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {/* Wrap Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setWrapLines((w) => !w)}
+                      className={cn(
+                        "hover:bg-surface-hover focus-visible:ring-ring flex size-7 cursor-pointer items-center justify-center rounded border border-transparent transition-all duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                        wrapLines
+                          ? "bg-primary-subtle text-primary border-primary-subtle font-medium"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      title={wrapLines ? "Tắt tự động xuống hàng" : "Bật tự động xuống hàng"}
+                    >
+                      <WrapText className="size-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="bg-surface flex items-center justify-center p-4 min-h-32 max-h-96 overflow-auto">
+                {isImage ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={contentUrl}
+                    alt={metadata.filename}
+                    className="max-h-80 w-auto rounded border object-contain shadow-sm"
+                  />
+                ) : textContent !== null ? (
+                  <div className="bg-surface-sunken border-border w-full overflow-auto rounded border font-mono text-xs max-h-80 select-text leading-relaxed">
+                    {lines.map((line, idx) => (
+                      <div
+                        key={idx}
+                        data-line-idx={idx}
+                        className={cn(
+                          "flex hover:bg-surface-hover/30",
+                          matches[activeMatchIdx]?.lineIdx === idx &&
+                            searchQuery &&
+                            "bg-warning-subtle/20 hover:bg-warning-subtle/30",
+                        )}
+                      >
+                        <span className="text-muted-foreground/60 w-12 shrink-0 border-r border-border pr-2.5 text-right select-none tabular-nums">
+                          {idx + 1}
+                        </span>
+                        <span
+                          className={cn(
+                            "pl-3",
+                            wrapLines ? "whitespace-pre-wrap break-all" : "",
+                          )}
+                        >
+                          <HighlightedText
+                            text={line}
+                            query={searchQuery}
+                            lineIdx={idx}
+                            activeMatchIdx={activeMatchIdx}
+                            matches={matches}
+                          />
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : textLoading ? (
+                  <div className="flex flex-col items-center justify-center gap-2 py-4">
+                    <Loader2 className="text-muted-foreground size-5 animate-spin" />
+                    <span className="text-muted-foreground text-xs">Đang tải nội dung...</span>
+                  </div>
+                ) : isPdf ? (
+                  <object
+                    data={contentUrl}
+                    type="application/pdf"
+                    className="h-80 w-full rounded border"
+                  >
+                    <div className="text-center p-4">
+                      <FileText className="text-muted-foreground mx-auto size-12" />
+                      <p className="text-muted-foreground mt-2 text-sm">Trình duyệt không hỗ trợ xem trực tiếp PDF.</p>
+                      <a href={contentUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline mt-1 inline-block text-sm">Mở PDF trong tab mới</a>
+                    </div>
+                  </object>
+                ) : (
+                  <div className="text-center py-6">
+                    <FileText className="text-muted-foreground mx-auto size-12" />
+                    <p className="text-muted-foreground mt-2 text-sm">Không hỗ trợ xem trước định dạng này.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="secondary" onClick={onClose}>
+                Đóng
+              </Button>
+              <Button asChild>
+                <a href={contentUrl} download={metadata.filename} className="gap-1.5">
+                  <Download className="size-4" />
+                  <span>Tải file về</span>
+                </a>
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
 }
