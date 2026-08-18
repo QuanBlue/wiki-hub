@@ -3544,6 +3544,9 @@ export function RichTextEditor({
         </div>
       ) : null}
       <AttachmentDetailsModal
+        // Keying on the attachment makes each one a fresh mount, so the modal
+        // never has to reset its own state on the way out.
+        key={selectedAttachmentId ?? "none"}
         attachmentId={selectedAttachmentId}
         onClose={() => setSelectedAttachmentId(null)}
       />
@@ -3635,6 +3638,9 @@ export function RichTextContent({ content }: { content: string }) {
     <div ref={editorContainerRef} className="relative">
       <EditorContent editor={editor} />
       <AttachmentDetailsModal
+        // Keying on the attachment makes each one a fresh mount, so the modal
+        // never has to reset its own state on the way out.
+        key={selectedAttachmentId ?? "none"}
         attachmentId={selectedAttachmentId}
         onClose={() => setSelectedAttachmentId(null)}
       />
@@ -3671,14 +3677,19 @@ function HighlightedText({
   if (!query) return <>{text || " "}</>;
 
   const parts = text.split(new RegExp(`(${escapeRegExp(query)})`, "gi"));
-  let charOffset = 0;
+  // Resolve every fragment's offset within the line up front. Carrying a
+  // running counter through the map below would mean mutating a variable from
+  // inside render, which is not safe to repeat across renders.
+  const segments: { part: string; start: number }[] = [];
+  for (let index = 0, start = 0; index < parts.length; index += 1) {
+    segments.push({ part: parts[index], start });
+    start += parts[index].length;
+  }
 
   return (
     <>
-      {parts.map((part, partIdx) => {
+      {segments.map(({ part, start: startOffset }, partIdx) => {
         const isMatch = part.toLowerCase() === query.toLowerCase();
-        const startOffset = charOffset;
-        charOffset += part.length;
 
         if (isMatch) {
           const globalIdx = matches.findIndex(
@@ -3725,14 +3736,10 @@ function AttachmentDetailsModal({
 
   // All hooks must run unconditionally (rules of hooks)
   useEffect(() => {
-    if (!attachmentId) {
-      setMetadata(null);
-      setTextContent(null);
-      setError(null);
-      setSearchQuery("");
-      setActiveMatchIdx(0);
-      return;
-    }
+    // Nothing to clear when there is no attachment: the render sites key this
+    // component by id, so closing the modal unmounts this state rather than
+    // asking the effect to reset it.
+    if (!attachmentId) return;
 
     async function fetchDetails() {
       setLoading(true);
