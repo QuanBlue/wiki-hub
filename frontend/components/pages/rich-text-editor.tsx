@@ -2872,7 +2872,9 @@ function RichTextToolbar({
                   attrs: {
                     href: uploaded.content_url,
                     title: uploaded.filename,
-                    target: "_blank",
+                    // No target="_blank" — attachment links are intercepted
+                    // by the native capture listener and must NOT open new tabs.
+                    target: "_self",
                   },
                 },
               ],
@@ -3328,25 +3330,64 @@ export function RichTextEditor({
     const container = editorContainerRef.current;
     if (!container) return;
 
-    const handleNativeClick = (event: MouseEvent) => {
+    // Intercept attachment link clicks at the lowest DOM level possible.
+    // We must stop both mousedown AND click events because ProseMirror
+    // consumes mousedown and may prevent the click event from firing,
+    // while the browser can still follow an <a> link via the mouseup/click
+    // sequence if we only intercept one. stopImmediatePropagation() ensures
+    // no other capture-phase listener (including ProseMirror's own) sees
+    // these events for attachment links.
+    const interceptAttachmentLink = (event: MouseEvent, onMatch: (id: string) => void) => {
       const target = event.target;
-      if (target instanceof Element) {
-        const link = target.closest("a");
-        if (link) {
-          const href = link.getAttribute("href") || link.href || "";
-          const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
-          if (match) {
-            event.preventDefault();
-            event.stopPropagation();
-            setSelectedAttachmentId(match[1]);
-          }
-        }
+      if (!(target instanceof Element)) return;
+      const link = target.closest("a");
+      if (!link) return;
+      const href = link.getAttribute("href") || "";
+      const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
+      if (match) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        onMatch(match[1]);
       }
     };
 
-    container.addEventListener("click", handleNativeClick, true);
+    let pendingId: string | null = null;
+
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const link = target.closest("a");
+      if (!link) return;
+      const href = link.getAttribute("href") || "";
+      const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
+      if (match) {
+        // Prevent the browser from treating this as a link activation,
+        // but allow ProseMirror to still update the cursor position.
+        event.preventDefault();
+        pendingId = match[1];
+      }
+    };
+
+    const handleClick = (event: MouseEvent) => {
+      interceptAttachmentLink(event, (id) => {
+        setSelectedAttachmentId(id);
+        pendingId = null;
+      });
+      // If mousedown was intercepted but click wasn't (ProseMirror ate it),
+      // open the modal using the id captured on mousedown.
+      if (pendingId) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setSelectedAttachmentId(pendingId);
+        pendingId = null;
+      }
+    };
+
+    container.addEventListener("mousedown", handleMouseDown, true);
+    container.addEventListener("click", handleClick, true);
     return () => {
-      container.removeEventListener("click", handleNativeClick, true);
+      container.removeEventListener("mousedown", handleMouseDown, true);
+      container.removeEventListener("click", handleClick, true);
     };
   }, []);
   const internalImageDragRef = useRef(false);
@@ -3540,25 +3581,53 @@ export function RichTextContent({ content }: { content: string }) {
     const container = editorContainerRef.current;
     if (!container) return;
 
-    const handleNativeClick = (event: MouseEvent) => {
+    const interceptAttachmentLink = (event: MouseEvent, onMatch: (id: string) => void) => {
       const target = event.target;
-      if (target instanceof Element) {
-        const link = target.closest("a");
-        if (link) {
-          const href = link.getAttribute("href") || link.href || "";
-          const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
-          if (match) {
-            event.preventDefault();
-            event.stopPropagation();
-            setSelectedAttachmentId(match[1]);
-          }
-        }
+      if (!(target instanceof Element)) return;
+      const link = target.closest("a");
+      if (!link) return;
+      const href = link.getAttribute("href") || "";
+      const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
+      if (match) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        onMatch(match[1]);
       }
     };
 
-    container.addEventListener("click", handleNativeClick, true);
+    let pendingId: string | null = null;
+
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const link = target.closest("a");
+      if (!link) return;
+      const href = link.getAttribute("href") || "";
+      const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
+      if (match) {
+        event.preventDefault();
+        pendingId = match[1];
+      }
+    };
+
+    const handleClick = (event: MouseEvent) => {
+      interceptAttachmentLink(event, (id) => {
+        setSelectedAttachmentId(id);
+        pendingId = null;
+      });
+      if (pendingId) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setSelectedAttachmentId(pendingId);
+        pendingId = null;
+      }
+    };
+
+    container.addEventListener("mousedown", handleMouseDown, true);
+    container.addEventListener("click", handleClick, true);
     return () => {
-      container.removeEventListener("click", handleNativeClick, true);
+      container.removeEventListener("mousedown", handleMouseDown, true);
+      container.removeEventListener("click", handleClick, true);
     };
   }, []);
 
@@ -3652,9 +3721,9 @@ function AttachmentDetailsModal({
   const [wrapLines, setWrapLines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeMatchIdx, setActiveMatchIdx] = useState(0);
-
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // All hooks must run unconditionally (rules of hooks)
   useEffect(() => {
     if (!attachmentId) {
       setMetadata(null);
@@ -3670,13 +3739,10 @@ function AttachmentDetailsModal({
       setError(null);
       try {
         const response = await fetch(`/api/v1/attachments/${attachmentId}`);
-        if (!response.ok) {
-          throw new Error("Could not retrieve file details.");
-        }
+        if (!response.ok) throw new Error("Could not retrieve file details.");
         const data = (await response.json()) as AttachmentMetadata;
         setMetadata(data);
 
-        // If it's a text/code file, fetch its raw content!
         const isText =
           data.content_type.startsWith("text/") ||
           /\.(txt|py|js|ts|tsx|jsx|json|css|html|md|sh|yml|yaml|xml|ini|conf)$/i.test(
@@ -3685,12 +3751,8 @@ function AttachmentDetailsModal({
         if (isText) {
           setTextLoading(true);
           try {
-            const contentUrl = `/api/v1/attachments/${attachmentId}/content`;
-            const contentRes = await fetch(contentUrl);
-            if (contentRes.ok) {
-              const text = await contentRes.text();
-              setTextContent(text);
-            }
+            const res = await fetch(`/api/v1/attachments/${attachmentId}/content`);
+            if (res.ok) setTextContent(await res.text());
           } catch (e) {
             console.error("Error reading file content", e);
           } finally {
@@ -3715,19 +3777,43 @@ function AttachmentDetailsModal({
         searchInputRef.current?.select();
       }
     };
-    if (attachmentId) {
-      window.addEventListener("keydown", handleKeyDown);
-    }
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+    if (attachmentId) window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [attachmentId]);
 
+  const lines = useMemo(
+    () => (textContent !== null ? textContent.split(/\r?\n/) : []),
+    [textContent],
+  );
+
+  const matches = useMemo(() => {
+    if (!searchQuery || !textContent) return [];
+    const queryLower = searchQuery.toLowerCase();
+    const allMatches: { lineIdx: number; charIdx: number }[] = [];
+    lines.forEach((line, lineIdx) => {
+      let charIdx = line.toLowerCase().indexOf(queryLower);
+      while (charIdx !== -1) {
+        allMatches.push({ lineIdx, charIdx });
+        charIdx = line.toLowerCase().indexOf(queryLower, charIdx + 1);
+      }
+    });
+    return allMatches;
+  }, [searchQuery, textContent, lines]);
+
+  useEffect(() => {
+    if (matches.length > 0 && matches[activeMatchIdx]) {
+      const element = document.querySelector(
+        `[data-line-idx="${matches[activeMatchIdx].lineIdx}"]`,
+      );
+      if (element) element.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [activeMatchIdx, matches]);
+
+  // All hooks above — safe to do early return now
   if (!attachmentId) return null;
 
   const contentUrl = `/api/v1/attachments/${attachmentId}/content`;
 
-  // Format file size helper
   const formatSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes";
     const k = 1024;
@@ -3738,8 +3824,7 @@ function AttachmentDetailsModal({
 
   const formatDate = (dateStr: string) => {
     try {
-      const date = new Date(dateStr);
-      return date.toLocaleString();
+      return new Date(dateStr).toLocaleString();
     } catch {
       return dateStr;
     }
@@ -3747,24 +3832,6 @@ function AttachmentDetailsModal({
 
   const isImage = metadata ? metadata.content_type.startsWith("image/") : false;
   const isPdf = metadata ? metadata.content_type === "application/pdf" : false;
-  const lines = textContent !== null ? textContent.split(/\r?\n/) : [];
-
-  // Compute all matches
-  const matches = useMemo(() => {
-    if (!searchQuery || !textContent) return [];
-    const queryLower = searchQuery.toLowerCase();
-    const allMatches: { lineIdx: number; charIdx: number }[] = [];
-
-    lines.forEach((line, lineIdx) => {
-      let charIdx = line.toLowerCase().indexOf(queryLower);
-      while (charIdx !== -1) {
-        allMatches.push({ lineIdx, charIdx });
-        charIdx = line.toLowerCase().indexOf(queryLower, charIdx + 1);
-      }
-    });
-
-    return allMatches;
-  }, [searchQuery, textContent, lines]);
 
   const handleSearchInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
@@ -3778,16 +3845,6 @@ function AttachmentDetailsModal({
     }
   };
 
-  useEffect(() => {
-    if (matches.length > 0 && matches[activeMatchIdx]) {
-      const lineIdx = matches[activeMatchIdx].lineIdx;
-      const element = document.querySelector(`[data-line-idx="${lineIdx}"]`);
-      if (element) {
-        element.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
-    }
-  }, [activeMatchIdx, matches]);
-
   return (
     <Dialog open={!!attachmentId} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent title="Chi tiết file đính kèm" className="max-w-3xl">
@@ -3799,9 +3856,7 @@ function AttachmentDetailsModal({
         ) : error ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2 text-danger">
             <p className="text-sm font-semibold">{error}</p>
-            <Button variant="secondary" onClick={onClose}>
-              Đóng
-            </Button>
+            <Button variant="secondary" onClick={onClose}>Đóng</Button>
           </div>
         ) : metadata ? (
           <div className="space-y-4">
@@ -3830,7 +3885,6 @@ function AttachmentDetailsModal({
                 <span>Xem trước</span>
                 {textContent !== null && (
                   <div className="flex items-center gap-3 normal-case tracking-normal">
-                    {/* Search bar */}
                     <div className="flex items-center gap-1.5">
                       <div className="relative">
                         <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -3847,7 +3901,7 @@ function AttachmentDetailsModal({
                         />
                       </div>
                       {matches.length > 0 && (
-                        <div className="flex items-center gap-1 text-muted-foreground text-xs select-none">
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground select-none">
                           <span className="font-medium text-foreground">
                             {activeMatchIdx + 1}/{matches.length}
                           </span>
@@ -3876,7 +3930,6 @@ function AttachmentDetailsModal({
                         </div>
                       )}
                     </div>
-                    {/* Wrap Toggle */}
                     <button
                       type="button"
                       onClick={() => setWrapLines((w) => !w)}
@@ -3917,12 +3970,7 @@ function AttachmentDetailsModal({
                         <span className="text-muted-foreground/60 w-12 shrink-0 border-r border-border pr-2.5 text-right select-none tabular-nums">
                           {idx + 1}
                         </span>
-                        <span
-                          className={cn(
-                            "pl-3",
-                            wrapLines ? "whitespace-pre-wrap break-all" : "",
-                          )}
-                        >
+                        <span className={cn("pl-3", wrapLines ? "whitespace-pre-wrap break-all" : "")}>
                           <HighlightedText
                             text={line}
                             query={searchQuery}
@@ -3947,14 +3995,25 @@ function AttachmentDetailsModal({
                   >
                     <div className="text-center p-4">
                       <FileText className="text-muted-foreground mx-auto size-12" />
-                      <p className="text-muted-foreground mt-2 text-sm">Trình duyệt không hỗ trợ xem trực tiếp PDF.</p>
-                      <a href={contentUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline mt-1 inline-block text-sm">Mở PDF trong tab mới</a>
+                      <p className="text-muted-foreground mt-2 text-sm">
+                        Trình duyệt không hỗ trợ xem trực tiếp PDF.
+                      </p>
+                      <a
+                        href={contentUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline mt-1 inline-block text-sm"
+                      >
+                        Mở PDF trong tab mới
+                      </a>
                     </div>
                   </object>
                 ) : (
                   <div className="text-center py-6">
                     <FileText className="text-muted-foreground mx-auto size-12" />
-                    <p className="text-muted-foreground mt-2 text-sm">Không hỗ trợ xem trước định dạng này.</p>
+                    <p className="text-muted-foreground mt-2 text-sm">
+                      Không hỗ trợ xem trước định dạng này.
+                    </p>
                   </div>
                 )}
               </div>

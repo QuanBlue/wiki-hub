@@ -44,6 +44,15 @@ class AttachmentUploadRead(BaseModel):
     content_url: str
 
 
+class AttachmentMetadataRead(BaseModel):
+    id: uuid.UUID
+    page_id: uuid.UUID
+    filename: str
+    content_type: str
+    size_bytes: int
+    created_at: str
+
+
 def _safe_filename(filename: str | None) -> str:
     name = Path(filename or "").name.strip()
     if not name or name in {".", ".."}:
@@ -99,6 +108,7 @@ async def upload_attachment(
         filename=filename,
         content_type=content_type,
         object_key=f"attachments/{page.id}/{attachment_id}/{filename}",
+        size_bytes=len(data),
     )
     session.add(attachment)
     await storage.put(attachment.object_key, data, content_type=content_type)
@@ -108,6 +118,34 @@ async def upload_attachment(
         filename=attachment.filename,
         content_type=attachment.content_type,
         content_url=f"/api/v1/attachments/{attachment.id}/content",
+    )
+
+
+@router.get("/{attachment_id}", response_model=AttachmentMetadataRead, summary="Get attachment metadata")
+async def get_attachment_metadata(
+    attachment_id: uuid.UUID,
+    _user: CurrentUser,
+    session: DbSession,
+) -> AttachmentMetadataRead:
+    """Return file metadata (name, type, size, date) for the attachment details modal."""
+    attachment = await session.get(PageAttachment, attachment_id)
+    if attachment is None:
+        raise NotFoundError("Attachment not found.")
+    page = await session.get(WikiPage, attachment.page_id)
+    if page is None:
+        raise NotFoundError("Attachment page not found.")
+    space = await session.get(Space, page.space_id)
+    if space is None:
+        raise NotFoundError("Attachment space not found.")
+    await SpaceService(session).permissions.require(space, _user, Permission.view)
+    await PageService(session).require_page_view(page, _user)
+    return AttachmentMetadataRead(
+        id=attachment.id,
+        page_id=attachment.page_id,
+        filename=attachment.filename,
+        content_type=attachment.content_type,
+        size_bytes=attachment.size_bytes,
+        created_at=attachment.created_at.isoformat(),
     )
 
 
@@ -133,7 +171,7 @@ async def read_attachment(
         attachment.content_type.startswith("image/") or attachment.content_type == "application/pdf"
     )
     disposition = "inline" if inline else "attachment"
-    filename = re.sub(r"[\r\n\\\"]", "", attachment.filename)
+    filename = re.sub(r'[\r\n\\"]+', "", attachment.filename)
     return Response(
         content=await storage.get(attachment.object_key),
         media_type=attachment.content_type,

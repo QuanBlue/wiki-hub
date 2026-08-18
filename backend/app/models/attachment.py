@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy import BigInteger, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,3 +23,4 @@ class PageAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(255), nullable=False, default="application/octet-stream"
     )
     object_key: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
