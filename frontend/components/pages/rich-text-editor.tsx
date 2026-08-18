@@ -18,6 +18,8 @@ import {
   mergeAttributes,
 } from "@tiptap/core";
 import { NodeSelection, Plugin } from "@tiptap/pm/state";
+import { Fragment, Slice } from "@tiptap/pm/model";
+import { dropPoint } from "@tiptap/pm/transform";
 import { TableMap } from "@tiptap/pm/tables";
 import {
   EditorContent,
@@ -3415,44 +3417,46 @@ export function RichTextEditor({
     editorProps: {
       attributes: { class: editorClassName },
       handleDrop(view, event) {
-        if (
-          internalImageDragRef.current &&
-          typeof draggedImagePosRef.current === "number"
-        ) {
-          const fromPos = draggedImagePosRef.current;
-          const dropCoords = view.posAtCoords({
-            left: event.clientX,
-            top: event.clientY,
-          });
-          if (dropCoords) {
-            const node = view.state.doc.nodeAt(fromPos);
-            if (node && node.type.name === "image") {
-              event.preventDefault();
-              event.stopPropagation();
-              internalImageDragRef.current = false;
-              const posToMove = draggedImagePosRef.current;
-              draggedImagePosRef.current = null;
+        // Tiptap's default node view `stopEvent` hides `dragstart` from
+        // ProseMirror whenever the drag begins on a child of the wrapper - the
+        // <img> here - so `view.dragging` is never set. Left to its default,
+        // ProseMirror then treats the drop as an external one: it pastes a copy
+        // parsed from the drag's text/html and never deletes the source, which
+        // is what left a duplicate behind. Own the drop instead and move the
+        // node ourselves.
+        if (!internalImageDragRef.current) return false;
+        const fromPos = draggedImagePosRef.current;
+        internalImageDragRef.current = false;
+        draggedImagePosRef.current = null;
+        // Every path below returns true, which makes ProseMirror call
+        // preventDefault: a drop we cannot place must be a no-op, never a copy.
+        if (typeof fromPos !== "number") return true;
+        const node = view.state.doc.nodeAt(fromPos);
+        if (!node || node.type.name !== "image") return true;
+        const dropCoords = view.posAtCoords({
+          left: event.clientX,
+          top: event.clientY,
+        });
+        if (!dropCoords) return true;
+        const targetPos = dropCoords.pos;
+        // Dropped back onto itself: nothing to do.
+        if (targetPos >= fromPos && targetPos <= fromPos + node.nodeSize)
+          return true;
 
-              const targetPos = dropCoords.pos;
-              if (
-                targetPos >= posToMove &&
-                targetPos <= posToMove + node.nodeSize
-              ) {
-                return true;
-              }
-              const tr = view.state.tr;
-              tr.delete(posToMove, posToMove + node.nodeSize);
-              const mappedTargetPos = tr.mapping.map(targetPos);
-              tr.insert(mappedTargetPos, node);
-              tr.setSelection(NodeSelection.create(tr.doc, mappedTargetPos));
-              view.dispatch(tr);
-              return true;
-            }
-          }
-          internalImageDragRef.current = false;
-          draggedImagePosRef.current = null;
-        }
-        return false;
+        const tr = view.state.tr;
+        tr.delete(fromPos, fromPos + node.nodeSize);
+        const mappedTargetPos = tr.mapping.map(targetPos);
+        // A raw text position is not always a place a block image may live -
+        // mid-paragraph, for one. dropPoint finds the nearest spot that fits.
+        const imageSlice = new Slice(Fragment.from(node), 0, 0);
+        const insertPos =
+          dropPoint(tr.doc, mappedTargetPos, imageSlice) ?? mappedTargetPos;
+        tr.insert(insertPos, node);
+        const inserted = tr.doc.nodeAt(insertPos);
+        if (inserted && NodeSelection.isSelectable(inserted))
+          tr.setSelection(NodeSelection.create(tr.doc, insertPos));
+        view.dispatch(tr);
+        return true;
       },
     },
     onUpdate: ({ editor: updatedEditor }) => emitEditorContent(updatedEditor),
@@ -3506,7 +3510,12 @@ export function RichTextEditor({
     };
     const onDrop = (event: DragEvent) => {
       if (internalImageDragRef.current) {
-        internalImageDragRef.current = false;
+        // Only the overlay is cleared here. This listener runs in the capture
+        // phase, ahead of ProseMirror's own drop handler, so resetting the drag
+        // refs would leave `handleDrop` above blind to the move in flight and
+        // the image would be copied instead of moved. Calling preventDefault
+        // would be just as bad: ProseMirror skips events whose default is
+        // already prevented. onDropCleanup below settles the refs afterwards.
         setDraggingFiles(false);
         return;
       }
@@ -3521,9 +3530,7 @@ export function RichTextEditor({
       if (position) editor?.commands.setTextSelection(position.pos);
       void handleDroppedFiles(event.dataTransfer.files);
     };
-    const onInternalImageDragStart = (
-      event: Event,
-    ) => {
+    const onInternalImageDragStart = (event: Event) => {
       internalImageDragRef.current = true;
       const customEvt = event as CustomEvent<{ pos?: number }>;
       if (typeof customEvt.detail?.pos === "number") {
@@ -3536,11 +3543,21 @@ export function RichTextEditor({
       draggedImagePosRef.current = null;
       setDraggingFiles(false);
     };
+    // Bubble phase, so it settles the refs only after ProseMirror's drop
+    // handler has had them. The node view's own dragend cannot be relied on:
+    // a successful move re-creates it, and the detached element may never see
+    // the event.
+    const onDropCleanup = () => {
+      internalImageDragRef.current = false;
+      draggedImagePosRef.current = null;
+      setDraggingFiles(false);
+    };
 
     container.addEventListener("dragenter", onDragEnter, true);
     container.addEventListener("dragover", onDragOver, true);
     container.addEventListener("dragleave", onDragLeave, true);
     container.addEventListener("drop", onDrop, true);
+    container.addEventListener("drop", onDropCleanup);
     container.addEventListener(
       "wikihub:internal-image-drag-start",
       onInternalImageDragStart,
@@ -3554,6 +3571,7 @@ export function RichTextEditor({
       container.removeEventListener("dragover", onDragOver, true);
       container.removeEventListener("dragleave", onDragLeave, true);
       container.removeEventListener("drop", onDrop, true);
+      container.removeEventListener("drop", onDropCleanup);
       container.removeEventListener(
         "wikihub:internal-image-drag-start",
         onInternalImageDragStart,

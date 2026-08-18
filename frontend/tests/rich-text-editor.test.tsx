@@ -305,6 +305,69 @@ describe("RichTextEditor images", () => {
       );
     });
   });
+
+  it("moves a dragged image instead of leaving a copy behind", async () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <RichTextEditor
+        content={
+          '<p>first</p><img src="/api/v1/attachments/a/content" alt="Diagram"><p>second</p>'
+        }
+        onChange={onChange}
+      />,
+    );
+
+    const image = await screen.findByAltText("Diagram");
+    const editable = container.querySelector(".ProseMirror") as HTMLElement;
+    const paragraphs = editable.querySelectorAll(":scope > p");
+    const target = paragraphs[paragraphs.length - 1] as HTMLElement;
+    const targetText = target.firstChild as Text;
+
+    // ProseMirror resolves a drop point through these two and jsdom implements
+    // neither. Point both at the end of the last paragraph.
+    document.elementFromPoint = () => target;
+    (
+      document as unknown as { caretPositionFromPoint: () => unknown }
+    ).caretPositionFromPoint = () => ({
+      offsetNode: targetText,
+      offset: targetText.length,
+    });
+
+    // Chrome fills a native image drag with the image's own markup, and that is
+    // what ProseMirror used to paste as a second copy while the source stayed
+    // put - tiptap's node view hides `dragstart` from it, so it cannot tell the
+    // drag apart from an external one.
+    const store: Record<string, string> = {
+      "text/html": '<img src="/api/v1/attachments/a/content" alt="Diagram">',
+      "text/plain": "",
+    };
+    const dataTransfer = {
+      types: Object.keys(store),
+      files: [],
+      effectAllowed: "all",
+      dropEffect: "none",
+      getData: (type: string) => store[type] ?? "",
+      setData: (type: string, value: string) => {
+        store[type] = value;
+      },
+      clearData: () => {
+        for (const key of Object.keys(store)) delete store[key];
+      },
+      setDragImage: () => {},
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(image, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer, clientX: 10, clientY: 400 });
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalled();
+    });
+    const html = onChange.mock.calls.at(-1)?.[0] as string;
+    expect(html.match(/<img/g) ?? []).toHaveLength(1);
+    // Landed after the paragraph it was dropped on rather than back where it
+    // started, so the move really happened.
+    expect(html.indexOf("<img")).toBeGreaterThan(html.indexOf("second"));
+  });
 });
 
 describe("RichTextEditor tables", () => {
