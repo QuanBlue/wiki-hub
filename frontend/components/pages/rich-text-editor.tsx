@@ -856,6 +856,15 @@ const imageResizeHandles: Array<{
   },
 ];
 
+/**
+ * Trims the float noise out of a value on its way into a style attribute.
+ * 100 / 0.3 is 333.33333333333337 in binary floating point, which is both
+ * unreadable in the DOM and awkward to assert on.
+ */
+function roundForCss(value: number) {
+  return Number(value.toFixed(4));
+}
+
 function ResizableImageComponent({
   editor,
   getPos,
@@ -911,20 +920,14 @@ function ResizableImageComponent({
         ? displayWidth
         : displayWidth * crop.width
       : undefined;
-  const croppedDisplayHeight =
-    crop && croppedDisplayWidth
-      ? Number(
-          (
-            (croppedDisplayWidth * crop.height) /
-            (imageAspectRatio * crop.width)
-          ).toPrecision(12),
-        )
-      : undefined;
-  const croppedSourceWidth =
-    crop && croppedDisplayWidth ? croppedDisplayWidth / crop.width : undefined;
-  const croppedSourceHeight =
-    crop && croppedDisplayHeight
-      ? croppedDisplayHeight / crop.height
+  // The visible crop's own aspect ratio: the selected fraction of the source,
+  // in the source's proportions. Everything about the cropped frame is laid
+  // out from this ratio and relative units, so the frame can shrink with its
+  // container - a fixed pixel height would keep the frame at its original size
+  // and let the page clip whatever no longer fits.
+  const croppedAspectRatio =
+    crop && crop.height > 0
+      ? roundForCss((crop.width / crop.height) * imageAspectRatio)
       : undefined;
   const showImageTools =
     canResize && (hovered || resizing || captionOpen || cropOpen);
@@ -1280,14 +1283,19 @@ function ResizableImageComponent({
         style={
           crop
             ? {
+                // A definite pixel width keeps the frame at the size the crop
+                // was saved at, while max-width lets it shrink with a narrower
+                // column the way an uncropped image does. Percentages here
+                // would be circular - the figure is shrink-to-fit around this
+                // very element - and collapse the frame to nothing.
                 width: croppedDisplayWidth
                   ? `${croppedDisplayWidth}px`
                   : undefined,
-                // Set both dimensions from the selected source rectangle.
-                // This avoids aspect-ratio rounding and transform layout
-                // quirks that could hide content along the lower edge.
-                height: croppedDisplayHeight
-                  ? `${croppedDisplayHeight}px`
+                maxWidth: "100%",
+                // The height follows from the ratio, so shrinking keeps both
+                // the proportions and the selected region.
+                aspectRatio: croppedAspectRatio
+                  ? String(croppedAspectRatio)
                   : undefined,
               }
             : undefined
@@ -1310,25 +1318,17 @@ function ResizableImageComponent({
             crop
               ? {
                   position: "absolute",
-                  // Fix the entire source rectangle in pixels. Leaving either
-                  // dimension to CSS auto-sizing can introduce a tiny ratio
-                  // mismatch, which is enough to clip the lower edge.
-                  width: croppedSourceWidth
-                    ? `${croppedSourceWidth}px`
-                    : `${100 / crop.width}%`,
-                  height: croppedSourceHeight
-                    ? `${croppedSourceHeight}px`
-                    : "auto",
+                  // Every dimension is a share of the frame, so the source
+                  // rectangle scales with it and the selected region stays
+                  // put whatever size the frame ends up.
+                  width: `${roundForCss(100 / crop.width)}%`,
+                  height: `${roundForCss(100 / crop.height)}%`,
                   maxWidth: "none",
-                  left: croppedSourceWidth
-                    ? `${-crop.x * croppedSourceWidth}px`
-                    : `${(-crop.x / crop.width) * 100}%`,
-                  top: croppedSourceHeight
-                    ? `${-crop.y * croppedSourceHeight}px`
-                    : `${(-crop.y / crop.height) * 100}%`,
+                  left: `${roundForCss((-crop.x / crop.width) * 100)}%`,
+                  top: `${roundForCss((-crop.y / crop.height) * 100)}%`,
                 }
               : displayWidth
-                ? { width: `${displayWidth}px` }
+                ? { width: `${displayWidth}px`, maxWidth: "100%" }
                 : undefined
           }
         />

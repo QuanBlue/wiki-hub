@@ -109,15 +109,20 @@ describe("RichTextEditor images", () => {
     );
 
     const image = await screen.findByAltText("Cropped diagram");
-    expect(image.parentElement).toHaveStyle({
-      width: "180px",
-      height: "200px",
-    });
+    const frame = image.parentElement as HTMLElement;
+    // Pinned to the size the crop was saved at, but free to shrink with a
+    // narrower column. The height is left to the ratio: a fixed pixel height
+    // would hold the frame at its original size and let the page clip it.
+    expect(frame).toHaveStyle({ width: "180px", maxWidth: "100%" });
+    expect(frame.getAttribute("style")).toContain("aspect-ratio: 0.9");
+    expect(frame.getAttribute("style")).not.toContain("height:");
+    // The source rectangle is a share of the frame, so it scales with it and
+    // the selected region survives any size.
     expect(image).toHaveStyle({
-      width: "600px",
-      height: "400px",
-      left: "-180px",
-      top: "-80px",
+      width: "333.3333%",
+      height: "200%",
+      left: "-100%",
+      top: "-40%",
     });
   });
 
@@ -139,14 +144,17 @@ describe("RichTextEditor images", () => {
     await waitFor(() => {
       expect(image.parentElement).toHaveStyle({
         width: "180px",
-        height: "200px",
+        maxWidth: "100%",
       });
     });
+    expect(image.parentElement?.getAttribute("style")).toContain(
+      "aspect-ratio: 0.9",
+    );
     expect(image).toHaveStyle({
-      width: "600px",
-      height: "400px",
-      left: "-180px",
-      top: "-80px",
+      width: "333.3333%",
+      height: "200%",
+      left: "-100%",
+      top: "-40%",
     });
   });
 
