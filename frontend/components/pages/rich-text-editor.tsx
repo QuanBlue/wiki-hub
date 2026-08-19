@@ -3699,6 +3699,16 @@ export function RichTextEditor({
         return true;
       },
     },
+    // Round-tripping the stored HTML through the schema rewrites it a little -
+    // attribute order, rel on links, the marker on an attachment tile - so the
+    // editor's own serialisation rarely matches the string the page was loaded
+    // with. Seeding the baseline from the editor means that difference is not
+    // mistaken for an edit: without this the first transaction of any kind,
+    // even just selecting a node, reported a change and armed the
+    // unsaved-changes guard on a page nobody had touched.
+    onCreate: ({ editor: createdEditor }) => {
+      lastEmittedHtml.current = createdEditor.getHTML();
+    },
     onUpdate: ({ editor: updatedEditor }) => emitEditorContent(updatedEditor),
     onTransaction: ({ editor: updatedEditor }) =>
       emitEditorContent(updatedEditor),

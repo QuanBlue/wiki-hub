@@ -512,6 +512,47 @@ describe("RichTextEditor attachments", () => {
     );
   });
 
+  it("does not report a change when the document was not changed", async () => {
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        // Stored HTML the schema rewrites on the way in: the tile gains a
+        // data-attachment marker, so the editor's serialisation differs from
+        // this string although nobody has edited anything.
+        content={`<p>first</p><p><a href="${attachmentHref}">runbook.pdf</a></p>`}
+        onChange={onChange}
+      />,
+    );
+
+    await screen.findByRole("button", { name: "runbook.pdf" });
+    // A transaction that leaves the document alone - toggling a mark with an
+    // empty selection only sets a stored mark. Every transaction re-serialises
+    // the document, so before the baseline was taken from the editor this
+    // reported the schema's own rewrite as if the reader had edited the page,
+    // which armed the unsaved-changes guard on an untouched one.
+    fireEvent.click(screen.getByRole("button", { name: "Bold" }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("still reports a real edit after that", async () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <RichTextEditor
+        content={`<p>first</p><p><a href="${attachmentHref}">runbook.pdf</a></p>`}
+        onChange={onChange}
+      />,
+    );
+
+    await screen.findByRole("button", { name: "runbook.pdf" });
+    const editable = container.querySelector(".ProseMirror") as HTMLElement;
+    fireEvent.input(editable, {
+      target: { innerHTML: "<p>first edited</p>" },
+    });
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalled();
+    });
+  });
   it("inserts an uploaded file as an attachment tile that round-trips", async () => {
     const onChange = vi.fn();
     render(
