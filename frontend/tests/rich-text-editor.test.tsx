@@ -162,6 +162,75 @@ describe("RichTextEditor images", () => {
     });
   });
 
+  it("marks the chosen alignment on the figure the wrapper rule keys off", async () => {
+    render(
+      <RichTextEditor
+        content={`<img src="/api/v1/attachments/example/content" alt="Alignable diagram" width="300">`}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const image = await screen.findByAltText("Alignable diagram");
+    const figure = image.closest("figure") as HTMLElement;
+    fireEvent.mouseEnter(image);
+    expect(figure).toHaveAttribute("data-alignment", "left");
+
+    // Alignment cannot live on the figure itself: its wrapper is shrink-wrapped
+    // to it, so auto margins there have no free space to distribute. The
+    // attribute is what globals.css moves the wrapper by.
+    for (const [label, value] of [
+      ["Align image center", "center"],
+      ["Align image right", "right"],
+      ["Align image left", "left"],
+    ] as const) {
+      fireEvent.click(await screen.findByRole("button", { name: label }));
+      await waitFor(() => {
+        expect(figure).toHaveAttribute("data-alignment", value);
+      });
+      expect(
+        await screen.findByRole("button", { name: label }),
+      ).toHaveAttribute("aria-pressed", "true");
+    }
+  });
+
+  it("marks the caption button when the image already has one", async () => {
+    render(
+      <RichTextEditor
+        content={`<img src="/api/v1/attachments/example/content" alt="Captioned diagram" width="300" data-caption="A diagram">`}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const image = await screen.findByAltText("Captioned diagram");
+    fireEvent.mouseEnter(image);
+    const captionButton = await screen.findByRole("button", {
+      name: "Add image caption",
+    });
+    expect(captionButton).toHaveAttribute("aria-pressed", "true");
+    expect(captionButton).toHaveClass("text-primary");
+  });
+
+  it("offers the caption dialog's confirm action as the primary button", async () => {
+    render(
+      <RichTextEditor
+        content={`<img src="/api/v1/attachments/example/content" alt="Plain diagram" width="300">`}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const image = await screen.findByAltText("Plain diagram");
+    fireEvent.mouseEnter(image);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Add image caption" }),
+    );
+
+    const save = await screen.findByRole("button", { name: "Save caption" });
+    expect(save).toHaveClass("bg-primary");
+    expect(screen.getByRole("button", { name: "Cancel" })).not.toHaveClass(
+      "bg-primary",
+    );
+  });
+
   it("shows the resize cursor along the whole side of an image", async () => {
     render(
       <RichTextEditor

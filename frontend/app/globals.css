@@ -389,11 +389,36 @@
     content: "";
   }
 
-  /* Prevent image wrapper and selected node outline from stretching to full width */
+  /* Prevent image wrapper and selected node outline from stretching to full
+     width. Left-aligned images stay inline-block, which also lets two of them
+     share a line. */
   .ProseMirror .react-renderer.node-image {
     display: inline-block;
     max-width: 100%;
     vertical-align: top;
+  }
+
+  /* Alignment belongs on the wrapper: the figure inside it can never be wider
+     than the wrapper, so auto margins there have no free space to distribute
+     and move nothing. A shrink-to-fit inline-block has the same problem, so a
+     centred or right-aligned image takes a block box of its own - still
+     shrink-wrapped, so the selection outline stays tight to the image. */
+  .ProseMirror
+    .react-renderer.node-image:has(> figure[data-alignment="center"]),
+  .ProseMirror
+    .react-renderer.node-image:has(> figure[data-alignment="right"]) {
+    display: block;
+    width: fit-content;
+  }
+
+  .ProseMirror
+    .react-renderer.node-image:has(> figure[data-alignment="center"]) {
+    margin-inline: auto;
+  }
+
+  .ProseMirror
+    .react-renderer.node-image:has(> figure[data-alignment="right"]) {
+    margin-inline-start: auto;
   }
 
   /* ProseMirror's drop cursor spans the whole block when the drop lands

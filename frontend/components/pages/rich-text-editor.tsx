@@ -1271,13 +1271,13 @@ function ResizableImageComponent({
       as="figure"
       className={cn(
         "group/image relative my-4 block w-fit max-w-full align-top",
-        alignment === "left" && "mr-auto",
-        alignment === "center" && "mx-auto",
-        alignment === "right" && "ml-auto",
         showImageTools &&
           "before:bg-border-strong after:bg-border-strong before:pointer-events-none before:absolute before:top-1/3 before:bottom-1/3 before:left-1 before:z-20 before:w-1.5 before:rounded-full after:pointer-events-none after:absolute after:top-1/3 after:right-1 after:bottom-1/3 after:z-20 after:w-1.5 after:rounded-full",
       )}
       contentEditable={false}
+      // Read by the wrapper rule in globals.css, which is the element that
+      // actually has room to move.
+      data-alignment={alignment}
       onClick={selectImage}
       onPointerDownCapture={beginResizeFromFrameEdge}
       onMouseEnter={keepImageToolsVisible}
@@ -1394,7 +1394,11 @@ function ResizableImageComponent({
                 setCaptionDraft(String(node.attrs.caption ?? ""));
                 setCaptionOpen(true);
               }}
-              className="hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+              aria-pressed={Boolean(node.attrs.caption)}
+              className={cn(
+                "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                node.attrs.caption && "bg-surface-selected text-primary",
+              )}
             >
               <Type className="size-4" aria-hidden />
             </button>
@@ -1453,7 +1457,7 @@ function ResizableImageComponent({
                 >
                   Cancel
                 </Button>
-                <Button type="button" onClick={saveCaption}>
+                <Button type="button" variant="primary" onClick={saveCaption}>
                   Save caption
                 </Button>
               </DialogFooter>
