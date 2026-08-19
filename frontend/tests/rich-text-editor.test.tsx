@@ -414,13 +414,17 @@ describe("RichTextEditor attachments", () => {
       />,
     );
 
-    const link = await screen.findByRole("link", { name: "jmx_exporter.jar" });
+    const link = await screen.findByRole("button", {
+      name: "jmx_exporter.jar",
+    });
     // A node view wrapper is what separates the tile from a plain link mark.
     expect(link.closest("[data-node-view-wrapper]")).not.toBeNull();
     expect(link).toHaveAttribute("title", "jmx_exporter.jar");
-    // Dragging an anchor is a browser default; leaving it on would duplicate
-    // the tile on drop, exactly as it used to for images.
-    expect(link).toHaveAttribute("draggable", "false");
+    // No href while editing: the browser starts navigating from the mouse
+    // sequence, and cancelling the click cannot call that back.
+    expect(link).not.toHaveAttribute("href");
+    // Draggable while editing, so a tile can be moved the way an image can.
+    expect(link).toHaveAttribute("draggable", "true");
     expect(link.querySelector("svg")).not.toBeNull();
   });
 
@@ -436,6 +440,8 @@ describe("RichTextEditor attachments", () => {
     });
     expect(link.closest("[data-node-view-wrapper]")).not.toBeNull();
     expect(link.querySelector("svg")).not.toBeNull();
+    // A saved page is not editable, so nothing there should offer to move.
+    expect(link).toHaveAttribute("draggable", "false");
   });
 
   it("leaves an attachment link written into a sentence as a link", async () => {
@@ -448,6 +454,62 @@ describe("RichTextEditor attachments", () => {
 
     const link = await screen.findByRole("link", { name: "this document" });
     expect(link.closest("[data-node-view-wrapper]")).toBeNull();
+  });
+
+  it("moves a dragged attachment tile instead of leaving a copy behind", async () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <RichTextEditor
+        content={`<p>first <a href="${attachmentHref}">runbook.pdf</a></p><p>second</p>`}
+        onChange={onChange}
+      />,
+    );
+
+    const link = await screen.findByRole("button", { name: "runbook.pdf" });
+    const editable = container.querySelector(".ProseMirror") as HTMLElement;
+    const target = editable.querySelectorAll(":scope > p")[1] as HTMLElement;
+    const targetText = target.firstChild as Text;
+
+    document.elementFromPoint = () => target;
+    (
+      document as unknown as { caretPositionFromPoint: () => unknown }
+    ).caretPositionFromPoint = () => ({
+      offsetNode: targetText,
+      offset: targetText.length,
+    });
+
+    // What Chrome puts on the clipboard for a native link drag, and what
+    // ProseMirror would otherwise paste as a second tile.
+    const store: Record<string, string> = {
+      "text/html": `<a href="${attachmentHref}">runbook.pdf</a>`,
+      "text/plain": attachmentHref,
+    };
+    const dataTransfer = {
+      types: Object.keys(store),
+      files: [],
+      effectAllowed: "all",
+      dropEffect: "none",
+      getData: (type: string) => store[type] ?? "",
+      setData: (type: string, value: string) => {
+        store[type] = value;
+      },
+      clearData: () => {
+        for (const key of Object.keys(store)) delete store[key];
+      },
+      setDragImage: () => {},
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(link, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer, clientX: 10, clientY: 400 });
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalled();
+    });
+    const html = onChange.mock.calls.at(-1)?.[0] as string;
+    expect(html.match(/data-attachment/g) ?? []).toHaveLength(1);
+    expect(html.indexOf("data-attachment")).toBeGreaterThan(
+      html.indexOf("second"),
+    );
   });
 
   it("inserts an uploaded file as an attachment tile that round-trips", async () => {
@@ -473,7 +535,7 @@ describe("RichTextEditor attachments", () => {
       }),
     );
 
-    const link = await screen.findByRole("link", { name: "runbook.pdf" });
+    const link = await screen.findByRole("button", { name: "runbook.pdf" });
     expect(link.closest("[data-node-view-wrapper]")).not.toBeNull();
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith(

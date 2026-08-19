@@ -1242,7 +1242,7 @@ function ResizableImageComponent({
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.dropEffect = "move";
     event.currentTarget.dispatchEvent(
-      new CustomEvent("wikihub:internal-image-drag-start", {
+      new CustomEvent("wikihub:internal-node-drag-start", {
         bubbles: true,
         detail: { pos: position },
       }),
@@ -1251,7 +1251,7 @@ function ResizableImageComponent({
 
   function finishImageMove(event: React.DragEvent<HTMLDivElement>) {
     event.currentTarget.dispatchEvent(
-      new CustomEvent("wikihub:internal-image-drag-end", { bubbles: true }),
+      new CustomEvent("wikihub:internal-node-drag-end", { bubbles: true }),
     );
   }
 
@@ -1744,6 +1744,20 @@ const ATTACHMENT_HREF = /\/api\/v1\/attachments\/[a-f0-9-]{36}/i;
 export function isAttachmentHref(href: string) {
   return ATTACHMENT_HREF.test(href);
 }
+
+/**
+ * The attachment a link points at, or null for anything else.
+ *
+ * While a page is being edited the tile carries no href at all - see
+ * AttachmentTile for why - so the target is read from a data attribute too.
+ */
+function attachmentIdFromLink(link: Element) {
+  const target =
+    link.getAttribute("href") ||
+    link.getAttribute("data-attachment-href") ||
+    "";
+  return target.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i)?.[1] ?? null;
+}
 /** A trailing ".ext" is what separates a filename from ordinary link prose. */
 const FILENAME_EXTENSION = /\.[A-Za-z0-9]{1,8}$/;
 
@@ -1800,22 +1814,76 @@ function attachmentIcon(filename: string) {
  * modal find their target with `closest("a")`, so the tile inherits that
  * behaviour in the editor and on a saved page alike.
  */
-function AttachmentTile({ node, selected }: NodeViewProps) {
+function AttachmentTile({ node, getPos, selected, editor }: NodeViewProps) {
   const filename = String(node.attrs.filename ?? "attachment");
   const href = String(node.attrs.href ?? "");
   const icon = attachmentIcon(filename);
+
+  // Same machinery images use. Tiptap's node view hides dragstart from
+  // ProseMirror, so the editor's own handleDrop has to be told which node is
+  // moving; without this the tile would be copied on drop, not moved.
+  function beginMove(event: React.DragEvent<HTMLElement>) {
+    if (!editor.isEditable) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.dropEffect = "move";
+    event.currentTarget.dispatchEvent(
+      new CustomEvent("wikihub:internal-node-drag-start", {
+        bubbles: true,
+        detail: { pos: typeof getPos === "function" ? getPos() : undefined },
+      }),
+    );
+  }
+
+  function endMove(event: React.DragEvent<HTMLElement>) {
+    event.currentTarget.dispatchEvent(
+      new CustomEvent("wikihub:internal-node-drag-end", { bubbles: true }),
+    );
+  }
+
   return (
-    <NodeViewWrapper as="span" className="mr-2 mb-2 inline-block align-top">
+    <NodeViewWrapper
+      as="span"
+      className="mr-2 mb-2 inline-block align-top"
+      onDragStartCapture={beginMove}
+      onDragEndCapture={endMove}
+    >
       <a
-        href={href}
+        // No href while editing. Preventing the click's default is not enough
+        // to stop the browser following an attachment link here - it starts
+        // the navigation from the mouse sequence, and the click never reaches
+        // the anchor because the interception below stops it first - so the
+        // page began unloading and the unsaved-changes prompt appeared before
+        // the preview modal could. Nothing needs to be navigable in the
+        // editor: the tile opens a modal. The interception reads the target
+        // from the data attribute instead.
+        href={editor.isEditable ? undefined : href}
+        data-attachment-href={href}
         title={filename}
         // Attachment links are intercepted and opened in a modal, so they must
         // never be given target="_blank".
         target="_self"
+        // An anchor without an href is not focusable or keyboard-activatable
+        // on its own, so the editing tile has to say what it is and handle
+        // its own keys.
+        role={editor.isEditable ? "button" : undefined}
+        tabIndex={editor.isEditable ? 0 : undefined}
+        onKeyDown={(event) => {
+          if (!editor.isEditable) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.currentTarget.click();
+          }
+        }}
         contentEditable={false}
-        draggable={false}
+        draggable={editor.isEditable}
         className={cn(
           "group/attachment border-border bg-surface-raised hover:border-primary focus-visible:ring-ring flex w-24 flex-col items-center gap-1.5 rounded-md border p-2 shadow-sm transition-colors !no-underline focus-visible:ring-2 focus-visible:outline-none",
+          editor.isEditable
+            ? "cursor-grab active:cursor-grabbing"
+            : "cursor-pointer",
           selected && "border-primary ring-primary/40 ring-2",
         )}
       >
@@ -1835,11 +1903,7 @@ const AttachmentNode = TiptapNode.create({
   group: "inline",
   inline: true,
   atom: true,
-  // Anchors are draggable by default in every browser, and tiptap's node view
-  // hides dragstart from ProseMirror, so a dragged tile would be pasted as a
-  // copy while the original stayed put - the same fault images used to have.
-  // Nothing here needs dragging, so it is switched off on both levels.
-  draggable: false,
+  draggable: true,
 
   addAttributes() {
     return {
@@ -1899,6 +1963,13 @@ const AttachmentNode = TiptapNode.create({
   },
 });
 
+
+/**
+ * Node types whose node view starts a drag through the custom move machinery.
+ * Both hide `dragstart` from ProseMirror behind a node view, so both need the
+ * drop to be owned rather than left to ProseMirror's external-drop path.
+ */
+const DRAGGABLE_NODE_TYPES = new Set(["image", "attachment"]);
 const editorExtensions = [
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
@@ -3512,12 +3583,11 @@ export function RichTextEditor({
       if (!(target instanceof Element)) return;
       const link = target.closest("a");
       if (!link) return;
-      const href = link.getAttribute("href") || "";
-      const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
-      if (match) {
+      const id = attachmentIdFromLink(link);
+      if (id) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        onMatch(match[1]);
+        onMatch(id);
       }
     };
 
@@ -3528,13 +3598,13 @@ export function RichTextEditor({
       if (!(target instanceof Element)) return;
       const link = target.closest("a");
       if (!link) return;
-      const href = link.getAttribute("href") || "";
-      const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
-      if (match) {
-        // Prevent the browser from treating this as a link activation,
-        // but allow ProseMirror to still update the cursor position.
-        event.preventDefault();
-        pendingId = match[1];
+      const id = attachmentIdFromLink(link);
+      if (id) {
+        pendingId = id;
+        // Preventing the default here would also stop the browser starting a
+        // drag, so a draggable tile is left alone. It carries no href, so
+        // there is nothing for the browser to navigate to anyway.
+        if (!link.draggable) event.preventDefault();
       }
     };
 
@@ -3560,8 +3630,8 @@ export function RichTextEditor({
       container.removeEventListener("click", handleClick, true);
     };
   }, []);
-  const internalImageDragRef = useRef(false);
-  const draggedImagePosRef = useRef<number | null>(null);
+  const internalNodeDragRef = useRef(false);
+  const draggedNodePosRef = useRef<number | null>(null);
   const normalizedContent = useMemo(
     () => normalizeConfluenceCodeMacros(content),
     [content],
@@ -3585,20 +3655,20 @@ export function RichTextEditor({
       handleDrop(view, event) {
         // Tiptap's default node view `stopEvent` hides `dragstart` from
         // ProseMirror whenever the drag begins on a child of the wrapper - the
-        // <img> here - so `view.dragging` is never set. Left to its default,
-        // ProseMirror then treats the drop as an external one: it pastes a copy
-        // parsed from the drag's text/html and never deletes the source, which
-        // is what left a duplicate behind. Own the drop instead and move the
-        // node ourselves.
-        if (!internalImageDragRef.current) return false;
-        const fromPos = draggedImagePosRef.current;
-        internalImageDragRef.current = false;
-        draggedImagePosRef.current = null;
+        // <img> or the tile's <a> here - so `view.dragging` is never set. Left
+        // to its default, ProseMirror then treats the drop as an external one:
+        // it pastes a copy parsed from the drag's text/html and never deletes
+        // the source, which is what left a duplicate behind. Own the drop
+        // instead and move the node ourselves.
+        if (!internalNodeDragRef.current) return false;
+        const fromPos = draggedNodePosRef.current;
+        internalNodeDragRef.current = false;
+        draggedNodePosRef.current = null;
         // Every path below returns true, which makes ProseMirror call
         // preventDefault: a drop we cannot place must be a no-op, never a copy.
         if (typeof fromPos !== "number") return true;
         const node = view.state.doc.nodeAt(fromPos);
-        if (!node || node.type.name !== "image") return true;
+        if (!node || !DRAGGABLE_NODE_TYPES.has(node.type.name)) return true;
         const dropCoords = view.posAtCoords({
           left: event.clientX,
           top: event.clientY,
@@ -3650,11 +3720,11 @@ export function RichTextEditor({
     const isFileDrag = (event: DragEvent) =>
       Array.from(event.dataTransfer?.types ?? []).includes("Files");
     const onDragEnter = (event: DragEvent) => {
-      if (isFileDrag(event) && !internalImageDragRef.current)
+      if (isFileDrag(event) && !internalNodeDragRef.current)
         setDraggingFiles(true);
     };
     const onDragOver = (event: DragEvent) => {
-      if (internalImageDragRef.current) {
+      if (internalNodeDragRef.current) {
         event.preventDefault();
         if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
         return;
@@ -3675,7 +3745,7 @@ export function RichTextEditor({
       setDraggingFiles(false);
     };
     const onDrop = (event: DragEvent) => {
-      if (internalImageDragRef.current) {
+      if (internalNodeDragRef.current) {
         // Only the overlay is cleared here. This listener runs in the capture
         // phase, ahead of ProseMirror's own drop handler, so resetting the drag
         // refs would leave `handleDrop` above blind to the move in flight and
@@ -3696,17 +3766,17 @@ export function RichTextEditor({
       if (position) editor?.commands.setTextSelection(position.pos);
       void handleDroppedFiles(event.dataTransfer.files);
     };
-    const onInternalImageDragStart = (event: Event) => {
-      internalImageDragRef.current = true;
+    const onInternalNodeDragStart = (event: Event) => {
+      internalNodeDragRef.current = true;
       const customEvt = event as CustomEvent<{ pos?: number }>;
       if (typeof customEvt.detail?.pos === "number") {
-        draggedImagePosRef.current = customEvt.detail.pos;
+        draggedNodePosRef.current = customEvt.detail.pos;
       }
       setDraggingFiles(false);
     };
-    const onInternalImageDragEnd = () => {
-      internalImageDragRef.current = false;
-      draggedImagePosRef.current = null;
+    const onInternalNodeDragEnd = () => {
+      internalNodeDragRef.current = false;
+      draggedNodePosRef.current = null;
       setDraggingFiles(false);
     };
     // Bubble phase, so it settles the refs only after ProseMirror's drop
@@ -3714,8 +3784,8 @@ export function RichTextEditor({
     // a successful move re-creates it, and the detached element may never see
     // the event.
     const onDropCleanup = () => {
-      internalImageDragRef.current = false;
-      draggedImagePosRef.current = null;
+      internalNodeDragRef.current = false;
+      draggedNodePosRef.current = null;
       setDraggingFiles(false);
     };
 
@@ -3725,12 +3795,12 @@ export function RichTextEditor({
     container.addEventListener("drop", onDrop, true);
     container.addEventListener("drop", onDropCleanup);
     container.addEventListener(
-      "wikihub:internal-image-drag-start",
-      onInternalImageDragStart,
+      "wikihub:internal-node-drag-start",
+      onInternalNodeDragStart,
     );
     container.addEventListener(
-      "wikihub:internal-image-drag-end",
-      onInternalImageDragEnd,
+      "wikihub:internal-node-drag-end",
+      onInternalNodeDragEnd,
     );
     return () => {
       container.removeEventListener("dragenter", onDragEnter, true);
@@ -3739,12 +3809,12 @@ export function RichTextEditor({
       container.removeEventListener("drop", onDrop, true);
       container.removeEventListener("drop", onDropCleanup);
       container.removeEventListener(
-        "wikihub:internal-image-drag-start",
-        onInternalImageDragStart,
+        "wikihub:internal-node-drag-start",
+        onInternalNodeDragStart,
       );
       container.removeEventListener(
-        "wikihub:internal-image-drag-end",
-        onInternalImageDragEnd,
+        "wikihub:internal-node-drag-end",
+        onInternalNodeDragEnd,
       );
     };
   }, [editor, handleDroppedFiles]);
@@ -3824,12 +3894,11 @@ export function RichTextContent({ content }: { content: string }) {
       if (!(target instanceof Element)) return;
       const link = target.closest("a");
       if (!link) return;
-      const href = link.getAttribute("href") || "";
-      const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
-      if (match) {
+      const id = attachmentIdFromLink(link);
+      if (id) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        onMatch(match[1]);
+        onMatch(id);
       }
     };
 
@@ -3840,11 +3909,10 @@ export function RichTextContent({ content }: { content: string }) {
       if (!(target instanceof Element)) return;
       const link = target.closest("a");
       if (!link) return;
-      const href = link.getAttribute("href") || "";
-      const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
-      if (match) {
+      const id = attachmentIdFromLink(link);
+      if (id) {
         event.preventDefault();
-        pendingId = match[1];
+        pendingId = id;
       }
     };
 
