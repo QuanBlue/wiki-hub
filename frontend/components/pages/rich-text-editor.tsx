@@ -1974,6 +1974,10 @@ const editorExtensions = [
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
     codeBlock: false,
+    // The stock drop cursor draws a rule across the whole block, which reads
+    // like a horizontal divider rather than an insertion point. Styled down to
+    // a caret in globals.css; the colour comes from there too.
+    dropcursor: { class: "wikihub-dropcursor", width: 2, color: false },
   }),
   CustomCodeBlock,
   CustomCalloutNode,

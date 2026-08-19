@@ -395,4 +395,22 @@
     max-width: 100%;
     vertical-align: top;
   }
+
+  /* ProseMirror's drop cursor spans the whole block when the drop lands
+     between blocks, which reads as a horizontal divider rather than as a
+     place a thing is about to go. Shrink it to a caret, so dragging an image
+     or an attachment tile marks the insertion point the way a text cursor
+     does. The inline variant is already caret-shaped and only needs colour. */
+  .wikihub-dropcursor {
+    background-color: var(--color-primary) !important;
+    border-radius: 9999px;
+  }
+
+  .wikihub-dropcursor.prosemirror-dropcursor-block {
+    /* The plugin centres the element on the boundary using its 2px height, so
+       the taller caret has to be pulled back by half of its own height. */
+    width: 2px !important;
+    height: 1.3em !important;
+    transform: translateY(-50%);
+  }
 }
