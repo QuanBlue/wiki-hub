@@ -984,6 +984,10 @@ function ResizableImageComponent({
     setHovered(true);
   }
 
+  // Hover is tracked on the figure alone. The toolbar sits inside it, so
+  // moving between the two never leaves the figure - but a mouseleave on the
+  // toolbar itself would fire on the way back to the image and hide the tools
+  // the pointer is still over, with no matching mouseenter to bring them back.
   function scheduleImageToolsHide() {
     if (resizing) return;
     if (hideToolsTimer.current) clearTimeout(hideToolsTimer.current);
@@ -1354,86 +1358,90 @@ function ResizableImageComponent({
       ) : null}
       {showImageTools ? (
         <>
-          <div
-            className="border-border bg-surface-raised/95 backdrop-blur-sm absolute top-2 right-2 z-20 flex h-9 items-center gap-0.5 rounded-md border p-1 shadow-md"
-            role="toolbar"
-            aria-label="Image options"
-            onMouseEnter={keepImageToolsVisible}
-            onMouseLeave={scheduleImageToolsHide}
-          >
-            {(
-              [
-                ["left", AlignLeft, "Align image left"],
-                ["center", AlignCenter, "Align image center"],
-                ["right", AlignRight, "Align image right"],
-              ] as const
-            ).map(([value, Icon, label]) => (
+          {/* Floats above the image so it covers none of it. The wrapper's
+              bottom padding is what puts the visible gap there: an actual gap
+              would be a strip of neither figure nor toolbar, and crossing it
+              would count as leaving the image. */}
+          <div className="absolute right-0 bottom-full z-20 pb-1">
+            <div
+              className="border-border bg-surface-raised/95 flex h-9 items-center gap-0.5 rounded-md border p-1 shadow-md backdrop-blur-sm"
+              role="toolbar"
+              aria-label="Image options"
+            >
+              {(
+                [
+                  ["left", AlignLeft, "Align image left"],
+                  ["center", AlignCenter, "Align image center"],
+                  ["right", AlignRight, "Align image right"],
+                ] as const
+              ).map(([value, Icon, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-label={label}
+                  title={label}
+                  aria-pressed={alignment === value}
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() => setImageAlignment(value)}
+                  className={cn(
+                    "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                    alignment === value && "bg-surface-selected text-primary",
+                  )}
+                >
+                  <Icon className="size-4" aria-hidden />
+                </button>
+              ))}
+              <span className="bg-border mx-0.5 h-5 w-px" aria-hidden />
               <button
-                key={value}
                 type="button"
-                aria-label={label}
-                title={label}
-                aria-pressed={alignment === value}
+                aria-label="Add image caption"
+                title="Add image caption"
                 onPointerDown={(event) => event.preventDefault()}
-                onClick={() => setImageAlignment(value)}
+                onClick={() => {
+                  setCaptionDraft(String(node.attrs.caption ?? ""));
+                  setCaptionOpen(true);
+                }}
+                aria-pressed={Boolean(node.attrs.caption)}
                 className={cn(
                   "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                  alignment === value && "bg-surface-selected text-primary",
+                  node.attrs.caption && "bg-surface-selected text-primary",
                 )}
               >
-                <Icon className="size-4" aria-hidden />
+                <Type className="size-4" aria-hidden />
               </button>
-            ))}
-            <span className="bg-border mx-0.5 h-5 w-px" aria-hidden />
-            <button
-              type="button"
-              aria-label="Add image caption"
-              title="Add image caption"
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => {
-                setCaptionDraft(String(node.attrs.caption ?? ""));
-                setCaptionOpen(true);
-              }}
-              aria-pressed={Boolean(node.attrs.caption)}
-              className={cn(
-                "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                node.attrs.caption && "bg-surface-selected text-primary",
-              )}
-            >
-              <Type className="size-4" aria-hidden />
-            </button>
-            <button
-              type="button"
-              aria-label="Crop image"
-              title="Crop image"
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={openCropEditor}
-              className={cn(
-                "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                crop && "bg-surface-selected text-primary",
-              )}
-            >
-              <Crop className="size-4" aria-hidden />
-            </button>
-            <button
-              type="button"
-              aria-label="Image details"
-              title="Image details"
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => {
-                const src = String(node.attrs.src ?? "");
-                const match = src.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
-                if (match) {
-                  const event = new CustomEvent("wikihub:view-file-details", {
-                    detail: match[1],
-                  });
-                  document.dispatchEvent(event);
-                }
-              }}
-              className="hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-            >
-              <Info className="size-4" aria-hidden />
-            </button>
+              <button
+                type="button"
+                aria-label="Crop image"
+                title="Crop image"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={openCropEditor}
+                className={cn(
+                  "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                  crop && "bg-surface-selected text-primary",
+                )}
+              >
+                <Crop className="size-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                aria-label="Image details"
+                title="Image details"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  const src = String(node.attrs.src ?? "");
+                  const match = src.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
+                  if (match) {
+                    const event = new CustomEvent("wikihub:view-file-details", {
+                      detail: match[1],
+                    });
+                    document.dispatchEvent(event);
+                  }
+                }}
+                className="hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <Info className="size-4" aria-hidden />
+              </button>
+            </div>
           </div>
           <Dialog open={captionOpen} onOpenChange={setCaptionOpen}>
             <DialogContent title="Image caption" className="max-w-md">

@@ -193,6 +193,39 @@ describe("RichTextEditor images", () => {
     }
   });
 
+  it("keeps the image toolbar up while the pointer moves between it and the image", async () => {
+    render(
+      <RichTextEditor
+        content={`<img src="/api/v1/attachments/example/content" alt="Hovered diagram" width="300">`}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const image = await screen.findByAltText("Hovered diagram");
+    fireEvent.mouseEnter(image);
+    const toolbar = await screen.findByRole("toolbar", {
+      name: "Image options",
+    });
+    // Floated above the image rather than over it.
+    expect(toolbar.parentElement).toHaveClass("bottom-full");
+
+    // Moving off the toolbar and back onto the image must not dismiss it. The
+    // pointer never leaves the figure, so nothing would bring the tools back.
+    fireEvent.mouseLeave(toolbar, { relatedTarget: image });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(
+      screen.getByRole("toolbar", { name: "Image options" }),
+    ).toBeInTheDocument();
+
+    // Leaving the image altogether still dismisses it.
+    fireEvent.mouseLeave(image);
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("toolbar", { name: "Image options" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("marks the caption button when the image already has one", async () => {
     render(
       <RichTextEditor

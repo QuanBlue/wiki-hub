@@ -398,6 +398,14 @@
     vertical-align: top;
   }
 
+  /* The options toolbar floats above the image. An image at the very top of
+     the document has only the editor's padding plus the figure's own margin
+     above it, which is less than the toolbar needs, so the scrolling editor
+     pane would clip its top edge. */
+  .ProseMirror > .react-renderer.node-image:first-child {
+    margin-top: 8px;
+  }
+
   /* Alignment belongs on the wrapper: the figure inside it can never be wider
      than the wrapper, so auto margins there have no free space to distribute
      and move nothing. A shrink-to-fit inline-block has the same problem, so a
