@@ -773,6 +773,14 @@ type ImageResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 type ImageAlignment = "left" | "center" | "right";
 type ImageCrop = { x: number; y: number; width: number; height: number };
 
+/**
+ * How far in from either side of an image a pointer press starts a resize.
+ * The visible grab bars sit inside this band, and the transparent side
+ * handles - which carry the resize cursor - are drawn exactly this wide, so
+ * what the cursor promises and what the hit test accepts stay the same thing.
+ */
+const IMAGE_RESIZE_EDGE_SIZE = 20;
+
 const defaultImageCrop: ImageCrop = {
   x: 0.05,
   y: 0.05,
@@ -809,49 +817,49 @@ const imageResizeHandles: Array<{
   {
     handle: "nw",
     label: "Resize image from top left",
-    className: "-top-3 -left-3 cursor-nwse-resize",
+    className: "-top-3 -left-3 cursor-nwse-resize size-8",
     markerClassName: "h-px w-3 -rotate-45 bg-primary",
   },
   {
     handle: "n",
     label: "Resize image from top",
-    className: "-top-3 left-1/2 -translate-x-1/2 cursor-ns-resize",
+    className: "-top-3 left-1/2 -translate-x-1/2 cursor-ns-resize size-8",
     markerClassName: "h-px w-5 bg-primary",
   },
   {
     handle: "ne",
     label: "Resize image from top right",
-    className: "-top-3 -right-3 cursor-nesw-resize",
+    className: "-top-3 -right-3 cursor-nesw-resize size-8",
     markerClassName: "h-px w-3 rotate-45 bg-primary",
   },
   {
     handle: "e",
     label: "Resize image from right",
-    className: "top-1/2 right-0 -translate-y-1/2 cursor-ew-resize",
+    className: "inset-y-0 right-0 cursor-ew-resize",
     markerClassName: "h-5 w-px bg-primary",
   },
   {
     handle: "se",
     label: "Resize image",
-    className: "-right-3 -bottom-3 cursor-nwse-resize",
+    className: "-right-3 -bottom-3 cursor-nwse-resize size-8",
     markerClassName: "h-px w-3 -rotate-45 bg-primary",
   },
   {
     handle: "s",
     label: "Resize image from bottom",
-    className: "-bottom-3 left-1/2 -translate-x-1/2 cursor-ns-resize",
+    className: "-bottom-3 left-1/2 -translate-x-1/2 cursor-ns-resize size-8",
     markerClassName: "h-px w-5 bg-primary",
   },
   {
     handle: "sw",
     label: "Resize image from bottom left",
-    className: "-bottom-3 -left-3 cursor-nesw-resize",
+    className: "-bottom-3 -left-3 cursor-nesw-resize size-8",
     markerClassName: "h-px w-3 rotate-45 bg-primary",
   },
   {
     handle: "w",
     label: "Resize image from left",
-    className: "top-1/2 left-0 -translate-y-1/2 cursor-ew-resize",
+    className: "inset-y-0 left-0 cursor-ew-resize",
     markerClassName: "h-5 w-px bg-primary",
   },
 ];
@@ -1068,7 +1076,7 @@ function ResizableImageComponent({
     )
       return;
     const bounds = event.currentTarget.getBoundingClientRect();
-    const edgeSize = 20;
+    const edgeSize = IMAGE_RESIZE_EDGE_SIZE;
     const handle =
       event.clientX - bounds.left <= edgeSize
         ? "w"
@@ -1599,10 +1607,13 @@ function ResizableImageComponent({
                 onPointerDown={(event) => beginResize(event, handle)}
                 onMouseDown={(event) => beginMouseResize(event, handle)}
                 onKeyDown={(event) => resizeWithKeyboard(event, handle)}
+                // Sits under the options toolbar (z-20) so the buttons in it
+                // stay clickable on a short image.
                 className={cn(
-                  "focus-visible:ring-ring absolute z-30 flex size-8 cursor-ew-resize touch-none items-center justify-center bg-transparent select-none focus-visible:ring-2 focus-visible:outline-none",
+                  "focus-visible:ring-ring absolute z-10 flex touch-none items-center justify-center bg-transparent select-none focus-visible:ring-2 focus-visible:outline-none",
                   className,
                 )}
+                style={{ width: IMAGE_RESIZE_EDGE_SIZE }}
               />
             ))
         : null}

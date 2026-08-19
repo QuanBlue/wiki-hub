@@ -162,6 +162,27 @@ describe("RichTextEditor images", () => {
     });
   });
 
+  it("shows the resize cursor along the whole side of an image", async () => {
+    render(
+      <RichTextEditor
+        content={`<img src="/api/v1/attachments/example/content" alt="Wide diagram" width="400">`}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const image = await screen.findByAltText("Wide diagram");
+    fireEvent.mouseEnter(image);
+
+    for (const name of ["Resize image from left", "Resize image from right"]) {
+      const handle = await screen.findByRole("button", { name });
+      // Stretched over the full height rather than parked at the midpoint, so
+      // the arrow shows anywhere along the grab bar - and over the whole band
+      // a press would resize from.
+      expect(handle).toHaveClass("inset-y-0", "cursor-ew-resize");
+      expect(handle).toHaveStyle({ width: "20px" });
+    }
+  });
+
   it("resizes the visible crop frame without jumping to the hidden source size", async () => {
     const onChange = vi.fn();
     render(
