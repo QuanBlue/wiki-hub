@@ -11,6 +11,13 @@
 13. Save xong bị mất nội dung
 
 
+- Cho phép admin thay đổi theme ứng dụng: icon
+- Trong page, các code cho thêm màu sắc vào cho dễ nhận diện, bộ theme màu của tất cả các ngôn ngữ lập trình phổ biến, trong phần code, cho phép:
+  + Chọn ngôn ngữ, từ đó format màu cho phù hợp
+  + Cho thêm phần caption (code title, nhiều khi cần viết tên code,...)
+
+
+
 
 Edit
 - Đã xong image
