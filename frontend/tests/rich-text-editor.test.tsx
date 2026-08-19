@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   RichTextContent,
@@ -718,5 +719,259 @@ describe("RichTextEditor attachments", () => {
         expect.stringContaining('data-attachment="runbook.pdf"'),
       );
     });
+  });
+});
+
+describe("RichTextEditor code blocks", () => {
+  it("colours a block with a known language and leaves one with none plain", async () => {
+    const { container } = render(
+      <RichTextEditor
+        content={
+          '<pre><code class="language-python">class Foo:\n    pass\n</code></pre>' +
+          "<pre><code>plain text, no colour</code></pre>"
+        }
+        onChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector(".hljs-keyword")).not.toBeNull();
+    });
+    // A compound highlight.js scope keeps its classes together as one token,
+    // not nested spans - `.hljs-title.class_` only matches if the classes
+    // stayed on one element.
+    expect(container.querySelector(".hljs-title.class_")).not.toBeNull();
+    // A block with no language falls back to "plaintext", which highlights
+    // to zero spans - not `highlightAuto()` guessing a language for it.
+    const plainPre = container.querySelectorAll("pre")[1];
+    expect(plainPre.querySelector('[class*="hljs-"]')).toBeNull();
+  });
+
+  it("always shows an edit button in an editable block, even with no caption or language yet", async () => {
+    render(
+      <RichTextEditor
+        content="<pre><code>echo hi</code></pre>"
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: "Edit code block title and language",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("commits a title and language together from the details modal", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content='<pre><code class="language-bash">echo hi</code></pre>'
+        onChange={onChange}
+      />,
+    );
+
+    // Radix opens its trigger on pointerdown, which plain fireEvent.click
+    // does not synthesize - userEvent does, matching tests/select.test.tsx.
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Edit code block title and language",
+      }),
+    );
+    const titleInput = await screen.findByLabelText("Title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "deploy.sh");
+    await user.click(screen.getByRole("button", { name: "Code language" }));
+    await user.click(
+      await screen.findByRole("menuitemradio", { name: "Python" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('data-caption="deploy.sh"'),
+      );
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.stringContaining('class="language-python"'),
+    );
+  });
+
+  it("colours the modal's live preview for a drafted language before it is saved", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content="<pre><code>def run():\n    pass</code></pre>"
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Edit code block title and language",
+      }),
+    );
+    // Unsaved, the block itself still has no language - the preview must
+    // reflect the in-progress choice, not what is actually stored yet.
+    expect(screen.queryByText("def", { selector: ".hljs-keyword" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Code language" }));
+    await user.click(
+      await screen.findByRole("menuitemradio", { name: "Python" }),
+    );
+
+    expect(
+      await screen.findByText("def", { selector: ".hljs-keyword" }),
+    ).toBeInTheDocument();
+    // Nothing has been saved yet.
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("discards the draft without saving when the details modal is cancelled", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content='<pre data-caption="original"><code class="language-bash">echo hi</code></pre>'
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Edit code block title and language",
+      }),
+    );
+    const titleInput = await screen.findByLabelText("Title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "discard me");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onChange).not.toHaveBeenCalled();
+    // Reopening must show the original value, not the discarded draft.
+    await user.click(
+      screen.getByRole("button", {
+        name: "Edit code block title and language",
+      }),
+    );
+    expect(await screen.findByLabelText("Title")).toHaveValue("original");
+  });
+
+  it("keeps typing in the details modal from reaching ProseMirror's own key handling", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <RichTextEditor
+        content='<pre><code class="language-bash">echo hi</code></pre>'
+        onChange={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Edit code block title and language",
+      }),
+    );
+    const titleInput = await screen.findByLabelText("Title");
+    // The modal is a Radix dialog portaled to document.body, well outside
+    // ProseMirror's contentEditable DOM - a keystroke typed here should
+    // never reach ProseMirror's own listener, which hangs on .ProseMirror
+    // the same way ProseMirror's own handler does.
+    const proseMirror = container.querySelector(".ProseMirror") as HTMLElement;
+    const spy = vi.fn();
+    proseMirror.addEventListener("keydown", spy);
+    await user.type(titleInput, "x");
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("shows the header only when there is a caption or a language to report", async () => {
+    const { container: bare } = render(
+      <RichTextContent content="<pre><code>echo hi</code></pre>" />,
+    );
+    await waitFor(() =>
+      expect(bare.querySelector(".ProseMirror pre")).not.toBeNull(),
+    );
+    // The header is the wrapper's first child, sitting above the line-number
+    // gutter and <pre>, which together are its only other child. Checking
+    // text content alone would miss the header rendering as an empty bar.
+    expect(bare.querySelector(".wikihub-code")?.childElementCount).toBe(1);
+
+    const { container: titled } = render(
+      <RichTextContent content='<pre data-caption="deploy.sh"><code class="language-bash">echo hi</code></pre>' />,
+    );
+    await waitFor(() =>
+      expect(titled.querySelector(".ProseMirror pre")).not.toBeNull(),
+    );
+    expect(titled.querySelector(".wikihub-code")?.childElementCount).toBe(2);
+    expect(titled.textContent).toContain("deploy.sh");
+    expect(titled.textContent).toContain("Bash");
+  });
+});
+
+describe("Attachment preview syntax highlighting", () => {
+  const attachmentId = "11111111-1111-1111-1111-111111111111";
+
+  // jsdom does not implement scrollIntoView; the modal calls it when a
+  // search match becomes active.
+  Element.prototype.scrollIntoView ??= () => {};
+
+  function mockAttachmentFetch(filename: string, content: string) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.endsWith("/content")) return new Response(content);
+        return new Response(
+          JSON.stringify({
+            id: attachmentId,
+            page_id: "page-1",
+            filename,
+            content_type: "text/plain",
+            created_at: new Date().toISOString(),
+            size_bytes: content.length,
+          }),
+          { headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("colours a previewed file by its extension and keeps a search match marked over it", async () => {
+    mockAttachmentFetch("app.py", "def run():\n    return 1\n");
+    const user = userEvent.setup();
+    render(<RichTextEditor content="<p>hi</p>" onChange={vi.fn()} />);
+
+    document.dispatchEvent(
+      new CustomEvent("wikihub:view-file-details", { detail: attachmentId }),
+    );
+
+    await screen.findByText("app.py");
+    expect(
+      await screen.findByText("def", { selector: ".hljs-keyword" }),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("Search content..."), "return");
+    const mark = document.querySelector("mark");
+    expect(mark).not.toBeNull();
+    // The whole query sits inside one syntax token here, so the match and
+    // the colour have to compose on the very same text, not just coexist
+    // on different lines.
+    expect(mark?.querySelector(".hljs-keyword")).not.toBeNull();
+  });
+
+  it("leaves a file with no recognised language plain", async () => {
+    mockAttachmentFetch("notes.txt", "def run():\n    return 1\n");
+    render(<RichTextEditor content="<p>hi</p>" onChange={vi.fn()} />);
+
+    document.dispatchEvent(
+      new CustomEvent("wikihub:view-file-details", { detail: attachmentId }),
+    );
+
+    await screen.findByText("notes.txt");
+    await waitFor(() => {
+      expect(screen.getByText("def run():")).toBeInTheDocument();
+    });
+    expect(document.querySelector('[class*="hljs-"]')).toBeNull();
   });
 });

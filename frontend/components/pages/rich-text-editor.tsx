@@ -30,7 +30,7 @@ import {
   ReactNodeViewRenderer,
   type Editor,
 } from "@tiptap/react";
-import CodeBlock from "@tiptap/extension-code-block";
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import type { NodeViewProps } from "@tiptap/core";
 import {
   AlertCircle,
@@ -57,6 +57,7 @@ import {
   Minus,
   Palette,
   Paperclip,
+  Pencil,
   Pilcrow,
   Plus,
   Quote,
@@ -115,6 +116,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  CODE_LANGUAGES,
+  codeLanguageForFilename,
+  highlightToLines,
+  lowlight,
+  type CodeToken,
+} from "@/lib/code-highlight";
 import { cn } from "@/lib/utils";
 
 const TableCellWithBackground = TableCell.extend({
@@ -671,33 +679,255 @@ const TableRowResize = Extension.create({
   },
 });
 
-function CodeBlockWithLines({ node, extension: _extension }: NodeViewProps) {
+/** Language picker order: `CODE_LANGUAGES` insertion order, computed once. */
+const CODE_LANGUAGE_ENTRIES = Object.entries(CODE_LANGUAGES);
+
+/**
+ * Static rendition of a code block for the details modal - the same
+ * header/gutter/colours as the real `.wikihub-code` block, but built from
+ * plain `CodeToken`s instead of a ProseMirror node view, so it can show the
+ * caption and language a person is still drafting before they hit Save.
+ */
+function CodeBlockPreview({
+  caption,
+  languageLabel,
+  lines,
+  tokenLines,
+}: {
+  caption: string;
+  languageLabel: string;
+  lines: number[];
+  tokenLines: CodeToken[][];
+}) {
+  const showHeader = Boolean(caption) || Boolean(languageLabel);
+
+  return (
+    <div className="wikihub-code border-code-border bg-code-bg flex h-full flex-col overflow-hidden rounded-md border">
+      {showHeader ? (
+        <div className="border-code-border bg-code-inset flex h-9 shrink-0 items-center justify-between gap-2 border-b px-3">
+          {caption ? (
+            <span className="text-code-muted min-w-0 flex-1 truncate font-mono text-xs">
+              {caption}
+            </span>
+          ) : (
+            <span aria-hidden className="flex-1" />
+          )}
+          {languageLabel ? (
+            <span className="text-code-muted shrink-0 font-mono text-xs">
+              {languageLabel}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="flex min-h-0 flex-1 overflow-auto">
+        <div className="border-code-border bg-code-inset text-code-muted sticky left-0 border-r px-3 py-4 text-right font-mono text-xs !leading-6 select-none">
+          {lines.map((line) => (
+            <div key={line} className="h-6">
+              {line}
+            </div>
+          ))}
+        </div>
+        <pre className="!my-0 flex-1 !border-0 !bg-transparent !p-4 font-mono text-xs !leading-6">
+          <code className="!m-0 !block bg-transparent !p-0 !font-mono !text-xs !leading-6 whitespace-pre">
+            {tokenLines.map((tokens, lineIdx) => (
+              <div key={lineIdx} className="h-6">
+                {tokens.length ? (
+                  tokens.map((token, tokenIdx) => (
+                    <span
+                      key={tokenIdx}
+                      className={token.className ?? undefined}
+                    >
+                      {token.text}
+                    </span>
+                  ))
+                ) : (
+                  <>&nbsp;</>
+                )}
+              </div>
+            ))}
+          </code>
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+function CodeBlockWithLines({ editor, node, updateAttributes }: NodeViewProps) {
   let text = node.textContent || "";
   if (text.endsWith("\n")) {
     text = text.slice(0, -1);
   }
   const lineCount = text.split("\n").length;
   const lines = Array.from({ length: Math.max(1, lineCount) }, (_, i) => i + 1);
-  // Default to a known language if set, though currently we just use the class
-  const language = node.attrs.language || "";
+  const language: string = node.attrs.language || "";
+  const canEdit = editor.isEditable;
+
+  const caption = String(node.attrs.caption ?? "");
+  // Title and language are edited together in a modal rather than inline in
+  // the header bar - a bare text input sitting right above a code block was
+  // too easy to mistake for the first line of the snippet and type into by
+  // accident. The modal is a Radix dialog portaled to document.body, well
+  // outside ProseMirror's contentEditable DOM, so unlike an inline input
+  // nothing typed there can be reinterpreted as a document command.
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState(caption);
+  const [languageDraft, setLanguageDraft] = useState(language || "plaintext");
+
+  function openDetails() {
+    setCaptionDraft(caption);
+    setLanguageDraft(language || "plaintext");
+    setDetailsOpen(true);
+  }
+
+  function saveDetails() {
+    const trimmed = captionDraft.trim();
+    updateAttributes({ caption: trimmed || null, language: languageDraft });
+    setDetailsOpen(false);
+  }
+
+  const languageLabel = language ? (CODE_LANGUAGES[language] ?? language) : "";
+  const showHeader = canEdit || Boolean(caption) || Boolean(language);
+
+  // Live preview inside the details modal: the block's own text, tokenised
+  // for whatever language is currently drafted (not yet saved), so choosing
+  // a language shows its actual colours before committing to it.
+  const previewTokenLines = useMemo(
+    () => highlightToLines(text, detailsOpen ? languageDraft : language),
+    [text, languageDraft, detailsOpen, language],
+  );
 
   return (
-    <NodeViewWrapper className="group border-border bg-surface-sunken relative my-4 flex overflow-hidden rounded-md border">
-      <div className="border-border/50 bg-surface-hover/30 text-muted-foreground/50 border-r px-3 py-4 text-right font-mono text-xs !leading-6 select-none">
-        {lines.map((line) => (
-          <div key={line} className="h-6">
-            {line}
-          </div>
-        ))}
-      </div>
-      <pre className="!my-0 flex-1 overflow-x-auto !border-0 !bg-transparent !p-4 font-mono text-xs !leading-6">
-        <NodeViewContent
-          className={cn(
-            "!m-0 !block bg-transparent !p-0 !font-mono !text-xs !leading-6 whitespace-pre",
-            language ? `language-${language}` : "",
+    <NodeViewWrapper className="wikihub-code group border-code-border bg-code-bg relative my-4 flex flex-col overflow-hidden rounded-md border">
+      {showHeader ? (
+        <div
+          contentEditable={false}
+          className="border-code-border bg-code-inset flex h-9 items-center justify-between gap-2 border-b px-3"
+        >
+          {caption ? (
+            <span className="text-code-muted min-w-0 flex-1 truncate font-mono text-xs">
+              {caption}
+            </span>
+          ) : (
+            <span aria-hidden className="flex-1" />
           )}
-        />
-      </pre>
+
+          <div className="flex shrink-0 items-center gap-1">
+            {languageLabel ? (
+              <span className="text-code-muted font-mono text-xs">
+                {languageLabel}
+              </span>
+            ) : null}
+            {canEdit ? (
+              <button
+                type="button"
+                aria-label="Edit code block title and language"
+                title="Edit title and language"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={openDetails}
+                className="text-code-muted hover:bg-code-border hover:text-code-fg focus-visible:ring-ring flex size-6 shrink-0 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <Pencil className="size-3.5" aria-hidden />
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      {canEdit ? (
+        <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+          <DialogContent
+            title="Code block details"
+            description="Give this code block a title and choose its language for syntax colours."
+            className="max-w-5xl"
+          >
+            <div className="flex flex-col gap-6 sm:flex-row">
+              <div className="space-y-5 sm:w-56 sm:shrink-0">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor="code-caption">
+                    Title
+                  </label>
+                  <Input
+                    id="code-caption"
+                    value={captionDraft}
+                    onChange={(event) => setCaptionDraft(event.target.value)}
+                    placeholder="e.g. deploy.sh"
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label
+                    className="text-sm font-medium"
+                    htmlFor="code-language"
+                  >
+                    Language
+                  </label>
+                  <Select
+                    value={languageDraft}
+                    onValueChange={setLanguageDraft}
+                  >
+                    <SelectTrigger
+                      id="code-language"
+                      aria-label="Code language"
+                    >
+                      <SelectValue>
+                        {CODE_LANGUAGES[languageDraft] ?? languageDraft}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72 overflow-y-auto">
+                      {CODE_LANGUAGE_ENTRIES.map(([key, label]) => (
+                        <SelectItem key={key} value={key}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <span className="text-sm font-medium">Preview</span>
+                <div className="h-[28rem]">
+                  <CodeBlockPreview
+                    caption={captionDraft.trim()}
+                    languageLabel={
+                      CODE_LANGUAGES[languageDraft] ?? languageDraft
+                    }
+                    lines={lines}
+                    tokenLines={previewTokenLines}
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setDetailsOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="button" variant="primary" onClick={saveDetails}>
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+      <div className="flex">
+        <div className="border-code-border bg-code-inset text-code-muted border-r px-3 py-4 text-right font-mono text-xs !leading-6 select-none">
+          {lines.map((line) => (
+            <div key={line} className="h-6">
+              {line}
+            </div>
+          ))}
+        </div>
+        <pre className="!my-0 flex-1 overflow-x-auto !border-0 !bg-transparent !p-4 font-mono text-xs !leading-6">
+          <NodeViewContent
+            className={cn(
+              "!m-0 !block bg-transparent !p-0 !font-mono !text-xs !leading-6 whitespace-pre",
+              language ? `language-${language}` : "",
+            )}
+          />
+        </pre>
+      </div>
     </NodeViewWrapper>
   );
 }
@@ -1429,7 +1659,9 @@ function ResizableImageComponent({
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() => {
                   const src = String(node.attrs.src ?? "");
-                  const match = src.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i);
+                  const match = src.match(
+                    /\/api\/v1\/attachments\/([a-f0-9-]{36})/i,
+                  );
                   if (match) {
                     const event = new CustomEvent("wikihub:view-file-details", {
                       detail: match[1],
@@ -1756,9 +1988,55 @@ const CustomCalloutNode = TiptapNode.create({
   },
 });
 
-const CustomCodeBlock = CodeBlock.extend({
+const CustomCodeBlock = CodeBlockLowlight.extend({
+  addAttributes() {
+    const parentAttributes = (this.parent?.() ?? {}) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    return {
+      ...parentAttributes,
+      // A block with no language chosen must stay genuinely unset - no
+      // `language-plaintext` class - so an untouched or freshly typed
+      // snippet round-trips exactly as it always has. `defaultLanguage:
+      // "plaintext"` (configured below) is read only by the highlighting
+      // plugin, as the fallback that keeps that same falsy language
+      // monochrome instead of guessing it from the text.
+      language: {
+        ...parentAttributes.language,
+        default: null,
+      },
+      caption: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-caption"),
+        renderHTML: (attributes: { caption?: string | null }) =>
+          attributes.caption ? { "data-caption": attributes.caption } : {},
+      },
+    };
+  },
   addNodeView() {
     return ReactNodeViewRenderer(CodeBlockWithLines);
+  },
+  addKeyboardShortcuts() {
+    return {
+      // Selecting the whole document from inside a long snippet is rarely
+      // what someone wants - scope Ctrl/Cmd-A to just this block's code
+      // first. Falls through to the editor's normal select-all (returns
+      // false) whenever the cursor isn't inside a code block at all.
+      "Mod-a": () => {
+        const { $from } = this.editor.state.selection;
+        for (let depth = $from.depth; depth > 0; depth -= 1) {
+          if ($from.node(depth).type === this.type) {
+            return this.editor.commands.setTextSelection({
+              from: $from.start(depth),
+              to: $from.end(depth),
+            });
+          }
+        }
+        return false;
+      },
+    };
   },
 });
 
@@ -1909,7 +2187,7 @@ function AttachmentTile({ node, getPos, selected, editor }: NodeViewProps) {
         contentEditable={false}
         draggable={editor.isEditable}
         className={cn(
-          "group/attachment border-border bg-surface-raised hover:border-primary focus-visible:ring-ring flex w-24 flex-col items-center gap-1.5 rounded-md border p-2 shadow-sm transition-colors !no-underline focus-visible:ring-2 focus-visible:outline-none",
+          "group/attachment border-border bg-surface-raised hover:border-primary focus-visible:ring-ring flex w-24 flex-col items-center gap-1.5 rounded-md border p-2 !no-underline shadow-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
           editor.isEditable
             ? "cursor-grab active:cursor-grabbing"
             : "cursor-pointer",
@@ -1992,7 +2270,6 @@ const AttachmentNode = TiptapNode.create({
   },
 });
 
-
 /**
  * Node types whose node view starts a drag through the custom move machinery.
  * Both hide `dragstart` from ProseMirror behind a node view, so both need the
@@ -2008,7 +2285,13 @@ const editorExtensions = [
     // a caret in globals.css; the colour comes from there too.
     dropcursor: { class: "wikihub-dropcursor", width: 2, color: false },
   }),
-  CustomCodeBlock,
+  CustomCodeBlock.configure({
+    lowlight,
+    // Also read by the LowlightPlugin's decoration pass as the fallback for
+    // any block with a falsy language, so an untouched block stays
+    // monochrome instead of `highlightAuto()` guessing its language.
+    defaultLanguage: "plaintext",
+  }),
   CustomCalloutNode,
   Link.configure({
     openOnClick: false,
@@ -2696,7 +2979,8 @@ function TableActionButton({
       onClick={onClick}
       className={cn(
         "h-8 gap-1.5 px-2",
-        destructive && "text-danger hover:bg-danger-bg hover:text-danger active:bg-danger-bg/85"
+        destructive &&
+          "text-danger hover:bg-danger-bg hover:text-danger active:bg-danger-bg/85",
       )}
     >
       {children}
@@ -2738,7 +3022,8 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
       editor.isFocused ||
       (typeof document !== "undefined" &&
         (document.activeElement?.closest('[role="menu"]') !== null ||
-          document.activeElement?.closest('[data-radix-menu-content]') !== null ||
+          document.activeElement?.closest("[data-radix-menu-content]") !==
+            null ||
           containerRef.current?.querySelector('[data-state="open"]') !== null ||
           containerRef.current?.contains(document.activeElement) === true));
 
@@ -2871,7 +3156,8 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
                 {Array.from({ length: maxRows * maxCols }, (_, index) => {
                   const row = Math.floor(index / maxCols) + 1;
                   const col = (index % maxCols) + 1;
-                  const selected = row <= hoveredTable.rows && col <= hoveredTable.cols;
+                  const selected =
+                    row <= hoveredTable.rows && col <= hoveredTable.cols;
                   return (
                     <button
                       key={`${row}-${col}`}
@@ -2883,7 +3169,9 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
                         "hover:bg-primary-subtle hover:border-primary focus-visible:ring-ring focus-visible:z-10 focus-visible:ring-2 focus-visible:outline-none",
                         selected && "bg-primary-subtle border-primary",
                       )}
-                      onPointerEnter={() => setHoveredTable({ rows: row, cols: col })}
+                      onPointerEnter={() =>
+                        setHoveredTable({ rows: row, cols: col })
+                      }
                       onClick={() => insertTable(row, col)}
                     />
                   );
@@ -2904,7 +3192,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
             variant="ghost"
             size="sm"
             disabled={!editor}
-            className="h-8 gap-1.5 px-2 text-danger hover:bg-danger-bg hover:text-danger active:bg-danger-bg/85"
+            className="text-danger hover:bg-danger-bg hover:text-danger active:bg-danger-bg/85 h-8 gap-1.5 px-2"
           >
             <Trash2 />
             <span>Delete</span>
@@ -3586,7 +3874,9 @@ export function RichTextEditor({
 }) {
   const [wrapText, setWrapText] = useState(true);
   const [draggingFiles, setDraggingFiles] = useState(false);
-  const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null);
+  const [selectedAttachmentId, setSelectedAttachmentId] = useState<
+    string | null
+  >(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -3596,7 +3886,10 @@ export function RichTextEditor({
     };
     document.addEventListener("wikihub:view-file-details", handleViewDetails);
     return () => {
-      document.removeEventListener("wikihub:view-file-details", handleViewDetails);
+      document.removeEventListener(
+        "wikihub:view-file-details",
+        handleViewDetails,
+      );
     };
   }, []);
 
@@ -3611,7 +3904,10 @@ export function RichTextEditor({
     // sequence if we only intercept one. stopImmediatePropagation() ensures
     // no other capture-phase listener (including ProseMirror's own) sees
     // these events for attachment links.
-    const interceptAttachmentLink = (event: MouseEvent, onMatch: (id: string) => void) => {
+    const interceptAttachmentLink = (
+      event: MouseEvent,
+      onMatch: (id: string) => void,
+    ) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
       const link = target.closest("a");
@@ -3903,7 +4199,9 @@ export function RichTextEditor({
 }
 
 export function RichTextContent({ content }: { content: string }) {
-  const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null);
+  const [selectedAttachmentId, setSelectedAttachmentId] = useState<
+    string | null
+  >(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
 
   const normalizedContent = useMemo(
@@ -3932,7 +4230,10 @@ export function RichTextContent({ content }: { content: string }) {
     const container = editorContainerRef.current;
     if (!container) return;
 
-    const interceptAttachmentLink = (event: MouseEvent, onMatch: (id: string) => void) => {
+    const interceptAttachmentLink = (
+      event: MouseEvent,
+      onMatch: (id: string) => void,
+    ) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
       const link = target.closest("a");
@@ -4007,20 +4308,86 @@ function escapeRegExp(string: string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** One coloured token's span within the line it belongs to. */
+type TokenSpan = { start: number; end: number; className: string | null };
+
+function tokenSpans(tokens: CodeToken[]): TokenSpan[] {
+  const spans: TokenSpan[] = [];
+  let offset = 0;
+  for (const token of tokens) {
+    spans.push({
+      start: offset,
+      end: offset + token.text.length,
+      className: token.className,
+    });
+    offset += token.text.length;
+  }
+  return spans;
+}
+
+/**
+ * Slices one fragment of a line against the token boundaries, so a fragment
+ * that straddles two differently-coloured tokens - most often a search
+ * match - keeps both syntax colours instead of losing them to plain text.
+ * With no spans (a plain file, or a surface with no highlighting at all),
+ * the fragment is returned as a single, uncoloured piece.
+ */
+function sliceByTokens(
+  fragment: string,
+  fragmentStart: number,
+  spans: TokenSpan[],
+) {
+  if (spans.length === 0 || !fragment)
+    return [{ text: fragment, className: null as string | null }];
+  const pieces: { text: string; className: string | null }[] = [];
+  let cursor = fragmentStart;
+  const end = fragmentStart + fragment.length;
+  while (cursor < end) {
+    const span = spans.find((s) => s.start <= cursor && cursor < s.end);
+    const pieceEnd = span ? Math.min(span.end, end) : end;
+    pieces.push({
+      text: fragment.slice(cursor - fragmentStart, pieceEnd - fragmentStart),
+      className: span?.className ?? null,
+    });
+    cursor = pieceEnd;
+  }
+  return pieces;
+}
+
 function HighlightedText({
   text,
+  tokens,
   query,
   lineIdx,
   activeMatchIdx,
   matches,
 }: {
   text: string;
+  /** Syntax tokens for this same line, when the file is being highlighted. */
+  tokens?: CodeToken[];
   query: string;
   lineIdx: number;
   activeMatchIdx: number;
   matches: { lineIdx: number; charIdx: number }[];
 }) {
-  if (!query) return <>{text || " "}</>;
+  if (!text) return <> </>;
+
+  const spans = tokens ? tokenSpans(tokens) : [];
+  const renderPieces = (
+    fragment: string,
+    fragmentStart: number,
+    keyPrefix: string,
+  ) =>
+    sliceByTokens(fragment, fragmentStart, spans).map((piece, pieceIdx) => (
+      <span
+        key={`${keyPrefix}-${pieceIdx}`}
+        className={piece.className ?? undefined}
+      >
+        {piece.text}
+      </span>
+    ));
+
+  if (!query) return <>{renderPieces(text, 0, "t")}</>;
 
   const parts = text.split(new RegExp(`(${escapeRegExp(query)})`, "gi"));
   // Resolve every fragment's offset within the line up front. Carrying a
@@ -4037,27 +4404,26 @@ function HighlightedText({
       {segments.map(({ part, start: startOffset }, partIdx) => {
         const isMatch = part.toLowerCase() === query.toLowerCase();
 
-        if (isMatch) {
-          const globalIdx = matches.findIndex(
-            (m) => m.lineIdx === lineIdx && m.charIdx === startOffset,
-          );
-          const isActive = globalIdx === activeMatchIdx;
+        if (!isMatch) return renderPieces(part, startOffset, String(partIdx));
 
-          return (
-            <mark
-              key={partIdx}
-              className={cn(
-                "rounded-sm px-0.5 font-semibold",
-                isActive
-                  ? "bg-warning text-warning-foreground ring-2 ring-warning"
-                  : "bg-yellow-200 dark:bg-yellow-800 text-foreground",
-              )}
-            >
-              {part}
-            </mark>
-          );
-        }
-        return <span key={partIdx}>{part}</span>;
+        const globalIdx = matches.findIndex(
+          (m) => m.lineIdx === lineIdx && m.charIdx === startOffset,
+        );
+        const isActive = globalIdx === activeMatchIdx;
+
+        return (
+          <mark
+            key={partIdx}
+            className={cn(
+              "rounded-sm px-0.5 font-semibold",
+              isActive
+                ? "bg-warning text-warning-foreground ring-warning ring-2"
+                : "text-foreground bg-yellow-200 dark:bg-yellow-800",
+            )}
+          >
+            {renderPieces(part, startOffset, String(partIdx))}
+          </mark>
+        );
       })}
     </>
   );
@@ -4119,7 +4485,9 @@ function AttachmentDetailsModal({
         if (isText) {
           setTextLoading(true);
           try {
-            const res = await fetch(`/api/v1/attachments/${attachmentId}/content`);
+            const res = await fetch(
+              `/api/v1/attachments/${attachmentId}/content`,
+            );
             if (res.ok) setTextContent(await res.text());
           } catch (e) {
             console.error("Error reading file content", e);
@@ -4154,6 +4522,21 @@ function AttachmentDetailsModal({
     [textContent],
   );
 
+  // The same colour theme the editor's code blocks use, keyed off the
+  // filename since a plain attachment has no explicit language choice.
+  // Highlighting the whole file once, rather than one line at a time, is
+  // what keeps a multi-line string or block comment tokenised correctly.
+  const codeLanguage = metadata
+    ? codeLanguageForFilename(metadata.filename)
+    : null;
+  const tokenLines = useMemo(
+    () =>
+      textContent !== null && codeLanguage
+        ? highlightToLines(textContent, codeLanguage)
+        : null,
+    [textContent, codeLanguage],
+  );
+
   const matches = useMemo(() => {
     if (!searchQuery || !textContent) return [];
     const queryLower = searchQuery.toLowerCase();
@@ -4173,7 +4556,8 @@ function AttachmentDetailsModal({
       const element = document.querySelector(
         `[data-line-idx="${matches[activeMatchIdx].lineIdx}"]`,
       );
-      if (element) element.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      if (element)
+        element.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   }, [activeMatchIdx, matches]);
 
@@ -4201,12 +4585,16 @@ function AttachmentDetailsModal({
   const isImage = metadata ? metadata.content_type.startsWith("image/") : false;
   const isPdf = metadata ? metadata.content_type === "application/pdf" : false;
 
-  const handleSearchInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleSearchInputKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
     if (event.key === "Enter") {
       event.preventDefault();
       if (matches.length === 0) return;
       if (event.shiftKey) {
-        setActiveMatchIdx((prev) => (prev - 1 + matches.length) % matches.length);
+        setActiveMatchIdx(
+          (prev) => (prev - 1 + matches.length) % matches.length,
+        );
       } else {
         setActiveMatchIdx((prev) => (prev + 1) % matches.length);
       }
@@ -4214,7 +4602,12 @@ function AttachmentDetailsModal({
   };
 
   return (
-    <Dialog open={!!attachmentId} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog
+      open={!!attachmentId}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent title="Attachment details" className="max-w-3xl">
         {loading ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2">
@@ -4222,40 +4615,44 @@ function AttachmentDetailsModal({
             <p className="text-muted-foreground text-sm">Loading details...</p>
           </div>
         ) : error ? (
-          <div className="flex h-48 flex-col items-center justify-center gap-2 text-danger">
+          <div className="text-danger flex h-48 flex-col items-center justify-center gap-2">
             <p className="text-sm font-semibold">{error}</p>
-            <Button variant="secondary" onClick={onClose}>Close</Button>
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
           </div>
         ) : metadata ? (
           <div className="space-y-4">
             {/* Compact details bar */}
-            <div className="bg-surface-sunken flex flex-wrap gap-x-6 gap-y-2 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground">
+            <div className="bg-surface-sunken border-border text-muted-foreground flex flex-wrap gap-x-6 gap-y-2 rounded-md border px-3 py-1.5 text-xs">
               <div>
-                <span className="font-semibold text-foreground">File: </span>
+                <span className="text-foreground font-semibold">File: </span>
                 <span className="break-all">{metadata.filename}</span>
               </div>
               <div>
-                <span className="font-semibold text-foreground">Size: </span>
+                <span className="text-foreground font-semibold">Size: </span>
                 <span>{formatSize(metadata.size_bytes)}</span>
               </div>
               <div>
-                <span className="font-semibold text-foreground">Type: </span>
+                <span className="text-foreground font-semibold">Type: </span>
                 <span>{metadata.content_type}</span>
               </div>
               <div>
-                <span className="font-semibold text-foreground">Uploaded: </span>
+                <span className="text-foreground font-semibold">
+                  Uploaded:{" "}
+                </span>
                 <span>{formatDate(metadata.created_at)}</span>
               </div>
             </div>
 
             <div className="border-border overflow-hidden rounded-lg border">
-              <div className="bg-surface-sunken flex items-center justify-between border-b px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="bg-surface-sunken text-muted-foreground flex items-center justify-between border-b px-3 py-1.5 text-xs font-semibold tracking-wider uppercase">
                 <span>Preview</span>
                 {textContent !== null && (
-                  <div className="flex items-center gap-3 normal-case tracking-normal">
+                  <div className="flex items-center gap-3 tracking-normal normal-case">
                     <div className="flex items-center gap-1.5">
                       <div className="relative">
-                        <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
                         <Input
                           ref={searchInputRef}
                           value={searchQuery}
@@ -4265,19 +4662,20 @@ function AttachmentDetailsModal({
                           }}
                           onKeyDown={handleSearchInputKeyDown}
                           placeholder="Search content..."
-                          className="h-7 w-40 pl-7 pr-2 text-xs"
+                          className="h-7 w-40 pr-2 pl-7 text-xs"
                         />
                       </div>
                       {matches.length > 0 && (
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground select-none">
-                          <span className="font-medium text-foreground">
+                        <div className="text-muted-foreground flex items-center gap-1 text-xs select-none">
+                          <span className="text-foreground font-medium">
                             {activeMatchIdx + 1}/{matches.length}
                           </span>
                           <button
                             type="button"
                             onClick={() =>
                               setActiveMatchIdx(
-                                (prev) => (prev - 1 + matches.length) % matches.length,
+                                (prev) =>
+                                  (prev - 1 + matches.length) % matches.length,
                               )
                             }
                             className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
@@ -4288,7 +4686,9 @@ function AttachmentDetailsModal({
                           <button
                             type="button"
                             onClick={() =>
-                              setActiveMatchIdx((prev) => (prev + 1) % matches.length)
+                              setActiveMatchIdx(
+                                (prev) => (prev + 1) % matches.length,
+                              )
                             }
                             className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
                             title="Next match"
@@ -4307,14 +4707,18 @@ function AttachmentDetailsModal({
                           ? "bg-primary-subtle text-primary border-primary-subtle font-medium"
                           : "text-muted-foreground hover:text-foreground",
                       )}
-                      title={wrapLines ? "Disable line wrapping" : "Enable line wrapping"}
+                      title={
+                        wrapLines
+                          ? "Disable line wrapping"
+                          : "Enable line wrapping"
+                      }
                     >
                       <WrapText className="size-4" />
                     </button>
                   </div>
                 )}
               </div>
-              <div className="bg-surface flex items-center justify-center p-4 min-h-32 max-h-96 overflow-auto">
+              <div className="bg-surface flex max-h-96 min-h-32 items-center justify-center overflow-auto p-4">
                 {isImage ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -4323,24 +4727,30 @@ function AttachmentDetailsModal({
                     className="max-h-80 w-auto rounded border object-contain shadow-sm"
                   />
                 ) : textContent !== null ? (
-                  <div className="bg-surface-sunken border-border w-full overflow-auto rounded border font-mono text-xs max-h-80 select-text leading-relaxed">
+                  <div className="wikihub-code bg-code-bg border-code-border max-h-80 w-full overflow-auto rounded border font-mono text-xs leading-relaxed select-text">
                     {lines.map((line, idx) => (
                       <div
                         key={idx}
                         data-line-idx={idx}
                         className={cn(
-                          "flex hover:bg-surface-hover/30",
+                          "hover:bg-code-inset flex",
                           matches[activeMatchIdx]?.lineIdx === idx &&
                             searchQuery &&
-                            "bg-warning-subtle/20 hover:bg-warning-subtle/30",
+                            "bg-code-highlight/15 hover:bg-code-highlight/25",
                         )}
                       >
-                        <span className="text-muted-foreground/60 w-12 shrink-0 border-r border-border pr-2.5 text-right select-none tabular-nums">
+                        <span className="text-code-muted border-code-border w-12 shrink-0 border-r pr-2.5 text-right tabular-nums select-none">
                           {idx + 1}
                         </span>
-                        <span className={cn("pl-3", wrapLines ? "whitespace-pre-wrap break-all" : "")}>
+                        <span
+                          className={cn(
+                            "pl-3",
+                            wrapLines ? "break-all whitespace-pre-wrap" : "",
+                          )}
+                        >
                           <HighlightedText
                             text={line}
+                            tokens={tokenLines?.[idx]}
                             query={searchQuery}
                             lineIdx={idx}
                             activeMatchIdx={activeMatchIdx}
@@ -4353,7 +4763,9 @@ function AttachmentDetailsModal({
                 ) : textLoading ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-4">
                     <Loader2 className="text-muted-foreground size-5 animate-spin" />
-                    <span className="text-muted-foreground text-xs">Loading content...</span>
+                    <span className="text-muted-foreground text-xs">
+                      Loading content...
+                    </span>
                   </div>
                 ) : isPdf ? (
                   <object
@@ -4361,7 +4773,7 @@ function AttachmentDetailsModal({
                     type="application/pdf"
                     className="h-80 w-full rounded border"
                   >
-                    <div className="text-center p-4">
+                    <div className="p-4 text-center">
                       <FileText className="text-muted-foreground mx-auto size-12" />
                       <p className="text-muted-foreground mt-2 text-sm">
                         Your browser cannot display this PDF inline.
@@ -4370,14 +4782,14 @@ function AttachmentDetailsModal({
                         href={contentUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-primary hover:underline mt-1 inline-block text-sm"
+                        className="text-primary mt-1 inline-block text-sm hover:underline"
                       >
                         Open the PDF in a new tab
                       </a>
                     </div>
                   </object>
                 ) : (
-                  <div className="text-center py-6">
+                  <div className="py-6 text-center">
                     <FileText className="text-muted-foreground mx-auto size-12" />
                     <p className="text-muted-foreground mt-2 text-sm">
                       No preview available for this file type.
@@ -4392,7 +4804,11 @@ function AttachmentDetailsModal({
                 Close
               </Button>
               <Button asChild>
-                <a href={contentUrl} download={metadata.filename} className="gap-1.5">
+                <a
+                  href={contentUrl}
+                  download={metadata.filename}
+                  className="gap-1.5"
+                >
                   <Download className="size-4" />
                   <span>Download</span>
                 </a>

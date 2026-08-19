@@ -49,6 +49,32 @@
   --wh-info: #1f6592;
   --wh-info-bg: #e8f2f9;
 
+  /* --- code block theme: Monokai Pro (Filter Octagon) ---
+     Fixed, not theme-dependent - the filter is a dark-only editor theme with
+     no official light counterpart, and re-deriving a "light Monokai" per
+     role only ever produced washed-out or hue-mismatched approximations. A
+     code block instead opts out of the app's light/dark mode entirely and
+     always renders on this dark surface, the same as it would in an editor,
+     so these are declared once here rather than repeated under .dark below.
+     Role-to-hue assignment (keyword/attr/tag = red, string/value = yellow,
+     number = purple, function/type = teal, comment = muted lavender-grey,
+     italic) matches the real extension, not a generic
+     "keyword/string/number" guess - confirmed against the theme running in
+     VS Code across YAML, Python and Dockerfile samples, not reconstructed
+     from a token-role table. */
+  --wh-code-bg: #282a3a;
+  --wh-code-bg-inset: #2f3247;
+  --wh-code-border: #3d4056;
+  --wh-code-fg: #eaf2f1;
+  --wh-code-comment: #9195ab;
+  --wh-code-keyword: #ff657a;
+  --wh-code-string: #ffd76d;
+  --wh-code-number: #c39ac9;
+  --wh-code-function: #9cd1bb;
+  --wh-code-type: #ff657a;
+  --wh-code-variable: #eaf2f1;
+  --wh-code-meta: #ff9b5e;
+
   /* --- semantic surface tokens (light) --- */
   --background: var(--wh-neutral-0);
   --foreground: var(--wh-neutral-900);
@@ -105,6 +131,10 @@
   --wh-danger-bg: color-mix(in oklab, #b3261e 24%, transparent);
   --wh-info: #86c0e6;
   --wh-info-bg: color-mix(in oklab, #1f6592 26%, transparent);
+
+  /* Code blocks are fixed-dark regardless of app theme (see :root above) -
+     nothing to override here. */
+
   --danger: #e5675e;
   --scrollbar-thumb: var(--wh-neutral-600);
   --scrollbar-thumb-hover: var(--wh-neutral-500);
@@ -137,6 +167,15 @@
   --color-info: var(--wh-info);
   --color-info-bg: var(--wh-info-bg);
   --color-danger-bg: var(--wh-danger-bg);
+
+  /* Code block chrome (background/border/default text) - fixed dark, see
+     the --wh-code-* comment in :root for why this doesn't vary by theme. */
+  --color-code-bg: var(--wh-code-bg);
+  --color-code-inset: var(--wh-code-bg-inset);
+  --color-code-border: var(--wh-code-border);
+  --color-code-fg: var(--wh-code-fg);
+  --color-code-muted: var(--wh-code-comment);
+  --color-code-highlight: var(--wh-code-meta);
 
   --spacing-topbar: var(--wh-topbar-height);
   --spacing-sidebar: var(--wh-sidebar-width);
@@ -445,5 +484,68 @@
     width: 2px !important;
     height: 1.3em !important;
     transform: translateY(-50%);
+  }
+
+  /* Syntax colours for a highlighted code block or attachment text preview.
+     highlight.js assigns each token one or more `hljs-*` classes (some
+     compound, e.g. `hljs-title function_`); grouped here into a handful of
+     roles rather than styled one class at a time, so the palette stays
+     legible. Punctuation and operators are left uncoloured on purpose - they
+     read as noise when tinted, so they fall through to this default instead.
+     Scoped to `.wikihub-code` so plain prose never picks up a `.hljs-*` class
+     collision by accident. */
+  .wikihub-code {
+    color: var(--wh-code-fg);
+  }
+
+  .wikihub-code :is(.hljs-comment, .hljs-quote) {
+    color: var(--wh-code-comment);
+    font-style: italic;
+  }
+
+  .wikihub-code :is(.hljs-keyword, .hljs-selector-tag) {
+    color: var(--wh-code-keyword);
+  }
+
+  .wikihub-code :is(.hljs-string, .hljs-regexp, .hljs-addition) {
+    color: var(--wh-code-string);
+  }
+
+  /* `True`/`False`/`None`-style language constants read as numbers here,
+     not keywords - confirmed against Python in the real theme, where they
+     take the same purple as numeric literals rather than the red used for
+     `def`/`import`/`if`. */
+  .wikihub-code :is(.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-literal) {
+    color: var(--wh-code-number);
+  }
+
+  /* Built-ins (`len`, `print`, `int`, `rm`) read as the same teal as a
+     defined function name in the real theme, not as a keyword - hljs gives
+     both a builtin type name and a builtin function call the one
+     `hljs-built_in` class, so one rule here covers both. */
+  .wikihub-code
+    :is(.hljs-title, .hljs-title.function_, .hljs-section, .hljs-built_in) {
+    color: var(--wh-code-function);
+  }
+
+  .wikihub-code
+    :is(
+      .hljs-type,
+      .hljs-title.class_,
+      .hljs-attr,
+      .hljs-attribute,
+      .hljs-tag,
+      .hljs-name
+    ) {
+    color: var(--wh-code-type);
+  }
+
+  .wikihub-code
+    :is(.hljs-variable, .hljs-params, .hljs-property, .hljs-template-variable) {
+    color: var(--wh-code-variable);
+  }
+
+  .wikihub-code :is(.hljs-meta, .hljs-doctag, .hljs-deletion) {
+    color: var(--wh-code-meta);
   }
 }
