@@ -1318,6 +1318,12 @@ function ResizableImageComponent({
             crop
               ? {
                   position: "absolute",
+                  // Prose styles give images a vertical margin. On an
+                  // absolutely positioned box that margin is added to the
+                  // offsets below, sliding the source image down by a fixed
+                  // number of pixels while its height scales with the frame -
+                  // so the visible slice drifts as the image is resized.
+                  margin: 0,
                   // Every dimension is a share of the frame, so the source
                   // rectangle scales with it and the selected region stays
                   // put whatever size the frame ends up.

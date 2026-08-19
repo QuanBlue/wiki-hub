@@ -124,6 +124,10 @@ describe("RichTextEditor images", () => {
       left: "-100%",
       top: "-40%",
     });
+    // Prose styles give images a vertical margin. Left in place it is added to
+    // the offsets above as a fixed pixel amount while the source image scales
+    // with the frame, so the visible slice slides as the image is resized.
+    expect(image).toHaveStyle({ margin: "0px" });
   });
 
   it("corrects the size and position of crops saved by the earlier editor", async () => {
