@@ -1,30 +1,20 @@
 "use client";
 
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import { useHydrated } from "@/hooks/use-hydrated";
 
-const ORDER = ["light", "dark", "system"] as const;
-type ThemeChoice = (typeof ORDER)[number];
-
-const ICONS: Record<ThemeChoice, typeof Sun> = {
-  light: Sun,
-  dark: Moon,
-  system: Monitor,
-};
-
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { theme, resolvedTheme, setTheme } = useTheme();
   const hydrated = useHydrated();
 
-  // The stored preference is only readable in the browser, so render the
-  // neutral "system" state until hydration completes.
-  const current: ThemeChoice = hydrated
-    ? ((theme as ThemeChoice) ?? "system")
-    : "system";
-  const Icon = ICONS[current] ?? Monitor;
+  // Strictly toggle between "light" and "dark" mode.
+  const currentMode = (resolvedTheme || theme) === "dark" ? "dark" : "light";
+  const current: "light" | "dark" = hydrated ? currentMode : "light";
+  const Icon = current === "dark" ? Moon : Sun;
+  const nextTheme = current === "light" ? "dark" : "light";
 
   return (
     <Button
@@ -32,11 +22,9 @@ export function ThemeToggle() {
       size="icon"
       aria-label={`Theme: ${current}. Click to change.`}
       title={`Theme: ${current}`}
-      onClick={() =>
-        setTheme(ORDER[(ORDER.indexOf(current) + 1) % ORDER.length])
-      }
+      onClick={() => setTheme(nextTheme)}
     >
-      <Icon />
+      <Icon className="size-4" aria-hidden />
     </Button>
   );
 }
