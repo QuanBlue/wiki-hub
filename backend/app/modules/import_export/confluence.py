@@ -73,10 +73,10 @@ def _timestamp(properties: dict[str, ET.Element], *names: str) -> datetime | Non
     return None
 
 
-def scan_archive(path: Path) -> list[ConfluenceSpace]:
+def scan_archive(file_or_path: Path | IO[bytes]) -> list[ConfluenceSpace]:
     """Read Space/Page metadata without materialising ``entities.xml`` in memory."""
     try:
-        archive = zipfile.ZipFile(path)
+        archive = zipfile.ZipFile(file_or_path)
     except zipfile.BadZipFile as exc:
         raise BadRequestError("The uploaded archive is not a valid ZIP file.") from exc
 

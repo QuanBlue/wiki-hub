@@ -1,8 +1,5 @@
-"""Confluence import orchestration shared by the API and ARQ worker."""
-
-from __future__ import annotations
-
 import html
+import io
 import re
 import tempfile
 import urllib.parse
@@ -10,6 +7,7 @@ import uuid
 import zipfile
 from contextlib import suppress
 from pathlib import Path
+from typing import IO, Any
 
 import anyio
 from bs4 import BeautifulSoup
@@ -17,6 +15,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, PayloadTooLargeError
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 from app.models.attachment import PageAttachment
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.page import WikiPage
@@ -240,6 +241,57 @@ def _normalize_confluence_code_macros(content: str) -> str:
     )
 
 
+class SeekableS3File(io.BufferedIOBase):
+    """Seekable read-only file-like wrapper around S3 object using Byte Range requests.
+
+    Allows zipfile.ZipFile to inspect and read specific files (like entities.xml)
+    from multi-gigabyte S3 archives in seconds without downloading the whole archive.
+    """
+
+    def __init__(self, client: Any, bucket: str, key: str, size: int) -> None:
+        self.client = client
+        self.bucket = bucket
+        self.key = key
+        self._size = size
+        self._pos = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self._pos
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        if whence == io.SEEK_SET:
+            self._pos = offset
+        elif whence == io.SEEK_CUR:
+            self._pos += offset
+        elif whence == io.SEEK_END:
+            self._pos = self._size + offset
+        self._pos = max(0, min(self._pos, self._size))
+        return self._pos
+
+    def read(self, size: int = -1) -> bytes:
+        if self._pos >= self._size:
+            return b""
+        if size is None or size < 0:
+            size = self._size - self._pos
+        end_pos = min(self._pos + size - 1, self._size - 1)
+        if end_pos < self._pos:
+            return b""
+        response = self.client.get_object(
+            Bucket=self.bucket,
+            Key=self.key,
+            Range=f"bytes={self._pos}-{end_pos}",
+        )
+        data = response["Body"].read()
+        self._pos += len(data)
+        return data
+
+
 class ConfluenceImportService:
     # S3 multipart uploads require every non-final part to be at least 5 MiB.
     # Eight MiB keeps retry costs reasonable without creating too many requests.
@@ -248,6 +300,76 @@ class ConfluenceImportService:
     def __init__(self, session: AsyncSession, storage: ObjectStorage) -> None:
         self.session, self.storage = session, storage
         self._user_cache: dict[str, uuid.UUID] = {}
+
+    def _scan_archive_sync(self, archive: ImportArchive) -> list[ConfluenceSpace]:
+        s3_client = getattr(self.storage, "_client", None)
+        bucket = getattr(self.storage, "bucket", None)
+
+        if s3_client is not None and bucket is not None:
+            try:
+                s3_file = SeekableS3File(s3_client, bucket, archive.object_key, archive.size_bytes)
+                return scan_archive(s3_file)
+            except Exception as stream_err:
+                logger.warning(
+                    "Streaming range-scan failed for %s, falling back to local file download: %s",
+                    archive.object_key,
+                    stream_err,
+                )
+
+        with tempfile.TemporaryDirectory(prefix="wikihub-confluence-scan-") as directory:
+            path = Path(directory) / "archive.zip"
+            if s3_client is not None and bucket is not None:
+                s3_client.download_file(bucket, archive.object_key, str(path))
+            else:
+                import asyncio
+                asyncio.run(self.storage.download_to_file(archive.object_key, str(path)))
+            return scan_archive(path)
+
+    async def scan(self, archive: ImportArchive) -> ImportArchive:
+        existing = set((await self.session.execute(select(Space.key))).scalars())
+        if archive.status == "scanned" and archive.spaces:
+            archive.spaces = [
+                {
+                    **item,
+                    "conflict": item.get("key") in existing,
+                }
+                for item in archive.spaces
+            ]
+            archive.error = None
+            await self.session.flush()
+            return archive
+        if not await self.storage.exists(archive.object_key):
+            raise BadRequestError("The archive upload has not completed yet.")
+
+        try:
+            spaces = await anyio.to_thread.run_sync(self._scan_archive_sync, archive)
+        except BadRequestError:
+            raise
+        except Exception as scan_error:
+            logger.error(
+                "Failed to scan Confluence archive %s: %s",
+                archive.id,
+                scan_error,
+                exc_info=True,
+            )
+            archive.error = str(scan_error)
+            await self.session.flush()
+            raise BadRequestError(f"Could not scan Confluence archive: {scan_error}") from scan_error
+
+        archive.spaces = [
+            {
+                "key": item.key,
+                "name": item.name,
+                "page_count": len(item.pages),
+                "attachment_count": item.attachment_count,
+                "conflict": item.key in existing,
+            }
+            for item in spaces
+        ]
+        archive.status = "scanned"
+        archive.error = None
+        await self.session.flush()
+        return archive
 
     async def _resolve_or_create_user(self, username: str) -> uuid.UUID | None:
         normalized_username = username.strip()
@@ -399,40 +521,6 @@ class ConfluenceImportService:
         archive.multipart_upload_id = None
         archive.status = "cancelled"
         await self.session.flush()
-
-    async def scan(self, archive: ImportArchive) -> ImportArchive:
-        existing = set((await self.session.execute(select(Space.key))).scalars())
-        if archive.status == "scanned" and archive.spaces:
-            archive.spaces = [
-                {
-                    **item,
-                    "conflict": item.get("key") in existing,
-                }
-                for item in archive.spaces
-            ]
-            archive.error = None
-            await self.session.flush()
-            return archive
-        if not await self.storage.exists(archive.object_key):
-            raise BadRequestError("The archive upload has not completed yet.")
-        with tempfile.TemporaryDirectory(prefix="wikihub-confluence-scan-") as directory:
-            path = Path(directory) / "archive.zip"
-            await self.storage.download_to_file(archive.object_key, str(path))
-            spaces = await anyio.to_thread.run_sync(scan_archive, path)
-        archive.spaces = [
-            {
-                "key": item.key,
-                "name": item.name,
-                "page_count": len(item.pages),
-                "attachment_count": item.attachment_count,
-                "conflict": item.key in existing,
-            }
-            for item in spaces
-        ]
-        archive.status = "scanned"
-        archive.error = None
-        await self.session.flush()
-        return archive
 
     async def create_job(
         self,

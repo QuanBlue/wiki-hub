@@ -245,7 +245,12 @@ async def test_group_user_audit_and_meta_wrappers(monkeypatch: pytest.MonkeyPatc
         "env_defaults",
         classmethod(
             lambda cls: SimpleNamespace(
-                site_name="WikiHub", max_upload_size_bytes=1, allowed_attachment_types=[]
+                site_name="WikiHub",
+                theme_color="#216fc0",
+                logo_icon="BookOpen",
+                custom_logo_url=None,
+                max_upload_size_bytes=1,
+                allowed_attachment_types=[],
             )
         ),
     )
