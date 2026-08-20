@@ -48,41 +48,49 @@ export function AccountSettings({ user }: { user: Me }) {
 
   return (
     <div className="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
-      <aside role="tablist" aria-label="Account settings" className="border-border border-r pr-5 lg:sticky lg:top-24">
-        <p className="text-muted-foreground px-2 text-[10px] font-semibold uppercase tracking-[0.08em]">
+      <aside
+        role="tablist"
+        aria-label="Account settings"
+        className="border-border border-r pr-5 lg:sticky lg:top-24"
+      >
+        <p className="text-muted-foreground px-2 text-[10px] font-semibold tracking-[0.08em] uppercase">
           Personal settings
         </p>
         <div className="mt-3 space-y-1">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
 
-          return (
-            <button
-              key={tab.id}
-              ref={(node) => { tabRefs.current[tab.id] = node; }}
-              type="button"
-              role="tab"
-              id={tab.id + "-tab"}
-              aria-controls={tab.id + "-panel"}
-              aria-selected={isActive}
-              tabIndex={isActive ? 0 : -1}
-              onClick={() => selectTab(tab.id)}
-              onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-normal",
-                "transition-colors duration-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                isActive
-                  ? "bg-surface-selected text-primary hover:bg-surface-hover font-medium"
-                  : "text-foreground hover:bg-surface-hover",
-              )}
-            >
-              <Icon className="size-4" aria-hidden />
-              {tab.label}
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={tab.id}
+                ref={(node) => {
+                  tabRefs.current[tab.id] = node;
+                }}
+                type="button"
+                role="tab"
+                id={tab.id + "-tab"}
+                aria-controls={tab.id + "-panel"}
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
+                onClick={() => selectTab(tab.id)}
+                onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
+                className={cn(
+                  "flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                  isActive
+                    ? "bg-surface-selected text-primary font-semibold hover:bg-surface-hover focus-visible:ring-ring"
+                    : "text-muted-foreground font-normal hover:text-foreground hover:bg-surface-hover focus-visible:ring-ring",
+                )}
+              >
+                <Icon className="size-4" aria-hidden />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
+        <p className="border-border text-muted-foreground mt-5 border-t px-2 pt-4 text-xs leading-relaxed">
+          Manage your personal profile, credentials, and active security sessions.
+        </p>
       </aside>
 
       <div className="min-w-0">
