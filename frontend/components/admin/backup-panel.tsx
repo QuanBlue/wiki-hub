@@ -209,9 +209,7 @@ function fileMatchesStoredUpload(
     file &&
     upload &&
     file.name === upload.fileName &&
-    file.size === upload.fileSize &&
-    (upload.fileLastModified === null ||
-      file.lastModified === upload.fileLastModified),
+    file.size === upload.fileSize,
   );
 }
 
@@ -1171,8 +1169,11 @@ export function BackupPanel() {
     };
   }, [restoreStoredConfluenceUpload, restoreActiveConfluenceJob]);
 
-  async function uploadConfluence(resume = false) {
-    const saved = resume ? storedConfluenceUpload : null;
+  async function uploadConfluence(
+    resume = false,
+    overrideStored?: StoredConfluenceUpload,
+  ) {
+    const saved = overrideStored ?? (resume ? storedConfluenceUpload : null);
     const selectedFile = saved?.file ?? confluenceFile;
     if (!selectedFile) {
       if (saved) {
@@ -1819,6 +1820,9 @@ export function BackupPanel() {
                 const nextStored = {
                   ...storedConfluenceUpload,
                   file: nextFile ?? undefined,
+                  fileLastModified:
+                    nextFile?.lastModified ??
+                    storedConfluenceUpload.fileLastModified,
                 };
                 setConfluenceFile(null);
                 storedConfluenceUploadRef.current = nextStored;
@@ -1829,6 +1833,7 @@ export function BackupPanel() {
                 setPreparationLogs([]);
                 setUploadProgress((current) => current ?? 0);
                 void saveStoredUpload(nextStored);
+                void uploadConfluence(true, nextStored);
                 return;
               }
               if (storedConfluenceUpload) {
