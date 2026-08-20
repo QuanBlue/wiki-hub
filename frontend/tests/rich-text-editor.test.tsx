@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -722,6 +728,20 @@ describe("RichTextEditor attachments", () => {
   });
 });
 
+/**
+ * The title/language editor lives behind a "Code block options" menu
+ * (Radix opens its trigger on pointerdown, which plain fireEvent.click does
+ * not synthesize - userEvent does, matching tests/select.test.tsx), not a
+ * lone edit button, so a "Delete code block" action can live in the same
+ * place without a second control crowding the header.
+ */
+async function openCodeBlockDetails(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    await screen.findByRole("button", { name: "Code block options" }),
+  );
+  await user.click(await screen.findByRole("menuitem", { name: /edit/i }));
+}
+
 describe("RichTextEditor code blocks", () => {
   it("colours a block with a known language and leaves one with none plain", async () => {
     const { container } = render(
@@ -747,7 +767,7 @@ describe("RichTextEditor code blocks", () => {
     expect(plainPre.querySelector('[class*="hljs-"]')).toBeNull();
   });
 
-  it("always shows an edit button in an editable block, even with no caption or language yet", async () => {
+  it("always shows an options button in an editable block, even with no caption or language yet", async () => {
     render(
       <RichTextEditor
         content="<pre><code>echo hi</code></pre>"
@@ -755,9 +775,7 @@ describe("RichTextEditor code blocks", () => {
       />,
     );
     expect(
-      await screen.findByRole("button", {
-        name: "Edit code block title and language",
-      }),
+      await screen.findByRole("button", { name: "Code block options" }),
     ).toBeInTheDocument();
   });
 
@@ -771,13 +789,7 @@ describe("RichTextEditor code blocks", () => {
       />,
     );
 
-    // Radix opens its trigger on pointerdown, which plain fireEvent.click
-    // does not synthesize - userEvent does, matching tests/select.test.tsx.
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Edit code block title and language",
-      }),
-    );
+    await openCodeBlockDetails(user);
     const titleInput = await screen.findByLabelText("Title");
     await user.clear(titleInput);
     await user.type(titleInput, "deploy.sh");
@@ -807,11 +819,7 @@ describe("RichTextEditor code blocks", () => {
       />,
     );
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Edit code block title and language",
-      }),
-    );
+    await openCodeBlockDetails(user);
     // Unsaved, the block itself still has no language - the preview must
     // reflect the in-progress choice, not what is actually stored yet.
     expect(screen.queryByText("def", { selector: ".hljs-keyword" })).toBeNull();
@@ -838,11 +846,7 @@ describe("RichTextEditor code blocks", () => {
       />,
     );
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Edit code block title and language",
-      }),
-    );
+    await openCodeBlockDetails(user);
     const titleInput = await screen.findByLabelText("Title");
     await user.clear(titleInput);
     await user.type(titleInput, "discard me");
@@ -850,11 +854,7 @@ describe("RichTextEditor code blocks", () => {
 
     expect(onChange).not.toHaveBeenCalled();
     // Reopening must show the original value, not the discarded draft.
-    await user.click(
-      screen.getByRole("button", {
-        name: "Edit code block title and language",
-      }),
-    );
+    await openCodeBlockDetails(user);
     expect(await screen.findByLabelText("Title")).toHaveValue("original");
   });
 
@@ -867,11 +867,7 @@ describe("RichTextEditor code blocks", () => {
       />,
     );
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Edit code block title and language",
-      }),
-    );
+    await openCodeBlockDetails(user);
     const titleInput = await screen.findByLabelText("Title");
     // The modal is a Radix dialog portaled to document.body, well outside
     // ProseMirror's contentEditable DOM - a keystroke typed here should
@@ -882,6 +878,33 @@ describe("RichTextEditor code blocks", () => {
     proseMirror.addEventListener("keydown", spy);
     await user.type(titleInput, "x");
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("deletes the code block from the options menu", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content="<p>Keep this paragraph</p><pre><code>echo hi</code></pre>"
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Code block options" }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: /delete code block/i }),
+    );
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.not.stringContaining("<pre>"),
+      );
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.stringContaining("Keep this paragraph"),
+    );
   });
 
   it("shows the header only when there is a caption or a language to report", async () => {
@@ -973,5 +996,172 @@ describe("Attachment preview syntax highlighting", () => {
       expect(screen.getByText("def run():")).toBeInTheDocument();
     });
     expect(document.querySelector('[class*="hljs-"]')).toBeNull();
+  });
+});
+
+describe("RichTextEditor slash-command bridge", () => {
+  // The slash-command menu (slash-command.tsx) is an editor-instance-agnostic
+  // extension - it can't reach the toolbar's hidden file inputs directly, so
+  // it dispatches these two events instead. The toolbar must be listening.
+  it("opens the image file picker when the menu dispatches its insert-image event", () => {
+    render(<RichTextEditor content="<p>hi</p>" onChange={vi.fn()} />);
+
+    const imageInput = document.querySelector(
+      'input[type="file"][accept="image/*"]',
+    ) as HTMLInputElement;
+    const clickSpy = vi.spyOn(imageInput, "click");
+
+    document.dispatchEvent(new CustomEvent("wikihub:slash-insert-image"));
+
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the attachment file picker when the menu dispatches its insert-attachment event", () => {
+    render(<RichTextEditor content="<p>hi</p>" onChange={vi.fn()} />);
+
+    const attachmentInput = document.querySelector(
+      'input[type="file"]:not([accept])',
+    ) as HTMLInputElement;
+    const clickSpy = vi.spyOn(attachmentInput, "click");
+
+    document.dispatchEvent(new CustomEvent("wikihub:slash-insert-attachment"));
+
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a page picker on link-to-page and inserts a link to the chosen page", async () => {
+    const onChange = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify([
+              { id: "page-2", slug: "onboarding", title: "Onboarding guide" },
+            ]),
+            { headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    render(
+      <RichTextEditor
+        content="<p>hi</p>"
+        onChange={onChange}
+        pageLinkContext={{ spaceKey: "DEMO", currentPageId: "page-1" }}
+      />,
+    );
+
+    await act(async () => {
+      document.dispatchEvent(new CustomEvent("wikihub:slash-link-to-page"));
+    });
+
+    const option = await screen.findByRole("option", {
+      name: /Onboarding guide/,
+    });
+    fireEvent.click(option);
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '/spaces/DEMO/pages/onboarding">Onboarding guide',
+        ),
+      );
+    });
+  });
+
+  it("creates a sub-page on create-subpage, inserts a link, and hands off to onSubpageCreated", async () => {
+    const onChange = vi.fn();
+    const onSubpageCreated = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ id: "page-3", slug: "roadmap", title: "Roadmap" }),
+            { headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    render(
+      <RichTextEditor
+        content="<p>hi</p>"
+        onChange={onChange}
+        pageLinkContext={{ spaceKey: "DEMO", currentPageId: "page-1" }}
+        onSubpageCreated={onSubpageCreated}
+      />,
+    );
+
+    act(() => {
+      document.dispatchEvent(new CustomEvent("wikihub:slash-create-subpage"));
+    });
+
+    const titleInput = await screen.findByLabelText("Title");
+    fireEvent.change(titleInput, { target: { value: "Roadmap" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create page" }));
+
+    await waitFor(() => {
+      expect(onSubpageCreated).toHaveBeenCalledWith(
+        expect.objectContaining({ slug: "roadmap", title: "Roadmap" }),
+      );
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.stringContaining('/spaces/DEMO/pages/roadmap">Roadmap'),
+    );
+  });
+});
+
+describe("RichTextEditor toggle blocks", () => {
+  it("collapses/expands via the chevron, keeps the body in the document, and persists open state", async () => {
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content='<div data-type="toggle"><div data-type="toggle-summary">Details</div><div data-type="toggle-content"><p>Hidden body</p></div></div>'
+        onChange={onChange}
+      />,
+    );
+
+    await screen.findByText("Hidden body");
+    const button = screen.getByRole("button", { name: "Collapse toggle" });
+    expect(button).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(button);
+
+    expect(
+      await screen.findByRole("button", { name: "Expand toggle" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    // Still in the document, not removed - collapsing must never lose typed
+    // content, and reopening has to show the same text back.
+    expect(screen.getByText("Hidden body")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('data-open="false"'),
+      );
+    });
+  });
+});
+
+describe("RichTextEditor to-do list", () => {
+  it("renders a checkbox and persists its checked state", async () => {
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content='<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><label><input type="checkbox"></label><div><p>Buy milk</p></div></li></ul>'
+        onChange={onChange}
+      />,
+    );
+
+    const checkbox = await screen.findByRole("checkbox");
+    expect(checkbox).not.toBeChecked();
+
+    fireEvent.click(checkbox);
+
+    expect(checkbox).toBeChecked();
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.stringContaining('data-checked="true"'),
+      );
+    });
   });
 });

@@ -28,3 +28,7 @@ window.ResizeObserver = class {
   unobserve() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver;
+
+// jsdom doesn't implement this either (used by the slash-command menu to
+// keep the keyboard-highlighted row in view as it scrolls).
+window.Element.prototype.scrollIntoView = vi.fn();

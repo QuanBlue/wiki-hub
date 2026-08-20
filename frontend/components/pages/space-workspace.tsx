@@ -2415,6 +2415,25 @@ export function SpaceWorkspace({
                         content={draftContent}
                         onChange={updateDraftContent}
                         onUploadFile={uploadPageAttachment}
+                        pageLinkContext={{
+                          spaceKey: space.key,
+                          currentPageId: currentPage.id,
+                        }}
+                        onSubpageCreated={(page) =>
+                          // Same "save what's here, then go" sequence this
+                          // file already uses for every other in-app
+                          // navigation away from an editing page (see
+                          // navigateTo's other callers) - the link just
+                          // inserted above needs to be part of what's saved.
+                          void persistDraft().finally(() =>
+                            navigateTo(
+                              new URL(
+                                pageHref(space.key, page.slug),
+                                window.location.href,
+                              ),
+                            ),
+                          )
+                        }
                       />
                     ) : (
                       <SourceCodeEditor

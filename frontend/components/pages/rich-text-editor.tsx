@@ -11,14 +11,24 @@ import {
   TableHeader,
   TableRow,
 } from "@tiptap/extension-table";
+// TaskList/TaskItem ship inside the same @tiptap/extension-list package
+// StarterKit's BulletList/OrderedList already come from - no new dependency.
+import { TaskList, TaskItem } from "@tiptap/extension-list";
+// Pulled out of StarterKit (which is told blockquote: false below) only so
+// its input rule can be re-keyed from "> " to Notion's '" ' - everything
+// else (schema, commands, keyboard shortcuts) stays the stock extension.
+import Blockquote from "@tiptap/extension-blockquote";
 import {
   Extension,
   Node as TiptapNode,
   Mark,
   mergeAttributes,
+  InputRule,
+  wrappingInputRule,
 } from "@tiptap/core";
-import { NodeSelection, Plugin } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, TextSelection } from "@tiptap/pm/state";
 import { Fragment, Slice } from "@tiptap/pm/model";
+import type { EditorView } from "@tiptap/pm/view";
 import { dropPoint } from "@tiptap/pm/transform";
 import { TableMap } from "@tiptap/pm/tables";
 import {
@@ -41,12 +51,15 @@ import {
   AlignRight,
   Check,
   ChevronDown,
+  ChevronRight,
   Code2,
   Crop,
   Ellipsis,
+  FilePlus2,
   Heading1,
   Heading2,
   Heading3,
+  Heading4,
   ImagePlus,
   Info,
   Italic,
@@ -54,6 +67,7 @@ import {
   Link2,
   List,
   ListOrdered,
+  ListTodo,
   Minus,
   Palette,
   Paperclip,
@@ -97,6 +111,8 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -108,7 +124,8 @@ import {
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Input, inputClassName } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -116,6 +133,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { api, ApiError } from "@/lib/api-client";
 import {
   CODE_LANGUAGES,
   codeLanguageForFilename,
@@ -124,6 +142,12 @@ import {
   type CodeToken,
 } from "@/lib/code-highlight";
 import { cn } from "@/lib/utils";
+import {
+  SlashCommand,
+  insertToggle,
+  placeCursorInToggleSummary,
+} from "@/components/pages/slash-command";
+import type { WikiPage } from "@/types/api";
 
 const TableCellWithBackground = TableCell.extend({
   addAttributes() {
@@ -752,7 +776,12 @@ function CodeBlockPreview({
   );
 }
 
-function CodeBlockWithLines({ editor, node, updateAttributes }: NodeViewProps) {
+function CodeBlockWithLines({
+  editor,
+  node,
+  updateAttributes,
+  deleteNode,
+}: NodeViewProps) {
   let text = node.textContent || "";
   if (text.endsWith("\n")) {
     text = text.slice(0, -1);
@@ -818,16 +847,32 @@ function CodeBlockWithLines({ editor, node, updateAttributes }: NodeViewProps) {
               </span>
             ) : null}
             {canEdit ? (
-              <button
-                type="button"
-                aria-label="Edit code block title and language"
-                title="Edit title and language"
-                onPointerDown={(event) => event.preventDefault()}
-                onClick={openDetails}
-                className="text-code-muted hover:bg-code-border hover:text-code-fg focus-visible:ring-ring flex size-6 shrink-0 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-              >
-                <Pencil className="size-3.5" aria-hidden />
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Code block options"
+                    title="Code block options"
+                    className="text-code-muted hover:bg-code-border hover:text-code-fg focus-visible:ring-ring flex size-6 shrink-0 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                  >
+                    <Ellipsis className="size-3.5" aria-hidden />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={openDetails} className="gap-2">
+                    <Pencil className="size-4" aria-hidden />
+                    Edit title &amp; language
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={deleteNode}
+                    destructive
+                    className="gap-2"
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                    Delete code block
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
           </div>
         </div>
@@ -980,6 +1025,50 @@ function CalloutComponent({ node }: NodeViewProps) {
           <IconComponent className={cn("h-5 w-5", config.iconColor)} />
         </div>
         <div className="min-w-0 flex-1 [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+          <NodeViewContent />
+        </div>
+      </div>
+    </NodeViewWrapper>
+  );
+}
+
+/**
+ * The toggle/collapsible block. Its two children (toggleSummary,
+ * toggleContent - see CustomToggleSummaryNode/CustomToggleContentNode below)
+ * have no node views of their own and render via plain parseHTML/renderHTML,
+ * so this is the only node view in the trio. `open` lives solely on this
+ * (parent) node - toggleContent stays mounted in the document either way and
+ * is only ever hidden with CSS, so nothing typed while collapsed is ever
+ * lost, and there's no cross-node attribute write to keep in sync.
+ */
+function ToggleComponent({ node, updateAttributes }: NodeViewProps) {
+  const open = node.attrs.open !== false;
+
+  return (
+    <NodeViewWrapper className="my-1">
+      <div className="flex items-start gap-1">
+        <button
+          type="button"
+          aria-label={open ? "Collapse toggle" : "Expand toggle"}
+          aria-expanded={open}
+          contentEditable={false}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => updateAttributes({ open: !open })}
+          className="text-muted-foreground hover:bg-surface-hover hover:text-foreground mt-0.5 flex size-5 shrink-0 items-center justify-center rounded transition-colors duration-150"
+        >
+          <ChevronRight
+            className={cn(
+              "size-4 transition-transform duration-150",
+              open && "rotate-90",
+            )}
+          />
+        </button>
+        <div
+          className={cn(
+            "min-w-0 flex-1 [&_[data-type='toggle-summary']]:font-medium [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
+            !open && "[&_[data-type='toggle-content']]:hidden",
+          )}
+        >
           <NodeViewContent />
         </div>
       </div>
@@ -1936,6 +2025,21 @@ const ResizableImage = Image.extend({
   },
 });
 
+// Notion's own markdown shortcuts use '" ' for Quote and '> ' for Toggle
+// list, the opposite of Blockquote's stock '> ' input rule - re-key it here
+// rather than in a second place, so there is exactly one source of truth for
+// what triggers a blockquote.
+const CustomBlockquote = Blockquote.extend({
+  addInputRules() {
+    return [
+      wrappingInputRule({
+        find: /^\s*"\s$/,
+        type: this.type,
+      }),
+    ];
+  },
+});
+
 const CustomCalloutNode = TiptapNode.create({
   name: "callout",
   group: "block",
@@ -1988,6 +2092,188 @@ const CustomCalloutNode = TiptapNode.create({
   },
 });
 
+// The toggle/collapsible block. No official @tiptap/extension-details
+// install here: its companion -summary/-content packages are only published
+// for Tiptap v2 (peer dep ^2.7.0, incompatible with the v3 core this app
+// runs) or as an unreleased v3 beta (peer dep pinned to that exact beta) -
+// installing either would be unsafe. This is a small hand-rolled
+// equivalent, same three-node shape, following the same
+// TiptapNode.create()/ReactNodeViewRenderer pattern as CustomCalloutNode
+// above.
+const CustomToggleSummaryNode = TiptapNode.create({
+  name: "toggleSummary",
+  content: "inline*",
+  defining: true,
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="toggle-summary"]' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, { "data-type": "toggle-summary" }),
+      0,
+    ];
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      // The parent toggle's content expression is exactly "toggleSummary
+      // toggleContent" (one of each, no repeats), so the default Enter
+      // (splitBlock, which would try to create a second toggleSummary
+      // sibling) is schema-invalid here. Move into the body instead - the
+      // same "Enter escapes this node" idea TaskItem's own Enter override
+      // already uses.
+      Enter: () =>
+        this.editor.commands.command(({ tr, dispatch, state }) => {
+          const { $from } = state.selection;
+          if ($from.parent.type.name !== this.name) return false;
+          const toggleDepth = $from.depth - 1;
+          if (toggleDepth < 0) return false;
+          const toggleNode = $from.node(toggleDepth);
+          const summaryNode = toggleNode?.firstChild;
+          if (toggleNode?.type.name !== "toggle" || !summaryNode) return false;
+          const toggleStart = $from.before(toggleDepth);
+          const contentStart = toggleStart + 1 + summaryNode.nodeSize + 1;
+          if (dispatch) {
+            tr.setSelection(
+              TextSelection.near(tr.doc.resolve(contentStart), 1),
+            );
+          }
+          return true;
+        }),
+      // Backspace at the very start of the title line used to be a dead
+      // end: ProseMirror's default joinBackward doesn't know how to merge
+      // a fixed "toggleSummary toggleContent" shape into whatever comes
+      // before it, so the toggle was stuck - no keyboard way to remove one.
+      // Unwrap instead: the title becomes a plain paragraph, the body's own
+      // blocks (if any) follow it, and an empty toggle collapses to exactly
+      // the one empty paragraph you'd expect Backspace to leave behind.
+      Backspace: () =>
+        this.editor.commands.command(({ tr, dispatch, state }) => {
+          const { $from, empty } = state.selection;
+          if (!empty || $from.parent.type.name !== this.name) return false;
+          if ($from.parentOffset !== 0) return false;
+          const toggleDepth = $from.depth - 1;
+          if (toggleDepth < 0) return false;
+          const toggleNode = $from.node(toggleDepth);
+          if (toggleNode?.type.name !== "toggle") return false;
+          const summaryNode = toggleNode.firstChild;
+          const contentNode = toggleNode.lastChild;
+          if (!summaryNode || !contentNode) return false;
+
+          if (dispatch) {
+            const toggleStart = $from.before(toggleDepth);
+            const toggleEnd = toggleStart + toggleNode.nodeSize;
+            const contentIsEmpty =
+              contentNode.childCount === 0 ||
+              (contentNode.childCount === 1 &&
+                contentNode.firstChild?.isTextblock &&
+                contentNode.firstChild.content.size === 0);
+            const replacement = Fragment.fromArray([
+              state.schema.nodes.paragraph.create(null, summaryNode.content),
+              ...(contentIsEmpty ? [] : contentNode.content.content),
+            ]);
+            tr.replaceWith(toggleStart, toggleEnd, replacement);
+            tr.setSelection(
+              TextSelection.near(tr.doc.resolve(toggleStart + 1), 1),
+            );
+          }
+          return true;
+        }),
+    };
+  },
+});
+
+const CustomToggleContentNode = TiptapNode.create({
+  name: "toggleContent",
+  content: "block+",
+  defining: true,
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="toggle-content"]' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, { "data-type": "toggle-content" }),
+      0,
+    ];
+  },
+});
+
+const CustomToggleNode = TiptapNode.create({
+  name: "toggle",
+  group: "block",
+  content: "toggleSummary toggleContent",
+  defining: true,
+
+  addAttributes() {
+    return {
+      open: {
+        default: true,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-open") !== "false",
+        renderHTML: (attributes: { open: boolean }) => ({
+          "data-open": String(attributes.open),
+        }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="toggle"]' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, { "data-type": "toggle" }),
+      0,
+    ];
+  },
+
+  addInputRules() {
+    // Not a wrappingInputRule: toggle's content is a fixed two-node
+    // sequence (a summary, then a content block), not a plain "wrap this
+    // paragraph" shape wrappingInputRule can build - so this builds the
+    // same {toggleSummary, toggleContent} shape insertToggle() in
+    // slash-command.tsx inserts, just triggered by typing instead of
+    // picking it from the menu.
+    return [
+      new InputRule({
+        find: /^\s*>\s$/,
+        handler: ({ chain, range }) => {
+          // Same "land in the empty title, not the body" fix insertToggle()
+          // in slash-command.tsx needs - see placeCursorInToggleSummary's
+          // own comment for why this can't just be a hardcoded offset from
+          // range.from.
+          chain()
+            .deleteRange(range)
+            .insertContent({
+              type: "toggle",
+              attrs: { open: true },
+              content: [
+                { type: "toggleSummary" },
+                { type: "toggleContent", content: [{ type: "paragraph" }] },
+              ],
+            })
+            .command(({ tr, dispatch }) =>
+              placeCursorInToggleSummary(tr, dispatch, range.from),
+            )
+            .run();
+        },
+      }),
+    ];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(ToggleComponent);
+  },
+});
+
 const CustomCodeBlock = CodeBlockLowlight.extend({
   addAttributes() {
     const parentAttributes = (this.parent?.() ?? {}) as Record<
@@ -2037,6 +2323,58 @@ const CustomCodeBlock = CodeBlockLowlight.extend({
         return false;
       },
     };
+  },
+});
+
+/**
+ * A code block (or any node that isn't a paragraph) sitting first in the
+ * document leaves no position "above" it for a cursor to land on - position
+ * 0 is before the node structurally, but a leaf-content node like a code
+ * block only accepts a cursor from position 1 onward, inside its own text.
+ * A page that starts with a code block could otherwise never gain a line
+ * above it. Pressing Up from that first position, or clicking in the blank
+ * margin above the first node, opens one instead.
+ */
+const LeadingParagraph = Extension.create({
+  name: "leadingParagraph",
+  addProseMirrorPlugins() {
+    const editor = this.editor;
+    function insertLeadingParagraph(view: EditorView) {
+      const firstChild = view.state.doc.firstChild;
+      if (!firstChild || firstChild.type.name === "paragraph") return false;
+      const paragraph = view.state.schema.nodes.paragraph.create();
+      const tr = view.state.tr.insert(0, paragraph);
+      view.dispatch(
+        tr.setSelection(TextSelection.create(tr.doc, 1)).scrollIntoView(),
+      );
+      return true;
+    }
+    return [
+      new Plugin({
+        props: {
+          handleKeyDown(view, event) {
+            if (
+              event.key !== "ArrowUp" ||
+              !editor.isEditable ||
+              !view.state.selection.empty ||
+              view.state.selection.$from.pos !== 1
+            ) {
+              return false;
+            }
+            return insertLeadingParagraph(view);
+          },
+          handleClick(view, _pos, event) {
+            if (!editor.isEditable) return false;
+            const firstNodeDom = view.nodeDOM(0);
+            if (!(firstNodeDom instanceof HTMLElement)) return false;
+            if (event.clientY >= firstNodeDom.getBoundingClientRect().top) {
+              return false;
+            }
+            return insertLeadingParagraph(view);
+          },
+        },
+      }),
+    ];
   },
 });
 
@@ -2278,8 +2616,9 @@ const AttachmentNode = TiptapNode.create({
 const DRAGGABLE_NODE_TYPES = new Set(["image", "attachment"]);
 const editorExtensions = [
   StarterKit.configure({
-    heading: { levels: [1, 2, 3] },
+    heading: { levels: [1, 2, 3, 4] },
     codeBlock: false,
+    blockquote: false,
     // The stock drop cursor draws a rule across the whole block, which reads
     // like a horizontal divider rather than an insertion point. Styled down to
     // a caret in globals.css; the colour comes from there too.
@@ -2292,7 +2631,15 @@ const editorExtensions = [
     // monochrome instead of `highlightAuto()` guessing its language.
     defaultLanguage: "plaintext",
   }),
+  CustomBlockquote,
+  LeadingParagraph,
+  SlashCommand,
   CustomCalloutNode,
+  CustomToggleSummaryNode,
+  CustomToggleContentNode,
+  CustomToggleNode,
+  TaskList.configure({ HTMLAttributes: { class: "wikihub-task-list" } }),
+  TaskItem.configure({ nested: true }),
   Link.configure({
     openOnClick: false,
     autolink: true,
@@ -2319,7 +2666,7 @@ const editorExtensions = [
   }),
 ];
 
-const headingLevels = [1, 2, 3] as const;
+const headingLevels = [1, 2, 3, 4] as const;
 
 function escapeHtml(value: string): string {
   return value
@@ -2445,7 +2792,20 @@ const editorClassName =
   "[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-tight " +
   "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:leading-tight " +
   "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:leading-tight " +
+  "[&_h4]:mt-4 [&_h4]:mb-1.5 [&_h4]:text-sm [&_h4]:font-semibold [&_h4]:leading-tight " +
   "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-0.5 " +
+  // Task list: no bullet marker, checkbox instead, styled to match the raw
+  // checkbox convention already used across the admin screens. TaskItem
+  // ships its own vanilla node view for the live editing DOM, which never
+  // carries the "data-type" it puts on serialized HTML - but it always sets
+  // data-checked (both live and serialized), so that's the selector that
+  // actually matches in both places.
+  // The content <div> next to the checkbox has no intrinsic width of its
+  // own (an empty paragraph is near-0px wide), so as a flex sibling it
+  // shrank to nothing and hid the caret with it - flex-1 + min-w-0 makes it
+  // claim the rest of the row like every other flex-text-column in this app.
+  "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-0 [&_li[data-checked]]:flex [&_li[data-checked]]:items-start [&_li[data-checked]]:gap-2 [&_li[data-checked]>label]:mt-1 [&_li[data-checked]>label]:flex-shrink-0 [&_li[data-checked]>div]:min-w-0 [&_li[data-checked]>div]:flex-1 " +
+  "[&_li[data-checked]>label>input[type=checkbox]]:accent-primary [&_li[data-checked]>label>input[type=checkbox]]:size-4 [&_li[data-checked]>label>input[type=checkbox]]:cursor-pointer [&_li[data-checked]>label>input[type=checkbox]]:rounded " +
   "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
   "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
   "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
@@ -2465,8 +2825,11 @@ export const readerClassName =
   "[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-tight " +
   "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:leading-tight " +
   "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:leading-tight " +
+  "[&_h4]:mt-4 [&_h4]:mb-1.5 [&_h4]:text-sm [&_h4]:font-semibold [&_h4]:leading-tight " +
   "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-primary/50 [&_a]:transition-colors [&_a]:duration-150 [&_a:hover]:text-primary-hover [&_a:hover]:decoration-primary " +
   "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-0.5 " +
+  "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-0 [&_li[data-checked]]:flex [&_li[data-checked]]:items-start [&_li[data-checked]]:gap-2 [&_li[data-checked]>label]:mt-1 [&_li[data-checked]>label]:flex-shrink-0 [&_li[data-checked]>div]:min-w-0 [&_li[data-checked]>div]:flex-1 " +
+  "[&_li[data-checked]>label>input[type=checkbox]]:accent-primary [&_li[data-checked]>label>input[type=checkbox]]:size-4 [&_li[data-checked]>label>input[type=checkbox]]:rounded [&_li[data-checked]>label>input[type=checkbox]]:pointer-events-none " +
   "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
   "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
   "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
@@ -2589,6 +2952,14 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
         >
           <Heading3 />
           Heading 3
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() =>
+            editor?.chain().focus().setHeading({ level: 4 }).run()
+          }
+        >
+          <Heading4 />
+          Heading 4
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -3282,6 +3653,8 @@ function RichTextToolbar({
   wrapText,
   onToggleWrap,
   onUploadFile,
+  pageLinkContext,
+  onSubpageCreated,
 }: {
   editor: Editor | null;
   wrapText: boolean;
@@ -3291,6 +3664,12 @@ function RichTextToolbar({
     content_type: string;
     content_url: string;
   }>;
+  // Threaded down from RichTextEditor's own optional prop of the same name -
+  // undefined wherever there's no real page to search/parent to (the space
+  // overview editor), in which case "Link to page"/"Create sub-page" in the
+  // slash menu still dispatch their events but nothing here answers them.
+  pageLinkContext?: { spaceKey: string; currentPageId: string | null };
+  onSubpageCreated?: (page: WikiPage) => void;
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
@@ -3302,9 +3681,16 @@ function RichTextToolbar({
   const imageInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [pagePickerOpen, setPagePickerOpen] = useState(false);
+  const [pagePickerSearch, setPagePickerSearch] = useState("");
+  const [pagePickerPages, setPagePickerPages] = useState<WikiPage[]>([]);
+  const [pagePickerLoading, setPagePickerLoading] = useState(false);
+  const [subpageOpen, setSubpageOpen] = useState(false);
+  const [subpageTitle, setSubpageTitle] = useState("");
+  const [subpagePending, setSubpagePending] = useState(false);
   const toolbarActionsRef = useRef<HTMLDivElement>(null);
   const [visibleOverflowActionCount, setVisibleOverflowActionCount] =
-    useState(9);
+    useState(11);
   const [toolbarMeasureVersion, setToolbarMeasureVersion] = useState(0);
 
   useLayoutEffect(() => {
@@ -3325,7 +3711,7 @@ function RichTextToolbar({
     const observer = new ResizeObserver(() => {
       // Recalculate from the full action set. Layout effects run before paint,
       // so this doesn't make the editor toolbar jump while its container grows.
-      setVisibleOverflowActionCount(9);
+      setVisibleOverflowActionCount(11);
       setToolbarMeasureVersion((version) => version + 1);
     });
     observer.observe(toolbar);
@@ -3403,6 +3789,137 @@ function RichTextToolbar({
     if (!editor) return;
     imageInput.current?.click();
   }, [editor]);
+
+  const openPagePicker = useCallback(() => {
+    if (!editor || !pageLinkContext) return;
+    setPagePickerSearch("");
+    setPagePickerOpen(true);
+    setPagePickerLoading(true);
+    void api
+      .get<WikiPage[]>(
+        `/api/v1/spaces/${encodeURIComponent(pageLinkContext.spaceKey)}/pages`,
+      )
+      .then(setPagePickerPages)
+      .catch(() => {
+        toast.error("Could not load pages.");
+        setPagePickerPages([]);
+      })
+      .finally(() => setPagePickerLoading(false));
+  }, [editor, pageLinkContext]);
+
+  function insertPageLink(page: WikiPage) {
+    if (!editor || !pageLinkContext) return;
+    editor
+      .chain()
+      .focus()
+      .insertContent({
+        type: "text",
+        text: page.title,
+        marks: [
+          {
+            type: "link",
+            attrs: {
+              href: `/spaces/${encodeURIComponent(pageLinkContext.spaceKey)}/pages/${encodeURIComponent(page.slug)}`,
+            },
+          },
+        ],
+      })
+      .run();
+    setPagePickerOpen(false);
+  }
+
+  const openSubpageDialog = useCallback(() => {
+    if (!editor || !pageLinkContext) return;
+    setSubpageTitle("");
+    setSubpageOpen(true);
+  }, [editor, pageLinkContext]);
+
+  async function submitSubpage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editor || !pageLinkContext) return;
+    const trimmedTitle = subpageTitle.trim();
+    if (!trimmedTitle) return;
+
+    setSubpagePending(true);
+    try {
+      const page = await api.post<WikiPage>(
+        `/api/v1/spaces/${encodeURIComponent(pageLinkContext.spaceKey)}/pages`,
+        {
+          title: trimmedTitle,
+          content: "",
+          parent_id: pageLinkContext.currentPageId,
+        },
+      );
+      // Insert the link into THIS document before handing off to
+      // onSubpageCreated, which typically saves this document and then
+      // navigates away - the editor instance (and this component) is gone
+      // once that happens, so the link has to land first.
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "text",
+          text: page.title,
+          marks: [
+            {
+              type: "link",
+              attrs: {
+                href: `/spaces/${encodeURIComponent(pageLinkContext.spaceKey)}/pages/${encodeURIComponent(page.slug)}`,
+              },
+            },
+          ],
+        })
+        .run();
+      setSubpageOpen(false);
+      onSubpageCreated?.(page);
+    } catch (error) {
+      toast.error(
+        error instanceof ApiError ? error.message : "Could not create page.",
+      );
+    } finally {
+      setSubpagePending(false);
+    }
+  }
+
+  // The slash-command menu (slash-command.tsx) can't reach these directly -
+  // it's an editor-instance-agnostic extension, while the hidden file inputs
+  // and upload state live here. It dispatches the same kind of CustomEvent
+  // this file already uses for "a node view needs a toolbar-owned action"
+  // (see the image node view's "wikihub:view-file-details").
+  useEffect(() => {
+    const onSlashInsertImage = () => insertImage();
+    const onSlashInsertAttachment = () => insertAttachment();
+    const onSlashLinkToPage = () => openPagePicker();
+    const onSlashCreateSubpage = () => openSubpageDialog();
+    document.addEventListener("wikihub:slash-insert-image", onSlashInsertImage);
+    document.addEventListener(
+      "wikihub:slash-insert-attachment",
+      onSlashInsertAttachment,
+    );
+    document.addEventListener("wikihub:slash-link-to-page", onSlashLinkToPage);
+    document.addEventListener(
+      "wikihub:slash-create-subpage",
+      onSlashCreateSubpage,
+    );
+    return () => {
+      document.removeEventListener(
+        "wikihub:slash-insert-image",
+        onSlashInsertImage,
+      );
+      document.removeEventListener(
+        "wikihub:slash-insert-attachment",
+        onSlashInsertAttachment,
+      );
+      document.removeEventListener(
+        "wikihub:slash-link-to-page",
+        onSlashLinkToPage,
+      );
+      document.removeEventListener(
+        "wikihub:slash-create-subpage",
+        onSlashCreateSubpage,
+      );
+    };
+  }, [insertImage, insertAttachment, openPagePicker, openSubpageDialog]);
 
   async function insertFiles(files: File[]) {
     if (!editor || files.length === 0) return;
@@ -3607,6 +4124,26 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 3 ? (
           <ToolbarButton
             editor={editor}
+            label="To-do list"
+            active={editor?.isActive("taskList")}
+            onClick={() => editor?.chain().focus().toggleTaskList().run()}
+          >
+            <ListTodo />
+          </ToolbarButton>
+        ) : null}
+        {visibleOverflowActionCount > 4 ? (
+          <ToolbarButton
+            editor={editor}
+            label="Toggle list"
+            active={editor?.isActive("toggle")}
+            onClick={() => editor && insertToggle(editor)}
+          >
+            <ChevronRight />
+          </ToolbarButton>
+        ) : null}
+        {visibleOverflowActionCount > 5 ? (
+          <ToolbarButton
+            editor={editor}
             label="Quote"
             active={editor?.isActive("blockquote")}
             onClick={() => editor?.chain().focus().toggleBlockquote().run()}
@@ -3614,7 +4151,7 @@ function RichTextToolbar({
             <Quote />
           </ToolbarButton>
         ) : null}
-        {visibleOverflowActionCount > 4 ? (
+        {visibleOverflowActionCount > 6 ? (
           <ToolbarButton
             editor={editor}
             label="Code block"
@@ -3624,7 +4161,7 @@ function RichTextToolbar({
             <Code2 className="fill-current" />
           </ToolbarButton>
         ) : null}
-        {visibleOverflowActionCount > 5 ? (
+        {visibleOverflowActionCount > 7 ? (
           <ToolbarButton
             editor={editor}
             label="Insert divider"
@@ -3633,7 +4170,7 @@ function RichTextToolbar({
             <Minus />
           </ToolbarButton>
         ) : null}
-        {visibleOverflowActionCount > 6 ? (
+        {visibleOverflowActionCount > 8 ? (
           <ToolbarButton
             editor={editor}
             label="Add link"
@@ -3642,7 +4179,7 @@ function RichTextToolbar({
             <Link2 />
           </ToolbarButton>
         ) : null}
-        {visibleOverflowActionCount > 7 ? (
+        {visibleOverflowActionCount > 9 ? (
           <ToolbarButton
             editor={editor}
             label="Insert image"
@@ -3656,7 +4193,7 @@ function RichTextToolbar({
             )}
           </ToolbarButton>
         ) : null}
-        {visibleOverflowActionCount > 8 ? (
+        {visibleOverflowActionCount > 10 ? (
           <ToolbarButton
             editor={editor}
             label="Upload file"
@@ -3689,7 +4226,7 @@ function RichTextToolbar({
         >
           <Redo2 />
         </ToolbarButton>
-        {visibleOverflowActionCount < 9 ? (
+        {visibleOverflowActionCount < 11 ? (
           <MoreFormattingMenu hasActions>
             {visibleOverflowActionCount < 1 ? (
               <OverflowToolbarButton
@@ -3722,6 +4259,24 @@ function RichTextToolbar({
             ) : null}
             {visibleOverflowActionCount < 4 ? (
               <OverflowToolbarButton
+                label="To-do list"
+                active={editor?.isActive("taskList")}
+                onClick={() => editor?.chain().focus().toggleTaskList().run()}
+              >
+                <ListTodo />
+              </OverflowToolbarButton>
+            ) : null}
+            {visibleOverflowActionCount < 5 ? (
+              <OverflowToolbarButton
+                label="Toggle list"
+                active={editor?.isActive("toggle")}
+                onClick={() => editor && insertToggle(editor)}
+              >
+                <ChevronRight />
+              </OverflowToolbarButton>
+            ) : null}
+            {visibleOverflowActionCount < 6 ? (
+              <OverflowToolbarButton
                 label="Quote"
                 active={editor?.isActive("blockquote")}
                 onClick={() => editor?.chain().focus().toggleBlockquote().run()}
@@ -3729,7 +4284,7 @@ function RichTextToolbar({
                 <Quote />
               </OverflowToolbarButton>
             ) : null}
-            {visibleOverflowActionCount < 5 ? (
+            {visibleOverflowActionCount < 7 ? (
               <OverflowToolbarButton
                 label="Code block"
                 active={editor?.isActive("codeBlock")}
@@ -3738,7 +4293,7 @@ function RichTextToolbar({
                 <Code2 className="fill-current" />
               </OverflowToolbarButton>
             ) : null}
-            {visibleOverflowActionCount < 6 ? (
+            {visibleOverflowActionCount < 8 ? (
               <OverflowToolbarButton
                 label="Insert divider"
                 onClick={() =>
@@ -3748,12 +4303,12 @@ function RichTextToolbar({
                 <Minus />
               </OverflowToolbarButton>
             ) : null}
-            {visibleOverflowActionCount < 7 ? (
+            {visibleOverflowActionCount < 9 ? (
               <OverflowToolbarButton label="Add link" onClick={openLinkDialog}>
                 <Link2 />
               </OverflowToolbarButton>
             ) : null}
-            {visibleOverflowActionCount < 8 ? (
+            {visibleOverflowActionCount < 10 ? (
               <OverflowToolbarButton
                 label={uploading ? "Uploading image" : "Insert image"}
                 disabled={uploading}
@@ -3766,7 +4321,7 @@ function RichTextToolbar({
                 )}
               </OverflowToolbarButton>
             ) : null}
-            {visibleOverflowActionCount < 9 ? (
+            {visibleOverflowActionCount < 11 ? (
               <OverflowToolbarButton
                 label={uploading ? "Uploading file" : "Upload file"}
                 disabled={uploading}
@@ -3850,6 +4405,118 @@ function RichTextToolbar({
           </form>
         </DialogContent>
       </Dialog>
+      <Dialog open={pagePickerOpen} onOpenChange={setPagePickerOpen}>
+        <DialogContent title="Link to page" className="max-w-md">
+          <div className="space-y-3">
+            <div className="relative">
+              <Search
+                aria-hidden
+                className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 z-10 size-4 -translate-y-1/2"
+              />
+              <input
+                type="search"
+                role="combobox"
+                aria-expanded
+                aria-controls="slash-page-picker-options"
+                aria-label="Search pages"
+                autoFocus
+                value={pagePickerSearch}
+                onChange={(event) => setPagePickerSearch(event.target.value)}
+                placeholder="Search pages..."
+                className={cn(inputClassName, "pl-9")}
+              />
+            </div>
+            <div
+              id="slash-page-picker-options"
+              role="listbox"
+              aria-label="Pages"
+              className="border-border max-h-64 overflow-y-auto rounded-md border p-1"
+            >
+              {pagePickerLoading ? (
+                <p className="text-muted-foreground flex items-center gap-2 px-2 py-1.5 text-sm">
+                  <Loader2 className="size-4 animate-spin" /> Loading pages...
+                </p>
+              ) : (
+                (() => {
+                  const results = pagePickerPages.filter(
+                    (page) =>
+                      page.id !== pageLinkContext?.currentPageId &&
+                      page.title
+                        .toLowerCase()
+                        .includes(pagePickerSearch.trim().toLowerCase()),
+                  );
+                  if (results.length === 0) {
+                    return (
+                      <p className="text-muted-foreground px-2 py-1.5 text-sm">
+                        No matching pages.
+                      </p>
+                    );
+                  }
+                  return results.map((page) => (
+                    <button
+                      key={page.id}
+                      type="button"
+                      role="option"
+                      aria-selected={false}
+                      onClick={() => insertPageLink(page)}
+                      className="text-foreground hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex min-h-8 w-full items-center gap-2 rounded px-2 text-left text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      <FileText
+                        className="text-muted-foreground size-4 shrink-0"
+                        aria-hidden
+                      />
+                      <span className="truncate">{page.title}</span>
+                    </button>
+                  ));
+                })()
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={subpageOpen} onOpenChange={setSubpageOpen}>
+        <DialogContent
+          title="Create sub-page"
+          description="Creates a page under this one and takes you there - save this page first if you have unsaved changes you want to keep."
+        >
+          <form onSubmit={submitSubpage} className="space-y-4" noValidate>
+            <div className="space-y-1.5">
+              <Label htmlFor="slash-subpage-title">Title</Label>
+              <Input
+                id="slash-subpage-title"
+                value={subpageTitle}
+                onChange={(event) => setSubpageTitle(event.target.value)}
+                placeholder="Meeting notes, runbook, project brief..."
+                autoFocus
+                required
+                maxLength={255}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setSubpageOpen(false)}
+                disabled={subpagePending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={subpagePending || !subpageTitle.trim()}
+              >
+                {subpagePending ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <FilePlus2 />
+                )}
+                {subpagePending ? "Creating..." : "Create page"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       {uploadError ? (
         <p className="text-danger basis-full px-2 py-1 text-xs" role="alert">
           {uploadError}
@@ -3863,6 +4530,8 @@ export function RichTextEditor({
   content,
   onChange,
   onUploadFile,
+  pageLinkContext,
+  onSubpageCreated,
 }: {
   content: string;
   onChange: (html: string) => void;
@@ -3871,6 +4540,13 @@ export function RichTextEditor({
     content_type: string;
     content_url: string;
   }>;
+  // Powers the slash menu's "Link to page" (search + insert a link to an
+  // existing page in this space) and "Create sub-page" (create one under
+  // currentPageId, insert a link to it, then hand off to onSubpageCreated)
+  // items. Omit both on editors with no real page to search/parent to (the
+  // space overview editor) - those two menu items then simply do nothing.
+  pageLinkContext?: { spaceKey: string; currentPageId: string | null };
+  onSubpageCreated?: (page: WikiPage) => void;
 }) {
   const [wrapText, setWrapText] = useState(true);
   const [draggingFiles, setDraggingFiles] = useState(false);
@@ -4166,6 +4842,8 @@ export function RichTextEditor({
           wrapText={wrapText}
           onToggleWrap={() => setWrapText((current) => !current)}
           onUploadFile={onUploadFile}
+          pageLinkContext={pageLinkContext}
+          onSubpageCreated={onSubpageCreated}
         />
       ) : (
         <div
@@ -4178,7 +4856,7 @@ export function RichTextEditor({
         className={cn(
           "border-border bg-surface focus-within:ring-ring focus-within:ring-offset-background max-w-full min-w-0 overflow-x-auto rounded-b-md border border-t-0 focus-within:ring-2 focus-within:ring-offset-2",
           !wrapText &&
-            "[&_h1]:whitespace-nowrap [&_h2]:whitespace-nowrap [&_h3]:whitespace-nowrap [&_p]:whitespace-nowrap",
+            "[&_h1]:whitespace-nowrap [&_h2]:whitespace-nowrap [&_h3]:whitespace-nowrap [&_h4]:whitespace-nowrap [&_p]:whitespace-nowrap",
         )}
       />
       <TableActionsMenu editor={editor} />
