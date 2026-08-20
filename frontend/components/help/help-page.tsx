@@ -20,7 +20,10 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export type HelpCategory =
-  "Workspace" | "Writing" | "Account" | "Administration";
+  | "Workspace"
+  | "Writing"
+  | "Account"
+  | "Administration";
 
 type HelpSection = {
   id: string;
@@ -40,198 +43,318 @@ type CategoryDefinition = {
 const categories: CategoryDefinition[] = [
   {
     title: "Workspace",
-    description: "Find and organise team knowledge.",
+    description: "Find, organise, and member-manage team knowledge.",
     icon: FolderKanban,
   },
   {
     title: "Writing",
-    description: "Create, share, and maintain pages.",
+    description: "Create, edit, format, and export pages with rich tools.",
     icon: FileText,
   },
   {
     title: "Account",
-    description: "Manage your profile and sign-in security.",
+    description: "Manage your profile, password, and active sign-in sessions.",
     icon: KeyRound,
   },
   {
     title: "Administration",
-    description: "Operate the workspace safely at scale.",
+    description: "Theme customization, storage limits, backups, and user access.",
     icon: Settings2,
   },
 ];
 
 const sections: HelpSection[] = [
+  // ---------------------------------------------------------------------------
+  // WORKSPACE CATEGORY
+  // ---------------------------------------------------------------------------
   {
     id: "getting-started",
     title: "Getting started",
     category: "Workspace",
     description:
       "Sign in, navigate WikiHub, and find the knowledge you can access.",
-    keywords: ["login", "search", "navigation", "home"],
+    keywords: ["login", "search", "navigation", "home", "sidebar"],
     body: (
       <>
         <p>
-          Sign in with your username or email address and password. If your
-          account is disabled, contact a workspace administrator to reactivate
-          it. Single sign-on is shown in account settings as an upcoming
-          capability; email and password are the current sign-in method.
+          Sign in with your registered username or email address and password.
+          If your account is disabled, contact a workspace administrator to
+          reactivate it.
         </p>
         <p>
-          Use the left navigation to open Home, Spaces, and Help. The top-bar
-          search finds spaces and pages that you are allowed to view. You can
-          collapse the application sidebar; your preference is remembered in
-          this browser.
+          The primary navigation rail on the left gives fast access to{" "}
+          <strong>Home</strong>, <strong>Spaces</strong>, and{" "}
+          <strong>Help</strong>. Global search in the top bar instantly finds
+          spaces and pages you have permission to view. You can collapse or
+          expand the sidebar at any time; your preference is saved in your
+          browser.
         </p>
       </>
     ),
   },
   {
     id: "spaces",
-    title: "Spaces",
+    title: "Spaces and permissions",
     category: "Workspace",
-    description: "Browse, favourite, create, and manage a space.",
-    keywords: ["favourite", "favorite", "members", "visibility", "archive"],
+    description: "Browse, favourite, create, and manage team knowledge spaces.",
+    keywords: ["favourite", "favorite", "members", "visibility", "archive", "layers"],
     body: (
       <>
         <p>
-          A space is a home for a team, project, or knowledge area. Open{" "}
-          <strong>Spaces</strong> to browse, search, filter, and favourite
-          spaces you use often. Spaces can be active or archived, and can be
-          open or restricted according to their access rules.
+          A <strong>Space</strong> is a dedicated workspace for a team, project, or
+          knowledge domain. Open <strong>Spaces</strong> to search, filter, and
+          favourite spaces for one-click access in your left sidebar.
         </p>
         <p>
-          Users with permission can create a space with a unique key, name,
-          description, icon, and visibility. Space managers can add members,
-          assign roles, grant permissions to people or groups, archive a space,
-          or permanently delete it when it is no longer needed.
+          Users with space creation rights can create a new space with a unique
+          key (e.g. <code>ENG</code>), name, description, custom icon, and
+          visibility rules. Space managers can assign members, grant role-based
+          permissions, archive inactive spaces, or delete a space when no
+          longer needed.
         </p>
       </>
     ),
   },
+
+  // ---------------------------------------------------------------------------
+  // WRITING CATEGORY
+  // ---------------------------------------------------------------------------
   {
     id: "pages",
-    title: "Pages and editing",
+    title: "Pages and rich-text editing",
     category: "Writing",
-    description: "Create pages, work with drafts, and structure a page tree.",
-    keywords: ["editor", "draft", "markdown", "html", "move", "delete"],
+    description:
+      "Create pages, use the sticky formatting toolbar, and toggle source mode.",
+    keywords: ["editor", "toolbar", "sticky", "markdown", "html", "source", "draft"],
     body: (
       <>
         <p>
-          Pages form a hierarchy inside a space. Use the page tree to open a
-          page, expand a branch, or create a child page. When editing, you can
-          use the rich-text editor or work with Markdown and HTML source when
-          that better suits the content.
+          Pages are organized hierarchically inside spaces. Create child pages
+          under any existing page or directly from the space root. When editing a
+          page, a <strong>sticky toolbar</strong> stays attached to the top of
+          your viewport as you scroll down long documents, allowing quick access
+          to formatting controls without scrolling back up.
         </p>
         <p>
-          Create, rename, move, or delete pages only when your space permissions
-          allow it. Deleting a page moves its children up the tree instead of
-          silently deleting their content. Drafts are kept locally and can also
-          be saved on the server, so discard a draft explicitly when you do not
-          want to continue it.
+          The rich-text editor supports inline formatting (bold, italic,
+          underline, strikethrough, inline code, links). You can also click{" "}
+          <strong>Source</strong> to switch to raw Markdown or HTML source code
+          mode for advanced editing. Drafts are automatically saved locally and
+          synchronized with the server.
         </p>
       </>
     ),
   },
   {
-    id: "collaboration",
-    title: "Reading and collaboration",
+    id: "slash-commands",
+    title: "Slash commands (/) and shortcuts",
     category: "Writing",
     description:
-      "Save useful pages, share knowledge, and protect sensitive content.",
-    keywords: ["saved", "like", "restrictions", "share", "recent"],
+      "Type / on any empty line to quickly insert blocks, tables, and media.",
+    keywords: [
+      "slash",
+      "shortcut",
+      "heading",
+      "callout",
+      "table",
+      "code",
+      "image",
+      "todo",
+    ],
     body: (
       <>
         <p>
-          Favourite spaces for quick access, save pages to your personal Saved
-          list, and like useful pages. Use the page link to share a page with
-          colleagues who already have access. Recent activity helps you return
-          to recently opened or updated knowledge.
+          Type <code>/</code> at the beginning of any empty line in the editor to
+          open the interactive <strong>Slash Command Menu</strong>. Use your arrow
+          keys or keep typing to filter available content blocks:
+        </p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            <code>/h1</code>, <code>/h2</code>, <code>/h3</code> — Insert level
+            1, 2, or 3 section headings.
+          </li>
+          <li>
+            <code>/bullet</code>, <code>/numbered</code> — Create bulleted or
+            numbered list items.
+          </li>
+          <li>
+            <code>/quote</code>, <code>/callout</code> — Insert blockquotes or
+            accented callout alert boxes.
+          </li>
+          <li>
+            <code>/table</code> — Create a structured data table.
+          </li>
+          <li>
+            <code>/code</code> — Insert a syntax-highlighted code block.
+          </li>
+          <li>
+            <code>/image</code>, <code>/attachment</code> — Upload an inline image
+            or file attachment.
+          </li>
+          <li>
+            <code>/todo</code> — Create interactive checkable task lists.
+          </li>
+          <li>
+            <code>/toggle</code> — Insert a collapsible toggle container.
+          </li>
+          <li>
+            <code>/divider</code> — Insert a horizontal divider line.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    id: "images-and-attachments",
+    title: "Images, attachments, and media",
+    category: "Writing",
+    description:
+      "Upload images, drag to resize, set alignment, and preview files.",
+    keywords: ["image", "attachment", "resize", "align", "caption", "preview"],
+    body: (
+      <>
+        <p>
+          Drag and drop images directly into the editor or use the image upload
+          button. Click any inserted image to reveal its hover toolbar: drag the
+          corner handle to resize pixel width, set alignment (left, center,
+          right), or add a descriptive caption.
         </p>
         <p>
-          A page can have user or group restrictions in addition to its space
-          permissions. Apply restrictions carefully: test them with a normal
-          account when protecting sensitive content.
+          File attachments (such as PDF documents, code snippets, or ZIP archives)
+          can be inserted into the text flow. Clicking an uploaded file opens a
+          modal detail dialog with file metadata (filename, size, creation date)
+          and a live preview for images or syntax-highlighted text files.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "tables-and-codeblocks",
+    title: "Tables, code blocks, and toggle lists",
+    category: "Writing",
+    description:
+      "Manage structured tables, syntax-highlighted code blocks, and collapsibles.",
+    keywords: ["table", "codeblock", "syntax", "toggle", "collapsible", "todo"],
+    body: (
+      <>
+        <p>
+          Insert tables to present structured data. Hovering over table cells
+          reveals action handles to add or delete rows and columns, toggle header
+          rows, or format cell alignment.
+        </p>
+        <p>
+          Code blocks feature automatic syntax highlighting for over 40
+          programming languages (Python, TypeScript, Go, Rust, SQL, Bash, etc.).
+          Click the code block options bar to choose a language, add a title or
+          caption, or copy the entire block code with a single click.
         </p>
       </>
     ),
   },
   {
     id: "history-and-export",
-    title: "History and PDF export",
+    title: "History, visual diff, and PDF export",
     category: "Writing",
     description:
-      "Compare revisions, restore earlier work, and export a readable PDF.",
-    keywords: ["revision", "history", "compare", "restore", "pdf"],
+      "Inspect revision history, compare versions with visual diff, and export PDF.",
+    keywords: ["revision", "history", "compare", "diff", "restore", "pdf"],
     body: (
       <>
         <p>
-          Every saved page change creates a revision. Open page history to
-          inspect previous versions, compare two versions with a visual diff, or
-          restore content from an earlier revision. A restore is itself recorded
-          as a new change, so the original history remains available.
+          Every saved page change creates a new revision. Open <strong>Page
+          History</strong> to review past versions, compare two revisions using
+          side-by-side or inline visual diff, or restore an earlier version.
+          Restoring creates a new revision, preserving complete history.
         </p>
         <p>
-          Use <strong>Export PDF</strong> from the page actions when you need a
-          readable, shareable copy of the current page.
+          Click <strong>Export PDF</strong> in page actions to generate a clean,
+          print-ready PDF document formatted for offline reading and sharing.
         </p>
       </>
     ),
   },
+
+  // ---------------------------------------------------------------------------
+  // ACCOUNT CATEGORY
+  // ---------------------------------------------------------------------------
   {
     id: "your-account",
-    title: "Profile, password, and sessions",
+    title: "Profile, password, and active sessions",
     category: "Account",
     description:
-      "Update your identity, secure your password, and review signed-in devices.",
+      "Update display identity, manage password security, and revoke sessions.",
     keywords: ["avatar", "password", "authentication", "session", "profile"],
     body: (
       <>
         <p>
-          Open <strong>Your account</strong> from the account menu. Profile
-          starts in read-only mode; choose <strong>Edit profile</strong> to
-          update your display name, email, avatar, bio, pronouns, company,
-          website, and up to two social links. Field validation appears as you
-          leave each input. Cancel discards unsaved edits.
+          Access <strong>Your account</strong> from the top-right profile menu.
+          Update your display name, email, avatar image, bio, pronouns, company,
+          and website link.
         </p>
         <p>
-          In Password &amp; authentication, change your password after
-          satisfying every displayed rule. You can generate a strong password in
-          the form. In Sessions, review active browsers and sign out all other
-          sessions if you see activity you do not recognise.
+          In <strong>Password &amp; authentication</strong>, change your password
+          following workspace complexity rules. In <strong>Sessions</strong>,
+          view active browsers and sign out all other sessions if you see
+          activity you do not recognise.
         </p>
       </>
     ),
   },
+
+  // ---------------------------------------------------------------------------
+  // ADMINISTRATION CATEGORY
+  // ---------------------------------------------------------------------------
   {
-    id: "administration",
-    title: "Users, groups, and access",
+    id: "theme-and-branding",
+    title: "Theme & branding customization",
     category: "Administration",
     description:
-      "Manage people, groups, permissions, and administrator account switching.",
+      "Customize brand colors, preset/custom logo icons, dark mode, and tab favicon.",
     keywords: [
-      "users",
-      "groups",
-      "permissions",
-      "roles",
-      "impersonation",
-      "switch",
+      "theme",
+      "color",
+      "hex",
+      "palette",
+      "icon",
+      "logo",
+      "favicon",
+      "preview",
+      "branding",
     ],
     body: (
       <>
         <p>
-          Administrators manage users, groups, spaces, workspace settings,
-          backups, and object storage. The Users directory supports search,
-          filtering, pagination, account activation, role changes, password
-          resets, and account deletion. The protected bootstrap account is
-          deliberately not editable through normal administrative actions.
+          Administrators can customize the workspace appearance under{" "}
+          <strong>Administration &gt; Settings &gt; Theme &amp; Branding</strong>:
         </p>
-        <p>
-          Groups make permissions easier to manage at scale. Give groups global
-          permissions such as creating spaces or managing users, then use those
-          groups when assigning access to spaces and pages. Administrators can
-          also switch into another active account for support; a banner remains
-          visible and the administrator is retained in the audit trail.
-        </p>
+        <ul className="list-disc pl-5 space-y-1.5 text-sm">
+          <li>
+            <strong>Brand Theme Color</strong>: Select from 8 curated palettes
+            (Blue, Emerald, Indigo, Violet, Rose, Amber, Teal, Slate) or use the
+            Custom Hex picker (e.g. <code>#216fc0</code>).
+          </li>
+          <li>
+            <strong>Application Logo &amp; Icon</strong>: Choose a built-in vector
+            icon preset (Hub, Book, Layers, Compass, Sparkles, Feather,
+            Graduation, CPU, Shield) or upload your team&apos;s custom PNG/SVG logo
+            image (under 2MB).
+          </li>
+          <li>
+            <strong>Theme Preview Modal</strong>: Click <strong>Preview Theme</strong>{" "}
+            to open an interactive simulation of WikiHub. Test tabs, buttons, links,
+            search, and toggle Light/Dark mode before applying changes.
+          </li>
+          <li>
+            <strong>Draft Mode</strong>: Theme changes remain in draft form and
+            only apply globally to the workspace when you click <strong>Save
+            settings</strong>.
+          </li>
+          <li>
+            <strong>Zero-Flicker SSR &amp; Dynamic Favicon</strong>: Theme CSS variables
+            are preloaded server-side on frame 0, and browser tab bar favicons
+            update instantly in real-time.
+          </li>
+        </ul>
       </>
     ),
   },
@@ -239,73 +362,63 @@ const sections: HelpSection[] = [
     id: "settings-and-storage",
     title: "Settings and object storage",
     category: "Administration",
-    description: "Control workspace defaults and safely locate stored objects.",
-    keywords: ["settings", "storage", "objects", "attachment", "download"],
+    description:
+      "Configure instance parameters, file limits, access matrix, and object storage.",
+    keywords: [
+      "settings",
+      "storage",
+      "objects",
+      "attachment",
+      "limits",
+      "matrix",
+      "download",
+    ],
     body: (
       <>
         <p>
-          Workspace settings control the site name, session lifetime, upload and
-          archive limits, allowed attachment types, and which roles can see
-          navigation areas. Leaving an override empty uses its
-          environment-provided default.
+          In <strong>Administration &gt; Settings</strong>, configure instance-wide
+          parameters: Site Name, Session TTL (hours), Max single attachment size
+          (MB), Max backup import size (MB), Allowed attachment file extensions
+          (e.g. <code>png, pdf, zip, *</code>), and the Sidebar Access Matrix per
+          user role (<code>member</code>, <code>admin</code>).
         </p>
         <p>
-          Storage lets administrators filter the object bucket by type, space,
-          page, or path. They can request a safe download link, preview
-          compatible files, or delete an object. Deletion is permanent and can
-          remove the associated attachment record, so confirm that a file is no
-          longer needed first.
+          In <strong>Storage</strong>, administrators can browse the S3 object
+          bucket in a clean folder tree view (formatted with regular text). Filter
+          objects by space, page, type, or file path; preview images and text;
+          generate secure download links; or delete orphan objects with hash
+          clearance.
         </p>
       </>
     ),
   },
   {
     id: "backup-and-restore",
-    title: "Backup and restore",
+    title: "Backup, Confluence import, and DC export",
     category: "Administration",
     description:
-      "Create full workspace backups, preview archives, and resolve space conflicts.",
-    keywords: ["zip", "restore", "overwrite", "checksum", "archive"],
+      "Create ZIP backups, import Confluence space archives, and export DC XML.",
+    keywords: [
+      "backup",
+      "zip",
+      "restore",
+      "confluence",
+      "import",
+      "export",
+      "xml",
+    ],
     body: (
       <>
         <p>
-          Administrators can create a full WikiHub ZIP backup containing
-          workspace data, pages, revisions, permissions, attachments, and
-          internal avatars. Password hashes are excluded by default; include
-          them only for a secure migration, because the archive becomes
-          sensitive.
+          Create full workspace ZIP backups under <strong>Administration &gt;
+          Backup</strong>, containing pages, revisions, attachments, avatars, and
+          permissions.
         </p>
         <p>
-          Restore accepts legacy JSON backups and full ZIP backups. Always
-          preview changes first. Existing users and spaces are skipped by
-          default. For a conflicting space in a full ZIP, an administrator can
-          explicitly overwrite page content, revisions, restrictions, and
-          attachments while retaining the destination space metadata, members,
-          and permissions.
-        </p>
-      </>
-    ),
-  },
-  {
-    id: "confluence-import",
-    title: "Confluence import and Data Center export",
-    category: "Administration",
-    description:
-      "Bring in a Confluence archive or create a Data Center-compatible export.",
-    keywords: ["confluence", "import", "export", "data center", "xml"],
-    body: (
-      <>
-        <p>
-          Import a Confluence export ZIP from Administration &gt; Backup.
-          Uploads use resumable multipart transfer. After the archive is
-          scanned, choose spaces to import, review conflicts, then monitor the
-          background job, logs, retry controls, or cancellation state.
-        </p>
-        <p>
-          WikiHub can also produce a separate Confluence Data Center XML export.
-          Select the target compatibility profile (Data Center 8.x or 9.x)
-          before creating it. This artifact contains space content and
-          attachments, not WikiHub users, groups, or workspace settings.
+          Import Confluence space ZIP exports with resumable upload support.
+          Scan archives, review space key conflicts, choose specific spaces to
+          import, and monitor background progress. You can also generate
+          Confluence Data Center XML exports (Data Center 8.x / 9.x compatible).
         </p>
       </>
     ),
@@ -315,23 +428,20 @@ const sections: HelpSection[] = [
     title: "Safe operation and troubleshooting",
     category: "Administration",
     description:
-      "Avoid destructive mistakes and resolve common access and upload issues.",
+      "Avoid destructive errors, troubleshoot uploads, and manage background tasks.",
     keywords: ["security", "troubleshooting", "failed", "upload", "access"],
     body: (
       <>
         <p>
-          Treat password-hash backups and pre-signed storage URLs as sensitive.
-          Preview a restore, especially before overwriting a space. Archive a
-          space before permanent deletion when a review period is useful, and
-          use groups instead of large sets of direct permissions.
+          Treat backup archives and pre-signed storage URLs securely. Preview
+          restores before overwriting space content. Archive inactive spaces before
+          permanent deletion. Use group permissions rather than large sets of
+          individual user assignments.
         </p>
         <p>
-          If sign-in fails, verify the account is active. If a page or space is
-          missing, check both space permissions and page restrictions. Upload
-          failures usually indicate an unsupported type or a configured size
-          limit. For a failed import, return to Backup to resume a scanned
-          archive or retry its job after checking worker, Redis, and
-          object-storage health.
+          If sign-in fails, check if the account is active. If uploads fail,
+          verify file extensions and size limits in Settings. If an import fails,
+          check worker logs, Redis, and MinIO storage health.
         </p>
       </>
     ),
@@ -392,8 +502,8 @@ export function HelpPage() {
               How can we help?
             </h1>
             <p className="text-muted-foreground mx-auto mt-2 max-w-xl text-base leading-7">
-              Browse practical guides for working with knowledge and managing
-              your workspace.
+              Browse practical guides for working with knowledge, page editing,
+              theme customization, and managing your workspace.
             </p>
             <div className="relative mx-auto mt-5 max-w-xl">
               <Search
@@ -404,7 +514,7 @@ export function HelpPage() {
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search a help topic..."
+                placeholder="Search a help topic (e.g. slash, theme, table, storage)..."
                 aria-label="Search Help topics"
                 className="bg-surface h-12 rounded-full pr-5 pl-12 text-base shadow-sm"
               />
@@ -621,7 +731,7 @@ export function HelpDetailPage({ topic }: { topic: HelpCategory }) {
           <div className="border-border bg-surface-sunken mt-7 rounded-lg border px-5 py-8 text-center">
             <p className="font-medium">No guides found for “{query}”</p>
             <p className="text-muted-foreground mt-1 text-sm">
-              Try a broader term such as “backup”, “spaces”, or “password”.
+              Try a broader term such as “slash”, “theme”, “table”, or “storage”.
             </p>
           </div>
         )}
