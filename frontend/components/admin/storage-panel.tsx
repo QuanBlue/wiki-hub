@@ -225,7 +225,7 @@ function FileRow({ node, depth, onDelete, onDownload, onPreview }: FileRowProps)
       <FileIcon name={node.name} />
       <button
         type="button"
-        className="text-foreground hover:text-primary min-w-0 flex-1 cursor-pointer truncate text-left font-mono text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="text-foreground hover:text-primary min-w-0 flex-1 cursor-pointer truncate text-left font-mono text-xs font-normal transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         title={`Preview ${node.path}`}
         onClick={() => onPreview(node)}
       >
@@ -302,10 +302,13 @@ function FolderRow({
         ) : (
           <Folder className="text-primary size-4 shrink-0" />
         )}
-        <span className="min-w-0 flex-1 truncate font-medium" title={node.path}>
+        <span
+          className="min-w-0 flex-1 truncate font-normal text-foreground"
+          title={node.path}
+        >
           {node.name}
         </span>
-        <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+        <span className="text-muted-foreground shrink-0 text-xs font-normal tabular-nums">
           {node.totalFiles} file{node.totalFiles !== 1 ? "s" : ""} ·{" "}
           {formatBytes(node.totalSize)}
         </span>

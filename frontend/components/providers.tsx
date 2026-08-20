@@ -7,6 +7,7 @@ import { Toaster } from "sonner";
 
 import { ApiError } from "@/lib/api-client";
 import { NavigationLoading } from "@/components/navigation-loading";
+import { ThemeColorProvider } from "@/components/theme-color-provider";
 
 function makeQueryClient() {
   return new QueryClient({
@@ -25,7 +26,17 @@ function makeQueryClient() {
   });
 }
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({
+  children,
+  initialThemeColor,
+  initialLogoIcon,
+  initialCustomLogoUrl,
+}: {
+  children: React.ReactNode;
+  initialThemeColor?: string;
+  initialLogoIcon?: string;
+  initialCustomLogoUrl?: string | null;
+}) {
   // Held in state so each browser session gets exactly one client, and so a
   // server render never shares a cache between two users' requests.
   const [queryClient] = useState(makeQueryClient);
@@ -38,9 +49,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
         enableSystem
         disableTransitionOnChange
       >
-        {children}
-        <NavigationLoading />
-        <Toaster position="bottom-right" closeButton richColors />
+        <ThemeColorProvider
+          initialThemeColor={initialThemeColor}
+          initialLogoIcon={initialLogoIcon}
+          initialCustomLogoUrl={initialCustomLogoUrl}
+        >
+          {children}
+          <NavigationLoading />
+          <Toaster position="bottom-right" closeButton richColors />
+        </ThemeColorProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

@@ -63,6 +63,9 @@ class SiteSettingsOverrides(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     site_name: str | None = None
+    theme_color: str | None = None
+    logo_icon: str | None = None
+    custom_logo_url: str | None = None
     max_upload_size_mb: int | None = None
     max_backup_import_size_mb: int | None = None
     allowed_attachment_types: list[str] | None = None
@@ -74,6 +77,9 @@ class EffectiveSettings(BaseModel):
     """What the application actually uses: override if set, else the env default."""
 
     site_name: str
+    theme_color: str
+    logo_icon: str
+    custom_logo_url: str | None
     max_upload_size_mb: int
     max_upload_size_bytes: int
     max_backup_import_size_mb: int
@@ -106,6 +112,9 @@ class SiteSettingsUpdate(BaseModel):
     """
 
     site_name: str | None = Field(default=None, max_length=255)
+    theme_color: str | None = Field(default=None, max_length=50)
+    logo_icon: str | None = Field(default=None, max_length=50)
+    custom_logo_url: str | None = Field(default=None, max_length=1_000_000)
     max_upload_size_mb: int | None = Field(default=None, ge=1, le=10_240)
     max_backup_import_size_mb: int | None = Field(default=None, ge=1, le=102_400)
     allowed_attachment_types: list[str] | None = Field(default=None, max_length=100)
@@ -114,9 +123,31 @@ class SiteSettingsUpdate(BaseModel):
 
     @field_validator("site_name")
     @classmethod
-    def _non_blank(cls, value: str | None) -> str | None:
-        # An empty string would render as a nameless instance; treat it as a
-        # reset instead, which is what the user almost certainly meant.
+    def _non_blank_site_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("theme_color")
+    @classmethod
+    def _validate_theme_color(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("logo_icon")
+    @classmethod
+    def _validate_logo_icon(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip().lower()
+        return stripped or None
+
+    @field_validator("custom_logo_url")
+    @classmethod
+    def _validate_custom_logo_url(cls, value: str | None) -> str | None:
         if value is None:
             return None
         stripped = value.strip()

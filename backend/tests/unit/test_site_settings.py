@@ -49,11 +49,17 @@ def test_site_settings_validators_normalise_and_validate_extensions() -> None:
 def test_site_settings_effective_defaults_and_overrides() -> None:
     defaults = SiteSettingsService.env_defaults()
     assert defaults.max_upload_size_bytes > 0
+    assert defaults.theme_color == "blue"
+    assert defaults.logo_icon == "default"
+    assert defaults.custom_logo_url is None
     overridden = type(
         "Row",
         (),
         {
             "site_name": "Custom",
+            "theme_color": "emerald",
+            "logo_icon": "sparkles",
+            "custom_logo_url": "https://example.com/logo.svg",
             "max_upload_size_mb": 2,
             "max_backup_import_size_mb": 3,
             "allowed_attachment_types": ["md"],
@@ -63,6 +69,9 @@ def test_site_settings_effective_defaults_and_overrides() -> None:
     )()
     effective = SiteSettingsService._effective(overridden)
     assert effective.site_name == "Custom"
+    assert effective.theme_color == "emerald"
+    assert effective.logo_icon == "sparkles"
+    assert effective.custom_logo_url == "https://example.com/logo.svg"
     assert effective.max_upload_size_mb == 2
     assert effective.max_backup_import_size_mb == 3
     assert effective.allowed_attachment_types == ["md"]
@@ -73,6 +82,9 @@ def test_site_settings_effective_defaults_and_overrides() -> None:
 async def test_site_settings_read_and_update_audit_paths() -> None:
     row = SimpleNamespace(
         site_name="Old",
+        theme_color=None,
+        logo_icon=None,
+        custom_logo_url=None,
         max_upload_size_mb=None,
         max_backup_import_size_mb=None,
         allowed_attachment_types=None,

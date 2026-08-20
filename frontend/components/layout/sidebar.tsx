@@ -6,6 +6,7 @@ import {
   FolderCog,
   HardDrive,
   Home,
+  Layers,
   LayoutGrid,
   MoreHorizontal,
   SlidersHorizontal,
@@ -216,6 +217,7 @@ function MySpacesSection({
         {spaces.map((space) => {
           const href = `/spaces/${encodeURIComponent(space.key)}`;
           const active = pathname === href || pathname.startsWith(`${href}/`);
+          const hasCustomEmoji = Boolean(space.icon && space.icon !== "📄");
           return (
             <li key={space.id}>
               <Link
@@ -231,12 +233,16 @@ function MySpacesSection({
                     : "text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected",
                 )}
               >
-                <span
-                  className="bg-primary-subtle flex size-5 shrink-0 items-center justify-center rounded text-[11px]"
-                  aria-hidden
-                >
-                  {space.icon || "📄"}
-                </span>
+                {hasCustomEmoji ? (
+                  <span
+                    className="flex size-4 shrink-0 items-center justify-center text-xs leading-none"
+                    aria-hidden
+                  >
+                    {space.icon}
+                  </span>
+                ) : (
+                  <Layers className="size-4 shrink-0" aria-hidden />
+                )}
                 <span className="truncate">{space.name}</span>
               </Link>
             </li>
@@ -249,13 +255,8 @@ function MySpacesSection({
           onClick={onNavigate}
           className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring mt-0.5 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
         >
-          <span
-            className="flex size-5 shrink-0 items-center justify-center"
-            aria-hidden
-          >
-            <MoreHorizontal className="size-4" />
-          </span>
-          View all spaces
+          <MoreHorizontal className="size-4 shrink-0" aria-hidden />
+          <span>View all spaces</span>
         </Link>
       ) : null}
     </>

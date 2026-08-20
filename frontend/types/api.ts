@@ -103,6 +103,9 @@ export interface PageDraft {
 
 export interface InstanceInfo {
   site_name: string;
+  theme_color?: string;
+  logo_icon?: string;
+  custom_logo_url?: string | null;
   version: string;
   environment: string;
   max_upload_size_bytes: number;
@@ -267,6 +270,9 @@ export interface Page<T> {
 
 export interface SiteSettingsOverrides {
   site_name: string | null;
+  theme_color: string | null;
+  logo_icon: string | null;
+  custom_logo_url: string | null;
   max_upload_size_mb: number | null;
   max_backup_import_size_mb: number | null;
   allowed_attachment_types: string[] | null;
@@ -276,6 +282,9 @@ export interface SiteSettingsOverrides {
 
 export interface EffectiveSettings {
   site_name: string;
+  theme_color: string;
+  logo_icon: string;
+  custom_logo_url: string | null;
   max_upload_size_mb: number;
   max_upload_size_bytes: number;
   max_backup_import_size_mb: number;

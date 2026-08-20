@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, SmallInteger, String
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, SmallInteger, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -38,6 +38,9 @@ class SiteSettings(TimestampMixin, Base):
 
     # Every override is nullable: NULL = fall back to the env-backed default.
     site_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    theme_color: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    logo_icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    custom_logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     max_upload_size_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_backup_import_size_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     allowed_attachment_types: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)

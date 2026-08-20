@@ -37,6 +37,9 @@ logger = get_logger(__name__)
 #: Fields recorded in the audit diff when settings change.
 AUDITED_FIELDS = (
     "site_name",
+    "theme_color",
+    "logo_icon",
+    "custom_logo_url",
     "max_upload_size_mb",
     "max_backup_import_size_mb",
     "allowed_attachment_types",
@@ -89,22 +92,29 @@ class SiteSettingsService:
 
     @staticmethod
     def _effective(row: SiteSettings | None) -> EffectiveSettings:
-        site_name = (row.site_name if row else None) or settings.site_name
-        max_mb = (row.max_upload_size_mb if row else None) or settings.max_upload_size_mb
-        import_mb = (row.max_backup_import_size_mb if row else None) or settings.max_import_size_mb
-        types = row.allowed_attachment_types if row else None
+        site_name = getattr(row, "site_name", None) or settings.site_name
+        theme_color = getattr(row, "theme_color", None) or "blue"
+        logo_icon = getattr(row, "logo_icon", None) or "default"
+        custom_logo_url = getattr(row, "custom_logo_url", None)
+        max_mb = getattr(row, "max_upload_size_mb", None) or settings.max_upload_size_mb
+        import_mb = getattr(row, "max_backup_import_size_mb", None) or settings.max_import_size_mb
+        types = getattr(row, "allowed_attachment_types", None)
         if types is None:
             types = list(settings.attachment_allowed_types)
+        sidebar_perms_raw = getattr(row, "sidebar_permissions", None)
         sidebar_permissions = (
-            SidebarPermissions.model_validate(row.sidebar_permissions)
-            if row and row.sidebar_permissions is not None
+            SidebarPermissions.model_validate(sidebar_perms_raw)
+            if sidebar_perms_raw is not None
             else SidebarPermissions()
         )
-        session_ttl_hours = (row.session_ttl_hours if row else None) or (
+        session_ttl_hours = getattr(row, "session_ttl_hours", None) or (
             settings.access_token_ttl_seconds // 3600
         )
         return EffectiveSettings(
             site_name=site_name,
+            theme_color=theme_color,
+            logo_icon=logo_icon,
+            custom_logo_url=custom_logo_url,
             max_upload_size_mb=max_mb,
             max_upload_size_bytes=max_mb * 1024 * 1024,
             max_backup_import_size_mb=import_mb,
@@ -136,7 +146,7 @@ class SiteSettingsService:
             self.session.add(row)
             await self.session.flush()
 
-        before = {field: getattr(row, field) for field in AUDITED_FIELDS}
+        before = {field: getattr(row, field, None) for field in AUDITED_FIELDS}
 
         # `in data` rather than `is not None`: an explicit null is meaningful
         # here - it resets the setting back to the environment default.
@@ -151,7 +161,7 @@ class SiteSettingsService:
         await self.session.flush()
         await self.session.refresh(row)
 
-        after = {field: getattr(row, field) for field in AUDITED_FIELDS}
+        after = {field: getattr(row, field, None) for field in AUDITED_FIELDS}
         diff = AuditService.changes(before, after, AUDITED_FIELDS)
         if diff:
             logger.info("site_settings_updated", changed=sorted(diff))
