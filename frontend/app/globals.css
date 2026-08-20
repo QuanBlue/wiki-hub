@@ -106,38 +106,39 @@
 }
 
 .dark {
-  --background: var(--wh-neutral-950);
-  --foreground: var(--wh-neutral-100);
-  --surface: var(--wh-neutral-900);
-  --surface-sunken: var(--wh-neutral-950);
-  --surface-raised: var(--wh-neutral-800);
-  --surface-hover: var(--wh-neutral-800);
-  --surface-selected: color-mix(in oklab, var(--wh-brand-500) 22%, transparent);
-  --border: var(--wh-neutral-800);
-  --border-strong: var(--wh-neutral-700);
-  --muted: var(--wh-neutral-900);
-  --muted-foreground: var(--wh-neutral-400);
+  /* Gentle, eye-soothing dark palette (slate-navy dark, low glare) */
+  --background: #171923;
+  --foreground: #e2e8f0;
+  --surface: #1e212d;
+  --surface-sunken: #14161f;
+  --surface-raised: #252937;
+  --surface-hover: #2a2f3f;
+  --surface-selected: color-mix(in oklab, var(--wh-brand-500) 24%, transparent);
+  --border: #2b3040;
+  --border-strong: #373e52;
+  --muted: #1e212d;
+  --muted-foreground: #94a3b8;
   --primary: var(--wh-brand-400);
   --primary-hover: var(--wh-brand-300);
-  --primary-foreground: var(--wh-neutral-950);
-  --primary-subtle: color-mix(in oklab, var(--wh-brand-500) 18%, transparent);
+  --primary-foreground: #0f172a;
+  --primary-subtle: color-mix(in oklab, var(--wh-brand-500) 20%, transparent);
   --ring: var(--wh-brand-400);
 
-  --wh-success: #6ed3a3;
-  --wh-success-bg: color-mix(in oklab, #1f7a4d 24%, transparent);
-  --wh-warning: #f0c07a;
-  --wh-warning-bg: color-mix(in oklab, #9a6100 26%, transparent);
-  --wh-danger: #f2938c;
-  --wh-danger-bg: color-mix(in oklab, #b3261e 24%, transparent);
-  --wh-info: #86c0e6;
-  --wh-info-bg: color-mix(in oklab, #1f6592 26%, transparent);
+  --wh-success: #5eead4;
+  --wh-success-bg: color-mix(in oklab, #0f766e 24%, transparent);
+  --wh-warning: #fde047;
+  --wh-warning-bg: color-mix(in oklab, #854d0e 26%, transparent);
+  --wh-danger: #fca5a5;
+  --wh-danger-bg: color-mix(in oklab, #991b1b 24%, transparent);
+  --wh-info: #7dd3fc;
+  --wh-info-bg: color-mix(in oklab, #0369a1 26%, transparent);
 
   /* Code blocks are fixed-dark regardless of app theme (see :root above) -
      nothing to override here. */
 
-  --danger: #e5675e;
-  --scrollbar-thumb: var(--wh-neutral-600);
-  --scrollbar-thumb-hover: var(--wh-neutral-500);
+  --danger: #fca5a5;
+  --scrollbar-thumb: #374151;
+  --scrollbar-thumb-hover: #4b5563;
 }
 
 /* Expose the tokens to Tailwind utilities (bg-surface, text-muted-foreground, ...) */
