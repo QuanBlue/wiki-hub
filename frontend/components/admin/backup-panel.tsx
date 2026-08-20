@@ -378,10 +378,12 @@ async function sha256File(
   onProgress: (loaded: number) => void,
   signal?: AbortSignal,
 ): Promise<string> {
+  const SAMPLE_CHUNK_SIZE = 2 * 1024 * 1024; // 2 MB per sample slice
+  const FAST_HASH_THRESHOLD = 8 * 1024 * 1024; // 8 MB threshold
+
   if (typeof window !== "undefined" && window.crypto?.subtle) {
     try {
-      const SAFE_MAX_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5 GB
-      if (file.size <= SAFE_MAX_SIZE) {
+      if (file.size <= FAST_HASH_THRESHOLD) {
         const arrayBuffer = await file.arrayBuffer();
         if (signal?.aborted) {
           throw new DOMException("Fingerprint cancelled.", "AbortError");
@@ -400,27 +402,97 @@ async function sha256File(
         onProgress(file.size);
         return hashHex;
       }
+
+      // Fast multi-sample fingerprinting for large files (> 8 MB):
+      // Read head (2MB) + middle (2MB) + tail (2MB) + metadata (size, lastModified, filename)
+      const head = await file.slice(0, SAMPLE_CHUNK_SIZE).arrayBuffer();
+      const midOffset = Math.floor((file.size - SAMPLE_CHUNK_SIZE) / 2);
+      const mid = await file
+        .slice(midOffset, midOffset + SAMPLE_CHUNK_SIZE)
+        .arrayBuffer();
+      const tail = await file
+        .slice(file.size - SAMPLE_CHUNK_SIZE)
+        .arrayBuffer();
+
+      const metaString = `size:${file.size};modified:${file.lastModified};name:${file.name};`;
+      const metaBytes = new TextEncoder().encode(metaString);
+
+      const combined = new Uint8Array(
+        head.byteLength +
+          mid.byteLength +
+          tail.byteLength +
+          metaBytes.byteLength,
+      );
+      combined.set(new Uint8Array(head), 0);
+      combined.set(new Uint8Array(mid), head.byteLength);
+      combined.set(new Uint8Array(tail), head.byteLength + mid.byteLength);
+      combined.set(
+        metaBytes,
+        head.byteLength + mid.byteLength + tail.byteLength,
+      );
+
+      if (signal?.aborted) {
+        throw new DOMException("Fingerprint cancelled.", "AbortError");
+      }
+
+      const hashBuffer = await window.crypto.subtle.digest(
+        "SHA-256",
+        combined,
+      );
+      if (signal?.aborted) {
+        throw new DOMException("Fingerprint cancelled.", "AbortError");
+      }
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      onProgress(file.size);
+      return hashHex;
     } catch (error) {
       console.warn(
-        "Native SHA-256 calculation failed, falling back to incremental JS implementation:",
+        "Native fast SHA-256 calculation failed, falling back to incremental JS implementation:",
         error,
       );
     }
   }
 
+  // Fallback for environments without window.crypto.subtle (also fast-sampled)
   const hasher = new IncrementalSha256();
-  const chunkSize = 8 * 1024 * 1024;
-  let offset = 0;
-  while (offset < file.size) {
+
+  if (file.size <= FAST_HASH_THRESHOLD) {
+    const chunkSize = 8 * 1024 * 1024;
+    let offset = 0;
+    while (offset < file.size) {
+      if (signal?.aborted) {
+        throw new DOMException("Fingerprint cancelled.", "AbortError");
+      }
+      const chunk = file.slice(offset, offset + chunkSize);
+      hasher.update(new Uint8Array(await chunk.arrayBuffer()));
+      offset += chunk.size;
+      onProgress(Math.min(offset, file.size));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    }
     if (signal?.aborted) {
       throw new DOMException("Fingerprint cancelled.", "AbortError");
     }
-    const chunk = file.slice(offset, offset + chunkSize);
-    hasher.update(new Uint8Array(await chunk.arrayBuffer()));
-    offset += chunk.size;
-    onProgress(Math.min(offset, file.size));
-    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    return hasher.digest();
   }
+
+  const head = await file.slice(0, SAMPLE_CHUNK_SIZE).arrayBuffer();
+  const midOffset = Math.floor((file.size - SAMPLE_CHUNK_SIZE) / 2);
+  const mid = await file
+    .slice(midOffset, midOffset + SAMPLE_CHUNK_SIZE)
+    .arrayBuffer();
+  const tail = await file.slice(file.size - SAMPLE_CHUNK_SIZE).arrayBuffer();
+  const metaString = `size:${file.size};modified:${file.lastModified};name:${file.name};`;
+  const metaBytes = new TextEncoder().encode(metaString);
+
+  hasher.update(new Uint8Array(head));
+  hasher.update(new Uint8Array(mid));
+  hasher.update(new Uint8Array(tail));
+  hasher.update(metaBytes);
+
+  onProgress(file.size);
   if (signal?.aborted) {
     throw new DOMException("Fingerprint cancelled.", "AbortError");
   }
