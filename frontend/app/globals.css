@@ -106,18 +106,18 @@
 }
 
 .dark {
-  /* Gentle, eye-soothing dark palette (slate-navy dark, low glare) */
-  --background: #171923;
-  --foreground: #e2e8f0;
-  --surface: #1e212d;
-  --surface-sunken: #14161f;
-  --surface-raised: #252937;
-  --surface-hover: #2a2f3f;
+  /* Brighter, comfortable Dark Dimmed palette (lightened slate) */
+  --background: #1f2330;
+  --foreground: #f1f5f9;
+  --surface: #272c3b;
+  --surface-sunken: #191c27;
+  --surface-raised: #2f3546;
+  --surface-hover: #33394c;
   --surface-selected: color-mix(in oklab, var(--wh-brand-500) 24%, transparent);
-  --border: #2b3040;
-  --border-strong: #373e52;
-  --muted: #1e212d;
-  --muted-foreground: #94a3b8;
+  --border: #363d50;
+  --border-strong: #444d64;
+  --muted: #272c3b;
+  --muted-foreground: #a0aec0;
   --primary: var(--wh-brand-400);
   --primary-hover: var(--wh-brand-300);
   --primary-foreground: #0f172a;
@@ -137,8 +137,8 @@
      nothing to override here. */
 
   --danger: #fca5a5;
-  --scrollbar-thumb: #374151;
-  --scrollbar-thumb-hover: #4b5563;
+  --scrollbar-thumb: #4b5563;
+  --scrollbar-thumb-hover: #6b7280;
 }
 
 /* Expose the tokens to Tailwind utilities (bg-surface, text-muted-foreground, ...) */
