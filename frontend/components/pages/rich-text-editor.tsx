@@ -3996,7 +3996,7 @@ function RichTextToolbar({
 
   return (
     <div
-      className="border-border bg-surface-sunken flex flex-nowrap items-center gap-1 overflow-hidden rounded-t-md border px-1 py-1 [&>button]:shrink-0"
+      className="border-border bg-surface-sunken sticky top-topbar md:top-0 z-20 flex flex-nowrap items-center gap-1 overflow-hidden rounded-t-md border px-1 py-1 shadow-xs [&>button]:shrink-0"
       role="toolbar"
       aria-label="Page formatting"
     >
@@ -4847,7 +4847,7 @@ export function RichTextEditor({
         />
       ) : (
         <div
-          className="border-border bg-surface-sunken h-10 rounded-t-md border"
+          className="border-border bg-surface-sunken sticky top-topbar md:top-0 z-20 h-10 rounded-t-md border shadow-xs"
           aria-hidden
         />
       )}

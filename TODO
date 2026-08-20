@@ -15,9 +15,9 @@
 - Trong page, các code cho thêm màu sắc vào cho dễ nhận diện, bộ theme màu của tất cả các ngôn ngữ lập trình phổ biến, trong phần code, cho phép:
   + Chọn ngôn ngữ, từ đó format màu cho phù hợp
   + Cho thêm phần caption (code title, nhiều khi cần viết tên code,...)
+- Tương tự áp dụng theme màu đó cho pannel preview nội dung file đính kèm luôn
 
-
-
+- cho toolbar trong edit pannel di chuyển theo khi scroll xuống,  vì nếu nội dung quá dài thì không thể kéo lên trên để chọn toolbar, rất mất công
 
 Edit
 - Đã xong image

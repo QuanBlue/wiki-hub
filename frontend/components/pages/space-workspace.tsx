@@ -1866,7 +1866,7 @@ export function SpaceWorkspace({
                 : "transition-[transform,opacity,padding] duration-300",
               "-mx-6 px-6 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10",
               isSticky
-                ? "bg-background border-border sticky top-0 z-30 border-b py-3 shadow-sm"
+                ? "bg-background border-border sticky top-topbar md:top-0 z-30 border-b py-3 shadow-sm"
                 : "relative py-5",
               showHeader
                 ? "translate-y-0 opacity-100"
