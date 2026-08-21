@@ -81,13 +81,13 @@ function SearchableUserPicker({
   }, []);
 
   return (
-    <div ref={containerRef} className="relative flex-1 min-w-48">
+    <div ref={containerRef} className="relative flex-1 min-w-44">
       <button
         type="button"
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
         className={cn(
-          "w-full flex items-center justify-between border border-border rounded-md px-3 py-2 text-xs bg-background hover:bg-surface-hover transition-colors text-left font-normal cursor-pointer",
+          "w-full flex items-center justify-between border border-border rounded-md px-2.5 py-1.5 text-xs bg-background hover:bg-surface-hover transition-colors text-left font-normal cursor-pointer h-8",
           disabled && "opacity-50 cursor-not-allowed",
           open && "ring-2 ring-primary/20 border-primary",
         )}
@@ -536,59 +536,63 @@ export function EditGroupDialog({
           {/* Tab 2: Members */}
           {activeTab === "members" ? (
             <div className="space-y-3 h-full flex flex-col">
-              {/* Add member section with SearchableUserPicker showing Added labels */}
-              <div className="border-border bg-surface-sunken flex flex-wrap items-center gap-2 rounded-lg border p-3 shrink-0">
-                <SearchableUserPicker
-                  users={allWorkspaceUsers}
-                  value={memberIdToAdd}
-                  onChange={setMemberIdToAdd}
-                  disabled={allWorkspaceUsers.length === 0}
-                  addedUserIds={currentMemberUserIds}
-                  placeholder="Select user to add..."
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleStageAddMember}
-                  disabled={!memberIdToAdd || pending}
-                >
-                  <UserPlus className="size-4" />
-                  Add member
-                </Button>
+              {/* Sleek Single-Line Toolbar: Search Left + Add Member Right */}
+              <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
+                {/* Left: Compact Filter Search */}
+                <div className="relative flex-1 min-w-44 max-w-xs">
+                  <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+                  <Input
+                    value={memberSearchQuery}
+                    onChange={(e) => setMemberSearchQuery(e.target.value)}
+                    placeholder="Search members..."
+                    className="w-full pl-8 h-8 text-xs bg-background"
+                  />
+                </div>
+
+                {/* Right: Add Member Control */}
+                <div className="flex items-center gap-1.5 flex-1 min-w-56 justify-end">
+                  <SearchableUserPicker
+                    users={allWorkspaceUsers}
+                    value={memberIdToAdd}
+                    onChange={setMemberIdToAdd}
+                    disabled={allWorkspaceUsers.length === 0}
+                    addedUserIds={currentMemberUserIds}
+                    placeholder="Select user to add..."
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 text-xs shrink-0 px-2.5"
+                    onClick={handleStageAddMember}
+                    disabled={!memberIdToAdd || pending}
+                  >
+                    <UserPlus className="size-3.5" />
+                    Add
+                  </Button>
+                </div>
               </div>
 
-              {/* Member search filter */}
-              <div className="relative shrink-0">
-                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-                <Input
-                  value={memberSearchQuery}
-                  onChange={(e) => setMemberSearchQuery(e.target.value)}
-                  placeholder="Search current group members..."
-                  className="w-full pl-8"
-                />
-              </div>
-
-              {/* Members list */}
-              <div className="border-border flex-1 max-h-[200px] min-h-[160px] overflow-y-auto rounded-lg border divide-y">
+              {/* Expansive Members List Table */}
+              <div className="border-border flex-1 h-[275px] max-h-[275px] overflow-y-auto rounded-lg border divide-y">
                 {loadingMembers ? (
-                  <div className="p-6 text-center text-sm text-muted-foreground">
+                  <div className="p-8 text-center text-sm text-muted-foreground">
                     <Loader2 className="mx-auto size-5 animate-spin mb-2" />
                     Loading members...
                   </div>
                 ) : filteredMembers.length === 0 ? (
-                  <div className="p-6 text-center text-sm text-muted-foreground">
-                    No members found in this group.
+                  <div className="p-8 text-center text-sm text-muted-foreground">
+                    No members found.
                   </div>
                 ) : (
                   filteredMembers.map((member) => (
-                    <div key={member.user_id} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <div key={member.user_id} className="flex items-center justify-between px-3 py-2 text-xs hover:bg-surface-hover transition-colors">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <span className="bg-primary-subtle text-primary flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                           {(member.full_name || member.username)[0]?.toUpperCase()}
                         </span>
                         <div className="min-w-0 flex items-center gap-2">
-                          <p className="font-medium truncate">{member.full_name || member.username}</p>
-                          <p className="text-xs text-muted-foreground truncate">@{member.username}</p>
+                          <p className="font-medium truncate text-foreground">{member.full_name || member.username}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">@{member.username}</p>
                           {member.isNew ? (
                             <Badge variant="success" className="text-[10px] py-0 px-1.5 font-semibold uppercase tracking-wider">
                               New
@@ -600,11 +604,11 @@ export function EditGroupDialog({
                         type="button"
                         size="sm"
                         variant="ghost"
-                        className="hover:bg-danger-bg hover:text-danger text-muted-foreground"
+                        className="h-7 text-xs hover:bg-danger-bg hover:text-danger text-muted-foreground px-2"
                         onClick={() => handleStageRemoveMember(member.user_id)}
                         title="Remove member from group"
                       >
-                        <UserMinus className="size-4" />
+                        <UserMinus className="size-3.5" />
                         Remove
                       </Button>
                     </div>
