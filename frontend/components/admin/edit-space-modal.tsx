@@ -8,7 +8,6 @@ import {
   Plus,
   ShieldCheck,
   Trash2,
-  Users,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -74,9 +73,15 @@ function EditSpaceModalContent({
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("access");
+
+  // Initial & Draft States
+  const [initialVisibility, setInitialVisibility] = useState(space.visibility);
   const [visibility, setVisibility] = useState(space.visibility);
+
   const [groups, setGroups] = useState<Group[]>(initialGroups || []);
   const [users, setUsers] = useState<User[]>(initialUsers || []);
+
+  const [initialAssignments, setInitialAssignments] = useState<SpacePermissionAssignment[]>([]);
   const [assignments, setAssignments] = useState<SpacePermissionAssignment[]>([]);
 
   const [groupIdToAdd, setGroupIdToAdd] = useState("");
@@ -85,8 +90,10 @@ function EditSpaceModalContent({
 
   const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [unsavedPromptOpen, setUnsavedPromptOpen] = useState(false);
 
   useEffect(() => {
+    setInitialVisibility(space.visibility);
     setVisibility(space.visibility);
     setActiveTab("access");
     void loadSpacePermissions();
@@ -103,6 +110,7 @@ function EditSpaceModalContent({
         ? rawUsersRes
         : rawUsersRes.items || [];
 
+      setInitialAssignments(fetchedAssignments);
       setAssignments(fetchedAssignments);
       if (groups.length === 0) setGroups(fetchedGroups);
       if (users.length === 0) setUsers(fetchedUsers);
@@ -111,19 +119,96 @@ function EditSpaceModalContent({
     }
   }
 
-  async function handleVisibilityChange(value: "open" | "restricted") {
+  // Calculate if there are unsaved changes
+  const isVisibilityChanged = visibility !== initialVisibility;
+  const isAssignmentsChanged = (() => {
+    if (initialAssignments.length !== assignments.length) return true;
+    const initialSet = new Set(
+      initialAssignments.map((a) => `${a.principal_type}:${a.principal_id}:${[...a.permissions].sort().join(",")}`),
+    );
+    const currentSet = new Set(
+      assignments.map((a) => `${a.principal_type}:${a.principal_id}:${[...a.permissions].sort().join(",")}`),
+    );
+    if (initialSet.size !== currentSet.size) return true;
+    for (const val of currentSet) {
+      if (!initialSet.has(val)) return true;
+    }
+    return false;
+  })();
+
+  const hasChanges = isVisibilityChanged || isAssignmentsChanged;
+
+  function handleAttemptClose() {
+    if (hasChanges) {
+      setUnsavedPromptOpen(true);
+    } else {
+      onOpenChange(false);
+    }
+  }
+
+  async function handleSaveAll() {
     setPending(true);
     try {
-      await api.patch(`/api/v1/spaces/${encodeURIComponent(space.key)}`, {
-        visibility: value,
-      });
-      setVisibility(value);
-      toast.success("Space visibility updated.");
+      // 1. Update visibility if changed
+      if (visibility !== initialVisibility) {
+        await api.patch(`/api/v1/spaces/${encodeURIComponent(space.key)}`, {
+          visibility,
+        });
+        setInitialVisibility(visibility);
+      }
+
+      // 2. Compute assignment diffs
+      const initialMap = new Map<string, Set<SpacePermission>>();
+      for (const item of initialAssignments) {
+        const key = `${item.principal_type}:${item.principal_id}`;
+        initialMap.set(key, new Set(item.permissions));
+      }
+
+      const currentMap = new Map<string, Set<SpacePermission>>();
+      for (const item of assignments) {
+        const key = `${item.principal_type}:${item.principal_id}`;
+        currentMap.set(key, new Set(item.permissions));
+      }
+
+      const requests: Promise<unknown>[] = [];
+
+      // Diffs to add
+      for (const [key, currentPerms] of currentMap.entries()) {
+        const [principal_type, principal_id] = key.split(":");
+        const initialPerms = initialMap.get(key) || new Set();
+
+        for (const perm of currentPerms) {
+          if (!initialPerms.has(perm)) {
+            const endpoint = principal_type === "group" ? "groups" : "users";
+            const path = `/api/v1/spaces/${encodeURIComponent(space.key)}/permissions/${endpoint}/${principal_id}/${perm}`;
+            requests.push(api.put(path));
+          }
+        }
+      }
+
+      // Diffs to remove
+      for (const [key, initialPerms] of initialMap.entries()) {
+        const [principal_type, principal_id] = key.split(":");
+        const currentPerms = currentMap.get(key) || new Set();
+
+        for (const perm of initialPerms) {
+          if (!currentPerms.has(perm)) {
+            const endpoint = principal_type === "group" ? "groups" : "users";
+            const path = `/api/v1/spaces/${encodeURIComponent(space.key)}/permissions/${endpoint}/${principal_id}/${perm}`;
+            requests.push(api.delete(path));
+          }
+        }
+      }
+
+      await Promise.all(requests);
+      toast.success("Space access & permissions saved.");
+      setInitialAssignments(assignments);
+      onOpenChange(false);
       if (onSpaceUpdated) onSpaceUpdated();
       router.refresh();
     } catch (error) {
       toast.error(
-        error instanceof ApiError ? error.message : "Could not update space visibility.",
+        error instanceof ApiError ? error.message : "Could not save space permissions.",
       );
     } finally {
       setPending(false);
@@ -142,12 +227,10 @@ function EditSpaceModalContent({
       .map((a) => a.principal_id),
   );
 
-  // Only display groups that are added OR are default groups
   const displayedGroups = groups.filter(
     (g) => assignedGroupIds.has(g.id) || isDefaultGroup(g),
   );
 
-  // Only display users that are explicitly added to this space
   const displayedUsers = users.filter((u) => assignedUserIds.has(u.id));
 
   function hasGroupPermission(group: Group, permission: SpacePermission) {
@@ -159,45 +242,56 @@ function EditSpaceModalContent({
     );
   }
 
-  async function toggleGroupPermission(group: Group, permission: SpacePermission, enabled: boolean) {
-    const path = `/api/v1/spaces/${encodeURIComponent(space.key)}/permissions/groups/${group.id}/${permission}`;
-    try {
-      if (enabled) await api.put(path);
-      else await api.delete(path);
+  function toggleGroupPermission(group: Group, permission: SpacePermission, enabled: boolean) {
+    setAssignments((current) => {
+      const existing = current.find(
+        (item) => item.principal_type === "group" && item.principal_id === group.id,
+      );
 
-      setAssignments((current) =>
-        enabled
-          ? [
-              ...current,
-              {
-                space_id: space.id,
-                principal_id: group.id,
-                principal_type: "group",
-                principal_name: group.name,
-                permissions: [permission],
-              },
-            ]
-          : current.filter(
-              (item) =>
-                !(
-                  item.principal_type === "group" &&
-                  item.principal_id === group.id &&
-                  item.permissions.includes(permission)
-                ),
-            ),
+      if (enabled) {
+        if (existing) {
+          return current.map((item) =>
+            item.principal_type === "group" && item.principal_id === group.id
+              ? {
+                  ...item,
+                  permissions: Array.from(new Set([...item.permissions, permission])),
+                }
+              : item,
+          );
+        }
+        return [
+          ...current,
+          {
+            space_id: space.id,
+            principal_id: group.id,
+            principal_type: "group",
+            principal_name: group.name,
+            permissions: [permission],
+          },
+        ];
+      }
+
+      if (!existing) return current;
+
+      const nextPermissions = existing.permissions.filter((p) => p !== permission);
+      if (nextPermissions.length === 0) {
+        return current.filter(
+          (item) => !(item.principal_type === "group" && item.principal_id === group.id),
+        );
+      }
+      return current.map((item) =>
+        item.principal_type === "group" && item.principal_id === group.id
+          ? { ...item, permissions: nextPermissions }
+          : item,
       );
-    } catch (error) {
-      toast.error(
-        error instanceof ApiError ? error.message : "Could not update permission.",
-      );
-    }
+    });
   }
 
-  async function handleAddGroup() {
+  function handleAddGroup() {
     if (!groupIdToAdd) return;
     const targetGroup = groups.find((g) => g.id === groupIdToAdd);
     if (!targetGroup) return;
-    await toggleGroupPermission(targetGroup, "view", true);
+    toggleGroupPermission(targetGroup, "view", true);
     setGroupIdToAdd("");
   }
 
@@ -210,45 +304,56 @@ function EditSpaceModalContent({
     );
   }
 
-  async function toggleUserPermission(user: User, permission: SpacePermission, enabled: boolean) {
-    const path = `/api/v1/spaces/${encodeURIComponent(space.key)}/permissions/users/${user.id}/${permission}`;
-    try {
-      if (enabled) await api.put(path);
-      else await api.delete(path);
+  function toggleUserPermission(user: User, permission: SpacePermission, enabled: boolean) {
+    setAssignments((current) => {
+      const existing = current.find(
+        (item) => item.principal_type === "user" && item.principal_id === user.id,
+      );
 
-      setAssignments((current) =>
-        enabled
-          ? [
-              ...current,
-              {
-                space_id: space.id,
-                principal_id: user.id,
-                principal_type: "user",
-                principal_name: user.username,
-                permissions: [permission],
-              },
-            ]
-          : current.filter(
-              (item) =>
-                !(
-                  item.principal_type === "user" &&
-                  item.principal_id === user.id &&
-                  item.permissions.includes(permission)
-                ),
-            ),
+      if (enabled) {
+        if (existing) {
+          return current.map((item) =>
+            item.principal_type === "user" && item.principal_id === user.id
+              ? {
+                  ...item,
+                  permissions: Array.from(new Set([...item.permissions, permission])),
+                }
+              : item,
+          );
+        }
+        return [
+          ...current,
+          {
+            space_id: space.id,
+            principal_id: user.id,
+            principal_type: "user",
+            principal_name: user.username,
+            permissions: [permission],
+          },
+        ];
+      }
+
+      if (!existing) return current;
+
+      const nextPermissions = existing.permissions.filter((p) => p !== permission);
+      if (nextPermissions.length === 0) {
+        return current.filter(
+          (item) => !(item.principal_type === "user" && item.principal_id === user.id),
+        );
+      }
+      return current.map((item) =>
+        item.principal_type === "user" && item.principal_id === user.id
+          ? { ...item, permissions: nextPermissions }
+          : item,
       );
-    } catch (error) {
-      toast.error(
-        error instanceof ApiError ? error.message : "Could not update permission.",
-      );
-    }
+    });
   }
 
-  async function handleAddUser() {
+  function handleAddUser() {
     if (!userIdToAdd) return;
     const targetUser = users.find((u) => u.id === userIdToAdd);
     if (!targetUser) return;
-    await toggleUserPermission(targetUser, "view", true);
+    toggleUserPermission(targetUser, "view", true);
     setUserIdToAdd("");
   }
 
@@ -329,7 +434,7 @@ function EditSpaceModalContent({
         </button>
       </div>
 
-      {/* Tab Content Container - Taller 540px Height */}
+      {/* Tab Content Container */}
       <div className="mt-4 h-[540px] min-h-[540px] overflow-y-auto">
         {/* Tab 1: Access & Permissions */}
         {activeTab === "access" ? (
@@ -351,7 +456,7 @@ function EditSpaceModalContent({
               </div>
               <Select
                 value={visibility}
-                onValueChange={(val) => void handleVisibilityChange(val as "open" | "restricted")}
+                onValueChange={(val) => setVisibility(val as "open" | "restricted")}
                 disabled={pending}
               >
                 <SelectTrigger className="w-36 h-8 text-xs bg-background">
@@ -400,7 +505,7 @@ function EditSpaceModalContent({
                   type="button"
                   size="sm"
                   className="h-8 text-xs px-3"
-                  onClick={() => void handleAddGroup()}
+                  onClick={handleAddGroup}
                   disabled={!groupIdToAdd || pending}
                 >
                   <Plus className="size-3.5" /> Add group
@@ -448,7 +553,7 @@ function EditSpaceModalContent({
                                   className="accent-primary size-3.5 cursor-pointer rounded border-border"
                                   aria-label={`${group.name}: ${label}`}
                                   checked={hasGroupPermission(group, permission)}
-                                  onChange={(e) => void toggleGroupPermission(group, permission, e.target.checked)}
+                                  onChange={(e) => toggleGroupPermission(group, permission, e.target.checked)}
                                 />
                               </td>
                             ))}
@@ -501,7 +606,7 @@ function EditSpaceModalContent({
                   type="button"
                   size="sm"
                   className="h-8 text-xs px-3"
-                  onClick={() => void handleAddUser()}
+                  onClick={handleAddUser}
                   disabled={!userIdToAdd || pending}
                 >
                   <Plus className="size-3.5" /> Add user
@@ -552,7 +657,7 @@ function EditSpaceModalContent({
                                   className="accent-primary size-3.5 cursor-pointer rounded border-border"
                                   aria-label={`${user.username}: ${label}`}
                                   checked={hasUserPermission(user, permission)}
-                                  onChange={(e) => void toggleUserPermission(user, permission, e.target.checked)}
+                                  onChange={(e) => toggleUserPermission(user, permission, e.target.checked)}
                                 />
                               </td>
                             ))}
@@ -632,10 +737,31 @@ function EditSpaceModalContent({
       </div>
 
       {/* Dialog Footer */}
-      <DialogFooter className="pt-3 border-t border-border">
-        <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-          Close
-        </Button>
+      <DialogFooter className="pt-3 border-t border-border flex items-center justify-between">
+        <div className="text-xs text-muted-foreground">
+          {hasChanges ? (
+            <span className="text-amber-600 dark:text-amber-400 font-medium">
+              Unsaved changes
+            </span>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleAttemptClose}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            disabled={!hasChanges || pending}
+            onClick={() => void handleSaveAll()}
+          >
+            {pending ? "Saving..." : "Save changes"}
+          </Button>
+        </div>
       </DialogFooter>
 
       {/* Confirmation Modals */}
@@ -659,6 +785,48 @@ function EditSpaceModalContent({
         pending={pending}
         onConfirm={() => void handleDeleteSpace()}
       />
+
+      {/* Unsaved Changes Confirmation Prompt Modal */}
+      <Dialog open={unsavedPromptOpen} onOpenChange={setUnsavedPromptOpen}>
+        <DialogContent
+          className="max-w-md"
+          title="Unsaved changes"
+          description={`You have unsaved changes in Access & Permissions for space "${space.name}". What would you like to do?`}
+        >
+          <DialogFooter className="flex-col sm:flex-row gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full sm:w-auto"
+              onClick={() => setUnsavedPromptOpen(false)}
+            >
+              Keep editing
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              className="w-full sm:w-auto bg-danger hover:bg-danger/90 text-white"
+              onClick={() => {
+                setUnsavedPromptOpen(false);
+                onOpenChange(false);
+              }}
+            >
+              Discard changes
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              className="w-full sm:w-auto"
+              onClick={() => {
+                setUnsavedPromptOpen(false);
+                void handleSaveAll();
+              }}
+            >
+              Save changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DialogContent>
   );
 }
