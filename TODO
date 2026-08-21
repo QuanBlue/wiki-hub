@@ -13,6 +13,8 @@
 
 - Cho phép admin thay đổi theme ứng dụng: icon, màu theme (Đã xong: chế độ draft form, nút Xem trước Theme Preview Modal, chỉ áp dụng sau khi Save)
 
+- Khi import file từ confluence: Đã hỗ trợ tự động bóc tách & tạo Group, gán thành viên User vào Group, phân quyền Space (Admin, Editor, Viewer), phân quyền Space cho Group (SpaceGroupPermission), tự động chuyển Space thành Private/Restricted nếu là Space nội bộ và khôi phục chế độ Page Restrictions (View/Edit) cho từng trang riêng tư. 
+
 Edit
 - Đã xong image
 - xong bảng
