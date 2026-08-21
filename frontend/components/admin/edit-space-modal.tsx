@@ -47,6 +47,18 @@ const PERMISSIONS: [SpacePermission, string][] = [
 
 type TabKey = "access" | "danger";
 
+function isDefaultGroup(g: Group) {
+  return (
+    g.name === "confluence-users" ||
+    g.name === "confluence-administrators" ||
+    g.name.toLowerCase().includes("default")
+  );
+}
+
+function isDefaultUser(u: User) {
+  return u.is_protected || u.username === "admin" || u.username === "sysadmin";
+}
+
 function EditSpaceModalContent({
   space,
   onOpenChange,
@@ -117,6 +129,28 @@ function EditSpaceModalContent({
       setPending(false);
     }
   }
+
+  const assignedGroupIds = new Set(
+    assignments
+      .filter((a) => a.principal_type === "group")
+      .map((a) => a.principal_id),
+  );
+
+  const assignedUserIds = new Set(
+    assignments
+      .filter((a) => a.principal_type === "user")
+      .map((a) => a.principal_id),
+  );
+
+  // Only display groups that are added OR are default groups
+  const displayedGroups = groups.filter(
+    (g) => assignedGroupIds.has(g.id) || isDefaultGroup(g),
+  );
+
+  // Only display users that are added OR are default users
+  const displayedUsers = users.filter(
+    (u) => assignedUserIds.has(u.id) || isDefaultUser(u),
+  );
 
   function hasGroupPermission(group: Group, permission: SpacePermission) {
     return assignments.some(
@@ -297,11 +331,11 @@ function EditSpaceModalContent({
         </button>
       </div>
 
-      {/* Tab Content Container */}
-      <div className="mt-4 h-[420px] min-h-[420px] overflow-y-auto">
+      {/* Tab Content Container - Taller 540px Height */}
+      <div className="mt-4 h-[540px] min-h-[540px] overflow-y-auto">
         {/* Tab 1: Access & Permissions */}
         {activeTab === "access" ? (
-          <div className="space-y-4 pr-1">
+          <div className="space-y-5 pr-1">
             {/* General Access Box */}
             <div className="border-border bg-surface rounded-lg border p-3.5 shadow-xs flex items-center justify-between gap-3">
               <div>
@@ -342,11 +376,26 @@ function EditSpaceModalContent({
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {groups.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        {g.name}
-                      </SelectItem>
-                    ))}
+                    {groups.map((g) => {
+                      const isAdded = assignedGroupIds.has(g.id);
+                      const isDefault = isDefaultGroup(g);
+                      return (
+                        <SelectItem key={g.id} value={g.id} disabled={isAdded}>
+                          <div className="flex items-center justify-between w-full gap-2">
+                            <span>{g.name}</span>
+                            {isAdded ? (
+                              <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
+                                Added
+                              </Badge>
+                            ) : isDefault ? (
+                              <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
+                                Default
+                              </Badge>
+                            ) : null}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 <Button
@@ -360,7 +409,7 @@ function EditSpaceModalContent({
                 </Button>
               </div>
 
-              <div className="max-h-48 overflow-y-auto">
+              <div className="max-h-60 overflow-y-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
@@ -373,29 +422,41 @@ function EditSpaceModalContent({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {groups.length === 0 ? (
+                    {displayedGroups.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="p-4 text-center text-muted-foreground text-xs">
-                          No groups configured.
+                          No groups added to this space yet.
                         </td>
                       </tr>
                     ) : (
-                      groups.map((group) => (
-                        <tr key={group.id} className="hover:bg-surface-hover transition-colors">
-                          <td className="px-3 py-2 font-medium text-foreground">{group.name}</td>
-                          {PERMISSIONS.map(([permission, label]) => (
-                            <td key={permission} className="px-1.5 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                className="accent-primary size-3.5 cursor-pointer rounded border-border"
-                                aria-label={`${group.name}: ${label}`}
-                                checked={hasGroupPermission(group, permission)}
-                                onChange={(e) => void toggleGroupPermission(group, permission, e.target.checked)}
-                              />
+                      displayedGroups.map((group) => {
+                        const isDefault = isDefaultGroup(group);
+                        return (
+                          <tr key={group.id} className="hover:bg-surface-hover transition-colors">
+                            <td className="px-3 py-2 font-medium text-foreground">
+                              <span className="flex items-center gap-1.5">
+                                <span>{group.name}</span>
+                                {isDefault ? (
+                                  <Badge variant="neutral" className="text-[10px] uppercase font-semibold py-0 px-1">
+                                    Default
+                                  </Badge>
+                                ) : null}
+                              </span>
                             </td>
-                          ))}
-                        </tr>
-                      ))
+                            {PERMISSIONS.map(([permission, label]) => (
+                              <td key={permission} className="px-1.5 py-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  className="accent-primary size-3.5 cursor-pointer rounded border-border"
+                                  aria-label={`${group.name}: ${label}`}
+                                  checked={hasGroupPermission(group, permission)}
+                                  onChange={(e) => void toggleGroupPermission(group, permission, e.target.checked)}
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -414,11 +475,28 @@ function EditSpaceModalContent({
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {users.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.full_name || u.username} (@{u.username})
-                      </SelectItem>
-                    ))}
+                    {users.map((u) => {
+                      const isAdded = assignedUserIds.has(u.id);
+                      const isDefault = isDefaultUser(u);
+                      return (
+                        <SelectItem key={u.id} value={u.id} disabled={isAdded}>
+                          <div className="flex items-center justify-between w-full gap-2">
+                            <span>
+                              {u.full_name || u.username} (@{u.username})
+                            </span>
+                            {isAdded ? (
+                              <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
+                                Added
+                              </Badge>
+                            ) : isDefault ? (
+                              <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
+                                Default
+                              </Badge>
+                            ) : null}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 <Button
@@ -432,7 +510,7 @@ function EditSpaceModalContent({
                 </Button>
               </div>
 
-              <div className="max-h-48 overflow-y-auto">
+              <div className="max-h-60 overflow-y-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
@@ -445,32 +523,44 @@ function EditSpaceModalContent({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {users.length === 0 ? (
+                    {displayedUsers.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="p-4 text-center text-muted-foreground text-xs">
-                          No users configured.
+                          No users added to this space yet.
                         </td>
                       </tr>
                     ) : (
-                      users.map((user) => (
-                        <tr key={user.id} className="hover:bg-surface-hover transition-colors">
-                          <td className="px-3 py-2 font-medium text-foreground">
-                            {user.full_name || user.username}{" "}
-                            <span className="text-muted-foreground font-normal">@{user.username}</span>
-                          </td>
-                          {PERMISSIONS.map(([permission, label]) => (
-                            <td key={permission} className="px-1.5 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                className="accent-primary size-3.5 cursor-pointer rounded border-border"
-                                aria-label={`${user.username}: ${label}`}
-                                checked={hasUserPermission(user, permission)}
-                                onChange={(e) => void toggleUserPermission(user, permission, e.target.checked)}
-                              />
+                      displayedUsers.map((user) => {
+                        const isDefault = isDefaultUser(user);
+                        return (
+                          <tr key={user.id} className="hover:bg-surface-hover transition-colors">
+                            <td className="px-3 py-2 font-medium text-foreground">
+                              <span className="flex items-center gap-1.5">
+                                <span>
+                                  {user.full_name || user.username}{" "}
+                                  <span className="text-muted-foreground font-normal">@{user.username}</span>
+                                </span>
+                                {isDefault ? (
+                                  <Badge variant="neutral" className="text-[10px] uppercase font-semibold py-0 px-1">
+                                    Default
+                                  </Badge>
+                                ) : null}
+                              </span>
                             </td>
-                          ))}
-                        </tr>
-                      ))
+                            {PERMISSIONS.map(([permission, label]) => (
+                              <td key={permission} className="px-1.5 py-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  className="accent-primary size-3.5 cursor-pointer rounded border-border"
+                                  aria-label={`${user.username}: ${label}`}
+                                  checked={hasUserPermission(user, permission)}
+                                  onChange={(e) => void toggleUserPermission(user, permission, e.target.checked)}
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
