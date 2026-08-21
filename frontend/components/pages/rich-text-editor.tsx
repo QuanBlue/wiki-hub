@@ -3826,12 +3826,21 @@ function LinkFloatingToolbar({
   onEditLink,
 }: {
   editor: Editor | null;
-  onEditLink: () => void;
+  onEditLink: (linkData?: {
+    href: string;
+    text: string;
+    title: string;
+    target: string;
+  }) => void;
 }) {
   const [position, setPosition] = useState<{
     left: number;
     top: number;
     href: string;
+    text: string;
+    title: string;
+    target: string;
+    pos?: number;
   } | null>(null);
   const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -3869,20 +3878,27 @@ function LinkFloatingToolbar({
       return;
     }
 
-    const { href } = editor.getAttributes("link");
+    const { href, title, target } = editor.getAttributes("link");
     if (!href) {
       setPosition(null);
       return;
     }
 
-    const { from } = editor.state.selection;
+    const { from, to } = editor.state.selection;
     const coords = editor.view.coordsAtPos(from);
     if (!coords) return;
+
+    const text =
+      from !== to ? editor.state.doc.textBetween(from, to, " ") : String(href);
 
     setPosition({
       left: Math.max(8, Math.min(coords.left, window.innerWidth - 380)),
       top: coords.bottom + 6,
       href: String(href),
+      text,
+      title: String(title ?? ""),
+      target: String(target ?? "_self"),
+      pos: from,
     });
   }, [editor]);
 
@@ -3916,11 +3932,25 @@ function LinkFloatingToolbar({
       keepToolbar();
       const rect = link.getBoundingClientRect();
       const href = link.getAttribute("href") || "";
+      const text = link.textContent || "";
+      const title = link.getAttribute("title") || "";
+      const targetAttr = link.getAttribute("target") || "_self";
+      let pos: number | undefined;
+      try {
+        pos = editor.view.posAtDOM(link, 0);
+      } catch {
+        // ignore
+      }
+
       if (href) {
         setPosition({
           left: Math.max(8, Math.min(rect.left, window.innerWidth - 380)),
           top: rect.bottom + 6,
           href,
+          text,
+          title,
+          target: targetAttr,
+          pos,
         });
       }
     };
@@ -3962,10 +3992,17 @@ function LinkFloatingToolbar({
       keepToolbar();
       const rect = link.getBoundingClientRect();
       const href = link.getAttribute("href") || "";
+      const text = link.textContent || "";
+      const title = link.getAttribute("title") || "";
+      const targetAttr = link.getAttribute("target") || "_self";
       setPosition({
         left: Math.max(8, Math.min(rect.left, window.innerWidth - 380)),
         top: rect.bottom + 6,
         href,
+        text,
+        title,
+        target: targetAttr,
+        pos,
       });
     };
 
@@ -4051,7 +4088,16 @@ function LinkFloatingToolbar({
       <button
         type="button"
         onClick={() => {
-          onEditLink();
+          if (typeof position.pos === "number") {
+            editor?.commands.setTextSelection(position.pos);
+            editor?.commands.extendMarkRange("link");
+          }
+          onEditLink({
+            href: position.href,
+            text: position.text,
+            title: position.title,
+            target: position.target,
+          });
           setPosition(null);
         }}
         className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground rounded p-1.5 transition-colors cursor-pointer"
@@ -4192,21 +4238,55 @@ function RichTextToolbar({
     return () => observer.disconnect();
   }, []);
 
-  const openLinkDialog = useCallback(() => {
-    if (!editor) return;
-    const { from, to } = editor.state.selection;
-    const attributes = editor.getAttributes("link");
-    linkSelection.current = { from, to };
-    setLinkUrl((attributes.href as string | undefined) ?? "");
-    setLinkTitle((attributes.title as string | undefined) ?? "");
-    setLinkTarget((attributes.target as string | undefined) ?? "_self");
-    setLinkText(editor.state.doc.textBetween(from, to, " "));
-    setLinkOpen(true);
-  }, [editor]);
+  const openLinkDialog = useCallback(
+    (customData?: {
+      href?: string;
+      text?: string;
+      title?: string;
+      target?: string;
+    }) => {
+      if (!editor) return;
+      if (editor.isActive("link")) {
+        editor.commands.extendMarkRange("link");
+      }
+      const { from, to } = editor.state.selection;
+      const attributes = editor.getAttributes("link");
+      linkSelection.current = { from, to };
+      const currentSelectedText =
+        from !== to ? editor.state.doc.textBetween(from, to, " ") : "";
+
+      const href =
+        customData?.href ?? (attributes.href as string | undefined) ?? "";
+      const title =
+        customData?.title ?? (attributes.title as string | undefined) ?? "";
+      const target =
+        customData?.target ??
+        (attributes.target as string | undefined) ??
+        "_self";
+      const text =
+        customData?.text ||
+        currentSelectedText ||
+        (attributes.href as string | undefined) ||
+        "";
+
+      setLinkUrl(href);
+      setLinkTitle(title);
+      setLinkTarget(target);
+      setLinkText(text);
+      setLinkOpen(true);
+    },
+    [editor],
+  );
 
   useEffect(() => {
-    const handleOpen = () => {
-      openLinkDialog();
+    const handleOpen = (event: Event) => {
+      const customEvt = event as CustomEvent<{
+        href?: string;
+        text?: string;
+        title?: string;
+        target?: string;
+      }>;
+      openLinkDialog(customEvt.detail);
     };
     window.addEventListener("wikihub:open-link-dialog", handleOpen);
     return () => {
@@ -4220,9 +4300,15 @@ function RichTextToolbar({
 
     const href = linkUrl.trim();
     const selection = linkSelection.current;
-    if (selection) editor.commands.setTextSelection(selection);
+    if (selection) {
+      editor.commands.setTextSelection(selection);
+    }
+    if (editor.isActive("link")) {
+      editor.commands.extendMarkRange("link");
+    }
+
     if (!href) {
-      editor.chain().focus().unsetLink().run();
+      editor.chain().focus().extendMarkRange("link").unsetLink().run();
       setLinkOpen(false);
       return;
     }
@@ -4234,10 +4320,11 @@ function RichTextToolbar({
     };
     const displayText = linkText.trim() || href;
     const chain = editor.chain().focus();
-    if (selection && selection.from !== selection.to) {
+    const curSelection = editor.state.selection;
+    if (curSelection.from !== curSelection.to) {
       const selectedText = editor.state.doc.textBetween(
-        selection.from,
-        selection.to,
+        curSelection.from,
+        curSelection.to,
         " ",
       );
       if (displayText !== selectedText) {
@@ -4822,7 +4909,10 @@ function RichTextToolbar({
         ) : null}
       </div>
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
-        <DialogContent title="Insert or edit link" className="max-w-xl">
+        <DialogContent
+          title={linkUrl ? "Edit link" : "Insert link"}
+          className="max-w-xl"
+        >
           <form onSubmit={saveLink} className="space-y-4" noValidate>
             <div className="space-y-1.5">
               <label htmlFor="link-url" className="text-sm font-medium">
@@ -5361,8 +5451,10 @@ export function RichTextEditor({
       <TableActionsMenu editor={editor} />
       <LinkFloatingToolbar
         editor={editor}
-        onEditLink={() =>
-          window.dispatchEvent(new CustomEvent("wikihub:open-link-dialog"))
+        onEditLink={(linkData) =>
+          window.dispatchEvent(
+            new CustomEvent("wikihub:open-link-dialog", { detail: linkData }),
+          )
         }
       />
       {draggingFiles ? (
