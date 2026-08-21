@@ -3,6 +3,7 @@
 import {
   Check,
   ChevronDown,
+  Crown,
   Loader2,
   Pencil,
   Search,
@@ -473,62 +474,94 @@ export function EditGroupDialog({
         <div className="mt-4 h-[380px] min-h-[380px]">
           {/* Tab 1: General Details */}
           {activeTab === "details" ? (
-            <div className="space-y-4 pr-1 h-full overflow-visible">
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-group-name">Group name</Label>
-                <Input
-                  id="edit-group-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  disabled={pending}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-group-description">Description</Label>
-                <Input
-                  id="edit-group-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Description of group purpose"
-                  disabled={pending}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Group owners</Label>
-                <div className="border border-border rounded-lg p-2.5 bg-surface space-y-2">
-                  <div className="flex flex-wrap gap-1.5 min-h-8 items-center">
-                    {ownerIds.map((id) => {
-                      const u = users.find((user) => user.id === id);
-                      return (
-                        <Badge key={id} variant="info" className="flex items-center gap-1.5 py-1 px-2.5 text-xs font-medium">
-                          <span>{u?.full_name || u?.username || id}</span>
-                          {ownerIds.length > 1 ? (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveOwner(id)}
-                              className="hover:text-danger text-muted-foreground ml-0.5 cursor-pointer rounded-xs"
-                              title="Remove owner"
-                              disabled={pending}
-                            >
-                              <X className="size-3" />
-                            </button>
-                          ) : null}
-                        </Badge>
-                      );
-                    })}
+            <div className="space-y-4 pr-1 h-full overflow-y-auto overflow-x-visible pb-2">
+              {/* Group Name & Description Section */}
+              <div className="grid grid-cols-1 gap-3.5 bg-surface-sunken/40 border border-border p-3.5 rounded-lg">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="edit-group-name" className="text-xs font-semibold">Group name</Label>
+                    <span className="text-[10px] text-muted-foreground">Required</span>
                   </div>
+                  <Input
+                    id="edit-group-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Engineering, Product Leads..."
+                    required
+                    disabled={pending}
+                    className="h-8.5 text-xs bg-background"
+                  />
+                </div>
 
-                  {availableOwners.length > 0 ? (
+                <div className="space-y-1">
+                  <Label htmlFor="edit-group-description" className="text-xs font-semibold">Description</Label>
+                  <textarea
+                    id="edit-group-description"
+                    rows={2}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Brief description of group purpose and team access scope..."
+                    disabled={pending}
+                    className="w-full px-3 py-2 text-xs bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary resize-none placeholder:text-muted-foreground/60"
+                  />
+                </div>
+              </div>
+
+              {/* Group Owners Section */}
+              <div className="border border-border rounded-lg p-3.5 bg-surface space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <Crown className="size-3.5 text-amber-500" />
+                      Group owners ({ownerIds.length})
+                    </h4>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Owners can manage group details, add or remove members, and assign access permissions.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Owner list badges */}
+                <div className="flex flex-wrap gap-2 min-h-9 items-center p-2 rounded-md bg-background border border-border/70">
+                  {ownerIds.map((id) => {
+                    const u = users.find((user) => user.id === id);
+                    return (
+                      <div
+                        key={id}
+                        className="flex items-center gap-1.5 py-1 px-2.5 rounded-md text-xs font-medium bg-surface border border-border shadow-xs text-foreground"
+                      >
+                        <span className="size-4 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[9px] font-bold flex items-center justify-center">
+                          {(u?.full_name || u?.username || id)[0]?.toUpperCase()}
+                        </span>
+                        <span className="truncate max-w-40 font-medium">{u?.full_name || u?.username || id}</span>
+                        {ownerIds.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveOwner(id)}
+                            className="hover:bg-danger/10 hover:text-danger text-muted-foreground p-0.5 rounded transition-colors cursor-pointer ml-0.5"
+                            title="Remove owner"
+                            disabled={pending}
+                          >
+                            <X className="size-3" />
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Owner picker dropdown */}
+                {availableOwners.length > 0 ? (
+                  <div className="flex items-center gap-2 pt-1">
                     <SearchableUserPicker
                       users={availableOwners}
                       value=""
                       onChange={handleAddOwner}
                       disabled={pending}
-                      placeholder="+ Add owner..."
+                      placeholder="+ Add another owner..."
                     />
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}
