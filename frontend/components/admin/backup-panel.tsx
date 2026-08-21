@@ -22,6 +22,13 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ApiError, apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type {
@@ -1755,16 +1762,18 @@ export function BackupPanel() {
               </p>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2 pt-2">
-              <select
-                aria-label="Confluence Data Center target version"
+              <Select
                 value={confluenceExportProfile}
-                onChange={(event) => setConfluenceExportProfile(event.target.value)}
-                className="border-input bg-background hover:border-input-hover h-9 min-w-36 flex-1 rounded-md border px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors duration-150"
+                onValueChange={(val) => setConfluenceExportProfile(val)}
               >
-                <option value="">Choose target version</option>
-                <option value="dc-8">Data Center 8.x</option>
-                <option value="dc-9">Data Center 9.x</option>
-              </select>
+                <SelectTrigger aria-label="Confluence Data Center target version" className="h-9 min-w-44 flex-1 text-xs">
+                  <SelectValue placeholder="Choose target version" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dc-8">Data Center 8.x</SelectItem>
+                  <SelectItem value="dc-9">Data Center 9.x</SelectItem>
+                </SelectContent>
+              </Select>
               <Button
                 type="button"
                 variant="secondary"
