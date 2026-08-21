@@ -171,9 +171,9 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                         or _text(props, "name")
                     )
                     gref = (
-                        _reference(props.get("parent"))
+                        _reference(props.get("parentGroup"))
+                        or _reference(props.get("parent"))
                         or _reference(props.get("group"))
-                        or _reference(props.get("parentGroup"))
                         or _reference(props.get("directoryGroup"))
                     )
                     uname = (
@@ -184,7 +184,9 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                         or _text(props, "member")
                     )
                     uref = (
-                        _reference(props.get("child"))
+                        _reference(props.get("userMember"))
+                        or _reference(props.get("member"))
+                        or _reference(props.get("child"))
                         or _reference(props.get("user"))
                         or _reference(props.get("userSubject"))
                         or _reference(props.get("childUser"))
@@ -245,11 +247,14 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                         or _text(props, "userName")
                         or _text(props, "lowerName")
                     )
-                    user_key = _text(props, "key") or _text(props, "userKey")
+                    user_key = _text(props, "key") or _text(props, "userKey") or _text(props, "externalId")
                     if username_val:
                         user_names[source_id] = username_val
+                        user_names[username_val] = username_val
+                        user_names[username_val.lower()] = username_val
                         if user_key:
                             user_names[user_key] = username_val
+                            user_names[user_key.lower()] = username_val
 
                 elif cls_name == "Page" and source_id:
                     title = _text(props, "title")

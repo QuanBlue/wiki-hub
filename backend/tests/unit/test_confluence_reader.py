@@ -140,3 +140,34 @@ def test_scan_confluence_userkey_memberships(tmp_path):
     assert len(spaces.groups) == 1
     assert spaces.groups[0].name == "dms4_mem"
     assert spaces.groups[0].members == ["anhdt187"]
+
+
+XML_HIBERNATE_MEMBERSHIPS = """<root>
+<object class="InternalUser" package="com.atlassian.crowd.model.user">
+  <id name="id">229377</id>
+  <property name="name">thongnm1</property>
+  <property name="lowerName">thongnm1</property>
+</object>
+<object class="InternalGroup" package="com.atlassian.crowd.model.group">
+  <id name="id">163842</id>
+  <property name="name">confluence-users</property>
+  <property name="lowerName">confluence-users</property>
+</object>
+<object class="HibernateMembership" package="com.atlassian.crowd.embedded.hibernate2">
+  <id name="id">294913</id>
+  <property name="parentGroup" class="InternalGroup" package="com.atlassian.crowd.model.group"><id name="id">163842</id></property>
+  <property name="userMember" class="InternalUser" package="com.atlassian.crowd.model.user"><id name="id">229377</id></property>
+</object>
+<object class="Space"><id>s200</id><property name="key">TEST2</property><property name="name">Test Space 2</property></object>
+</root>"""
+
+
+def test_scan_confluence_hibernate_memberships(tmp_path):
+    path = tmp_path / "hibernate_export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", XML_HIBERNATE_MEMBERSHIPS)
+    spaces = scan_archive(path)
+    assert len(spaces) == 1
+    assert len(spaces.groups) == 1
+    assert spaces.groups[0].name == "confluence-users"
+    assert spaces.groups[0].members == ["thongnm1"]
