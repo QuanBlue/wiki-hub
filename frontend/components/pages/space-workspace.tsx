@@ -42,6 +42,7 @@ import {
 import { toast } from "sonner";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
+import { EditSpaceModal } from "@/components/admin/edit-space-modal";
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
@@ -816,6 +817,12 @@ export function SpaceWorkspace({
   const [deletePageOpen, setDeletePageOpen] = useState(false);
   const [deletePagePending, setDeletePagePending] = useState(false);
   const [movePageOpen, setMovePageOpen] = useState(false);
+  const [editSpaceModalOpen, setEditSpaceModalOpen] = useState(false);
+  const canAdmin =
+    canManageRestrictions ||
+    space.my_role === "admin" ||
+    space.my_permissions?.includes("admin") === true ||
+    space.my_permissions?.includes("restrictions") === true;
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [reloadPending, setReloadPending] = useState(false);
   const [cancelEditPending, setCancelEditPending] = useState(false);
@@ -1822,6 +1829,22 @@ export function SpaceWorkspace({
                 </ul>
               </nav>
             </div>
+
+            {/* Sidebar Footer: Edit Space button for Admins & Owners */}
+            {canAdmin ? (
+              <div className="border-border border-t p-3 shrink-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground cursor-pointer text-xs h-8"
+                  onClick={() => setEditSpaceModalOpen(true)}
+                >
+                  <Pencil className="size-3.5" />
+                  Edit space
+                </Button>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {!collapsed ? (
@@ -2763,6 +2786,13 @@ export function SpaceWorkspace({
               onRestored={() => router.refresh()}
             />
           ) : null}
+
+          <EditSpaceModal
+            space={space}
+            groups={groups}
+            open={editSpaceModalOpen}
+            onOpenChange={setEditSpaceModalOpen}
+          />
 
           <ConfirmDialog
             open={deletePageOpen}
