@@ -1,6 +1,7 @@
 "use client";
 
 import { Globe2, LockKeyhole, Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -127,13 +128,12 @@ export function AdminSpaceRow({
               {space.icon || "◆"}
             </span>
             <div className="min-w-0">
-              <button
-                type="button"
-                onClick={() => setEditOpen(true)}
-                className="text-primary hover:text-primary-hover block truncate font-medium hover:underline text-left cursor-pointer"
+              <Link
+                href={`/spaces/${encodeURIComponent(space.key)}`}
+                className="text-primary hover:text-primary-hover block truncate font-medium hover:underline text-left"
               >
                 {space.name}
-              </button>
+              </Link>
               <p className="text-muted-foreground mt-0.5 truncate text-xs">
                 {space.description || space.key}
               </p>
