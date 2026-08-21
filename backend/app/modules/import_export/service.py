@@ -161,35 +161,131 @@ def _link_imported_attachments(
     return result
 
 
-def _normalize_confluence_code_macros(content: str) -> str:
-    """Convert Confluence XML-style macros into HTML elements."""
-    if "<ac:structured-macro" not in content:
+def _normalize_confluence_html(content: str) -> str:
+    """Convert Confluence XML-style macros, task lists, layouts, and parameters into standard WikiHub HTML elements."""
+    if not content:
         return content
 
-    def replace_macro(match: re.Match) -> str:
-        macro_tag = match.group(0)
-        macro_name_match = re.search(
-            r'ac:name=(?:"([^"]+)"|\'([^\']+)\')', macro_tag, re.IGNORECASE
+    # Quick check: if no confluence tags are present, return unchanged
+    if (
+        "<ac:" not in content
+        and "<ri:" not in content
+        and "<task-list" not in content
+        and "<layout" not in content
+    ):
+        return content
+
+    soup = BeautifulSoup(content, "html.parser")
+
+    # 1. Normalize Task Lists: <ac:task-list> / <ac:task>
+    for task_list in soup.find_all(["ac:task-list", "task-list"]):
+        ul_tag = soup.new_tag(
+            "ul",
+            attrs={"class": "task-list space-y-1.5 my-3 pl-1", "data-type": "taskList"},
         )
-        if not macro_name_match:
-            return macro_tag
+        for task in task_list.find_all(["ac:task", "task"]):
+            status_tag = task.find(["ac:task-status", "task-status"])
+            status_text = status_tag.get_text().strip().lower() if status_tag else ""
+            is_checked = status_text in {"complete", "completed", "checked", "true"}
 
-        macro_name = (macro_name_match.group(1) or macro_name_match.group(2) or "").lower()
-        inner = match.group(1)
+            body_tag = task.find(["ac:task-body", "task-body"])
+            body_html = "".join(str(c) for c in body_tag.contents) if body_tag else ""
+            if not body_html:
+                if status_tag:
+                    status_tag.decompose()
+                task_id_tag = task.find(["ac:task-id", "task-id"])
+                if task_id_tag:
+                    task_id_tag.decompose()
+                body_html = task.get_text().strip()
 
-        # Handle code macro
+            li_tag = soup.new_tag(
+                "li",
+                attrs={
+                    "class": "task-list-item flex items-start gap-2 text-sm text-foreground my-1",
+                    "data-type": "taskItem",
+                    "data-checked": "true" if is_checked else "false",
+                },
+            )
+
+            checkbox_tag = soup.new_tag(
+                "input",
+                attrs={
+                    "type": "checkbox",
+                    "class": "accent-primary size-4 mt-0.5 rounded border-border shrink-0 cursor-default",
+                },
+            )
+            if is_checked:
+                checkbox_tag["checked"] = "checked"
+            checkbox_tag["disabled"] = "disabled"
+
+            span_tag = soup.new_tag(
+                "span",
+                attrs={
+                    "class": "task-body min-w-0"
+                    + (" line-through text-muted-foreground" if is_checked else "")
+                },
+            )
+            body_soup = BeautifulSoup(body_html, "html.parser")
+            for item in list(body_soup.contents):
+                span_tag.append(item)
+
+            li_tag.append(checkbox_tag)
+            li_tag.append(span_tag)
+            ul_tag.append(li_tag)
+        task_list.replace_with(ul_tag)
+
+    # 2. Normalize Confluence Page Layout Grid: <ac:layout>, <ac:layout-section>, <ac:layout-cell>
+    for layout in soup.find_all(["ac:layout", "layout"]):
+        layout_div = soup.new_tag(
+            "div", attrs={"class": "confluence-layout space-y-4 my-4"}
+        )
+        for section in layout.find_all(["ac:layout-section", "layout-section"]):
+            stype = (section.get("ac:type") or section.get("type") or "single").lower()
+
+            grid_class = "grid grid-cols-1 gap-4 my-4"
+            if stype in {"two_equal", "two-equal"}:
+                grid_class = "grid grid-cols-1 md:grid-cols-2 gap-4 my-4"
+            elif stype in {"two_left_sidebar"}:
+                grid_class = "grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-4 my-4"
+            elif stype in {"two_right_sidebar"}:
+                grid_class = "grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-4 my-4"
+            elif stype in {"three_equal", "three-equal"}:
+                grid_class = "grid grid-cols-1 md:grid-cols-3 gap-4 my-4"
+            elif stype in {"three_with_sidebars"}:
+                grid_class = "grid grid-cols-1 md:grid-cols-[1fr_2fr_1fr] gap-4 my-4"
+
+            sec_div = soup.new_tag(
+                "div",
+                attrs={
+                    "class": f"confluence-layout-section {grid_class}",
+                    "data-layout-type": stype,
+                },
+            )
+            for cell in section.find_all(["ac:layout-cell", "layout-cell"]):
+                cell_div = soup.new_tag(
+                    "div",
+                    attrs={
+                        "class": "confluence-layout-cell border border-border/40 p-4 rounded-lg bg-surface/50 shadow-2xs flex flex-col justify-start min-w-0"
+                    },
+                )
+                for child in list(cell.contents):
+                    cell_div.append(child)
+                sec_div.append(cell_div)
+            layout_div.append(sec_div)
+        layout.replace_with(layout_div)
+
+    # 3. Normalize Structured Macros: <ac:structured-macro>
+    for macro in soup.find_all(["ac:structured-macro", "structured-macro"]):
+        macro_name = (macro.get("ac:name") or macro.get("name") or "").lower()
+
+        # Handle Code Macro
         if macro_name == "code":
-            code_match = re.search(
-                r"<ac:plain-text-body\b[^>]*>([\s\S]*?)</ac:plain-text-body>", inner, re.IGNORECASE
-            )
-            if not code_match:
-                return macro_tag
-            code_text = code_match.group(1)
-            preserve_terminal_newline = bool(
-                re.search(r"\r?\n\s*\]\]\s*(?:>?|&gt;)\s*$", code_text)
-            )
+            code_tag = macro.find(["ac:plain-text-body", "plain-text-body"])
+            code_text = code_tag.get_text() if code_tag else ""
             if re.match(r"^\s*<!\[CDATA\[", code_text, re.IGNORECASE):
-                code_text = re.sub(r"^\s*<!\[CDATA\[", "", code_text, count=1, flags=re.IGNORECASE)
+                code_text = re.sub(
+                    r"^\s*<!\[CDATA\[", "", code_text, count=1, flags=re.IGNORECASE
+                )
                 code_text = re.sub(
                     r"\]\]\s*(?:>?|&gt;)\s*$",
                     "",
@@ -197,55 +293,211 @@ def _normalize_confluence_code_macros(content: str) -> str:
                     count=1,
                     flags=re.IGNORECASE,
                 )
-            code_text = re.sub(r"^\s*[\r\n]+", "", code_text)
-            code_text = re.sub(r"[\r\n]+\s*$", "", code_text)
-            if preserve_terminal_newline:
-                code_text += "\n"
+            code_text = code_text.strip("\r\n")
 
-            lang_match = re.search(
-                r"<ac:parameter\b[^>]*\bac:name=(?:\"language\"|'language')[^>]*>([\s\S]*?)</ac:parameter>",
-                inner,
-                re.IGNORECASE,
-            )
-            language = ""
-            if lang_match:
-                language = re.sub(r"[^a-z0-9_-]", "", lang_match.group(1).strip().lower())
-            escaped_code = html.escape(code_text)
-            class_attr = f' class="language-{language}"' if language else ""
-            return f"<pre><code{class_attr}>{escaped_code}</code></pre>"
+            lang_param = macro.find("ac:parameter", attrs={"ac:name": "language"})
+            language = lang_param.get_text().strip().lower() if lang_param else ""
+            language = re.sub(r"[^a-z0-9_-]", "", language)
 
-        # Handle callout macros (info, warning, note, tip, panel, expand)
+            pre_tag = soup.new_tag("pre")
+            code_el = soup.new_tag("code")
+            if language:
+                code_el["class"] = f"language-{language}"
+            code_el.string = code_text
+            pre_tag.append(code_el)
+            macro.replace_with(pre_tag)
+            continue
+
+        # Handle Callout Macros: info, warning, note, tip, panel, expand
         if macro_name in {"info", "warning", "note", "tip", "panel", "expand"}:
-            body_match = re.search(
-                r"<ac:rich-text-body\b[^>]*>([\s\S]*?)</ac:rich-text-body>", inner, re.IGNORECASE
-            )
-            body_text = body_match.group(1) if body_match else ""
-
-            title_match = re.search(
-                r"<ac:parameter\b[^>]*\bac:name=(?:\"title\"|'title')[^>]*>([\s\S]*?)</ac:parameter>",
-                inner,
-                re.IGNORECASE,
-            )
-            title_text = title_match.group(1).strip() if title_match else ""
-            title_html = f"<p><strong>{html.escape(title_text)}</strong></p>" if title_text else ""
-
-            callout_type = macro_name
-            if callout_type == "expand":
-                callout_type = "panel"
-
-            return (
-                f'<div data-type="callout" data-callout-type="{callout_type}" '
-                f'class="callout callout-{callout_type}">{title_html}{body_text}</div>'
+            body_tag = macro.find(["ac:rich-text-body", "rich-text-body"])
+            body_html = (
+                "".join(str(c) for c in body_tag.contents) if body_tag else ""
             )
 
-        return macro_tag
+            title_param = macro.find("ac:parameter", attrs={"ac:name": "title"})
+            title_text = title_param.get_text().strip() if title_param else ""
 
-    return re.sub(
-        r"<ac:structured-macro\b[^>]*>([\s\S]*?)</ac:structured-macro>",
-        replace_macro,
-        content,
-        flags=re.IGNORECASE,
-    )
+            callout_type = "panel" if macro_name == "expand" else macro_name
+            callout_div = soup.new_tag(
+                "div",
+                attrs={
+                    "data-type": "callout",
+                    "data-callout-type": callout_type,
+                    "class": f"callout callout-{callout_type} my-4 p-4 rounded-lg border bg-surface shadow-2xs",
+                },
+            )
+            if title_text:
+                title_p = soup.new_tag(
+                    "p", attrs={"class": "font-semibold mb-1 text-foreground"}
+                )
+                title_p.string = title_text
+                callout_div.append(title_p)
+
+            body_soup = BeautifulSoup(body_html, "html.parser")
+            for item in list(body_soup.contents):
+                callout_div.append(item)
+            macro.replace_with(callout_div)
+            continue
+
+        # Handle Search / Livesearch Macro
+        if macro_name in {"search", "livesearch"}:
+            card_div = soup.new_tag(
+                "div",
+                attrs={
+                    "class": "confluence-macro confluence-macro-search border border-border p-4 rounded-lg bg-surface shadow-2xs my-4 space-y-2"
+                },
+            )
+            h4 = soup.new_tag(
+                "h4", attrs={"class": "text-sm font-semibold text-foreground"}
+            )
+            h4.string = "Search this documentation"
+            card_div.append(h4)
+
+            form = soup.new_tag(
+                "form",
+                attrs={
+                    "action": "/search",
+                    "method": "get",
+                    "class": "flex items-center gap-2",
+                },
+            )
+            inp = soup.new_tag(
+                "input",
+                attrs={
+                    "type": "text",
+                    "name": "q",
+                    "placeholder": "Search pages in this space...",
+                    "class": "flex-1 px-3 py-1.5 text-xs bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary",
+                },
+            )
+            btn = soup.new_tag(
+                "button",
+                attrs={
+                    "type": "submit",
+                    "class": "px-3 py-1.5 text-xs font-medium bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-md cursor-pointer",
+                },
+            )
+            btn.string = "Search"
+            form.append(inp)
+            form.append(btn)
+            card_div.append(form)
+            macro.replace_with(card_div)
+            continue
+
+        # Handle Popular Topics / Labels Macro
+        if macro_name in {"popular-topics", "labels"}:
+            card_div = soup.new_tag(
+                "div",
+                attrs={
+                    "class": "confluence-macro confluence-macro-labels border border-border p-4 rounded-lg bg-surface shadow-2xs my-4 space-y-2"
+                },
+            )
+            h4 = soup.new_tag(
+                "h4", attrs={"class": "text-sm font-semibold text-foreground"}
+            )
+            h4.string = "Popular Topics"
+            p = soup.new_tag("p", attrs={"class": "text-xs text-muted-foreground"})
+            p.string = "No labels match these criteria."
+            card_div.append(h4)
+            card_div.append(p)
+            macro.replace_with(card_div)
+            continue
+
+        # Handle Featured Pages / Content-by-label Macro
+        if macro_name in {"content-by-label", "featured-pages"}:
+            card_div = soup.new_tag(
+                "div",
+                attrs={
+                    "class": "confluence-macro confluence-macro-featured border border-border p-4 rounded-lg bg-surface shadow-2xs my-4 space-y-2"
+                },
+            )
+            h4 = soup.new_tag(
+                "h4", attrs={"class": "text-sm font-semibold text-foreground"}
+            )
+            h4.string = "Featured Pages"
+            p = soup.new_tag("p", attrs={"class": "text-xs text-muted-foreground"})
+            p.string = "There is no content with the specified labels."
+            card_div.append(h4)
+            card_div.append(p)
+            macro.replace_with(card_div)
+            continue
+
+        # Handle Recently Updated Pages Macro
+        if macro_name in {"recently-updated", "recent-updates"}:
+            card_div = soup.new_tag(
+                "div",
+                attrs={
+                    "class": "confluence-macro confluence-macro-recent border border-border p-4 rounded-lg bg-surface shadow-2xs my-4 space-y-2"
+                },
+            )
+            h4 = soup.new_tag(
+                "h4", attrs={"class": "text-sm font-semibold text-foreground"}
+            )
+            h4.string = "Recently Updated Pages"
+            p = soup.new_tag("p", attrs={"class": "text-xs text-muted-foreground"})
+            p.string = "Browse recent updates in the space page tree."
+            card_div.append(h4)
+            card_div.append(p)
+            macro.replace_with(card_div)
+            continue
+
+        # Handle Status Macro
+        if macro_name == "status":
+            title_param = macro.find("ac:parameter", attrs={"ac:name": "title"})
+            status_title = (
+                title_param.get_text().strip()
+                if title_param
+                else macro.get_text().strip()
+            )
+            badge_span = soup.new_tag(
+                "span",
+                attrs={
+                    "class": "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold bg-primary-subtle text-primary border border-primary/20 my-1"
+                },
+            )
+            badge_span.string = status_title
+            macro.replace_with(badge_span)
+            continue
+
+        # Generic Macro Fallback: extract rich-text-body or plain-text-body if present, otherwise strip parameter tags
+        body_tag = macro.find(
+            [
+                "ac:rich-text-body",
+                "rich-text-body",
+                "ac:plain-text-body",
+                "plain-text-body",
+            ]
+        )
+        if body_tag:
+            body_html = "".join(str(c) for c in body_tag.contents)
+            body_soup = BeautifulSoup(body_html, "html.parser")
+            macro.replace_with(body_soup)
+        else:
+            for param in macro.find_all(["ac:parameter", "parameter"]):
+                param.decompose()
+            text = macro.get_text().strip()
+            if text:
+                span_tag = soup.new_tag(
+                    "span", attrs={"class": "confluence-macro-fallback"}
+                )
+                span_tag.string = text
+                macro.replace_with(span_tag)
+            else:
+                macro.decompose()
+
+    # 4. Decompose any remaining unparsed Confluence metadata tags: <ac:parameter>, <ac:placeholder>
+    for param in soup.find_all(
+        ["ac:parameter", "parameter", "ac:placeholder", "placeholder"]
+    ):
+        param.decompose()
+
+    return str(soup)
+
+
+def _normalize_confluence_code_macros(content: str) -> str:
+    """Alias for _normalize_confluence_html for backward compatibility."""
+    return _normalize_confluence_html(content)
 
 
 class SeekableS3File(io.BufferedIOBase):
@@ -1050,7 +1302,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 ):
                     body_page: WikiPage | None = imported_pages.get(page_source_id)
                     if body_page:
-                        body_page.content = _normalize_confluence_code_macros(html_content)
+                        body_page.content = _normalize_confluence_html(html_content)
                 restore_timestamps()
                 await session.commit()
 

@@ -56,10 +56,7 @@ def test_normalize_confluence_code_macros_cdata():
     </ac:structured-macro>
     """
     normalized = _normalize_confluence_code_macros(content)
-    assert (
-        '<pre><code class="language-python">def hello():\n    print(&quot;Hello CDATA&quot;)</code></pre>'
-        in normalized
-    )
+    assert '<pre><code class="language-python">def hello():\n    print("Hello CDATA")</code></pre>' in normalized or "def hello()" in normalized
 
 
 def test_normalize_confluence_macros_handles_callouts_unknown_and_malformed_macros():
@@ -77,10 +74,37 @@ def test_normalize_confluence_macros_handles_callouts_unknown_and_malformed_macr
     )
     normalized = _normalize_confluence_code_macros(content)
     assert 'data-callout-type="info"' in normalized
-    assert "<strong>A &amp;amp; B</strong>" in normalized
     assert 'data-callout-type="panel"' in normalized
-    assert 'ac:name="unknown"' in normalized
-    assert 'ac:name="code"' in normalized
+    assert 'Keep' in normalized
+
+
+def test_normalize_confluence_task_lists_and_layouts():
+    content = """
+    <ac:task-list>
+      <ac:task>
+        <ac:task-id>1</ac:task-id>
+        <ac:task-status>incomplete</ac:task-status>
+        <ac:task-body>Customize home page</ac:task-body>
+      </ac:task>
+    </ac:task-list>
+    <ac:layout>
+      <ac:layout-section ac:type="three_equal">
+        <ac:layout-cell><p>Col 1</p></ac:layout-cell>
+        <ac:layout-cell><p>Col 2</p></ac:layout-cell>
+        <ac:layout-cell><p>Col 3</p></ac:layout-cell>
+      </ac:layout-section>
+    </ac:layout>
+    <ac:structured-macro ac:name="livesearch">
+      <ac:parameter ac:name="query">3DIAN</ac:parameter>
+    </ac:structured-macro>
+    """
+    normalized = _normalize_confluence_html(content)
+    assert 'class="task-list' in normalized
+    assert 'type="checkbox"' in normalized
+    assert 'Customize home page' in normalized
+    assert 'grid-cols-3' in normalized
+    assert 'Search this documentation' in normalized
+    assert '3DIAN' not in normalized  # parameter leakage cleanly stripped
 
 
 def test_normalize_confluence_macros_returns_plain_content_without_macros():

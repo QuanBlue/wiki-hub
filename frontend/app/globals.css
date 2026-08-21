@@ -549,4 +549,42 @@
   .wikihub-code :is(.hljs-meta, .hljs-doctag, .hljs-deletion) {
     color: var(--wh-code-meta);
   }
+
+  /* Confluence imported content & macro styles */
+  .callout-info {
+    background-color: var(--wh-info-bg);
+    border-color: color-mix(in oklab, var(--wh-info) 30%, transparent);
+    color: var(--foreground);
+  }
+  .callout-warning {
+    background-color: var(--wh-warning-bg);
+    border-color: color-mix(in oklab, var(--wh-warning) 30%, transparent);
+    color: var(--foreground);
+  }
+  .callout-note,
+  .callout-tip {
+    background-color: var(--wh-success-bg);
+    border-color: color-mix(in oklab, var(--wh-success) 30%, transparent);
+    color: var(--foreground);
+  }
+  .callout-panel,
+  .callout-expand {
+    background-color: var(--surface);
+    border-color: var(--border);
+    color: var(--foreground);
+  }
+
+  .task-list {
+    list-style: none;
+    padding-left: 0;
+  }
+  .task-list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .confluence-layout-section {
+    width: 100%;
+  }
 }

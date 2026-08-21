@@ -15,6 +15,9 @@
 
 - Khi import file từ confluence: Đã hỗ trợ tự động bóc tách & tạo Group, gán thành viên User vào Group, phân quyền Space (Admin, Editor, Viewer), phân quyền Space cho Group (SpaceGroupPermission), tự động chuyển Space thành Private/Restricted nếu là Space nội bộ và khôi phục chế độ Page Restrictions (View/Edit) cho từng trang riêng tư. 
 
+
+- cho tích hợp với mail để gửi mail thông báo (đổi password, có người yêu cầu quyền truy cập vào space/page, bị disable,...)
+
 Edit
 - Đã xong image
 - xong bảng
