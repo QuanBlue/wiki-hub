@@ -221,7 +221,13 @@ export function EditGroupDialog({
     ownerIds.some((id, idx) => id !== initialOwnerIds[idx]);
   const isMembersChanged = pendingAddedUserIds.length > 0 || pendingRemovedUserIds.length > 0;
 
-  const hasChanges = isNameChanged || isDescChanged || isOwnerChanged || isMembersChanged;
+  const initialPerms = group.global_permissions || [];
+  const isPermissionsChanged =
+    globalPermissions.length !== initialPerms.length ||
+    globalPermissions.some((p) => !initialPerms.includes(p));
+
+  const hasChanges =
+    isNameChanged || isDescChanged || isOwnerChanged || isMembersChanged || isPermissionsChanged;
 
   function handleAddOwner(userId: string) {
     if (!userId || ownerIds.includes(userId)) return;
@@ -254,6 +260,12 @@ export function EditGroupDialog({
     } else {
       setPendingRemovedUserIds((prev) => [...prev, userId]);
     }
+  }
+
+  function handleTogglePermission(permission: GlobalPermission, enabled: boolean) {
+    setGlobalPermissions((prev) =>
+      enabled ? [...prev, permission] : prev.filter((p) => p !== permission),
+    );
   }
 
   async function handleSaveAll() {
@@ -294,12 +306,36 @@ export function EditGroupDialog({
         );
       }
 
+      // Process global permission changes
+      const permsToAdd = globalPermissions.filter((p) => !initialPerms.includes(p));
+      const permsToRemove = initialPerms.filter((p) => !globalPermissions.includes(p));
+
+      if (permsToAdd.length > 0) {
+        await Promise.all(
+          permsToAdd.map((p) =>
+            api.put(`/api/v1/groups/${group.id}/global-permissions/${p}`).catch(() => {}),
+          ),
+        );
+      }
+
+      if (permsToRemove.length > 0) {
+        await Promise.all(
+          permsToRemove.map((p) =>
+            api.delete(`/api/v1/groups/${group.id}/global-permissions/${p}`).catch(() => {}),
+          ),
+        );
+      }
+
       const nextMembers = await listGroupMembers(group.id);
       setMembers(nextMembers);
       setPendingAddedUserIds([]);
       setPendingRemovedUserIds([]);
 
-      const updatedGroup = { ...updated, member_count: nextMembers.length };
+      const updatedGroup = {
+        ...updated,
+        member_count: nextMembers.length,
+        global_permissions: globalPermissions,
+      };
       onGroupUpdated(updatedGroup);
       toast.success("Group changes saved.");
       onOpenChange(false);
@@ -307,24 +343,6 @@ export function EditGroupDialog({
       setError(err instanceof ApiError ? err.message : "Could not save group changes.");
     } finally {
       setPending(false);
-    }
-  }
-
-  async function handleTogglePermission(permission: GlobalPermission, enabled: boolean) {
-    if (!group) return;
-    const path = `/api/v1/groups/${group.id}/global-permissions/${permission}`;
-    try {
-      if (enabled) await api.put(path);
-      else await api.delete(path);
-      const nextPerms = enabled
-        ? [...globalPermissions, permission]
-        : globalPermissions.filter((p) => p !== permission);
-      setGlobalPermissions(nextPerms);
-      const updatedGroup = { ...group, global_permissions: nextPerms };
-      onGroupUpdated(updatedGroup);
-      toast.success("Global permission updated.");
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not update permission.");
     }
   }
 
