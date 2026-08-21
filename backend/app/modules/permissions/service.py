@@ -1,5 +1,10 @@
+"""Additive permission resolution shared by all content services."""
+
+from __future__ import annotations
+
 import inspect
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -230,7 +235,7 @@ class PermissionService:
         await _safe_refresh(self.session, group)
         return group
 
-    async def get_group(self, group_id: uuid.UUID) -> Group:
+    async def get_group(self, group_id: UUID) -> Group:
         group = await self.session.get(Group, group_id)
         if group is None:
             raise NotFoundError("Group not found.")
