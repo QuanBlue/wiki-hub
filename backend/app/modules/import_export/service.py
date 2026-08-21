@@ -21,6 +21,12 @@ logger = get_logger(__name__)
 from app.models.attachment import PageAttachment
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.page import WikiPage
+from app.models.permission import Group, GroupMember, Permission, SpaceGroupPermission
+from app.models.restriction import (
+    PageGroupRestriction,
+    PageRestrictionPermission,
+    PageUserRestriction,
+)
 from app.models.space import Space, SpaceMember, SpaceRole, SpaceVisibility
 from app.modules.import_export.confluence import (
     ConfluencePage,
@@ -666,6 +672,52 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                         elif src_page.created_at:
                             target_page.updated_at = src_page.created_at
 
+            # 1. Resolve and create all imported Groups and Group Memberships
+            group_by_name: dict[str, Group] = {}
+            imported_groups = getattr(scanned, "groups", [])
+            if imported_groups:
+                for group_data in imported_groups:
+                    if not group_data.name:
+                        continue
+                    gname = group_data.name.strip()
+                    if not gname or _is_invalid_import_username(gname):
+                        continue
+                    gname_lower = gname.lower()
+                    existing_group = (
+                        await session.execute(
+                            select(Group).where(func.lower(Group.name) == gname_lower)
+                        )
+                    ).scalar_one_or_none()
+
+                    if existing_group:
+                        group_by_name[gname_lower] = existing_group
+                    else:
+                        new_group = Group(
+                            name=gname,
+                            description=f"Imported from Confluence ({gname})",
+                            owner_id=job.created_by_id,
+                            is_active=True,
+                        )
+                        session.add(new_group)
+                        await session.flush()
+                        group_by_name[gname_lower] = new_group
+
+                    grp = group_by_name[gname_lower]
+                    for member_username in group_data.members:
+                        uid = await service._resolve_or_create_user(member_username)
+                        if uid:
+                            existing_gm = (
+                                await session.execute(
+                                    select(GroupMember).where(
+                                        GroupMember.group_id == grp.id,
+                                        GroupMember.user_id == uid,
+                                    )
+                                )
+                            ).scalar_one_or_none()
+                            if not existing_gm:
+                                session.add(GroupMember(group_id=grp.id, user_id=uid))
+                await session.flush()
+
             for source_space in scanned:
                 if source_space.key not in selected:
                     continue
@@ -717,8 +769,8 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     public_view = False
                     for perm in source_space.permissions:
                         if perm.perm_type in {"VIEWSPACE", "SETSPACEPERMISSIONS", "SPACEADMIN", "ADMINISTER"}:
-                            grp = (perm.group_name or "").lower()
-                            if grp in {"confluence-users", "confluence-administrators", "users", "anonymous", ""}:
+                            grp_name = (perm.group_name or "").lower()
+                            if grp_name in {"confluence-users", "confluence-administrators", "users", "anonymous", ""}:
                                 public_view = True
 
                         if perm.user_name:
@@ -735,7 +787,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                                 if username_clean not in user_roles:
                                     user_roles[username_clean] = SpaceRole.viewer
 
-                    if not public_view and user_roles:
+                    if not public_view and (user_roles or any(p.group_name for p in source_space.permissions)):
                         is_restricted = True
 
                 visibility = SpaceVisibility.restricted if is_restricted else SpaceVisibility.open
@@ -759,6 +811,45 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     if uid and uid not in added_user_ids:
                         session.add(SpaceMember(space_id=space.id, user_id=uid, role=role))
                         added_user_ids.add(uid)
+
+                # Grant SpaceGroupPermissions for groups referenced in space permissions
+                for perm in source_space.permissions:
+                    if perm.group_name:
+                        g_clean = perm.group_name.strip().lower()
+                        grp = group_by_name.get(g_clean)
+                        if grp:
+                            p_enum = (
+                                Permission.admin
+                                if perm.perm_type
+                                in {
+                                    "SETSPACEPERMISSIONS",
+                                    "ADMINISTERSPACE",
+                                    "SPACEADMIN",
+                                    "ADMINISTER",
+                                }
+                                else Permission.add
+                                if perm.perm_type
+                                in {"EDITSPACE", "CREATEPAGE", "REMOVEPAGE", "EDITBLOG"}
+                                else Permission.view
+                            )
+                            existing_sgp = (
+                                await session.execute(
+                                    select(SpaceGroupPermission).where(
+                                        SpaceGroupPermission.space_id == space.id,
+                                        SpaceGroupPermission.group_id == grp.id,
+                                        SpaceGroupPermission.permission == p_enum,
+                                    )
+                                )
+                            ).scalar_one_or_none()
+                            if not existing_sgp:
+                                session.add(
+                                    SpaceGroupPermission(
+                                        space_id=space.id,
+                                        group_id=grp.id,
+                                        permission=p_enum,
+                                    )
+                                )
+
                 pages: dict[str, WikiPage] = {}
                 occupied: set[str] = set()
                 for source_page in source_space.pages:
@@ -794,6 +885,58 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     imported_pages[source_page.source_id] = page
                     source_pages_by_id[source_page.source_id] = source_page
                 await session.flush()
+
+                # Apply Page Restrictions from Confluence
+                for restr in source_space.restrictions:
+                    target_page = pages.get(restr.page_id)
+                    if not target_page:
+                        continue
+                    perm_enum = (
+                        PageRestrictionPermission.view
+                        if restr.restriction_type == "view"
+                        else PageRestrictionPermission.edit
+                    )
+                    if restr.user_name:
+                        uid = await service._resolve_or_create_user(restr.user_name)
+                        if uid:
+                            existing_pur = (
+                                await session.execute(
+                                    select(PageUserRestriction).where(
+                                        PageUserRestriction.page_id == target_page.id,
+                                        PageUserRestriction.user_id == uid,
+                                        PageUserRestriction.permission == perm_enum,
+                                    )
+                                )
+                            ).scalar_one_or_none()
+                            if not existing_pur:
+                                session.add(
+                                    PageUserRestriction(
+                                        page_id=target_page.id,
+                                        user_id=uid,
+                                        permission=perm_enum,
+                                    )
+                                )
+
+                    if restr.group_name:
+                        grp = group_by_name.get(restr.group_name.strip().lower())
+                        if grp:
+                            existing_pgr = (
+                                await session.execute(
+                                    select(PageGroupRestriction).where(
+                                        PageGroupRestriction.page_id == target_page.id,
+                                        PageGroupRestriction.group_id == grp.id,
+                                        PageGroupRestriction.permission == perm_enum,
+                                    )
+                                )
+                            ).scalar_one_or_none()
+                            if not existing_pgr:
+                                session.add(
+                                    PageGroupRestriction(
+                                        page_id=target_page.id,
+                                        group_id=grp.id,
+                                        permission=perm_enum,
+                                    )
+                                )
 
                 # Confluence exports can contain several top-level pages. In
                 # WikiHub every imported space has one stable home page so the

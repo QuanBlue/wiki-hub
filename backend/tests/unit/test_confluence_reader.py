@@ -51,3 +51,35 @@ def test_confluence_reader_reports_invalid_archives(tmp_path):
         scan_archive(empty)
     with pytest.raises(BadRequestError):
         list(iter_page_bodies(empty))
+
+
+XML_GROUPS_AND_RESTRICTIONS = """<root>
+<object class="ConfluenceUserImpl"><id>u1</id><property name="name">alice</property></object>
+<object class="ConfluenceUserImpl"><id>u2</id><property name="name">bob</property></object>
+<object class="Group"><id>g1</id><property name="name">developers</property></object>
+<object class="Membership"><property name="group"><id>g1</id></property><property name="user"><id>u1</id></property></object>
+<object class="Membership"><property name="groupName">developers</property><property name="userName">bob</property></object>
+<object class="Space"><id>s1</id><property name="key">DEV</property><property name="name">Development</property></object>
+<object class="SpacePermission"><property name="space"><id>s1</id></property><property name="type">VIEWSPACE</property><property name="group">developers</property></object>
+<object class="Page"><id>p1</id><property name="title">Secret Spec</property><property name="space"><id>s1</id></property><property name="contentStatus">current</property></object>
+<object class="ContentPermissionSet"><id>cps1</id><property name="type">view</property><property name="owningContent"><id>p1</id></property></object>
+<object class="ContentPermission"><property name="owningSet"><id>cps1</id></property><property name="userName">alice</property></object>
+</root>"""
+
+
+def test_scan_confluence_archive_with_groups_and_restrictions(tmp_path):
+    path = tmp_path / "groups_export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", XML_GROUPS_AND_RESTRICTIONS)
+    spaces = scan_archive(path)
+    assert len(spaces) == 1
+    assert spaces[0].key == "DEV"
+    assert len(spaces.groups) == 1
+    assert spaces.groups[0].name == "developers"
+    assert sorted(spaces.groups[0].members) == ["alice", "bob"]
+    assert len(spaces[0].permissions) == 1
+    assert spaces[0].permissions[0].group_name == "developers"
+    assert len(spaces[0].restrictions) == 1
+    assert spaces[0].restrictions[0].page_id == "p1"
+    assert spaces[0].restrictions[0].user_name == "alice"
+    assert spaces[0].restrictions[0].restriction_type == "view"
