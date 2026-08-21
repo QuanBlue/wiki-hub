@@ -97,14 +97,7 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
           </span>
           <span className="min-w-0">
             <span className="flex min-w-0 items-center gap-2">
-              <span
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setEditOpen(true);
-                }}
-                className="truncate text-sm font-semibold text-foreground hover:text-primary cursor-pointer hover:underline"
-              >
+              <span className="truncate text-sm font-semibold group-hover:text-primary">
                 {space.name}
               </span>
               <Badge variant="neutral" className="hidden font-mono text-[10px] sm:inline-flex">
