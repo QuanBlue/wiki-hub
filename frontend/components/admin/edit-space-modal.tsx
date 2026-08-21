@@ -403,6 +403,18 @@ function EditSpaceModalContent({
       className="max-w-3xl"
       title={`Edit space "${space.name}"`}
       description="Manage space permissions, visibility, archiving, and deletion."
+      onPointerDownOutside={(e) => {
+        if (hasChanges) {
+          e.preventDefault();
+          setUnsavedPromptOpen(true);
+        }
+      }}
+      onEscapeKeyDown={(e) => {
+        if (hasChanges) {
+          e.preventDefault();
+          setUnsavedPromptOpen(true);
+        }
+      }}
     >
       {/* Navigation Tabs */}
       <div className="border-border border-b flex gap-2">
