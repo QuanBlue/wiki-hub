@@ -233,6 +233,23 @@ async def test_scan_paths_and_log(monkeypatch: pytest.MonkeyPatch, tmp_path) -> 
     assert entry.message == "done"
 
 
+def test_confluence_permission_mapping() -> None:
+    from app.modules.import_export.confluence import ConfluencePermission, ConfluenceSpace
+    space = ConfluenceSpace(
+        source_id="1",
+        key="PRIV",
+        name="Private Space",
+        permissions=[
+            ConfluencePermission(perm_type="VIEWSPACE", user_name="alice"),
+            ConfluencePermission(perm_type="EDITSPACE", user_name="bob"),
+            ConfluencePermission(perm_type="SETSPACEPERMISSIONS", user_name="charlie"),
+        ],
+    )
+    assert len(space.permissions) == 3
+    assert space.permissions[0].user_name == "alice"
+    assert space.permissions[1].perm_type == "EDITSPACE"
+
+
 def test_import_markup_helpers_cover_macros_and_fallbacks() -> None:
     assert _link_imported_attachments("plain", "42", {}, {}) == "plain"
     occupied = {"page", "page-2"}

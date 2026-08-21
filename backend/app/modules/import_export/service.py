@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 from app.models.attachment import PageAttachment
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.page import WikiPage
-from app.models.space import Space, SpaceMember, SpaceRole
+from app.models.space import Space, SpaceMember, SpaceRole, SpaceVisibility
 from app.modules.import_export.confluence import (
     ConfluencePage,
     ConfluenceSpace,
@@ -709,14 +709,56 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                         )
                         await session.commit()
                         continue
+                # Determine space visibility & space member roles from Confluence permissions
+                is_restricted = False
+                user_roles: dict[str, SpaceRole] = {}
+
+                if source_space.permissions:
+                    public_view = False
+                    for perm in source_space.permissions:
+                        if perm.perm_type in {"VIEWSPACE", "SETSPACEPERMISSIONS", "SPACEADMIN", "ADMINISTER"}:
+                            grp = (perm.group_name or "").lower()
+                            if grp in {"confluence-users", "confluence-administrators", "users", "anonymous", ""}:
+                                public_view = True
+
+                        if perm.user_name:
+                            username_clean = perm.user_name.strip().lower()
+                            if _is_invalid_import_username(username_clean):
+                                continue
+
+                            if perm.perm_type in {"SETSPACEPERMISSIONS", "ADMINISTERSPACE", "SPACEADMIN", "ADMINISTER"}:
+                                user_roles[username_clean] = SpaceRole.admin
+                            elif perm.perm_type in {"EDITSPACE", "CREATEPAGE", "REMOVEPAGE", "EDITBLOG"}:
+                                if user_roles.get(username_clean) != SpaceRole.admin:
+                                    user_roles[username_clean] = SpaceRole.editor
+                            elif perm.perm_type == "VIEWSPACE":
+                                if username_clean not in user_roles:
+                                    user_roles[username_clean] = SpaceRole.viewer
+
+                    if not public_view and user_roles:
+                        is_restricted = True
+
+                visibility = SpaceVisibility.restricted if is_restricted else SpaceVisibility.open
+
                 space = Space(
-                    key=source_space.key, name=source_space.name, created_by_id=job.created_by_id
+                    key=source_space.key,
+                    name=source_space.name,
+                    created_by_id=job.created_by_id,
+                    visibility=visibility,
                 )
                 session.add(space)
                 await session.flush()
                 session.add(
                     SpaceMember(space_id=space.id, user_id=job.created_by_id, role=SpaceRole.admin)
                 )
+                added_user_ids = {job.created_by_id}
+
+                # Grant space membership to users resolved from Confluence permissions
+                for uname, role in user_roles.items():
+                    uid = await service._resolve_or_create_user(uname)
+                    if uid and uid not in added_user_ids:
+                        session.add(SpaceMember(space_id=space.id, user_id=uid, role=role))
+                        added_user_ids.add(uid)
                 pages: dict[str, WikiPage] = {}
                 occupied: set[str] = set()
                 for source_page in source_space.pages:

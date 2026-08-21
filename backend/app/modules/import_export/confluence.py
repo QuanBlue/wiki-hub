@@ -27,12 +27,20 @@ class ConfluencePage:
 
 
 @dataclass(slots=True)
+class ConfluencePermission:
+    perm_type: str
+    user_name: str | None = None
+    group_name: str | None = None
+
+
+@dataclass(slots=True)
 class ConfluenceSpace:
     source_id: str
     key: str
     name: str
     pages: list[ConfluencePage] = field(default_factory=list)
     attachment_count: int = 0
+    permissions: list[ConfluencePermission] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -91,6 +99,7 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> list[ConfluenceSpace]:
         attachment_page_ids: list[str] = []
         user_names: dict[str, str] = {}
         page_user_refs: list[tuple[ConfluencePage, str | None, str | None]] = []
+        space_permission_refs: list[tuple[str, str, str | None, str | None, str | None]] = []
         with stream:
             # Confluence exports are admin-only; iterparse keeps their 300MB XML bounded in memory.
             for _event, element in ET.iterparse(stream, events=("end",)):  # noqa: S314
@@ -98,12 +107,23 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> list[ConfluenceSpace]:
                     continue
                 props = _properties(element)
                 source_id = element.findtext("id")
-                if element.get("class") == "Space" and source_id:
+                cls_name = element.get("class")
+                if cls_name == "Space" and source_id:
                     key = _text(props, "key")
                     name = _text(props, "name", key)
                     if key and name:
                         spaces[source_id] = ConfluenceSpace(source_id, key, name)
-                elif element.get("class") == "Page" and source_id:
+                elif cls_name == "SpacePermission":
+                    space_ref = _reference(props.get("space"))
+                    perm_type = _text(props, "type")
+                    user_name = _text(props, "userName")
+                    user_ref = _reference(props.get("userSubject")) or _reference(props.get("user"))
+                    group_name = _text(props, "group")
+                    if space_ref and perm_type:
+                        space_permission_refs.append(
+                            (space_ref, perm_type, user_name or None, user_ref or None, group_name or None)
+                        )
+                elif cls_name == "Page" and source_id:
                     title = _text(props, "title")
                     space_id = _reference(props.get("space"))
                     status = _text(props, "contentStatus").lower()
@@ -128,11 +148,11 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> list[ConfluenceSpace]:
                         )
                         pages.append(page)
                         page_user_refs.append((page, creator_ref, last_modifier_ref))
-                elif element.get("class") == "ConfluenceUserImpl" and source_id:
+                elif cls_name == "ConfluenceUserImpl" and source_id:
                     username_val = _text(props, "name")
                     if username_val:
                         user_names[source_id] = username_val
-                elif element.get("class") == "Attachment":
+                elif cls_name == "Attachment":
                     attachment_page_id = (
                         _reference(props.get("containerContent"))
                         or _reference(props.get("container"))
@@ -148,6 +168,18 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> list[ConfluenceSpace]:
             page.creator = user_names.get(creator_ref)
         if not page.last_modifier and last_modifier_ref:
             page.last_modifier = user_names.get(last_modifier_ref)
+
+    # Resolve space permissions
+    for space_ref, perm_type, user_name, user_ref, group_name in space_permission_refs:
+        resolved_user = user_name or (user_names.get(user_ref) if user_ref else None)
+        if space_ref in spaces:
+            spaces[space_ref].permissions.append(
+                ConfluencePermission(
+                    perm_type=perm_type,
+                    user_name=resolved_user,
+                    group_name=group_name,
+                )
+            )
 
     pages_by_source_id = {page.source_id: page for page in pages}
     for attachment_page_id in attachment_page_ids:
