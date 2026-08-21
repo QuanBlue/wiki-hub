@@ -676,6 +676,23 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             group_by_name: dict[str, Group] = {}
             added_group_members: set[tuple[uuid.UUID, uuid.UUID]] = set()
             imported_groups = getattr(scanned, "groups", [])
+
+            # Only import groups that have members or are referenced in space/page permissions
+            active_group_names: set[str] = set()
+            for group_data in imported_groups:
+                if group_data.members:
+                    active_group_names.add(group_data.name.strip().lower())
+
+            for source_space in scanned:
+                if source_space.permissions:
+                    for perm in source_space.permissions:
+                        if perm.group_name:
+                            active_group_names.add(perm.group_name.strip().lower())
+                if source_space.restrictions:
+                    for restr in source_space.restrictions:
+                        if restr.group_name:
+                            active_group_names.add(restr.group_name.strip().lower())
+
             if imported_groups:
                 for group_data in imported_groups:
                     if not group_data.name:
@@ -684,6 +701,8 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     if not gname or _is_invalid_import_username(gname):
                         continue
                     gname_lower = gname.lower()
+                    if gname_lower not in active_group_names:
+                        continue
                     existing_group = (
                         await session.execute(
                             select(Group).where(func.lower(Group.name) == gname_lower)
