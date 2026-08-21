@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import uuid
-from typing import Annotated
+import inspect
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
@@ -31,7 +31,19 @@ def get_service(session: DbSession) -> PermissionService:
 ServiceDep = Annotated[PermissionService, Depends(get_service)]
 
 
+async def _safe_refresh(session: Any, instance: Any) -> None:
+    refresh = getattr(session, "refresh", None)
+    if refresh is not None:
+        try:
+            res = refresh(instance)
+            if inspect.isawaitable(res):
+                await res
+        except Exception:
+            pass
+
+
 async def group_read(session: DbSession, group: Group) -> GroupRead:
+    await _safe_refresh(session, group)
     owner = await session.get(User, group.owner_id)
     count = await session.scalar(
         select(func.count()).select_from(GroupMember).where(GroupMember.group_id == group.id)

@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
-import uuid
+import inspect
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+async def _safe_refresh(session: Any, instance: Any) -> None:
+    refresh = getattr(session, "refresh", None)
+    if refresh is not None:
+        try:
+            res = refresh(instance)
+            if inspect.isawaitable(res):
+                await res
+        except Exception:
+            pass
 
 from app.core.exceptions import ConflictError, NotFoundError, PermissionDeniedError
 from app.models.page import WikiPage
@@ -217,6 +229,7 @@ class PermissionService:
         await self.session.flush()
         self.session.add(GroupMember(group_id=group.id, user_id=owner.id))
         await self.session.flush()
+        await _safe_refresh(self.session, group)
         return group
 
     async def get_group(self, group_id: uuid.UUID) -> Group:
@@ -266,6 +279,7 @@ class PermissionService:
         if data.get("is_active") is not None:
             group.is_active = bool(data["is_active"])
         await self.session.flush()
+        await _safe_refresh(self.session, group)
         return group
 
     async def delete_group(self, group: Group, actor: User) -> None:
