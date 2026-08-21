@@ -4072,38 +4072,21 @@ function LinkFloatingToolbar({
   return (
     <div
       ref={containerRef}
-      className="border-border bg-surface-raised fixed z-50 flex max-w-xs items-center gap-1 rounded-lg border p-1 text-xs shadow-lg animate-in fade-in zoom-in-95 duration-100 select-none sm:max-w-sm before:absolute before:-top-3 before:left-0 before:right-0 before:h-3 before:content-['']"
+      className="border-border bg-surface-raised fixed z-50 flex items-center gap-0.5 rounded-lg border p-1 text-xs shadow-lg animate-in fade-in zoom-in-95 duration-100 select-none before:absolute before:-top-3 before:left-0 before:right-0 before:h-3 before:content-['']"
       style={{ left: position.left, top: position.top }}
       onMouseEnter={keepToolbar}
       onMouseLeave={scheduleHide}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <a
-        href={normalizedHref}
-        target={position.target === "_self" ? "_self" : "_blank"}
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
-        className="bg-surface-sunken/80 hover:bg-surface-hover border-border/50 flex max-w-[180px] min-w-0 items-center gap-1.5 rounded border px-2 py-1 sm:max-w-[220px] transition-colors cursor-pointer !no-underline"
-        title={`Navigate to: ${position.href}`}
-      >
-        <Link2 className="text-primary size-3.5 shrink-0" />
-        <span
-          className="text-foreground truncate text-[11px] font-medium hover:underline"
-          title={position.href}
-        >
-          {position.href}
-        </span>
-      </a>
-
       <button
         type="button"
         onClick={openLink}
         className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground rounded p-1.5 transition-colors cursor-pointer"
         title={
           position.target === "_self"
-            ? "Open link in current window"
-            : "Open link in new tab"
+            ? `Open link in current window (${position.href})`
+            : `Open link in new tab (${position.href})`
         }
       >
         <ExternalLink className="size-3.5" />
