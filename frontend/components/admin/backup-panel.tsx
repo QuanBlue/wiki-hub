@@ -1678,27 +1678,31 @@ export function BackupPanel() {
     <div className="space-y-6">
       {/* -- Export ------------------------------------------------------- */}
       <section className="border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm">
-        <h2 className="flex items-center gap-2.5 text-base font-semibold">
-          <span className="bg-primary-subtle text-primary flex size-8 items-center justify-center rounded-md">
-            <Download className="size-4" />
-          </span>
-          Export workspace data
-        </h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Choose a portable WikiHub restore package or a separate Confluence
-          Data Center content export. The two formats are intentionally not interchangeable.
-        </p>
+        <div className="mb-4">
+          <h2 className="flex items-center gap-2.5 text-base font-semibold">
+            <span className="bg-primary-subtle text-primary flex size-8 items-center justify-center rounded-md">
+              <Download className="size-4" />
+            </span>
+            Export workspace data
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Choose a portable WikiHub restore package or a separate Confluence
+            Data Center content export. The two formats are intentionally not
+            interchangeable.
+          </p>
+        </div>
 
-        <label className="border-border bg-surface-sunken mt-4 flex max-w-3xl items-start gap-3 rounded-md border p-3">
+        {/* Security / Password Hashes Toggle Option */}
+        <label className="border-border bg-surface-sunken mb-5 flex items-start gap-3 rounded-lg border p-3.5 text-sm transition-colors hover:bg-surface-hover cursor-pointer">
           <input
             type="checkbox"
             checked={includeCredentials}
             onChange={(e) => setIncludeCredentials(e.target.checked)}
-            className="accent-primary mt-0.5 size-4 cursor-pointer"
+            className="accent-primary mt-0.5 size-4 rounded cursor-pointer"
           />
-          <span className="text-sm">
-            Include password hashes
-            <span className="text-muted-foreground block text-xs">
+          <span>
+            <span className="font-medium text-foreground">Include password hashes</span>
+            <span className="text-muted-foreground block text-xs mt-0.5 leading-normal">
               Off by default. The file becomes an offline cracking target for
               every weak password in the instance — only enable it for a
               migration, and store the file accordingly. Without it, restored
@@ -1707,47 +1711,75 @@ export function BackupPanel() {
           </span>
         </label>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            variant="primary"
-            disabled={isDownloading}
-            aria-busy={isDownloading}
-            onClick={() => void createPortableExport("full_export")}
-          >
-            {isDownloading ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <Download />
-            )}
-            {isDownloading ? "Queueing export..." : "Create full backup ZIP"}
-          </Button>
-          <div className="border-border flex items-end gap-2 rounded-md border p-2">
-            <Label className="grid gap-1 text-xs font-medium">
-              Confluence Data Center profile
+        {/* 2 Export Option Cards in Grid */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {/* Card 1: WikiHub Native Backup */}
+          <div className="border-border bg-surface-raised flex flex-col justify-between rounded-lg border p-4 shadow-2xs">
+            <div>
+              <div className="flex items-center gap-2 font-medium text-sm text-foreground">
+                <FileArchive className="text-primary size-4 shrink-0" />
+                <span>WikiHub Backup Package</span>
+              </div>
+              <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
+                Generates a complete <code className="text-foreground bg-surface-sunken px-1 py-0.5 rounded font-mono text-[11px]">.zip</code> package containing all spaces, pages, revisions, and attachments for full workspace restore.
+              </p>
+            </div>
+            <div className="mt-4 pt-2">
+              <Button
+                type="button"
+                variant="primary"
+                className="w-full sm:w-auto"
+                disabled={isDownloading}
+                aria-busy={isDownloading}
+                onClick={() => void createPortableExport("full_export")}
+              >
+                {isDownloading ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Download />
+                )}
+                {isDownloading ? "Queueing export..." : "Create full backup ZIP"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Card 2: Confluence DC Export */}
+          <div className="border-border bg-surface-raised flex flex-col justify-between rounded-lg border p-4 shadow-2xs">
+            <div>
+              <div className="flex items-center gap-2 font-medium text-sm text-foreground">
+                <FileArchive className="text-muted-foreground size-4 shrink-0" />
+                <span>Confluence Data Center Export</span>
+              </div>
+              <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
+                Generates an XML export package compatible with Atlassian Confluence DC site restore tools.
+              </p>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2 pt-2">
               <select
+                aria-label="Confluence Data Center target version"
                 value={confluenceExportProfile}
                 onChange={(event) => setConfluenceExportProfile(event.target.value)}
-                className="border-input bg-background h-9 rounded-md border px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="border-input bg-background hover:border-input-hover h-9 min-w-36 flex-1 rounded-md border px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors duration-150"
               >
                 <option value="">Choose target version</option>
                 <option value="dc-8">Data Center 8.x</option>
                 <option value="dc-9">Data Center 9.x</option>
               </select>
-            </Label>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={isDownloading || !confluenceExportProfile}
-              onClick={() => void createPortableExport("confluence_export")}
-            >
-              <FileArchive /> Export DC XML
-            </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={isDownloading || !confluenceExportProfile}
+                onClick={() => void createPortableExport("confluence_export")}
+              >
+                <FileArchive /> Export DC XML
+              </Button>
+            </div>
           </div>
         </div>
+
         {portableBackupJob && (
-          <div className="border-border bg-surface-sunken mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm">
-            <span className="text-muted-foreground">
+          <div className="border-border bg-surface-sunken mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm">
+            <span className="text-muted-foreground text-xs">
               {portableBackupJob.status === "complete"
                 ? "Export is ready."
                 : portableBackupJob.status === "failed"
@@ -1755,7 +1787,7 @@ export function BackupPanel() {
                   : "Export is running in the background…"}
             </span>
             {portableBackupJob.download_url && portableBackupJob.output_filename && (
-              <Button asChild variant="secondary">
+              <Button asChild variant="secondary" size="sm">
                 <a href={portableBackupJob.download_url} download={portableBackupJob.output_filename}>
                   <Download /> Download {portableBackupJob.output_filename}
                 </a>
