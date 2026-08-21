@@ -40,16 +40,23 @@ function SearchableUserPicker({
   onChange,
   disabled,
   placeholder,
+  addedUserIds,
 }: {
   users: User[];
   value: string;
   onChange: (userId: string) => void;
   disabled?: boolean;
   placeholder: string;
+  addedUserIds?: Set<string> | string[];
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const addedSet =
+    addedUserIds instanceof Set
+      ? addedUserIds
+      : new Set(addedUserIds || []);
 
   const selectedUser = users.find((u) => u.id === value);
 
@@ -113,30 +120,44 @@ function SearchableUserPicker({
                 No matching users found.
               </div>
             ) : (
-              filteredUsers.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(u.id);
-                    setOpen(false);
-                    setQuery("");
-                  }}
-                  className={cn(
-                    "w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-sm text-left hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer",
-                    u.id === value && "bg-accent/50 font-medium",
-                  )}
-                >
-                  <span className="size-5 rounded-full bg-primary-subtle text-primary text-[10px] font-semibold flex items-center justify-center shrink-0">
-                    {(u.full_name || u.username)[0]?.toUpperCase()}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{u.full_name || u.username}</p>
-                    <p className="truncate text-[10px] text-muted-foreground">@{u.username}</p>
-                  </div>
-                  {u.id === value ? <Check className="size-3 text-primary shrink-0" /> : null}
-                </button>
-              ))
+              filteredUsers.map((u) => {
+                const isAlreadyAdded = addedSet.has(u.id);
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    disabled={isAlreadyAdded}
+                    onClick={() => {
+                      if (isAlreadyAdded) return;
+                      onChange(u.id);
+                      setOpen(false);
+                      setQuery("");
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-sm text-left transition-colors",
+                      isAlreadyAdded
+                        ? "opacity-60 cursor-not-allowed bg-muted/20"
+                        : "hover:bg-accent hover:text-accent-foreground cursor-pointer",
+                      u.id === value && !isAlreadyAdded && "bg-accent/50 font-medium",
+                    )}
+                  >
+                    <span className="size-5 rounded-full bg-primary-subtle text-primary text-[10px] font-semibold flex items-center justify-center shrink-0">
+                      {(u.full_name || u.username)[0]?.toUpperCase()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{u.full_name || u.username}</p>
+                      <p className="truncate text-[10px] text-muted-foreground">@{u.username}</p>
+                    </div>
+                    {isAlreadyAdded ? (
+                      <span className="text-[10px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded border border-border/60 shrink-0">
+                        Added
+                      </span>
+                    ) : u.id === value ? (
+                      <Check className="size-3 text-primary shrink-0" />
+                    ) : null}
+                  </button>
+                );
+              })
             )}
           </div>
         </div>
@@ -361,8 +382,8 @@ export function EditGroupDialog({
     ...pendingAddedUserIds,
   ]);
 
-  const availableUsersToAdd = users
-    .filter((u) => !currentMemberUserIds.has(u.id))
+  const allWorkspaceUsers = users
+    .slice()
     .sort((a, b) => (a.full_name || a.username).localeCompare(b.full_name || b.username));
 
   const availableOwners = users
@@ -515,14 +536,15 @@ export function EditGroupDialog({
           {/* Tab 2: Members */}
           {activeTab === "members" ? (
             <div className="space-y-3 h-full flex flex-col">
-              {/* Add member section with SearchableUserPicker */}
+              {/* Add member section with SearchableUserPicker showing Added labels */}
               <div className="border-border bg-surface-sunken flex flex-wrap items-center gap-2 rounded-lg border p-3 shrink-0">
                 <SearchableUserPicker
-                  users={availableUsersToAdd}
+                  users={allWorkspaceUsers}
                   value={memberIdToAdd}
                   onChange={setMemberIdToAdd}
-                  disabled={availableUsersToAdd.length === 0}
-                  placeholder={availableUsersToAdd.length > 0 ? "Select user to add..." : "All users are members"}
+                  disabled={allWorkspaceUsers.length === 0}
+                  addedUserIds={currentMemberUserIds}
+                  placeholder="Select user to add..."
                 />
                 <Button
                   type="button"
