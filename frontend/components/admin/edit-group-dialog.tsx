@@ -226,6 +226,11 @@ export function EditGroupDialog({
   function handleAddOwner(userId: string) {
     if (!userId || ownerIds.includes(userId)) return;
     setOwnerIds((current) => [...current, userId]);
+    // Also stage newly added owner as a group member if not already
+    const existingMemberUserIds = new Set(members.map((m) => m.user_id));
+    if (!existingMemberUserIds.has(userId) && !pendingAddedUserIds.includes(userId)) {
+      setPendingAddedUserIds((prev) => [userId, ...prev]);
+    }
   }
 
   function handleRemoveOwner(userId: string) {
@@ -261,11 +266,13 @@ export function EditGroupDialog({
     setError(null);
     try {
       let updated = group;
+      // Send the latest selected owner ID as the group owner
+      const targetOwnerId = ownerIds[ownerIds.length - 1] || ownerIds[0];
       if (isNameChanged || isDescChanged || isOwnerChanged) {
         updated = await api.patch<Group>(`/api/v1/groups/${group.id}`, {
           name: name.trim(),
           description: description.trim(),
-          owner_id: ownerIds[0],
+          owner_id: targetOwnerId,
         });
       }
 
@@ -418,7 +425,7 @@ export function EditGroupDialog({
         <div className="mt-4 h-[350px] min-h-[350px]">
           {/* Tab 1: General Details */}
           {activeTab === "details" ? (
-            <div className="space-y-4 pr-1 h-full overflow-y-auto">
+            <div className="space-y-4 pr-1 h-full overflow-visible">
               <div className="space-y-1.5">
                 <Label htmlFor="edit-group-name">Group name</Label>
                 <Input
