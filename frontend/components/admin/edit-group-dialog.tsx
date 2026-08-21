@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  Check,
+  ChevronDown,
   Loader2,
   Pencil,
   Search,
@@ -18,13 +20,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
 import { listGroupMembers } from "@/lib/group-members";
 import { cn } from "@/lib/utils";
@@ -38,6 +33,117 @@ const PERMISSIONS = [
 ] as const;
 
 type TabKey = "details" | "members" | "permissions";
+
+function SearchableUserPicker({
+  users,
+  value,
+  onChange,
+  disabled,
+  placeholder,
+}: {
+  users: User[];
+  value: string;
+  onChange: (userId: string) => void;
+  disabled?: boolean;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedUser = users.find((u) => u.id === value);
+
+  const filteredUsers = users.filter((u) => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase().trim();
+    return (
+      (u.full_name || "").toLowerCase().includes(q) ||
+      u.username.toLowerCase().includes(q) ||
+      (u.email || "").toLowerCase().includes(q)
+    );
+  });
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative flex-1 min-w-48">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((prev) => !prev)}
+        className={cn(
+          "w-full flex items-center justify-between border border-border rounded-md px-3 py-2 text-xs bg-background hover:bg-surface-hover transition-colors text-left font-normal cursor-pointer",
+          disabled && "opacity-50 cursor-not-allowed",
+          open && "ring-2 ring-primary/20 border-primary",
+        )}
+      >
+        <span className={cn("truncate", !selectedUser && "text-muted-foreground")}>
+          {selectedUser
+            ? `${selectedUser.full_name || selectedUser.username} (@${selectedUser.username})`
+            : placeholder}
+        </span>
+        <ChevronDown className="size-3.5 text-muted-foreground shrink-0 ml-1" />
+      </button>
+
+      {open && !disabled ? (
+        <div className="absolute top-full left-0 mt-1 w-full z-50 bg-popover text-popover-foreground border border-border rounded-md shadow-md p-1.5 space-y-1.5 min-w-64">
+          <div className="relative">
+            <Search className="absolute top-1/2 left-2.5 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search user by name or @username..."
+              className="w-full pl-8 pr-2 py-1.5 text-xs bg-surface border border-border rounded-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          <div className="max-h-48 overflow-y-auto space-y-0.5 divide-y divide-border/40">
+            {filteredUsers.length === 0 ? (
+              <div className="p-3 text-center text-xs text-muted-foreground">
+                No matching users found.
+              </div>
+            ) : (
+              filteredUsers.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(u.id);
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-sm text-left hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer",
+                    u.id === value && "bg-accent/50 font-medium",
+                  )}
+                >
+                  <span className="size-5 rounded-full bg-primary-subtle text-primary text-[10px] font-semibold flex items-center justify-center shrink-0">
+                    {(u.full_name || u.username)[0]?.toUpperCase()}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{u.full_name || u.username}</p>
+                    <p className="truncate text-[10px] text-muted-foreground">@{u.username}</p>
+                  </div>
+                  {u.id === value ? <Check className="size-3 text-primary shrink-0" /> : null}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function EditGroupDialog({
   group,
@@ -337,18 +443,13 @@ export function EditGroupDialog({
                   </div>
 
                   {availableOwners.length > 0 ? (
-                    <Select value="" onValueChange={handleAddOwner} disabled={pending}>
-                      <SelectTrigger className="w-full text-xs h-8">
-                        <SelectValue placeholder="+ Add owner..." />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-60 overflow-y-auto">
-                        {availableOwners.map((u) => (
-                          <SelectItem key={u.id} value={u.id}>
-                            {u.full_name || u.username} (@{u.username})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableUserPicker
+                      users={availableOwners}
+                      value=""
+                      onChange={handleAddOwner}
+                      disabled={pending}
+                      placeholder="+ Add owner..."
+                    />
                   ) : null}
                 </div>
               </div>
@@ -358,20 +459,15 @@ export function EditGroupDialog({
           {/* Tab 2: Members */}
           {activeTab === "members" ? (
             <div className="space-y-3 h-full flex flex-col">
-              {/* Add member section */}
+              {/* Add member section with SearchableUserPicker */}
               <div className="border-border bg-surface-sunken flex flex-wrap items-center gap-2 rounded-lg border p-3 shrink-0">
-                <Select value={memberIdToAdd} onValueChange={setMemberIdToAdd} disabled={availableUsersToAdd.length === 0}>
-                  <SelectTrigger className="flex-1 min-w-48">
-                    <SelectValue placeholder={availableUsersToAdd.length > 0 ? "Select user to add..." : "All users are members"} />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60 overflow-y-auto">
-                    {availableUsersToAdd.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.full_name || u.username} (@{u.username})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableUserPicker
+                  users={availableUsersToAdd}
+                  value={memberIdToAdd}
+                  onChange={setMemberIdToAdd}
+                  disabled={availableUsersToAdd.length === 0}
+                  placeholder={availableUsersToAdd.length > 0 ? "Select user to add..." : "All users are members"}
+                />
                 <Button
                   type="button"
                   size="sm"
@@ -389,7 +485,7 @@ export function EditGroupDialog({
                 <Input
                   value={memberSearchQuery}
                   onChange={(e) => setMemberSearchQuery(e.target.value)}
-                  placeholder="Search group members..."
+                  placeholder="Search current group members..."
                   className="w-full pl-8"
                 />
               </div>
