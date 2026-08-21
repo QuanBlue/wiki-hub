@@ -61,6 +61,94 @@ def _slug(value: str, occupied: set[str]) -> str:
     return candidate
 
 
+def _build_attachments_table_html(files: list[dict[str, str]]) -> str:
+    if not files:
+        return ""
+
+    rows = []
+    for f in files:
+        fn = html.escape(f["filename"])
+        url = html.escape(f["url"])
+        ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+        icon = "📄"
+        if ext in {"ppt", "pptx"}:
+            icon = "📊"
+        elif ext in {"doc", "docx"}:
+            icon = "📝"
+        elif ext in {"xls", "xlsx"}:
+            icon = "📈"
+        elif ext == "pdf":
+            icon = "📕"
+        elif ext in {"zip", "tar", "gz", "7z", "rar"}:
+            icon = "📦"
+        elif ext in {"png", "jpg", "jpeg", "gif", "webp", "svg"}:
+            icon = "🖼️"
+
+        rows.append(
+            f'<tr>'
+            f'<td class="px-4 py-2.5 font-medium text-foreground">'
+            f'<a href="{url}" download="{fn}" class="text-primary hover:underline inline-flex items-center gap-2">'
+            f'<span>{icon}</span> <span>{fn}</span>'
+            f'</a>'
+            f'</td>'
+            f'<td class="px-4 py-2.5 text-right">'
+            f'<a href="{url}" download="{fn}" class="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">'
+            f'Download'
+            f'</a>'
+            f'</td>'
+            f'</tr>'
+        )
+
+    tbody = "".join(rows)
+    return (
+        f'<div class="confluence-macro confluence-macro-attachments border border-border rounded-lg bg-surface shadow-2xs my-4 overflow-hidden">'
+        f'<div class="border-b border-border bg-surface-sunken/40 px-4 py-2 flex items-center justify-between">'
+        f'<span class="text-xs font-semibold text-foreground flex items-center gap-1.5">'
+        f'📎 Attached Files ({len(files)})'
+        f'</span>'
+        f'</div>'
+        f'<div class="overflow-x-auto">'
+        f'<table class="w-full text-xs">'
+        f'<thead>'
+        f'<tr class="bg-surface-sunken/60 text-muted-foreground border-b border-border text-left">'
+        f'<th class="px-4 py-2 font-medium">File</th>'
+        f'<th class="px-4 py-2 font-medium w-28 text-right">Action</th>'
+        f'</tr>'
+        f'</thead>'
+        f'<tbody class="divide-y divide-border">{tbody}</tbody>'
+        f'</table>'
+        f'</div>'
+        f'</div>'
+    )
+
+
+def _build_gallery_html(images: list[dict[str, str]]) -> str:
+    if not images:
+        return ""
+
+    cards = []
+    for img in images:
+        fn = html.escape(img["filename"])
+        url = html.escape(img["url"])
+        cards.append(
+            f'<div class="border border-border rounded-lg overflow-hidden bg-surface shadow-2xs group flex flex-col">'
+            f'<a href="{url}" target="_blank" rel="noreferrer" class="block aspect-video bg-surface-sunken overflow-hidden flex items-center justify-center p-1">'
+            f'<img src="{url}" alt="{fn}" class="object-contain w-full h-full group-hover:scale-105 transition-transform duration-200" />'
+            f'</a>'
+            f'<div class="p-2 border-t border-border bg-surface-sunken/30">'
+            f'<p class="text-[11px] font-medium text-foreground truncate" title="{fn}">{fn}</p>'
+            f'</div>'
+            f'</div>'
+        )
+
+    grid = "".join(cards)
+    return (
+        f'<div class="confluence-macro confluence-macro-gallery grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 my-4">'
+        f'{grid}'
+        f'</div>'
+    )
+
+
 def _link_imported_attachments(
     content: str,
     source_page_id: str,
@@ -71,6 +159,20 @@ def _link_imported_attachments(
     if not urls:
         return content
     soup = BeautifulSoup(content, "html.parser")
+
+    # Collect all attachments belonging to this page
+    this_page_files: list[dict[str, str]] = []
+    this_page_images: list[dict[str, str]] = []
+    this_page_docs: list[dict[str, str]] = []
+    for (pid, fn), u in urls.items():
+        if pid == source_page_id:
+            item = {"filename": fn, "url": u}
+            this_page_files.append(item)
+            ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+            if ext in {"png", "jpg", "jpeg", "gif", "webp", "svg"}:
+                this_page_images.append(item)
+            else:
+                this_page_docs.append(item)
 
     # 1. Resolve <ac:image> macros
     for macro in soup.find_all("ac:image"):
@@ -86,10 +188,8 @@ def _link_imported_attachments(
 
         url = urls.get((target_page_id, filename))
         if not url:
-            # Fallback: try case-insensitive or space-replace matches
             url = urls.get((target_page_id, filename.replace("+", " ")))
         if not url:
-            # Fallback: find any matching filename in urls
             url = next(
                 (
                     u
@@ -101,7 +201,6 @@ def _link_imported_attachments(
 
         if url:
             image = soup.new_tag("img", src=url, alt=filename)
-            # Preserve width/height attributes if specified on ac:image
             for attr in ("width", "height", "ac:width", "ac:height"):
                 val = macro.get(attr)
                 if val:
@@ -115,17 +214,14 @@ def _link_imported_attachments(
         if not isinstance(filename, str):
             continue
 
-        # Determine referenced page_id
         page_ref = macro.find("ri:page")
         ref_title = page_ref.get("ri:content-title") if page_ref else None
         target_page_id = (title_to_page_id.get(ref_title) if ref_title else None) or source_page_id
 
         url = urls.get((target_page_id, filename))
         if not url:
-            # Fallback: try case-insensitive or space-replace matches
             url = urls.get((target_page_id, filename.replace("+", " ")))
         if not url:
-            # Fallback: find any matching filename in urls
             url = next(
                 (
                     u
@@ -140,17 +236,65 @@ def _link_imported_attachments(
             link.string = macro.get_text(" ", strip=True) or filename
             macro.replace_with(link)
 
+    # 3. Resolve <div data-macro="attachments"> or <ac:structured-macro ac:name="attachments">
+    attachment_macros = soup.find_all(
+        lambda tag: (
+            tag.name == "div" and tag.get("data-macro") == "attachments"
+        ) or (
+            tag.name in {"ac:structured-macro", "structured-macro"}
+            and (tag.get("ac:name") or tag.get("name") or "").lower() == "attachments"
+        )
+    )
+    for m in attachment_macros:
+        files_to_render = this_page_docs if this_page_docs else this_page_files
+        tbl_html = _build_attachments_table_html(files_to_render)
+        if tbl_html:
+            m_soup = BeautifulSoup(tbl_html, "html.parser")
+            m.replace_with(m_soup)
+        else:
+            m.decompose()
+
+    # 4. Resolve <div data-macro="gallery"> or <ac:structured-macro ac:name="gallery">
+    gallery_macros = soup.find_all(
+        lambda tag: (
+            tag.name == "div" and tag.get("data-macro") == "gallery"
+        ) or (
+            tag.name in {"ac:structured-macro", "structured-macro"}
+            and (tag.get("ac:name") or tag.get("name") or "").lower() == "gallery"
+        )
+    )
+    for m in gallery_macros:
+        gal_html = _build_gallery_html(this_page_images)
+        if gal_html:
+            m_soup = BeautifulSoup(gal_html, "html.parser")
+            m.replace_with(m_soup)
+        else:
+            m.decompose()
+
+    # If page has files and neither macro was explicitly present, check if we should render them
+    if this_page_files and not attachment_macros and not gallery_macros:
+        # Check if files were not already linked in the content
+        unlinked_docs = [
+            f for f in this_page_docs if f["url"] not in str(soup)
+        ]
+        unlinked_images = [
+            img for img in this_page_images if img["url"] not in str(soup)
+        ]
+        if unlinked_docs:
+            tbl_soup = BeautifulSoup(_build_attachments_table_html(unlinked_docs), "html.parser")
+            soup.append(tbl_soup)
+        if unlinked_images:
+            gal_soup = BeautifulSoup(_build_gallery_html(unlinked_images), "html.parser")
+            soup.append(gal_soup)
+
     result = str(soup)
 
-    # 3. Replace raw attachment URLs with query parameters or without
-    # Regex to match "/download/attachments/{page_id}/{filename}" with optional query parameters
+    # 5. Replace raw attachment URLs with query parameters or without
     def replace_url(match: re.Match) -> str:
         pid = match.group(1)
-        # Unescape/url-decode the filename if it was encoded in the html
         fn = urllib.parse.unquote_plus(match.group(2))
         url = urls.get((pid, fn))
         if not url:
-            # Fallback: find any matching filename in urls
             url = next((u for (p, f), u in urls.items() if f == fn), None)
         return url if url else match.group(0)
 
@@ -458,6 +602,30 @@ def _normalize_confluence_html(content: str) -> str:
             )
             badge_span.string = status_title
             macro.replace_with(badge_span)
+            continue
+
+        # Handle Attachments Macro
+        if macro_name == "attachments":
+            card_div = soup.new_tag(
+                "div",
+                attrs={
+                    "class": "confluence-macro confluence-macro-attachments",
+                    "data-macro": "attachments",
+                },
+            )
+            macro.replace_with(card_div)
+            continue
+
+        # Handle Gallery Macro
+        if macro_name == "gallery":
+            card_div = soup.new_tag(
+                "div",
+                attrs={
+                    "class": "confluence-macro confluence-macro-gallery",
+                    "data-macro": "gallery",
+                },
+            )
+            macro.replace_with(card_div)
             continue
 
         # Generic Macro Fallback: extract rich-text-body or plain-text-body if present, otherwise strip parameter tags
