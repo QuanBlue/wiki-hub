@@ -400,7 +400,7 @@ function EditSpaceModalContent({
 
   return (
     <DialogContent
-      className="max-w-3xl"
+      className="max-w-3xl h-[80vh] max-h-[640px] flex flex-col p-6 overflow-hidden"
       title={`Edit space "${space.name}"`}
       description="Manage space permissions, visibility, archiving, and deletion."
       onPointerDownOutside={(e) => {
@@ -416,8 +416,8 @@ function EditSpaceModalContent({
         }
       }}
     >
-      {/* Navigation Tabs */}
-      <div className="border-border border-b flex gap-2">
+      {/* Navigation Tabs - Fixed Header */}
+      <div className="border-border border-b flex gap-2 shrink-0">
         <button
           type="button"
           onClick={() => setActiveTab("access")}
@@ -446,8 +446,8 @@ function EditSpaceModalContent({
         </button>
       </div>
 
-      {/* Tab Content Container */}
-      <div className="mt-4 h-[540px] min-h-[540px] overflow-y-auto">
+      {/* Tab Content Container - Only this area scrolls */}
+      <div className="flex-1 min-h-0 overflow-y-auto mt-4 pr-1">
         {/* Tab 1: Access & Permissions */}
         {activeTab === "access" ? (
           <div className="space-y-5 pr-1">
@@ -748,8 +748,8 @@ function EditSpaceModalContent({
         ) : null}
       </div>
 
-      {/* Dialog Footer */}
-      <DialogFooter className="pt-3 border-t border-border flex items-center justify-between">
+      {/* Dialog Footer - Fixed Footer */}
+      <DialogFooter className="pt-3 border-t border-border flex items-center justify-between shrink-0">
         <div className="text-xs text-muted-foreground">
           {hasChanges ? (
             <span className="text-amber-600 dark:text-amber-400 font-medium">
@@ -819,6 +819,8 @@ function EditSpaceModalContent({
               variant="danger"
               className="w-full sm:w-auto bg-danger hover:bg-danger/90 text-white"
               onClick={() => {
+                setAssignments(initialAssignments);
+                setVisibility(initialVisibility);
                 setUnsavedPromptOpen(false);
                 onOpenChange(false);
               }}
@@ -862,13 +864,16 @@ export function EditSpaceModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <EditSpaceModalContent
-        space={space}
-        onOpenChange={onOpenChange}
-        initialUsers={users}
-        initialGroups={groups}
-        onSpaceUpdated={onSpaceUpdated}
-      />
+      {open ? (
+        <EditSpaceModalContent
+          key={`${space.id}-${open}`}
+          space={space}
+          onOpenChange={onOpenChange}
+          initialUsers={users}
+          initialGroups={groups}
+          onSpaceUpdated={onSpaceUpdated}
+        />
+      ) : null}
     </Dialog>
   );
 }
