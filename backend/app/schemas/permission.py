@@ -22,6 +22,7 @@ class GroupUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=10_000)
     owner_id: uuid.UUID | None = None
+    owner_ids: list[uuid.UUID] | None = None
     is_active: bool | None = None
 
 
@@ -33,6 +34,7 @@ class GroupRead(BaseModel):
     description: str
     owner_id: uuid.UUID
     owner_username: str | None = None
+    owner_ids: list[uuid.UUID] = Field(default_factory=list)
     is_active: bool
     member_count: int = 0
     created_at: datetime

@@ -65,6 +65,18 @@ class GroupMember(Base):
     )
 
 
+class GroupOwner(Base):
+    __tablename__ = "group_owners"
+    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_group_owners_group_user"),)
+
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
 class GroupGlobalPermission(Base):
     __tablename__ = "group_global_permissions"
 

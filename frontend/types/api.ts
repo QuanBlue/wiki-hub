@@ -207,6 +207,7 @@ export interface Group {
   description: string;
   owner_id: string;
   owner_username: string | null;
+  owner_ids?: string[];
   is_active: boolean;
   member_count: number;
   created_at: string;

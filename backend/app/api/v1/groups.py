@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.exceptions import PermissionDeniedError
-from app.models.permission import GlobalPermission, Group, GroupGlobalPermission, GroupMember
+from app.models.permission import GlobalPermission, Group, GroupGlobalPermission, GroupMember, GroupOwner
 from app.models.user import User
 from app.modules.permissions.service import PermissionService
 from app.schemas.permission import (
@@ -39,6 +39,18 @@ async def _safe_refresh(session: Any, instance: Any) -> None:
             pass
 
 
+def _is_uuid(val: Any) -> bool:
+    if isinstance(val, UUID):
+        return True
+    if isinstance(val, str):
+        try:
+            UUID(val)
+            return True
+        except ValueError:
+            return False
+    return False
+
+
 async def group_read(session: DbSession, group: Group) -> GroupRead:
     await _safe_refresh(session, group)
     owner = await session.get(User, group.owner_id)
@@ -52,12 +64,22 @@ async def group_read(session: DbSession, group: Group) -> GroupRead:
             )
         )
     )
+    raw_owner_ids = list(
+        await session.scalars(
+            select(GroupOwner.user_id).where(GroupOwner.group_id == group.id)
+        )
+    )
+    owner_ids = [uid for uid in raw_owner_ids if _is_uuid(uid)]
+    if not owner_ids and group.owner_id:
+        owner_ids = [group.owner_id]
+
     return GroupRead(
         id=group.id,
         name=group.name,
         description=group.description,
         owner_id=group.owner_id,
         owner_username=owner.username if owner else None,
+        owner_ids=owner_ids,
         is_active=group.is_active,
         member_count=int(count or 0),
         created_at=group.created_at,

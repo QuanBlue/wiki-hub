@@ -186,7 +186,13 @@ export function EditGroupDialog({
     if (group && (isJustOpened || isDifferentGroup)) {
       setName(group.name);
       setDescription(group.description || "");
-      setOwnerIds(group.owner_id ? [group.owner_id] : []);
+      const initialOwners =
+        group.owner_ids && group.owner_ids.length > 0
+          ? group.owner_ids
+          : group.owner_id
+            ? [group.owner_id]
+            : [];
+      setOwnerIds(initialOwners);
       setGlobalPermissions(group.global_permissions || []);
       setPendingAddedUserIds([]);
       setPendingRemovedUserIds([]);
@@ -215,10 +221,15 @@ export function EditGroupDialog({
   // Change detection for General Details
   const isNameChanged = name.trim() !== group.name;
   const isDescChanged = description.trim() !== (group.description || "");
-  const initialOwnerIds = group.owner_id ? [group.owner_id] : [];
+  const initialOwners =
+    group.owner_ids && group.owner_ids.length > 0
+      ? group.owner_ids
+      : group.owner_id
+        ? [group.owner_id]
+        : [];
   const isOwnerChanged =
-    ownerIds.length !== initialOwnerIds.length ||
-    ownerIds.some((id, idx) => id !== initialOwnerIds[idx]);
+    ownerIds.length !== initialOwners.length ||
+    ownerIds.some((id, idx) => id !== initialOwners[idx]);
   const isMembersChanged = pendingAddedUserIds.length > 0 || pendingRemovedUserIds.length > 0;
 
   const initialPerms = group.global_permissions || [];
@@ -278,13 +289,11 @@ export function EditGroupDialog({
     setError(null);
     try {
       let updated = group;
-      // Send the latest selected owner ID as the group owner
-      const targetOwnerId = ownerIds[ownerIds.length - 1] || ownerIds[0];
       if (isNameChanged || isDescChanged || isOwnerChanged) {
         updated = await api.patch<Group>(`/api/v1/groups/${group.id}`, {
           name: name.trim(),
           description: description.trim(),
-          owner_id: targetOwnerId,
+          owner_ids: ownerIds,
         });
       }
 

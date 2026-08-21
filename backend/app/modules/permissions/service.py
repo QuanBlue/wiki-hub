@@ -1,11 +1,7 @@
-"""Additive permission resolution shared by all content services."""
-
-from __future__ import annotations
-
 import inspect
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -26,6 +22,7 @@ from app.models.permission import (
     Group,
     GroupGlobalPermission,
     GroupMember,
+    GroupOwner,
     Permission,
     SpaceGroupPermission,
     SpaceUserPermission,
@@ -228,6 +225,7 @@ class PermissionService:
         self.session.add(group)
         await self.session.flush()
         self.session.add(GroupMember(group_id=group.id, user_id=owner.id))
+        self.session.add(GroupOwner(group_id=group.id, user_id=owner.id))
         await self.session.flush()
         await _safe_refresh(self.session, group)
         return group
@@ -251,7 +249,26 @@ class PermissionService:
                 "Only the group owner or a system administrator can manage this group."
             )
         data = payload.model_dump(exclude_unset=True)
-        if "owner_id" in data:
+        if "owner_ids" in data and data["owner_ids"] is not None:
+            new_owner_ids = data["owner_ids"]
+            if not new_owner_ids:
+                raise ConflictError("Group must have at least one owner.")
+            await self.session.execute(
+                delete(GroupOwner).where(GroupOwner.group_id == group.id)
+            )
+            for o_id in new_owner_ids:
+                u = await self.session.get(User, o_id)
+                if u is None:
+                    raise NotFoundError(f"User {o_id} not found.")
+                self.session.add(GroupOwner(group_id=group.id, user_id=o_id))
+                if not await self.session.scalar(
+                    select(GroupMember).where(
+                        GroupMember.group_id == group.id, GroupMember.user_id == o_id
+                    )
+                ):
+                    self.session.add(GroupMember(group_id=group.id, user_id=o_id))
+            group.owner_id = new_owner_ids[0]
+        elif "owner_id" in data and data["owner_id"] is not None:
             owner = await self.session.get(User, data["owner_id"])
             if owner is None:
                 raise NotFoundError("Group owner not found.")
@@ -261,6 +278,7 @@ class PermissionService:
                 )
             ):
                 self.session.add(GroupMember(group_id=group.id, user_id=owner.id))
+            self.session.add(GroupOwner(group_id=group.id, user_id=owner.id))
             group.owner_id = owner.id
         if data.get("name") is not None:
             next_name = str(data["name"]).strip()
