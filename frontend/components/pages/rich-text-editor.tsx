@@ -4035,7 +4035,11 @@ function LinkFloatingToolbar({
 
   function openLink() {
     if (!position?.href) return;
-    window.open(position.href, "_blank", "noopener,noreferrer");
+    if (position.target === "_self") {
+      window.location.href = position.href;
+    } else {
+      window.open(position.href, "_blank", "noopener,noreferrer");
+    }
   }
 
   function removeLink() {
@@ -4067,7 +4071,11 @@ function LinkFloatingToolbar({
         type="button"
         onClick={openLink}
         className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground rounded p-1.5 transition-colors cursor-pointer"
-        title="Open link in new tab"
+        title={
+          position.target === "_self"
+            ? "Open link in current window"
+            : "Open link in new tab"
+        }
       >
         <ExternalLink className="size-3.5" />
       </button>
@@ -4195,7 +4203,7 @@ function RichTextToolbar({
   const [linkUrl, setLinkUrl] = useState("");
   const [linkText, setLinkText] = useState("");
   const [linkTitle, setLinkTitle] = useState("");
-  const [linkTarget, setLinkTarget] = useState("_self");
+  const [linkTarget, setLinkTarget] = useState("_blank");
   const linkSelection = useRef<{ from: number; to: number } | null>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -4262,7 +4270,7 @@ function RichTextToolbar({
       const target =
         customData?.target ??
         (attributes.target as string | undefined) ??
-        "_self";
+        "_blank";
       const text =
         customData?.text ||
         currentSelectedText ||
@@ -4271,7 +4279,7 @@ function RichTextToolbar({
 
       setLinkUrl(href);
       setLinkTitle(title);
-      setLinkTarget(target);
+      setLinkTarget(target === "_self" ? "_self" : "_blank");
       setLinkText(text);
       setLinkOpen(true);
     },
@@ -4316,7 +4324,7 @@ function RichTextToolbar({
     const attrs = {
       href,
       title: linkTitle.trim() || null,
-      target: linkTarget === "_blank" ? "_blank" : null,
+      target: linkTarget === "_self" ? "_self" : "_blank",
     };
     const displayText = linkText.trim() || href;
     const chain = editor.chain().focus();
