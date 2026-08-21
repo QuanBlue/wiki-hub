@@ -4,12 +4,16 @@ import {
   Check,
   ChevronDown,
   Crown,
+  FolderKanban,
   Loader2,
   Pencil,
+  PlusCircle,
   Search,
+  ShieldAlert,
   ShieldCheck,
   UserMinus,
   UserPlus,
+  Users,
   UsersRound,
   X,
 } from "lucide-react";
@@ -26,12 +30,31 @@ import { listGroupMembers } from "@/lib/group-members";
 import { cn } from "@/lib/utils";
 import type { GlobalPermission, Group, GroupMember, User } from "@/types/api";
 
-const PERMISSIONS = [
-  ["create_space", "Create spaces", "Allows creating new documentation spaces in the workspace."],
-  ["manage_users", "Manage users", "Allows creating, editing, and deactivating user accounts."],
-  ["manage_groups", "Manage groups", "Allows creating, editing, and assigning user groups."],
-  ["system_admin", "System admin", "Full administrative control over workspace settings and data."],
-] as const;
+const PERMISSION_CONFIG: Record<
+  GlobalPermission,
+  { label: string; description: string; icon: React.ComponentType<{ className?: string }> }
+> = {
+  create_space: {
+    label: "Create spaces",
+    description: "Allows group members to create new documentation spaces in the workspace.",
+    icon: PlusCircle,
+  },
+  manage_users: {
+    label: "Manage users",
+    description: "Allows creating, editing, resetting passwords, and deactivating user accounts.",
+    icon: Users,
+  },
+  manage_groups: {
+    label: "Manage groups",
+    description: "Allows creating, updating, assigning members, and managing user groups.",
+    icon: FolderKanban,
+  },
+  system_admin: {
+    label: "System administrator",
+    description: "Full administrative control over workspace settings, security, and system backups.",
+    icon: ShieldAlert,
+  },
+};
 
 type TabKey = "details" | "members" | "permissions";
 
@@ -651,45 +674,85 @@ export function EditGroupDialog({
             </div>
           ) : null}
 
-          {/* Tab 3: Global Permissions (Table Format) */}
+          {/* Tab 3: Global Permissions (Feature List with Toggle Switches) */}
           {activeTab === "permissions" ? (
-            <div className="space-y-3 h-full flex flex-col">
-              <p className="text-xs text-muted-foreground shrink-0">
-                Configure workspace-wide administrative permissions granted to members of this group.
-              </p>
-              <div className="border-border flex-1 overflow-y-auto rounded-lg border">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left text-xs uppercase tracking-wider font-semibold">
-                      <th className="px-4 py-2.5">Permission</th>
-                      <th className="px-4 py-2.5">Key</th>
-                      <th className="px-4 py-2.5">Description</th>
-                      <th className="px-4 py-2.5 text-right">Status / Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {PERMISSIONS.map(([permission, label, desc]) => {
-                      const isEnabled = globalPermissions.includes(permission as GlobalPermission);
-                      return (
-                        <tr key={permission} className="hover:bg-surface-hover transition-colors">
-                          <td className="px-4 py-3 font-medium whitespace-nowrap">{label}</td>
-                          <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{permission}</td>
-                          <td className="px-4 py-3 text-xs text-muted-foreground">{desc}</td>
-                          <td className="px-4 py-3 text-right whitespace-nowrap">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={isEnabled ? "primary" : "secondary"}
-                              onClick={() => handleTogglePermission(permission as GlobalPermission, !isEnabled)}
-                            >
-                              {isEnabled ? "Enabled" : "Enable"}
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            <div className="space-y-3 h-full flex flex-col min-h-0">
+              <div className="bg-surface-sunken/50 border border-border p-3 rounded-lg flex items-start gap-2.5 shrink-0">
+                <ShieldCheck className="size-4.5 text-primary shrink-0 mt-0.5" />
+                <div className="text-xs">
+                  <p className="font-semibold text-foreground">Workspace Global Access</p>
+                  <p className="text-muted-foreground mt-0.5 leading-normal">
+                    Administrative permissions enabled here apply to all members of this group across the entire workspace.
+                  </p>
+                </div>
+              </div>
+
+              <div className="border border-border rounded-lg flex-1 min-h-0 overflow-y-auto divide-y divide-border bg-surface">
+                {(Object.keys(PERMISSION_CONFIG) as GlobalPermission[]).map((permission) => {
+                  const config = PERMISSION_CONFIG[permission];
+                  const Icon = config.icon;
+                  const isEnabled = globalPermissions.includes(permission);
+
+                  return (
+                    <div
+                      key={permission}
+                      className={cn(
+                        "flex items-center justify-between p-3 gap-3.5 transition-colors hover:bg-surface-hover",
+                        isEnabled && "bg-primary-subtle/10",
+                      )}
+                    >
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div
+                          className={cn(
+                            "size-8 rounded-lg flex items-center justify-center shrink-0 border transition-colors mt-0.5",
+                            isEnabled
+                              ? "bg-primary-subtle text-primary border-primary/30"
+                              : "bg-muted/40 text-muted-foreground border-border/60",
+                          )}
+                        >
+                          <Icon className="size-4" />
+                        </div>
+
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-foreground">{config.label}</span>
+                            <span className="font-mono text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.2 rounded border border-border/50">
+                              {permission}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-normal">{config.description}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <Badge
+                          variant={isEnabled ? "success" : "neutral"}
+                          className="text-[10px] py-0.5 px-2 font-medium"
+                        >
+                          {isEnabled ? "Active" : "Disabled"}
+                        </Badge>
+
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={isEnabled}
+                          onClick={() => handleTogglePermission(permission, !isEnabled)}
+                          className={cn(
+                            "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
+                            isEnabled ? "bg-primary" : "bg-muted-foreground/30",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "pointer-events-none inline-block size-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out",
+                              isEnabled ? "translate-x-4" : "translate-x-0",
+                            )}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ) : null}
