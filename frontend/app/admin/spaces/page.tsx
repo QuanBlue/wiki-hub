@@ -13,7 +13,7 @@ import {
   ListFilters,
   PaginationControls,
 } from "@/components/admin/list-controls";
-import { SpaceRowActions } from "@/components/admin/space-row-actions";
+import { AdminSpaceRow } from "@/components/admin/space-row-actions";
 import { CreateSpaceForm } from "@/components/spaces/create-space-form";
 import { Badge } from "@/components/ui/badge";
 import { listAllUsers } from "@/lib/admin";
@@ -165,59 +165,7 @@ export default async function AdminSpacesPage({
                 </tr>
               ) : (
                 pageSpaces.map((space) => (
-                  <tr
-                    key={space.id}
-                    className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0"
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-md text-base">
-                          {space.icon || "◆"}
-                        </span>
-                        <div className="min-w-0">
-                          <Link
-                            className="text-primary hover:text-primary-hover block truncate font-medium hover:underline"
-                            href={
-                              "/admin/spaces/" + encodeURIComponent(space.key)
-                            }
-                          >
-                            {space.name}
-                          </Link>
-                          <p className="text-muted-foreground mt-0.5 truncate text-xs">
-                            {space.description || space.key}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="flex items-center gap-2">
-                        {space.visibility === "open" ? (
-                          <Globe2 className="text-muted-foreground size-3.5" />
-                        ) : (
-                          <LockKeyhole className="text-muted-foreground size-3.5" />
-                        )}
-                        <span>
-                          {space.visibility === "open" ? "Public" : "Private"}
-                        </span>
-                      </span>
-                    </td>
-                    <td className="text-muted-foreground px-4 py-3">
-                      {space.member_count} member
-                      {space.member_count === 1 ? "" : "s"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        variant={
-                          space.status === "active" ? "success" : "warning"
-                        }
-                      >
-                        {space.status === "active" ? "Active" : "Archived"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <SpaceRowActions space={space} users={users} />
-                    </td>
-                  </tr>
+                  <AdminSpaceRow key={space.id} space={space} users={users} />
                 ))
               )}
             </tbody>
