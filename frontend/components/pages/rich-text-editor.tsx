@@ -4035,10 +4035,21 @@ function LinkFloatingToolbar({
 
   function openLink() {
     if (!position?.href) return;
+    const rawHref = position.href.trim();
+    const url =
+      rawHref.startsWith("http://") ||
+      rawHref.startsWith("https://") ||
+      rawHref.startsWith("/") ||
+      rawHref.startsWith("#") ||
+      rawHref.startsWith("mailto:") ||
+      rawHref.startsWith("tel:")
+        ? rawHref
+        : `https://${rawHref}`;
+
     if (position.target === "_self") {
-      window.location.href = position.href;
+      window.location.href = url;
     } else {
-      window.open(position.href, "_blank", "noopener,noreferrer");
+      window.open(url, "_blank", "noopener,noreferrer");
     }
   }
 
@@ -4046,6 +4057,17 @@ function LinkFloatingToolbar({
     editor?.chain().focus().extendMarkRange("link").unsetLink().run();
     setPosition(null);
   }
+
+  const normalizedHref = position
+    ? position.href.startsWith("http://") ||
+      position.href.startsWith("https://") ||
+      position.href.startsWith("/") ||
+      position.href.startsWith("#") ||
+      position.href.startsWith("mailto:") ||
+      position.href.startsWith("tel:")
+      ? position.href
+      : `https://${position.href}`
+    : "";
 
   return (
     <div
@@ -4057,15 +4079,22 @@ function LinkFloatingToolbar({
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="bg-surface-sunken/80 border-border/50 flex max-w-[180px] min-w-0 items-center gap-1.5 rounded border px-2 py-1 sm:max-w-[220px]">
+      <a
+        href={normalizedHref}
+        target={position.target === "_self" ? "_self" : "_blank"}
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="bg-surface-sunken/80 hover:bg-surface-hover border-border/50 flex max-w-[180px] min-w-0 items-center gap-1.5 rounded border px-2 py-1 sm:max-w-[220px] transition-colors cursor-pointer !no-underline"
+        title={`Navigate to: ${position.href}`}
+      >
         <Link2 className="text-primary size-3.5 shrink-0" />
         <span
-          className="text-foreground truncate text-[11px] font-medium"
+          className="text-foreground truncate text-[11px] font-medium hover:underline"
           title={position.href}
         >
           {position.href}
         </span>
-      </div>
+      </a>
 
       <button
         type="button"
@@ -4306,7 +4335,7 @@ function RichTextToolbar({
     event.preventDefault();
     if (!editor) return;
 
-    const href = linkUrl.trim();
+    let href = linkUrl.trim();
     const selection = linkSelection.current;
     if (selection) {
       editor.commands.setTextSelection(selection);
@@ -4319,6 +4348,17 @@ function RichTextToolbar({
       editor.chain().focus().extendMarkRange("link").unsetLink().run();
       setLinkOpen(false);
       return;
+    }
+
+    if (
+      !href.startsWith("http://") &&
+      !href.startsWith("https://") &&
+      !href.startsWith("/") &&
+      !href.startsWith("#") &&
+      !href.startsWith("mailto:") &&
+      !href.startsWith("tel:")
+    ) {
+      href = `https://${href}`;
     }
 
     const attrs = {
