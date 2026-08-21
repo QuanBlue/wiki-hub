@@ -83,3 +83,33 @@ def test_scan_confluence_archive_with_groups_and_restrictions(tmp_path):
     assert spaces[0].restrictions[0].page_id == "p1"
     assert spaces[0].restrictions[0].user_name == "alice"
     assert spaces[0].restrictions[0].restriction_type == "view"
+
+
+XML_CROWD_MEMBERSHIPS = """<root>
+<object class="InternalDirectoryUser"><id>u10</id><property name="name">anhdt187</property></object>
+<object class="InternalDirectoryUser"><id>u20</id><property name="name">anpb7</property></object>
+<object class="InternalDirectoryGroup"><id>g10</id><property name="name">confluence-users</property></object>
+<object class="InternalDirectoryMembership" package="com.atlassian.crowd.model.membership">
+  <id>m1</id>
+  <property name="membershipType">GROUP_USER</property>
+  <property name="parentName">confluence-users</property>
+  <property name="childName">anhdt187</property>
+</object>
+<object class="InternalDirectoryMembership">
+  <id>m2</id>
+  <property name="lowerParentName">confluence-users</property>
+  <property name="lowerChildName">anpb7</property>
+</object>
+<object class="Space"><id>s10</id><property name="key">TEST</property><property name="name">Test Space</property></object>
+</root>"""
+
+
+def test_scan_confluence_crowd_internal_directory_memberships(tmp_path):
+    path = tmp_path / "crowd_export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", XML_CROWD_MEMBERSHIPS)
+    spaces = scan_archive(path)
+    assert len(spaces) == 1
+    assert len(spaces.groups) == 1
+    assert spaces.groups[0].name == "confluence-users"
+    assert sorted(spaces.groups[0].members) == ["anhdt187", "anpb7"]

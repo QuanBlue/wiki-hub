@@ -152,31 +152,46 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                     if key and name:
                         spaces[source_id] = ConfluenceSpace(source_id, key, name)
 
-                elif (
-                    cls_name in {"Group", "DefaultGroup", "InternalGroup", "CrowdGroup"}
-                    or cls_name.endswith("Group")
-                ) and source_id:
-                    gname = _text(props, "name") or _text(props, "groupName")
+                elif "Group" in cls_name and source_id:
+                    gname = (
+                        _text(props, "name")
+                        or _text(props, "groupName")
+                        or _text(props, "lowerName")
+                    )
                     if gname:
                         group_names[source_id] = gname
                         group_members.setdefault(gname, set())
 
-                elif (
-                    cls_name
-                    in {
-                        "Membership",
-                        "InternalMembership",
-                        "GroupMembership",
-                        "CrowdMembership",
-                        "DefaultMembership",
-                    }
-                    or cls_name.endswith("Membership")
-                ):
-                    gname = _text(props, "groupName")
-                    gref = _reference(props.get("group"))
-                    uname = _text(props, "userName")
-                    uref = _reference(props.get("userSubject")) or _reference(props.get("user"))
-                    membership_refs.append((gname or None, gref, uname or None, uref))
+                elif "Membership" in cls_name or "Member" in cls_name:
+                    gname = (
+                        _text(props, "parentName")
+                        or _text(props, "lowerParentName")
+                        or _text(props, "groupName")
+                        or _text(props, "group")
+                        or _text(props, "name")
+                    )
+                    gref = (
+                        _reference(props.get("parent"))
+                        or _reference(props.get("group"))
+                        or _reference(props.get("parentGroup"))
+                        or _reference(props.get("directoryGroup"))
+                    )
+                    uname = (
+                        _text(props, "childName")
+                        or _text(props, "lowerChildName")
+                        or _text(props, "userName")
+                        or _text(props, "user")
+                        or _text(props, "member")
+                    )
+                    uref = (
+                        _reference(props.get("child"))
+                        or _reference(props.get("user"))
+                        or _reference(props.get("userSubject"))
+                        or _reference(props.get("childUser"))
+                        or _reference(props.get("directoryUser"))
+                    )
+                    if (gname or gref) and (uname or uref):
+                        membership_refs.append((gname or None, gref, uname or None, uref))
 
                 elif cls_name == "SpacePermission":
                     space_ref = _reference(props.get("space"))
@@ -224,10 +239,17 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                             )
                         )
 
-                elif cls_name in {"ConfluenceUserImpl", "User"} and source_id:
-                    username_val = _text(props, "name") or _text(props, "userName")
+                elif "User" in cls_name and source_id:
+                    username_val = (
+                        _text(props, "name")
+                        or _text(props, "userName")
+                        or _text(props, "lowerName")
+                    )
+                    user_key = _text(props, "key") or _text(props, "userKey")
                     if username_val:
                         user_names[source_id] = username_val
+                        if user_key:
+                            user_names[user_key] = username_val
 
                 elif cls_name == "Page" and source_id:
                     title = _text(props, "title")
@@ -277,7 +299,12 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
         resolved_g = gname or (group_names.get(gref) if gref else None)
         resolved_u = uname or (user_names.get(uref) if uref else None)
         if resolved_g and resolved_u:
-            group_members.setdefault(resolved_g, set()).add(resolved_u)
+            target_g = resolved_g
+            for existing_g in group_members:
+                if existing_g.casefold() == resolved_g.casefold():
+                    target_g = existing_g
+                    break
+            group_members.setdefault(target_g, set()).add(resolved_u)
 
     parsed_groups = [
         ConfluenceGroup(name=gname, members=sorted(members))
