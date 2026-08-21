@@ -9,7 +9,7 @@ import {
   UserPlus,
   UsersRound,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,10 +29,10 @@ import { cn } from "@/lib/utils";
 import type { GlobalPermission, Group, GroupMember, User } from "@/types/api";
 
 const PERMISSIONS = [
-  ["create_space", "Create spaces"],
-  ["manage_users", "Manage users"],
-  ["manage_groups", "Manage groups"],
-  ["system_admin", "System admin"],
+  ["create_space", "Create spaces", "Allows creating new documentation spaces in the workspace."],
+  ["manage_users", "Manage users", "Allows creating, editing, and deactivating user accounts."],
+  ["manage_groups", "Manage groups", "Allows creating, editing, and assigning user groups."],
+  ["system_admin", "System admin", "Full administrative control over workspace settings and data."],
 ] as const;
 
 type TabKey = "details" | "members" | "permissions";
@@ -62,8 +62,18 @@ export function EditGroupDialog({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const prevGroupIdRef = useRef<string | null>(null);
+  const prevOpenRef = useRef<boolean>(false);
+
   useEffect(() => {
-    if (group && open) {
+    if (!open) {
+      prevOpenRef.current = false;
+      return;
+    }
+    const isJustOpened = !prevOpenRef.current;
+    const isDifferentGroup = prevGroupIdRef.current !== group?.id;
+
+    if (group && (isJustOpened || isDifferentGroup)) {
       setName(group.name);
       setDescription(group.description || "");
       setOwnerId(group.owner_id || "");
@@ -71,7 +81,9 @@ export function EditGroupDialog({
       setActiveTab("details");
       setError(null);
       void loadMembers(group.id);
+      prevGroupIdRef.current = group.id;
     }
+    prevOpenRef.current = open;
   }, [group, open]);
 
   async function loadMembers(groupId: string) {
@@ -161,7 +173,13 @@ export function EditGroupDialog({
   }
 
   const memberIds = new Set(members.map((m) => m.user_id));
-  const availableUsersToAdd = users.filter((u) => !memberIds.has(u.id));
+  const availableUsersToAdd = users
+    .filter((u) => !memberIds.has(u.id))
+    .sort((a, b) => (a.full_name || a.username).localeCompare(b.full_name || b.username));
+
+  const sortedUsers = [...users].sort((a, b) =>
+    (a.full_name || a.username).localeCompare(b.full_name || b.username),
+  );
 
   const filteredMembers = members.filter((m) => {
     if (!memberSearchQuery.trim()) return true;
@@ -225,172 +243,187 @@ export function EditGroupDialog({
           </p>
         ) : null}
 
-        {/* Tab 1: General Details */}
-        {activeTab === "details" ? (
-          <form onSubmit={handleSaveDetails} className="mt-4 space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-group-name">Group name</Label>
-              <Input
-                id="edit-group-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                disabled={pending}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-group-description">Description</Label>
-              <Input
-                id="edit-group-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Description of group purpose"
-                disabled={pending}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-group-owner">Group owner</Label>
-              <Select value={ownerId} onValueChange={setOwnerId} disabled={pending}>
-                <SelectTrigger id="edit-group-owner">
-                  <SelectValue placeholder="Select owner">
-                    {users.find((u) => u.id === ownerId)?.full_name ||
-                      users.find((u) => u.id === ownerId)?.username ||
-                      "Select owner"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {users.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.full_name || u.username} (@{u.username})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter className="mt-6">
-              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={pending || !name.trim()}>
-                {pending ? <Loader2 className="animate-spin" /> : null}
-                Save changes
-              </Button>
-            </DialogFooter>
-          </form>
-        ) : null}
-
-        {/* Tab 2: Members */}
-        {activeTab === "members" ? (
-          <div className="mt-4 space-y-4">
-            {/* Add member section */}
-            <div className="border-border bg-surface-sunken flex flex-wrap items-center gap-2 rounded-lg border p-3">
-              <Select value={memberIdToAdd} onValueChange={setMemberIdToAdd} disabled={availableUsersToAdd.length === 0}>
-                <SelectTrigger className="flex-1 min-w-48">
-                  <SelectValue placeholder={availableUsersToAdd.length > 0 ? "Select user to add..." : "All users are members"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableUsersToAdd.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.full_name || u.username} (@{u.username})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleAddMember}
-                disabled={!memberIdToAdd || pending}
-              >
-                <UserPlus className="size-4" />
-                Add member
-              </Button>
-            </div>
-
-            {/* Member search filter */}
-            <div className="relative">
-              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-              <Input
-                value={memberSearchQuery}
-                onChange={(e) => setMemberSearchQuery(e.target.value)}
-                placeholder="Search group members..."
-                className="w-full pl-8"
-              />
-            </div>
-
-            {/* Members list */}
-            <div className="border-border max-h-64 divide-y overflow-y-auto rounded-lg border">
-              {loadingMembers ? (
-                <div className="p-6 text-center text-sm text-muted-foreground">
-                  <Loader2 className="mx-auto size-5 animate-spin mb-2" />
-                  Loading members...
+        {/* Tab Content Container with Fixed Height */}
+        <div className="mt-4 h-[380px] min-h-[380px] flex flex-col justify-between">
+          {/* Tab 1: General Details */}
+          {activeTab === "details" ? (
+            <form onSubmit={handleSaveDetails} className="space-y-4 flex-1 flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-group-name">Group name</Label>
+                  <Input
+                    id="edit-group-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    disabled={pending}
+                  />
                 </div>
-              ) : filteredMembers.length === 0 ? (
-                <div className="p-6 text-center text-sm text-muted-foreground">
-                  No members found in this group.
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-group-description">Description</Label>
+                  <Input
+                    id="edit-group-description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Description of group purpose"
+                    disabled={pending}
+                  />
                 </div>
-              ) : (
-                filteredMembers.map((member) => (
-                  <div key={member.user_id} className="flex items-center justify-between px-3 py-2 text-sm">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="bg-primary-subtle text-primary flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
-                        {(member.full_name || member.username)[0]?.toUpperCase()}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="font-medium truncate">{member.full_name || member.username}</p>
-                        <p className="text-xs text-muted-foreground truncate">@{member.username}</p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-group-owner">Group owner</Label>
+                  <Select value={ownerId} onValueChange={setOwnerId} disabled={pending}>
+                    <SelectTrigger id="edit-group-owner">
+                      <SelectValue placeholder="Select owner">
+                        {users.find((u) => u.id === ownerId)?.full_name ||
+                          users.find((u) => u.id === ownerId)?.username ||
+                          "Select owner"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60 overflow-y-auto">
+                      {sortedUsers.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.full_name || u.username} (@{u.username})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter className="pt-4 border-t border-border">
+                <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={pending || !name.trim()}>
+                  {pending ? <Loader2 className="animate-spin" /> : null}
+                  Save changes
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : null}
+
+          {/* Tab 2: Members */}
+          {activeTab === "members" ? (
+            <div className="space-y-4 flex-1 flex flex-col min-h-0">
+              {/* Add member section */}
+              <div className="border-border bg-surface-sunken flex flex-wrap items-center gap-2 rounded-lg border p-3 shrink-0">
+                <Select value={memberIdToAdd} onValueChange={setMemberIdToAdd} disabled={availableUsersToAdd.length === 0}>
+                  <SelectTrigger className="flex-1 min-w-48">
+                    <SelectValue placeholder={availableUsersToAdd.length > 0 ? "Select user to add..." : "All users are members"} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60 overflow-y-auto">
+                    {availableUsersToAdd.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.full_name || u.username} (@{u.username})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleAddMember}
+                  disabled={!memberIdToAdd || pending}
+                >
+                  <UserPlus className="size-4" />
+                  Add member
+                </Button>
+              </div>
+
+              {/* Member search filter */}
+              <div className="relative shrink-0">
+                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+                <Input
+                  value={memberSearchQuery}
+                  onChange={(e) => setMemberSearchQuery(e.target.value)}
+                  placeholder="Search group members..."
+                  className="w-full pl-8"
+                />
+              </div>
+
+              {/* Members list */}
+              <div className="border-border flex-1 divide-y overflow-y-auto rounded-lg border min-h-0">
+                {loadingMembers ? (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    <Loader2 className="mx-auto size-5 animate-spin mb-2" />
+                    Loading members...
+                  </div>
+                ) : filteredMembers.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    No members found in this group.
+                  </div>
+                ) : (
+                  filteredMembers.map((member) => (
+                    <div key={member.user_id} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="bg-primary-subtle text-primary flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+                          {(member.full_name || member.username)[0]?.toUpperCase()}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{member.full_name || member.username}</p>
+                          <p className="text-xs text-muted-foreground truncate">@{member.username}</p>
+                        </div>
                       </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="hover:bg-danger-bg hover:text-danger text-muted-foreground"
+                        onClick={() => handleRemoveMember(member.user_id)}
+                        title="Remove member from group"
+                      >
+                        <UserMinus className="size-4" />
+                        Remove
+                      </Button>
                     </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="hover:bg-danger-bg hover:text-danger text-muted-foreground"
-                      onClick={() => handleRemoveMember(member.user_id)}
-                      title="Remove member from group"
-                    >
-                      <UserMinus className="size-4" />
-                      Remove
-                    </Button>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
 
-        {/* Tab 3: Global Permissions */}
-        {activeTab === "permissions" ? (
-          <div className="mt-4 space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Configure workspace-wide administrative access granted to all members of this group.
-            </p>
-            <div className="space-y-2">
-              {PERMISSIONS.map(([permission, label]) => {
-                const isEnabled = globalPermissions.includes(permission as GlobalPermission);
-                return (
-                  <div
-                    key={permission}
-                    className="border-border bg-surface-raised flex items-center justify-between rounded-lg border p-3 text-sm"
-                  >
-                    <div>
-                      <p className="font-medium">{label}</p>
-                      <p className="text-xs text-muted-foreground font-mono mt-0.5">{permission}</p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={isEnabled ? "primary" : "secondary"}
-                      onClick={() => handleTogglePermission(permission as GlobalPermission, !isEnabled)}
-                    >
-                      {isEnabled ? "Enabled" : "Enable"}
-                    </Button>
-                  </div>
-                );
-              })}
+          {/* Tab 3: Global Permissions (Table Format) */}
+          {activeTab === "permissions" ? (
+            <div className="space-y-3 flex-1 flex flex-col min-h-0">
+              <p className="text-xs text-muted-foreground shrink-0">
+                Configure workspace-wide administrative permissions granted to members of this group.
+              </p>
+              <div className="border-border flex-1 overflow-y-auto rounded-lg border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left text-xs uppercase tracking-wider font-semibold">
+                      <th className="px-4 py-2.5">Permission</th>
+                      <th className="px-4 py-2.5">Key</th>
+                      <th className="px-4 py-2.5">Description</th>
+                      <th className="px-4 py-2.5 text-right">Status / Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {PERMISSIONS.map(([permission, label, desc]) => {
+                      const isEnabled = globalPermissions.includes(permission as GlobalPermission);
+                      return (
+                        <tr key={permission} className="hover:bg-surface-hover transition-colors">
+                          <td className="px-4 py-3 font-medium whitespace-nowrap">{label}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{permission}</td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground">{desc}</td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={isEnabled ? "primary" : "secondary"}
+                              onClick={() => handleTogglePermission(permission as GlobalPermission, !isEnabled)}
+                            >
+                              {isEnabled ? "Enabled" : "Enable"}
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );
