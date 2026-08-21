@@ -24,6 +24,7 @@ from app.models.page import WikiPage
 from app.models.space import Space, SpaceMember, SpaceRole
 from app.modules.import_export.confluence import (
     ConfluencePage,
+    ConfluenceSpace,
     iter_attachments,
     iter_page_bodies,
     scan_archive,
