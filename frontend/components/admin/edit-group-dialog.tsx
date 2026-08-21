@@ -94,7 +94,7 @@ function SearchableUserPicker({
       </button>
 
       {open && !disabled ? (
-        <div className="absolute top-full left-0 mt-1 w-full z-50 bg-popover text-popover-foreground border border-border rounded-md shadow-md p-1.5 space-y-1.5 min-w-64">
+        <div className="absolute top-full left-0 mt-1 w-full z-50 bg-surface text-foreground border border-border rounded-md shadow-xl p-1.5 space-y-1.5 min-w-64">
           <div className="relative">
             <Search className="absolute top-1/2 left-2.5 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
             <input
@@ -103,7 +103,7 @@ function SearchableUserPicker({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search user by name or @username..."
-              className="w-full pl-8 pr-2 py-1.5 text-xs bg-surface border border-border rounded-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full pl-8 pr-2 py-1.5 text-xs bg-background border border-border rounded-sm focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
 
@@ -166,6 +166,8 @@ export function EditGroupDialog({
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [memberIdToAdd, setMemberIdToAdd] = useState("");
   const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const [pendingAddedUserIds, setPendingAddedUserIds] = useState<string[]>([]);
+  const [pendingRemovedUserIds, setPendingRemovedUserIds] = useState<string[]>([]);
   const [globalPermissions, setGlobalPermissions] = useState<GlobalPermission[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +188,8 @@ export function EditGroupDialog({
       setDescription(group.description || "");
       setOwnerIds(group.owner_id ? [group.owner_id] : []);
       setGlobalPermissions(group.global_permissions || []);
+      setPendingAddedUserIds([]);
+      setPendingRemovedUserIds([]);
       setActiveTab("details");
       setError(null);
       void loadMembers(group.id);
@@ -215,8 +219,9 @@ export function EditGroupDialog({
   const isOwnerChanged =
     ownerIds.length !== initialOwnerIds.length ||
     ownerIds.some((id, idx) => id !== initialOwnerIds[idx]);
+  const isMembersChanged = pendingAddedUserIds.length > 0 || pendingRemovedUserIds.length > 0;
 
-  const hasChanges = isNameChanged || isDescChanged || isOwnerChanged;
+  const hasChanges = isNameChanged || isDescChanged || isOwnerChanged || isMembersChanged;
 
   function handleAddOwner(userId: string) {
     if (!userId || ownerIds.includes(userId)) return;
@@ -231,7 +236,22 @@ export function EditGroupDialog({
     setOwnerIds((current) => current.filter((id) => id !== userId));
   }
 
-  async function handleSaveDetails() {
+  function handleStageAddMember() {
+    if (!memberIdToAdd || pendingAddedUserIds.includes(memberIdToAdd)) return;
+    setPendingAddedUserIds((prev) => [memberIdToAdd, ...prev]);
+    setPendingRemovedUserIds((prev) => prev.filter((id) => id !== memberIdToAdd));
+    setMemberIdToAdd("");
+  }
+
+  function handleStageRemoveMember(userId: string) {
+    if (pendingAddedUserIds.includes(userId)) {
+      setPendingAddedUserIds((prev) => prev.filter((id) => id !== userId));
+    } else {
+      setPendingRemovedUserIds((prev) => [...prev, userId]);
+    }
+  }
+
+  async function handleSaveAll() {
     if (!name.trim() || ownerIds.length === 0 || !group) return;
     if (!hasChanges) {
       onOpenChange(false);
@@ -240,66 +260,46 @@ export function EditGroupDialog({
     setPending(true);
     setError(null);
     try {
-      const updated = await api.patch<Group>(`/api/v1/groups/${group.id}`, {
-        name: name.trim(),
-        description: description.trim(),
-        owner_id: ownerIds[0],
-      });
-      // Ensure all selected owners are also group members
-      const existingMemberIds = new Set(members.map((m) => m.user_id));
-      const newOwnerMembers = ownerIds.filter((id) => !existingMemberIds.has(id));
-      if (newOwnerMembers.length > 0) {
+      let updated = group;
+      if (isNameChanged || isDescChanged || isOwnerChanged) {
+        updated = await api.patch<Group>(`/api/v1/groups/${group.id}`, {
+          name: name.trim(),
+          description: description.trim(),
+          owner_id: ownerIds[0],
+        });
+      }
+
+      // Add newly staged members
+      if (pendingAddedUserIds.length > 0) {
         await Promise.all(
-          newOwnerMembers.map((id) =>
-            api.put(`/api/v1/groups/${group.id}/members`, { user_id: id }).catch(() => {}),
+          pendingAddedUserIds.map((userId) =>
+            api.put(`/api/v1/groups/${group.id}/members`, { user_id: userId }).catch(() => {}),
           ),
         );
-        const nextMembers = await listGroupMembers(group.id);
-        setMembers(nextMembers);
-        onGroupUpdated({ ...updated, member_count: nextMembers.length });
-      } else {
-        onGroupUpdated(updated);
       }
-      toast.success("Group details updated.");
-      onOpenChange(false);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not update group details.");
-    } finally {
-      setPending(false);
-    }
-  }
 
-  async function handleAddMember() {
-    if (!memberIdToAdd || !group) return;
-    setPending(true);
-    try {
-      await api.put(`/api/v1/groups/${group.id}/members`, {
-        user_id: memberIdToAdd,
-      });
+      // Remove staged deleted members
+      if (pendingRemovedUserIds.length > 0) {
+        await Promise.all(
+          pendingRemovedUserIds.map((userId) =>
+            api.delete(`/api/v1/groups/${group.id}/members/${userId}`).catch(() => {}),
+          ),
+        );
+      }
+
       const nextMembers = await listGroupMembers(group.id);
       setMembers(nextMembers);
-      setMemberIdToAdd("");
-      const updatedGroup = { ...group, member_count: nextMembers.length };
+      setPendingAddedUserIds([]);
+      setPendingRemovedUserIds([]);
+
+      const updatedGroup = { ...updated, member_count: nextMembers.length };
       onGroupUpdated(updatedGroup);
-      toast.success("Member added.");
+      toast.success("Group changes saved.");
+      onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not add member.");
+      setError(err instanceof ApiError ? err.message : "Could not save group changes.");
     } finally {
       setPending(false);
-    }
-  }
-
-  async function handleRemoveMember(userId: string) {
-    if (!group) return;
-    try {
-      await api.delete(`/api/v1/groups/${group.id}/members/${userId}`);
-      const nextMembers = members.filter((m) => m.user_id !== userId);
-      setMembers(nextMembers);
-      const updatedGroup = { ...group, member_count: nextMembers.length };
-      onGroupUpdated(updatedGroup);
-      toast.success("Member removed.");
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not remove member.");
     }
   }
 
@@ -321,16 +321,38 @@ export function EditGroupDialog({
     }
   }
 
-  const memberIds = new Set(members.map((m) => m.user_id));
+  // Active membership state calculation
+  const currentMemberUserIds = new Set([
+    ...members.map((m) => m.user_id).filter((id) => !pendingRemovedUserIds.includes(id)),
+    ...pendingAddedUserIds,
+  ]);
+
   const availableUsersToAdd = users
-    .filter((u) => !memberIds.has(u.id))
+    .filter((u) => !currentMemberUserIds.has(u.id))
     .sort((a, b) => (a.full_name || a.username).localeCompare(b.full_name || b.username));
 
   const availableOwners = users
     .filter((u) => !ownerIds.includes(u.id))
     .sort((a, b) => (a.full_name || a.username).localeCompare(b.full_name || b.username));
 
-  const filteredMembers = members.filter((m) => {
+  // Display items: Staged Added (NEW) at the very top, followed by existing members
+  const stagedNewMembers = pendingAddedUserIds.map((userId) => {
+    const u = users.find((user) => user.id === userId);
+    return {
+      user_id: userId,
+      username: u?.username || userId,
+      full_name: u?.full_name || u?.username || userId,
+      isNew: true,
+    };
+  });
+
+  const existingActiveMembers = members
+    .filter((m) => !pendingRemovedUserIds.includes(m.user_id))
+    .map((m) => ({ ...m, isNew: false }));
+
+  const allDisplayedMembers = [...stagedNewMembers, ...existingActiveMembers];
+
+  const filteredMembers = allDisplayedMembers.filter((m) => {
     if (!memberSearchQuery.trim()) return true;
     const q = memberSearchQuery.toLowerCase().trim();
     return (m.full_name || m.username).toLowerCase().includes(q) || m.username.toLowerCase().includes(q);
@@ -369,7 +391,7 @@ export function EditGroupDialog({
             )}
           >
             <UsersRound className="size-4" />
-            Members ({members.length})
+            Members ({allDisplayedMembers.length})
           </button>
           <button
             type="button"
@@ -471,7 +493,7 @@ export function EditGroupDialog({
                 <Button
                   type="button"
                   size="sm"
-                  onClick={handleAddMember}
+                  onClick={handleStageAddMember}
                   disabled={!memberIdToAdd || pending}
                 >
                   <UserPlus className="size-4" />
@@ -508,9 +530,14 @@ export function EditGroupDialog({
                         <span className="bg-primary-subtle text-primary flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                           {(member.full_name || member.username)[0]?.toUpperCase()}
                         </span>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex items-center gap-2">
                           <p className="font-medium truncate">{member.full_name || member.username}</p>
                           <p className="text-xs text-muted-foreground truncate">@{member.username}</p>
+                          {member.isNew ? (
+                            <Badge variant="success" className="text-[10px] py-0 px-1.5 font-semibold uppercase tracking-wider">
+                              New
+                            </Badge>
+                          ) : null}
                         </div>
                       </div>
                       <Button
@@ -518,7 +545,7 @@ export function EditGroupDialog({
                         size="sm"
                         variant="ghost"
                         className="hover:bg-danger-bg hover:text-danger text-muted-foreground"
-                        onClick={() => handleRemoveMember(member.user_id)}
+                        onClick={() => handleStageRemoveMember(member.user_id)}
                         title="Remove member from group"
                       >
                         <UserMinus className="size-4" />
@@ -582,7 +609,7 @@ export function EditGroupDialog({
           </Button>
           <Button
             type="button"
-            onClick={() => void handleSaveDetails()}
+            onClick={() => void handleSaveAll()}
             variant={hasChanges ? "primary" : "secondary"}
             disabled={!hasChanges || !name.trim() || ownerIds.length === 0 || pending}
             className={cn(
