@@ -25,6 +25,16 @@ describe("admin list controls", () => {
     expect(navigation.push).toHaveBeenCalledWith("/admin/users?q=alice");
   });
 
+  it("clears search query immediately when clicking the clear button", async () => {
+    const actor = userEvent.setup();
+    render(<ListFilters searchValue="existing" searchPlaceholder="Search users" />);
+
+    const clearBtn = screen.getByRole("button", { name: "Clear search" });
+    await actor.click(clearBtn);
+
+    expect(navigation.push).toHaveBeenCalledWith("/admin/users");
+  });
+
   it("moves to the next server page while keeping active filters", async () => {
     const actor = userEvent.setup();
     render(<PaginationControls total={35} limit={10} offset={10} pageSizes={[10, 25, 50, 100]} />);
