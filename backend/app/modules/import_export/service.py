@@ -1503,11 +1503,16 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     target_page = imported_pages.get(source_attachment.page_id)
                     if target_page is None:
                         continue
+                    try:
+                        size_bytes = source_archive.getinfo(archive_member).file_size
+                    except (KeyError, Exception):
+                        size_bytes = 0
                     attachment = PageAttachment(
                         page_id=target_page.id,
                         filename=source_attachment.filename[:255],
                         content_type=source_attachment.content_type[:255],
                         object_key="",
+                        size_bytes=size_bytes,
                     )
                     session.add(attachment)
                     await session.flush()

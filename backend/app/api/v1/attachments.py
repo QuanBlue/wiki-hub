@@ -167,13 +167,20 @@ async def read_attachment(
         raise NotFoundError("Attachment space not found.")
     await SpaceService(session).permissions.require(space, _user, Permission.view)
     await PageService(session).require_page_view(page, _user)
+    import urllib.parse
+
     inline = (
         attachment.content_type.startswith("image/") or attachment.content_type == "application/pdf"
     )
     disposition = "inline" if inline else "attachment"
     filename = re.sub(r'[\r\n\\"]+', "", attachment.filename)
+    ascii_filename = re.sub(r"[^\x20-\x7e]", "_", filename).replace('"', "")
+    encoded_filename = urllib.parse.quote(filename, encoding="utf-8")
+    content_disposition = (
+        f"{disposition}; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename}"
+    )
     return Response(
         content=await storage.get(attachment.object_key),
         media_type=attachment.content_type,
-        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition},
     )
