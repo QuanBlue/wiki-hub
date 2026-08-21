@@ -113,3 +113,30 @@ def test_scan_confluence_crowd_internal_directory_memberships(tmp_path):
     assert len(spaces.groups) == 1
     assert spaces.groups[0].name == "confluence-users"
     assert sorted(spaces.groups[0].members) == ["anhdt187", "anpb7"]
+
+
+XML_USERKEY_MEMBERSHIPS = """<root>
+<object class="ConfluenceUserImpl">
+  <id>u100</id>
+  <property name="key">2c91808465fb1234567890abcdef1234</property>
+  <property name="name">anhdt187</property>
+  <property name="lowerName">anhdt187</property>
+</object>
+<object class="InternalDirectoryGroup"><id>g100</id><property name="name">dms4_mem</property></object>
+<object class="InternalDirectoryMembership">
+  <property name="parentName">dms4_mem</property>
+  <property name="childName">2c91808465fb1234567890abcdef1234</property>
+</object>
+<object class="Space"><id>s100</id><property name="key">DMS4</property><property name="name">DMS4 Space</property></object>
+</root>"""
+
+
+def test_scan_confluence_userkey_memberships(tmp_path):
+    path = tmp_path / "userkey_export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", XML_USERKEY_MEMBERSHIPS)
+    spaces = scan_archive(path)
+    assert len(spaces) == 1
+    assert len(spaces.groups) == 1
+    assert spaces.groups[0].name == "dms4_mem"
+    assert spaces.groups[0].members == ["anhdt187"]

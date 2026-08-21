@@ -1006,13 +1006,6 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     elif source_page.created_at:
                         imported_page.updated_at = source_page.created_at
                 await session.flush()
-                # Bodies are streamed in a second pass; only selected page ids are retained.
-                for page_source_id, html_content in await anyio.to_thread.run_sync(
-                    lambda: list(iter_page_bodies(path))
-                ):
-                    body_page: WikiPage | None = pages.get(page_source_id)
-                    if body_page:
-                        body_page.content = _normalize_confluence_code_macros(html_content)
                 count = len(pages)
                 job.counters = {
                     **job.counters,
@@ -1024,19 +1017,50 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     job,
                     "info",
                     "spaces",
-                    f"Imported {count} current pages.",
+                    f"Created {count} pages for space {space.key}.",
                     entity_type="space",
                     entity_label=space.key,
                 )
                 restore_timestamps()
                 await session.commit()
+
+            # Stream all page bodies in a single pass across the entire archive
+            if imported_pages:
+                for page_source_id, html_content in await anyio.to_thread.run_sync(
+                    lambda: list(iter_page_bodies(path))
+                ):
+                    body_page: WikiPage | None = imported_pages.get(page_source_id)
+                    if body_page:
+                        body_page.content = _normalize_confluence_code_macros(html_content)
+                restore_timestamps()
+                await session.commit()
+
+            # Attachments Phase
+            job.phase = "attachments"
+            await log(
+                session,
+                job,
+                "info",
+                "attachments",
+                "Reading attachments from archive...",
+            )
+            await session.commit()
+
             attachments_imported = 0
             attachment_urls: dict[tuple[str, str], str] = {}
             attachment_sources = await anyio.to_thread.run_sync(
                 lambda: list(iter_attachments(path))
             )
+            total_attachments = len(attachment_sources)
+            job.counters = {
+                **job.counters,
+                "attachments_processed": 0,
+                "attachments_total": total_attachments,
+            }
+            await session.commit()
+
             with zipfile.ZipFile(path) as source_archive:
-                for source_attachment, archive_member in attachment_sources:
+                for idx, (source_attachment, archive_member) in enumerate(attachment_sources, 1):
                     target_page = imported_pages.get(source_attachment.page_id)
                     if target_page is None:
                         continue
@@ -1062,6 +1086,14 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                         f"/api/v1/attachments/{attachment.id}/content"
                     )
                     attachments_imported += 1
+                    if idx % 25 == 0 or idx == total_attachments:
+                        job.counters = {
+                            **job.counters,
+                            "attachments_processed": attachments_imported,
+                            "attachments_total": total_attachments,
+                        }
+                        await session.commit()
+
             if attachment_urls:
                 title_to_page_id = {page.title: pid for pid, page in imported_pages.items()}
                 for source_page_id, target_page in imported_pages.items():
@@ -1072,6 +1104,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             job.counters = {
                 **job.counters,
                 "attachments_processed": attachments_imported,
+                "attachments_total": total_attachments,
             }
             await log(
                 session,
@@ -1080,9 +1113,8 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 "attachments",
                 f"Imported {attachments_imported} attachments and linked them to their pages.",
             )
+            job.status, job.phase = "completed", "completed"
             await session.commit()
-        job.status, job.phase = "completed", "completed"
-        await session.commit()
     except ImportCancelled as exc:
         await session.rollback()
         job = await session.get(ImportJob, job_id)

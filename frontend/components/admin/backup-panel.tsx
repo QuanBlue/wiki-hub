@@ -704,6 +704,9 @@ export function BackupPanel() {
   );
   const jobSpacesTotal = confluenceJob?.counters.spaces_total ?? 0;
   const jobSpacesCompleted = confluenceJob?.counters.spaces_completed ?? 0;
+  const jobAttachmentsTotal = confluenceJob?.counters.attachments_total ?? 0;
+  const jobAttachmentsProcessed =
+    confluenceJob?.counters.attachments_processed ?? 0;
   const jobDownloadPercent = Math.min(
     100,
     confluenceJob?.counters.download_percent ?? 0,
@@ -714,6 +717,13 @@ export function BackupPanel() {
     100,
     (jobSpacesCompleted / Math.max(1, jobSpacesTotal)) * 100,
   );
+  const jobAttachmentPercent =
+    jobAttachmentsTotal > 0
+      ? Math.min(
+          100,
+          (jobAttachmentsProcessed / Math.max(1, jobAttachmentsTotal)) * 100,
+        )
+      : 100;
   const jobProgressPercent = !confluenceJob
     ? 0
     : confluenceJob.status === "completed" ||
@@ -724,8 +734,12 @@ export function BackupPanel() {
         : confluenceJob.phase === "downloading"
           ? jobDownloadPercent
           : confluenceJob.phase === "scanning"
-            ? 100
-            : jobSpacePercent;
+            ? 10
+            : confluenceJob.phase === "importing"
+              ? Math.min(85, 10 + Math.round(jobSpacePercent * 0.75))
+              : confluenceJob.phase === "attachments"
+                ? Math.min(99, 85 + Math.round(jobAttachmentPercent * 0.14))
+                : jobSpacePercent;
   const jobTitle = !confluenceJob
     ? ""
     : confluenceJob.status === "completed"
@@ -739,8 +753,10 @@ export function BackupPanel() {
             : confluenceJob.phase === "scanning"
               ? "Scanning archive"
               : confluenceJob.phase === "importing"
-                ? "Importing spaces"
-                : "Import queued";
+                ? "Importing spaces and pages"
+                : confluenceJob.phase === "attachments"
+                  ? "Importing and linking attachments"
+                  : "Import running";
   const jobPagesSummary = confluenceJob?.counters.pages_total
     ? `${confluenceJob.counters.pages_processed ?? 0}/${confluenceJob.counters.pages_total} pages`
     : `${confluenceJob?.counters.pages_processed ?? 0} pages`;
@@ -891,7 +907,7 @@ export function BackupPanel() {
       } catch {
         /* next poll reports a recoverable API failure */
       }
-    }, 2000);
+    }, 1000);
     return () => window.clearInterval(timer);
   }, [confluenceJob]);
 
@@ -2247,6 +2263,9 @@ export function BackupPanel() {
             <p className="text-muted-foreground mt-1 text-sm">
               {Math.round(jobProgressPercent)}% complete · {jobSpacesCompleted}/
               {jobSpacesTotal} spaces · {jobPagesSummary}
+              {jobAttachmentsTotal > 0
+                ? ` · ${jobAttachmentsProcessed}/${jobAttachmentsTotal} attachments`
+                : ""}
             </p>
             <p className="hidden">
               {Math.round(jobProgressPercent)}% complete · {jobSpacesCompleted}/

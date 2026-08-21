@@ -287,17 +287,50 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                         attachment_page_ids.append(attachment_page_id)
                 element.clear()
 
+    def _lookup_user(name_or_key: str | None, ref_id: str | None) -> str | None:
+        if name_or_key:
+            res = (
+                user_names.get(name_or_key)
+                or user_names.get(name_or_key.lower())
+                or name_or_key
+            )
+            # If the result was another key in user_names, resolve it
+            return user_names.get(res) or user_names.get(res.lower()) or res
+        if ref_id:
+            res = user_names.get(ref_id) or user_names.get(ref_id.lower())
+            if res:
+                return user_names.get(res) or user_names.get(res.lower()) or res
+        return None
+
+    def _lookup_group(name_or_key: str | None, ref_id: str | None) -> str | None:
+        if name_or_key:
+            res = (
+                group_names.get(name_or_key)
+                or group_names.get(name_or_key.lower())
+                or name_or_key
+            )
+            return group_names.get(res) or group_names.get(res.lower()) or res
+        if ref_id:
+            res = group_names.get(ref_id) or group_names.get(ref_id.lower())
+            if res:
+                return group_names.get(res) or group_names.get(res.lower()) or res
+        return None
+
     # Resolve creator and modifier usernames from their referenced IDs
     for page, creator_ref, last_modifier_ref in page_user_refs:
         if not page.creator and creator_ref:
-            page.creator = user_names.get(creator_ref)
+            page.creator = _lookup_user(None, creator_ref)
+        elif page.creator:
+            page.creator = _lookup_user(page.creator, None)
         if not page.last_modifier and last_modifier_ref:
-            page.last_modifier = user_names.get(last_modifier_ref)
+            page.last_modifier = _lookup_user(None, last_modifier_ref)
+        elif page.last_modifier:
+            page.last_modifier = _lookup_user(page.last_modifier, None)
 
     # Resolve group memberships
     for gname, gref, uname, uref in membership_refs:
-        resolved_g = gname or (group_names.get(gref) if gref else None)
-        resolved_u = uname or (user_names.get(uref) if uref else None)
+        resolved_g = _lookup_group(gname, gref)
+        resolved_u = _lookup_user(uname, uref)
         if resolved_g and resolved_u:
             target_g = resolved_g
             for existing_g in group_members:
@@ -321,8 +354,8 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
         group_name,
         group_ref,
     ) in space_permission_refs:
-        resolved_user = user_name or (user_names.get(user_ref) if user_ref else None)
-        resolved_group = group_name or (group_names.get(group_ref) if group_ref else None)
+        resolved_user = _lookup_user(user_name, user_ref)
+        resolved_group = _lookup_group(group_name, group_ref)
         if space_ref in spaces:
             spaces[space_ref].permissions.append(
                 ConfluencePermission(
@@ -339,8 +372,8 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
         if set_ref in perm_sets:
             page_id, set_type = perm_sets[set_ref]
             resolved_type = perm_type or set_type
-            resolved_user = user_name or (user_names.get(user_ref) if user_ref else None)
-            resolved_group = group_name or (group_names.get(group_ref) if group_ref else None)
+            resolved_user = _lookup_user(user_name, user_ref)
+            resolved_group = _lookup_group(group_name, group_ref)
             target_page = pages_by_source_id.get(page_id)
             if target_page and target_page.space_id in spaces and (resolved_user or resolved_group):
                 spaces[target_page.space_id].restrictions.append(
