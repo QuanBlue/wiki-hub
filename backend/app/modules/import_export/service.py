@@ -674,6 +674,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
 
             # 1. Resolve and create all imported Groups and Group Memberships
             group_by_name: dict[str, Group] = {}
+            added_group_members: set[tuple[uuid.UUID, uuid.UUID]] = set()
             imported_groups = getattr(scanned, "groups", [])
             if imported_groups:
                 for group_data in imported_groups:
@@ -706,16 +707,19 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     for member_username in group_data.members:
                         uid = await service._resolve_or_create_user(member_username)
                         if uid:
-                            existing_gm = (
-                                await session.execute(
-                                    select(GroupMember).where(
-                                        GroupMember.group_id == grp.id,
-                                        GroupMember.user_id == uid,
+                            gm_key = (grp.id, uid)
+                            if gm_key not in added_group_members:
+                                added_group_members.add(gm_key)
+                                existing_gm = (
+                                    await session.execute(
+                                        select(GroupMember).where(
+                                            GroupMember.group_id == grp.id,
+                                            GroupMember.user_id == uid,
+                                        )
                                     )
-                                )
-                            ).scalar_one_or_none()
-                            if not existing_gm:
-                                session.add(GroupMember(group_id=grp.id, user_id=uid))
+                                ).scalar_one_or_none()
+                                if not existing_gm:
+                                    session.add(GroupMember(group_id=grp.id, user_id=uid))
                 await session.flush()
 
             for source_space in scanned:
@@ -813,6 +817,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                         added_user_ids.add(uid)
 
                 # Grant SpaceGroupPermissions for groups referenced in space permissions
+                added_space_group_perms: set[tuple[uuid.UUID, uuid.UUID, Permission]] = set()
                 for perm in source_space.permissions:
                     if perm.group_name:
                         g_clean = perm.group_name.strip().lower()
@@ -832,23 +837,26 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                                 in {"EDITSPACE", "CREATEPAGE", "REMOVEPAGE", "EDITBLOG"}
                                 else Permission.view
                             )
-                            existing_sgp = (
-                                await session.execute(
-                                    select(SpaceGroupPermission).where(
-                                        SpaceGroupPermission.space_id == space.id,
-                                        SpaceGroupPermission.group_id == grp.id,
-                                        SpaceGroupPermission.permission == p_enum,
+                            sgp_key = (space.id, grp.id, p_enum)
+                            if sgp_key not in added_space_group_perms:
+                                added_space_group_perms.add(sgp_key)
+                                existing_sgp = (
+                                    await session.execute(
+                                        select(SpaceGroupPermission).where(
+                                            SpaceGroupPermission.space_id == space.id,
+                                            SpaceGroupPermission.group_id == grp.id,
+                                            SpaceGroupPermission.permission == p_enum,
+                                        )
                                     )
-                                )
-                            ).scalar_one_or_none()
-                            if not existing_sgp:
-                                session.add(
-                                    SpaceGroupPermission(
-                                        space_id=space.id,
-                                        group_id=grp.id,
-                                        permission=p_enum,
+                                ).scalar_one_or_none()
+                                if not existing_sgp:
+                                    session.add(
+                                        SpaceGroupPermission(
+                                            space_id=space.id,
+                                            group_id=grp.id,
+                                            permission=p_enum,
+                                        )
                                     )
-                                )
 
                 pages: dict[str, WikiPage] = {}
                 occupied: set[str] = set()
@@ -887,6 +895,12 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 await session.flush()
 
                 # Apply Page Restrictions from Confluence
+                added_page_user_restrictions: set[
+                    tuple[uuid.UUID, uuid.UUID, PageRestrictionPermission]
+                ] = set()
+                added_page_group_restrictions: set[
+                    tuple[uuid.UUID, uuid.UUID, PageRestrictionPermission]
+                ] = set()
                 for restr in source_space.restrictions:
                     target_page = pages.get(restr.page_id)
                     if not target_page:
@@ -899,44 +913,50 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     if restr.user_name:
                         uid = await service._resolve_or_create_user(restr.user_name)
                         if uid:
-                            existing_pur = (
-                                await session.execute(
-                                    select(PageUserRestriction).where(
-                                        PageUserRestriction.page_id == target_page.id,
-                                        PageUserRestriction.user_id == uid,
-                                        PageUserRestriction.permission == perm_enum,
+                            pur_key = (target_page.id, uid, perm_enum)
+                            if pur_key not in added_page_user_restrictions:
+                                added_page_user_restrictions.add(pur_key)
+                                existing_pur = (
+                                    await session.execute(
+                                        select(PageUserRestriction).where(
+                                            PageUserRestriction.page_id == target_page.id,
+                                            PageUserRestriction.user_id == uid,
+                                            PageUserRestriction.permission == perm_enum,
+                                        )
                                     )
-                                )
-                            ).scalar_one_or_none()
-                            if not existing_pur:
-                                session.add(
-                                    PageUserRestriction(
-                                        page_id=target_page.id,
-                                        user_id=uid,
-                                        permission=perm_enum,
+                                ).scalar_one_or_none()
+                                if not existing_pur:
+                                    session.add(
+                                        PageUserRestriction(
+                                            page_id=target_page.id,
+                                            user_id=uid,
+                                            permission=perm_enum,
+                                        )
                                     )
-                                )
 
                     if restr.group_name:
                         grp = group_by_name.get(restr.group_name.strip().lower())
                         if grp:
-                            existing_pgr = (
-                                await session.execute(
-                                    select(PageGroupRestriction).where(
-                                        PageGroupRestriction.page_id == target_page.id,
-                                        PageGroupRestriction.group_id == grp.id,
-                                        PageGroupRestriction.permission == perm_enum,
+                            pgr_key = (target_page.id, grp.id, perm_enum)
+                            if pgr_key not in added_page_group_restrictions:
+                                added_page_group_restrictions.add(pgr_key)
+                                existing_pgr = (
+                                    await session.execute(
+                                        select(PageGroupRestriction).where(
+                                            PageGroupRestriction.page_id == target_page.id,
+                                            PageGroupRestriction.group_id == grp.id,
+                                            PageGroupRestriction.permission == perm_enum,
+                                        )
                                     )
-                                )
-                            ).scalar_one_or_none()
-                            if not existing_pgr:
-                                session.add(
-                                    PageGroupRestriction(
-                                        page_id=target_page.id,
-                                        group_id=grp.id,
-                                        permission=perm_enum,
+                                ).scalar_one_or_none()
+                                if not existing_pgr:
+                                    session.add(
+                                        PageGroupRestriction(
+                                            page_id=target_page.id,
+                                            group_id=grp.id,
+                                            permission=perm_enum,
+                                        )
                                     )
-                                )
 
                 # Confluence exports can contain several top-level pages. In
                 # WikiHub every imported space has one stable home page so the
