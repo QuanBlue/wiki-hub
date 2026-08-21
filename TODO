@@ -1,9 +1,3 @@
-1. Trong trang upload file confluence có phần tính hash để nếu up file trùng với file đã tồn tại thì sẽ không upload lại, mà chỉ hiển thị thông báo rằng file đã tồn tại. Điều này giúp tiết kiệm dung lượng lưu trữ và tránh việc trùng lặp dữ liệu.
-   Nhưng có 2 vấn đề: 
-   - Việc tính hash file đó trước khi upload làm x2 thời gian upload, đặc biệt là với các file lớn. Việc này có thể gây ra trải nghiệm người dùng không tốt vì thời gian chờ đợi lâu hơn.
-   - Lúc upload file sau thì tính hash giải quyết bài toán không up trùng file lên s3 nhưng việc tính hash quá lâu, tương đương up file
-   -> Giải quyết cái này
-
 
 
 7. Trang 1 Thông tin chung - File list hiển thị sai

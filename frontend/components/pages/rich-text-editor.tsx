@@ -2488,7 +2488,7 @@ function AttachmentTile({
 
   const scheduleToolsHide = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = setTimeout(() => setHovered(false), 250);
+    hideTimerRef.current = setTimeout(() => setHovered(false), 50);
   }, []);
 
   useEffect(() => {
@@ -3862,7 +3862,7 @@ function LinkFloatingToolbar({
       if (!isHoveredRef.current) {
         setPosition(null);
       }
-    }, 250);
+    }, 60);
   }, []);
 
   const updateFromSelection = useCallback(() => {
