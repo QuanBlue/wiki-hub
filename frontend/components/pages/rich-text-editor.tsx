@@ -4331,8 +4331,9 @@ function RichTextToolbar({
     };
   }, [openLinkDialog]);
 
-  function saveLink(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function saveLink(event?: React.FormEvent<HTMLFormElement> | React.MouseEvent) {
+    event?.preventDefault();
+    event?.stopPropagation();
     if (!editor) return;
 
     let href = linkUrl.trim();
@@ -4453,8 +4454,11 @@ function RichTextToolbar({
     setSubpageOpen(true);
   }, [editor, pageLinkContext]);
 
-  async function submitSubpage(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submitSubpage(
+    event?: React.FormEvent<HTMLFormElement> | React.MouseEvent,
+  ) {
+    event?.preventDefault();
+    event?.stopPropagation();
     if (!editor || !pageLinkContext) return;
     const trimmedTitle = subpageTitle.trim();
     if (!trimmedTitle) return;
@@ -4961,7 +4965,15 @@ function RichTextToolbar({
           title={linkUrl ? "Edit link" : "Insert link"}
           className="max-w-xl"
         >
-          <form onSubmit={saveLink} className="space-y-4" noValidate>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              saveLink(e);
+            }}
+            className="space-y-4"
+            noValidate
+          >
             <div className="space-y-1.5">
               <label htmlFor="link-url" className="text-sm font-medium">
                 Url
@@ -5020,7 +5032,11 @@ function RichTextToolbar({
               >
                 Cancel
               </Button>
-              <Button type="submit" variant="primary">
+              <Button
+                type="submit"
+                variant="primary"
+                onClick={(e) => e.stopPropagation()}
+              >
                 Save
               </Button>
             </DialogFooter>
@@ -5101,7 +5117,15 @@ function RichTextToolbar({
           title="Create sub-page"
           description="Creates a page under this one and takes you there - save this page first if you have unsaved changes you want to keep."
         >
-          <form onSubmit={submitSubpage} className="space-y-4" noValidate>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void submitSubpage(e);
+            }}
+            className="space-y-4"
+            noValidate
+          >
             <div className="space-y-1.5">
               <Label htmlFor="slash-subpage-title">Title</Label>
               <Input
@@ -5126,6 +5150,7 @@ function RichTextToolbar({
               <Button
                 type="submit"
                 variant="primary"
+                onClick={(e) => e.stopPropagation()}
                 disabled={subpagePending || !subpageTitle.trim()}
               >
                 {subpagePending ? (
