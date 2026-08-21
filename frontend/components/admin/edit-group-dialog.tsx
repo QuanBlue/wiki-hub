@@ -65,6 +65,7 @@ function SearchableUserPicker({
   disabled,
   placeholder,
   addedUserIds,
+  side = "bottom",
 }: {
   users: User[];
   value: string;
@@ -72,6 +73,7 @@ function SearchableUserPicker({
   disabled?: boolean;
   placeholder: string;
   addedUserIds?: Set<string> | string[];
+  side?: "top" | "bottom";
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -125,7 +127,12 @@ function SearchableUserPicker({
       </button>
 
       {open && !disabled ? (
-        <div className="absolute top-full left-0 mt-1 w-full z-50 bg-surface text-foreground border border-border rounded-md shadow-xl p-1.5 space-y-1.5 min-w-64">
+        <div
+          className={cn(
+            "absolute left-0 w-full z-50 bg-surface text-foreground border border-border rounded-md shadow-xl p-1.5 space-y-1.5 min-w-64",
+            side === "top" ? "bottom-full mb-1" : "top-full mt-1",
+          )}
+        >
           <div className="relative">
             <Search className="absolute top-1/2 left-2.5 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
             <input
@@ -497,7 +504,7 @@ export function EditGroupDialog({
         <div className="mt-4 h-[380px] min-h-[380px]">
           {/* Tab 1: General Details */}
           {activeTab === "details" ? (
-            <div className="space-y-4 pr-1 h-full overflow-y-auto overflow-x-visible pb-2">
+            <div className="space-y-4 pr-1 h-full overflow-visible pb-2">
               {/* Group Name & Description Section */}
               <div className="grid grid-cols-1 gap-3.5 bg-surface-sunken/40 border border-border p-3.5 rounded-lg">
                 <div className="space-y-1">
@@ -581,6 +588,7 @@ export function EditGroupDialog({
                       value=""
                       onChange={handleAddOwner}
                       disabled={pending}
+                      side="top"
                       placeholder="+ Add another owner..."
                     />
                   </div>
