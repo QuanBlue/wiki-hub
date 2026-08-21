@@ -102,7 +102,7 @@ export function EditGroupDialog({
 
   if (!group) return null;
 
-  // Change detection for Tab 1 (General Details)
+  // Change detection for General Details
   const isNameChanged = name.trim() !== group.name;
   const isDescChanged = description.trim() !== (group.description || "");
   const initialOwnerIds = group.owner_id ? [group.owner_id] : [];
@@ -125,9 +125,12 @@ export function EditGroupDialog({
     setOwnerIds((current) => current.filter((id) => id !== userId));
   }
 
-  async function handleSaveDetails(event: React.FormEvent) {
-    event.preventDefault();
-    if (!name.trim() || ownerIds.length === 0 || !group || !hasChanges) return;
+  async function handleSaveDetails() {
+    if (!name.trim() || ownerIds.length === 0 || !group) return;
+    if (!hasChanges) {
+      onOpenChange(false);
+      return;
+    }
     setPending(true);
     setError(null);
     try {
@@ -152,6 +155,7 @@ export function EditGroupDialog({
         onGroupUpdated(updated);
       }
       toast.success("Group details updated.");
+      onOpenChange(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not update group details.");
     } finally {
@@ -283,97 +287,77 @@ export function EditGroupDialog({
         ) : null}
 
         {/* Tab Content Container with Fixed Height */}
-        <div className="mt-4 h-[380px] min-h-[380px] flex flex-col justify-between">
+        <div className="mt-4 h-[340px] min-h-[340px] overflow-y-auto">
           {/* Tab 1: General Details */}
           {activeTab === "details" ? (
-            <form onSubmit={handleSaveDetails} className="space-y-4 flex-1 flex flex-col justify-between">
-              <div className="space-y-4 overflow-y-auto max-h-[300px] pr-1">
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-group-name">Group name</Label>
-                  <Input
-                    id="edit-group-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    disabled={pending}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-group-description">Description</Label>
-                  <Input
-                    id="edit-group-description"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Description of group purpose"
-                    disabled={pending}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Group owners</Label>
-                  <div className="border border-border rounded-lg p-2.5 bg-surface space-y-2">
-                    <div className="flex flex-wrap gap-1.5 min-h-8 items-center">
-                      {ownerIds.map((id) => {
-                        const u = users.find((user) => user.id === id);
-                        return (
-                          <Badge key={id} variant="info" className="flex items-center gap-1.5 py-1 px-2.5 text-xs font-medium">
-                            <span>{u?.full_name || u?.username || id}</span>
-                            {ownerIds.length > 1 ? (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveOwner(id)}
-                                className="hover:text-danger text-muted-foreground ml-0.5 cursor-pointer rounded-xs"
-                                title="Remove owner"
-                                disabled={pending}
-                              >
-                                <X className="size-3" />
-                              </button>
-                            ) : null}
-                          </Badge>
-                        );
-                      })}
-                    </div>
-
-                    {availableOwners.length > 0 ? (
-                      <Select value="" onValueChange={handleAddOwner} disabled={pending}>
-                        <SelectTrigger className="w-full text-xs h-8">
-                          <SelectValue placeholder="+ Add owner..." />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-60 overflow-y-auto">
-                          {availableOwners.map((u) => (
-                            <SelectItem key={u.id} value={u.id}>
-                              {u.full_name || u.username} (@{u.username})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : null}
+            <div className="space-y-4 pr-1">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-group-name">Group name</Label>
+                <Input
+                  id="edit-group-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  disabled={pending}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-group-description">Description</Label>
+                <Input
+                  id="edit-group-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Description of group purpose"
+                  disabled={pending}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Group owners</Label>
+                <div className="border border-border rounded-lg p-2.5 bg-surface space-y-2">
+                  <div className="flex flex-wrap gap-1.5 min-h-8 items-center">
+                    {ownerIds.map((id) => {
+                      const u = users.find((user) => user.id === id);
+                      return (
+                        <Badge key={id} variant="info" className="flex items-center gap-1.5 py-1 px-2.5 text-xs font-medium">
+                          <span>{u?.full_name || u?.username || id}</span>
+                          {ownerIds.length > 1 ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveOwner(id)}
+                              className="hover:text-danger text-muted-foreground ml-0.5 cursor-pointer rounded-xs"
+                              title="Remove owner"
+                              disabled={pending}
+                            >
+                              <X className="size-3" />
+                            </button>
+                          ) : null}
+                        </Badge>
+                      );
+                    })}
                   </div>
+
+                  {availableOwners.length > 0 ? (
+                    <Select value="" onValueChange={handleAddOwner} disabled={pending}>
+                      <SelectTrigger className="w-full text-xs h-8">
+                        <SelectValue placeholder="+ Add owner..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60 overflow-y-auto">
+                        {availableOwners.map((u) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.full_name || u.username} (@{u.username})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
                 </div>
               </div>
-              <DialogFooter className="pt-4 border-t border-border">
-                <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant={hasChanges ? "primary" : "secondary"}
-                  disabled={!hasChanges || !name.trim() || ownerIds.length === 0 || pending}
-                  className={cn(
-                    hasChanges
-                      ? "bg-primary text-primary-foreground font-medium shadow-sm hover:bg-primary-hover"
-                      : "opacity-50 cursor-not-allowed",
-                  )}
-                >
-                  {pending ? <Loader2 className="animate-spin" /> : null}
-                  Save changes
-                </Button>
-              </DialogFooter>
-            </form>
+            </div>
           ) : null}
 
           {/* Tab 2: Members */}
           {activeTab === "members" ? (
-            <div className="space-y-4 flex-1 flex flex-col min-h-0">
+            <div className="space-y-4 flex flex-col h-full min-h-0">
               {/* Add member section */}
               <div className="border-border bg-surface-sunken flex flex-wrap items-center gap-2 rounded-lg border p-3 shrink-0">
                 <Select value={memberIdToAdd} onValueChange={setMemberIdToAdd} disabled={availableUsersToAdd.length === 0}>
@@ -453,7 +437,7 @@ export function EditGroupDialog({
 
           {/* Tab 3: Global Permissions (Table Format) */}
           {activeTab === "permissions" ? (
-            <div className="space-y-3 flex-1 flex flex-col min-h-0">
+            <div className="space-y-3 flex flex-col h-full min-h-0">
               <p className="text-xs text-muted-foreground shrink-0">
                 Configure workspace-wide administrative permissions granted to members of this group.
               </p>
@@ -494,6 +478,27 @@ export function EditGroupDialog({
             </div>
           ) : null}
         </div>
+
+        {/* Global Dialog Footer Visible across ALL Tabs */}
+        <DialogFooter className="pt-4 border-t border-border mt-3">
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void handleSaveDetails()}
+            variant={hasChanges ? "primary" : "secondary"}
+            disabled={!hasChanges || !name.trim() || ownerIds.length === 0 || pending}
+            className={cn(
+              hasChanges
+                ? "bg-primary text-primary-foreground font-medium shadow-sm hover:bg-primary-hover"
+                : "opacity-50 cursor-not-allowed",
+            )}
+          >
+            {pending ? <Loader2 className="animate-spin" /> : null}
+            Save changes
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
