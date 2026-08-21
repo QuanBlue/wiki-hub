@@ -100,6 +100,7 @@ import {
   Download,
   Loader2,
   Search,
+  LayoutGrid,
 } from "lucide-react";
 import {
   useCallback,
@@ -2459,10 +2460,22 @@ function attachmentIcon(filename: string) {
  * modal find their target with `closest("a")`, so the tile inherits that
  * behaviour in the editor and on a saved page alike.
  */
-function AttachmentTile({ node, getPos, selected, editor }: NodeViewProps) {
+function AttachmentTile({
+  node,
+  getPos,
+  selected,
+  editor,
+  updateAttributes,
+  deleteNode,
+}: NodeViewProps) {
   const filename = String(node.attrs.filename ?? "attachment");
   const href = String(node.attrs.href ?? "");
+  const displayMode = String(node.attrs.displayMode ?? "card");
+  const [hovered, setHovered] = useState(false);
   const icon = attachmentIcon(filename);
+
+  const isCard = displayMode !== "link";
+  const showToolbar = editor.isEditable && (selected || hovered);
 
   // Same machinery images use. Tiptap's node view hides dragstart from
   // ProseMirror, so the editor's own handleDrop has to be told which node is
@@ -2488,13 +2501,154 @@ function AttachmentTile({ node, getPos, selected, editor }: NodeViewProps) {
     );
   }
 
+  function handleOpenDetails(e?: React.MouseEvent) {
+    e?.preventDefault();
+    e?.stopPropagation();
+    const match = href.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i)?.[1];
+    if (match) {
+      const event = new CustomEvent("wikihub:open-attachment-modal", {
+        bubbles: true,
+        detail: { attachmentId: match },
+      });
+      window.dispatchEvent(event);
+    }
+  }
+
+  const floatingToolbar = showToolbar ? (
+    <div
+      className={cn(
+        "absolute z-40 flex items-center gap-1 rounded-lg border border-border bg-surface-raised p-1 shadow-lg text-xs whitespace-nowrap animate-in fade-in zoom-in-95 duration-100 select-none",
+        isCard ? "-top-10 left-1/2 -translate-x-1/2" : "-top-9 left-0",
+      )}
+      contentEditable={false}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center rounded-md bg-surface-sunken/80 p-0.5 border border-border/50">
+        <button
+          type="button"
+          onClick={() => updateAttributes({ displayMode: "card" })}
+          className={cn(
+            "px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer",
+            isCard
+              ? "bg-primary text-primary-foreground shadow-2xs"
+              : "text-muted-foreground hover:text-foreground hover:bg-surface-raised",
+          )}
+          title="Display as Card"
+        >
+          <LayoutGrid className="size-3" />
+          <span>Card</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => updateAttributes({ displayMode: "link" })}
+          className={cn(
+            "px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer",
+            !isCard
+              ? "bg-primary text-primary-foreground shadow-2xs"
+              : "text-muted-foreground hover:text-foreground hover:bg-surface-raised",
+          )}
+          title="Display as Link"
+        >
+          <Link2 className="size-3" />
+          <span>Link</span>
+        </button>
+      </div>
+
+      <div className="h-3.5 w-px bg-border mx-0.5" />
+
+      <button
+        type="button"
+        onClick={handleOpenDetails}
+        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors cursor-pointer"
+        title="View file details and preview"
+      >
+        <Info className="size-3.5" />
+      </button>
+
+      <a
+        href={href}
+        download={filename}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors flex items-center justify-center cursor-pointer"
+        title="Download file"
+      >
+        <Download className="size-3.5" />
+      </a>
+
+      <button
+        type="button"
+        onClick={() => deleteNode()}
+        className="p-1 rounded text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+        title="Remove attachment"
+      >
+        <Trash2 className="size-3.5" />
+      </button>
+    </div>
+  ) : null;
+
+  if (!isCard) {
+    return (
+      <NodeViewWrapper
+        as="span"
+        className="relative inline-block align-baseline mr-1.5 my-0.5"
+        onDragStartCapture={beginMove}
+        onDragEndCapture={endMove}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        {floatingToolbar}
+        <a
+          href={editor.isEditable ? undefined : href}
+          data-attachment-href={href}
+          data-display-mode="link"
+          title={filename}
+          target="_self"
+          role={editor.isEditable ? "button" : undefined}
+          tabIndex={editor.isEditable ? 0 : undefined}
+          onClick={(e) => {
+            if (editor.isEditable) {
+              e.preventDefault();
+            }
+          }}
+          onKeyDown={(event) => {
+            if (!editor.isEditable) return;
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              event.currentTarget.click();
+            }
+          }}
+          contentEditable={false}
+          draggable={editor.isEditable}
+          className={cn(
+            "attachment-link inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-border bg-surface-raised text-primary text-xs font-medium !no-underline shadow-2xs hover:bg-surface-sunken hover:border-primary/50 transition-colors align-baseline",
+            editor.isEditable
+              ? "cursor-grab active:cursor-grabbing"
+              : "cursor-pointer",
+            selected && "border-primary ring-primary/40 ring-2",
+          )}
+        >
+          <span className="text-muted-foreground shrink-0 size-3.5 flex items-center justify-center">
+            <Paperclip className="size-3" />
+          </span>
+          <span className="truncate max-w-[260px]">{filename}</span>
+        </a>
+      </NodeViewWrapper>
+    );
+  }
+
   return (
     <NodeViewWrapper
       as="span"
-      className="mr-2 mb-2 inline-block align-top"
+      className="relative mr-2 mb-2 inline-block align-top"
       onDragStartCapture={beginMove}
       onDragEndCapture={endMove}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
+      {floatingToolbar}
       <a
         // No href while editing. Preventing the click's default is not enough
         // to stop the browser following an attachment link here - it starts
@@ -2506,6 +2660,7 @@ function AttachmentTile({ node, getPos, selected, editor }: NodeViewProps) {
         // from the data attribute instead.
         href={editor.isEditable ? undefined : href}
         data-attachment-href={href}
+        data-display-mode="card"
         title={filename}
         // Attachment links are intercepted and opened in a modal, so they must
         // never be given target="_blank".
@@ -2515,6 +2670,11 @@ function AttachmentTile({ node, getPos, selected, editor }: NodeViewProps) {
         // its own keys.
         role={editor.isEditable ? "button" : undefined}
         tabIndex={editor.isEditable ? 0 : undefined}
+        onClick={(e) => {
+          if (editor.isEditable) {
+            e.preventDefault();
+          }
+        }}
         onKeyDown={(event) => {
           if (!editor.isEditable) return;
           if (event.key === "Enter" || event.key === " ") {
@@ -2563,6 +2723,12 @@ const AttachmentNode = TiptapNode.create({
           element.textContent?.trim() ||
           "attachment",
       },
+      displayMode: {
+        default: "card",
+        parseHTML: (element) =>
+          element.getAttribute("data-display-mode") ||
+          (element.classList.contains("attachment-link") ? "link" : "card"),
+      },
     };
   },
 
@@ -2570,7 +2736,23 @@ const AttachmentNode = TiptapNode.create({
     // Priority has to clear the Link mark's, or an attachment would be parsed
     // as ordinary linked text before this rule is ever consulted.
     return [
-      { tag: "a[data-attachment]", priority: 1100 },
+      {
+        tag: "a[data-attachment]",
+        priority: 1100,
+        getAttrs: (element) => {
+          const el = element as HTMLElement;
+          return {
+            href: el.getAttribute("href"),
+            filename:
+              el.getAttribute("data-attachment") ||
+              el.textContent?.trim() ||
+              "attachment",
+            displayMode:
+              el.getAttribute("data-display-mode") ||
+              (el.classList.contains("attachment-link") ? "link" : "card"),
+          };
+        },
+      },
       {
         // Pages written before this node existed - and everything imported
         // from Confluence, whose view-file macro becomes a bare <a> - carry no
@@ -2580,10 +2762,18 @@ const AttachmentNode = TiptapNode.create({
         tag: "a[href]",
         priority: 1100,
         getAttrs: (element) => {
-          const href = element.getAttribute("href") ?? "";
+          const el = element as HTMLElement;
+          const href = el.getAttribute("href") ?? "";
           if (!ATTACHMENT_HREF.test(href)) return false;
-          const text = element.textContent?.trim() ?? "";
-          return FILENAME_EXTENSION.test(text) ? null : false;
+          const text = el.textContent?.trim() ?? "";
+          if (!FILENAME_EXTENSION.test(text)) return false;
+          return {
+            href,
+            filename: text,
+            displayMode: el.classList.contains("attachment-link")
+              ? "link"
+              : "card",
+          };
         },
       },
     ];
@@ -2591,6 +2781,7 @@ const AttachmentNode = TiptapNode.create({
 
   renderHTML({ node }) {
     const filename = String(node.attrs.filename ?? "attachment");
+    const displayMode = String(node.attrs.displayMode ?? "card");
     return [
       "a",
       mergeAttributes({
@@ -2598,6 +2789,11 @@ const AttachmentNode = TiptapNode.create({
         title: filename,
         target: "_self",
         "data-attachment": filename,
+        "data-display-mode": displayMode,
+        class:
+          displayMode === "link"
+            ? "attachment-link inline-flex items-center gap-1 text-primary hover:underline font-medium text-xs align-baseline"
+            : undefined,
       }),
       filename,
     ];
@@ -4817,7 +5013,22 @@ export function RichTextEditor({
       "wikihub:internal-node-drag-end",
       onInternalNodeDragEnd,
     );
+    const onOpenAttachmentModal = (event: Event) => {
+      const customEvt = event as CustomEvent<{ attachmentId?: string }>;
+      if (customEvt.detail?.attachmentId) {
+        setSelectedAttachmentId(customEvt.detail.attachmentId);
+      }
+    };
+    window.addEventListener(
+      "wikihub:open-attachment-modal",
+      onOpenAttachmentModal,
+    );
+
     return () => {
+      window.removeEventListener(
+        "wikihub:open-attachment-modal",
+        onOpenAttachmentModal,
+      );
       container.removeEventListener("dragenter", onDragEnter, true);
       container.removeEventListener("dragover", onDragOver, true);
       container.removeEventListener("dragleave", onDragLeave, true);
@@ -4951,9 +5162,24 @@ export function RichTextContent({ content }: { content: string }) {
       }
     };
 
+    const onOpenAttachmentModal = (event: Event) => {
+      const customEvt = event as CustomEvent<{ attachmentId?: string }>;
+      if (customEvt.detail?.attachmentId) {
+        setSelectedAttachmentId(customEvt.detail.attachmentId);
+      }
+    };
+    window.addEventListener(
+      "wikihub:open-attachment-modal",
+      onOpenAttachmentModal,
+    );
+
     container.addEventListener("mousedown", handleMouseDown, true);
     container.addEventListener("click", handleClick, true);
     return () => {
+      window.removeEventListener(
+        "wikihub:open-attachment-modal",
+        onOpenAttachmentModal,
+      );
       container.removeEventListener("mousedown", handleMouseDown, true);
       container.removeEventListener("click", handleClick, true);
     };
