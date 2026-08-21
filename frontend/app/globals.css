@@ -13,6 +13,10 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  /* --- typography tokens --- */
+  --font-mono: var(--font-jetbrains-mono), "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-page: var(--wh-page-font, var(--font-inter));
+
   /* --- neutral ramp (slightly cool grey) --- */
   --wh-neutral-0: #ffffff;
   --wh-neutral-50: #f7f8fa;
@@ -187,6 +191,7 @@
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
 
+  --font-page: var(--wh-space-page-font, var(--wh-page-font, var(--font-inter, sans-serif)));
   --font-sans:
     var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     sans-serif;
@@ -604,5 +609,68 @@
   .wikihub-reader a:not([data-attachment]):hover {
     color: var(--primary-hover);
     text-decoration-color: var(--primary-hover);
+  }
+
+  /* Dynamic page typography for page title, overview, reader, and editor prose */
+  .wikihub-page-content,
+  .wikihub-page-content > h1,
+  .wikihub-page-content > h2,
+  .wikihub-page-content > h3,
+  .wikihub-page-content > h4,
+  .wikihub-page-content > p,
+  .wikihub-page-content > div > p,
+  .wikihub-page-header,
+  .wikihub-reader p,
+  .wikihub-reader h1,
+  .wikihub-reader h2,
+  .wikihub-reader h3,
+  .wikihub-reader h4,
+  .wikihub-reader li,
+  .wikihub-reader blockquote,
+  .wikihub-reader td,
+  .wikihub-reader th,
+  .wikihub-editor p,
+  .wikihub-editor h1,
+  .wikihub-editor h2,
+  .wikihub-editor h3,
+  .wikihub-editor h4,
+  .wikihub-editor li,
+  .wikihub-editor blockquote,
+  .wikihub-editor td,
+  .wikihub-editor th,
+  .ProseMirror p,
+  .ProseMirror h1,
+  .ProseMirror h2,
+  .ProseMirror h3,
+  .ProseMirror h4,
+  .ProseMirror li,
+  .ProseMirror blockquote,
+  .ProseMirror td,
+  .ProseMirror th {
+    font-family: var(--font-page);
+  }
+
+  /* Monospace font isolation for code blocks, inline code, and editors */
+  pre,
+  pre *,
+  code,
+  code *,
+  kbd,
+  samp,
+  .hljs,
+  .hljs *,
+  .wikihub-code,
+  .wikihub-code *,
+  .wikihub-code-block,
+  .wikihub-code-block *,
+  .source-code-editor-host,
+  .source-code-editor-host *,
+  [data-node-view-wrapper] pre,
+  [data-node-view-wrapper] pre *,
+  [data-node-view-wrapper] code,
+  [data-node-view-wrapper] code *,
+  .cm-editor,
+  .cm-editor * {
+    font-family: var(--font-mono) !important;
   }
 }

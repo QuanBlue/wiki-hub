@@ -28,12 +28,16 @@ function makeQueryClient() {
 
 export function Providers({
   children,
+  initialSiteName,
   initialThemeColor,
+  initialDefaultFont,
   initialLogoIcon,
   initialCustomLogoUrl,
 }: {
   children: React.ReactNode;
+  initialSiteName?: string;
   initialThemeColor?: string;
+  initialDefaultFont?: string;
   initialLogoIcon?: string;
   initialCustomLogoUrl?: string | null;
 }) {
@@ -51,7 +55,9 @@ export function Providers({
         disableTransitionOnChange
       >
         <ThemeColorProvider
+          initialSiteName={initialSiteName}
           initialThemeColor={initialThemeColor}
+          initialDefaultFont={initialDefaultFont}
           initialLogoIcon={initialLogoIcon}
           initialCustomLogoUrl={initialCustomLogoUrl}
         >

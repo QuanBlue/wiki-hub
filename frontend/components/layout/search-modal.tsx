@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { useThemeSettings } from "@/components/theme-color-provider";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { SearchResultPage, SearchResultSpace, SearchResults } from "@/types/api";
@@ -47,6 +48,8 @@ export function SearchModal({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const themeSettings = useThemeSettings();
+  const siteName = themeSettings?.siteName || "WikiHub";
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
   const [loading, setLoading] = useState(false);
@@ -66,52 +69,49 @@ export function SearchModal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onOpenChange]);
 
-  // Focus input when dialog opens & reset search state on close
+  // Focus input on modal open
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset transient dialog state when it closes
       setQuery("");
       setResults(null);
       setSelectedIndex(0);
-      itemRefs.current = [];
     }
   }, [open]);
 
-  // Auto scroll selected item into view on keyboard navigation
+  // Scroll selected item into view
   useEffect(() => {
-    const el = itemRefs.current[selectedIndex];
-    if (el) {
-      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (itemRefs.current[selectedIndex]) {
+      itemRefs.current[selectedIndex]?.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
     }
   }, [selectedIndex]);
 
-  // Debounced search query fetching
+  // Debounced search query
   useEffect(() => {
-    const trimmed = query.trim();
-    if (!trimmed) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear results when the query becomes empty
+    if (!query.trim()) {
       setResults(null);
       setLoading(false);
       return;
     }
 
-    setLoading(true);
-    const timer = setTimeout(() => {
-      api
-        .get<SearchResults>(`/api/v1/search?q=${encodeURIComponent(trimmed)}&limit=20`)
-        .then((res) => {
-          setResults(res);
-          setSelectedIndex(0);
-        })
-        .catch(() => {
-          setResults({ query: trimmed, pages: [], spaces: [] });
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    }, 150);
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const data = await api.get<SearchResults>(
+          `/api/v1/search?q=${encodeURIComponent(query.trim())}`,
+        );
+        setResults(data);
+        setSelectedIndex(0);
+      } catch {
+        setResults({ query: query.trim(), spaces: [], pages: [] });
+      } finally {
+        setLoading(false);
+      }
+    }, 200);
 
     return () => clearTimeout(timer);
   }, [query]);
@@ -164,19 +164,11 @@ export function SearchModal({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay
-          className={cn(
-            "fixed inset-0 z-50 bg-black/50 backdrop-blur-xs",
-            "data-[state=open]:animate-in data-[state=closed]:animate-out",
-            "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
-          )}
-        />
+        <DialogPrimitive.Overlay className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50 backdrop-blur-xs" />
         <DialogPrimitive.Content
           className={cn(
-            "border-border bg-surface fixed top-[12vh] left-1/2 z-50 w-[calc(100vw-2rem)] max-w-2xl",
-            "-translate-x-1/2 rounded-xl border shadow-2xl outline-none",
-            "flex max-h-[75vh] flex-col overflow-hidden",
-            "data-[state=open]:animate-in data-[state=closed]:animate-out",
+            "border-border bg-surface fixed top-[18%] left-[50%] z-50 flex max-h-[70vh] w-full max-w-xl -translate-x-1/2 flex-col overflow-hidden rounded-xl border shadow-2xl outline-none duration-150",
+            "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
             "data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
           )}
           onKeyDown={handleKeyDown}
@@ -189,7 +181,7 @@ export function SearchModal({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search spaces, page titles, and content..."
+              placeholder={`Search ${siteName}...`}
               className="text-foreground placeholder:text-muted-foreground w-full bg-transparent text-base outline-none"
             />
             {query ? (
@@ -212,11 +204,11 @@ export function SearchModal({
             {loading ? (
               <div className="text-muted-foreground flex items-center justify-center py-12 text-sm">
                 <Loader2 className="mr-2 size-5 animate-spin text-primary" />
-                Searching WikiHub...
+                Searching {siteName}...
               </div>
             ) : !query.trim() ? (
               <div className="text-muted-foreground py-12 text-center text-sm">
-                <p className="font-medium text-foreground">Quick Search WikiHub</p>
+                <p className="font-medium text-foreground">Quick Search {siteName}</p>
                 <p className="mt-1 text-xs">
                   Type a space handle, page title, or keyword to find documentation instantly.
                 </p>

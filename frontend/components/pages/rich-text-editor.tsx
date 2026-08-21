@@ -3009,7 +3009,7 @@ export function linkifyPlainTextUrls(content: string): string {
 }
 
 const editorClassName =
-  "min-h-[calc(100vh-19rem)] px-5 py-4 text-sm leading-[1.45] outline-none " +
+  "wikihub-editor min-h-[calc(100vh-19rem)] px-5 py-4 text-sm leading-[1.45] outline-none " +
   "[&_p]:my-2 [&_p:first-child]:mt-0 " +
   "[&_p.is-editor-empty:first-child::before]:text-muted-foreground [&_p.is-editor-empty:first-child::before]:pointer-events-none [&_p.is-editor-empty:first-child::before]:float-left [&_p.is-editor-empty:first-child::before]:h-0 [&_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] " +
   "[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-tight " +
@@ -3043,7 +3043,7 @@ const editorClassName =
 // Keep this separate from editorClassName so editing remains comfortable while
 // imported Confluence pages retain their compact, scan-friendly rhythm.
 export const readerClassName =
-  "text-sm leading-[1.45] " +
+  "wikihub-reader text-sm leading-[1.45] " +
   "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 " +
   "[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-tight " +
   "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:leading-tight " +
@@ -3885,7 +3885,12 @@ function LinkFloatingToolbar({
     }
 
     const { from, to } = editor.state.selection;
-    const coords = editor.view.coordsAtPos(from);
+    let coords: { left: number; bottom: number } | null = null;
+    try {
+      coords = editor.view.coordsAtPos(from);
+    } catch {
+      coords = null;
+    }
     if (!coords) return;
 
     const text =
@@ -5622,7 +5627,10 @@ export function RichTextContent({ content }: { content: string }) {
   }, []);
 
   return (
-    <div ref={editorContainerRef} className="relative">
+    <div
+      ref={editorContainerRef}
+      className="relative wikihub-reader wikihub-page-content"
+    >
       <EditorContent editor={editor} />
       <AttachmentDetailsModal
         // Keying on the attachment makes each one a fresh mount, so the modal

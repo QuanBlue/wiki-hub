@@ -83,6 +83,7 @@ class SpaceService:
             name=space.name,
             description=space.description,
             icon=space.icon,
+            font_family=space.font_family,
             status=space.status,
             visibility=space.visibility,
             created_at=space.created_at,
@@ -165,6 +166,7 @@ class SpaceService:
             name=payload.name.strip(),
             description=payload.description.strip(),
             icon=payload.icon.strip(),
+            font_family=payload.font_family.strip().lower() if payload.font_family else None,
             status=SpaceStatus.active,
             visibility=payload.visibility,
             created_by_id=creator.id,
@@ -210,6 +212,9 @@ class SpaceService:
             space.description = str(data["description"]).strip()
         if data.get("icon") is not None:
             space.icon = str(data["icon"]).strip()
+        if "font_family" in data:
+            val = data["font_family"]
+            space.font_family = str(val).strip().lower() if val else None
         if data.get("status") is not None:
             space.status = SpaceStatus(data["status"])
         if data.get("visibility") is not None:

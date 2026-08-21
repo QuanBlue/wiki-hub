@@ -76,6 +76,7 @@ import {
   savePageDraft,
 } from "@/lib/drafts";
 import { findHomePage } from "@/lib/home-page";
+import { getFontFamilyCss } from "@/lib/font-presets";
 import { cn } from "@/lib/utils";
 import type {
   PageContentFormat,
@@ -1874,6 +1875,15 @@ export function SpaceWorkspace({
       <main
         ref={mainContainerRef}
         className="max-w-full min-w-0 flex-1 overflow-x-hidden md:h-full md:overflow-y-auto md:overscroll-contain"
+        style={
+          space.font_family &&
+          space.font_family !== "inherit" &&
+          space.font_family !== "default"
+            ? ({
+                "--wh-space-page-font": getFontFamilyCss(space.font_family),
+              } as CSSProperties)
+            : undefined
+        }
       >
         <div
           className={cn(
@@ -2386,7 +2396,7 @@ export function SpaceWorkspace({
 
           <article
             className={cn(
-              "mt-4",
+              "mt-4 wikihub-page-content",
               !editing &&
                 !overviewEditing &&
                 !viewFullWidth &&
@@ -2395,7 +2405,7 @@ export function SpaceWorkspace({
           >
             {overviewEditing ? (
               <>
-                <h1 className="text-foreground text-3xl font-semibold tracking-normal">
+                <h1 className="text-foreground text-3xl font-semibold tracking-normal wikihub-page-header">
                   {space.name}
                 </h1>
                 <div className="mt-6 min-w-0">
@@ -2415,7 +2425,7 @@ export function SpaceWorkspace({
                 className="space-y-5"
                 noValidate
               >
-                <h1 className="text-foreground text-3xl font-semibold tracking-normal">
+                <h1 className="text-foreground text-3xl font-semibold tracking-normal wikihub-page-header">
                   {currentPage.title}
                 </h1>
                 <div
@@ -2641,7 +2651,7 @@ export function SpaceWorkspace({
               </form>
             ) : (
               <>
-                <h1 className="text-foreground text-3xl font-semibold tracking-normal">
+                <h1 className="text-foreground text-3xl font-semibold tracking-normal wikihub-page-header">
                   {title}
                 </h1>
                 <p className="text-muted-foreground mt-2 text-xs">

@@ -200,16 +200,20 @@ export function LogoMark({
 }
 
 export function Wordmark({
-  siteName,
+  siteName: propSiteName,
   className,
   icon,
   customLogoUrl,
 }: {
-  siteName: string;
+  siteName?: string;
   className?: string;
   icon?: string;
   customLogoUrl?: string | null;
 }) {
+  const settings = useThemeSettings();
+  const effectiveSiteName =
+    settings?.siteName || propSiteName || "WikiHub";
+
   return (
     <span
       className={cn(
@@ -218,7 +222,7 @@ export function Wordmark({
       )}
     >
       <LogoMark icon={icon} customLogoUrl={customLogoUrl} />
-      {siteName}
+      {effectiveSiteName}
     </span>
   );
 }

@@ -1,11 +1,26 @@
 import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import {
+  Inter,
+  Roboto,
+  Open_Sans,
+  Plus_Jakarta_Sans,
+  Outfit,
+  Montserrat,
+  Source_Sans_3,
+  Nunito,
+  Poppins,
+  Lora,
+  Merriweather,
+  Playfair_Display,
+  JetBrains_Mono,
+} from "next/font/google";
 import Script from "next/script";
 import type { CSSProperties } from "react";
 
 import { Providers } from "@/components/providers";
 import { SITE_NAME } from "@/lib/env";
+import { getFontFamilyCss } from "@/lib/font-presets";
 import { serverGet } from "@/lib/server-api";
 import {
   generateFaviconSvg,
@@ -23,11 +38,96 @@ const inter = Inter({
   display: "swap",
 });
 
+const roboto = Roboto({
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+  variable: "--font-roboto",
+  display: "swap",
+});
+
+const openSans = Open_Sans({
+  subsets: ["latin"],
+  variable: "--font-open-sans",
+  display: "swap",
+});
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-plus-jakarta-sans",
+  display: "swap",
+});
+
+const outfit = Outfit({
+  subsets: ["latin"],
+  variable: "--font-outfit",
+  display: "swap",
+});
+
+const montserrat = Montserrat({
+  subsets: ["latin"],
+  variable: "--font-montserrat",
+  display: "swap",
+});
+
+const sourceSans3 = Source_Sans_3({
+  subsets: ["latin"],
+  variable: "--font-source-sans-3",
+  display: "swap",
+});
+
+const nunito = Nunito({
+  subsets: ["latin"],
+  variable: "--font-nunito",
+  display: "swap",
+});
+
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-poppins",
+  display: "swap",
+});
+
+const lora = Lora({
+  subsets: ["latin"],
+  variable: "--font-lora",
+  display: "swap",
+});
+
+const merriweather = Merriweather({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-merriweather",
+  display: "swap",
+});
+
+const playfairDisplay = Playfair_Display({
+  subsets: ["latin"],
+  variable: "--font-playfair-display",
+  display: "swap",
+});
+
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-jetbrains-mono",
   display: "swap",
 });
+
+const fontClasses = [
+  inter.variable,
+  roboto.variable,
+  openSans.variable,
+  plusJakartaSans.variable,
+  outfit.variable,
+  montserrat.variable,
+  sourceSans3.variable,
+  nunito.variable,
+  poppins.variable,
+  lora.variable,
+  merriweather.variable,
+  playfairDisplay.variable,
+  jetbrainsMono.variable,
+].join(" ");
 
 export const metadata: Metadata = {
   title: {
@@ -47,7 +147,9 @@ const SIDEBAR_COLLAPSED_COOKIE = "wikihub_sidebar_collapsed";
 const SIDEBAR_WIDTH_COOKIE = "wikihub_sidebar_width";
 const SPACE_SIDEBAR_WIDTH_COOKIE = "wikihub_space_sidebar_width";
 const THEME_COLOR_COOKIE = "wikihub_theme_color";
+const DEFAULT_FONT_COOKIE = "wikihub_default_font";
 const LOGO_ICON_COOKIE = "wikihub_logo_icon";
+const SITE_NAME_COOKIE = "wikihub_site_name";
 
 function preferredWidth(
   value: string | undefined,
@@ -77,8 +179,12 @@ export default async function RootLayout({
     200,
   );
 
+  let initialSiteName =
+    preferenceCookies.get(SITE_NAME_COOKIE)?.value || SITE_NAME;
   let initialThemeColor =
     preferenceCookies.get(THEME_COLOR_COOKIE)?.value || "blue";
+  let initialDefaultFont =
+    preferenceCookies.get(DEFAULT_FONT_COOKIE)?.value || "inter";
   let initialLogoIcon =
     preferenceCookies.get(LOGO_ICON_COOKIE)?.value || "default";
   let initialCustomLogoUrl: string | null = null;
@@ -86,7 +192,9 @@ export default async function RootLayout({
   try {
     const meta = await serverGet<InstanceInfo>("/api/v1/meta");
     if (meta) {
+      if (meta.site_name) initialSiteName = meta.site_name;
       if (meta.theme_color) initialThemeColor = meta.theme_color;
+      if (meta.default_font) initialDefaultFont = meta.default_font;
       if (meta.logo_icon) initialLogoIcon = meta.logo_icon;
       if (meta.custom_logo_url !== undefined) {
         initialCustomLogoUrl = meta.custom_logo_url;
@@ -103,12 +211,15 @@ export default async function RootLayout({
     initialCustomLogoUrl ||
     `data:image/svg+xml,${encodeURIComponent(initialFaviconSvg)}`;
 
+  const initialFontCss = getFontFamilyCss(initialDefaultFont);
+
   return (
     <html
       lang="en"
       suppressHydrationWarning
       data-wh-sidebar-collapsed={String(sidebarCollapsed)}
       data-wh-sidebar-hydrated="false"
+      className={fontClasses}
       style={
         {
           "--wh-preloaded-sidebar-width": `${appSidebarWidth}px`,
@@ -122,6 +233,16 @@ export default async function RootLayout({
           rel="icon"
           type={initialCustomLogoUrl ? "image/png" : "image/svg+xml"}
           href={initialFaviconHref}
+        />
+        <style
+          id="wh-preloaded-font-vars"
+          dangerouslySetInnerHTML={{
+            __html: `
+              :root {
+                --wh-page-font: ${initialFontCss};
+              }
+            `,
+          }}
         />
         {initialThemeColor !== "blue" ? (
           <style
@@ -157,10 +278,7 @@ export default async function RootLayout({
           />
         ) : null}
       </head>
-      <body
-        className={`${inter.variable} ${jetbrainsMono.variable}`}
-        suppressHydrationWarning
-      >
+      <body className={fontClasses} suppressHydrationWarning>
         <Script
           src="/remove-extension-hydration-markers.js"
           id="remove-extension-hydration-markers-external"
@@ -172,7 +290,9 @@ export default async function RootLayout({
           strategy="beforeInteractive"
         />
         <Providers
+          initialSiteName={initialSiteName}
           initialThemeColor={initialThemeColor}
+          initialDefaultFont={initialDefaultFont}
           initialLogoIcon={initialLogoIcon}
           initialCustomLogoUrl={initialCustomLogoUrl}
         >

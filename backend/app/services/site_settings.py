@@ -38,6 +38,7 @@ logger = get_logger(__name__)
 AUDITED_FIELDS = (
     "site_name",
     "theme_color",
+    "default_font",
     "logo_icon",
     "custom_logo_url",
     "max_upload_size_mb",
@@ -94,6 +95,7 @@ class SiteSettingsService:
     def _effective(row: SiteSettings | None) -> EffectiveSettings:
         site_name = getattr(row, "site_name", None) or settings.site_name
         theme_color = getattr(row, "theme_color", None) or "blue"
+        default_font = getattr(row, "default_font", None) or "inter"
         logo_icon = getattr(row, "logo_icon", None) or "default"
         custom_logo_url = getattr(row, "custom_logo_url", None)
         max_mb = getattr(row, "max_upload_size_mb", None) or settings.max_upload_size_mb
@@ -113,6 +115,7 @@ class SiteSettingsService:
         return EffectiveSettings(
             site_name=site_name,
             theme_color=theme_color,
+            default_font=default_font,
             logo_icon=logo_icon,
             custom_logo_url=custom_logo_url,
             max_upload_size_mb=max_mb,

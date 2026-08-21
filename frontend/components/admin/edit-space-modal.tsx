@@ -3,10 +3,12 @@
 import {
   Archive,
   ArchiveRestore,
+  Check,
   Globe2,
   LockKeyhole,
   Plus,
   ShieldCheck,
+  SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -17,6 +19,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -44,7 +48,7 @@ const PERMISSIONS: [SpacePermission, string][] = [
   ["admin", "Admin"],
 ];
 
-type TabKey = "access" | "danger";
+type TabKey = "general" | "access" | "danger";
 
 function isDefaultGroup(g: Group) {
   return (
@@ -72,9 +76,12 @@ function EditSpaceModalContent({
   onSpaceUpdated?: () => void;
 }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabKey>("access");
+  const [activeTab, setActiveTab] = useState<TabKey>("general");
 
   // Initial & Draft States
+  const [initialName, setInitialName] = useState(space.name);
+  const [name, setName] = useState(space.name);
+
   const [initialVisibility, setInitialVisibility] = useState(space.visibility);
   const [visibility, setVisibility] = useState(space.visibility);
 
@@ -93,11 +100,13 @@ function EditSpaceModalContent({
   const [unsavedPromptOpen, setUnsavedPromptOpen] = useState(false);
 
   useEffect(() => {
+    setInitialName(space.name);
+    setName(space.name);
     setInitialVisibility(space.visibility);
     setVisibility(space.visibility);
-    setActiveTab("access");
+    setActiveTab("general");
     void loadSpacePermissions();
-  }, [space.key]);
+  }, [space.key, space.name, space.visibility]);
 
   async function loadSpacePermissions() {
     try {
@@ -120,7 +129,10 @@ function EditSpaceModalContent({
   }
 
   // Calculate if there are unsaved changes
-  const isVisibilityChanged = visibility !== initialVisibility;
+  const isGeneralChanged =
+    visibility !== initialVisibility ||
+    name.trim() !== initialName.trim();
+
   const isAssignmentsChanged = (() => {
     if (initialAssignments.length !== assignments.length) return true;
     const initialSet = new Set(
@@ -136,7 +148,7 @@ function EditSpaceModalContent({
     return false;
   })();
 
-  const hasChanges = isVisibilityChanged || isAssignmentsChanged;
+  const hasChanges = isGeneralChanged || isAssignmentsChanged;
 
   function handleAttemptClose() {
     if (hasChanges) {
@@ -149,12 +161,14 @@ function EditSpaceModalContent({
   async function handleSaveAll() {
     setPending(true);
     try {
-      // 1. Update visibility if changed
-      if (visibility !== initialVisibility) {
+      // 1. Update space properties if changed
+      if (isGeneralChanged) {
         await api.patch(`/api/v1/spaces/${encodeURIComponent(space.key)}`, {
+          name: name.trim() || space.name,
           visibility,
         });
         setInitialVisibility(visibility);
+        setInitialName(name);
       }
 
       // 2. Compute assignment diffs
@@ -420,6 +434,19 @@ function EditSpaceModalContent({
       <div className="border-border border-b flex gap-2 shrink-0">
         <button
           type="button"
+          onClick={() => setActiveTab("general")}
+          className={cn(
+            "flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium transition-colors cursor-pointer",
+            activeTab === "general"
+              ? "border-primary text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <SlidersHorizontal className="size-4" />
+          General
+        </button>
+        <button
+          type="button"
           onClick={() => setActiveTab("access")}
           className={cn(
             "flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium transition-colors cursor-pointer",
@@ -447,10 +474,60 @@ function EditSpaceModalContent({
       </div>
 
       {/* Tab Content Container - Only this area scrolls */}
-      <div className="flex-1 min-h-0 overflow-y-auto mt-4 pr-1">
+      <div className="flex-1 min-h-0 overflow-y-auto mt-4 px-1.5 py-1 -mx-1.5">
+        {/* Tab 0: General */}
+        {activeTab === "general" ? (
+          <div className="space-y-5">
+            {/* Space Name */}
+            <div className="space-y-1.5">
+              <Label htmlFor="space-name" className="text-xs font-semibold">
+                Space Name
+              </Label>
+              <Input
+                id="space-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={space.name}
+                className="text-sm"
+                disabled={pending}
+              />
+            </div>
+
+            {/* General Access Box */}
+            <div className="border-border bg-surface rounded-lg border p-3.5 shadow-xs flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  {visibility === "open" ? (
+                    <Globe2 className="size-3.5 text-primary" />
+                  ) : (
+                    <LockKeyhole className="size-3.5 text-muted-foreground" />
+                  )}
+                  General access
+                </h4>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Choose whether every signed-in user can view this Space.
+                </p>
+              </div>
+              <Select
+                value={visibility}
+                onValueChange={(val) => setVisibility(val as "open" | "restricted")}
+                disabled={pending}
+              >
+                <SelectTrigger className="w-36 h-8 text-xs bg-background">
+                  <SelectValue>{visibility === "open" ? "Open" : "Restricted"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="open">Open</SelectItem>
+                  <SelectItem value="restricted">Restricted</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        ) : null}
+
         {/* Tab 1: Access & Permissions */}
         {activeTab === "access" ? (
-          <div className="space-y-5 pr-1">
+          <div className="space-y-5">
             {/* General Access Box */}
             <div className="border-border bg-surface rounded-lg border p-3.5 shadow-xs flex items-center justify-between gap-3">
               <div>
@@ -686,7 +763,7 @@ function EditSpaceModalContent({
 
         {/* Tab 2: Space settings & Danger zone */}
         {activeTab === "danger" ? (
-          <div className="space-y-4 pr-1">
+          <div className="space-y-4">
             {/* Archive / Unarchive Card */}
             <div className="border border-border bg-surface rounded-lg p-4 space-y-3 shadow-xs">
               <div className="flex items-start justify-between gap-3">

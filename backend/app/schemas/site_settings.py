@@ -64,6 +64,7 @@ class SiteSettingsOverrides(BaseModel):
 
     site_name: str | None = None
     theme_color: str | None = None
+    default_font: str | None = None
     logo_icon: str | None = None
     custom_logo_url: str | None = None
     max_upload_size_mb: int | None = None
@@ -78,6 +79,7 @@ class EffectiveSettings(BaseModel):
 
     site_name: str
     theme_color: str
+    default_font: str
     logo_icon: str
     custom_logo_url: str | None
     max_upload_size_mb: int
@@ -113,6 +115,7 @@ class SiteSettingsUpdate(BaseModel):
 
     site_name: str | None = Field(default=None, max_length=255)
     theme_color: str | None = Field(default=None, max_length=50)
+    default_font: str | None = Field(default=None, max_length=50)
     logo_icon: str | None = Field(default=None, max_length=50)
     custom_logo_url: str | None = Field(default=None, max_length=1_000_000)
     max_upload_size_mb: int | None = Field(default=None, ge=1, le=10_240)
@@ -135,6 +138,14 @@ class SiteSettingsUpdate(BaseModel):
         if value is None:
             return None
         stripped = value.strip()
+        return stripped or None
+
+    @field_validator("default_font")
+    @classmethod
+    def _validate_default_font(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip().lower()
         return stripped or None
 
     @field_validator("logo_icon")

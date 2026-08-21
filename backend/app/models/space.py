@@ -86,6 +86,8 @@ class Space(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     #: A single emoji. Purely decorative; never rendered as HTML.
     icon: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    #: Custom font family for pages in this space (NULL inherits instance default).
+    font_family: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     status: Mapped[SpaceStatus] = mapped_column(
         _enum_column(SpaceStatus, "space_status"),

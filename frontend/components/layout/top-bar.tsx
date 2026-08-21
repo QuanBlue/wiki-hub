@@ -8,14 +8,17 @@ import { Wordmark } from "@/components/brand/logo";
 import { SearchModal } from "@/components/layout/search-modal";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { useThemeSettings } from "@/components/theme-color-provider";
 import { UserMenu } from "@/components/layout/user-menu";
 import type { Me } from "@/types/api";
 
 /**
  * Fixed application header: brand, global search entry point and user actions.
  */
-export function TopBar({ siteName, user }: { siteName: string; user: Me }) {
+export function TopBar({ siteName: propSiteName, user }: { siteName?: string; user: Me }) {
   const [searchOpen, setSearchOpen] = useState(false);
+  const themeSettings = useThemeSettings();
+  const effectiveSiteName = themeSettings?.siteName || propSiteName || "WikiHub";
 
   return (
     <header className="h-topbar border-border bg-surface fixed inset-x-0 top-0 z-30 border-b">
@@ -25,9 +28,9 @@ export function TopBar({ siteName, user }: { siteName: string; user: Me }) {
         <Link
           href="/"
           className="hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring rounded-md px-1 py-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-          aria-label={`${siteName} home`}
+          aria-label={`${effectiveSiteName} home`}
         >
-          <Wordmark siteName={siteName} />
+          <Wordmark siteName={effectiveSiteName} />
         </Link>
 
         <div className="mx-auto w-full max-w-md">
@@ -37,7 +40,7 @@ export function TopBar({ siteName, user }: { siteName: string; user: Me }) {
             className="border-border bg-surface-sunken text-muted-foreground hover:bg-surface-hover hover:border-border-strong active:bg-surface-selected flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-left transition-colors duration-150"
           >
             <Search className="size-4 shrink-0" />
-            <span className="truncate text-xs">Search WikiHub</span>
+            <span className="truncate text-xs">Search {effectiveSiteName}</span>
             <kbd className="border-border ml-auto hidden rounded border px-1.5 py-0.5 font-mono text-[10px] sm:inline">
               ⌘K
             </kbd>

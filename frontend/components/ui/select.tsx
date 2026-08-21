@@ -100,8 +100,10 @@ export const SelectContent = React.forwardRef<
       <DropdownMenuPrimitive.Content
         ref={ref}
         forceMount
+        data-radix-scroll-lock-ignore=""
+        onWheel={(e) => e.stopPropagation()}
         className={cn(
-          "border-border bg-surface text-foreground z-50 max-h-96 w-[var(--radix-dropdown-menu-trigger-width)] min-w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto rounded-lg border p-1 shadow-lg",
+          "border-border bg-surface text-foreground z-[100] max-h-56 w-[var(--radix-dropdown-menu-trigger-width)] min-w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto overscroll-contain rounded-lg border p-1 shadow-lg",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
           "data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
           className,

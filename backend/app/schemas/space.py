@@ -32,6 +32,7 @@ class SpaceRead(BaseModel):
     name: str
     description: str
     icon: str
+    font_family: str | None = None
     status: SpaceStatus
     visibility: SpaceVisibility
     created_at: datetime
@@ -49,6 +50,7 @@ class SpaceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str = Field(default="", max_length=200_000)
     icon: str = Field(default="", max_length=16)
+    font_family: str | None = Field(default=None, max_length=50)
     visibility: SpaceVisibility = SpaceVisibility.open
 
     @field_validator("key")
@@ -67,6 +69,7 @@ class SpaceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=200_000)
     icon: str | None = Field(default=None, max_length=16)
+    font_family: str | None = Field(default=None, max_length=50)
     status: SpaceStatus | None = None
     visibility: SpaceVisibility | None = None
 

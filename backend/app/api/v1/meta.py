@@ -40,6 +40,7 @@ class InstanceFeatures(BaseModel):
 class InstanceInfo(BaseModel):
     site_name: str
     theme_color: str = "blue"
+    default_font: str = "inter"
     logo_icon: str = "default"
     custom_logo_url: str | None = None
     version: str
@@ -72,6 +73,7 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
     return InstanceInfo(
         site_name=effective.site_name,
         theme_color=effective.theme_color,
+        default_font=effective.default_font,
         logo_icon=effective.logo_icon,
         custom_logo_url=effective.custom_logo_url,
         version=settings.project_version,

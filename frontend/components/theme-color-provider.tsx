@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { getFontFamilyCss } from "@/lib/font-presets";
 import {
   getPresetOrCustomPalette,
   renderFaviconPngDataUrl,
@@ -15,19 +16,27 @@ import {
 import type { InstanceInfo } from "@/types/api";
 
 interface ThemeSettingsContextValue {
+  siteName: string;
   themeColor: string;
+  defaultFont: string;
   logoIcon: string;
   customLogoUrl: string | null;
+  setSiteName: (name: string) => void;
   setThemeColor: (color: string) => void;
+  setDefaultFont: (font: string) => void;
   setLogoIcon: (icon: string) => void;
   setCustomLogoUrl: (url: string | null) => void;
 }
 
 const ThemeSettingsContext = createContext<ThemeSettingsContextValue>({
+  siteName: "WikiHub",
   themeColor: "blue",
+  defaultFont: "inter",
   logoIcon: "default",
   customLogoUrl: null,
+  setSiteName: () => {},
   setThemeColor: () => {},
+  setDefaultFont: () => {},
   setLogoIcon: () => {},
   setCustomLogoUrl: () => {},
 });
@@ -37,22 +46,42 @@ export function useThemeSettings() {
 }
 
 export function ThemeColorProvider({
+  initialSiteName = "WikiHub",
   initialThemeColor = "blue",
+  initialDefaultFont = "inter",
   initialLogoIcon = "default",
   initialCustomLogoUrl = null,
   children,
 }: {
+  initialSiteName?: string;
   initialThemeColor?: string;
+  initialDefaultFont?: string;
   initialLogoIcon?: string;
   initialCustomLogoUrl?: string | null;
   children: ReactNode;
 }) {
+  const [siteName, setSiteNameState] = useState(() => {
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem("wikihub:site-name");
+      if (stored) return stored;
+    }
+    return initialSiteName;
+  });
+
   const [themeColor, setThemeColorState] = useState(() => {
     if (typeof window !== "undefined") {
       const stored = window.localStorage.getItem("wikihub:theme-color");
       if (stored) return stored;
     }
     return initialThemeColor;
+  });
+
+  const [defaultFont, setDefaultFontState] = useState(() => {
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem("wikihub:default-font");
+      if (stored) return stored;
+    }
+    return initialDefaultFont;
   });
 
   const [logoIcon, setLogoIconState] = useState(() => {
@@ -71,11 +100,28 @@ export function ThemeColorProvider({
     return initialCustomLogoUrl;
   });
 
+  const setSiteName = (name: string) => {
+    const nextName = name.trim() || "WikiHub";
+    setSiteNameState(nextName);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("wikihub:site-name", nextName);
+      document.cookie = `wikihub_site_name=${encodeURIComponent(nextName)}; path=/; max-age=31536000; SameSite=Lax`;
+    }
+  };
+
   const setThemeColor = (color: string) => {
     setThemeColorState(color);
     if (typeof window !== "undefined") {
       window.localStorage.setItem("wikihub:theme-color", color);
       document.cookie = `wikihub_theme_color=${encodeURIComponent(color)}; path=/; max-age=31536000; SameSite=Lax`;
+    }
+  };
+
+  const setDefaultFont = (font: string) => {
+    setDefaultFontState(font);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("wikihub:default-font", font);
+      document.cookie = `wikihub_default_font=${encodeURIComponent(font)}; path=/; max-age=31536000; SameSite=Lax`;
     }
   };
 
@@ -105,8 +151,16 @@ export function ThemeColorProvider({
 
   // Sync state if props change from server
   useEffect(() => {
+    if (initialSiteName) setSiteNameState(initialSiteName);
+  }, [initialSiteName]);
+
+  useEffect(() => {
     if (initialThemeColor) setThemeColorState(initialThemeColor);
   }, [initialThemeColor]);
+
+  useEffect(() => {
+    if (initialDefaultFont) setDefaultFontState(initialDefaultFont);
+  }, [initialDefaultFont]);
 
   useEffect(() => {
     if (initialLogoIcon) setLogoIconState(initialLogoIcon);
@@ -123,10 +177,20 @@ export function ThemeColorProvider({
       .then((res) => (res.ok ? res.json() : null))
       .then((data: InstanceInfo | null) => {
         if (!active || !data) return;
+        if (data.site_name) {
+          setSiteNameState(data.site_name);
+          window.localStorage.setItem("wikihub:site-name", data.site_name);
+          document.cookie = `wikihub_site_name=${encodeURIComponent(data.site_name)}; path=/; max-age=31536000; SameSite=Lax`;
+        }
         if (data.theme_color) {
           setThemeColorState(data.theme_color);
           window.localStorage.setItem("wikihub:theme-color", data.theme_color);
           document.cookie = `wikihub_theme_color=${encodeURIComponent(data.theme_color)}; path=/; max-age=31536000; SameSite=Lax`;
+        }
+        if (data.default_font) {
+          setDefaultFontState(data.default_font);
+          window.localStorage.setItem("wikihub:default-font", data.default_font);
+          document.cookie = `wikihub_default_font=${encodeURIComponent(data.default_font)}; path=/; max-age=31536000; SameSite=Lax`;
         }
         if (data.logo_icon) {
           setLogoIconState(data.logo_icon);
@@ -147,6 +211,12 @@ export function ThemeColorProvider({
       active = false;
     };
   }, []);
+
+  // Dynamically update CSS font variable on root
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--wh-page-font", getFontFamilyCss(defaultFont));
+  }, [defaultFont]);
 
   // Dynamically update CSS variables on root
   useEffect(() => {
@@ -290,14 +360,18 @@ export function ThemeColorProvider({
 
   const value = useMemo(
     () => ({
+      siteName,
       themeColor,
+      defaultFont,
       logoIcon,
       customLogoUrl,
+      setSiteName,
       setThemeColor,
+      setDefaultFont,
       setLogoIcon,
       setCustomLogoUrl,
     }),
-    [themeColor, logoIcon, customLogoUrl],
+    [siteName, themeColor, defaultFont, logoIcon, customLogoUrl],
   );
 
   return (

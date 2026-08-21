@@ -104,6 +104,7 @@ export interface PageDraft {
 export interface InstanceInfo {
   site_name: string;
   theme_color?: string;
+  default_font?: string;
   logo_icon?: string;
   custom_logo_url?: string | null;
   version: string;
@@ -182,6 +183,7 @@ export interface Space {
   name: string;
   description: string;
   icon: string;
+  font_family?: string | null;
   status: SpaceStatus;
   visibility: SpaceVisibility;
   created_at: string;
@@ -272,6 +274,7 @@ export interface Page<T> {
 export interface SiteSettingsOverrides {
   site_name: string | null;
   theme_color: string | null;
+  default_font: string | null;
   logo_icon: string | null;
   custom_logo_url: string | null;
   max_upload_size_mb: number | null;
@@ -284,6 +287,7 @@ export interface SiteSettingsOverrides {
 export interface EffectiveSettings {
   site_name: string;
   theme_color: string;
+  default_font: string;
   logo_icon: string;
   custom_logo_url: string | null;
   max_upload_size_mb: number;
