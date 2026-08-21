@@ -10,8 +10,8 @@ import {
   LayoutGrid,
   MoreHorizontal,
   SlidersHorizontal,
+  User,
   Users,
-  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -50,11 +50,11 @@ const HELP_NAV: NavItem = {
 // picking sections apart one by one. Backup keeps its own dedicated
 // "backups" key since the admin settings screen already offers it separately.
 const ADMIN_NAV: NavItem[] = [
-  { href: "/admin/users", label: "Users", icon: Users, permission: "settings" },
+  { href: "/admin/users", label: "Users", icon: User, permission: "settings" },
   {
     href: "/admin/groups",
     label: "Groups",
-    icon: UsersRound,
+    icon: Users,
     permission: "settings",
   },
   {
