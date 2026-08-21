@@ -3840,7 +3840,10 @@ function LinkFloatingToolbar({
 
   const keepToolbar = useCallback(() => {
     isHoveredRef.current = true;
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
   }, []);
 
   const scheduleHide = useCallback(() => {
@@ -3850,7 +3853,7 @@ function LinkFloatingToolbar({
       if (!isHoveredRef.current && !editor?.isActive("link")) {
         setPosition(null);
       }
-    }, 250);
+    }, 350);
   }, [editor]);
 
   const updateFromSelection = useCallback(() => {
@@ -3922,7 +3925,13 @@ function LinkFloatingToolbar({
       }
     };
 
-    const handleMouseLeave = () => {
+    const handleMouseLeave = (event: MouseEvent) => {
+      // If moving towards the floating toolbar, do not close
+      const related = event.relatedTarget as HTMLElement | null;
+      if (containerRef.current?.contains(related)) {
+        keepToolbar();
+        return;
+      }
       if (!editor.isActive("link")) {
         scheduleHide();
       }
@@ -3950,6 +3959,7 @@ function LinkFloatingToolbar({
       editor.commands.setTextSelection(pos);
       editor.commands.extendMarkRange("link");
 
+      keepToolbar();
       const rect = link.getBoundingClientRect();
       const href = link.getAttribute("href") || "";
       setPosition({
@@ -3999,7 +4009,7 @@ function LinkFloatingToolbar({
   return (
     <div
       ref={containerRef}
-      className="border-border bg-surface-raised fixed z-50 flex max-w-xs items-center gap-1 overflow-hidden rounded-lg border p-1 text-xs shadow-lg animate-in fade-in zoom-in-95 duration-100 select-none sm:max-w-sm"
+      className="border-border bg-surface-raised fixed z-50 flex max-w-xs items-center gap-1 rounded-lg border p-1 text-xs shadow-lg animate-in fade-in zoom-in-95 duration-100 select-none sm:max-w-sm before:absolute before:-top-3 before:left-0 before:right-0 before:h-3 before:content-['']"
       style={{ left: position.left, top: position.top }}
       onMouseEnter={keepToolbar}
       onMouseLeave={scheduleHide}
