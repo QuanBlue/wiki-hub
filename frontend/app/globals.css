@@ -587,4 +587,22 @@
   .confluence-layout-section {
     width: 100%;
   }
+
+  /* Real link styling: blue text with underline */
+  .ProseMirror a:not([data-attachment]),
+  .wikihub-editor a:not([data-attachment]),
+  .wikihub-reader a:not([data-attachment]) {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.15s ease, text-decoration-color 0.15s ease;
+  }
+  .ProseMirror a:not([data-attachment]):hover,
+  .wikihub-editor a:not([data-attachment]):hover,
+  .wikihub-reader a:not([data-attachment]):hover {
+    color: var(--primary-hover);
+    text-decoration-color: var(--primary-hover);
+  }
 }

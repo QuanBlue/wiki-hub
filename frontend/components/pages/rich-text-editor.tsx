@@ -101,6 +101,9 @@ import {
   Loader2,
   Search,
   LayoutGrid,
+  ExternalLink,
+  Copy,
+  Unlink,
 } from "lucide-react";
 import {
   useCallback,
@@ -3812,6 +3815,230 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
   );
 }
 
+function LinkFloatingToolbar({
+  editor,
+  onEditLink,
+}: {
+  editor: Editor | null;
+  onEditLink: () => void;
+}) {
+  const [position, setPosition] = useState<{
+    left: number;
+    top: number;
+    href: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isHoveredRef = useRef(false);
+
+  const keepToolbar = useCallback(() => {
+    isHoveredRef.current = true;
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+  }, []);
+
+  const scheduleHide = useCallback(() => {
+    isHoveredRef.current = false;
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => {
+      if (!isHoveredRef.current && !editor?.isActive("link")) {
+        setPosition(null);
+      }
+    }, 250);
+  }, [editor]);
+
+  const updateFromSelection = useCallback(() => {
+    if (!editor || !editor.isEditable) {
+      setPosition(null);
+      return;
+    }
+
+    if (!editor.isActive("link")) {
+      if (!isHoveredRef.current) {
+        setPosition(null);
+      }
+      return;
+    }
+
+    const { href } = editor.getAttributes("link");
+    if (!href) {
+      setPosition(null);
+      return;
+    }
+
+    const { from } = editor.state.selection;
+    const coords = editor.view.coordsAtPos(from);
+    if (!coords) return;
+
+    setPosition({
+      left: Math.max(8, Math.min(coords.left, window.innerWidth - 380)),
+      top: coords.bottom + 6,
+      href: String(href),
+    });
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const dom = editor.view.dom;
+
+    const handleMouseOver = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const link = target?.closest(
+        "a:not([data-attachment])",
+      ) as HTMLAnchorElement | null;
+      if (!link) {
+        if (!editor.isActive("link") && !isHoveredRef.current) {
+          scheduleHide();
+        }
+        return;
+      }
+
+      keepToolbar();
+      const rect = link.getBoundingClientRect();
+      const href = link.getAttribute("href") || "";
+      if (href) {
+        setPosition({
+          left: Math.max(8, Math.min(rect.left, window.innerWidth - 380)),
+          top: rect.bottom + 6,
+          href,
+        });
+      }
+    };
+
+    const handleMouseLeave = () => {
+      if (!editor.isActive("link")) {
+        scheduleHide();
+      }
+    };
+
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const link = target?.closest(
+        "a:not([data-attachment])",
+      ) as HTMLAnchorElement | null;
+      if (!link) return;
+
+      // Prevent redirect in edit mode!
+      event.preventDefault();
+      event.stopPropagation();
+
+      const pos = editor.view.posAtDOM(link, 0);
+      editor.commands.setTextSelection(pos);
+      editor.commands.extendMarkRange("link");
+
+      const rect = link.getBoundingClientRect();
+      const href = link.getAttribute("href") || "";
+      setPosition({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - 380)),
+        top: rect.bottom + 6,
+        href,
+      });
+    };
+
+    dom.addEventListener("mouseover", handleMouseOver);
+    dom.addEventListener("mouseleave", handleMouseLeave);
+    dom.addEventListener("click", handleClick, true);
+
+    editor.on("selectionUpdate", updateFromSelection);
+    editor.on("transaction", updateFromSelection);
+
+    return () => {
+      dom.removeEventListener("mouseover", handleMouseOver);
+      dom.removeEventListener("mouseleave", handleMouseLeave);
+      dom.removeEventListener("click", handleClick, true);
+      editor.off("selectionUpdate", updateFromSelection);
+      editor.off("transaction", updateFromSelection);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, [editor, keepToolbar, scheduleHide, updateFromSelection]);
+
+  if (!position) return null;
+
+  function copyLink() {
+    if (!position?.href) return;
+    void navigator.clipboard.writeText(position.href);
+    setCopied(true);
+    toast.success("Link copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function openLink() {
+    if (!position?.href) return;
+    window.open(position.href, "_blank", "noopener,noreferrer");
+  }
+
+  function removeLink() {
+    editor?.chain().focus().extendMarkRange("link").unsetLink().run();
+    setPosition(null);
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="border-border bg-surface-raised fixed z-50 flex max-w-xs items-center gap-1 overflow-hidden rounded-lg border p-1 text-xs shadow-lg animate-in fade-in zoom-in-95 duration-100 select-none sm:max-w-sm"
+      style={{ left: position.left, top: position.top }}
+      onMouseEnter={keepToolbar}
+      onMouseLeave={scheduleHide}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div className="bg-surface-sunken/80 border-border/50 flex max-w-[180px] min-w-0 items-center gap-1.5 rounded border px-2 py-1 sm:max-w-[220px]">
+        <Link2 className="text-primary size-3.5 shrink-0" />
+        <span
+          className="text-foreground truncate text-[11px] font-medium"
+          title={position.href}
+        >
+          {position.href}
+        </span>
+      </div>
+
+      <button
+        type="button"
+        onClick={openLink}
+        className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground rounded p-1.5 transition-colors cursor-pointer"
+        title="Open link in new tab"
+      >
+        <ExternalLink className="size-3.5" />
+      </button>
+
+      <button
+        type="button"
+        onClick={copyLink}
+        className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground rounded p-1.5 transition-colors cursor-pointer"
+        title="Copy link URL"
+      >
+        {copied ? (
+          <Check className="text-success size-3.5" />
+        ) : (
+          <Copy className="size-3.5" />
+        )}
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          onEditLink();
+          setPosition(null);
+        }}
+        className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground rounded p-1.5 transition-colors cursor-pointer"
+        title="Edit link"
+      >
+        <Pencil className="size-3.5" />
+      </button>
+
+      <button
+        type="button"
+        onClick={removeLink}
+        className="hover:bg-destructive/10 text-destructive rounded p-1.5 transition-colors cursor-pointer"
+        title="Remove link"
+      >
+        <Unlink className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
 function MoreFormattingMenu({
   hasActions,
   children,
@@ -3943,6 +4170,16 @@ function RichTextToolbar({
     setLinkText(editor.state.doc.textBetween(from, to, " "));
     setLinkOpen(true);
   }, [editor]);
+
+  useEffect(() => {
+    const handleOpen = () => {
+      openLinkDialog();
+    };
+    window.addEventListener("wikihub:open-link-dialog", handleOpen);
+    return () => {
+      window.removeEventListener("wikihub:open-link-dialog", handleOpen);
+    };
+  }, [openLinkDialog]);
 
   function saveLink(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -5089,6 +5326,12 @@ export function RichTextEditor({
         )}
       />
       <TableActionsMenu editor={editor} />
+      <LinkFloatingToolbar
+        editor={editor}
+        onEditLink={() =>
+          window.dispatchEvent(new CustomEvent("wikihub:open-link-dialog"))
+        }
+      />
       {draggingFiles ? (
         <div className="border-primary bg-primary-subtle/90 text-primary pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed text-sm font-semibold">
           Drop images or files to upload
