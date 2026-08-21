@@ -5,9 +5,17 @@ import { useState } from "react";
 
 import { EditSpaceModal } from "@/components/admin/edit-space-modal";
 import { Button } from "@/components/ui/button";
-import type { Space } from "@/types/api";
+import type { Group, Space, User } from "@/types/api";
 
-export function SpaceRowActions({ space }: { space: Space }) {
+export function SpaceRowActions({
+  space,
+  users,
+  groups,
+}: {
+  space: Space;
+  users?: User[];
+  groups?: Group[];
+}) {
   const [editOpen, setEditOpen] = useState(false);
 
   return (
@@ -25,6 +33,8 @@ export function SpaceRowActions({ space }: { space: Space }) {
 
       <EditSpaceModal
         space={space}
+        users={users}
+        groups={groups}
         open={editOpen}
         onOpenChange={setEditOpen}
       />

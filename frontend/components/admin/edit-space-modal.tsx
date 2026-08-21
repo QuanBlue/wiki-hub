@@ -82,11 +82,15 @@ function EditSpaceModalContent({
 
   async function loadSpacePermissions() {
     try {
-      const [fetchedAssignments, fetchedGroups, fetchedUsers] = await Promise.all([
+      const [fetchedAssignments, fetchedGroups, rawUsersRes] = await Promise.all([
         api.get<SpacePermissionAssignment[]>(`/api/v1/spaces/${encodeURIComponent(space.key)}/permissions`),
         groups.length === 0 ? api.get<Group[]>("/api/v1/groups") : Promise.resolve(groups),
-        users.length === 0 ? api.get<User[]>("/api/v1/users") : Promise.resolve(users),
+        users.length === 0 ? api.get<{ items?: User[] } | User[]>("/api/v1/users?limit=100") : Promise.resolve(users),
       ]);
+      const fetchedUsers = Array.isArray(rawUsersRes)
+        ? rawUsersRes
+        : rawUsersRes.items || [];
+
       setAssignments(fetchedAssignments);
       if (groups.length === 0) setGroups(fetchedGroups);
       if (users.length === 0) setUsers(fetchedUsers);

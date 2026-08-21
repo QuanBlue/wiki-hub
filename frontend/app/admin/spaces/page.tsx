@@ -215,7 +215,7 @@ export default async function AdminSpacesPage({
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <SpaceRowActions space={space} />
+                      <SpaceRowActions space={space} users={users} />
                     </td>
                   </tr>
                 ))
