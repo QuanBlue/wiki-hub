@@ -147,10 +147,8 @@ function EditSpaceModalContent({
     (g) => assignedGroupIds.has(g.id) || isDefaultGroup(g),
   );
 
-  // Only display users that are added OR are default users
-  const displayedUsers = users.filter(
-    (u) => assignedUserIds.has(u.id) || isDefaultUser(u),
-  );
+  // Only display users that are explicitly added to this space
+  const displayedUsers = users.filter((u) => assignedUserIds.has(u.id));
 
   function hasGroupPermission(group: Group, permission: SpacePermission) {
     return assignments.some(
@@ -477,7 +475,7 @@ function EditSpaceModalContent({
                   <SelectContent>
                     {users.map((u) => {
                       const isAdded = assignedUserIds.has(u.id);
-                      const isDefault = isDefaultUser(u);
+                      const isAdmin = isDefaultUser(u);
                       return (
                         <SelectItem key={u.id} value={u.id} disabled={isAdded}>
                           <div className="flex items-center justify-between w-full gap-2">
@@ -488,9 +486,9 @@ function EditSpaceModalContent({
                               <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
                                 Added
                               </Badge>
-                            ) : isDefault ? (
+                            ) : isAdmin ? (
                               <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
-                                Default
+                                Admin
                               </Badge>
                             ) : null}
                           </div>
