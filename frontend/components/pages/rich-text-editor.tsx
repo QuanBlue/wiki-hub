@@ -2605,17 +2605,23 @@ function AttachmentTile({
         <Info className="size-3.5" />
       </button>
 
-      <a
-        href={href}
-        download={filename}
-        target="_blank"
-        rel="noreferrer"
-        onClick={(e) => e.stopPropagation()}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          const a = document.createElement("a");
+          a.href = href;
+          a.download = filename;
+          a.target = "_blank";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }}
         className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors flex items-center justify-center cursor-pointer"
         title="Download file"
       >
         <Download className="size-3.5" />
-      </a>
+      </button>
 
       <button
         type="button"
@@ -2623,10 +2629,10 @@ function AttachmentTile({
           e.stopPropagation();
           deleteNode();
         }}
-        className="p-1 rounded text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+        className="p-1 rounded text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-500/20 transition-colors cursor-pointer"
         title="Remove attachment"
       >
-        <Trash2 className="size-3.5" />
+        <Trash2 className="size-3.5 text-red-500 dark:text-red-400" />
       </button>
     </div>
   ) : null;
@@ -3884,8 +3890,18 @@ function LinkFloatingToolbar({
 
     const handleMouseOver = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
+      const isInsideAttachment = target?.closest(
+        "[data-node-view-wrapper], .group\\/attachment, .attachment-link, [data-attachment], .group\\/attachment-wrapper",
+      );
+      if (isInsideAttachment) {
+        if (!editor.isActive("link") && !isHoveredRef.current) {
+          scheduleHide();
+        }
+        return;
+      }
+
       const link = target?.closest(
-        "a:not([data-attachment])",
+        "a:not([data-attachment]):not(.attachment-link)",
       ) as HTMLAnchorElement | null;
       if (!link) {
         if (!editor.isActive("link") && !isHoveredRef.current) {
@@ -3914,8 +3930,15 @@ function LinkFloatingToolbar({
 
     const handleClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
+      const isInsideAttachment = target?.closest(
+        "[data-node-view-wrapper], .group\\/attachment, .attachment-link, [data-attachment], .group\\/attachment-wrapper",
+      );
+      if (isInsideAttachment) {
+        return;
+      }
+
       const link = target?.closest(
-        "a:not([data-attachment])",
+        "a:not([data-attachment]):not(.attachment-link)",
       ) as HTMLAnchorElement | null;
       if (!link) return;
 
@@ -4030,10 +4053,10 @@ function LinkFloatingToolbar({
       <button
         type="button"
         onClick={removeLink}
-        className="hover:bg-destructive/10 text-destructive rounded p-1.5 transition-colors cursor-pointer"
+        className="p-1.5 rounded text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-500/20 transition-colors cursor-pointer"
         title="Remove link"
       >
-        <Unlink className="size-3.5" />
+        <Unlink className="size-3.5 text-red-500 dark:text-red-400" />
       </button>
     </div>
   );
