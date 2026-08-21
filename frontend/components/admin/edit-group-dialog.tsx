@@ -287,10 +287,10 @@ export function EditGroupDialog({
         ) : null}
 
         {/* Tab Content Container with Fixed Height */}
-        <div className="mt-4 h-[340px] min-h-[340px] overflow-y-auto">
+        <div className="mt-4 h-[350px] min-h-[350px]">
           {/* Tab 1: General Details */}
           {activeTab === "details" ? (
-            <div className="space-y-4 pr-1">
+            <div className="space-y-4 pr-1 h-full overflow-y-auto">
               <div className="space-y-1.5">
                 <Label htmlFor="edit-group-name">Group name</Label>
                 <Input
@@ -357,7 +357,7 @@ export function EditGroupDialog({
 
           {/* Tab 2: Members */}
           {activeTab === "members" ? (
-            <div className="space-y-4 flex flex-col h-full min-h-0">
+            <div className="space-y-3 h-full flex flex-col">
               {/* Add member section */}
               <div className="border-border bg-surface-sunken flex flex-wrap items-center gap-2 rounded-lg border p-3 shrink-0">
                 <Select value={memberIdToAdd} onValueChange={setMemberIdToAdd} disabled={availableUsersToAdd.length === 0}>
@@ -395,7 +395,7 @@ export function EditGroupDialog({
               </div>
 
               {/* Members list */}
-              <div className="border-border flex-1 divide-y overflow-y-auto rounded-lg border min-h-0">
+              <div className="border-border flex-1 max-h-[200px] min-h-[160px] overflow-y-auto rounded-lg border divide-y">
                 {loadingMembers ? (
                   <div className="p-6 text-center text-sm text-muted-foreground">
                     <Loader2 className="mx-auto size-5 animate-spin mb-2" />
@@ -437,7 +437,7 @@ export function EditGroupDialog({
 
           {/* Tab 3: Global Permissions (Table Format) */}
           {activeTab === "permissions" ? (
-            <div className="space-y-3 flex flex-col h-full min-h-0">
+            <div className="space-y-3 h-full flex flex-col">
               <p className="text-xs text-muted-foreground shrink-0">
                 Configure workspace-wide administrative permissions granted to members of this group.
               </p>
