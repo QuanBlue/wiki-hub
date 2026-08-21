@@ -470,7 +470,7 @@ export function EditGroupDialog({
         ) : null}
 
         {/* Tab Content Container with Fixed Height */}
-        <div className="mt-4 h-[350px] min-h-[350px]">
+        <div className="mt-4 h-[380px] min-h-[380px]">
           {/* Tab 1: General Details */}
           {activeTab === "details" ? (
             <div className="space-y-4 pr-1 h-full overflow-visible">
@@ -535,7 +535,7 @@ export function EditGroupDialog({
 
           {/* Tab 2: Members */}
           {activeTab === "members" ? (
-            <div className="space-y-3 h-full flex flex-col">
+            <div className="space-y-3 h-full flex flex-col min-h-0">
               {/* Sleek Single-Line Toolbar: Search Left + Add Member Right */}
               <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
                 {/* Left: Compact Filter Search */}
@@ -572,8 +572,8 @@ export function EditGroupDialog({
                 </div>
               </div>
 
-              {/* Expansive Members List Table */}
-              <div className="border-border flex-1 h-[275px] max-h-[275px] overflow-y-auto rounded-lg border divide-y">
+              {/* Expansive Members List Table filling 100% of remaining space */}
+              <div className="border-border flex-1 h-full min-h-0 overflow-y-auto rounded-lg border divide-y">
                 {loadingMembers ? (
                   <div className="p-8 text-center text-sm text-muted-foreground">
                     <Loader2 className="mx-auto size-5 animate-spin mb-2" />
