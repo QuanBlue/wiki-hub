@@ -3859,11 +3859,11 @@ function LinkFloatingToolbar({
     isHoveredRef.current = false;
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(() => {
-      if (!isHoveredRef.current && !editor?.isActive("link")) {
+      if (!isHoveredRef.current) {
         setPosition(null);
       }
-    }, 350);
-  }, [editor]);
+    }, 250);
+  }, []);
 
   const updateFromSelection = useCallback(() => {
     if (!editor || !editor.isEditable) {
@@ -3913,9 +3913,7 @@ function LinkFloatingToolbar({
         "[data-node-view-wrapper], .group\\/attachment, .attachment-link, [data-attachment], .group\\/attachment-wrapper",
       );
       if (isInsideAttachment) {
-        if (!editor.isActive("link") && !isHoveredRef.current) {
-          scheduleHide();
-        }
+        scheduleHide();
         return;
       }
 
@@ -3923,9 +3921,7 @@ function LinkFloatingToolbar({
         "a:not([data-attachment]):not(.attachment-link)",
       ) as HTMLAnchorElement | null;
       if (!link) {
-        if (!editor.isActive("link") && !isHoveredRef.current) {
-          scheduleHide();
-        }
+        scheduleHide();
         return;
       }
 
@@ -3962,9 +3958,7 @@ function LinkFloatingToolbar({
         keepToolbar();
         return;
       }
-      if (!editor.isActive("link")) {
-        scheduleHide();
-      }
+      scheduleHide();
     };
 
     const handleClick = (event: MouseEvent) => {
