@@ -2472,10 +2472,39 @@ function AttachmentTile({
   const href = String(node.attrs.href ?? "");
   const displayMode = String(node.attrs.displayMode ?? "card");
   const [hovered, setHovered] = useState(false);
+  const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
   const icon = attachmentIcon(filename);
 
   const isCard = displayMode !== "link";
   const showToolbar = editor.isEditable && (selected || hovered);
+
+  const keepToolsVisible = useCallback(() => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    setHovered(true);
+  }, []);
+
+  const scheduleToolsHide = useCallback(() => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setHovered(false), 250);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, []);
+
+  function handleSelectNode(e?: React.MouseEvent) {
+    if (!editor.isEditable) return;
+    e?.preventDefault();
+    e?.stopPropagation();
+    if (typeof getPos === "function") {
+      const pos = getPos();
+      if (typeof pos === "number") {
+        editor.commands.setNodeSelection(pos);
+      }
+    }
+  }
 
   // Same machinery images use. Tiptap's node view hides dragstart from
   // ProseMirror, so the editor's own handleDrop has to be told which node is
@@ -2517,17 +2546,21 @@ function AttachmentTile({
   const floatingToolbar = showToolbar ? (
     <div
       className={cn(
-        "absolute z-40 flex items-center gap-1 rounded-lg border border-border bg-surface-raised p-1 shadow-lg text-xs whitespace-nowrap animate-in fade-in zoom-in-95 duration-100 select-none",
-        isCard ? "-top-10 left-1/2 -translate-x-1/2" : "-top-9 left-0",
+        "absolute z-50 flex items-center gap-1 rounded-lg border border-border bg-surface-raised p-1 shadow-lg text-xs whitespace-nowrap animate-in fade-in zoom-in-95 duration-100 select-none bottom-full mb-1.5 left-0 min-w-max after:absolute after:top-full after:left-0 after:right-0 after:h-2 after:content-['']",
       )}
       contentEditable={false}
+      onMouseEnter={keepToolsVisible}
+      onMouseLeave={scheduleToolsHide}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center rounded-md bg-surface-sunken/80 p-0.5 border border-border/50">
         <button
           type="button"
-          onClick={() => updateAttributes({ displayMode: "card" })}
+          onClick={(e) => {
+            e.stopPropagation();
+            updateAttributes({ displayMode: "card" });
+          }}
           className={cn(
             "px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer",
             isCard
@@ -2541,7 +2574,10 @@ function AttachmentTile({
         </button>
         <button
           type="button"
-          onClick={() => updateAttributes({ displayMode: "link" })}
+          onClick={(e) => {
+            e.stopPropagation();
+            updateAttributes({ displayMode: "link" });
+          }}
           className={cn(
             "px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer",
             !isCard
@@ -2580,7 +2616,10 @@ function AttachmentTile({
 
       <button
         type="button"
-        onClick={() => deleteNode()}
+        onClick={(e) => {
+          e.stopPropagation();
+          deleteNode();
+        }}
         className="p-1 rounded text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
         title="Remove attachment"
       >
@@ -2593,11 +2632,11 @@ function AttachmentTile({
     return (
       <NodeViewWrapper
         as="span"
-        className="relative inline-block align-baseline mr-1.5 my-0.5"
+        className="relative inline-block align-baseline mr-1.5 my-0.5 group/attachment-wrapper"
         onDragStartCapture={beginMove}
         onDragEndCapture={endMove}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseEnter={keepToolsVisible}
+        onMouseLeave={scheduleToolsHide}
       >
         {floatingToolbar}
         <a
@@ -2608,16 +2647,12 @@ function AttachmentTile({
           target="_self"
           role={editor.isEditable ? "button" : undefined}
           tabIndex={editor.isEditable ? 0 : undefined}
-          onClick={(e) => {
-            if (editor.isEditable) {
-              e.preventDefault();
-            }
-          }}
+          onClick={handleSelectNode}
           onKeyDown={(event) => {
             if (!editor.isEditable) return;
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
-              event.currentTarget.click();
+              handleSelectNode();
             }
           }}
           contentEditable={false}
@@ -2642,44 +2677,27 @@ function AttachmentTile({
   return (
     <NodeViewWrapper
       as="span"
-      className="relative mr-2 mb-2 inline-block align-top"
+      className="relative mr-2 mb-2 inline-block align-top group/attachment-wrapper"
       onDragStartCapture={beginMove}
       onDragEndCapture={endMove}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={keepToolsVisible}
+      onMouseLeave={scheduleToolsHide}
     >
       {floatingToolbar}
       <a
-        // No href while editing. Preventing the click's default is not enough
-        // to stop the browser following an attachment link here - it starts
-        // the navigation from the mouse sequence, and the click never reaches
-        // the anchor because the interception below stops it first - so the
-        // page began unloading and the unsaved-changes prompt appeared before
-        // the preview modal could. Nothing needs to be navigable in the
-        // editor: the tile opens a modal. The interception reads the target
-        // from the data attribute instead.
         href={editor.isEditable ? undefined : href}
         data-attachment-href={href}
         data-display-mode="card"
         title={filename}
-        // Attachment links are intercepted and opened in a modal, so they must
-        // never be given target="_blank".
         target="_self"
-        // An anchor without an href is not focusable or keyboard-activatable
-        // on its own, so the editing tile has to say what it is and handle
-        // its own keys.
         role={editor.isEditable ? "button" : undefined}
         tabIndex={editor.isEditable ? 0 : undefined}
-        onClick={(e) => {
-          if (editor.isEditable) {
-            e.preventDefault();
-          }
-        }}
+        onClick={handleSelectNode}
         onKeyDown={(event) => {
           if (!editor.isEditable) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            event.currentTarget.click();
+            handleSelectNode();
           }
         }}
         contentEditable={false}
