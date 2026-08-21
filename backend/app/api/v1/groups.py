@@ -1,9 +1,6 @@
-"""Group and global permission endpoints."""
-
-from __future__ import annotations
-
 import inspect
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
@@ -94,7 +91,7 @@ async def create_group(
 
 @router.get("/{group_id}", response_model=GroupRead)
 async def get_group(
-    group_id: uuid.UUID, user: CurrentUser, service: ServiceDep, session: DbSession
+    group_id: UUID, user: CurrentUser, service: ServiceDep, session: DbSession
 ) -> GroupRead:
     group = await service.get_group(group_id)
     if not await service.can_manage_group(group, user):
@@ -104,7 +101,7 @@ async def get_group(
 
 @router.patch("/{group_id}", response_model=GroupRead)
 async def update_group(
-    group_id: uuid.UUID,
+    group_id: UUID,
     payload: GroupUpdate,
     user: CurrentUser,
     service: ServiceDep,
@@ -115,13 +112,13 @@ async def update_group(
 
 
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_group(group_id: uuid.UUID, user: CurrentUser, service: ServiceDep) -> None:
+async def delete_group(group_id: UUID, user: CurrentUser, service: ServiceDep) -> None:
     await service.delete_group(await service.get_group(group_id), user)
 
 
 @router.get("/{group_id}/members", response_model=list[GroupMemberRead])
 async def list_group_members(
-    group_id: uuid.UUID, user: CurrentUser, service: ServiceDep, session: DbSession
+    group_id: UUID, user: CurrentUser, service: ServiceDep, session: DbSession
 ) -> list[GroupMemberRead]:
     group = await service.get_group(group_id)
     if not await service.can_manage_group(group, user):
@@ -146,21 +143,21 @@ async def list_group_members(
 
 @router.put("/{group_id}/members", status_code=status.HTTP_204_NO_CONTENT)
 async def add_group_member(
-    group_id: uuid.UUID, payload: GroupMemberUpsert, user: CurrentUser, service: ServiceDep
+    group_id: UUID, payload: GroupMemberUpsert, user: CurrentUser, service: ServiceDep
 ) -> None:
     await service.set_group_member(await service.get_group(group_id), payload.user_id, user, True)
 
 
 @router.delete("/{group_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_group_member(
-    group_id: uuid.UUID, user_id: uuid.UUID, user: CurrentUser, service: ServiceDep
+    group_id: UUID, user_id: UUID, user: CurrentUser, service: ServiceDep
 ) -> None:
     await service.set_group_member(await service.get_group(group_id), user_id, user, False)
 
 
 @router.put("/{group_id}/global-permissions/{permission}", status_code=status.HTTP_204_NO_CONTENT)
 async def add_global_permission(
-    group_id: uuid.UUID, permission: GlobalPermission, admin: CurrentUser, service: ServiceDep
+    group_id: UUID, permission: GlobalPermission, admin: CurrentUser, service: ServiceDep
 ) -> None:
     await service.set_group_global_permission(
         await service.get_group(group_id), permission, admin, True
@@ -171,7 +168,7 @@ async def add_global_permission(
     "/{group_id}/global-permissions/{permission}", status_code=status.HTTP_204_NO_CONTENT
 )
 async def remove_global_permission(
-    group_id: uuid.UUID, permission: GlobalPermission, admin: CurrentUser, service: ServiceDep
+    group_id: UUID, permission: GlobalPermission, admin: CurrentUser, service: ServiceDep
 ) -> None:
     await service.set_group_global_permission(
         await service.get_group(group_id), permission, admin, False
