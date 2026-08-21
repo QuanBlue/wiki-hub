@@ -6,6 +6,7 @@ import {
   Globe2,
   Grid2X2,
   Lock,
+  Pencil,
   Search,
   Star,
   Users,
@@ -16,6 +17,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { EditSpaceModal } from "@/components/admin/edit-space-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,6 +63,7 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
   const router = useRouter();
   const [favorite, setFavorite] = useState(space.is_favorite);
   const [pending, setPending] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const href = "/spaces/" + encodeURIComponent(space.key);
 
   async function toggleFavorite(event: React.MouseEvent) {
@@ -83,54 +86,79 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
   }
 
   return (
-    <Link
-      href={href}
-      className="border-border group grid min-w-0 grid-cols-[minmax(0,1fr)_7.5rem_5.5rem_2.75rem] items-center gap-3 border-b px-4 py-3 transition-colors duration-150 last:border-b-0 hover:bg-surface-hover focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
-    >
-      <span className="flex min-w-0 items-center gap-3">
-        <span className="bg-primary-subtle flex size-9 shrink-0 items-center justify-center rounded-md text-lg leading-none">
-          {space.icon || "📄"}
-        </span>
-        <span className="min-w-0">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-semibold group-hover:text-primary">
-              {space.name}
-            </span>
-            <Badge variant="neutral" className="hidden font-mono text-[10px] sm:inline-flex">
-              {space.key}
-            </Badge>
-            {space.status === "archived" ? (
-              <Badge variant="neutral" className="hidden text-[10px] md:inline-flex">
-                Archived
+    <>
+      <Link
+        href={href}
+        className="border-border group grid min-w-0 grid-cols-[minmax(0,1fr)_7.5rem_5.5rem_auto] items-center gap-3 border-b px-4 py-3 transition-colors duration-150 last:border-b-0 hover:bg-surface-hover focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="bg-primary-subtle flex size-9 shrink-0 items-center justify-center rounded-md text-lg leading-none">
+            {space.icon || "📄"}
+          </span>
+          <span className="min-w-0">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-semibold group-hover:text-primary">
+                {space.name}
+              </span>
+              <Badge variant="neutral" className="hidden font-mono text-[10px] sm:inline-flex">
+                {space.key}
               </Badge>
-            ) : null}
-          </span>
-          <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-            {space.description || "No description"}
+              {space.status === "archived" ? (
+                <Badge variant="neutral" className="hidden text-[10px] md:inline-flex">
+                  Archived
+                </Badge>
+              ) : null}
+            </span>
+            <span className="text-muted-foreground mt-0.5 block truncate text-xs">
+              {space.description || "No description"}
+            </span>
           </span>
         </span>
-      </span>
-      <span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:flex">
-        {space.visibility === "open" ? (
-          <Globe2 className="size-3.5 shrink-0" />
-        ) : (
-          <Lock className="size-3.5 shrink-0" />
-        )}
-        <span>{space.visibility === "open" ? "Open" : "Private"}</span>
-      </span>
-      <span className="text-muted-foreground hidden items-center gap-1.5 text-xs md:flex">
-        <Users className="size-3.5 shrink-0" />
-        {space.member_count}
-      </span>
-      <span onClick={(event) => event.preventDefault()} className="justify-self-end">
-        <FavoriteButton
-          space={space}
-          favorite={favorite}
-          pending={pending}
-          onToggle={toggleFavorite}
-        />
-      </span>
-    </Link>
+        <span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:flex">
+          {space.visibility === "open" ? (
+            <Globe2 className="size-3.5 shrink-0" />
+          ) : (
+            <Lock className="size-3.5 shrink-0" />
+          )}
+          <span>{space.visibility === "open" ? "Open" : "Private"}</span>
+        </span>
+        <span className="text-muted-foreground hidden items-center gap-1.5 text-xs md:flex">
+          <Users className="size-3.5 shrink-0" />
+          {space.member_count}
+        </span>
+        <span
+          onClick={(event) => event.preventDefault()}
+          className="justify-self-end flex items-center gap-1"
+        >
+          <FavoriteButton
+            space={space}
+            favorite={favorite}
+            pending={pending}
+            onToggle={toggleFavorite}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-7 text-xs gap-1 px-2 font-medium cursor-pointer"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setEditOpen(true);
+            }}
+          >
+            <Pencil className="size-3" />
+            Edit
+          </Button>
+        </span>
+      </Link>
+
+      <EditSpaceModal
+        space={space}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
+    </>
   );
 }
 
