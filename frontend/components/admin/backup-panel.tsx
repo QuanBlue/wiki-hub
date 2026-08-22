@@ -1559,6 +1559,9 @@ export function BackupPanel() {
     storedConfluenceUploadRef.current = null;
     setStoredConfluenceUpload(null);
     setConfluenceFile(null);
+    if (confluenceFileInput.current) {
+      confluenceFileInput.current.value = "";
+    }
     setConfluenceArchive(null);
     setUploadProgress(null);
     setUploadStats(null);
@@ -1607,6 +1610,9 @@ export function BackupPanel() {
       setIsSpaceModalOpen(false);
       setConfluenceArchive(null);
       setConfluenceFile(null);
+      if (confluenceFileInput.current) {
+        confluenceFileInput.current.value = "";
+      }
       storedConfluenceUploadRef.current = null;
       setStoredConfluenceUpload(null);
       setUploadProgress(null);
@@ -2907,6 +2913,9 @@ export function BackupPanel() {
                 setConfluenceJob(null);
                 setConfluenceArchive(null);
                 setConfluenceFile(null);
+                if (confluenceFileInput.current) {
+                  confluenceFileInput.current.value = "";
+                }
                 setUploadProgress(null);
                 setUploadStats(null);
                 setHashStats(null);
