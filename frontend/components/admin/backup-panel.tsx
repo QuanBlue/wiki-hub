@@ -426,7 +426,7 @@ async function sha256File(
         .slice(file.size - SAMPLE_CHUNK_SIZE)
         .arrayBuffer();
 
-      const metaString = `size:${file.size};modified:${file.lastModified};name:${file.name};`;
+      const metaString = `size:${file.size};name:${file.name};`;
       const metaBytes = new TextEncoder().encode(metaString);
 
       const combined = new Uint8Array(
@@ -1383,6 +1383,7 @@ export function BackupPanel() {
         setSpaceFilter("");
         setSelectedSpaces([]);
         setImportAllSpaces(false);
+        setIsSpaceModalOpen(true);
         toast.success("Archive already uploaded. Choose the Spaces to import.");
         return;
       }
@@ -1600,7 +1601,6 @@ export function BackupPanel() {
    * and from inside the space-selection modal. */
   async function discardConfluenceArchive() {
     if (!confluenceArchive) return;
-    const archiveId = confluenceArchive.id;
     setDiscardingArchivePending(true);
     try {
       setIsSpaceModalOpen(false);
@@ -1615,14 +1615,7 @@ export function BackupPanel() {
       setConfluenceUploadError(null);
       setConfluenceUploadNotice(null);
       void clearStoredUpload();
-      rememberCancelledUpload(archiveId);
-      await apiFetch(
-        `/api/v1/confluence-imports/archives/${archiveId}/upload`,
-        { method: "DELETE" },
-      );
-      toast.success("Archive discarded.");
-    } catch {
-      // Best-effort – the cancelled marker prevents it from appearing again.
+      toast.success("Archive selection cleared.");
     } finally {
       setDiscardingArchivePending(false);
       setConfirmDiscardArchive(false);
@@ -2256,15 +2249,17 @@ export function BackupPanel() {
                       }
                       if (storedConfluenceUpload) {
                         const replacedArchiveId = storedConfluenceUpload.archiveId;
-                        rememberCancelledUpload(replacedArchiveId);
                         uploadRestoreRun.current += 1;
                         storedConfluenceUploadRef.current = null;
                         setStoredConfluenceUpload(null);
                         void clearStoredUpload();
-                        void apiFetch(
-                          `/api/v1/confluence-imports/archives/${replacedArchiveId}/upload`,
-                          { method: "DELETE" },
-                        ).catch(() => {});
+                        if (storedConfluenceUpload.sha256 === null) {
+                          rememberCancelledUpload(replacedArchiveId);
+                          void apiFetch(
+                            `/api/v1/confluence-imports/archives/${replacedArchiveId}/upload`,
+                            { method: "DELETE" },
+                          ).catch(() => {});
+                        }
                       }
                       setConfluenceFile(nextFile);
                       setStoredConfluenceUpload(null);
@@ -2909,6 +2904,8 @@ export function BackupPanel() {
               variant="primary"
               onClick={() => {
                 setConfluenceJob(null);
+                setConfluenceArchive(null);
+                setConfluenceFile(null);
                 setUploadProgress(null);
                 setUploadStats(null);
                 setHashStats(null);

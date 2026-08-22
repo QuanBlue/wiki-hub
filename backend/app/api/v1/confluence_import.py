@@ -113,6 +113,7 @@ async def list_active_uploads(
     Scanned archives are included so that a new tab can restore the space
     selection UI without the user having to re-upload the archive.
     """
+    imported_archive_ids = select(ImportJob.archive_id)
     archives = (
         (
             await session.execute(
@@ -120,6 +121,7 @@ async def list_active_uploads(
                 .where(
                     ImportArchive.created_by_id == user.id,
                     ImportArchive.status.in_(["uploading", "scanned"]),
+                    ImportArchive.id.not_in(imported_archive_ids),
                 )
                 .order_by(desc(ImportArchive.updated_at), desc(ImportArchive.created_at))
                 .limit(5)

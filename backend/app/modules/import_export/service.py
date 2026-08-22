@@ -945,9 +945,9 @@ class ConfluenceImportService:
                 await self.storage.abort_multipart_upload(
                     archive.object_key, archive.multipart_upload_id
                 )
-        archive.multipart_upload_id = None
-        archive.status = "cancelled"
-        await self.session.flush()
+            archive.multipart_upload_id = None
+            archive.status = "cancelled"
+            await self.session.flush()
 
     async def create_job(
         self,
