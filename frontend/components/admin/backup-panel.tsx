@@ -1498,6 +1498,7 @@ export function BackupPanel() {
       setSpaceFilter("");
       setSelectedSpaces([]);
       setImportAllSpaces(false);
+      setIsSpaceModalOpen(true);
       toast.success("Archive scanned. Choose the Spaces to import.");
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
