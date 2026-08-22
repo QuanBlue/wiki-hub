@@ -61,6 +61,69 @@ def _slug(value: str, occupied: set[str]) -> str:
     return candidate
 
 
+def _build_view_file_card_html(filename: str, url: str) -> str:
+    escaped_fn = html.escape(filename)
+    escaped_url = html.escape(url)
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    title_no_ext = filename.rsplit(".", 1)[0] if "." in filename else filename
+    escaped_title = html.escape(title_no_ext)
+
+    if ext in {"pptx", "ppt"}:
+        bg_gradient = "from-rose-600 via-red-700 to-amber-700"
+        badge_text = "Presentation"
+        badge_bg = "bg-rose-950/40 text-rose-100"
+        icon = "📊"
+    elif ext in {"pdf"}:
+        bg_gradient = "from-red-600 via-rose-800 to-slate-900"
+        badge_text = "PDF Document"
+        badge_bg = "bg-red-950/40 text-red-100"
+        icon = "📕"
+    elif ext in {"docx", "doc"}:
+        bg_gradient = "from-blue-600 via-indigo-700 to-slate-900"
+        badge_text = "Word Document"
+        badge_bg = "bg-blue-950/40 text-blue-100"
+        icon = "📝"
+    elif ext in {"xlsx", "xls"}:
+        bg_gradient = "from-emerald-600 via-teal-700 to-slate-900"
+        badge_text = "Spreadsheet"
+        badge_bg = "bg-emerald-950/40 text-emerald-100"
+        icon = "📈"
+    elif ext in {"png", "jpg", "jpeg", "gif", "webp", "svg"}:
+        return (
+            f'<div class="confluence-macro confluence-macro-view-file my-4 inline-block border border-border rounded-xl bg-surface shadow-2xs overflow-hidden max-w-sm m-1.5 align-top">'
+            f'<img src="{escaped_url}" alt="{escaped_fn}" class="max-h-60 object-contain w-full bg-surface-sunken/30" />'
+            f'<div class="p-2.5 flex items-center justify-between text-xs border-t border-border/40">'
+            f'<span class="font-medium text-foreground truncate" title="{escaped_fn}">{escaped_fn}</span>'
+            f'<a href="{escaped_url}" download="{escaped_fn}" class="text-primary hover:underline font-semibold ml-2 shrink-0">Download</a>'
+            f'</div>'
+            f'</div>'
+        )
+    else:
+        bg_gradient = "from-slate-600 via-slate-700 to-slate-900"
+        badge_text = "File"
+        badge_bg = "bg-slate-950/40 text-slate-100"
+        icon = "📄"
+
+    return (
+        f'<div class="confluence-macro confluence-macro-view-file my-3 inline-flex flex-col border border-border rounded-xl bg-surface shadow-xs hover:shadow-md hover:border-primary/50 transition-all overflow-hidden w-full sm:w-[260px] m-1.5 align-top">'
+        f'<div class="h-32 bg-gradient-to-br {bg_gradient} p-3.5 flex flex-col justify-between text-white relative overflow-hidden group">'
+        f'<div class="absolute -right-3 -bottom-3 opacity-15 text-5xl font-black select-none uppercase tracking-tighter">{ext}</div>'
+        f'<span class="text-[10px] font-bold uppercase tracking-wider {badge_bg} border border-white/20 backdrop-blur-xs px-2 py-0.5 rounded-full w-max">{badge_text}</span>'
+        f'<p class="font-bold text-xs leading-snug drop-shadow-xs line-clamp-3 my-auto">{escaped_title}</p>'
+        f'</div>'
+        f'<div class="p-2.5 flex items-center justify-between gap-2 bg-surface text-xs border-t border-border/40">'
+        f'<div class="flex items-center gap-1.5 min-w-0">'
+        f'<span class="text-sm shrink-0">{icon}</span>'
+        f'<span class="text-[11px] font-medium text-foreground truncate" title="{escaped_fn}">{escaped_fn}</span>'
+        f'</div>'
+        f'<a href="{escaped_url}" download="{escaped_fn}" class="text-[11px] font-semibold text-primary hover:text-primary-hover hover:underline shrink-0">'
+        f'Download'
+        f'</a>'
+        f'</div>'
+        f'</div>'
+    )
+
+
 def _build_attachments_table_html(files: list[dict[str, str]]) -> str:
     if not files:
         return ""
@@ -271,6 +334,58 @@ def _link_imported_attachments(
         else:
             m.decompose()
 
+    # 5. Resolve <div data-macro="view-file"> or <ac:structured-macro ac:name="view-file">
+    view_file_macros = soup.find_all(
+        lambda tag: (
+            tag.name == "div" and tag.get("data-macro") in {"view-file", "viewfile", "view-doc", "viewdoc"}
+        ) or (
+            tag.name in {"ac:structured-macro", "structured-macro"}
+            and (tag.get("ac:name") or tag.get("name") or "").lower() in {"view-file", "viewfile", "view-doc", "viewdoc"}
+        )
+    )
+    for m in view_file_macros:
+        attachment = m.find(["ri:attachment", "attachment"])
+        filename = attachment.get("ri:filename") or attachment.get("filename") if attachment else None
+        if not filename:
+            span_fn = m.find(lambda s: s.name == "span" and s.get("data-filename"))
+            if span_fn:
+                filename = span_fn.get("data-filename")
+        if not filename:
+            param = m.find(
+                lambda p: p.name in {"ac:parameter", "parameter"}
+                and p.get("ac:name") in {"name", "filename", "0"}
+            )
+            if param:
+                filename = param.get_text().strip()
+
+        if not isinstance(filename, str) or not filename:
+            m.decompose()
+            continue
+
+        page_ref = m.find("ri:page")
+        ref_title = page_ref.get("ri:content-title") if page_ref else None
+        target_page_id = (title_to_page_id.get(ref_title) if ref_title else None) or source_page_id
+
+        url = urls.get((target_page_id, filename))
+        if not url:
+            url = urls.get((target_page_id, filename.replace("+", " ")))
+        if not url:
+            url = next(
+                (
+                    u
+                    for (_pid, fn), u in urls.items()
+                    if fn == filename or fn == filename.replace("+", " ")
+                ),
+                None,
+            )
+
+        if not url:
+            url = f"#attachment-{filename}"
+
+        card_html = _build_view_file_card_html(filename, url)
+        card_soup = BeautifulSoup(card_html, "html.parser")
+        m.replace_with(card_soup)
+
     # If page has files and neither macro was explicitly present, check if we should render them
     if this_page_files and not attachment_macros and not gallery_macros:
         # Check if files were not already linked in the content
@@ -318,6 +433,21 @@ def _normalize_confluence_html(content: str) -> str:
         and "<layout" not in content
     ):
         return content
+
+    def _escape_cdata(match: re.Match) -> str:
+        inner = match.group(1)
+        return (
+            inner.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+
+    content = re.sub(
+        r"<!\[CDATA\[([\s\S]*?)\]\]\s*(?:>?|&gt;)?\s*",
+        _escape_cdata,
+        content,
+        flags=re.IGNORECASE,
+    )
 
     soup = BeautifulSoup(content, "html.parser")
 
@@ -425,7 +555,7 @@ def _normalize_confluence_html(content: str) -> str:
         # Handle Code Macro
         if macro_name == "code":
             code_tag = macro.find(["ac:plain-text-body", "plain-text-body"])
-            code_text = code_tag.get_text() if code_tag else ""
+            code_text = code_tag.get_text() if code_tag else macro.get_text().strip()
             if re.match(r"^\s*<!\[CDATA\[", code_text, re.IGNORECASE):
                 code_text = re.sub(
                     r"^\s*<!\[CDATA\[", "", code_text, count=1, flags=re.IGNORECASE
@@ -625,6 +755,36 @@ def _normalize_confluence_html(content: str) -> str:
                     "data-macro": "gallery",
                 },
             )
+            macro.replace_with(card_div)
+            continue
+
+        # Handle View File Macro
+        if macro_name in {"view-file", "viewfile", "view-doc", "viewdoc"}:
+            card_div = soup.new_tag(
+                "div",
+                attrs={
+                    "class": "confluence-macro confluence-macro-view-file",
+                    "data-macro": "view-file",
+                },
+            )
+            attachment = macro.find(["ri:attachment", "attachment"])
+            if attachment:
+                card_div.append(attachment)
+            else:
+                param = macro.find(
+                    lambda p: (
+                        p.name in {"ac:parameter", "parameter"}
+                        and p.get("ac:name") in {"name", "filename", "0"}
+                    )
+                )
+                if param:
+                    filename_text = param.get_text().strip()
+                    if filename_text:
+                        span_file = soup.new_tag(
+                            "span", attrs={"data-filename": filename_text}
+                        )
+                        card_div.append(span_file)
+
             macro.replace_with(card_div)
             continue
 

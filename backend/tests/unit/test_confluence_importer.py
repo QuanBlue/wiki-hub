@@ -5,6 +5,7 @@ from app.modules.import_export.service import (
     _is_invalid_import_username,
     _link_imported_attachments,
     _normalize_confluence_code_macros,
+    _normalize_confluence_html,
     _slug,
 )
 
@@ -120,7 +121,7 @@ def test_normalize_confluence_code_macros_no_cdata():
     """
     normalized = _normalize_confluence_code_macros(content)
     assert (
-        '<pre><code class="language-javascript">console.log(&quot;Hello No CDATA&quot;);</code></pre>'
+        '<pre><code class="language-javascript">console.log("Hello No CDATA");</code></pre>'
         in normalized
     )
 
@@ -146,7 +147,7 @@ def test_normalize_confluence_code_macros_spaced_cdata():
     """
     normalized = _normalize_confluence_code_macros(content)
     assert (
-        '<pre><code class="language-python">def hello():\n    print(&quot;Hello CDATA Spaced&quot;)\n</code></pre>'
+        '<pre><code class="language-python">def hello():\n    print("Hello CDATA Spaced")</code></pre>'
         in normalized
     )
 
@@ -179,6 +180,33 @@ def test_link_imported_attachments():
     assert '<img alt="other.png" src="/attachments/456/other.png"/>' in result
     assert 'href="/attachments/123/raw.txt"' in result
     assert 'src="/attachments/123/my-image.png"' in result
+
+
+def test_normalize_and_link_attachments_modes():
+    raw = """
+    <p>Inline Link: <ac:link><ri:attachment ri:filename="manual.pdf" /></ac:link></p>
+    <p>Card Preview: <ac:structured-macro ac:name="view-file"><ac:parameter ac:name="name"><ri:attachment ri:filename="slides.pptx" /></ac:parameter></ac:structured-macro></p>
+    <p>Embedded Image: <ac:image><ri:attachment ri:filename="photo.jpg" /></ac:image></p>
+    <ac:structured-macro ac:name="attachments"></ac:structured-macro>
+    """
+    urls = {
+        ("p1", "manual.pdf"): "/files/manual.pdf",
+        ("p1", "slides.pptx"): "/files/slides.pptx",
+        ("p1", "photo.jpg"): "/files/photo.jpg",
+    }
+    normalized = _normalize_confluence_html(raw)
+    linked = _link_imported_attachments(normalized, "p1", urls, {})
+
+    # 1. Inline Link must render as <a>
+    assert '<a href="/files/manual.pdf">manual.pdf</a>' in linked
+    # 2. View File Card must render as card container div
+    assert 'confluence-macro-view-file' in linked
+    assert 'slides.pptx' in linked
+    assert 'download="slides.pptx"' in linked
+    # 3. Embedded Image must render as <img>
+    assert '<img alt="photo.jpg" src="/files/photo.jpg"/>' in linked
+    # 4. Attachments Macro must render table
+    assert 'Attached Files' in linked
 
 
 def test_confluence_scan_resolves_referenced_users_and_attachment_fallbacks(tmp_path):

@@ -41,6 +41,7 @@ def space():
         name="Engineering",
         description="Docs",
         icon="book",
+        font_family="inherit",
         status=SpaceStatus.active,
         visibility=SpaceVisibility.open,
         created_at=datetime.now(UTC),

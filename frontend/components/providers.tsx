@@ -8,6 +8,7 @@ import { Toaster } from "sonner";
 import { ApiError } from "@/lib/api-client";
 import { NavigationLoading } from "@/components/navigation-loading";
 import { ThemeColorProvider } from "@/components/theme-color-provider";
+import { ScrollToTop } from "@/components/ui/scroll-to-top";
 
 function makeQueryClient() {
   return new QueryClient({
@@ -64,6 +65,7 @@ export function Providers({
           {children}
           <NavigationLoading />
           <Toaster position="bottom-right" closeButton richColors />
+          <ScrollToTop />
         </ThemeColorProvider>
       </ThemeProvider>
     </QueryClientProvider>

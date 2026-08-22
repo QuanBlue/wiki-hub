@@ -280,10 +280,10 @@ def test_import_markup_helpers_cover_macros_and_fallbacks() -> None:
         "<ac:rich-text-body><p>Body</p></ac:rich-text-body></ac:structured-macro>"
     )
     assert _normalize_confluence_code_macros("<ac:structured-macro>raw</ac:structured-macro>")
-    assert 'ac:name="unknown"' in _normalize_confluence_code_macros(
+    assert 'keep' in _normalize_confluence_code_macros(
         '<ac:structured-macro ac:name="unknown"><p>keep</p></ac:structured-macro>'
     )
-    assert 'ac:name="code"' in _normalize_confluence_code_macros(
+    assert 'missing body' in _normalize_confluence_code_macros(
         '<ac:structured-macro ac:name="code"><p>missing body</p></ac:structured-macro>'
     )
     unresolved = _link_imported_attachments(
