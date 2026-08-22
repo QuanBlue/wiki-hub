@@ -1561,9 +1561,7 @@ export function BackupPanel() {
     setHashStats(null);
     setPreparationLogs([]);
     setConfluenceUploadError(null);
-    setConfluenceUploadNotice(
-      "Upload cancelled. Choose a file to start a new import.",
-    );
+    setConfluenceUploadNotice(null);
     void clearStoredUpload();
     try {
       if (archiveId) {
@@ -1613,9 +1611,7 @@ export function BackupPanel() {
       setHashStats(null);
       setPreparationLogs([]);
       setConfluenceUploadError(null);
-      setConfluenceUploadNotice(
-        "Archive discarded. Choose a file to start a new import.",
-      );
+      setConfluenceUploadNotice(null);
       void clearStoredUpload();
       rememberCancelledUpload(archiveId);
       await apiFetch(
