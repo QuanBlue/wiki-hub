@@ -2,15 +2,22 @@
 
 import {
   AlertTriangle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   ChevronDown,
   Download,
   FileArchive,
+  Archive,
+  ArchiveRestore,
+  HardDrive,
   Info,
   Loader2,
   Pause,
   Play,
+  RotateCcw,
   Search,
   Upload,
+  UploadCloud,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1697,107 +1704,250 @@ export function BackupPanel() {
     }
   }
 
+  const [activeSection, setActiveSection] = useState<"export" | "import">("export");
+
+  const BACKUP_SECTIONS = [
+    {
+      id: "export" as const,
+      label: "Export / Backup",
+      icon: Archive,
+    },
+    {
+      id: "import" as const,
+      label: "Import / Restore",
+      icon: ArchiveRestore,
+    },
+  ];
+
   return (
-    <div className="space-y-6">
+    <div className="grid items-start gap-8 lg:grid-cols-[13rem_minmax(0,1fr)]">
+      {/* Sidebar */}
+      <aside
+        aria-label="Backup sections"
+        className="border-border border-r pr-5 lg:sticky lg:top-24"
+      >
+        <p className="text-muted-foreground px-2 text-[10px] font-semibold tracking-[0.08em] uppercase">
+          Backup sections
+        </p>
+        <div className="mt-3 space-y-1">
+          {BACKUP_SECTIONS.map(({ id, label, icon: Icon }) => {
+            const selected = activeSection === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setActiveSection(id)}
+                className={cn(
+                  "flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  selected
+                    ? "bg-surface-selected text-primary font-semibold hover:bg-surface-hover"
+                    : "text-muted-foreground font-normal hover:bg-surface-hover hover:text-foreground",
+                )}
+              >
+                <Icon className="size-4 shrink-0" />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="min-w-0 space-y-6">
+
       {/* -- Export ------------------------------------------------------- */}
-      <section className="border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm">
-        <div className="mb-4">
+      <section
+        id="backup-export-section"
+        role="tabpanel"
+        className={cn(
+          "border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm",
+          activeSection !== "export" && "hidden",
+        )}
+      >
+        <div className="mb-5">
           <h2 className="flex items-center gap-2.5 text-base font-semibold">
             <span className="bg-primary-subtle text-primary flex size-8 items-center justify-center rounded-md">
-              <Download className="size-4" />
+              <Archive className="size-4" />
             </span>
-            Export workspace data
+            Export & Backup workspace data
           </h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Choose a portable WikiHub restore package or a separate Confluence
-            Data Center content export. The two formats are intentionally not
-            interchangeable.
+            Two separate export formats are available. They serve different
+            purposes and are{" "}
+            <strong className="text-foreground font-medium">
+              not interchangeable
+            </strong>
+            .
           </p>
         </div>
 
-        {/* Security / Password Hashes Toggle Option */}
-        <label className="border-border bg-surface-sunken mb-5 flex items-start gap-3 rounded-lg border p-3.5 text-sm transition-colors hover:bg-surface-hover cursor-pointer">
-          <input
-            type="checkbox"
-            checked={includeCredentials}
-            onChange={(e) => setIncludeCredentials(e.target.checked)}
-            className="accent-primary mt-0.5 size-4 rounded cursor-pointer"
-          />
-          <span>
-            <span className="font-medium text-foreground">Include password hashes</span>
-            <span className="text-muted-foreground block text-xs mt-0.5 leading-normal">
-              Off by default. The file becomes an offline cracking target for
-              every weak password in the instance — only enable it for a
-              migration, and store the file accordingly. Without it, restored
-              accounts need a password set before they can sign in.
-            </span>
-          </span>
-        </label>
+        {/* 2 Export Option Cards — distinct colour accents to prevent confusion */}
+        <div className="grid grid-cols-1 gap-0 md:grid-cols-[1fr_auto_1fr]">
 
-        {/* 2 Export Option Cards in Grid */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {/* Card 1: WikiHub Native Backup */}
-          <div className="border-border bg-surface-raised flex flex-col justify-between rounded-lg border p-4 shadow-2xs">
-            <div>
-              <div className="flex items-center gap-2 font-medium text-sm text-foreground">
-                <FileArchive className="text-primary size-4 shrink-0" />
-                <span>WikiHub Backup Package</span>
+          <div className="border-border bg-surface-raised flex flex-col overflow-hidden rounded-xl border shadow-sm">
+            <div className="flex flex-1 flex-col p-4">
+              {/* Header */}
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
+                    <HardDrive className="size-4" />
+                  </span>
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">
+                      Export WikiHub Backup
+                    </div>
+                    <div className="text-muted-foreground mt-0.5 text-[11px]">
+                      Native restore package
+                    </div>
+                  </div>
+                </div>
+                <span className="bg-primary-subtle text-primary shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium">
+                  Native
+                </span>
               </div>
-              <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
-                Generates a complete <code className="text-foreground bg-surface-sunken px-1 py-0.5 rounded font-mono text-[11px]">.zip</code> package containing all spaces, pages, revisions, and attachments for full workspace restore.
+
+              {/* Purpose */}
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                A complete{" "}
+                <code className="text-foreground bg-surface-sunken rounded px-1 py-0.5 font-mono text-[11px]">
+                  .zip
+                </code>{" "}
+                of all spaces, pages, revisions and attachments. Use this to{" "}
+                <span className="text-foreground font-medium">
+                  restore WikiHub itself
+                </span>{" "}
+                — on a new server, after data loss, or before a major upgrade.
               </p>
-            </div>
-            <div className="mt-4 pt-2">
-              <Button
-                type="button"
-                variant="primary"
-                className="w-full sm:w-auto"
-                disabled={isDownloading}
-                aria-busy={isDownloading}
-                onClick={() => void createPortableExport("full_export")}
-              >
-                {isDownloading ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <Download />
-                )}
-                {isDownloading ? "Queueing export..." : "Create full backup ZIP"}
-              </Button>
+
+              {/* Password hashes option — only relevant to WikiHub restore */}
+              <label className="border-border bg-surface-sunken mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-xs transition-colors duration-150 hover:bg-surface-hover">
+                <input
+                  type="checkbox"
+                  checked={includeCredentials}
+                  onChange={(e) => setIncludeCredentials(e.target.checked)}
+                  className="accent-primary mt-0.5 size-3.5 shrink-0 cursor-pointer rounded"
+                />
+                <span>
+                  <span className="font-medium text-foreground">
+                    Include password hashes
+                  </span>
+                  <span className="text-muted-foreground mt-0.5 block leading-normal">
+                    Off by default. Enables offline cracking of weak passwords
+                    — only enable for a migration and store the file securely.
+                    Without it, restored accounts need a password set before
+                    signing in.
+                  </span>
+                </span>
+              </label>
+
+              <div className="mt-auto pt-4">
+                <Button
+                  type="button"
+                  variant="primary"
+                  className="w-full"
+                  disabled={isDownloading}
+                  aria-busy={isDownloading}
+                  onClick={() => void createPortableExport("full_export")}
+                >
+                  {isDownloading ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Download />
+                  )}
+                  {isDownloading ? "Queueing export…" : "Create full backup ZIP"}
+                </Button>
+              </div>
             </div>
           </div>
 
+          {/* "or" divider between the two cards */}
+          <div className="flex items-center justify-center py-4 md:flex-col md:px-4 md:py-0">
+            <div className="bg-border h-px w-full md:h-full md:w-px" />
+            <span className="bg-surface border-border text-muted-foreground mx-3 shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium md:mx-0 md:my-3">
+              or
+            </span>
+            <div className="bg-border h-px w-full md:h-full md:w-px" />
+          </div>
+
           {/* Card 2: Confluence DC Export */}
-          <div className="border-border bg-surface-raised flex flex-col justify-between rounded-lg border p-4 shadow-2xs">
-            <div>
-              <div className="flex items-center gap-2 font-medium text-sm text-foreground">
-                <FileArchive className="text-muted-foreground size-4 shrink-0" />
-                <span>Confluence Data Center Export</span>
+          <div className="border-border bg-surface-raised flex flex-col overflow-hidden rounded-xl border shadow-sm">
+            <div className="flex flex-1 flex-col p-4">
+              {/* Header */}
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg"
+                    style={{
+                      backgroundColor: "hsl(38 92% 50% / 0.12)",
+                      color: "hsl(38 92% 50%)",
+                    }}
+                  >
+                    <ArrowUpFromLine className="size-4" />
+                  </span>
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">
+                      Export Confluence Backup
+                    </div>
+                    <div className="text-muted-foreground mt-0.5 text-[11px]">
+                      Migration / hand-off format
+                    </div>
+                  </div>
+                </div>
+                <span
+                  className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  style={{
+                    backgroundColor: "hsl(38 92% 50% / 0.12)",
+                    color: "hsl(38 92% 50%)",
+                  }}
+                >
+                  Migration
+                </span>
               </div>
-              <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
-                Generates an XML export package compatible with Atlassian Confluence DC site restore tools.
+
+              {/* Purpose */}
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                An XML archive compatible with Atlassian Confluence Data Center
+                restore tools. Use this to{" "}
+                <span className="text-foreground font-medium">
+                  hand content off to a Confluence instance
+                </span>{" "}
+                — it cannot be used to restore WikiHub.
               </p>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 pt-2">
-              <Select
-                value={confluenceExportProfile}
-                onValueChange={(val) => setConfluenceExportProfile(val)}
-              >
-                <SelectTrigger aria-label="Confluence Data Center target version" className="h-9 min-w-44 flex-1 text-xs">
-                  <SelectValue placeholder="Choose target version" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="dc-8">Data Center 8.x</SelectItem>
-                  <SelectItem value="dc-9">Data Center 9.x</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={isDownloading || !confluenceExportProfile}
-                onClick={() => void createPortableExport("confluence_export")}
-              >
-                <FileArchive /> Export DC XML
-              </Button>
+
+              <div className="mt-auto space-y-2 pt-4">
+                <Select
+                  value={confluenceExportProfile}
+                  onValueChange={(val) => setConfluenceExportProfile(val)}
+                >
+                  <SelectTrigger
+                    aria-label="Confluence Data Center target version"
+                    className="h-9 w-full text-xs"
+                  >
+                    <SelectValue placeholder="Choose target version" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="dc-8">Data Center 8.x</SelectItem>
+                    <SelectItem value="dc-9">Data Center 9.x</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="primary"
+                  className="w-full"
+                  disabled={isDownloading || !confluenceExportProfile}
+                  onClick={() => void createPortableExport("confluence_export")}
+                >
+                  {isDownloading ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <ArrowUpFromLine />
+                  )}
+                  Export DC XML
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -1813,7 +1963,10 @@ export function BackupPanel() {
             </span>
             {portableBackupJob.download_url && portableBackupJob.output_filename && (
               <Button asChild variant="secondary" size="sm">
-                <a href={portableBackupJob.download_url} download={portableBackupJob.output_filename}>
+                <a
+                  href={portableBackupJob.download_url}
+                  download={portableBackupJob.output_filename}
+                >
                   <Download /> Download {portableBackupJob.output_filename}
                 </a>
               </Button>
@@ -1822,213 +1975,423 @@ export function BackupPanel() {
         )}
       </section>
 
-      {/* -- Confluence import ------------------------------------------ */}
-      <section className="border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="flex items-center gap-2.5 text-base font-semibold">
-              <span className="bg-primary-subtle text-primary flex size-8 items-center justify-center rounded-md">
-                <FileArchive className="size-4" />
-              </span>
-              Import from Confluence
-            </h2>
-            <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
-              Choose a Confluence site or space export archive to prepare it for
-              import into WikiHub.
-            </p>
-          </div>
+      {/* -- Confluence import + WikiHub restore (unified) ----------------- */}
+      <section
+        id="backup-import-section"
+        role="tabpanel"
+        className={cn(
+          "border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm",
+          activeSection !== "import" && "hidden",
+        )}
+      >
+        <div className="mb-5">
+          <h2 className="flex items-center gap-2.5 text-base font-semibold">
+            <span className="bg-primary-subtle text-primary flex size-8 items-center justify-center rounded-md">
+              <ArchiveRestore className="size-4" />
+            </span>
+            Import &amp; Restore workspace data
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Two separate import paths are available. They serve different
+            purposes and are{" "}
+            <strong className="text-foreground font-medium">
+              not interchangeable
+            </strong>
+            .
+          </p>
         </div>
 
-        <div className="border-border bg-surface-sunken mt-4 rounded-md border border-dashed p-4">
-          <Label>Confluence export archive</Label>
-          <input
-            id="confluence-backup-file"
-            ref={confluenceFileInput}
-            type="file"
-            accept=".zip,application/zip,application/x-zip-compressed"
-            disabled={
-              confluencePending ||
-              Boolean(confluenceArchive) ||
-              importInProgress
-            }
-            onChange={(event) => {
-              const nextFile = event.target.files?.[0] ?? null;
-              if (
-                nextFile &&
-                siteSettings?.effective?.max_backup_import_size_bytes
-              ) {
-                if (
-                  nextFile.size >
-                  siteSettings.effective.max_backup_import_size_bytes
-                ) {
-                  setConfluenceUploadError(
-                    `Archive exceeds the configured ${siteSettings.effective.max_backup_import_size_mb} MB limit.`,
-                  );
-                  event.target.value = ""; // Clear file input
-                  setConfluenceFile(null);
-                  return;
-                }
-              }
-              const matchesInterruptedUpload = fileMatchesStoredUpload(
-                nextFile,
-                storedConfluenceUpload,
-              );
-              if (matchesInterruptedUpload && storedConfluenceUpload) {
-                const nextStored = {
-                  ...storedConfluenceUpload,
-                  file: nextFile ?? undefined,
-                  fileLastModified:
-                    nextFile?.lastModified ??
-                    storedConfluenceUpload.fileLastModified,
-                };
-                setConfluenceFile(null);
-                storedConfluenceUploadRef.current = nextStored;
-                setStoredConfluenceUpload(nextStored);
-                setConfluenceArchive(null);
-                setConfluenceUploadError(null);
-                setConfluenceUploadNotice(null);
-                setPreparationLogs([]);
-                setUploadProgress((current) => current ?? 0);
-                void saveStoredUpload(nextStored);
-                void uploadConfluence(true, nextStored);
-                return;
-              }
-              if (storedConfluenceUpload) {
-                const replacedArchiveId = storedConfluenceUpload.archiveId;
-                rememberCancelledUpload(replacedArchiveId);
-                uploadRestoreRun.current += 1;
-                storedConfluenceUploadRef.current = null;
-                setStoredConfluenceUpload(null);
-                void clearStoredUpload();
-                void apiFetch(
-                  `/api/v1/confluence-imports/archives/${replacedArchiveId}/upload`,
-                  { method: "DELETE" },
-                ).catch(() => {
-                  // The local cancelled marker keeps this abandoned upload from
-                  // returning to the UI even if server cleanup is delayed.
-                });
-              }
-              setConfluenceFile(nextFile);
-              setStoredConfluenceUpload(null);
-              void clearStoredUpload();
-              setConfluenceArchive(null);
-              setConfluenceJob(null);
-              setConfluenceUploadError(null);
-              setConfluenceUploadNotice(null);
-              setPreparationLogs([]);
-              setUploadProgress(null);
-              setUploadStats(null);
-              setHashStats(null);
-              setIsUploading(false);
-            }}
-            className="sr-only"
-          />
-          <label
-            className={cn(
-              "border-border bg-surface hover:border-border-strong focus-within:ring-ring mt-2 flex h-10 w-full max-w-md items-center rounded-md border text-sm transition-[color,background-color,border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-offset-2",
-              confluencePending || confluenceArchive || importInProgress
-                ? "cursor-not-allowed opacity-50"
-                : "cursor-pointer",
-            )}
-            htmlFor="confluence-backup-file"
-            aria-disabled={
-              confluencePending ||
-              Boolean(confluenceArchive) ||
-              importInProgress
-            }
-          >
-            <span className="border-border bg-surface-sunken shrink-0 border-r px-3 py-2 font-medium">
-              Choose file
-            </span>
-            <span
-              className="text-muted-foreground min-w-0 flex-1 truncate px-3"
-              title={confluenceArchiveName ?? undefined}
-            >
-              {confluenceArchiveName ?? "No file selected"}
-            </span>
-          </label>
-          <p className="text-muted-foreground mt-2 text-xs">
-            Accepted format: <code className="font-mono">.zip</code> archive
-            exported by Confluence. It uploads directly to protected object
-            storage.
-            {storedUploadNeedsFile
-              ? ` Select ${storedConfluenceUpload?.fileName} again so WikiHub can read the remaining parts.`
-              : null}
-            {confluenceArchive
-              ? " Finish or clear this space selection before choosing another archive."
-              : null}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {isUploading || isHashingArchive ? (
-              <>
-                {isUploading ? (
+        {/* 2-card grid */}
+        <div className="grid grid-cols-1 gap-0 md:grid-cols-[1fr_auto_1fr]">
+
+          {/* Card 1: WikiHub Restore */}
+          <div className="border-border bg-surface-raised flex flex-col overflow-hidden rounded-xl border shadow-sm">
+            <div className="flex flex-1 flex-col p-4">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
+                    <RotateCcw className="size-4" />
+                  </span>
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">
+                      Restore WikiHub Backup
+                    </div>
+                    <div className="text-muted-foreground mt-0.5 text-[11px]">
+                      Native restore package
+                    </div>
+                  </div>
+                </div>
+                <span className="bg-primary-subtle text-primary shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium">
+                  Native
+                </span>
+              </div>
+
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                Upload a trusted WikiHub{" "}
+                <code className="text-foreground bg-surface-sunken rounded px-1 py-0.5 font-mono text-[11px]">
+                  .zip
+                </code>{" "}
+                or{" "}
+                <code className="text-foreground bg-surface-sunken rounded px-1 py-0.5 font-mono text-[11px]">
+                  .json
+                </code>{" "}
+                backup to preview its changes. Existing records are{" "}
+                <span className="text-foreground font-medium">
+                  skipped, never overwritten
+                </span>
+                , and the built-in administrator is always left untouched.
+              </p>
+
+              <div className="mt-auto space-y-3 pt-4">
+                <div>
+                  <input
+                    id="backup-file"
+                    ref={fileInput}
+                    type="file"
+                    accept="application/json,.json,application/zip,.zip"
+                    onChange={(e) => {
+                      const selectedFile = e.target.files?.[0] ?? null;
+                      if (
+                        selectedFile &&
+                        siteSettings?.effective?.max_backup_import_size_bytes &&
+                        selectedFile.size >
+                          siteSettings.effective.max_backup_import_size_bytes
+                      ) {
+                        setFile(null);
+                        setReport(null);
+                        setError(
+                          `Backup exceeds the configured ${siteSettings.effective.max_backup_import_size_mb} MB limit.`,
+                        );
+                        e.target.value = "";
+                        return;
+                      }
+                      setFile(selectedFile);
+                      setReport(null);
+                      setOverwriteBackupSpaces([]);
+                      setError(null);
+                    }}
+                    className="border-border bg-surface file:bg-surface-sunken file:text-foreground hover:border-border-strong block w-full cursor-pointer rounded-md border text-sm transition-colors duration-150 file:mr-3 file:cursor-pointer file:border-0 file:px-3 file:py-2 file:text-sm"
+                  />
+                </div>
+
+                {error ? (
+                  <p
+                    role="alert"
+                    className="border-danger/30 bg-danger/10 text-danger rounded-md border px-3 py-2 text-sm"
+                  >
+                    {error}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant="secondary"
-                    onClick={() => cancelConfluenceUpload("pause")}
+                    disabled={!file || pending !== null}
+                    onClick={() => submitImport(true)}
                   >
-                    <Pause /> Pause upload
+                    {pending === "preview" ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Upload />
+                    )}
+                    Preview changes
                   </Button>
+                  <Button
+                    variant="primary"
+                    disabled={!report || report.dry_run === false || pending !== null}
+                    onClick={() => setConfirmApply(true)}
+                  >
+                    Apply import
+                  </Button>
+                </div>
+
+                {report?.dry_run &&
+                file?.name.toLocaleLowerCase().endsWith(".zip") &&
+                report.entries.some(
+                  (entry) => entry.kind === "space" && entry.reason === "key_exists",
+                ) ? (
+                  <div className="border-warning/30 bg-warning-bg rounded-md border p-3 text-sm">
+                    <p className="font-medium">Conflicting spaces</p>
+                    <p className="text-muted-foreground mt-1">
+                      Leave unchecked to skip. Selecting overwrite replaces only
+                      page content, revisions, restrictions and attachments;
+                      destination membership and permissions stay unchanged.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+                      {report.entries
+                        .filter(
+                          (entry) =>
+                            entry.kind === "space" && entry.reason === "key_exists",
+                        )
+                        .map((entry) => (
+                          <label
+                            key={entry.label}
+                            className="flex cursor-pointer items-center gap-2"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={overwriteBackupSpaces.includes(entry.label)}
+                              onChange={(event) =>
+                                setOverwriteBackupSpaces((current) =>
+                                  event.target.checked
+                                    ? [...current, entry.label]
+                                    : current.filter((key) => key !== entry.label),
+                                )
+                              }
+                              className="accent-primary size-4"
+                            />
+                            Overwrite {entry.label}
+                          </label>
+                        ))}
+                    </div>
+                  </div>
                 ) : null}
-                <Button
-                  variant="danger"
-                  disabled={cancelUploadPending}
-                  onClick={() => setConfirmCancelUpload(true)}
-                >
-                  Cancel upload
-                </Button>
-              </>
-            ) : !isFinalizingArchive ? (
-              <>
-                <Button
-                  variant="secondary"
-                  disabled={
-                    (!confluenceFile &&
-                      !canResumeStoredUpload &&
-                      !storedUploadNeedsFile) ||
-                    confluencePending ||
-                    Boolean(confluenceArchive) ||
-                    importInProgress
-                  }
-                  onClick={() => {
-                    if (storedUploadNeedsFile) {
-                      confluenceFileInput.current?.click();
-                      return;
-                    }
-                    void uploadConfluence(Boolean(storedConfluenceUpload));
+              </div>
+            </div>
+          </div>
+
+          {/* "or" divider */}
+          <div className="flex items-center justify-center py-4 md:flex-col md:px-4 md:py-0">
+            <div className="bg-border h-px w-full md:h-full md:w-px" />
+            <span className="bg-surface border-border text-muted-foreground mx-3 shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium md:mx-0 md:my-3">
+              or
+            </span>
+            <div className="bg-border h-px w-full md:h-full md:w-px" />
+          </div>
+
+          {/* Card 2: Confluence Import */}
+          <div className="border-border bg-surface-raised flex flex-col overflow-hidden rounded-xl border shadow-sm">
+            <div className="flex flex-1 flex-col p-4">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg"
+                    style={{
+                      backgroundColor: "hsl(38 92% 50% / 0.12)",
+                      color: "hsl(38 92% 50%)",
+                    }}
+                  >
+                    <ArrowDownToLine className="size-4" />
+                  </span>
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">
+                      Import Confluence Backup
+                    </div>
+                    <div className="text-muted-foreground mt-0.5 text-[11px]">
+                      Migration / hand-off format
+                    </div>
+                  </div>
+                </div>
+                <span
+                  className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  style={{
+                    backgroundColor: "hsl(38 92% 50% / 0.12)",
+                    color: "hsl(38 92% 50%)",
                   }}
                 >
-                  {isHashingArchive ? (
-                    <FileArchive />
-                  ) : confluencePending && !confluenceArchive ? (
-                    <Loader2 className="animate-spin" />
-                  ) : storedConfluenceUpload ? (
-                    <Play />
-                  ) : (
-                    <Upload />
-                  )}{" "}
-                  {storedUploadNeedsFile
-                    ? "Select file to resume"
-                    : storedConfluenceUpload
-                      ? "Resume upload"
-                      : "Upload and scan"}
-                </Button>
-                {storedConfluenceUpload && !confluenceArchive ? (
-                  <Button
-                    variant="danger"
-                    disabled={cancelUploadPending}
-                    onClick={() => setConfirmCancelUpload(true)}
+                  Migration
+                </span>
+              </div>
+
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                Upload a Confluence site or space export{" "}
+                <code className="text-foreground bg-surface-sunken rounded px-1 py-0.5 font-mono text-[11px]">
+                  .zip
+                </code>{" "}
+                archive to bring content into WikiHub. The archive uploads
+                directly to protected object storage.
+              </p>
+
+              <div className="mt-auto space-y-3 pt-4">
+                <div>
+                  <input
+                    id="confluence-backup-file"
+                    ref={confluenceFileInput}
+                    type="file"
+                    accept=".zip,application/zip,application/x-zip-compressed"
+                    disabled={
+                      confluencePending ||
+                      Boolean(confluenceArchive) ||
+                      importInProgress
+                    }
+                    onChange={(event) => {
+                      const nextFile = event.target.files?.[0] ?? null;
+                      if (
+                        nextFile &&
+                        siteSettings?.effective?.max_backup_import_size_bytes
+                      ) {
+                        if (
+                          nextFile.size >
+                          siteSettings.effective.max_backup_import_size_bytes
+                        ) {
+                          setConfluenceUploadError(
+                            `Archive exceeds the configured ${siteSettings.effective.max_backup_import_size_mb} MB limit.`,
+                          );
+                          event.target.value = "";
+                          setConfluenceFile(null);
+                          return;
+                        }
+                      }
+                      const matchesInterruptedUpload = fileMatchesStoredUpload(
+                        nextFile,
+                        storedConfluenceUpload,
+                      );
+                      if (matchesInterruptedUpload && storedConfluenceUpload) {
+                        const nextStored = {
+                          ...storedConfluenceUpload,
+                          file: nextFile ?? undefined,
+                          fileLastModified:
+                            nextFile?.lastModified ??
+                            storedConfluenceUpload.fileLastModified,
+                        };
+                        setConfluenceFile(null);
+                        storedConfluenceUploadRef.current = nextStored;
+                        setStoredConfluenceUpload(nextStored);
+                        setConfluenceArchive(null);
+                        setConfluenceUploadError(null);
+                        setConfluenceUploadNotice(null);
+                        setPreparationLogs([]);
+                        setUploadProgress((current) => current ?? 0);
+                        void saveStoredUpload(nextStored);
+                        void uploadConfluence(true, nextStored);
+                        return;
+                      }
+                      if (storedConfluenceUpload) {
+                        const replacedArchiveId = storedConfluenceUpload.archiveId;
+                        rememberCancelledUpload(replacedArchiveId);
+                        uploadRestoreRun.current += 1;
+                        storedConfluenceUploadRef.current = null;
+                        setStoredConfluenceUpload(null);
+                        void clearStoredUpload();
+                        void apiFetch(
+                          `/api/v1/confluence-imports/archives/${replacedArchiveId}/upload`,
+                          { method: "DELETE" },
+                        ).catch(() => {});
+                      }
+                      setConfluenceFile(nextFile);
+                      setStoredConfluenceUpload(null);
+                      void clearStoredUpload();
+                      setConfluenceArchive(null);
+                      setConfluenceJob(null);
+                      setConfluenceUploadError(null);
+                      setConfluenceUploadNotice(null);
+                      setPreparationLogs([]);
+                      setUploadProgress(null);
+                      setUploadStats(null);
+                      setHashStats(null);
+                      setIsUploading(false);
+                    }}
+                    className={cn(
+                      "border-border bg-surface file:bg-surface-sunken file:text-foreground hover:border-border-strong block w-full rounded-md border text-sm transition-colors duration-150 file:mr-3 file:border-0 file:px-3 file:py-2 file:text-sm",
+                      confluencePending || confluenceArchive || importInProgress
+                        ? "cursor-not-allowed opacity-50 file:cursor-not-allowed"
+                        : "cursor-pointer file:cursor-pointer",
+                    )}
+                  />
+                  {(storedUploadNeedsFile || confluenceArchive) && (
+                    <p className="text-muted-foreground mt-1.5 text-xs">
+                      {storedUploadNeedsFile
+                        ? `Select ${storedConfluenceUpload?.fileName} again so WikiHub can read the remaining parts.`
+                        : "Finish or clear this space selection before choosing another archive."}
+                    </p>
+                  )}
+                </div>
+
+                {confluenceUploadError ? (
+                  <p
+                    role="alert"
+                    className="border-danger/30 bg-danger/10 text-danger rounded-md border px-3 py-2 text-sm"
                   >
-                    Cancel upload
-                  </Button>
+                    {confluenceUploadError}
+                  </p>
                 ) : null}
-              </>
-            ) : null}
+
+                {confluenceUploadNotice ? (
+                  <p
+                    role="status"
+                    className="border-success/30 bg-success-bg text-success rounded-md border px-3 py-2 text-sm"
+                  >
+                    {confluenceUploadNotice}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2">
+                  {isUploading || isHashingArchive ? (
+                    <>
+                      {isUploading ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => cancelConfluenceUpload("pause")}
+                        >
+                          <Pause /> Pause upload
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="danger"
+                        disabled={cancelUploadPending}
+                        onClick={() => setConfirmCancelUpload(true)}
+                      >
+                        Cancel upload
+                      </Button>
+                    </>
+                  ) : !isFinalizingArchive ? (
+                    <>
+                      <Button
+                        variant="secondary"
+                        disabled={
+                          (!confluenceFile &&
+                            !canResumeStoredUpload &&
+                            !storedUploadNeedsFile) ||
+                          confluencePending ||
+                          Boolean(confluenceArchive) ||
+                          importInProgress
+                        }
+                        onClick={() => {
+                          if (storedUploadNeedsFile) {
+                            confluenceFileInput.current?.click();
+                            return;
+                          }
+                          void uploadConfluence(Boolean(storedConfluenceUpload));
+                        }}
+                      >
+                        {isHashingArchive ? (
+                          <FileArchive />
+                        ) : confluencePending && !confluenceArchive ? (
+                          <Loader2 className="animate-spin" />
+                        ) : storedConfluenceUpload ? (
+                          <Play />
+                        ) : (
+                          <Upload />
+                        )}{" "}
+                        {storedUploadNeedsFile
+                          ? "Select file to resume"
+                          : storedConfluenceUpload
+                            ? "Resume upload"
+                            : "Upload and scan"}
+                      </Button>
+                      {storedConfluenceUpload && !confluenceArchive ? (
+                        <Button
+                          variant="danger"
+                          disabled={cancelUploadPending}
+                          onClick={() => setConfirmCancelUpload(true)}
+                        >
+                          Cancel upload
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
+        {/* ── Full-width status panels below the grid ── */}
+
+        {/* Confluence: fingerprint progress */}
         {isHashingArchive && hashStats ? (
           <div
-            className="border-info/25 bg-info-bg mt-3 rounded-md border p-3 text-sm"
+            className="border-info/25 bg-info-bg mt-4 rounded-md border p-3 text-sm"
             role="status"
           >
             <div className="flex gap-2.5">
@@ -2052,11 +2415,6 @@ export function BackupPanel() {
                     style={{ width: `${hashProgress ?? 0}%` }}
                   />
                 </div>
-                <p className="text-muted-foreground mt-2 text-xs">
-                  Read: {formatBytes(hashStats.loaded)} /{" "}
-                  {formatBytes(hashStats.total)}. WikiHub uses this hash to
-                  avoid uploading the same archive twice.
-                </p>
                 <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
                   <span>
                     <span className="text-foreground font-medium">Speed:</span>{" "}
@@ -2065,9 +2423,7 @@ export function BackupPanel() {
                       : "Calculating speed…"}
                   </span>
                   <span>
-                    <span className="text-foreground font-medium">
-                      Estimate:
-                    </span>{" "}
+                    <span className="text-foreground font-medium">Estimate:</span>{" "}
                     {formatDuration(hashStats.secondsRemaining)}
                   </span>
                 </div>
@@ -2076,16 +2432,15 @@ export function BackupPanel() {
           </div>
         ) : null}
 
+        {/* Confluence: finalizing */}
         {isFinalizingArchive ? (
           <div
-            className="border-info/25 bg-info-bg mt-3 flex gap-2.5 rounded-md border p-3 text-sm"
+            className="border-info/25 bg-info-bg mt-4 flex gap-2.5 rounded-md border p-3 text-sm"
             role="status"
           >
             <Loader2 className="text-info mt-0.5 size-4 shrink-0 animate-spin" />
             <div>
-              <p className="font-medium">
-                Upload complete. Preparing your archive…
-              </p>
+              <p className="font-medium">Upload complete. Preparing your archive…</p>
               <p className="text-muted-foreground mt-1 text-xs">
                 Verifying the upload and scanning spaces can take a few minutes
                 for large archives. Keep this page open while WikiHub prepares
@@ -2095,30 +2450,13 @@ export function BackupPanel() {
           </div>
         ) : null}
 
-        {confluenceUploadNotice ? (
-          <p
-            role="status"
-            className="border-success/30 bg-success-bg text-success mt-3 rounded-md border px-3 py-2 text-sm"
-          >
-            {confluenceUploadNotice}
-          </p>
-        ) : null}
-
-        {confluenceUploadError ? (
-          <p
-            role="alert"
-            className="border-danger/30 bg-danger/10 text-danger mt-3 rounded-md border px-3 py-2 text-sm"
-          >
-            {confluenceUploadError}
-          </p>
-        ) : null}
-
+        {/* Confluence: upload progress */}
         {uploadProgress !== null &&
         !confluenceArchive &&
         !isFinalizingArchive &&
         !isHashingArchive ? (
           <div
-            className="border-info/25 bg-info-bg mt-3 rounded-md border p-3 text-sm"
+            className="border-info/25 bg-info-bg mt-4 rounded-md border p-3 text-sm"
             role="status"
           >
             <div className="flex gap-2.5">
@@ -2144,26 +2482,20 @@ export function BackupPanel() {
                 </div>
                 <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
                   <span>
-                    <span className="text-foreground font-medium">
-                      Uploaded:
-                    </span>{" "}
+                    <span className="text-foreground font-medium">Uploaded:</span>{" "}
                     {formatBytes(uploadStats?.loaded ?? 0)} /{" "}
                     {formatBytes(uploadStats?.total ?? confluenceArchiveSize)}
                   </span>
                   {isUploading ? (
                     <>
                       <span>
-                        <span className="text-foreground font-medium">
-                          Speed:
-                        </span>{" "}
+                        <span className="text-foreground font-medium">Speed:</span>{" "}
                         {uploadStats && uploadStats.bytesPerSecond > 0
                           ? `${formatBytes(uploadStats.bytesPerSecond)}/s`
                           : "Calculating speed…"}
                       </span>
                       <span>
-                        <span className="text-foreground font-medium">
-                          Estimate:
-                        </span>{" "}
+                        <span className="text-foreground font-medium">Estimate:</span>{" "}
                         {formatDuration(uploadStats?.secondsRemaining ?? null)}
                       </span>
                     </>
@@ -2174,9 +2506,10 @@ export function BackupPanel() {
           </div>
         ) : null}
 
+        {/* Confluence: preparation logs */}
         {preparationLogs.length > 0 && !confluenceArchive ? (
           <details
-            className="border-border bg-surface mt-3 rounded-md border"
+            className="border-border bg-surface mt-4 rounded-md border"
             open={preparationLogsExpanded}
             onToggle={(event) =>
               setPreparationLogsExpanded(event.currentTarget.open)
@@ -2201,12 +2534,11 @@ export function BackupPanel() {
           </details>
         ) : null}
 
+        {/* Confluence: archive ready */}
         {confluenceArchive && !importInProgress ? (
           <div className="border-border bg-surface-sunken mt-4 flex items-center justify-between gap-3 rounded-md border p-4 text-sm">
             <div>
-              <p className="font-semibold">
-                Confluence archive ready for import
-              </p>
+              <p className="font-semibold">Confluence archive ready for import</p>
               <p className="text-muted-foreground mt-1 text-xs">
                 {confluenceArchive.spaces.length} spaces found. Choose which
                 spaces to import.
@@ -2241,6 +2573,7 @@ export function BackupPanel() {
           </div>
         ) : null}
 
+        {/* Confluence: job progress */}
         {confluenceJob ? (
           <div className="border-border bg-surface-raised mt-4 rounded-lg border p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2267,17 +2600,6 @@ export function BackupPanel() {
                 ? ` · ${jobAttachmentsProcessed}/${jobAttachmentsTotal} attachments`
                 : ""}
             </p>
-            <p className="hidden">
-              {Math.round(jobProgressPercent)}% complete · {jobSpacesCompleted}/
-              {jobSpacesTotal} spaces ·{" "}
-              {confluenceJob.counters.pages_processed ?? 0}/
-              {confluenceJob.counters.pages_total ?? 0} pages
-            </p>
-            <p className="hidden">
-              {confluenceJob.counters.spaces_completed ?? 0}/
-              {confluenceJob.counters.spaces_total ?? 0} spaces ·{" "}
-              {confluenceJob.counters.pages_processed ?? 0} pages
-            </p>
             <div
               className="bg-surface-sunken mt-3 h-2 overflow-hidden rounded-full"
               aria-label={`${Math.round(jobProgressPercent)}% of import complete`}
@@ -2288,9 +2610,7 @@ export function BackupPanel() {
             >
               <div
                 className="bg-primary h-full transition-[width] duration-300"
-                style={{
-                  width: `${jobProgressPercent}%`,
-                }}
+                style={{ width: `${jobProgressPercent}%` }}
               />
             </div>
             {confluenceJob.phase === "downloading" ? (
@@ -2301,9 +2621,7 @@ export function BackupPanel() {
                 ({displayedDownloadPercent}%)
               </p>
             ) : null}
-            {!["completed", "failed", "cancelled"].includes(
-              confluenceJob.status,
-            ) ? (
+            {!["completed", "failed", "cancelled"].includes(confluenceJob.status) ? (
               <Button
                 className="mt-3"
                 variant="danger"
@@ -2337,10 +2655,7 @@ export function BackupPanel() {
               </Button>
             ) : null}
             {displayConfluenceLogs.length ? (
-              <details
-                className="border-border bg-surface mt-4 rounded-md border"
-                open
-              >
+              <details className="border-border bg-surface mt-4 rounded-md border" open>
                 <summary className="hover:bg-surface-hover cursor-pointer px-3 py-2 text-sm font-medium transition-colors duration-150">
                   Import activity ({displayConfluenceLogs.length})
                 </summary>
@@ -2363,194 +2678,79 @@ export function BackupPanel() {
             ) : null}
           </div>
         ) : null}
-      </section>
 
-      {/* -- Import ------------------------------------------------------- */}
-      <section className="border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm">
-        <h2 className="flex items-center gap-2.5 text-base font-semibold">
-          <span className="bg-primary-subtle text-primary flex size-8 items-center justify-center rounded-md">
-            <Upload className="size-4" />
-          </span>
-          Restore a backup
-        </h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Upload a trusted WikiHub JSON backup or full ZIP to preview its changes. Existing
-          records are <strong>skipped, never overwritten</strong>, and the
-          built-in administrator is always left untouched.
-        </p>
-
-        <div className="mt-4 space-y-2">
-          <Label htmlFor="backup-file">Backup file</Label>
-          <input
-            id="backup-file"
-            ref={fileInput}
-            type="file"
-            accept="application/json,.json,application/zip,.zip"
-            onChange={(e) => {
-              const selectedFile = e.target.files?.[0] ?? null;
-              if (
-                selectedFile &&
-                siteSettings?.effective?.max_backup_import_size_bytes &&
-                selectedFile.size >
-                  siteSettings.effective.max_backup_import_size_bytes
-              ) {
-                setFile(null);
-                setReport(null);
-                setError(
-                  `Backup exceeds the configured ${siteSettings.effective.max_backup_import_size_mb} MB limit.`,
-                );
-                e.target.value = "";
-                return;
-              }
-              setFile(selectedFile);
-              setReport(null);
-              setOverwriteBackupSpaces([]);
-              setError(null);
-            }}
-            className="border-border bg-surface file:bg-surface-sunken file:text-foreground hover:border-border-strong block w-full max-w-md cursor-pointer rounded-md border text-sm transition-colors duration-150 file:mr-3 file:cursor-pointer file:border-0 file:px-3 file:py-2 file:text-sm"
-          />
-        </div>
-
-        {error ? (
-          <p
-            role="alert"
-            className="border-danger/30 bg-danger/10 text-danger mt-3 rounded-md border px-3 py-2 text-sm"
-          >
-            {error}
-          </p>
-        ) : null}
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            disabled={!file || pending !== null}
-            onClick={() => submitImport(true)}
-          >
-            {pending === "preview" ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <Upload />
-            )}
-            Preview changes
-          </Button>
-          <Button
-            variant="primary"
-            disabled={!report || report.dry_run === false || pending !== null}
-            onClick={() => setConfirmApply(true)}
-          >
-            Apply import
-          </Button>
-        </div>
-        {report?.dry_run &&
-        file?.name.toLocaleLowerCase().endsWith(".zip") &&
-        report.entries.some(
-          (entry) => entry.kind === "space" && entry.reason === "key_exists",
-        ) ? (
-          <div className="border-warning/30 bg-warning-bg mt-4 rounded-md border p-3 text-sm">
-            <p className="font-medium">Conflicting spaces</p>
-            <p className="text-muted-foreground mt-1">
-              Leave unchecked to skip. Selecting overwrite replaces only page content,
-              revisions, restrictions and attachments; destination membership and permissions stay unchanged.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
-              {report.entries
-                .filter((entry) => entry.kind === "space" && entry.reason === "key_exists")
-                .map((entry) => (
-                  <label key={entry.label} className="flex cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={overwriteBackupSpaces.includes(entry.label)}
-                      onChange={(event) =>
-                        setOverwriteBackupSpaces((current) =>
-                          event.target.checked
-                            ? [...current, entry.label]
-                            : current.filter((key) => key !== entry.label),
-                        )
-                      }
-                      className="accent-primary size-4"
-                    />
-                    Overwrite {entry.label}
-                  </label>
-                ))}
+        {/* WikiHub restore: report */}
+        {report && activeSection === "import" ? (
+          <div className="border-border bg-surface-raised mt-4 rounded-lg border p-5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-semibold">
+                {report.dry_run ? "Preview" : "Import result"}
+              </h3>
+              <Badge variant={report.dry_run ? "info" : "success"}>
+                {report.dry_run ? "nothing written" : "applied"}
+              </Badge>
+              {report.includes_credentials ? (
+                <Badge variant="warning">includes credentials</Badge>
+              ) : null}
             </div>
-          </div>
-        ) : null}
-      </section>
-
-      {/* -- Report ------------------------------------------------------- */}
-      {report ? (
-        <section className="border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm">
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-semibold">
-              {report.dry_run ? "Preview" : "Import result"}
-            </h2>
-            <Badge variant={report.dry_run ? "info" : "success"}>
-              {report.dry_run ? "nothing written" : "applied"}
-            </Badge>
-            {report.includes_credentials ? (
-              <Badge variant="warning">includes credentials</Badge>
+            <div className="mt-4 grid gap-5 sm:grid-cols-3">
+              <CountList title="Created" counts={report.created} />
+              <CountList title="Skipped" counts={report.skipped} />
+              <CountList title="Errors" counts={report.errors} />
+            </div>
+            {report.users_without_password.length > 0 ? (
+              <div className="border-warning/30 bg-warning-bg mt-4 flex gap-2.5 rounded-md border p-3">
+                <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" />
+                <div className="text-sm">
+                  <p className="font-medium">
+                    {report.users_without_password.length} account(s) cannot sign
+                    in yet
+                  </p>
+                  <p className="text-muted-foreground mt-0.5">
+                    The backup carried no password hashes. Set a password for each
+                    from the Users tab:{" "}
+                    {report.users_without_password.slice(0, 10).join(", ")}
+                    {report.users_without_password.length > 10 ? "…" : ""}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            {report.entries.length > 0 ? (
+              <details className="mt-4">
+                <summary className="hover:bg-surface-hover hover:text-foreground text-muted-foreground -mx-1 cursor-pointer rounded px-1 text-sm transition-colors duration-150">
+                  Per-item detail ({report.entries.length}
+                  {report.entries_truncated ? ", truncated" : ""})
+                </summary>
+                <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto text-sm">
+                  {report.entries.map((entry, index) => (
+                    <li key={`${entry.kind}-${entry.label}-${index}`}>
+                      <Badge
+                        variant={
+                          entry.outcome === "created"
+                            ? "success"
+                            : entry.outcome === "error"
+                              ? "danger"
+                              : "neutral"
+                        }
+                      >
+                        {entry.outcome}
+                      </Badge>{" "}
+                      <span className="text-muted-foreground">{entry.kind}</span>{" "}
+                      {entry.label}
+                      {entry.reason ? (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          — {entry.reason.replaceAll("_", " ")}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             ) : null}
           </div>
-
-          <div className="mt-4 grid gap-5 sm:grid-cols-3">
-            <CountList title="Created" counts={report.created} />
-            <CountList title="Skipped" counts={report.skipped} />
-            <CountList title="Errors" counts={report.errors} />
-          </div>
-
-          {report.users_without_password.length > 0 ? (
-            <div className="border-warning/30 bg-warning-bg mt-4 flex gap-2.5 rounded-md border p-3">
-              <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" />
-              <div className="text-sm">
-                <p className="font-medium">
-                  {report.users_without_password.length} account(s) cannot sign
-                  in yet
-                </p>
-                <p className="text-muted-foreground mt-0.5">
-                  The backup carried no password hashes. Set a password for each
-                  from the Users tab:{" "}
-                  {report.users_without_password.slice(0, 10).join(", ")}
-                  {report.users_without_password.length > 10 ? "…" : ""}
-                </p>
-              </div>
-            </div>
-          ) : null}
-
-          {report.entries.length > 0 ? (
-            <details className="mt-4">
-              <summary className="hover:bg-surface-hover hover:text-foreground text-muted-foreground -mx-1 cursor-pointer rounded px-1 text-sm transition-colors duration-150">
-                Per-item detail ({report.entries.length}
-                {report.entries_truncated ? ", truncated" : ""})
-              </summary>
-              <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto text-sm">
-                {report.entries.map((entry, index) => (
-                  <li key={`${entry.kind}-${entry.label}-${index}`}>
-                    <Badge
-                      variant={
-                        entry.outcome === "created"
-                          ? "success"
-                          : entry.outcome === "error"
-                            ? "danger"
-                            : "neutral"
-                      }
-                    >
-                      {entry.outcome}
-                    </Badge>{" "}
-                    <span className="text-muted-foreground">{entry.kind}</span>{" "}
-                    {entry.label}
-                    {entry.reason ? (
-                      <span className="text-muted-foreground">
-                        {" "}
-                        — {entry.reason.replaceAll("_", " ")}
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
-        </section>
-      ) : null}
+        ) : null}
+      </section>
 
       <Dialog open={isSpaceModalOpen} onOpenChange={setIsSpaceModalOpen}>
         <DialogContent title="Select Spaces to Import" className="max-w-2xl">
@@ -2782,6 +2982,7 @@ export function BackupPanel() {
         pending={discardingArchivePending}
         onConfirm={() => void discardConfluenceArchive()}
       />
+      </div>
     </div>
   );
 }

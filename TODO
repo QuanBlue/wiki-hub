@@ -1,4 +1,2 @@
-
 - cho tích hợp với mail để gửi mail thông báo (đổi password, có người yêu cầu quyền truy cập vào space/page, bị disable,...)
-
-- trong trang admin, cho admin Chỉnh font chữ cho tất cả page của tất cả space, cho nhiều font để chọn lựa, áp dụng cho tất cả các page, và trong từng space cho phép owner chỉnh lại font chữ các page trong đó luôn (phần edit space). Lưu ý là không thay đổi font chữ trong phần code
+Export workspace data cho phép chọn space export hoặc all space
