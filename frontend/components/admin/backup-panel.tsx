@@ -1345,9 +1345,11 @@ export function BackupPanel() {
             archive_id: resumeArchive.archiveId,
             part_size_bytes: resumeArchive.partSize,
             uploaded_parts: resumeProgress?.uploaded_parts ?? [],
-            status: "uploading",
+            status: resumeProgress?.status ?? "uploading",
             sha256: selectedSha256,
-            reused: false,
+            reused:
+              resumeProgress?.status === "uploaded" ||
+              resumeProgress?.status === "scanned",
           }
         : await apiFetch<ConfluenceUploadTarget>(
             "/api/v1/confluence-imports/uploads",
