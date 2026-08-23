@@ -695,15 +695,27 @@ html[data-export="true"] [data-sonner-toaster] {
     print-color-adjust: exact;
   }
 
-  /* Playwright supplies its own page margins; let content use the full page. */
+  /* Mirrors the margin passed to page.pdf() in export_service.py so both
+     agree on the same number instead of one silently winning. They are NOT
+     redundant: prefer_css_page_size only asks Chromium to honor a CSS @page
+     size, but a page fragment that is forced to break mid-way through a
+     break-inside: avoid box (see below) has been observed to fall back to
+     this CSS margin instead of the JS one for that fragment - a 0 here, as
+     this used to be, produced an edge-to-edge page with no margin at all
+     wherever that happened. Keeping the two identical makes which one wins
+     unobservable. */
   @page {
     size: A4;
-    margin: 0;
+    margin: 14mm 12mm 16mm 12mm;
   }
 
-  /* Keep a code block, table, image, or callout from splitting awkwardly
-     across a page break - a pagination nicety, not a visual change. */
-  .wikihub-code,
+  /* Keep a table, image, callout, or toggle from splitting awkwardly across
+     a page break - a pagination nicety, not a visual change. Code blocks are
+     deliberately excluded: a long block (a full log dump, a big manifest) is
+     often taller than one whole page, and forcing "avoid" on a box that
+     cannot possibly avoid breaking is exactly what produced the margin-loss
+     bug above - better to let a long code block break cleanly across pages
+     than to fight physics for it. */
   table,
   figure,
   img,
