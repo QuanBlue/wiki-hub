@@ -74,6 +74,7 @@ import {
   Pencil,
   Pilcrow,
   Plus,
+  Presentation,
   Quote,
   Redo2,
   RemoveFormatting,
@@ -2440,6 +2441,14 @@ const ATTACHMENT_ICONS: [RegExp, ReactNode][] = [
     />,
   ],
   [
+    /\.(pptx?|ppsx?|key|odp)$/i,
+    <Presentation
+      className={ATTACHMENT_ICON_CLASS}
+      aria-hidden
+      key="presentation"
+    />,
+  ],
+  [
     /\.(ya?ml|json|xml|toml|ini|conf|properties|sh|bash|ps1|sql|py|java|go|rs|ts|tsx|js|jsx|css|html?)$/i,
     <FileCode className={ATTACHMENT_ICON_CLASS} aria-hidden key="code" />,
   ],
@@ -2712,17 +2721,25 @@ function AttachmentTile({
         contentEditable={false}
         draggable={editor.isEditable}
         className={cn(
-          "group/attachment border-border bg-surface-raised hover:border-primary focus-visible:ring-ring flex w-24 flex-col items-center gap-1.5 rounded-md border p-2 !no-underline shadow-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
+          "group/attachment border-border bg-surface-raised hover:border-primary focus-visible:ring-ring flex w-28 sm:w-32 flex-col items-center gap-1.5 rounded-md border p-2 !no-underline shadow-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
           editor.isEditable
             ? "cursor-grab active:cursor-grabbing"
             : "cursor-pointer",
           selected && "border-primary ring-primary/40 ring-2",
         )}
       >
-        <span className="bg-surface-sunken text-muted-foreground group-hover/attachment:text-primary flex h-14 w-full items-center justify-center rounded transition-colors">
-          {icon}
+        <span className="bg-surface-sunken text-muted-foreground group-hover/attachment:text-primary flex h-16 w-full items-center justify-center rounded transition-colors overflow-hidden p-1">
+          {/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(filename) && href ? (
+            <img
+              src={href}
+              alt={filename}
+              className="h-full w-full object-contain rounded"
+            />
+          ) : (
+            icon
+          )}
         </span>
-        <span className="text-foreground w-full truncate text-center text-[11px] leading-tight">
+        <span className="text-foreground w-full truncate text-center text-[11px] leading-tight" title={filename}>
           {filename}
         </span>
       </a>
@@ -2754,7 +2771,11 @@ const AttachmentNode = TiptapNode.create({
         default: "card",
         parseHTML: (element) =>
           element.getAttribute("data-display-mode") ||
-          (element.classList.contains("attachment-link") ? "link" : "card"),
+          (element.classList.contains("attachment-link")
+            ? "link"
+            : element.getAttribute("data-attachment")
+              ? "card"
+              : "link"),
       },
     };
   },
@@ -2768,24 +2789,33 @@ const AttachmentNode = TiptapNode.create({
         priority: 1100,
         getAttrs: (element) => {
           const el = element as HTMLElement;
+          const displayAttr = el.getAttribute("data-display-mode");
+          const isExplicitLink =
+            displayAttr === "link" || el.classList.contains("attachment-link");
+          let filename =
+            el.getAttribute("data-attachment") ||
+            el.getAttribute("title") ||
+            el.textContent?.trim() ||
+            "attachment";
+          if (filename.toLowerCase() === "download") {
+            const titleVal = el.getAttribute("title");
+            const dataAttVal = el.getAttribute("data-attachment");
+            if (titleVal && titleVal.toLowerCase() !== "download") {
+              filename = titleVal;
+            } else if (dataAttVal && dataAttVal.toLowerCase() !== "download") {
+              filename = dataAttVal;
+            }
+          }
           return {
             href: el.getAttribute("href"),
-            filename:
-              el.getAttribute("data-attachment") ||
-              el.textContent?.trim() ||
-              "attachment",
-            displayMode:
-              el.getAttribute("data-display-mode") ||
-              (el.classList.contains("attachment-link") ? "link" : "card"),
+            filename,
+            displayMode: isExplicitLink ? "link" : "card",
           };
         },
       },
       {
-        // Pages written before this node existed - and everything imported
-        // from Confluence, whose view-file macro becomes a bare <a> - carry no
-        // marker attribute. Recognise them by their href, but only when the
-        // link text reads as a filename: that leaves a deliberate inline link
-        // to an attachment inside a sentence looking like a link.
+        // Pages written before this node existed carry no data-attachment marker.
+        // Recognize them by href. Standard inline links default to link mode.
         tag: "a[href]",
         priority: 1100,
         getAttrs: (element) => {
@@ -2794,12 +2824,11 @@ const AttachmentNode = TiptapNode.create({
           if (!ATTACHMENT_HREF.test(href)) return false;
           const text = el.textContent?.trim() ?? "";
           if (!FILENAME_EXTENSION.test(text)) return false;
+          const displayAttr = el.getAttribute("data-display-mode");
           return {
             href,
             filename: text,
-            displayMode: el.classList.contains("attachment-link")
-              ? "link"
-              : "card",
+            displayMode: displayAttr === "card" ? "card" : "link",
           };
         },
       },
@@ -2952,7 +2981,81 @@ export function normalizeConfluenceCodeMacros(content: string): string {
         return `<div data-type="callout" data-callout-type="${type}" class="callout callout-${type}">${titleHtml}${body}</div>`;
       }
 
+      if (["view-file", "viewfile", "view-doc", "viewdoc"].includes(name)) {
+        const fileMatch =
+          inner.match(/ri:filename="([^"]+)"/i) ||
+          inner.match(/filename="([^"]+)"/i) ||
+          inner.match(/<ac:parameter[^>]*>([^<]+)<\/ac:parameter>/i);
+        const filename = fileMatch ? fileMatch[1].trim() : "";
+        if (!filename) return "";
+        return `<a href="#attachment-${escapeHtml(filename)}" data-attachment="${escapeHtml(filename)}" data-display-mode="card" title="${escapeHtml(filename)}">${escapeHtml(filename)}</a>`;
+      }
+
       return macro;
+    },
+  );
+
+  // Normalize ac:link macros pointing at attachments into standard link-mode attachments
+  res = res.replace(
+    /<ac:link\b[^>]*>([\s\S]*?)<\/ac:link>/gi,
+    (fullLink, inner: string) => {
+      const fileMatch = inner.match(/ri:filename="([^"]+)"/i);
+      if (fileMatch) {
+        const filename = fileMatch[1].trim();
+        const textMatch =
+          inner.match(
+            /<ac:plain-text-link-body[^>]*>([\s\S]*?)<\/ac:plain-text-link-body>/i,
+          ) ||
+          inner.match(/<ac:link-body[^>]*>([\s\S]*?)<\/ac:link-body>/i);
+        const text = textMatch
+          ? textMatch[1].replace(/<[^>]+>/g, "").trim()
+          : filename;
+        return `<a href="#attachment-${escapeHtml(filename)}" data-attachment="${escapeHtml(filename)}" data-display-mode="link" class="attachment-link" title="${escapeHtml(text || filename)}">${escapeHtml(text || filename)}</a>`;
+      }
+      return fullLink;
+    },
+  );
+
+  // Normalize any legacy view-file card container divs into clean card-mode attachment anchors
+  res = res.replace(
+    /<div\b[^>]*class="[^"]*confluence-macro-view-file[^"]*"[\s\S]*?<\/div>\s*<\/div>/gi,
+    (fullDiv) => {
+      const hrefMatch = fullDiv.match(/href="([^"]+)"/i);
+      if (!hrefMatch) return fullDiv;
+      const href = hrefMatch[1];
+
+      // Try title or download attribute with an extension first
+      const attrMatch =
+        fullDiv.match(/download="([^"]+\.[A-Za-z0-9]{1,8})"/i) ||
+        fullDiv.match(/title="([^"]+\.[A-Za-z0-9]{1,8})"/i) ||
+        fullDiv.match(/data-attachment="([^"]+)"/i) ||
+        fullDiv.match(/data-filename="([^"]+)"/i);
+
+      let filename = attrMatch ? attrMatch[1].trim() : "";
+
+      // If not found, try finding any span or p text that has a filename with extension
+      if (!filename || filename.toLowerCase() === "download") {
+        const textMatch = fullDiv.match(/>([^<>]+\.[A-Za-z0-9]{1,8})</i);
+        if (textMatch && textMatch[1].trim().toLowerCase() !== "download") {
+          filename = textMatch[1].trim();
+        }
+      }
+
+      // If still not found, try extracting title without ext + ext badge
+      if (!filename || filename.toLowerCase() === "download") {
+        const titleMatch = fullDiv.match(/<p\b[^>]*>([^<]+)<\/p>/i);
+        const extMatch =
+          fullDiv.match(/opacity-15[^>]*>([A-Za-z0-9]{1,8})<\/div>/i) ||
+          fullDiv.match(/uppercase[^>]*>([A-Za-z0-9]{1,8})<\/div>/i);
+        if (titleMatch && extMatch) {
+          filename = `${titleMatch[1].trim()}.${extMatch[1].trim().toLowerCase()}`;
+        }
+      }
+
+      if (filename && filename.toLowerCase() !== "download" && href) {
+        return `<a href="${href}" data-attachment="${escapeHtml(filename)}" data-display-mode="card" title="${escapeHtml(filename)}">${escapeHtml(filename)}</a>`;
+      }
+      return fullDiv;
     },
   );
 

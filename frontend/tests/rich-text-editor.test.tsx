@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   RichTextContent,
   RichTextEditor,
+  normalizeConfluenceCodeMacros,
 } from "@/components/pages/rich-text-editor";
 
 describe("RichTextEditor images", () => {
@@ -1163,5 +1164,39 @@ describe("RichTextEditor to-do list", () => {
         expect.stringContaining('data-checked="true"'),
       );
     });
+  });
+});
+
+describe("Confluence macro normalization and attachment display modes", () => {
+  it("normalizes view-file macros into card attachment nodes", () => {
+    const raw = `<p>Presentation: <ac:structured-macro ac:name="view-file"><ac:parameter ac:name="name"><ri:attachment ri:filename="VCS-NSM.pptx" /></ac:parameter></ac:structured-macro></p>`;
+    const normalized = normalizeConfluenceCodeMacros(raw);
+    expect(normalized).toContain('data-display-mode="card"');
+    expect(normalized).toContain('data-attachment="VCS-NSM.pptx"');
+  });
+
+  it("recovers legacy view-file div wrappers into card attachment nodes", () => {
+    const legacy = `<div class="confluence-macro confluence-macro-view-file my-3 inline-flex"><a href="/api/v1/attachments/123/content" download="NSM_Training.pptx">Download</a></div></div>`;
+    const normalized = normalizeConfluenceCodeMacros(legacy);
+    expect(normalized).toContain('data-display-mode="card"');
+    expect(normalized).toContain('data-attachment="NSM_Training.pptx"');
+    expect(normalized).toContain('href="/api/v1/attachments/123/content"');
+  });
+
+  it("renders attachment link with link display mode as inline link and card display mode as tile", async () => {
+    render(
+      <RichTextContent
+        content={`
+          <p><a href="/api/v1/attachments/11111111-1111-1111-1111-111111111111/content" data-attachment="doc.pdf" data-display-mode="link" class="attachment-link">doc.pdf</a></p>
+          <p><a href="/api/v1/attachments/22222222-2222-2222-2222-222222222222/content" data-attachment="slides.pptx" data-display-mode="card">slides.pptx</a></p>
+        `}
+      />,
+    );
+
+    const linkEl = await screen.findByRole("link", { name: "doc.pdf" });
+    expect(linkEl).toHaveClass("attachment-link");
+
+    const cardEl = await screen.findByRole("link", { name: "slides.pptx" });
+    expect(cardEl).toHaveClass("group/attachment");
   });
 });

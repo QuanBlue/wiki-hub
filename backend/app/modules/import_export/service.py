@@ -64,63 +64,10 @@ def _slug(value: str, occupied: set[str]) -> str:
 def _build_view_file_card_html(filename: str, url: str) -> str:
     escaped_fn = html.escape(filename)
     escaped_url = html.escape(url)
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    title_no_ext = filename.rsplit(".", 1)[0] if "." in filename else filename
-    escaped_title = html.escape(title_no_ext)
-
-    if ext in {"pptx", "ppt"}:
-        bg_gradient = "from-rose-600 via-red-700 to-amber-700"
-        badge_text = "Presentation"
-        badge_bg = "bg-rose-950/40 text-rose-100"
-        icon = "📊"
-    elif ext in {"pdf"}:
-        bg_gradient = "from-red-600 via-rose-800 to-slate-900"
-        badge_text = "PDF Document"
-        badge_bg = "bg-red-950/40 text-red-100"
-        icon = "📕"
-    elif ext in {"docx", "doc"}:
-        bg_gradient = "from-blue-600 via-indigo-700 to-slate-900"
-        badge_text = "Word Document"
-        badge_bg = "bg-blue-950/40 text-blue-100"
-        icon = "📝"
-    elif ext in {"xlsx", "xls"}:
-        bg_gradient = "from-emerald-600 via-teal-700 to-slate-900"
-        badge_text = "Spreadsheet"
-        badge_bg = "bg-emerald-950/40 text-emerald-100"
-        icon = "📈"
-    elif ext in {"png", "jpg", "jpeg", "gif", "webp", "svg"}:
-        return (
-            f'<div class="confluence-macro confluence-macro-view-file my-4 inline-block border border-border rounded-xl bg-surface shadow-2xs overflow-hidden max-w-sm m-1.5 align-top">'
-            f'<img src="{escaped_url}" alt="{escaped_fn}" class="max-h-60 object-contain w-full bg-surface-sunken/30" />'
-            f'<div class="p-2.5 flex items-center justify-between text-xs border-t border-border/40">'
-            f'<span class="font-medium text-foreground truncate" title="{escaped_fn}">{escaped_fn}</span>'
-            f'<a href="{escaped_url}" download="{escaped_fn}" class="text-primary hover:underline font-semibold ml-2 shrink-0">Download</a>'
-            f'</div>'
-            f'</div>'
-        )
-    else:
-        bg_gradient = "from-slate-600 via-slate-700 to-slate-900"
-        badge_text = "File"
-        badge_bg = "bg-slate-950/40 text-slate-100"
-        icon = "📄"
-
     return (
-        f'<div class="confluence-macro confluence-macro-view-file my-3 inline-flex flex-col border border-border rounded-xl bg-surface shadow-xs hover:shadow-md hover:border-primary/50 transition-all overflow-hidden w-full sm:w-[260px] m-1.5 align-top">'
-        f'<div class="h-32 bg-gradient-to-br {bg_gradient} p-3.5 flex flex-col justify-between text-white relative overflow-hidden group">'
-        f'<div class="absolute -right-3 -bottom-3 opacity-15 text-5xl font-black select-none uppercase tracking-tighter">{ext}</div>'
-        f'<span class="text-[10px] font-bold uppercase tracking-wider {badge_bg} border border-white/20 backdrop-blur-xs px-2 py-0.5 rounded-full w-max">{badge_text}</span>'
-        f'<p class="font-bold text-xs leading-snug drop-shadow-xs line-clamp-3 my-auto">{escaped_title}</p>'
-        f'</div>'
-        f'<div class="p-2.5 flex items-center justify-between gap-2 bg-surface text-xs border-t border-border/40">'
-        f'<div class="flex items-center gap-1.5 min-w-0">'
-        f'<span class="text-sm shrink-0">{icon}</span>'
-        f'<span class="text-[11px] font-medium text-foreground truncate" title="{escaped_fn}">{escaped_fn}</span>'
-        f'</div>'
-        f'<a href="{escaped_url}" download="{escaped_fn}" class="text-[11px] font-semibold text-primary hover:text-primary-hover hover:underline shrink-0">'
-        f'Download'
+        f'<a href="{escaped_url}" data-attachment="{escaped_fn}" data-display-mode="card" title="{escaped_fn}">'
+        f'{escaped_fn}'
         f'</a>'
-        f'</div>'
-        f'</div>'
     )
 
 
@@ -132,56 +79,30 @@ def _build_attachments_table_html(files: list[dict[str, str]]) -> str:
     for f in files:
         fn = html.escape(f["filename"])
         url = html.escape(f["url"])
-        ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
-        icon = "📄"
-        if ext in {"ppt", "pptx"}:
-            icon = "📊"
-        elif ext in {"doc", "docx"}:
-            icon = "📝"
-        elif ext in {"xls", "xlsx"}:
-            icon = "📈"
-        elif ext == "pdf":
-            icon = "📕"
-        elif ext in {"zip", "tar", "gz", "7z", "rar"}:
-            icon = "📦"
-        elif ext in {"png", "jpg", "jpeg", "gif", "webp", "svg"}:
-            icon = "🖼️"
-
         rows.append(
             f'<tr>'
-            f'<td class="px-4 py-2.5 font-medium text-foreground">'
-            f'<a href="{url}" download="{fn}" class="text-primary hover:underline inline-flex items-center gap-2">'
-            f'<span>{icon}</span> <span>{fn}</span>'
+            f'<td>'
+            f'<a href="{url}" data-attachment="{fn}" data-display-mode="link" class="attachment-link">'
+            f'{fn}'
             f'</a>'
             f'</td>'
-            f'<td class="px-4 py-2.5 text-right">'
-            f'<a href="{url}" download="{fn}" class="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">'
-            f'Download'
-            f'</a>'
+            f'<td>'
+            f'<a href="{url}" download="{fn}">Download</a>'
             f'</td>'
             f'</tr>'
         )
 
     tbody = "".join(rows)
     return (
-        f'<div class="confluence-macro confluence-macro-attachments border border-border rounded-lg bg-surface shadow-2xs my-4 overflow-hidden">'
-        f'<div class="border-b border-border bg-surface-sunken/40 px-4 py-2 flex items-center justify-between">'
-        f'<span class="text-xs font-semibold text-foreground flex items-center gap-1.5">'
-        f'📎 Attached Files ({len(files)})'
-        f'</span>'
-        f'</div>'
-        f'<div class="overflow-x-auto">'
-        f'<table class="w-full text-xs">'
+        f'<table>'
         f'<thead>'
-        f'<tr class="bg-surface-sunken/60 text-muted-foreground border-b border-border text-left">'
-        f'<th class="px-4 py-2 font-medium">File</th>'
-        f'<th class="px-4 py-2 font-medium w-28 text-right">Action</th>'
+        f'<tr>'
+        f'<th>File</th>'
+        f'<th>Action</th>'
         f'</tr>'
         f'</thead>'
-        f'<tbody class="divide-y divide-border">{tbody}</tbody>'
+        f'<tbody>{tbody}</tbody>'
         f'</table>'
-        f'</div>'
-        f'</div>'
     )
 
 
@@ -189,27 +110,13 @@ def _build_gallery_html(images: list[dict[str, str]]) -> str:
     if not images:
         return ""
 
-    cards = []
+    imgs = []
     for img in images:
         fn = html.escape(img["filename"])
         url = html.escape(img["url"])
-        cards.append(
-            f'<div class="border border-border rounded-lg overflow-hidden bg-surface shadow-2xs group flex flex-col">'
-            f'<a href="{url}" target="_blank" rel="noreferrer" class="block aspect-video bg-surface-sunken overflow-hidden flex items-center justify-center p-1">'
-            f'<img src="{url}" alt="{fn}" class="object-contain w-full h-full group-hover:scale-105 transition-transform duration-200" />'
-            f'</a>'
-            f'<div class="p-2 border-t border-border bg-surface-sunken/30">'
-            f'<p class="text-[11px] font-medium text-foreground truncate" title="{fn}">{fn}</p>'
-            f'</div>'
-            f'</div>'
-        )
+        imgs.append(f'<p><img src="{url}" alt="{fn}" /></p>')
 
-    grid = "".join(cards)
-    return (
-        f'<div class="confluence-macro confluence-macro-gallery grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 my-4">'
-        f'{grid}'
-        f'</div>'
-    )
+    return "".join(imgs)
 
 
 def _link_imported_attachments(
@@ -295,7 +202,15 @@ def _link_imported_attachments(
             )
 
         if url:
-            link = soup.new_tag("a", href=url)
+            link = soup.new_tag(
+                "a",
+                href=url,
+                attrs={
+                    "data-attachment": filename,
+                    "data-display-mode": "link",
+                    "class": "attachment-link",
+                },
+            )
             link.string = macro.get_text(" ", strip=True) or filename
             macro.replace_with(link)
 
@@ -813,6 +728,45 @@ def _normalize_confluence_html(content: str) -> str:
                 macro.replace_with(span_tag)
             else:
                 macro.decompose()
+
+    # Normalize any legacy view-file card container divs into standard attachment card links
+    for old_vf in soup.find_all(
+        lambda tag: tag.name == "div"
+        and "confluence-macro-view-file" in (tag.get("class") or [])
+        and not tag.get("data-macro")
+    ):
+        link_tag = old_vf.find("a")
+        if link_tag:
+            h = link_tag.get("href") or ""
+            fn = link_tag.get("download") or ""
+            if not fn or fn.lower() == "download":
+                title_span = old_vf.find(lambda s: bool(s.get("title") and "." in s.get("title")))
+                if title_span:
+                    fn = title_span.get("title") or ""
+            if not fn or fn.lower() == "download":
+                text_span = old_vf.find(lambda s: s.name in {"span", "p"} and "." in s.get_text())
+                if text_span:
+                    fn = text_span.get_text().strip()
+            if not fn or fn.lower() == "download":
+                title_p = old_vf.find("p")
+                ext_div = old_vf.find(lambda d: "opacity-15" in (d.get("class") or []))
+                if title_p and ext_div:
+                    fn = f"{title_p.get_text().strip()}.{ext_div.get_text().strip().lower()}"
+
+            if fn and fn.lower() != "download" and h:
+                new_a = soup.new_tag(
+                    "a",
+                    href=h,
+                    attrs={
+                        "data-attachment": fn,
+                        "data-display-mode": "card",
+                        "title": fn,
+                    },
+                )
+                new_a.string = fn
+                old_vf.replace_with(new_a)
+                continue
+        old_vf.decompose()
 
     # 4. Decompose any remaining unparsed Confluence metadata tags: <ac:parameter>, <ac:placeholder>
     for param in soup.find_all(

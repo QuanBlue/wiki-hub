@@ -176,7 +176,8 @@ def test_link_imported_attachments():
 
     # BeautifulSoup will output normalized tags
     assert '<img alt="test.png" src="/attachments/123/test.png"/>' in result
-    assert '<a href="/attachments/123/doc.pdf">doc.pdf</a>' in result
+    assert 'href="/attachments/123/doc.pdf"' in result
+    assert 'data-display-mode="link"' in result
     assert '<img alt="other.png" src="/attachments/456/other.png"/>' in result
     assert 'href="/attachments/123/raw.txt"' in result
     assert 'src="/attachments/123/my-image.png"' in result
@@ -197,16 +198,19 @@ def test_normalize_and_link_attachments_modes():
     normalized = _normalize_confluence_html(raw)
     linked = _link_imported_attachments(normalized, "p1", urls, {})
 
-    # 1. Inline Link must render as <a>
-    assert '<a href="/files/manual.pdf">manual.pdf</a>' in linked
-    # 2. View File Card must render as card container div
-    assert 'confluence-macro-view-file' in linked
-    assert 'slides.pptx' in linked
-    assert 'download="slides.pptx"' in linked
+    # 1. Inline Link must render as <a> with link display mode
+    assert 'data-display-mode="link"' in linked
+    assert 'class="attachment-link"' in linked
+    assert '<a class="attachment-link" data-attachment="manual.pdf" data-display-mode="link" href="/files/manual.pdf">manual.pdf</a>' in linked
+    # 2. View File Card must render as card attachment node
+    assert 'data-display-mode="card"' in linked
+    assert 'data-attachment="slides.pptx"' in linked
+    assert '<a data-attachment="slides.pptx" data-display-mode="card" href="/files/slides.pptx" title="slides.pptx">slides.pptx</a>' in linked
     # 3. Embedded Image must render as <img>
     assert '<img alt="photo.jpg" src="/files/photo.jpg"/>' in linked
     # 4. Attachments Macro must render table
-    assert 'Attached Files' in linked
+    assert '<table>' in linked
+    assert '<th>File</th>' in linked
 
 
 def test_confluence_scan_resolves_referenced_users_and_attachment_fallbacks(tmp_path):
