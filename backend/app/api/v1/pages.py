@@ -13,7 +13,7 @@ from app.api.v1.groups import group_read
 from app.models.permission import Group, Permission
 from app.models.restriction import PageRestrictionPermission
 from app.models.user import User
-from app.modules.pages.pdf_export import render_page_pdf
+from app.modules.pages.export_service import ExportFormat, ExportService
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
 from app.schemas.draft import PageDraftRead, PageDraftUpsert
@@ -40,8 +40,13 @@ def get_space_service(session: DbSession) -> SpaceService:
     return SpaceService(session)
 
 
+def get_export_service() -> ExportService:
+    return ExportService()
+
+
 PageServiceDep = Annotated[PageService, Depends(get_page_service)]
 SpaceServiceDep = Annotated[SpaceService, Depends(get_space_service)]
+ExportServiceDep = Annotated[ExportService, Depends(get_export_service)]
 
 
 @router.get("", response_model=list[PageRead], summary="List pages in a space")
@@ -92,23 +97,37 @@ async def move_page(
     return await page_service.to_read_for_user(moved, user)
 
 
-@router.get("/{slug}/export/pdf", response_class=Response, summary="Download a page as PDF")
-async def export_page_pdf(
+@router.get(
+    "/{slug}/export/{fmt}",
+    response_class=Response,
+    summary="Download a page as PDF or HTML, rendered exactly as it looks on screen",
+)
+async def export_page(
     key: str,
     slug: str,
-    _user: CurrentUser,
+    fmt: ExportFormat,
+    user: CurrentUser,
     page_service: PageServiceDep,
     space_service: SpaceServiceDep,
+    export_service: ExportServiceDep,
+    session: DbSession,
 ) -> Response:
     space = await space_service.get_by_key(key)
-    await space_service.require_view(space, _user)
+    await space_service.require_view(space, user)
     page = await page_service.get_by_slug(space, slug)
-    await page_service.require_page_view(page, _user)
-    await space_service.permissions.require(space, _user, Permission.export)
+    await page_service.require_page_view(page, user)
+    await space_service.permissions.require(space, user, Permission.export)
+
+    result = await export_service.export(
+        page=page, space=space, user=user, fmt=fmt, session=session
+    )
     return Response(
-        content=render_page_pdf(page),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{page.slug or "page"}.pdf"'},
+        content=result.content,
+        media_type=result.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{result.filename}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

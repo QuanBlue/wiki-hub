@@ -5634,7 +5634,22 @@ export function RichTextEditor({
   );
 }
 
-export function RichTextContent({ content }: { content: string }) {
+export function RichTextContent({
+  content,
+  exportMode = false,
+  onReady,
+}: {
+  content: string;
+  /**
+   * Rendering for a static export snapshot (PDF/HTML/Word), not the live
+   * screen. Skips attachment click handling and the details modal - both
+   * assume a session, which the headless-browser export render never has.
+   */
+  exportMode?: boolean;
+  /** Fires once the editor has mounted content, so an export capture knows
+   * when there's something worth reading. */
+  onReady?: () => void;
+}) {
   const [selectedAttachmentId, setSelectedAttachmentId] = useState<
     string | null
   >(null);
@@ -5663,6 +5678,11 @@ export function RichTextContent({ content }: { content: string }) {
   }, [editor, normalizedContent]);
 
   useEffect(() => {
+    if (editor && onReady) onReady();
+  }, [editor, onReady]);
+
+  useEffect(() => {
+    if (exportMode) return;
     const container = editorContainerRef.current;
     if (!container) return;
 
@@ -5730,21 +5750,26 @@ export function RichTextContent({ content }: { content: string }) {
       container.removeEventListener("mousedown", handleMouseDown, true);
       container.removeEventListener("click", handleClick, true);
     };
-  }, []);
+  }, [exportMode]);
 
   return (
     <div
       ref={editorContainerRef}
-      className="relative wikihub-reader wikihub-page-content"
+      className={cn(
+        "relative wikihub-reader wikihub-page-content",
+        exportMode && "wikihub-export",
+      )}
     >
       <EditorContent editor={editor} />
-      <AttachmentDetailsModal
-        // Keying on the attachment makes each one a fresh mount, so the modal
-        // never has to reset its own state on the way out.
-        key={selectedAttachmentId ?? "none"}
-        attachmentId={selectedAttachmentId}
-        onClose={() => setSelectedAttachmentId(null)}
-      />
+      {exportMode ? null : (
+        <AttachmentDetailsModal
+          // Keying on the attachment makes each one a fresh mount, so the modal
+          // never has to reset its own state on the way out.
+          key={selectedAttachmentId ?? "none"}
+          attachmentId={selectedAttachmentId}
+          onClose={() => setSelectedAttachmentId(null)}
+        />
+      )}
     </div>
   );
 }

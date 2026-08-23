@@ -100,6 +100,10 @@ async def test_space_create_update_archive_delete_and_favourites() -> None:
         await service.create(SpaceCreate(key="ENG", name="Again"), actor)
 
     await service.update(created, SpaceUpdate(description=" New "), actor)
+    await service.update(created, SpaceUpdate(font_family=" Inter "), actor)
+    assert created.font_family == "inter"
+    await service.update(created, SpaceUpdate(font_family=None), actor)
+    assert created.font_family is None
     await service.update(
         created,
         SpaceUpdate(name="New", icon="x", status="archived", visibility="restricted"),

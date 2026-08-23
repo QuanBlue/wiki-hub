@@ -89,9 +89,9 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
             spaces=True,
             audit_log=True,
             backup=True,
-            # Content import/export needs the Pages domain, which does not
-            # exist yet. Instance backup/restore is reported by `backup` above.
-            imports=[],
-            exports=[],
+            # Whole-instance backup/restore is reported by `backup` above,
+            # not here - these two are per-page/per-space content transfer.
+            imports=["confluence"],
+            exports=["pdf", "html", "docx"],
         ),
     )

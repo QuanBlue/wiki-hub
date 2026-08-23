@@ -71,6 +71,11 @@ async def test_worker_entrypoints(monkeypatch: pytest.MonkeyPatch) -> None:
     await tasks.run_confluence_import({}, job_id)
     run.assert_awaited_once_with(session, storage, uuid.UUID(job_id))
 
+    backup_run = AsyncMock()
+    monkeypatch.setattr(tasks, "execute_backup_job", backup_run)
+    await tasks.run_backup_job({}, job_id)
+    backup_run.assert_awaited_once_with(session, storage, uuid.UUID(job_id))
+
     monkeypatch.setattr(worker_settings, "configure_logging", Mock())
     await worker_settings.startup({})
     dispose = AsyncMock()

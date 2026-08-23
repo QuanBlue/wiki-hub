@@ -15,6 +15,7 @@ from app.core.security import (
     decode_access_token,
     decode_token_identity,
     hash_password,
+    needs_rehash,
     verify_password,
 )
 
@@ -39,6 +40,9 @@ class TestPasswordHashing:
     def test_verify_rejects_a_missing_hash(self) -> None:
         # An OIDC-only account has no local credential and must never authenticate.
         assert not verify_password("anything", None)
+
+    def test_needs_rehash_is_false_for_a_freshly_produced_hash(self) -> None:
+        assert needs_rehash(hash_password("s3cret-password")) is False
 
     def test_verify_rejects_a_corrupt_hash(self) -> None:
         assert not verify_password("anything", "not-a-valid-argon2-hash")
@@ -123,6 +127,7 @@ class TestImpersonationClaim:
         token = jwt.encode(
             {
                 "sub": str(uuid.uuid4()),
+                "jti": str(uuid.uuid4()),
                 "type": "access",
                 "exp": int(datetime.now(UTC).timestamp()) + 600,
                 "act": actor,

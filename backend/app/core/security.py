@@ -22,6 +22,7 @@ from app.core.exceptions import AuthenticationError
 _hasher = PasswordHasher()
 
 TOKEN_TYPE_ACCESS: Final = "access"  # noqa: S105 - a token *type* label, not a credential
+TOKEN_TYPE_EXPORT: Final = "export"  # noqa: S105 - a token *type* label, not a credential
 
 #: A throwaway hash used to burn CPU when the username does not exist, so a
 #: caller cannot distinguish "no such user" from "wrong password" by timing.
@@ -146,3 +147,82 @@ def decode_token_identity(token: str) -> TokenIdentity:
 def decode_access_token(token: str) -> uuid.UUID:
     """Validate an access token and return the user id it identifies."""
     return decode_token_identity(token).subject
+
+
+@dataclass(frozen=True)
+class ExportTokenIdentity:
+    """A narrow, single-page capability handed to the headless-browser render.
+
+    Deliberately its own token family, not a short-lived access token: it must
+    never be usable as a session (``decode_token_identity`` rejects anything
+    whose ``type`` is not ``"access"``, and this rejects anything whose
+    ``type`` is not ``"export"`` - the two are disjoint by construction), it
+    is scoped to exactly one page, and it carries the requested export format
+    so a captured render can't quietly be reused for a different one.
+    """
+
+    subject: uuid.UUID
+    space_id: uuid.UUID
+    page_id: uuid.UUID
+    fmt: str
+    jti: str
+
+
+def create_export_token(
+    *,
+    user_id: uuid.UUID,
+    space_id: uuid.UUID,
+    page_id: uuid.UUID,
+    fmt: str,
+    ttl_seconds: int,
+) -> tuple[str, datetime]:
+    """Return ``(token, expires_at)`` scoped to one user/space/page/format."""
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(seconds=ttl_seconds)
+
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "sid": str(space_id),
+        "pid": str(page_id),
+        "fmt": fmt,
+        "type": TOKEN_TYPE_EXPORT,
+        "iat": int(now.timestamp()),
+        "exp": int(expires_at.timestamp()),
+        "jti": str(uuid.uuid4()),
+    }
+    token = jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+    return token, expires_at
+
+
+def decode_export_token(token: str) -> ExportTokenIdentity:
+    """Validate an export token and return the page/format it grants access to."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"require": ["exp", "sub", "sid", "pid", "fmt"]},
+        )
+    except jwt.ExpiredSignatureError as exc:
+        raise AuthenticationError("This export link has expired.") from exc
+    except jwt.InvalidTokenError as exc:
+        raise AuthenticationError("Invalid export token.") from exc
+
+    if payload.get("type") != TOKEN_TYPE_EXPORT:
+        raise AuthenticationError("Invalid export token.")
+
+    try:
+        subject = uuid.UUID(str(payload["sub"]))
+        space_id = uuid.UUID(str(payload["sid"]))
+        page_id = uuid.UUID(str(payload["pid"]))
+        jti = str(uuid.UUID(str(payload["jti"])))
+        fmt = str(payload["fmt"])
+    except (KeyError, ValueError) as exc:
+        raise AuthenticationError("Invalid export token.") from exc
+
+    if not fmt:
+        raise AuthenticationError("Invalid export token.")
+
+    return ExportTokenIdentity(
+        subject=subject, space_id=space_id, page_id=page_id, fmt=fmt, jti=jti
+    )

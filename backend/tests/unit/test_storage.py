@@ -96,6 +96,12 @@ async def test_storage_operations_and_presigned_urls(storage: S3ObjectStorage, t
         == "upload"
     )
 
+    client.upload_part.return_value = {"ETag": '"part-etag"'}
+    assert await storage.upload_part("a", "upload", 1, b"chunk") == '"part-etag"'
+    client.upload_part.assert_called_once_with(
+        Bucket="test-bucket", Key="a", UploadId="upload", PartNumber=1, Body=b"chunk"
+    )
+
     client.list_parts.side_effect = [
         {"Parts": [{"PartNumber": 2, "ETag": "b"}], "IsTruncated": True, "NextPartNumberMarker": 2},
         {"Parts": [{"PartNumber": 1, "ETag": "a"}], "IsTruncated": False},

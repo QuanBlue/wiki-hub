@@ -30,6 +30,11 @@ def test_sidebar_permissions_requires_a_role_for_knowledge_navigation() -> None:
         SidebarPermissions(recent=[])
 
 
+def test_sidebar_permissions_dedupes_an_explicit_role_list() -> None:
+    permissions = SidebarPermissions(recent=["admin", "admin", "member"])
+    assert permissions.recent == ["admin", "member"]
+
+
 def test_sidebar_permissions_does_not_expose_administration_to_members() -> None:
     with pytest.raises(ValidationError, match="administrators only"):
         SidebarPermissions(settings=["admin", "member"])
@@ -44,6 +49,47 @@ def test_site_settings_validators_normalise_and_validate_extensions() -> None:
     assert SiteSettingsUpdate(site_name="   ").site_name is None
     with pytest.raises(ValidationError, match="valid file extension"):
         SiteSettingsUpdate(allowed_attachment_types=["not-valid!"])
+
+
+def test_site_settings_string_fields_normalise_blanks_to_none() -> None:
+    blank = SiteSettingsUpdate(
+        theme_color="   ", default_font="   ", logo_icon="   ", custom_logo_url="   "
+    )
+    assert blank.theme_color is None
+    assert blank.default_font is None
+    assert blank.logo_icon is None
+    assert blank.custom_logo_url is None
+
+    trimmed = SiteSettingsUpdate(
+        theme_color="  Emerald  ",
+        default_font="  Inter  ",
+        logo_icon="  Book  ",
+        custom_logo_url="  /logo.png  ",
+    )
+    assert trimmed.theme_color == "Emerald"
+    assert trimmed.default_font == "inter"
+    assert trimmed.logo_icon == "book"
+    assert trimmed.custom_logo_url == "/logo.png"
+
+    unset = SiteSettingsUpdate()
+    assert unset.theme_color is None
+    assert unset.default_font is None
+    assert unset.logo_icon is None
+    assert unset.custom_logo_url is None
+
+    explicit_none = SiteSettingsUpdate(
+        site_name=None,
+        theme_color=None,
+        default_font=None,
+        logo_icon=None,
+        custom_logo_url=None,
+        allowed_attachment_types=None,
+    )
+    assert explicit_none.theme_color is None
+    assert explicit_none.default_font is None
+    assert explicit_none.logo_icon is None
+    assert explicit_none.custom_logo_url is None
+    assert explicit_none.allowed_attachment_types is None
 
 
 def test_site_settings_effective_defaults_and_overrides() -> None:

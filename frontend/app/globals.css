@@ -674,3 +674,55 @@
     font-family: var(--font-mono) !important;
   }
 }
+
+/*
+ * Page export (PDF/HTML/Word): the /print route renders the same
+ * .wikihub-reader content as the live page through the same TipTap schema,
+ * so it inherits all of the above for free. These rules only strip what a
+ * static, non-interactive snapshot has no use for - never colors or fonts,
+ * which stay identical to the live view by design. Deliberately unlayered so
+ * they win over the @layer utilities rules above regardless of source order.
+ */
+html[data-export="true"] .ProseMirror .column-resize-handle,
+html[data-export="true"] .ProseMirror-gapcursor,
+html[data-export="true"] [data-sonner-toaster] {
+  display: none !important;
+}
+
+@media print {
+  html {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Playwright supplies its own page margins; let content use the full page. */
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  /* Keep a code block, table, image, or callout from splitting awkwardly
+     across a page break - a pagination nicety, not a visual change. */
+  .wikihub-code,
+  table,
+  figure,
+  img,
+  [data-type="callout"],
+  [data-type="toggle"] {
+    break-inside: avoid;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid;
+  }
+  tr,
+  td,
+  th {
+    break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+}

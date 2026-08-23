@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import uuid
 import zipfile
 from datetime import UTC, datetime
@@ -10,15 +12,23 @@ import pytest
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, PayloadTooLargeError
 from app.models.import_job import ImportArchive
+from app.models.permission import Group, GroupMember, Permission, SpaceGroupPermission
+from app.models.restriction import PageGroupRestriction, PageRestrictionPermission, PageUserRestriction
+from app.models.space import Space, SpaceVisibility
 from app.modules.import_export import service as import_module
 from app.modules.import_export.confluence import (
     ConfluenceAttachment,
+    ConfluenceGroup,
     ConfluencePage,
+    ConfluencePageRestriction,
+    ConfluencePermission,
     ConfluenceSpace,
+    ConfluenceSpaceList,
 )
 from app.modules.import_export.service import (
     ConfluenceImportService,
     ImportCancelled,
+    SeekableS3File,
     _link_imported_attachments,
     _normalize_confluence_code_macros,
     _slug,
@@ -37,6 +47,45 @@ class _ScalarResult:
 
     def __iter__(self):
         return iter(self.values)
+
+
+class _EntityResult:
+    """Minimal stand-in for a SQLAlchemy Result, wrapping a single scalar value."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+    def scalars(self):
+        return self
+
+    def first(self):
+        return self._value
+
+    def __iter__(self):
+        return iter([self._value] if self._value is not None else [])
+
+
+def _entity_dispatch_execute(queues: dict[type, list]):
+    """Build a session.execute side_effect that resolves results by queried model.
+
+    Each entry in ``queues`` maps an ORM model class to an ordered list of
+    canned return values (``None`` meaning "not found"). Successive queries
+    against that model pop the next queued value; once a model's queue is
+    exhausted (or it has none registered) queries return ``None``.
+    """
+
+    async def _execute(stmt):
+        entity = None
+        with contextlib.suppress(Exception):
+            entity = stmt.column_descriptions[0]["entity"]
+        queue = queues.get(entity)
+        value = queue.pop(0) if queue else None
+        return _EntityResult(value)
+
+    return _execute
 
 
 @pytest.mark.asyncio
@@ -628,3 +677,439 @@ async def test_run_import_persists_cancelled_and_failed_states() -> None:
     storage = Mock(download_to_file=AsyncMock(side_effect=cancelled_download))
     await import_module.run_import(session, storage, progress_job.id)
     assert final_job.status == "cancelled"
+
+
+def test_seekable_s3_file_read_seek_and_metadata() -> None:
+    client = Mock()
+    client.get_object = Mock(return_value={"Body": Mock(read=Mock(return_value=b"hello"))})
+    f = SeekableS3File(client, "bucket", "key", 100)
+
+    assert f.readable() is True
+    assert f.seekable() is True
+    assert f.tell() == 0
+
+    assert f.seek(10, io.SEEK_SET) == 10
+    assert f.seek(5, io.SEEK_CUR) == 15
+    assert f.seek(-10, io.SEEK_END) == 90
+    # Clamped to the file bounds on both ends.
+    assert f.seek(10_000, io.SEEK_SET) == 100
+    assert f.seek(-10_000, io.SEEK_SET) == 0
+
+    f.seek(0)
+    data = f.read(5)
+    assert data == b"hello"
+    client.get_object.assert_called_with(Bucket="bucket", Key="key", Range="bytes=0-4")
+
+    # Reading with a negative size reads through to the end of the file.
+    f.seek(0)
+    f.read(-1)
+    client.get_object.assert_called_with(Bucket="bucket", Key="key", Range="bytes=0-99")
+
+    # Positioned at (or past) EOF returns no data without calling S3.
+    client.get_object.reset_mock()
+    eof = SeekableS3File(client, "bucket", "key", 0)
+    assert eof.read(10) == b""
+    client.get_object.assert_not_called()
+
+    # A zero-byte request collapses the computed range and short-circuits.
+    zero = SeekableS3File(client, "bucket", "key", 10)
+    assert zero.read(0) == b""
+
+
+@pytest.mark.asyncio
+async def test_scan_archive_sync_falls_back_to_local_download_on_stream_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Mock()
+    session.flush = AsyncMock()
+    storage = Mock()
+    storage.exists = AsyncMock(return_value=True)
+    service = ConfluenceImportService(session, storage)
+    archive = ImportArchive(
+        object_key="key",
+        filename="archive.zip",
+        size_bytes=5,
+        status="uploaded",
+        spaces=[],
+        created_by_id=uuid.uuid4(),
+    )
+    session.execute = AsyncMock(return_value=_ScalarResult([]))
+
+    def fake_scan_archive(path_or_file):
+        if isinstance(path_or_file, SeekableS3File):
+            raise RuntimeError("range-scan boom")
+        return []
+
+    monkeypatch.setattr(import_module, "scan_archive", fake_scan_archive)
+    # storage is a Mock(), so getattr(storage, "_client"/"bucket", None) yields
+    # truthy Mocks, driving _scan_archive_sync down the S3 streaming path first.
+    await service.scan(archive)
+    assert archive.status == "scanned"
+    # The local fallback re-used the same S3 client to download the file.
+    storage._client.download_file.assert_called_once()
+    call_args = storage._client.download_file.call_args[0]
+    assert call_args[0] == storage.bucket
+    assert call_args[1] == archive.object_key
+
+
+@pytest.mark.asyncio
+async def test_scan_archive_sync_without_s3_client_uses_storage_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Mock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock(return_value=_ScalarResult([]))
+    storage = SimpleNamespace(
+        exists=AsyncMock(return_value=True),
+        download_to_file=AsyncMock(return_value=None),
+    )
+    service = ConfluenceImportService(session, storage)
+    archive = ImportArchive(
+        object_key="key",
+        filename="archive.zip",
+        size_bytes=5,
+        status="uploaded",
+        spaces=[],
+        created_by_id=uuid.uuid4(),
+    )
+    monkeypatch.setattr(import_module, "scan_archive", lambda _path: [])
+    await service.scan(archive)
+    assert archive.status == "scanned"
+    storage.download_to_file.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_scan_reraises_bad_request_error_from_scan_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Mock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock(return_value=_ScalarResult([]))
+    storage = Mock()
+    storage.exists = AsyncMock(return_value=True)
+    service = ConfluenceImportService(session, storage)
+    archive = ImportArchive(
+        object_key="key",
+        filename="archive.zip",
+        size_bytes=5,
+        status="uploaded",
+        spaces=[],
+        created_by_id=uuid.uuid4(),
+    )
+
+    def fake_scan_archive(_path_or_file):
+        raise BadRequestError("not a real archive")
+
+    monkeypatch.setattr(import_module, "scan_archive", fake_scan_archive)
+    with pytest.raises(BadRequestError, match="not a real archive"):
+        await service.scan(archive)
+    assert archive.error is None
+
+
+@pytest.mark.asyncio
+async def test_scan_wraps_generic_scan_sync_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = Mock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock(return_value=_ScalarResult([]))
+    storage = Mock()
+    storage.exists = AsyncMock(return_value=True)
+    service = ConfluenceImportService(session, storage)
+    archive = ImportArchive(
+        object_key="key",
+        filename="archive.zip",
+        size_bytes=5,
+        status="uploaded",
+        spaces=[],
+        created_by_id=uuid.uuid4(),
+    )
+
+    def fake_scan_archive(_path_or_file):
+        raise RuntimeError("totally broken")
+
+    monkeypatch.setattr(import_module, "scan_archive", fake_scan_archive)
+    with pytest.raises(BadRequestError, match="Could not scan Confluence archive"):
+        await service.scan(archive)
+    assert archive.error == "totally broken"
+
+
+@pytest.mark.asyncio
+async def test_run_import_groups_space_permissions_and_page_restrictions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise Confluence group import, space permission mapping (roles and
+    SpaceGroupPermission grants) and page restriction import together, since
+    they all live on the same archive scan result."""
+
+    session = Mock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.refresh = AsyncMock()
+    session.delete = AsyncMock()
+    added: list = []
+    session.add = Mock(side_effect=added.append)
+
+    async def flush() -> None:
+        for item in added:
+            if getattr(item, "id", None) is None:
+                item.id = uuid.uuid4()
+
+    session.flush = AsyncMock(side_effect=flush)
+
+    existing_group = SimpleNamespace(id=uuid.uuid4(), name="Existing Team")
+    session.execute = AsyncMock(
+        side_effect=_entity_dispatch_execute({Group: [existing_group]})
+    )
+
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        import_all=True,
+        space_keys=[],
+        overwrite_existing=False,
+        created_by_id=uuid.uuid4(),
+        cancel_requested=False,
+        counters={"download_percent": 0, "spaces_completed": 0, "pages_processed": 0},
+    )
+    archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
+    session.get = AsyncMock(side_effect=[job, archive])
+
+    groups = [
+        ConfluenceGroup(name="", members=["ignored"]),
+        ConfluenceGroup(name="8a9e2ef3775bd448017765ec6a120000", members=["ignored2"]),
+        ConfluenceGroup(name="Inactive Team", members=[]),
+        ConfluenceGroup(name="Existing Team", members=["carol", "dave"]),
+        ConfluenceGroup(name="New Team", members=["erin"]),
+        ConfluenceGroup(name="Perm Only", members=[]),
+        ConfluenceGroup(name="Restr Only", members=[]),
+    ]
+
+    permissions = [
+        ConfluencePermission(perm_type="VIEWSPACE", user_name="alice"),
+        ConfluencePermission(perm_type="EDITSPACE", user_name="bob"),
+        ConfluencePermission(perm_type="SETSPACEPERMISSIONS", user_name="charlie"),
+        ConfluencePermission(perm_type="VIEWSPACE", user_name="8a9e2ef3775bd448017765ec6a120000"),
+        ConfluencePermission(perm_type="EDITSPACE", group_name="Perm Only"),
+        ConfluencePermission(perm_type="SETSPACEPERMISSIONS", group_name="Existing Team"),
+        ConfluencePermission(perm_type="VIEWSPACE", group_name="Existing Team"),
+    ]
+
+    page1 = ConfluencePage(
+        source_id="page-1",
+        space_id="space-1",
+        parent_id=None,
+        title="Page One",
+        status="current",
+        created_at=None,
+        updated_at=None,
+    )
+    page2 = ConfluencePage(
+        source_id="page-2",
+        space_id="space-1",
+        parent_id=None,
+        title="Page Two",
+        status="current",
+        created_at=None,
+        updated_at=None,
+    )
+
+    restrictions = [
+        # Refers to a page that was never imported -> must be skipped.
+        ConfluencePageRestriction(page_id="page-missing", restriction_type="view", user_name="ghost"),
+        ConfluencePageRestriction(page_id="page-1", restriction_type="view", user_name="frank"),
+        ConfluencePageRestriction(
+            page_id="page-1", restriction_type="edit", group_name="Existing Team"
+        ),
+        ConfluencePageRestriction(
+            page_id="page-2", restriction_type="view", group_name="Restr Only"
+        ),
+    ]
+
+    source_space = ConfluenceSpace(
+        "space-1",
+        "ENG",
+        "Engineering",
+        [page1, page2],
+        permissions=permissions,
+        restrictions=restrictions,
+    )
+    scanned = ConfluenceSpaceList([source_space], groups)
+
+    async def download(_key, target, **_kwargs):
+        with zipfile.ZipFile(target, "w") as source:
+            source.writestr("unused", b"data")
+
+    storage = Mock(download_to_file=AsyncMock(side_effect=download), put=AsyncMock())
+    monkeypatch.setattr(import_module, "scan_archive", lambda _path: scanned)
+    monkeypatch.setattr(import_module, "iter_page_bodies", lambda _path: [])
+    monkeypatch.setattr(import_module, "iter_attachments", lambda _path: [])
+
+    await import_module.run_import(session, storage, job.id)
+
+    assert job.status == "completed"
+
+    created_groups = [item for item in added if isinstance(item, Group)]
+    # "Existing Team" was resolved from the DB, not re-created.
+    assert all(g.name != "Existing Team" for g in created_groups)
+    assert {"New Team", "Perm Only", "Restr Only"} <= {g.name for g in created_groups}
+
+    group_members = [item for item in added if isinstance(item, GroupMember)]
+    assert len(group_members) == 3  # carol, dave (Existing Team) + erin (New Team)
+
+    sgp_permissions = {item.permission for item in added if isinstance(item, SpaceGroupPermission)}
+    assert sgp_permissions == {Permission.admin, Permission.add, Permission.view}
+
+    user_restrictions = [item for item in added if isinstance(item, PageUserRestriction)]
+    assert any(r.permission == PageRestrictionPermission.view for r in user_restrictions)
+
+    group_restrictions = [item for item in added if isinstance(item, PageGroupRestriction)]
+    assert {r.permission for r in group_restrictions} == {
+        PageRestrictionPermission.edit,
+        PageRestrictionPermission.view,
+    }
+
+    space = next(item for item in added if isinstance(item, Space))
+    assert space.key == "ENG"
+
+
+@pytest.mark.asyncio
+async def test_run_import_attachment_size_defaults_to_zero_on_missing_zip_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Mock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.refresh = AsyncMock()
+    session.delete = AsyncMock()
+    added: list = []
+    session.add = Mock(side_effect=added.append)
+
+    async def flush() -> None:
+        for item in added:
+            if getattr(item, "id", None) is None:
+                item.id = uuid.uuid4()
+
+    session.flush = AsyncMock(side_effect=flush)
+    session.execute = AsyncMock(return_value=Mock(scalar_one_or_none=Mock(return_value=None)))
+
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        import_all=True,
+        space_keys=[],
+        overwrite_existing=False,
+        created_by_id=uuid.uuid4(),
+        cancel_requested=False,
+        counters={"download_percent": 0, "spaces_completed": 0, "pages_processed": 0},
+    )
+    archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
+    session.get = AsyncMock(side_effect=[job, archive, job])
+
+    source_page = ConfluencePage(
+        source_id="page-1",
+        space_id="space-1",
+        parent_id=None,
+        title="ENG",
+        status="current",
+        created_at=None,
+        updated_at=None,
+    )
+    source_space = ConfluenceSpace("space-1", "ENG", "Engineering", [source_page])
+
+    async def download(_key, target, **_kwargs):
+        with zipfile.ZipFile(target, "w") as source:
+            # The member is genuinely present so `.open()` still succeeds;
+            # only `.getinfo()` is made to fail below, to reach the
+            # defensive except branch around the file-size lookup.
+            source.writestr("attachments/att-1", b"binary-data")
+
+    storage = Mock(download_to_file=AsyncMock(side_effect=download), put=AsyncMock())
+    monkeypatch.setattr(import_module, "scan_archive", lambda _path: [source_space])
+    monkeypatch.setattr(
+        import_module, "iter_page_bodies", lambda _path: [("page-1", "<p>body</p>")]
+    )
+    attachment = ConfluenceAttachment("att-1", "page-1", "doc.txt", "text/plain")
+    monkeypatch.setattr(
+        import_module, "iter_attachments", lambda _path: [(attachment, "attachments/att-1")]
+    )
+
+    # `ZipFile.open()` also calls `getinfo()` internally, so only the first
+    # (explicit, service.py-issued) call is made to fail; the later call
+    # made by `.open()` must still succeed so the attachment body can be read.
+    original_getinfo = zipfile.ZipFile.getinfo
+    call_count = {"n": 0}
+
+    def flaky_getinfo(self, name, *args, **kwargs):
+        call_count["n"] += 1
+        if name == "attachments/att-1" and call_count["n"] == 1:
+            raise KeyError(name)
+        return original_getinfo(self, name, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "getinfo", flaky_getinfo)
+
+    await import_module.run_import(session, storage, job.id)
+
+    assert job.status == "completed", getattr(job, "error", None)
+    created_attachment = next(item for item in added if getattr(item, "filename", None) == "doc.txt")
+    assert created_attachment.size_bytes == 0
+
+
+@pytest.mark.asyncio
+async def test_run_import_marks_space_restricted_without_public_view_permission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """None of the space's permissions are a public VIEWSPACE/SPACEADMIN-style
+    grant, but an EDITSPACE grant still produces a user role, so the space
+    must be imported as restricted rather than open."""
+
+    session = Mock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.refresh = AsyncMock()
+    session.delete = AsyncMock()
+    added: list = []
+    session.add = Mock(side_effect=added.append)
+
+    async def flush() -> None:
+        for item in added:
+            if getattr(item, "id", None) is None:
+                item.id = uuid.uuid4()
+
+    session.flush = AsyncMock(side_effect=flush)
+    session.execute = AsyncMock(return_value=Mock(scalar_one_or_none=Mock(return_value=None)))
+
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        import_all=True,
+        space_keys=[],
+        overwrite_existing=False,
+        created_by_id=uuid.uuid4(),
+        cancel_requested=False,
+        counters={"download_percent": 0, "spaces_completed": 0, "pages_processed": 0},
+    )
+    archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
+    session.get = AsyncMock(side_effect=[job, archive])
+
+    permissions = [ConfluencePermission(perm_type="EDITSPACE", user_name="bob")]
+    source_space = ConfluenceSpace("space-1", "ENG", "Engineering", [], permissions=permissions)
+
+    async def download(_key, target, **_kwargs):
+        with zipfile.ZipFile(target, "w"):
+            pass
+
+    storage = Mock(download_to_file=AsyncMock(side_effect=download), put=AsyncMock())
+    monkeypatch.setattr(import_module, "scan_archive", lambda _path: [source_space])
+    monkeypatch.setattr(import_module, "iter_page_bodies", lambda _path: [])
+    monkeypatch.setattr(import_module, "iter_attachments", lambda _path: [])
+
+    await import_module.run_import(session, storage, job.id)
+
+    assert job.status == "completed", getattr(job, "error", None)
+    space = next(item for item in added if isinstance(item, Space))
+    assert space.visibility == SpaceVisibility.restricted

@@ -433,3 +433,25 @@ export interface StorageDeleteResult {
   archive_cleared: boolean;
   attachment_deleted: boolean;
 }
+
+/** The chrome-less /print route's payload - see backend `ExportBundle`. */
+export interface ExportBundle {
+  page: {
+    id: string;
+    title: string;
+    slug: string;
+    /** Sanitized, toggle-forced-open, attachment-inlined HTML, ready to render. */
+    content: string;
+  };
+  space: {
+    key: string;
+    name: string;
+    font_family: string | null;
+  };
+  site: {
+    site_name: string;
+    theme_color: string;
+    default_font: string;
+  };
+  theme: "light" | "dark";
+}

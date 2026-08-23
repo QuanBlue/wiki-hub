@@ -16,6 +16,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 from app.core.redis import close_redis
 from app.db.session import dispose_engine
+from app.services.browser import close_browser
 
 logger = get_logger(__name__)
 
@@ -60,6 +61,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     logger.info("shutdown")
     await dispose_engine()
     await close_redis()
+    await close_browser()
 
 
 def create_app() -> FastAPI:

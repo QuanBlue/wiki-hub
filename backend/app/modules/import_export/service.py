@@ -346,6 +346,7 @@ def _normalize_confluence_html(content: str) -> str:
         and "<ri:" not in content
         and "<task-list" not in content
         and "<layout" not in content
+        and "confluence-macro-view-file" not in content
     ):
         return content
 

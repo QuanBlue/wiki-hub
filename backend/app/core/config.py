@@ -105,6 +105,24 @@ class Settings(BaseSettings):
     s3_use_path_style: bool = True
     s3_presign_ttl_seconds: int = 300
 
+    # --- page export (headless-browser render) -----------------------------
+    #: Where the backend's headless browser reaches the frontend to render the
+    #: chrome-less /print route. Defaults to the compose service name; a
+    #: non-compose deployment must override this to wherever the frontend is
+    #: reachable from the backend process.
+    frontend_internal_url: str = "http://frontend:3000"
+    #: How long a minted export token stays valid. Short: it is a bearer
+    #: capability for one page, not a session.
+    export_token_ttl_seconds: int = 120
+    export_render_timeout_seconds: int = 45
+    export_max_concurrent_renders: int = 2
+    #: Attachments are inlined as data: URIs into the export snapshot. Caps
+    #: keep one huge attachment (or many) from ballooning the export or
+    #: stalling the render; anything over the cap becomes a plain link instead.
+    export_max_inline_asset_bytes: int = 8 * 1024 * 1024
+    export_max_inline_total_bytes: int = 40 * 1024 * 1024
+    pandoc_binary: str = "pandoc"
+
     # --- uploads ----------------------------------------------------------
     max_upload_size_mb: int = 50
     max_import_size_mb: int = 1024
@@ -160,6 +178,13 @@ class Settings(BaseSettings):
         if not value.startswith(("redis://", "rediss://", "unix://")):
             raise ValueError("WIKIHUB_REDIS_URL must be a redis:// or rediss:// URL")
         return value
+
+    @field_validator("frontend_internal_url")
+    @classmethod
+    def _validate_frontend_internal_url(cls, value: str) -> str:
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("WIKIHUB_FRONTEND_INTERNAL_URL must be an http:// or https:// URL")
+        return value.rstrip("/")
 
     @model_validator(mode="after")
     def _harden_production(self) -> Settings:

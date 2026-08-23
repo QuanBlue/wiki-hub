@@ -14,6 +14,7 @@ import {
   FolderInput,
   Eye,
   EyeOff,
+  FileType,
   Lock,
   Maximize2,
   Minimize2,
@@ -1466,86 +1467,21 @@ export function SpaceWorkspace({
     }
   }
 
-  function getExportContent(page: WikiPage): string {
-    const html =
-      page.content_format === "markdown"
-        ? markdownToHtml(page.content)
-        : page.content;
-    const document = new DOMParser().parseFromString(html, "text/html");
-
-    // Exported content may originate in a third-party import. Keep the exported
-    // document faithful to the page while never executing imported markup.
-    document
-      .querySelectorAll("script, iframe, object, embed, form")
-      .forEach((element) => element.remove());
-    document.querySelectorAll("*").forEach((element) => {
-      Array.from(element.attributes).forEach((attribute) => {
-        const value = attribute.value.trim().toLowerCase();
-        if (
-          attribute.name.toLowerCase().startsWith("on") ||
-          value.startsWith("javascript:")
-        ) {
-          element.removeAttribute(attribute.name);
-        }
-      });
-    });
-    return document.body.innerHTML;
-  }
-
-  function exportDocumentHtml(page: WikiPage): string {
-    const exportTitle = escapeHtml(page.title);
-    return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${exportTitle}</title>
-    <style>
-      :root { color-scheme: light dark; }
-      body { max-width: 53rem; margin: 2rem auto; padding: 0 1.5rem; font-family: Inter, ui-sans-serif, system-ui, sans-serif; line-height: 1.65; color: CanvasText; background: Canvas; }
-      img, video, table { max-width: 100%; }
-      pre { overflow: auto; padding: 1rem; border: 1px solid GrayText; border-radius: .375rem; white-space: pre-wrap; }
-      code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .9em; }
-      table { border-collapse: collapse; }
-      th, td { padding: .5rem; border: 1px solid GrayText; text-align: left; vertical-align: top; }
-      a { color: LinkText; }
-    </style>
-  </head>
-  <body>
-    <article>
-      <h1>${exportTitle}</h1>
-      ${getExportContent(page)}
-    </article>
-  </body>
-</html>`;
-  }
-
-  function exportPageHtml() {
+  // The backend renders the real page in a headless browser and serves the
+  // result directly - PDF and HTML are captured from the same render the
+  // live page uses, so this is now just a download link, the same pattern
+  // for both formats.
+  function exportPage(format: "pdf" | "html" | "docx") {
     if (!currentPage) return;
-    const filename = `${currentPage.slug || "page"}.html`;
-    const blob = new Blob([exportDocumentHtml(currentPage)], {
-      type: "text/html;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
+    link.href = `${apiBaseUrl()}/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/export/${format}`;
+    link.download = `${currentPage.slug || "page"}.${format}`;
     document.body.appendChild(link);
     link.click();
     link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    toast.success("HTML export downloaded.");
-  }
-
-  function exportPagePdf() {
-    if (!currentPage) return;
-    const link = document.createElement("a");
-    link.href = `${apiBaseUrl()}/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/export/pdf`;
-    link.download = `${currentPage.slug || "page"}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    toast.success("PDF export downloaded.");
+    toast.success(
+      `Preparing your ${format.toUpperCase()} export — the download will start shortly.`,
+    );
   }
 
   function openEditor(mode: EditMode) {
@@ -2215,13 +2151,17 @@ export function SpaceWorkspace({
                               Export
                             </DropdownMenuSubTrigger>
                             <DropdownMenuSubContent className="w-48">
-                              <DropdownMenuItem onSelect={exportPageHtml}>
+                              <DropdownMenuItem onSelect={() => exportPage("html")}>
                                 <Download />
                                 Export HTML
                               </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={exportPagePdf}>
+                              <DropdownMenuItem onSelect={() => exportPage("pdf")}>
                                 <FileText />
                                 Export PDF
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => exportPage("docx")}>
+                                <FileType />
+                                Export Word
                               </DropdownMenuItem>
                             </DropdownMenuSubContent>
                           </DropdownMenuSub>
@@ -2284,13 +2224,17 @@ export function SpaceWorkspace({
                                 Export
                               </DropdownMenuSubTrigger>
                               <DropdownMenuSubContent className="w-48">
-                                <DropdownMenuItem onSelect={exportPageHtml}>
+                                <DropdownMenuItem onSelect={() => exportPage("html")}>
                                   <Download />
                                   Export HTML
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={exportPagePdf}>
+                                <DropdownMenuItem onSelect={() => exportPage("pdf")}>
                                   <FileText />
                                   Export PDF
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => exportPage("docx")}>
+                                  <FileType />
+                                  Export Word
                                 </DropdownMenuItem>
                               </DropdownMenuSubContent>
                             </DropdownMenuSub>

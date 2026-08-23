@@ -62,6 +62,13 @@ def test_password_change_rules() -> None:
         PasswordReset(new_password="123456a@")
 
 
+def test_self_profile_email_validation() -> None:
+    assert SelfProfileUpdate(email=None).email is None
+    assert SelfProfileUpdate(email=" me@wikihub.local ").email == "me@wikihub.local"
+    with pytest.raises(ValidationError, match="valid email address"):
+        SelfProfileUpdate(email="not-an-email")
+
+
 @pytest.mark.asyncio
 async def test_authentication_and_user_lookup_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     svc = service()

@@ -11,6 +11,7 @@ from app.api.v1 import pages as pages_api
 from app.api.v1 import spaces as spaces_api
 from app.models.permission import Permission
 from app.models.restriction import PageRestrictionPermission
+from app.modules.pages.export_service import ExportResult
 
 
 def _services():
@@ -44,9 +45,10 @@ def _services():
 
 @pytest.mark.asyncio
 async def test_page_route_wrappers_delegate_to_services(monkeypatch: pytest.MonkeyPatch) -> None:
-    user, _space, page, page_service, space_service = _services()
+    user, space, page, page_service, space_service = _services()
     assert pages_api.get_page_service(Mock()).__class__ is not None
     assert pages_api.get_space_service(Mock()).__class__ is not None
+    assert pages_api.get_export_service().__class__ is not None
 
     assert await pages_api.list_pages("ENG", user, page_service, space_service) == []
     assert (
@@ -72,9 +74,25 @@ async def test_page_route_wrappers_delegate_to_services(monkeypatch: pytest.Monk
     ).id == page.id
     assert await pages_api.delete_page("ENG", "home", user, page_service, space_service) is None
 
-    monkeypatch.setattr(pages_api, "render_page_pdf", lambda _page: b"pdf")
-    response = await pages_api.export_page_pdf("ENG", "home", user, page_service, space_service)
+    export_service = Mock()
+    export_service.export = AsyncMock(
+        return_value=ExportResult(content=b"pdf", media_type="application/pdf", filename="home.pdf")
+    )
+    fake_session = Mock()
+    response = await pages_api.export_page(
+        "ENG",
+        "home",
+        pages_api.ExportFormat.pdf,
+        user,
+        page_service,
+        space_service,
+        export_service,
+        fake_session,
+    )
     assert response.media_type == "application/pdf"
+    export_service.export.assert_awaited_once_with(
+        page=page, space=space, user=user, fmt=pages_api.ExportFormat.pdf, session=fake_session
+    )
 
     assert (
         await pages_api.list_page_restrictions("ENG", "home", user, page_service, space_service)
@@ -259,6 +277,15 @@ async def test_confluence_import_route_wrappers(monkeypatch: pytest.MonkeyPatch)
             archive.id, SimpleNamespace(part_numbers=[1]), user, importer
         )
     ).urls == {1: "url"}
+    
+    # Test uploading status direct urls
+    archive.status = "uploading"
+    res = await imports_api.get_upload_part_urls(
+        archive.id, SimpleNamespace(part_numbers=[1]), user, importer
+    )
+    assert res.urls == {1: "/api/v1/storage/object?key=imports%2Fa.zip&upload_id=upload&part_number=1"}
+    archive.status = "scanned"
+    
     with pytest.raises(imports_api.NotFoundError):
         await imports_api.get_upload_part_urls(
             archive.id, SimpleNamespace(part_numbers=[3]), user, importer

@@ -38,19 +38,46 @@ FROM python:3.12-slim-trixie AS runtime
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    # Page export launches a real Chromium to render the app's real CSS
+    # instead of a second, hand-maintained stylesheet (see
+    # app/services/browser.py). Installed under a fixed, world-readable path
+    # rather than the default `~/.cache/ms-playwright` - that default resolves
+    # under /root at install time (this stage still runs as root here) and
+    # would be unreadable once the process drops to the non-root `wikihub`
+    # user below.
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 
-# Base-image security patches, then libpq for asyncpg's fallbacks and curl for
-# the container healthcheck.
+# Base-image security patches, then:
+#   - libpq + curl: asyncpg fallback / container healthcheck (unchanged)
+#   - fonts-*: Chromium needs real fonts to render text at all; emoji in page
+#     content would render as tofu without fonts-noto-color-emoji
+# WeasyPrint's native libs (libcairo2/libpango/libgdk-pixbuf/libffi/libjpeg)
+# are gone along with the WeasyPrint-based PDF export they existed for.
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
-        libpq5 curl fonts-dejavu-core libcairo2 libpango-1.0-0 libpangoft2-1.0-0 \
-        libgdk-pixbuf-2.0-0 libffi8 libjpeg62-turbo \
+        libpq5 curl fonts-dejavu-core fonts-liberation2 fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin wikihub
 
 COPY --from=builder /opt/venv /opt/venv
+
+# Chromium + its OS-level dependencies, for page export. Must run as root
+# (installs system packages), and must come before the pip-strip block below
+# needs `playwright` importable, which it already is via the copied venv.
+ARG PANDOC_VERSION=3.5
+RUN /opt/venv/bin/playwright install --with-deps chromium \
+    && chmod -R a+rX /opt/playwright \
+    # Word export converts the captured page snapshot with pandoc. The
+    # official .deb (pinned + checksummed) over Debian's apt package: it is
+    # self-contained, needs no Haskell runtime pulled in from apt, and is a
+    # current release with better HTML-reader/skylighting behaviour.
+    && curl -fsSL -o /tmp/pandoc.deb \
+        "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-1-amd64.deb" \
+    && dpkg -i /tmp/pandoc.deb \
+    && rm -f /tmp/pandoc.deb \
+    && rm -rf /var/lib/apt/lists/*
 
 # Strip the packaging toolchain from the runtime image. It is not needed to run
 # the app, and leaving it in ships pip's vendored dependencies plus setuptools

@@ -14,6 +14,7 @@ from app.api.v1 import (
     auth,
     backup,
     confluence_import,
+    export_render,
     groups,
     meta,
     pages,
@@ -43,6 +44,7 @@ api_router.include_router(audit_logs.router)
 api_router.include_router(backup.router)
 api_router.include_router(confluence_import.router)
 api_router.include_router(storage_admin.router)
+api_router.include_router(export_render.router)
 
 # Registered in later phases:
 #   groups, roles, revisions,

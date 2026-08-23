@@ -573,11 +573,22 @@ const sections: HelpSection[] = [
   },
   {
     id: "history-and-export",
-    title: "Revision History, Visual Diff & PDF Export",
+    title: "Revision History, Visual Diff & Export",
     category: "Writing",
     description:
-      "Compare document revisions, restore past versions safely, and export PDF.",
-    keywords: ["revision", "history", "compare", "diff", "restore", "pdf", "export"],
+      "Compare document revisions, restore past versions safely, and export to PDF, HTML, or Word.",
+    keywords: [
+      "revision",
+      "history",
+      "compare",
+      "diff",
+      "restore",
+      "pdf",
+      "html",
+      "word",
+      "docx",
+      "export",
+    ],
     body: (
       <>
         <p>
@@ -604,11 +615,22 @@ const sections: HelpSection[] = [
             and deletions are highlighted in red.
           </li>
           <li>
-            <strong>Export PDF</strong>: Click <strong>Export PDF</strong> in page actions
-            to generate a clean, print-formatted PDF document complete with page headers,
-            tables, and embedded images.
+            <strong>Export</strong>: Open <strong>Export</strong> in page actions to
+            download the page as PDF, HTML, or Word. PDF and HTML are rendered from
+            the exact page you see on screen, so colors, fonts, code highlighting,
+            callouts, and tables come out looking identical to the live page - not a
+            re-formatted approximation of it.
           </li>
         </ol>
+
+        <Callout variant="note" title="WHAT LOOKS DIFFERENT IN AN EXPORT">
+          A collapsed toggle section exports fully expanded, since a static file has
+          no way to click it open. Word is the one format with a real ceiling: its
+          .docx format has no equivalent of a CSS rounded corner, shadow, or
+          gradient, so a callout or code block comes out as a square shaded
+          paragraph - faithful in color and text, not in exact shape. PDF and HTML
+          have no such limit.
+        </Callout>
       </>
     ),
   },

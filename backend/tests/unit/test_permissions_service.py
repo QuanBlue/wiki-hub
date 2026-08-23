@@ -10,7 +10,7 @@ from app.core.exceptions import ConflictError, NotFoundError, PermissionDeniedEr
 from app.models.permission import GlobalPermission, Permission
 from app.models.restriction import PageRestrictionPermission
 from app.models.space import SpaceRole, SpaceVisibility
-from app.modules.permissions.service import PermissionService
+from app.modules.permissions.service import PermissionService, _safe_refresh
 from app.schemas.permission import GroupCreate, GroupUpdate
 
 
@@ -94,6 +94,42 @@ async def test_group_and_removal_rules() -> None:
 
 
 @pytest.mark.asyncio
+async def test_safe_refresh_swallows_refresh_errors() -> None:
+    # A best-effort ORM refresh after flush must never bubble up and fail the
+    # caller - if the row is already stale/gone we just skip the refresh.
+    session = Mock()
+    session.refresh = AsyncMock(side_effect=RuntimeError("boom"))
+    await _safe_refresh(session, object())
+    session.refresh.assert_awaited_once()
+
+    no_refresh = SimpleNamespace()
+    await _safe_refresh(no_refresh, object())  # no `refresh` attribute at all
+
+
+@pytest.mark.asyncio
+async def test_update_group_replaces_owners() -> None:
+    service = svc()
+    actor = user(is_superuser=True)
+    other_owner = user()
+    group = SimpleNamespace(id=uuid.uuid4(), owner_id=uuid.uuid4())
+    service.session.get.side_effect = [other_owner]
+    service.session.scalar.side_effect = [None]  # not already a member
+
+    await service.update_group(group, GroupUpdate(owner_ids=[other_owner.id]), actor)
+
+    assert group.owner_id == other_owner.id
+    service.session.execute.assert_awaited()
+    assert service.session.add.call_count == 2  # GroupOwner + GroupMember
+
+    with pytest.raises(ConflictError):
+        await service.update_group(group, GroupUpdate(owner_ids=[]), actor)
+
+    service.session.get.side_effect = [None]
+    with pytest.raises(NotFoundError):
+        await service.update_group(group, GroupUpdate(owner_ids=[uuid.uuid4()]), actor)
+
+
+@pytest.mark.asyncio
 async def test_page_visibility_and_restriction_helpers() -> None:
     service = svc()
     actor = user()
@@ -106,6 +142,10 @@ async def test_page_visibility_and_restriction_helpers() -> None:
     service._principal_has_restriction = AsyncMock(return_value=False)
     assert await service.can_view_page(page, actor) is True
     assert await service.can_edit_page(page, actor) is True
+    assert await service.page_view_is_restricted(page) is False
+
+    service._restriction_rows_exist = AsyncMock(return_value=True)
+    assert await service.page_view_is_restricted(page) is True
 
     service._restriction_rows_exist = AsyncMock(return_value=True)
     assert await service.can_edit_page(page, actor) is False

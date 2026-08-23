@@ -44,7 +44,13 @@ dependencies = [
   # --- observability ---
   "structlog>=24.4",
   "orjson>=3.10",
-  "weasyprint>=66,<67",
+  # --- page export (headless-browser render, replaces the old WeasyPrint-
+  # based PDF export - see app/modules/pages/export_service.py) ---
+  "playwright>=1.49,<2",
+  # Word export converts a captured page snapshot with pandoc (see
+  # deploy/docker/backend.Dockerfile), then this library paints the
+  # resulting .docx's named styles with the page's real, probed colors.
+  "python-docx>=1.1",
 ]
 
 [project.optional-dependencies]

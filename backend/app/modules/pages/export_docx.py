@@ -1,0 +1,257 @@
+"""HTML to Word conversion for page export.
+
+pandoc does the structural conversion (headings, lists, tables, images
+already inlined as ``data:`` URIs, and syntax-aware code coloring via its own
+skylighting engine, themed from the probed code palette below); a small Lua
+filter (``app/assets/wikihub.lua``) maps WikiHub's semantic markup (callouts,
+toggle sections) onto named Word styles; this module's ``python-docx``
+post-pass then paints those named styles with the page's real,
+currently-rendered colors, probed moments earlier by
+``export_snapshot.DOCX_CAPTURE_JS``. Nothing here is hand-picked, and nothing
+can silently drift from the live theme the way a static template would.
+
+**A real ceiling, not a shortfall of this pipeline**: OOXML has no CSS
+gradient, box-shadow, border-radius, flexbox, or grid. A callout that has a
+soft rounded corner and a subtle shadow on screen becomes a square shaded
+paragraph with a colored left border in Word - faithful in color and
+structure, not in geometry. PDF and HTML are pixel-exact; Word is the best
+this file format can represent.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import json
+import re
+import tempfile
+from pathlib import Path
+from typing import Any, Final
+
+from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
+from docx.oxml.ns import qn
+from docx.oxml.parser import OxmlElement
+from docx.shared import Pt, RGBColor
+
+from app.core.config import settings
+from app.core.exceptions import ServiceUnavailableError
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+_LUA_FILTER: Final = Path(__file__).resolve().parent.parent.parent / "assets" / "wikihub.lua"
+
+_HEX_RE = re.compile(r"^#([0-9a-fA-F]{6})$")
+_RGB_RE = re.compile(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*[\d.]+\s*)?\)")
+
+#: skylighting/KDE-syntax-highlighting token categories, mapped onto the
+#: app's own reduced code-token palette (see globals.css's ".wikihub-code"
+#: rules) - one CSS var often covers several of pandoc's finer categories.
+_HIGHLIGHT_TOKEN_MAP: Final[dict[str, str]] = {
+    "Keyword": "code_keyword",
+    "ControlFlow": "code_keyword",
+    "Operator": "code_keyword",
+    "String": "code_string",
+    "VerbatimString": "code_string",
+    "SpecialString": "code_string",
+    "Char": "code_string",
+    "Comment": "code_comment",
+    "Documentation": "code_comment",
+    "CommentVar": "code_comment",
+    "DecVal": "code_number",
+    "BaseN": "code_number",
+    "Float": "code_number",
+    "Constant": "code_number",
+    "Function": "code_function",
+    "BuiltIn": "code_function",
+    "DataType": "code_type",
+    "Extension": "code_type",
+    "Variable": "code_variable",
+    "Attribute": "code_variable",
+    "Preprocessor": "code_meta",
+    "Import": "code_meta",
+    "Annotation": "code_meta",
+    "RegionMarker": "code_meta",
+    "Information": "code_meta",
+    "Warning": "code_meta",
+    "Alert": "code_meta",
+    "Error": "code_meta",
+    "SpecialChar": "code_meta",
+    "Others": "code_fg",
+}
+_ITALIC_TOKENS: Final = {"Comment", "Documentation", "CommentVar"}
+
+
+def _parse_color(value: str | None) -> str | None:
+    """Return a bare 6-digit hex string (no '#'), or ``None`` if unparseable.
+
+    getComputedStyle hands back ``rgb(r, g, b)`` for a resolved style
+    property (callout backgrounds/borders) and the raw custom-property string
+    - already ``#rrggbb`` in globals.css - for the fixed code palette. Both
+    are handled; anything else is left to the reference style's own default
+    rather than guessed at.
+    """
+    if not value:
+        return None
+    hex_match = _HEX_RE.match(value.strip())
+    if hex_match:
+        return hex_match.group(1)
+    rgb_match = _RGB_RE.match(value.strip())
+    if rgb_match:
+        r, g, b = (int(x) for x in rgb_match.groups())
+        return f"{r:02x}{g:02x}{b:02x}"
+    return None
+
+
+def _build_highlight_theme(theme: dict[str, str]) -> dict[str, Any]:
+    """A skylighting theme JSON pandoc's ``--highlight-style`` accepts,
+    generated from the probed code palette rather than a static file."""
+
+    def style(key: str, *, italic: bool = False) -> dict[str, Any]:
+        color = _parse_color(theme.get(key))
+        return {"text-color": f"#{color}" if color else None, "italic": italic}
+
+    text_styles = {
+        token: style(css_key, italic=token in _ITALIC_TOKENS)
+        for token, css_key in _HIGHLIGHT_TOKEN_MAP.items()
+    }
+    fg = _parse_color(theme.get("code_fg"))
+    bg = _parse_color(theme.get("code_bg"))
+    return {
+        "text-color": f"#{fg}" if fg else "#eaf2f1",
+        "background-color": f"#{bg}" if bg else "#282a3a",
+        "line-number-color": f"#{fg}" if fg else "#eaf2f1",
+        "line-number-background-color": f"#{bg}" if bg else "#282a3a",
+        "text-styles": text_styles,
+    }
+
+
+def _set_paragraph_shading(paragraph: Any, hex_color: str) -> None:
+    """python-docx has no high-level API for paragraph shading; ``w:shd`` on
+    ``w:pPr`` is the raw OOXML element Word itself uses for it."""
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), hex_color)
+    paragraph._p.get_or_add_pPr().append(shd)
+
+
+def _set_paragraph_left_border(paragraph: Any, hex_color: str) -> None:
+    borders = OxmlElement("w:pBdr")
+    left = OxmlElement("w:left")
+    left.set(qn("w:val"), "single")
+    left.set(qn("w:sz"), "24")
+    left.set(qn("w:space"), "8")
+    left.set(qn("w:color"), hex_color)
+    borders.append(left)
+    paragraph._p.get_or_add_pPr().append(borders)
+
+
+def _get_or_add_style(document: Any, name: str) -> Any:
+    """pandoc's docx writer auto-creates any ``custom-style`` it sees that
+    isn't already in the document, so the style this function's caller wants
+    to paint may already exist by the time python-docx opens the file - reuse
+    it rather than raise trying to add a duplicate."""
+    try:
+        return document.styles[name]
+    except KeyError:
+        return document.styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)
+
+
+def _apply_named_styles(document: Any, theme: dict[str, str]) -> None:
+    callouts = {
+        "WikiHub Callout Info": ("callout_info_bg", "callout_info_border"),
+        "WikiHub Callout Warning": ("callout_warning_bg", "callout_warning_border"),
+        "WikiHub Callout Note": ("callout_note_bg", "callout_note_border"),
+        "WikiHub Callout Panel": ("callout_panel_bg", "callout_panel_border"),
+    }
+    fg = _parse_color(theme.get("foreground"))
+    for name in callouts:
+        style = _get_or_add_style(document, name)
+        style.paragraph_format.space_before = Pt(6)
+        style.paragraph_format.space_after = Pt(6)
+        style.paragraph_format.left_indent = Pt(8)
+        if fg:
+            style.font.color.rgb = RGBColor.from_string(fg)
+        # Word has no "default paragraph shading/border" on a *style* via the
+        # high-level API either; both live on every paragraph using the
+        # style instead, applied below.
+
+    toggle_summary = _get_or_add_style(document, "WikiHub Toggle Summary")
+    toggle_summary.font.bold = True
+
+    toggle_body = _get_or_add_style(document, "WikiHub Toggle Body")
+    toggle_body.paragraph_format.left_indent = Pt(18)
+
+    for paragraph in document.paragraphs:
+        if paragraph.style.name in callouts:
+            bg_key, border_key = callouts[paragraph.style.name]
+            bg = _parse_color(theme.get(bg_key))
+            border = _parse_color(theme.get(border_key)) or _parse_color(theme.get("border"))
+            if bg:
+                _set_paragraph_shading(paragraph, bg)
+            if border:
+                _set_paragraph_left_border(paragraph, border)
+
+
+async def html_to_docx(html: str, theme: dict[str, str], *, title: str) -> bytes:
+    """Convert a simplified, semantically-marked-up HTML fragment to a
+    ``.docx``, themed from ``theme`` (see ``DOCX_CAPTURE_JS``)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        highlight_theme_path = tmp_path / "highlight.theme"
+        output_path = tmp_path / "output.docx"
+
+        highlight_theme_path.write_text(
+            json.dumps(_build_highlight_theme(theme)), encoding="utf-8"
+        )
+
+        args = [
+            settings.pandoc_binary,
+            "--from=html+native_divs+native_spans",
+            "--to=docx",
+            f"--lua-filter={_LUA_FILTER}",
+            f"--highlight-style={highlight_theme_path}",
+            "--metadata",
+            f"title={title}",
+            "--standalone",
+            "-o",
+            str(output_path),
+        ]
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _stdout, stderr = await asyncio.wait_for(
+                process.communicate(html.encode("utf-8")),
+                timeout=settings.export_render_timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise ServiceUnavailableError(
+                "Converting the page to Word timed out. Please try again."
+            ) from exc
+        except OSError as exc:
+            raise ServiceUnavailableError(
+                "Word export is not available on this server."
+            ) from exc
+
+        if process.returncode != 0 or not output_path.exists():
+            logger.error(
+                "docx_conversion_failed",
+                returncode=process.returncode,
+                stderr=stderr.decode("utf-8", errors="replace")[:2000],
+            )
+            raise ServiceUnavailableError(
+                "Converting the page to Word failed. Please try again."
+            )
+
+        document = Document(str(output_path))
+        _apply_named_styles(document, theme)
+
+        result_stream = io.BytesIO()
+        document.save(result_stream)
+        return result_stream.getvalue()

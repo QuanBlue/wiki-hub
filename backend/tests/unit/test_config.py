@@ -73,6 +73,16 @@ def test_sync_database_url_drops_the_async_driver() -> None:
     assert settings.sync_database_url.startswith("postgresql://")
 
 
+def test_frontend_internal_url_strips_a_trailing_slash() -> None:
+    settings = Settings(frontend_internal_url="http://frontend:3000/")  # type: ignore[arg-type]
+    assert settings.frontend_internal_url == "http://frontend:3000"
+
+
+def test_frontend_internal_url_rejects_a_non_http_scheme() -> None:
+    with pytest.raises(ValueError, match="FRONTEND_INTERNAL_URL"):
+        Settings(frontend_internal_url="frontend:3000")  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize(
     "key",
     ["password", "Password", "secret_key", "access_token", "Authorization", "client_secret"],

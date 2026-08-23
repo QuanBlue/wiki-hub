@@ -587,6 +587,40 @@ describe("RichTextEditor attachments", () => {
     expect(link).toHaveAttribute("draggable", "false");
   });
 
+  it("in export mode, never mounts the attachment modal or fetches on click", async () => {
+    const fetchSpy = vi.spyOn(window, "fetch");
+    const { container } = render(
+      <RichTextContent
+        content={`<p><a href="${attachmentHref}">jmx_exporter_config.yaml</a></p>`}
+        exportMode
+      />,
+    );
+
+    const link = await screen.findByRole("link", {
+      name: "jmx_exporter_config.yaml",
+    });
+    fireEvent.mouseDown(link);
+    fireEvent.click(link);
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("calls onReady once the export-mode editor has mounted content", async () => {
+    const onReady = vi.fn();
+    render(
+      <RichTextContent
+        content={`<p><a href="${attachmentHref}">jmx_exporter_config.yaml</a></p>`}
+        exportMode
+        onReady={onReady}
+      />,
+    );
+
+    await screen.findByRole("link", { name: "jmx_exporter_config.yaml" });
+    await waitFor(() => expect(onReady).toHaveBeenCalled());
+  });
+
   it("leaves an attachment link written into a sentence as a link", async () => {
     render(
       <RichTextEditor
@@ -1175,12 +1209,30 @@ describe("Confluence macro normalization and attachment display modes", () => {
     expect(normalized).toContain('data-attachment="VCS-NSM.pptx"');
   });
 
-  it("recovers legacy view-file div wrappers into card attachment nodes", () => {
+  it("recovers legacy view-file div wrappers into card attachment nodes (download attr)", () => {
     const legacy = `<div class="confluence-macro confluence-macro-view-file my-3 inline-flex"><a href="/api/v1/attachments/123/content" download="NSM_Training.pptx">Download</a></div></div>`;
     const normalized = normalizeConfluenceCodeMacros(legacy);
     expect(normalized).toContain('data-display-mode="card"');
     expect(normalized).toContain('data-attachment="NSM_Training.pptx"');
     expect(normalized).toContain('href="/api/v1/attachments/123/content"');
+  });
+
+  it("recovers legacy view-file div wrappers into card attachment nodes (title attr)", () => {
+    const legacy = `<div class="confluence-macro confluence-macro-view-file"><a href="/content">Download</a><span title="File.pdf"></span></div></div>`;
+    const normalized = normalizeConfluenceCodeMacros(legacy);
+    expect(normalized).toContain('data-attachment="File.pdf"');
+  });
+
+  it("recovers legacy view-file div wrappers into card attachment nodes (text fallback)", () => {
+    const legacy = `<div class="confluence-macro confluence-macro-view-file"><a href="/content">Download</a><span>MyDoc.docx</span></div></div>`;
+    const normalized = normalizeConfluenceCodeMacros(legacy);
+    expect(normalized).toContain('data-attachment="MyDoc.docx"');
+  });
+
+  it("recovers legacy view-file div wrappers into card attachment nodes (ext badge fallback)", () => {
+    const legacy = `<div class="confluence-macro confluence-macro-view-file"><a href="/content">Download</a><p>MyDoc</p><div class="opacity-15">DOCX</div></div></div>`;
+    const normalized = normalizeConfluenceCodeMacros(legacy);
+    expect(normalized).toContain('data-attachment="MyDoc.docx"');
   });
 
   it("renders attachment link with link display mode as inline link and card display mode as tile", async () => {
