@@ -2676,11 +2676,11 @@ function AttachmentTile({
           contentEditable={false}
           draggable={editor.isEditable}
           className={cn(
-            "attachment-link inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-border bg-surface-raised text-primary text-xs font-medium !no-underline shadow-2xs hover:bg-surface-sunken hover:border-primary/50 transition-colors align-baseline",
+            "attachment-link inline-flex items-center gap-1 text-primary hover:underline font-medium text-xs align-baseline",
             editor.isEditable
               ? "cursor-grab active:cursor-grabbing"
               : "cursor-pointer",
-            selected && "border-primary ring-primary/40 ring-2",
+            selected && "outline-primary/40 outline-2 outline",
           )}
         >
           <span className="text-muted-foreground shrink-0 size-3.5 flex items-center justify-center">
@@ -2800,10 +2800,13 @@ const AttachmentNode = TiptapNode.create({
           if (filename.toLowerCase() === "download") {
             const titleVal = el.getAttribute("title");
             const dataAttVal = el.getAttribute("data-attachment");
+            const downloadAttr = el.getAttribute("download");
             if (titleVal && titleVal.toLowerCase() !== "download") {
               filename = titleVal;
             } else if (dataAttVal && dataAttVal.toLowerCase() !== "download") {
               filename = dataAttVal;
+            } else if (downloadAttr && downloadAttr.toLowerCase() !== "download") {
+              filename = downloadAttr;
             }
           }
           return {
