@@ -5,6 +5,13 @@ const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
+  // The backend's headless-browser export visits /print via the Docker
+  // service hostname ("http://frontend:3000/print?..."), not localhost. Next
+  // dev's cross-origin guard blocks unrecognised hosts from dev-only
+  // resources (HMR, RSC) by default, which silently stalls client hydration
+  // for that request - the exported page's readiness signal then never
+  // fires. Harmless outside `next dev`; ignored in production builds.
+  allowedDevOrigins: ["frontend"],
   async headers() {
     return [
       {

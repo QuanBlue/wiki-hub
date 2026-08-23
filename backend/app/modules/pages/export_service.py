@@ -13,6 +13,8 @@ and self-heals as new page features are added.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
@@ -57,6 +59,28 @@ MEDIA_TYPES: Final[dict[ExportFormat, str]] = {
 #: data-export-ready once content has settled, or data-export-error if the
 #: bundle fetch failed or nothing became ready within its own watchdog.
 _READY_OR_ERROR_SELECTOR = 'body[data-export-ready="true"], body[data-export-error]'
+
+_SLUG_CHARS: Final = re.compile(r"[^a-z0-9]+")
+#: Unicode gives no canonical decomposition for stroke-through letters like
+#: "đ"/"Đ" - NFD leaves them untouched, so they need an explicit substitution
+#: before the generic diacritic strip below runs.
+_STROKE_LETTERS: Final = str.maketrans({"đ": "d", "Đ": "D"})
+
+
+def _export_filename_stem(title: str, *, fallback: str = "page") -> str:
+    """Turn a page title into a readable, download-safe filename stem.
+
+    Unlike the page's own URL slug (``pages/service.py``'s ``unique_slug``,
+    which lowercases and discards anything outside ``[a-z0-9]`` with no
+    transliteration first), this transliterates accented Latin letters -
+    Vietnamese tone marks included - down to their plain ASCII base letter,
+    so "Giám sát ứng dụng Java SpringBoot" becomes
+    "giam-sat-ung-dung-java-springboot" instead of "gi-m-s-t-ng-d-ng...".
+    """
+    normalized = unicodedata.normalize("NFD", title.translate(_STROKE_LETTERS))
+    ascii_title = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    stem = _SLUG_CHARS.sub("-", ascii_title.strip().lower()).strip("-")
+    return stem[:200] or fallback
 
 
 @dataclass(frozen=True)
@@ -141,7 +165,7 @@ class ExportService:
         return ExportResult(
             content=content,
             media_type=MEDIA_TYPES[fmt],
-            filename=f"{page.slug or 'page'}.{fmt.value}",
+            filename=f"{_export_filename_stem(page.title)}.{fmt.value}",
         )
 
     @staticmethod
