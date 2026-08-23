@@ -30,6 +30,7 @@ from typing import Any, Final
 
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml.parser import OxmlElement
 from docx.shared import Pt, RGBColor
@@ -184,6 +185,17 @@ def _apply_named_styles(document: Any, theme: dict[str, str]) -> None:
     toggle_body = _get_or_add_style(document, "WikiHub Toggle Body")
     toggle_body.paragraph_format.left_indent = Pt(18)
 
+    # pandoc's own docx writer shades "Source Code" from the skylighting
+    # theme's background-color (see _build_highlight_theme), but it leaves
+    # the style's spacing untouched - text sits flush against the shaded
+    # box's edges on every side. Give it the same breathing room the
+    # callouts above already get.
+    code_style = _get_or_add_style(document, "Source Code")
+    code_style.paragraph_format.space_before = Pt(8)
+    code_style.paragraph_format.space_after = Pt(8)
+    code_style.paragraph_format.left_indent = Pt(10)
+    code_style.paragraph_format.right_indent = Pt(10)
+
     for paragraph in document.paragraphs:
         if paragraph.style.name in callouts:
             bg_key, border_key = callouts[paragraph.style.name]
@@ -193,6 +205,50 @@ def _apply_named_styles(document: Any, theme: dict[str, str]) -> None:
                 _set_paragraph_shading(paragraph, bg)
             if border:
                 _set_paragraph_left_border(paragraph, border)
+
+
+def _append_field(paragraph: Any, instruction: str) -> None:
+    """Insert a live Word field (``{ PAGE }``, ``{ NUMPAGES }``) as three
+    runs - python-docx has no high-level API for fields, so this is the raw
+    OOXML sequence Word itself writes: a field-char run to open it, an
+    instruction-text run naming it, and a field-char run to close it. Word
+    computes the actual number itself whenever the document is opened,
+    paginated, or printed - nothing here is a fixed value that could drift.
+    """
+    begin = paragraph.add_run()
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    begin._r.append(fld_begin)
+
+    instr_run = paragraph.add_run()
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = f" {instruction} "
+    instr_run._r.append(instr)
+
+    end = paragraph.add_run()
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+    end._r.append(fld_end)
+
+
+def _add_page_number_footer(document: Any) -> None:
+    """Center a "<page> / <total>" footer, matching the PDF export's own
+    page-number footer."""
+    section = document.sections[0]
+    section.footer.is_linked_to_previous = False
+    paragraph = (
+        section.footer.paragraphs[0]
+        if section.footer.paragraphs
+        else section.footer.add_paragraph()
+    )
+    paragraph.text = ""
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _append_field(paragraph, "PAGE")
+    paragraph.add_run(" / ")
+    _append_field(paragraph, "NUMPAGES")
+    for run in paragraph.runs:
+        run.font.size = Pt(8)
 
 
 async def html_to_docx(html: str, theme: dict[str, str], *, title: str) -> bytes:
@@ -251,6 +307,7 @@ async def html_to_docx(html: str, theme: dict[str, str], *, title: str) -> bytes
 
         document = Document(str(output_path))
         _apply_named_styles(document, theme)
+        _add_page_number_footer(document)
 
         result_stream = io.BytesIO()
         document.save(result_stream)
