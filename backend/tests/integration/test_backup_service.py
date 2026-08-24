@@ -437,6 +437,51 @@ class TestRoundTrip:
         restored_users = (await session.execute(select(User))).scalars().all()
         assert len(restored_users) == 3
 
+    async def test_full_zip_restore_reports_conflicting_space_keys(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Drives the frontend's "these spaces already exist - overwrite?"
+
+        prompt: a plain restore (no ``overwrite_space_keys``) must skip the
+        already-existing space and report exactly which key conflicted, with
+        nothing else about that space touched.
+        """
+        seeded = await _seed_instance(session)
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        objects: dict[str, bytes] = {}
+
+        async def get(key: str) -> bytes:
+            return objects[key]
+
+        async def put(key: str, data: bytes, **_kwargs: object) -> None:
+            objects[key] = data
+
+        async def delete(key: str) -> None:
+            objects.pop(key, None)
+
+        storage = cast(ObjectStorage, SimpleNamespace(get=get, put=put, delete=delete))
+        archive = str(tmp_path / "conflict.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
+
+        report = await BackupService(session).restore_full_package(
+            archive, storage, dry_run=False
+        )
+
+        assert report.conflicting_space_keys == ["ENG"]
+        assert report.skipped["space"] == 1
+        # The follow-up overwrite call the frontend makes with exactly this
+        # key must be accepted - proving these two are the same currency.
+        followup = await BackupService(session).restore_full_package(
+            archive,
+            storage,
+            dry_run=True,
+            overwrite_space_keys=set(report.conflicting_space_keys),
+        )
+        assert followup.dry_run is True
+        # Space itself is still the original row (overwrite replaces its
+        # pages, never the space identity/membership).
+        assert (await session.get(Space, space.id)) is not None
+
     async def test_full_zip_overwrite_replaces_pages_but_keeps_space_membership(
         self, session: AsyncSession, tmp_path: Path
     ) -> None:
@@ -748,6 +793,7 @@ class TestConflicts:
         assert report.skipped["space"] == 1
         reasons = {e.reason for e in report.entries if e.kind == "space"}
         assert reasons == {"key_exists"}
+        assert report.conflicting_space_keys == ["ENG"]
 
 
 class TestProtectedAccountShielding:

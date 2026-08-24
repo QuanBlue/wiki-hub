@@ -257,6 +257,11 @@ class ImportReport(BaseModel):
     users_without_password: list[str] = Field(default_factory=list)
     entries: list[ImportEntry] = Field(default_factory=list)
     entries_truncated: bool = False
+    #: Space keys skipped because a space with that key already exists.
+    #: Unlike `entries`, never truncated - the caller needs the exact set to
+    #: offer a follow-up "replace these spaces" restore with
+    #: `overwrite_space_keys`.
+    conflicting_space_keys: list[str] = Field(default_factory=list)
 
 
 class BackupExportCreate(BaseModel):

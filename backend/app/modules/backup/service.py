@@ -97,6 +97,9 @@ class _ReportBuilder:
         self.errors: dict[str, int] = {}
         self.entries: list[ImportEntry] = []
         self.truncated = False
+        #: Not capped like `entries` - the caller needs the exact set of
+        #: conflicting space keys to offer a follow-up overwrite restore.
+        self.conflicting_space_keys: list[str] = []
 
     def add(
         self,
@@ -777,6 +780,7 @@ class BackupService:
             users_without_password=sorted(no_password),
             entries=report.entries,
             entries_truncated=report.truncated,
+            conflicting_space_keys=sorted(report.conflicting_space_keys),
         )
 
         # Written outside the savepoint so it survives a dry run: an attempted
@@ -852,6 +856,7 @@ class BackupService:
             key = space_entry.key.strip().upper()
             if await self.spaces.get_by_key(key):
                 report.add("space", key, "skipped", "key_exists")
+                report.conflicting_space_keys.append(key)
                 continue
 
             creator = (
