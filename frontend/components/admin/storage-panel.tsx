@@ -19,7 +19,7 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -511,7 +511,7 @@ function MultiFilter({
   );
 }
 
-export function StoragePanel({ quotas }: { quotas?: ReactNode } = {}) {
+export function StoragePanel() {
   const [objects, setObjects] = useState<StorageObject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -716,40 +716,42 @@ export function StoragePanel({ quotas }: { quotas?: ReactNode } = {}) {
   return (
     <>
       {loading ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
             <div
               key={i}
-              className="border-border bg-surface-raised h-17.5 animate-pulse rounded-lg border"
+              className="border-border bg-surface-raised h-11 animate-pulse rounded-lg border"
             />
           ))}
         </div>
       ) : error ? null : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {/* Total: always resets the type filter back to "all". */}
           <button
             type="button"
             onClick={() => setKindFilters([])}
             aria-pressed={kindFilters.length === 0}
             className={cn(
-              "flex items-center gap-3 rounded-lg border px-4 py-3 text-left shadow-sm transition-colors duration-150 cursor-pointer",
+              "flex items-center gap-2 rounded-lg border px-3 py-2 text-left shadow-sm transition-colors duration-150 cursor-pointer",
               kindFilters.length === 0
                 ? "border-primary bg-primary/5 ring-primary/20 ring-1"
                 : "border-border bg-surface-raised hover:bg-surface-hover",
             )}
           >
-            <span className="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-full">
-              <Boxes className="size-4.5" />
+            <span className="bg-primary/10 text-primary flex size-7 shrink-0 items-center justify-center rounded-full">
+              <Boxes className="size-3.5" />
             </span>
-            <span className="min-w-0">
-              <span className="text-muted-foreground block text-[11px] font-medium uppercase tracking-[0.06em]">
+            <span className="min-w-0 leading-tight">
+              <span className="text-muted-foreground block text-[10px] font-medium uppercase tracking-[0.06em]">
                 Total
               </span>
-              <span className="block text-base font-semibold tabular-nums">
-                {formatBytes(totalSize)}
-              </span>
-              <span className="text-muted-foreground block text-[11px] tabular-nums">
-                {objects.length} object{objects.length === 1 ? "" : "s"}
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-sm font-semibold tabular-nums">
+                  {formatBytes(totalSize)}
+                </span>
+                <span className="text-muted-foreground truncate text-[11px] tabular-nums">
+                  {objects.length} object{objects.length === 1 ? "" : "s"}
+                </span>
               </span>
             </span>
           </button>
@@ -767,24 +769,26 @@ export function StoragePanel({ quotas }: { quotas?: ReactNode } = {}) {
                 aria-pressed={active}
                 title={`Filter by ${label}`}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg border px-4 py-3 text-left shadow-sm transition-colors duration-150 cursor-pointer",
+                  "flex items-center gap-2 rounded-lg border px-3 py-2 text-left shadow-sm transition-colors duration-150 cursor-pointer",
                   active
                     ? "border-primary bg-primary/5 ring-primary/20 ring-1"
                     : "border-border bg-surface-raised hover:bg-surface-hover",
                 )}
               >
-                <span className="bg-surface-sunken text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full">
-                  <Icon className="size-4.5" />
+                <span className="bg-surface-sunken text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-full">
+                  <Icon className="size-3.5" />
                 </span>
-                <span className="min-w-0">
-                  <span className="text-muted-foreground block truncate text-[11px] font-medium uppercase tracking-[0.06em]">
+                <span className="min-w-0 leading-tight">
+                  <span className="text-muted-foreground block truncate text-[10px] font-medium uppercase tracking-[0.06em]">
                     {label}
                   </span>
-                  <span className="block text-base font-semibold tabular-nums">
-                    {formatBytes(stats.size)}
-                  </span>
-                  <span className="text-muted-foreground block text-[11px] tabular-nums">
-                    {stats.count} object{stats.count === 1 ? "" : "s"}
+                  <span className="flex items-baseline gap-1.5">
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatBytes(stats.size)}
+                    </span>
+                    <span className="text-muted-foreground truncate text-[11px] tabular-nums">
+                      {stats.count} object{stats.count === 1 ? "" : "s"}
+                    </span>
                   </span>
                 </span>
               </button>
@@ -792,8 +796,6 @@ export function StoragePanel({ quotas }: { quotas?: ReactNode } = {}) {
           })}
         </div>
       )}
-
-      {quotas ? <div className="mt-5">{quotas}</div> : null}
 
       <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-end">
         <div className="flex flex-wrap gap-2">

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 
-import { StoragePanel } from "@/components/admin/storage-panel";
-import { StorageQuotasCard } from "@/components/admin/storage-quotas-card";
+import { StorageTabs } from "@/components/admin/storage-tabs";
 import { getSiteSettings } from "@/lib/admin";
 
 export const metadata: Metadata = { title: "Object storage" };
@@ -23,7 +22,7 @@ export default async function AdminStoragePage() {
           Browse and manage files held in the workspace storage bucket.
         </p>
       </header>
-      <StoragePanel quotas={<StorageQuotasCard settings={settings} />} />
+      <StorageTabs settings={settings} />
     </div>
   );
 }
