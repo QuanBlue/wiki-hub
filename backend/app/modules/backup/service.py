@@ -601,8 +601,12 @@ class BackupService:
                 await self.session.execute(delete(WikiPage).where(WikiPage.id.in_(page_ids)))
                 await self.session.flush()
         existing_users = set((await self.session.execute(select(User.username))).scalars())
+        # Normalized the same way `_apply` creates spaces (key.strip().upper())
+        # and `SpaceRepository.get_by_key` looks them up - the archive's
+        # `page_space_key` carries whatever case the source space had, which
+        # can differ from the restored space's canonicalised key.
         existing_page_refs = {
-            f"{space_key}/{slug}"
+            f"{space_key.upper()}/{slug}"
             for space_key, slug in (
                 await self.session.execute(
                     select(Space.key, WikiPage.slug)
@@ -629,7 +633,7 @@ class BackupService:
         try:
             with zipfile.ZipFile(path) as archive:
                 for attachment in scanned.document.attachments:
-                    page_label = f"{attachment.page_space_key}/{attachment.page_slug}"
+                    page_label = f"{attachment.page_space_key.upper()}/{attachment.page_slug}"
                     if page_label in existing_page_refs:
                         continue
                     page = (
@@ -637,7 +641,7 @@ class BackupService:
                             select(WikiPage)
                             .join(Space, WikiPage.space_id == Space.id)
                             .where(
-                                Space.key == attachment.page_space_key,
+                                func.upper(Space.key) == attachment.page_space_key.upper(),
                                 WikiPage.slug == attachment.page_slug,
                             )
                         )

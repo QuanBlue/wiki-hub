@@ -31,7 +31,7 @@ from app.models.permission import (
 )
 from app.models.restriction import PageGroupRestriction, PageRestrictionPermission
 from app.models.revision import PageRevision
-from app.models.space import Space, SpaceRole, SpaceVisibility
+from app.models.space import Space, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
 from app.modules.auth.service import AuthService
 from app.modules.backup.service import BackupService
@@ -210,6 +210,79 @@ class TestRoundTrip:
         assert objects[restored_alice.avatar_object_key] == b"avatar bytes"
         assert report.created["attachment"] == 1
         assert report.created["avatar"] == 1
+
+    async def test_full_zip_restores_attachment_when_source_space_key_is_lowercase(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Restoring a space recreates its key upper-cased (``_apply`` does
+
+        ``key.strip().upper()``), but a source space's key isn't guaranteed
+        to already be upper-case - ``SpaceCreate`` normalises it on that
+        path, but a space created outside it (Confluence import inserts
+        ``Space`` rows directly, preserving whatever case the source system
+        used) can carry a lowercase key. The attachment-restore lookup must
+        match the two case-insensitively or every attachment on such a space
+        silently fails to re-attach, even though its page restores fine.
+        """
+        seeded = await _seed_instance(session)
+        lower_space = Space(
+            key="devsecops",
+            name="DevSecOps",
+            description="",
+            icon="",
+            status=SpaceStatus.active,
+            visibility=SpaceVisibility.open,
+            created_by_id=seeded["alice"].id,  # type: ignore[union-attr]
+        )
+        session.add(lower_space)
+        await session.flush()
+        page = WikiPage(
+            space_id=lower_space.id, title="Files", slug="files", content="<p>files</p>"
+        )
+        session.add(page)
+        await session.flush()
+        session.add(
+            PageAttachment(
+                page_id=page.id,
+                filename="guide.txt",
+                content_type="text/plain",
+                object_key="attachments/source-guide.txt",
+            )
+        )
+        objects = {"attachments/source-guide.txt": b"important file bytes"}
+
+        async def get(key: str) -> bytes:
+            return objects[key]
+
+        async def put(key: str, data: bytes, **_kwargs: object) -> None:
+            objects[key] = data
+
+        async def delete(key: str) -> None:
+            objects.pop(key, None)
+
+        storage = cast(ObjectStorage, SimpleNamespace(get=get, put=put, delete=delete))
+        archive = str(tmp_path / "full.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
+        await _wipe(session)
+
+        report = await BackupService(session).restore_full_package(archive, storage, dry_run=False)
+        restored_space = (
+            await session.execute(select(Space).where(Space.key == "DEVSECOPS"))
+        ).scalar_one()
+        restored_page = (
+            await session.execute(
+                select(WikiPage).where(
+                    WikiPage.space_id == restored_space.id, WikiPage.slug == "files"
+                )
+            )
+        ).scalar_one()
+        restored_attachment = (
+            await session.execute(
+                select(PageAttachment).where(PageAttachment.page_id == restored_page.id)
+            )
+        ).scalar_one()
+        assert objects[restored_attachment.object_key] == b"important file bytes"
+        assert report.created["attachment"] == 1
 
     async def test_full_zip_scoped_to_selected_spaces_restores_only_that_space(
         self, session: AsyncSession, tmp_path: Path
