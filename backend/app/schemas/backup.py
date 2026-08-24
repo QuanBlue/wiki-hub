@@ -158,6 +158,13 @@ class BackupPageGroupRestriction(BaseModel):
 
 
 class BackupAttachment(BaseModel):
+    # Defaulted (not required) so archives exported before this field existed
+    # still parse - they just fall back to the old behaviour of minting a
+    # fresh id, which orphans any `/api/v1/attachments/<id>` link already
+    # baked into that page's stored content. Archives exported going forward
+    # carry the real id, so restore can preserve it and keep those links
+    # working.
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
     page_space_key: str
     page_slug: str
     filename: str

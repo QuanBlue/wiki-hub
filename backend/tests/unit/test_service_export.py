@@ -51,7 +51,7 @@ async def test_export_package(service: BackupService, tmp_path):
     page = WikiPage(id="page-1", space_id="space-1", slug="page-1-slug")
     space = Space(id="space-1", key="SPACE")
     attachment = PageAttachment(
-        id="att-1", page_id="page-1", filename="a.txt", content_type="text/plain", object_key="storage-att-1"
+        id=uuid4(), page_id="page-1", filename="a.txt", content_type="text/plain", object_key="storage-att-1"
     )
     user = User(
         id="user-1", username="user1", avatar_object_key="storage-ava-1", avatar_content_type="image/png"
@@ -110,14 +110,14 @@ async def test_export_package_skips_orphaned_attachments_and_users_without_avata
     page = WikiPage(id="page-1", space_id="space-1", slug="page-1-slug")
     space = Space(id="space-1", key="SPACE")
     valid_attachment = PageAttachment(
-        id="att-1",
+        id=uuid4(),
         page_id="page-1",
         filename="a.txt",
         content_type="text/plain",
         object_key="storage-att-1",
     )
     orphaned_attachment = PageAttachment(
-        id="att-2",
+        id=uuid4(),
         page_id="missing-page",
         filename="b.txt",
         content_type="text/plain",

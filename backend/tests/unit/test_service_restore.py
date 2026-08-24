@@ -17,6 +17,7 @@ from app.schemas.backup import (
     BackupAttachment, BackupAvatar, ImportReport
 )
 from app.models.space import SpaceStatus, SpaceVisibility
+from app.models.attachment import PageAttachment
 
 @pytest.fixture
 def mock_session():
@@ -102,6 +103,109 @@ async def test_restore_full_package_overwrites(service: BackupService, mock_stor
         assert res.created["avatar"] == 1
         savepoint.commit.assert_awaited()
         mock_storage.delete.assert_awaited_with("old-key-1")
+
+
+@pytest.mark.asyncio
+async def test_restore_full_package_preserves_attachment_id_when_free(
+    service: BackupService, mock_storage, tmp_path
+):
+    """A restored attachment keeps its original id so any
+
+    `/api/v1/attachments/<id>` link already baked into that page's content
+    (from before it was exported) keeps resolving, instead of pointing at
+    an id nothing was ever created with.
+    """
+    zip_path = tmp_path / "backup.zip"
+    with open(zip_path, "wb") as f:
+        f.write(create_dummy_zip().read())
+
+    original_id = uuid4()
+    doc = BackupDocument(
+        wikihub_backup=BackupMeta(version=1, app_version="1", site_name="T", exported_at=datetime.now(UTC), includes_credentials=False, counts={}),
+        users=[], spaces=[BackupSpace(id=str(uuid4()), key="S", name="Space", status=SpaceStatus.active, visibility=SpaceVisibility.open, created_at=None, updated_at=None)],
+        space_members=[], space_favorites=[], groups=[], group_members=[], group_global_permissions=[], space_user_permissions=[], space_group_permissions=[],
+        pages=[], page_revisions=[], page_likes=[], page_user_restrictions=[], page_group_restrictions=[],
+        attachments=[BackupAttachment(id=original_id, page_space_key="S", page_slug="p", filename="att1.png", content_type="image/png", object_path="att1.png", sha256="abc", size_bytes=10)],
+        avatars=[],
+    )
+
+    with patch("app.modules.backup.service.scan_full_backup", return_value=ScannedPackage(document=doc, manifest={}, entries={}, archive_sha256="", archive_size_bytes=0)):
+        service.import_document = AsyncMock(return_value=ImportReport(dry_run=False, version=1, includes_credentials=False, created={"page": 1}))
+
+        async def side_effect(*args, **kwargs):
+            query = str(args[0]).lower()
+            if "select spaces.id" in query and "spaces.key" in query:
+                return make_result([])  # No pre-existing spaces.
+            if "select spaces.key" in query and "pages.slug" in query:
+                return make_result([])  # No pre-existing pages.
+            if "from pages join spaces" in query:
+                return make_result([Mock(id="page-2")])
+            return make_result([])
+
+        service.session.execute.side_effect = side_effect
+        service.session.get = AsyncMock(return_value=None)  # id is free.
+
+        res = await service.restore_full_package(str(zip_path), storage=mock_storage, dry_run=False)
+        assert res.created["attachment"] == 1
+
+        added_attachments = [
+            call.args[0]
+            for call in service.session.add.call_args_list
+            if isinstance(call.args[0], PageAttachment)
+        ]
+        assert len(added_attachments) == 1
+        assert added_attachments[0].id == original_id
+        assert added_attachments[0].size_bytes == len(b"data")
+
+
+@pytest.mark.asyncio
+async def test_restore_full_package_skips_attachment_id_when_taken(
+    service: BackupService, mock_storage, tmp_path
+):
+    """If that id is already in use, restore still creates the attachment -
+
+    just without forcing a colliding primary key onto it.
+    """
+    zip_path = tmp_path / "backup.zip"
+    with open(zip_path, "wb") as f:
+        f.write(create_dummy_zip().read())
+
+    original_id = uuid4()
+    doc = BackupDocument(
+        wikihub_backup=BackupMeta(version=1, app_version="1", site_name="T", exported_at=datetime.now(UTC), includes_credentials=False, counts={}),
+        users=[], spaces=[BackupSpace(id=str(uuid4()), key="S", name="Space", status=SpaceStatus.active, visibility=SpaceVisibility.open, created_at=None, updated_at=None)],
+        space_members=[], space_favorites=[], groups=[], group_members=[], group_global_permissions=[], space_user_permissions=[], space_group_permissions=[],
+        pages=[], page_revisions=[], page_likes=[], page_user_restrictions=[], page_group_restrictions=[],
+        attachments=[BackupAttachment(id=original_id, page_space_key="S", page_slug="p", filename="att1.png", content_type="image/png", object_path="att1.png", sha256="abc", size_bytes=10)],
+        avatars=[],
+    )
+
+    with patch("app.modules.backup.service.scan_full_backup", return_value=ScannedPackage(document=doc, manifest={}, entries={}, archive_sha256="", archive_size_bytes=0)):
+        service.import_document = AsyncMock(return_value=ImportReport(dry_run=False, version=1, includes_credentials=False, created={"page": 1}))
+
+        async def side_effect(*args, **kwargs):
+            query = str(args[0]).lower()
+            if "select spaces.id" in query and "spaces.key" in query:
+                return make_result([])
+            if "select spaces.key" in query and "pages.slug" in query:
+                return make_result([])
+            if "from pages join spaces" in query:
+                return make_result([Mock(id="page-2")])
+            return make_result([])
+
+        service.session.execute.side_effect = side_effect
+        service.session.get = AsyncMock(return_value=Mock())  # id already taken.
+
+        res = await service.restore_full_package(str(zip_path), storage=mock_storage, dry_run=False)
+        assert res.created["attachment"] == 1
+
+        added_attachments = [
+            call.args[0]
+            for call in service.session.add.call_args_list
+            if isinstance(call.args[0], PageAttachment)
+        ]
+        assert len(added_attachments) == 1
+        assert added_attachments[0].id != original_id
 
 @pytest.mark.asyncio
 async def test_restore_full_package_skips_existing_refs_and_missing_targets(

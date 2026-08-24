@@ -471,6 +471,7 @@ class BackupService:
             object_path = f"objects/attachments/{digest}"
             document.attachments.append(
                 BackupAttachment(
+                    id=attachment.id,
                     page_space_key=space.key,
                     page_slug=page.slug,
                     filename=attachment.filename,
@@ -645,14 +646,20 @@ class BackupService:
                     key = f"attachments/{page.id}/{uuid4()}-{safe_name}"
                     await storage.put(key, payload, content_type=attachment.content_type)
                     created_object_keys.append(key)
-                    self.session.add(
-                        PageAttachment(
-                            page_id=page.id,
-                            filename=attachment.filename,
-                            content_type=attachment.content_type,
-                            object_key=key,
-                        )
+                    new_attachment = PageAttachment(
+                        page_id=page.id,
+                        filename=attachment.filename,
+                        content_type=attachment.content_type,
+                        object_key=key,
+                        size_bytes=len(payload),
                     )
+                    # Preserve the original id (same idiom as WikiPage above)
+                    # so `/api/v1/attachments/<id>` links already baked into
+                    # this page's restored content keep resolving, unless
+                    # that id is somehow already taken.
+                    if await self.session.get(PageAttachment, attachment.id) is None:
+                        new_attachment.id = attachment.id
+                    self.session.add(new_attachment)
                     result.created["attachment"] = result.created.get("attachment", 0) + 1
                 for avatar in scanned.document.avatars:
                     if avatar.username in existing_users:
