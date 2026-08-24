@@ -2858,20 +2858,24 @@ export function BackupPanel() {
                     Select spaces…
                   </span>
                 </label>
-                {exportSpaceScope === "selected" ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="ml-auto h-7 text-xs"
-                    onClick={() => setIsExportSpacePickerOpen(true)}
-                  >
-                    <ListChecks className="size-3.5" />
-                    {exportSelectedSpaceKeys.length > 0
-                      ? `${exportSelectedSpaceKeys.length} selected`
-                      : "Choose spaces"}
-                  </Button>
-                ) : null}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className={cn(
+                    "ml-auto h-7 text-xs",
+                    exportSpaceScope !== "selected" &&
+                      "invisible pointer-events-none",
+                  )}
+                  tabIndex={exportSpaceScope === "selected" ? 0 : -1}
+                  aria-hidden={exportSpaceScope !== "selected"}
+                  onClick={() => setIsExportSpacePickerOpen(true)}
+                >
+                  <ListChecks className="size-3.5" />
+                  {exportSelectedSpaceKeys.length > 0
+                    ? `${exportSelectedSpaceKeys.length} selected`
+                    : "Choose spaces"}
+                </Button>
               </div>
               <p className="text-muted-foreground mt-1.5 leading-normal">
                 {exportSpaceScope === "all"
