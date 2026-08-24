@@ -65,6 +65,11 @@ function baseRoutes(): Array<{ method: string; match: (pathname: string) => bool
       handler: () => ({ body: SPACES }),
     },
     {
+      method: "POST",
+      match: (p) => p === "/api/v1/backup/inspect-zip",
+      handler: () => ({ body: SPACES }),
+    },
+    {
       method: "GET",
       match: (p) => p.startsWith("/api/v1/backup/jobs/"),
       handler: () => ({
@@ -369,7 +374,95 @@ describe("BackupPanel native restore", () => {
     await waitFor(() => expect(postedForm).not.toBeNull());
     expect(postedForm!.get("dry_run")).toBe("false");
     expect(postedForm!.get("file")).toBeInstanceOf(File);
+    expect(postedForm!.get("space_keys")).toBe("[]");
 
     expect(await screen.findByText("Import result")).toBeInTheDocument();
+  });
+
+  it("shows a scope picker only for .zip uploads, lazily reading the archive's own spaces", async () => {
+    mockFetch(baseRoutes());
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+
+    // A .json restore has no scope picker at all.
+    await actor.upload(
+      fileInput,
+      new File(["{}"], "backup.json", { type: "application/json" }),
+    );
+    expect(
+      screen.queryByRole("radio", { name: /select spaces/i }),
+    ).not.toBeInTheDocument();
+
+    await actor.upload(
+      fileInput,
+      new File(["zip-bytes"], "backup.zip", { type: "application/zip" }),
+    );
+    await actor.click(screen.getByRole("radio", { name: /select spaces/i }));
+
+    expect(
+      screen.getByRole("button", { name: /^import backup$/i }),
+    ).toBeDisabled();
+
+    await actor.click(screen.getByRole("button", { name: /choose spaces/i }));
+
+    expect(await screen.findByText("Engineering")).toBeInTheDocument();
+    expect(screen.getByText("Sales")).toBeInTheDocument();
+  });
+
+  it("restores only the selected spaces once chosen", async () => {
+    let postedForm: FormData | null = null;
+    mockFetch([
+      ...baseRoutes(),
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/import-zip",
+        handler: (init) => {
+          postedForm = init?.body as FormData;
+          return {
+            body: {
+              dry_run: false,
+              includes_credentials: false,
+              created: { space: 1 },
+              skipped: {},
+              errors: {},
+              users_without_password: [],
+              entries: [],
+              entries_truncated: false,
+            },
+          };
+        },
+      },
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(
+      fileInput,
+      new File(["zip-bytes"], "backup.zip", { type: "application/zip" }),
+    );
+
+    await actor.click(screen.getByRole("radio", { name: /select spaces/i }));
+    await actor.click(screen.getByRole("button", { name: /choose spaces/i }));
+    await actor.click(await screen.findByRole("checkbox", { name: /Engineering/ }));
+    await actor.click(screen.getByRole("button", { name: /^done$/i }));
+
+    const importButton = screen.getByRole("button", {
+      name: /^import backup$/i,
+    });
+    expect(importButton).not.toBeDisabled();
+    await actor.click(importButton);
+
+    await waitFor(() => expect(postedForm).not.toBeNull());
+    expect(postedForm!.get("space_keys")).toBe(JSON.stringify(["ENG"]));
   });
 });

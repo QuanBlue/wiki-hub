@@ -632,6 +632,28 @@ export function BackupPanel() {
   const [availableSpaces, setAvailableSpaces] = useState<Space[] | null>(null);
   const [isLoadingAvailableSpaces, setIsLoadingAvailableSpaces] =
     useState(false);
+
+  // Native-restore space scope. Sourced from /backup/inspect-zip (the
+  // *archive's* space list) rather than availableSpaces above (this
+  // instance's own spaces) - the common case is restoring into an empty
+  // instance, where availableSpaces would just be empty.
+  const [importSpaceScope, setImportSpaceScope] = useState<"all" | "selected">(
+    "all",
+  );
+  const [importSelectedSpaceKeys, setImportSelectedSpaceKeys] = useState<
+    string[]
+  >([]);
+  const [importSpaceFilter, setImportSpaceFilter] = useState("");
+  const [isImportSpacePickerOpen, setIsImportSpacePickerOpen] =
+    useState(false);
+  const [archiveSpaces, setArchiveSpaces] = useState<
+    { key: string; name: string }[] | null
+  >(null);
+  const [isLoadingArchiveSpaces, setIsLoadingArchiveSpaces] = useState(false);
+  const [archiveSpacesError, setArchiveSpacesError] = useState<string | null>(
+    null,
+  );
+
   const [confirmDiscardArchive, setConfirmDiscardArchive] = useState(false);
   const [discardingArchivePending, setDiscardingArchivePending] =
     useState(false);
@@ -703,6 +725,14 @@ export function BackupPanel() {
       !normalizedExportSpaceFilter ||
       space.name.toLocaleLowerCase().includes(normalizedExportSpaceFilter) ||
       space.key.toLocaleLowerCase().includes(normalizedExportSpaceFilter),
+  );
+
+  const normalizedImportSpaceFilter = importSpaceFilter.trim().toLocaleLowerCase();
+  const filteredArchiveSpaces = (archiveSpaces ?? []).filter(
+    (space) =>
+      !normalizedImportSpaceFilter ||
+      space.name.toLocaleLowerCase().includes(normalizedImportSpaceFilter) ||
+      space.key.toLocaleLowerCase().includes(normalizedImportSpaceFilter),
   );
 
   const displayConfluenceLogs = useMemo(() => {
@@ -909,6 +939,40 @@ export function BackupPanel() {
       active = false;
     };
   }, [isExportSpacePickerOpen, availableSpaces]);
+
+  // Fetch the *archive's* space list lazily, only once the import picker is
+  // opened for the currently-selected file - this is a second upload (the
+  // archive is read once here, then again for the actual restore), so it
+  // only happens when the admin opts into scoping the restore at all.
+  useEffect(() => {
+    if (!isImportSpacePickerOpen || archiveSpaces !== null || !file) return;
+    let active = true;
+    const form = new FormData();
+    form.append("file", file);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch the archive's space list the first time the import picker opens for this file
+    setIsLoadingArchiveSpaces(true);
+    setArchiveSpacesError(null);
+    void apiFetch<{ key: string; name: string }[]>("/api/v1/backup/inspect-zip", {
+      method: "POST",
+      rawBody: form,
+    })
+      .then((spaces) => {
+        if (active) setArchiveSpaces(spaces);
+      })
+      .catch((err) => {
+        if (!active) return;
+        const message =
+          err instanceof Error ? err.message : "Could not read the archive.";
+        setArchiveSpacesError(message);
+        toast.error(message);
+      })
+      .finally(() => {
+        if (active) setIsLoadingArchiveSpaces(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isImportSpacePickerOpen, archiveSpaces, file]);
 
   /** Save a completed export to disk without waiting for the user to click
    * the "Download" link - same technique as a normal `<a download>` click,
@@ -1792,11 +1856,20 @@ export function BackupPanel() {
     setPending("apply");
     setError(null);
     try {
+      const isZip = file.name.toLocaleLowerCase().endsWith(".zip");
       const form = new FormData();
       form.append("file", file);
       form.append("dry_run", "false");
+      if (isZip) {
+        form.append(
+          "space_keys",
+          JSON.stringify(
+            importSpaceScope === "selected" ? importSelectedSpaceKeys : [],
+          ),
+        );
+      }
 
-      const endpoint = file.name.toLocaleLowerCase().endsWith(".zip")
+      const endpoint = isZip
         ? "/api/v1/backup/import-zip"
         : "/api/v1/backup/import";
       const result = await apiFetch<ImportReport>(endpoint, {
@@ -2181,10 +2254,68 @@ export function BackupPanel() {
                       setFile(selectedFile);
                       setReport(null);
                       setError(null);
+                      // A new archive invalidates any space list/selection
+                      // read from the previous one.
+                      setArchiveSpaces(null);
+                      setArchiveSpacesError(null);
+                      setImportSpaceScope("all");
+                      setImportSelectedSpaceKeys([]);
                     }}
                     className="border-border bg-surface file:bg-surface-sunken file:text-foreground hover:border-border-strong block w-full cursor-pointer rounded-md border text-sm transition-colors duration-150 file:mr-3 file:cursor-pointer file:border-0 file:px-3 file:py-2 file:text-sm"
                   />
                 </div>
+
+                {/* Scope — only meaningful for a .zip (inspect-zip reads its
+                    space list); a .json restore has no such picker. */}
+                {file?.name.toLocaleLowerCase().endsWith(".zip") ? (
+                  <div className="border-border bg-surface-sunken rounded-lg border p-3 text-xs">
+                    <div className="flex min-h-8 flex-wrap items-center gap-2">
+                      <label className="flex cursor-pointer items-center gap-1.5">
+                        <input
+                          type="radio"
+                          name="import-space-scope"
+                          checked={importSpaceScope === "all"}
+                          onChange={() => setImportSpaceScope("all")}
+                          className="accent-primary size-3.5 cursor-pointer"
+                        />
+                        <span className="font-medium text-foreground">
+                          All spaces
+                        </span>
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-1.5">
+                        <input
+                          type="radio"
+                          name="import-space-scope"
+                          checked={importSpaceScope === "selected"}
+                          onChange={() => setImportSpaceScope("selected")}
+                          className="accent-primary size-3.5 cursor-pointer"
+                        />
+                        <span className="font-medium text-foreground">
+                          Select spaces…
+                        </span>
+                      </label>
+                      {importSpaceScope === "selected" ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="ml-auto h-7 text-xs"
+                          onClick={() => setIsImportSpacePickerOpen(true)}
+                        >
+                          <ListChecks className="size-3.5" />
+                          {importSelectedSpaceKeys.length > 0
+                            ? `${importSelectedSpaceKeys.length} selected`
+                            : "Choose spaces"}
+                        </Button>
+                      ) : null}
+                    </div>
+                    <p className="text-muted-foreground mt-1.5 leading-normal">
+                      {importSpaceScope === "all"
+                        ? "Every space in the archive. Users and groups are always restored in full."
+                        : "Only the selected spaces' pages and permissions. Users and groups are always restored in full."}
+                    </p>
+                  </div>
+                ) : null}
 
                 {error ? (
                   <p
@@ -2198,7 +2329,12 @@ export function BackupPanel() {
                 <Button
                   variant="primary"
                   className="w-full"
-                  disabled={!file || pending !== null}
+                  disabled={
+                    !file ||
+                    pending !== null ||
+                    (importSpaceScope === "selected" &&
+                      importSelectedSpaceKeys.length === 0)
+                  }
                   aria-busy={pending === "apply"}
                   onClick={() => void submitImport()}
                 >
@@ -3065,6 +3201,115 @@ export function BackupPanel() {
                 variant="primary"
                 size="sm"
                 onClick={() => setIsExportSpacePickerOpen(false)}
+              >
+                Done
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isImportSpacePickerOpen}
+        onOpenChange={setIsImportSpacePickerOpen}
+      >
+        <DialogContent title="Select Spaces to Restore" className="max-w-2xl">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">
+                {importSelectedSpaceKeys.length}/{(archiveSpaces ?? []).length}{" "}
+                Space(s) selected
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-52 flex-1">
+                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+                <Input
+                  type="search"
+                  value={importSpaceFilter}
+                  onChange={(event) => setImportSpaceFilter(event.target.value)}
+                  placeholder="Filter by space name or key"
+                  aria-label="Filter spaces to restore"
+                  className="pl-9"
+                />
+              </div>
+              <span className="text-muted-foreground text-xs" aria-live="polite">
+                {filteredArchiveSpaces.length} of {(archiveSpaces ?? []).length}{" "}
+                shown
+              </span>
+            </div>
+            <div className="border-border max-h-64 overflow-y-auto rounded-md border">
+              {isLoadingArchiveSpaces ? (
+                <div className="text-muted-foreground flex items-center justify-center gap-2 px-3 py-8 text-sm">
+                  <Loader2 className="size-4 animate-spin" />
+                  Reading the archive…
+                </div>
+              ) : archiveSpacesError ? (
+                <p className="text-danger px-3 py-6 text-center text-sm">
+                  {archiveSpacesError}
+                </p>
+              ) : filteredArchiveSpaces.length ? (
+                filteredArchiveSpaces.map((space) => (
+                  <label
+                    key={space.key}
+                    className="border-border hover:bg-surface-sunken flex cursor-pointer items-center gap-3 border-b px-3 py-2 text-sm last:border-0"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={importSelectedSpaceKeys.includes(space.key)}
+                      onChange={(event) => {
+                        setImportSelectedSpaceKeys(
+                          event.target.checked
+                            ? [...importSelectedSpaceKeys, space.key]
+                            : importSelectedSpaceKeys.filter(
+                                (key) => key !== space.key,
+                              ),
+                        );
+                      }}
+                      className="accent-primary size-4"
+                    />
+                    <span className="font-medium">{space.name}</span>
+                    <span className="text-muted-foreground">{space.key}</span>
+                  </label>
+                ))
+              ) : (
+                <p className="text-muted-foreground px-3 py-6 text-center text-sm">
+                  {archiveSpaces?.length
+                    ? `No spaces match "${importSpaceFilter}".`
+                    : "This archive has no spaces."}
+                </p>
+              )}
+            </div>
+            <DialogFooter className="justify-between sm:justify-between">
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setImportSelectedSpaceKeys(
+                      Array.from(
+                        new Set([
+                          ...importSelectedSpaceKeys,
+                          ...filteredArchiveSpaces.map((space) => space.key),
+                        ]),
+                      ),
+                    );
+                  }}
+                >
+                  {normalizedImportSpaceFilter ? "Select visible" : "Select all"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setImportSelectedSpaceKeys([])}
+                >
+                  Clear selection
+                </Button>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsImportSpacePickerOpen(false)}
               >
                 Done
               </Button>
