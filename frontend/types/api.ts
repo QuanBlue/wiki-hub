@@ -403,6 +403,10 @@ export interface ImportReport {
   users_without_password: string[];
   entries: ImportEntry[];
   entries_truncated: boolean;
+  /** Space keys skipped because a space with that key already exists -
+   * exact and never truncated, unlike `entries`. Offer these back as
+   * `overwrite_space_keys` on a follow-up restore to replace them. */
+  conflicting_space_keys: string[];
 }
 
 // ---------------------------------------------------------------------------

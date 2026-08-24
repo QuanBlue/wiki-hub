@@ -654,6 +654,16 @@ export function BackupPanel() {
     null,
   );
 
+  // Set once a restore attempt reports spaces it skipped because they
+  // already exist (BackupService._apply's "key_exists" skip) - offers a
+  // one-click follow-up restore that replaces just those spaces' pages,
+  // via the same overwrite_space_keys the Confluence card already uses.
+  const [conflictingImportSpaceKeys, setConflictingImportSpaceKeys] = useState<
+    string[]
+  >([]);
+  const [confirmOverwriteImportSpaces, setConfirmOverwriteImportSpaces] =
+    useState(false);
+
   const [confirmDiscardArchive, setConfirmDiscardArchive] = useState(false);
   const [discardingArchivePending, setDiscardingArchivePending] =
     useState(false);
@@ -1843,15 +1853,18 @@ export function BackupPanel() {
     void startConfluenceImport();
   }
 
-  // No preview/dry-run step and no confirm modal: uploading a huge trusted
-  // archive twice (once to preview, once to apply) was slow enough to look
-  // hung, and gating the run behind a popup just added a click before
-  // progress was visible. This restores directly on a single upload, with
-  // progress shown inline below the cards - same shape as the Confluence
-  // import job panel. Existing records are still only ever skipped, never
-  // overwritten (the backend defaults overwrite_space_keys to none when the
-  // field is omitted).
-  async function submitImport() {
+  // No preview/dry-run step and no confirm modal up front: uploading a huge
+  // trusted archive twice (once to preview, once to apply) was slow enough
+  // to look hung, and gating the run behind a popup just added a click
+  // before progress was visible. This restores directly on a single upload,
+  // with progress shown inline below the cards - same shape as the
+  // Confluence import job panel. Existing spaces are skipped, never
+  // silently overwritten - but if the archive turns out to collide with
+  // spaces already here, the report says exactly which ones
+  // (`conflicting_space_keys`), and a confirm modal offers a one-click
+  // follow-up restore with those keys as `overwrite_space_keys` - same
+  // "ask, then overwrite" shape as the Confluence import card already uses.
+  async function submitImport(overwriteSpaceKeys: string[] = []) {
     if (!file) return;
     setPending("apply");
     setError(null);
@@ -1867,6 +1880,7 @@ export function BackupPanel() {
             importSpaceScope === "selected" ? importSelectedSpaceKeys : [],
           ),
         );
+        form.append("overwrite_space_keys", JSON.stringify(overwriteSpaceKeys));
       }
 
       const endpoint = isZip
@@ -1877,7 +1891,18 @@ export function BackupPanel() {
         rawBody: form,
       });
       setReport(result);
-      toast.success("Import applied.");
+      setConfirmOverwriteImportSpaces(false);
+      const conflicts = result.conflicting_space_keys ?? [];
+      if (overwriteSpaceKeys.length === 0 && conflicts.length > 0) {
+        setConflictingImportSpaceKeys(conflicts);
+        setConfirmOverwriteImportSpaces(true);
+        toast.success(
+          `Restore applied. ${conflicts.length} existing ${conflicts.length === 1 ? "space" : "spaces"} already existed and ${conflicts.length === 1 ? "was" : "were"} skipped.`,
+        );
+      } else {
+        setConflictingImportSpaceKeys([]);
+        toast.success("Import applied.");
+      }
       router.refresh();
     } catch (err) {
       setError(
@@ -2260,6 +2285,8 @@ export function BackupPanel() {
                       setArchiveSpacesError(null);
                       setImportSpaceScope("all");
                       setImportSelectedSpaceKeys([]);
+                      setConflictingImportSpaceKeys([]);
+                      setConfirmOverwriteImportSpaces(false);
                     }}
                     className="border-border bg-surface file:bg-surface-sunken file:text-foreground hover:border-border-strong block w-full cursor-pointer rounded-md border text-sm transition-colors duration-150 file:mr-3 file:cursor-pointer file:border-0 file:px-3 file:py-2 file:text-sm"
                   />
@@ -3533,6 +3560,16 @@ export function BackupPanel() {
         destructive
         pending={confluencePending}
         onConfirm={() => void startConfluenceImport(true)}
+      />
+      <ConfirmDialog
+        open={confirmOverwriteImportSpaces}
+        onOpenChange={setConfirmOverwriteImportSpaces}
+        title="Replace existing spaces?"
+        description={`${conflictingImportSpaceKeys.length} existing ${conflictingImportSpaceKeys.length === 1 ? "space" : "spaces"} in this archive already existed and ${conflictingImportSpaceKeys.length === 1 ? "was" : "were"} skipped: ${conflictingImportSpaceKeys.join(", ")}. Replace their current pages and attachments with the archive's version? Space membership and permissions are kept either way.`}
+        confirmLabel="Replace and restore"
+        destructive
+        pending={pending === "apply"}
+        onConfirm={() => void submitImport(conflictingImportSpaceKeys)}
       />
       <ConfirmDialog
         open={confirmDiscardArchive}

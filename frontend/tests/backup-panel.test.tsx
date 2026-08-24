@@ -465,4 +465,67 @@ describe("BackupPanel native restore", () => {
     await waitFor(() => expect(postedForm).not.toBeNull());
     expect(postedForm!.get("space_keys")).toBe(JSON.stringify(["ENG"]));
   });
+
+  it("offers to overwrite spaces the restore reports as already existing", async () => {
+    const postedForms: FormData[] = [];
+    mockFetch([
+      ...baseRoutes(),
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/import-zip",
+        handler: (init) => {
+          const form = init?.body as FormData;
+          postedForms.push(form);
+          const overwriting =
+            JSON.parse(String(form.get("overwrite_space_keys"))).length > 0;
+          return {
+            body: {
+              dry_run: false,
+              includes_credentials: false,
+              created: overwriting ? { space: 1 } : {},
+              skipped: overwriting ? {} : { space: 1 },
+              errors: {},
+              users_without_password: [],
+              entries: [],
+              entries_truncated: false,
+              conflicting_space_keys: overwriting ? [] : ["ENG"],
+            },
+          };
+        },
+      },
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(
+      fileInput,
+      new File(["zip-bytes"], "backup.zip", { type: "application/zip" }),
+    );
+    await actor.click(
+      screen.getByRole("button", { name: /^restore backup$/i }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /replace existing spaces/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/ENG/)).toBeInTheDocument();
+
+    await actor.click(
+      screen.getByRole("button", { name: /^replace and restore$/i }),
+    );
+
+    await waitFor(() => expect(postedForms).toHaveLength(2));
+    expect(postedForms[0].get("overwrite_space_keys")).toBe("[]");
+    expect(postedForms[1].get("overwrite_space_keys")).toBe(
+      JSON.stringify(["ENG"]),
+    );
+    expect(
+      screen.queryByRole("heading", { name: /replace existing spaces/i }),
+    ).not.toBeInTheDocument();
+  });
 });
