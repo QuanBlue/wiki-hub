@@ -716,7 +716,7 @@ export function StoragePanel() {
   return (
     <>
       {loading ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
             <div
               key={i}
@@ -725,7 +725,7 @@ export function StoragePanel() {
           ))}
         </div>
       ) : error ? null : (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
           {/* Total: always resets the type filter back to "all". */}
           <button
             type="button"
@@ -745,11 +745,11 @@ export function StoragePanel() {
               <span className="text-muted-foreground block text-[10px] font-medium uppercase tracking-[0.06em]">
                 Total
               </span>
-              <span className="flex items-baseline gap-1.5">
-                <span className="text-sm font-semibold tabular-nums">
+              <span className="flex flex-wrap items-baseline gap-x-1.5">
+                <span className="text-sm font-semibold whitespace-nowrap tabular-nums">
                   {formatBytes(totalSize)}
                 </span>
-                <span className="text-muted-foreground truncate text-[11px] tabular-nums">
+                <span className="text-muted-foreground whitespace-nowrap text-[11px] tabular-nums">
                   {objects.length} object{objects.length === 1 ? "" : "s"}
                 </span>
               </span>
@@ -782,11 +782,11 @@ export function StoragePanel() {
                   <span className="text-muted-foreground block truncate text-[10px] font-medium uppercase tracking-[0.06em]">
                     {label}
                   </span>
-                  <span className="flex items-baseline gap-1.5">
-                    <span className="text-sm font-semibold tabular-nums">
+                  <span className="flex flex-wrap items-baseline gap-x-1.5">
+                    <span className="text-sm font-semibold whitespace-nowrap tabular-nums">
                       {formatBytes(stats.size)}
                     </span>
-                    <span className="text-muted-foreground truncate text-[11px] tabular-nums">
+                    <span className="text-muted-foreground whitespace-nowrap text-[11px] tabular-nums">
                       {stats.count} object{stats.count === 1 ? "" : "s"}
                     </span>
                   </span>
