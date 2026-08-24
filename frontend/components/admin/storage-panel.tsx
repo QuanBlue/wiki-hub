@@ -355,7 +355,10 @@ function FolderRowWrapper({
   onDownload: (key: string, name: string) => void;
   onPreview: (node: FileNode) => void;
 }) {
-  const [expanded, setExpanded] = useState(depth === 0);
+  // Every folder starts collapsed, top level included - a fresh page load
+  // with hundreds/thousands of attachments auto-expanded was an unreadable
+  // wall of rows.
+  const [expanded, setExpanded] = useState(false);
   return (
     <FolderRow
       node={node}
