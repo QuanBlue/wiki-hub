@@ -2812,7 +2812,7 @@ export function BackupPanel() {
           <div className="space-y-3">
             {/* Scope — every space by default, or a hand-picked subset */}
             <div className="border-border bg-surface-sunken rounded-lg border p-3 text-xs">
-              <div className="flex min-h-7 flex-wrap items-center gap-2">
+              <div className="flex min-h-8 flex-wrap items-center gap-2">
                 <label className="flex cursor-pointer items-center gap-1.5">
                   <input
                     type="radio"
