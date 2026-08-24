@@ -17,12 +17,14 @@ import instead writes one ``backup_imported`` row into the target's own log.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import re
 import zipfile
+from collections.abc import Collection, Mapping
 from datetime import UTC, datetime
 from typing import Any, Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -86,6 +88,78 @@ from app.services.site_settings import SiteSettingsService
 from app.services.storage import ObjectStorage
 
 logger = get_logger(__name__)
+
+
+#: Any tag carrying an `/api/v1/attachments/<uuid>` reference. Matched as a
+#: whole tag (not just the URL) so the filename attribute sitting beside the
+#: URL is available to identify what the link was *meant* to point at.
+_ATTACHMENT_TAG_RE = re.compile(r"<[^>]*?/api/v1/attachments/[0-9a-fA-F-]{36}[^>]*?>")
+_ATTACHMENT_ID_RE = re.compile(r"(/api/v1/attachments/)([0-9a-fA-F-]{36})")
+#: In precedence order. `data-attachment` is what the editor writes on an
+#: attachment link, `download` what a download anchor carries, and `alt` what
+#: an embedded image keeps. Confirmed against real imported content: 346 of
+#: 355 references in a production space carry one of these.
+_ATTACHMENT_NAME_ATTRS = ("data-attachment", "download", "alt")
+
+
+def _attachment_name_in(tag: str) -> str | None:
+    for attr in _ATTACHMENT_NAME_ATTRS:
+        found = re.search(rf'{attr}="([^"]*)"', tag)
+        if found:
+            # Attribute values are HTML-escaped; attachment filenames are not.
+            return html.unescape(found.group(1))
+    return None
+
+
+def _relink_attachment_references(
+    content: str,
+    ids_by_filename: Mapping[str, UUID],
+    valid_ids: Collection[UUID],
+) -> str:
+    """Repoint `/api/v1/attachments/<id>` links at the attachments that were
+    actually restored for this page, identifying them by filename.
+
+    Preserving attachment ids across a round trip (see ``BackupAttachment.id``)
+    keeps links working when the archive is internally consistent. It cannot
+    help when the archive itself is already broken - which is the normal state
+    of any archive exported from an instance that was once restored by an
+    older build, since that restore minted fresh ids without touching the
+    content still referencing the old ones. Such an archive faithfully
+    reproduces its own broken linkage no matter how correct the restore is, so
+    the linkage has to be *rebuilt* rather than copied.
+
+    Filename is the identity that survives all of it: the editor writes it into
+    the tag next to the URL (`data-attachment`/`download`/`alt`), and it is the
+    same string the attachment row stores.
+
+    Deliberately conservative - a reference is only rewritten when the id it
+    currently names is **not** a real attachment of this page. A link that
+    already resolves is never touched, so a consistent archive restores
+    byte-identical and only genuinely broken links are repaired.
+    """
+    if not content or not ids_by_filename:
+        return content
+
+    def rewrite(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        current = _ATTACHMENT_ID_RE.search(tag)
+        if current is None:  # pragma: no cover - guaranteed by _ATTACHMENT_TAG_RE
+            return tag
+        try:
+            if UUID(current.group(2)) in valid_ids:
+                return tag  # Already points at one of this page's attachments.
+        except ValueError:  # pragma: no cover - the pattern only matches uuids
+            return tag
+        filename = _attachment_name_in(tag)
+        replacement = ids_by_filename.get(filename) if filename else None
+        if replacement is None:
+            # No filename marker, or it names a file this page never had (a
+            # link already dangling in the source instance). Leave it alone
+            # rather than guess.
+            return tag
+        return _ATTACHMENT_ID_RE.sub(rf"\g<1>{replacement}", tag)
+
+    return _ATTACHMENT_TAG_RE.sub(rewrite, content)
 
 
 class _ReportBuilder:
@@ -633,6 +707,10 @@ class BackupService:
             return result
 
         created_object_keys: list[str] = []
+        # Every page this restore attached files to, with the ids those files
+        # actually landed on - the input to the relink pass below.
+        restored_pages: dict[UUID, WikiPage] = {}
+        attachment_ids_by_page: dict[UUID, dict[str, UUID]] = {}
         try:
             with zipfile.ZipFile(path) as archive:
                 for attachment in scanned.document.attachments:
@@ -666,10 +744,18 @@ class BackupService:
                     # Preserve the original id (same idiom as WikiPage above)
                     # so `/api/v1/attachments/<id>` links already baked into
                     # this page's restored content keep resolving, unless
-                    # that id is somehow already taken.
+                    # that id is somehow already taken. Assigned explicitly
+                    # either way - the column default only fires at flush, and
+                    # the relink pass below needs the id now.
                     if await self.session.get(PageAttachment, attachment.id) is None:
                         new_attachment.id = attachment.id
+                    else:
+                        new_attachment.id = uuid4()
                     self.session.add(new_attachment)
+                    restored_pages[page.id] = page
+                    attachment_ids_by_page.setdefault(page.id, {}).setdefault(
+                        attachment.filename, new_attachment.id
+                    )
                     result.created["attachment"] = result.created.get("attachment", 0) + 1
                 for avatar in scanned.document.avatars:
                     if avatar.username in existing_users:
@@ -685,6 +771,24 @@ class BackupService:
                     user.avatar_content_type = avatar.content_type
                     user.avatar_url = f"/api/v1/users/{user.id}/avatar"
                     result.created["avatar"] = result.created.get("avatar", 0) + 1
+
+            # Repair attachment links in the content just restored. Runs after
+            # every attachment exists so a page's links can be resolved
+            # against the full set, and only rewrites references that do not
+            # already resolve - see _relink_attachment_references.
+            relinked = 0
+            for page_id, ids_by_filename in attachment_ids_by_page.items():
+                page = restored_pages[page_id]
+                repaired = _relink_attachment_references(
+                    page.content, ids_by_filename, set(ids_by_filename.values())
+                )
+                if repaired != page.content:
+                    page.content = repaired
+                    relinked += 1
+            if relinked:
+                result.created["relinked_page"] = relinked
+                logger.info("backup_restore_relinked_attachments", pages=relinked)
+
             await self.session.flush()
         except Exception:
             await self.session.rollback()

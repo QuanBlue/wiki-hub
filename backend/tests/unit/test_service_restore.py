@@ -88,7 +88,7 @@ async def test_restore_full_package_overwrites(service: BackupService, mock_stor
             if "select spaces.key" in query and "pages.slug" in query:
                 print("Miss: " + query); return make_result([]) # No existing pages
             if "from pages join spaces" in query:
-                return make_result([Mock(id="page-2")])
+                return make_result([Mock(id="page-2", content="<p>page body</p>")])
 
             print("Miss: " + query); return make_result([])
 
@@ -139,7 +139,7 @@ async def test_restore_full_package_preserves_attachment_id_when_free(
             if "select spaces.key" in query and "pages.slug" in query:
                 return make_result([])  # No pre-existing pages.
             if "from pages join spaces" in query:
-                return make_result([Mock(id="page-2")])
+                return make_result([Mock(id="page-2", content="<p>page body</p>")])
             return make_result([])
 
         service.session.execute.side_effect = side_effect
@@ -190,7 +190,7 @@ async def test_restore_full_package_skips_attachment_id_when_taken(
             if "select spaces.key" in query and "pages.slug" in query:
                 return make_result([])
             if "from pages join spaces" in query:
-                return make_result([Mock(id="page-2")])
+                return make_result([Mock(id="page-2", content="<p>page body</p>")])
             return make_result([])
 
         service.session.execute.side_effect = side_effect
@@ -362,7 +362,7 @@ async def test_restore_full_package_zip_exception(service: BackupService, mock_s
             if "select spaces.key" in query and "pages.slug" in query:
                 print("Miss: " + query); return make_result([]) # No existing pages
             if "from pages join spaces" in query:
-                return make_result([Mock(id="page-2")])
+                return make_result([Mock(id="page-2", content="<p>page body</p>")])
             print("Miss: " + query); return make_result([])
 
         service.session.execute.side_effect = side_effect

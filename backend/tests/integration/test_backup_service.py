@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import uuid
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -210,6 +211,135 @@ class TestRoundTrip:
         assert objects[restored_alice.avatar_object_key] == b"avatar bytes"
         assert report.created["attachment"] == 1
         assert report.created["avatar"] == 1
+
+    async def test_replacing_a_space_repairs_content_whose_attachment_links_are_stale(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """The end state of an instance restored by a build without attachment
+
+        id preservation: the page content still names the *original* ids while
+        the attachment rows carry freshly minted ones. Every export taken from
+        that instance inherits the mismatch, so restoring one - however
+        faithfully - reproduces broken links. Replacing the space has to
+        rebuild the linkage from each reference's filename, not copy it.
+        """
+        seeded = await _seed_instance(session)
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        # A link pointing at an id no attachment has ever had, exactly as the
+        # broken instance stores it.
+        orphaned_id = uuid.uuid4()
+        page = WikiPage(
+            space_id=space.id,
+            title="Resources",
+            slug="resources",
+            content=(
+                '<a class="attachment-link" data-attachment="guide.pdf" '
+                f'href="/api/v1/attachments/{orphaned_id}/content">guide.pdf</a>'
+            ),
+        )
+        session.add(page)
+        await session.flush()
+        session.add(
+            PageAttachment(
+                page_id=page.id,
+                filename="guide.pdf",
+                content_type="application/pdf",
+                object_key="attachments/source-guide.pdf",
+            )
+        )
+        objects = {"attachments/source-guide.pdf": b"pdf bytes"}
+
+        async def get(key: str) -> bytes:
+            return objects[key]
+
+        async def put(key: str, data: bytes, **_kwargs: object) -> None:
+            objects[key] = data
+
+        async def delete_object(key: str) -> None:
+            objects.pop(key, None)
+
+        storage = cast(ObjectStorage, SimpleNamespace(get=get, put=put, delete=delete_object))
+        archive = str(tmp_path / "stale-links.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
+
+        # The archive is internally inconsistent, which is the whole point.
+        with zipfile.ZipFile(archive) as bundle:
+            exported = json.loads(bundle.read("data/workspace.json"))
+        exported_ids = {entry["id"] for entry in exported["attachments"]}
+        assert str(orphaned_id) not in exported_ids
+
+        # The space already exists, so this is the "Replace and restore" path.
+        report = await BackupService(session).restore_full_package(
+            archive, storage, dry_run=False, overwrite_space_keys={"ENG"}
+        )
+
+        restored_page = (
+            await session.execute(
+                select(WikiPage).where(WikiPage.space_id == space.id, WikiPage.slug == "resources")
+            )
+        ).scalar_one()
+        restored_attachment = (
+            await session.execute(
+                select(PageAttachment).where(PageAttachment.page_id == restored_page.id)
+            )
+        ).scalar_one()
+        assert f"/api/v1/attachments/{restored_attachment.id}/content" in restored_page.content
+        assert str(orphaned_id) not in restored_page.content
+        assert report.created["relinked_page"] == 1
+        assert objects[restored_attachment.object_key] == b"pdf bytes"
+
+    async def test_full_zip_restore_leaves_already_valid_attachment_links_untouched(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """The repair pass must be inert on a consistent archive.
+
+        Only a reference that fails to resolve is rebuilt, so a healthy round
+        trip reproduces the content exactly and never reports a relink.
+        """
+        seeded = await _seed_instance(session)
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        page = WikiPage(
+            space_id=space.id, title="Resources", slug="resources", content="<p>placeholder</p>"
+        )
+        session.add(page)
+        await session.flush()
+        attachment = PageAttachment(
+            page_id=page.id,
+            filename="guide.pdf",
+            content_type="application/pdf",
+            object_key="attachments/source-guide.pdf",
+        )
+        session.add(attachment)
+        await session.flush()
+        # A correctly-linked page, the way the editor writes one.
+        page.content = (
+            '<a class="attachment-link" data-attachment="guide.pdf" '
+            f'href="/api/v1/attachments/{attachment.id}/content">guide.pdf</a>'
+        )
+        original_content = page.content
+        objects = {"attachments/source-guide.pdf": b"pdf bytes"}
+
+        async def get(key: str) -> bytes:
+            return objects[key]
+
+        async def put(key: str, data: bytes, **_kwargs: object) -> None:
+            objects[key] = data
+
+        async def delete_object(key: str) -> None:
+            objects.pop(key, None)
+
+        storage = cast(ObjectStorage, SimpleNamespace(get=get, put=put, delete=delete_object))
+        archive = str(tmp_path / "healthy.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
+        await _wipe(session)
+
+        report = await BackupService(session).restore_full_package(archive, storage, dry_run=False)
+
+        restored_page = (
+            await session.execute(select(WikiPage).where(WikiPage.slug == "resources"))
+        ).scalar_one()
+        assert restored_page.content == original_content
+        assert "relinked_page" not in report.created
 
     async def test_full_zip_restores_attachment_when_source_space_key_is_lowercase(
         self, session: AsyncSession, tmp_path: Path
@@ -463,9 +593,7 @@ class TestRoundTrip:
         archive = str(tmp_path / "conflict.zip")
         await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
 
-        report = await BackupService(session).restore_full_package(
-            archive, storage, dry_run=False
-        )
+        report = await BackupService(session).restore_full_package(archive, storage, dry_run=False)
 
         assert report.conflicting_space_keys == ["ENG"]
         assert report.skipped["space"] == 1
