@@ -17,13 +17,13 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.page import WikiPage
-from app.models.permission import Permission, SpaceUserPermission
+from app.models.permission import Group, Permission, SpaceGroupPermission, SpaceUserPermission
 from app.models.space import Space, SpaceMember, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
 from app.modules.permissions.service import ROLE_PERMISSIONS, PermissionService
@@ -32,6 +32,11 @@ from app.repositories.user import UserRepository
 from app.schemas.space import SpaceCreate, SpaceMemberRead, SpaceRead, SpaceUpdate
 
 logger = get_logger(__name__)
+
+#: Groups that already carry blanket admin access by convention, so counting
+#: them as a per-space "licensed" grant would be redundant noise - same idea
+#: as excluding superusers from the direct-user count below.
+DEFAULT_ADMIN_GROUP_NAMES = frozenset({"confluence-administrators"})
 
 
 class SpaceService:
@@ -69,14 +74,51 @@ class SpaceService:
         await self.session.refresh(space)
 
     # -- serialisation -----------------------------------------------------
+    async def _permission_principal_counts(
+        self, space_id: uuid.UUID
+    ) -> tuple[int, int]:
+        """(distinct groups, distinct non-superuser users) with a direct grant.
+
+        System administrators already have full access to every space by
+        default, so they are excluded from the user count - otherwise every
+        space would misleadingly show them as an explicit "licensed" member.
+        """
+        group_count = await self.session.scalar(
+            select(func.count(func.distinct(SpaceGroupPermission.group_id)))
+            .join(Group, Group.id == SpaceGroupPermission.group_id)
+            .where(
+                SpaceGroupPermission.space_id == space_id,
+                func.lower(Group.name).notin_(DEFAULT_ADMIN_GROUP_NAMES),
+            )
+        )
+        user_count = await self.session.scalar(
+            select(func.count(func.distinct(SpaceUserPermission.user_id)))
+            .join(User, User.id == SpaceUserPermission.user_id)
+            .where(
+                SpaceUserPermission.space_id == space_id,
+                User.is_superuser.is_(False),
+            )
+        )
+        return int(group_count or 0), int(user_count or 0)
+
     async def to_read(
-        self, space: Space, user: User, *, is_favorite: bool | None = None
+        self,
+        space: Space,
+        user: User,
+        *,
+        is_favorite: bool | None = None,
+        group_permission_count: int | None = None,
+        direct_user_permission_count: int | None = None,
     ) -> SpaceRead:
         favorite = (
             is_favorite
             if is_favorite is not None
             else await self.spaces.is_favorite(space.id, user.id)
         )
+        if group_permission_count is None or direct_user_permission_count is None:
+            group_permission_count, direct_user_permission_count = (
+                await self._permission_principal_counts(space.id)
+            )
         return SpaceRead(
             id=space.id,
             key=space.key,
@@ -90,6 +132,8 @@ class SpaceService:
             updated_at=space.updated_at,
             created_by_username=space.created_by.username if space.created_by else None,
             member_count=len(space.members),
+            group_permission_count=group_permission_count,
+            direct_user_permission_count=direct_user_permission_count,
             is_favorite=favorite,
             my_role=await self.role_of(space, user),
             my_permissions=sorted(
@@ -99,10 +143,48 @@ class SpaceService:
         )
 
     async def to_read_many(self, spaces: Sequence[Space], user: User) -> list[SpaceRead]:
-        # Resolve favourites in one query rather than once per space.
+        # Resolve favourites and permission-principal counts in one query each
+        # rather than once per space.
         favorites = await self.spaces.favorite_ids(user.id)
+        space_ids = [space.id for space in spaces]
+        group_counts: dict[uuid.UUID, int] = {}
+        user_counts: dict[uuid.UUID, int] = {}
+        if space_ids:
+            group_rows = await self.session.execute(
+                select(
+                    SpaceGroupPermission.space_id,
+                    func.count(func.distinct(SpaceGroupPermission.group_id)),
+                )
+                .join(Group, Group.id == SpaceGroupPermission.group_id)
+                .where(
+                    SpaceGroupPermission.space_id.in_(space_ids),
+                    func.lower(Group.name).notin_(DEFAULT_ADMIN_GROUP_NAMES),
+                )
+                .group_by(SpaceGroupPermission.space_id)
+            )
+            group_counts = dict(group_rows.all())
+            user_rows = await self.session.execute(
+                select(
+                    SpaceUserPermission.space_id,
+                    func.count(func.distinct(SpaceUserPermission.user_id)),
+                )
+                .join(User, User.id == SpaceUserPermission.user_id)
+                .where(
+                    SpaceUserPermission.space_id.in_(space_ids),
+                    User.is_superuser.is_(False),
+                )
+                .group_by(SpaceUserPermission.space_id)
+            )
+            user_counts = dict(user_rows.all())
         return [
-            await self.to_read(space, user, is_favorite=space.id in favorites) for space in spaces
+            await self.to_read(
+                space,
+                user,
+                is_favorite=space.id in favorites,
+                group_permission_count=group_counts.get(space.id, 0),
+                direct_user_permission_count=user_counts.get(space.id, 0),
+            )
+            for space in spaces
         ]
 
     # -- reads -------------------------------------------------------------
@@ -112,6 +194,26 @@ class SpaceService:
             raise NotFoundError(f"Space '{key}' was not found.")
         return space
 
+    async def _is_listable(self, space: Space, user: User) -> bool:
+        """Whether ``space`` belongs in a directory listing for ``user``.
+
+        A Confluence personal space (key ``~username``, the only spaces that
+        can have a ``~`` key - WikiHub's own key validator requires a leading
+        letter) is real content its owner and any Confluence-users-level
+        grant can open, but Confluence itself never lists another person's
+        personal space in the Space Directory - only a direct link or search
+        surfaces it. WikiHub has no separate "not directory-listed but still
+        viewable" tier, so this keeps a personal space out of list_spaces(),
+        list_recent() and list_favorites() for anyone but its owner or a
+        system administrator, while a direct visit still goes through
+        require_view() -> effective_permissions() untouched.
+        """
+        if Permission.view not in await self.permissions.effective_permissions(space, user):
+            return False
+        if space.key.startswith("~") and not await self.permissions.is_system_admin(user):
+            return space.key[1:].lower() == user.username.lower()
+        return True
+
     async def list_spaces(
         self, user: User, *, include_archived: bool = False, limit: int = 100, offset: int = 0
     ) -> list[SpaceRead]:
@@ -120,26 +222,18 @@ class SpaceService:
         )
         visible: list[Space] = []
         for space in spaces:
-            if Permission.view in await self.permissions.effective_permissions(space, user):
+            if await self._is_listable(space, user):
                 visible.append(space)
         return await self.to_read_many(visible, user)
 
     async def list_recent(self, user: User, *, limit: int = 20) -> list[SpaceRead]:
         spaces = await self.spaces.list_recent(limit=limit)
-        visible = [
-            space
-            for space in spaces
-            if Permission.view in await self.permissions.effective_permissions(space, user)
-        ]
+        visible = [space for space in spaces if await self._is_listable(space, user)]
         return await self.to_read_many(visible, user)
 
     async def list_favorites(self, user: User) -> list[SpaceRead]:
         spaces = await self.spaces.list_favorites(user.id)
-        visible = [
-            space
-            for space in spaces
-            if Permission.view in await self.permissions.effective_permissions(space, user)
-        ]
+        visible = [space for space in spaces if await self._is_listable(space, user)]
         return await self.to_read_many(visible, user)
 
     async def list_members(self, space: Space) -> list[SpaceMemberRead]:

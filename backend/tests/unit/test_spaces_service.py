@@ -18,7 +18,9 @@ def make_service() -> SpaceService:
     result = SpaceService(Mock())
     result.session.flush = AsyncMock()
     result.session.refresh = AsyncMock()
-    result.session.execute = AsyncMock()
+    # `.all()` must resolve synchronously - a bare `AsyncMock()` return value
+    # makes it a coroutine, which `dict(...)` in to_read_many() can't iterate.
+    result.session.execute = AsyncMock(return_value=Mock(all=Mock(return_value=[])))
     result.session.scalar = AsyncMock()
     result.session.add = Mock()
     result.session.add_all = Mock()
@@ -158,3 +160,32 @@ async def test_membership_updates_and_last_admin_guards() -> None:
     service.users.get = AsyncMock(return_value=None)
     with pytest.raises(NotFoundError):
         await service.set_member(current, actor, target.id, SpaceRole.viewer)
+
+
+@pytest.mark.asyncio
+async def test_personal_spaces_are_not_directory_listed_for_other_users() -> None:
+    """A Confluence personal space (key "~username") stays viewable by a
+    direct visit for anyone the archive granted access to, but must not show
+    up in list_spaces()/list_recent()/list_favorites() for anyone but its
+    owner or a system administrator - Confluence itself never lists another
+    person's personal space in the Space Directory either.
+    """
+    service = make_service()
+    personal = SimpleNamespace(key="~alice", visibility=SpaceVisibility.open)
+
+    owner = SimpleNamespace(id=uuid.uuid4(), username="alice")
+    service.permissions.is_system_admin = AsyncMock(return_value=False)
+    assert await service._is_listable(personal, owner) is True
+
+    other = SimpleNamespace(id=uuid.uuid4(), username="bob")
+    service.permissions.is_system_admin = AsyncMock(return_value=False)
+    assert await service._is_listable(personal, other) is False
+
+    admin = SimpleNamespace(id=uuid.uuid4(), username="root")
+    service.permissions.is_system_admin = AsyncMock(return_value=True)
+    assert await service._is_listable(personal, admin) is True
+
+    # A regular team space is unaffected regardless of who is asking.
+    team = SimpleNamespace(key="ENG", visibility=SpaceVisibility.open)
+    service.permissions.is_system_admin = AsyncMock(return_value=False)
+    assert await service._is_listable(team, other) is True
