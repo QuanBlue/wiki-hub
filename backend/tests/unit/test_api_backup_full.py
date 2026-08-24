@@ -9,6 +9,7 @@ from app.api.v1.backup import (
     create_backup_export,
     get_backup_job,
     import_full_backup_zip,
+    inspect_full_backup_zip,
 )
 from app.core.exceptions import BadRequestError, PayloadTooLargeError, ServiceUnavailableError
 from app.models.backup_job import BackupJob
@@ -53,27 +54,73 @@ async def test_upload_legacy_restore_package(monkeypatch):
         
     # 2. Invalid json
     file.filename = "test.zip"
-    with pytest.raises(BadRequestError, match="Overwrite space selection is invalid"):
+    with pytest.raises(BadRequestError, match="Space selection is invalid"):
         await import_full_backup_zip(service, file, False, "invalid")
-        
+
     # 3. Invalid json array (not strings)
-    with pytest.raises(BadRequestError, match="Overwrite space selection is invalid"):
+    with pytest.raises(BadRequestError, match="Space selection is invalid"):
         await import_full_backup_zip(service, file, False, "[1, 2]")
-        
+
+    # 3b. Same validation applies to the restore-scope field.
+    with pytest.raises(BadRequestError, match="Space selection is invalid"):
+        await import_full_backup_zip(service, file, False, "[]", "invalid")
+
     # 4. Success payload
     class MockSettings:
         max_import_size_bytes = 1000
     monkeypatch.setattr("app.api.v1.backup.settings", MockSettings)
-    
+
     file.read = AsyncMock(side_effect=[b"x" * 500, b""])
-    res = await import_full_backup_zip(service, file, False, '["SPACE"]')
+    res = await import_full_backup_zip(service, file, False, '["SPACE"]', '["ENG"]')
     assert res == {"status": "ok"}
     service.restore_full_package.assert_called_once()
-    
+    assert service.restore_full_package.call_args.kwargs["space_keys"] == {"ENG"}
+
+    # 4b. Empty scope means "every space" - passed through as None, not {}.
+    file.read = AsyncMock(side_effect=[b"x" * 500, b""])
+    await import_full_backup_zip(service, file, False, "[]", "[]")
+    assert service.restore_full_package.call_args.kwargs["space_keys"] is None
+
     # 5. Payload Too large
     file.read = AsyncMock(side_effect=[b"x" * 1500])
     with pytest.raises(PayloadTooLargeError):
         await import_full_backup_zip(service, file, False, '["SPACE"]')
+
+
+@pytest.mark.asyncio
+async def test_inspect_full_backup_zip(monkeypatch, tmp_path):
+    service = Mock()  # only present to enforce CurrentSuperuser; unused here.
+
+    with pytest.raises(BadRequestError, match="Choose a .zip file created by WikiHub"):
+        bad_file = AsyncMock()
+        bad_file.filename = "test.txt"
+        await inspect_full_backup_zip(service, bad_file)
+
+    class MockSettings:
+        max_import_size_bytes = 1000
+
+    monkeypatch.setattr("app.api.v1.backup.settings", MockSettings)
+
+    file = AsyncMock()
+    file.filename = "backup.zip"
+    file.read = AsyncMock(side_effect=[b"x" * 10, b""])
+
+    # `name=` is special-cased by Mock() itself, so it has to be assigned
+    # after construction rather than passed as a constructor kwarg.
+    eng, sales = Mock(key="ENG"), Mock(key="SALES")
+    eng.name, sales.name = "Engineering", "Sales"
+    scanned = Mock()
+    scanned.document.spaces = [eng, sales]
+    with patch(
+        "app.api.v1.backup.BackupService.scan_full_package", return_value=scanned
+    ) as mocked_scan:
+        result = await inspect_full_backup_zip(service, file)
+
+    assert [item.model_dump() for item in result] == [
+        {"key": "ENG", "name": "Engineering"},
+        {"key": "SALES", "name": "Sales"},
+    ]
+    mocked_scan.assert_called_once()
 
 
 @pytest.mark.asyncio

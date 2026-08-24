@@ -550,6 +550,7 @@ class BackupService:
         *,
         dry_run: bool = True,
         overwrite_space_keys: set[str] | None = None,
+        space_keys: set[str] | None = None,
     ) -> ImportReport:
         """Restore a checksum-verified full ZIP and its owned binaries.
 
@@ -611,7 +612,9 @@ class BackupService:
             ).all()
         }
         try:
-            result = await self.import_document(scanned.document, dry_run=dry_run)
+            result = await self.import_document(
+                scanned.document, dry_run=dry_run, space_keys=space_keys
+            )
         except Exception:
             if restore_savepoint is not None and restore_savepoint.is_active:
                 await restore_savepoint.rollback()
@@ -697,7 +700,13 @@ class BackupService:
         return result
 
     # -- import ------------------------------------------------------------
-    async def import_document(self, doc: BackupDocument, *, dry_run: bool = True) -> ImportReport:
+    async def import_document(
+        self,
+        doc: BackupDocument,
+        *,
+        dry_run: bool = True,
+        space_keys: set[str] | None = None,
+    ) -> ImportReport:
         """Restore a document. Conflicts are **skipped and reported**, never
         overwritten.
 
@@ -710,12 +719,30 @@ class BackupService:
         is then rolled back. A separate validation routine would inevitably
         drift from the real one, which is the classic bug in this feature; this
         way even database-level conflicts are exercised for real.
+
+        ``space_keys`` (empty/None means "every space in the archive", mirroring
+        the export side's convention) only needs to filter ``doc.spaces`` -
+        every other loop in ``_apply`` resolves its space by key through
+        ``self.spaces.get_by_key(...)`` rather than iterating ``doc.spaces``
+        again, so a page/member/permission belonging to an excluded space
+        naturally reports "missing_space" once that space is never created.
+        Users, groups and their global permissions are never scoped, same as
+        on export.
         """
         if doc.wikihub_backup.version not in SUPPORTED_BACKUP_VERSIONS:
             raise BadRequestError(
                 f"Unsupported backup version {doc.wikihub_backup.version}; "
                 f"this build reads version {BACKUP_VERSION}.",
                 code="unsupported_backup_version",
+            )
+        if space_keys:
+            allowed = {key.strip().upper() for key in space_keys if key.strip()}
+            doc = doc.model_copy(
+                update={
+                    "spaces": [
+                        space for space in doc.spaces if space.key.strip().upper() in allowed
+                    ]
+                }
             )
 
         report = _ReportBuilder()

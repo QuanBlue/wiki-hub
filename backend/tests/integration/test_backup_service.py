@@ -287,6 +287,83 @@ class TestRoundTrip:
         restored_users = (await session.execute(select(User))).scalars().all()
         assert len(restored_users) == 3
 
+    async def test_full_zip_restore_scoped_to_selected_spaces_skips_the_rest(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Restore-side scoping (the "select spaces to restore" picker), as
+
+        opposed to `test_full_zip_scoped_to_selected_spaces_restores_only_
+        that_space` above, which scopes on export instead - here the archive
+        carries every space and restore itself is asked to only apply one.
+        """
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        eng: Space = seeded["space"]  # type: ignore[assignment]
+        sales = await SpaceService(session).create(SpaceCreate(key="SALES", name="Sales"), alice)
+        eng_page = WikiPage(space_id=eng.id, title="Eng Home", slug="home", content="<p>eng</p>")
+        sales_page = WikiPage(
+            space_id=sales.id, title="Sales Home", slug="home", content="<p>sales</p>"
+        )
+        session.add_all([eng_page, sales_page])
+        await session.flush()
+        session.add_all(
+            [
+                PageAttachment(
+                    page_id=eng_page.id,
+                    filename="eng.txt",
+                    content_type="text/plain",
+                    object_key="attachments/eng.txt",
+                ),
+                PageAttachment(
+                    page_id=sales_page.id,
+                    filename="sales.txt",
+                    content_type="text/plain",
+                    object_key="attachments/sales.txt",
+                ),
+            ]
+        )
+        objects = {
+            "attachments/eng.txt": b"eng bytes",
+            "attachments/sales.txt": b"sales bytes",
+        }
+
+        async def get(key: str) -> bytes:
+            return objects[key]
+
+        async def put(key: str, data: bytes, **_kwargs: object) -> None:
+            objects[key] = data
+
+        async def delete(key: str) -> None:
+            objects.pop(key, None)
+
+        storage = cast(ObjectStorage, SimpleNamespace(get=get, put=put, delete=delete))
+        archive = str(tmp_path / "full.zip")
+
+        # Unscoped export: the archive carries both ENG and SALES.
+        manifest = await BackupService(session, actor=seeded["admin"]).export_full_package(  # type: ignore[arg-type]
+            archive, storage
+        )
+        assert manifest["counts"]["spaces"] == 2
+
+        await _wipe(session)
+        report = await BackupService(session).restore_full_package(
+            archive, storage, dry_run=False, space_keys={"eng"}  # lowercase: keys are matched case-insensitively
+        )
+
+        restored_spaces = (await session.execute(select(Space))).scalars().all()
+        assert [s.key for s in restored_spaces] == ["ENG"]
+        restored_pages = (await session.execute(select(WikiPage))).scalars().all()
+        assert len(restored_pages) == 2  # ENG's auto-home page + the "home" page added above.
+        assert {p.slug for p in restored_pages} == {"eng", "home"}
+        restored_attachments = (await session.execute(select(PageAttachment))).scalars().all()
+        assert len(restored_attachments) == 1
+        assert objects[restored_attachments[0].object_key] == b"eng bytes"
+        assert report.skipped.get("space", 0) == 0  # never created, not "skipped" - it just wasn't offered.
+
+        # The identity graph (users) still restores in full regardless of scope.
+        restored_users = (await session.execute(select(User))).scalars().all()
+        assert len(restored_users) == 3
+
     async def test_full_zip_overwrite_replaces_pages_but_keeps_space_membership(
         self, session: AsyncSession, tmp_path: Path
     ) -> None:

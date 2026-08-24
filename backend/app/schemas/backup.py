@@ -71,6 +71,15 @@ class BackupSpace(BaseModel):
     created_by_username: str | None = None
 
 
+class BackupArchiveSpaceRead(BaseModel):
+    """One entry in the `/backup/inspect-zip` response - deliberately just
+    enough to render a "select spaces to restore" picker, not a full
+    `BackupSpace`."""
+
+    key: str
+    name: str
+
+
 class BackupSpaceMember(BaseModel):
     space_key: str
     username: str

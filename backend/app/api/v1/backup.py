@@ -27,7 +27,13 @@ from app.core.exceptions import BadRequestError, PayloadTooLargeError, ServiceUn
 from app.models.backup_job import BackupJob
 from app.modules.backup.jobs import create_export_job
 from app.modules.backup.service import BackupService
-from app.schemas.backup import BackupDocument, BackupExportCreate, BackupJobRead, ImportReport
+from app.schemas.backup import (
+    BackupArchiveSpaceRead,
+    BackupDocument,
+    BackupExportCreate,
+    BackupJobRead,
+    ImportReport,
+)
 from app.services.storage import get_storage
 
 router = APIRouter(prefix="/backup", tags=["backup"])
@@ -157,6 +163,63 @@ async def import_backup(
     return await service.import_document(document, dry_run=dry_run)
 
 
+def _parse_space_key_list(raw: str, *, code: str) -> list[str]:
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise BadRequestError("Space selection is invalid.", code=code) from exc
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        raise BadRequestError("Space selection is invalid.", code=code)
+    return parsed
+
+
+@router.post(
+    "/inspect-zip",
+    response_model=list[BackupArchiveSpaceRead],
+    summary="List the spaces contained in a WikiHub backup ZIP",
+)
+async def inspect_full_backup_zip(
+    # Unused beyond enforcing the same CurrentSuperuser auth every other
+    # endpoint on this router requires - this reads archive contents and
+    # must not be reachable by anyone else.
+    service: BackupServiceDep,
+    file: Annotated[UploadFile, File(description="A full .zip produced by a WikiHub export job")],
+) -> list[BackupArchiveSpaceRead]:
+    """Read only the space list out of an archive, for the "select spaces to
+    restore" picker - never touches the database.
+
+    Kept a separate upload from the actual restore (rather than an automatic
+    dry run) so the default "restore everything" path stays a single upload;
+    only picking specific spaces costs a second one, to read what's on offer.
+    """
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        raise BadRequestError("Choose a .zip file created by WikiHub.", code="invalid_backup_file")
+    staged_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="wikihub-restore-inspect-", suffix=".zip", delete=False
+        ) as staged:
+            staged_path = staged.name
+            total = 0
+            while chunk := await file.read(1024 * 1024):
+                total += len(chunk)
+                if total > settings.max_import_size_bytes:
+                    raise PayloadTooLargeError(
+                        "Backup archive exceeds the configured import limit."
+                    )
+                staged.write(chunk)
+        scanned = BackupService.scan_full_package(staged_path)
+        return [
+            BackupArchiveSpaceRead(key=space.key, name=space.name)
+            for space in scanned.document.spaces
+        ]
+    finally:
+        await file.close()
+        if staged_path:
+            with suppress(OSError):
+                os.unlink(staged_path)
+
+
 @router.post("/import-zip", response_model=ImportReport, summary="Restore a full WikiHub ZIP")
 async def import_full_backup_zip(
     service: BackupServiceDep,
@@ -164,6 +227,9 @@ async def import_full_backup_zip(
     dry_run: Annotated[bool, Form(description="Verify and preview without writing.")] = True,
     overwrite_space_keys: Annotated[
         str, Form(description="JSON array of conflicting space keys to replace.")
+    ] = "[]",
+    space_keys: Annotated[
+        str, Form(description="JSON array of space keys to restore; empty means every space.")
     ] = "[]",
 ) -> ImportReport:
     """Stage ZIP bytes locally only long enough for strict scan/apply.
@@ -173,18 +239,10 @@ async def import_full_backup_zip(
     """
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise BadRequestError("Choose a .zip file created by WikiHub.", code="invalid_backup_file")
-    try:
-        overwrite_keys = json.loads(overwrite_space_keys)
-    except json.JSONDecodeError as exc:
-        raise BadRequestError(
-            "Overwrite space selection is invalid.", code="invalid_backup_overwrite"
-        ) from exc
-    if not isinstance(overwrite_keys, list) or not all(
-        isinstance(item, str) for item in overwrite_keys
-    ):
-        raise BadRequestError(
-            "Overwrite space selection is invalid.", code="invalid_backup_overwrite"
-        )
+    overwrite_keys = _parse_space_key_list(
+        overwrite_space_keys, code="invalid_backup_overwrite"
+    )
+    scoped_keys = _parse_space_key_list(space_keys, code="invalid_backup_scope")
     staged_path = ""
     try:
         with tempfile.NamedTemporaryFile(
@@ -204,6 +262,7 @@ async def import_full_backup_zip(
             get_storage(),
             dry_run=dry_run,
             overwrite_space_keys=set(overwrite_keys),
+            space_keys=set(scoped_keys) or None,
         )
     finally:
         await file.close()
