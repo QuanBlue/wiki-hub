@@ -10,7 +10,9 @@ vi.mock("next/navigation", () => ({
 
 afterEach(() => vi.unstubAllGlobals());
 
-type RouteHandler = (init?: RequestInit) => { status?: number; body: unknown };
+type RouteHandler = (
+  init?: RequestInit,
+) => { status?: number; body: unknown } | Promise<{ status?: number; body: unknown }>;
 
 function mockFetch(routes: Array<{ method: string; match: (pathname: string) => boolean; handler: RouteHandler }>) {
   const spy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -24,7 +26,7 @@ function mockFetch(routes: Array<{ method: string; match: (pathname: string) => 
         { status: 404, headers: { "content-type": "application/json" } },
       );
     }
-    const { status = 200, body } = route.handler(init);
+    const { status = 200, body } = await route.handler(init);
     return new Response(JSON.stringify(body), {
       status,
       headers: { "content-type": "application/json" },
@@ -301,15 +303,19 @@ describe("BackupPanel native export scope", () => {
 });
 
 describe("BackupPanel native restore", () => {
-  it("restores directly from a single upload, with no preview step", async () => {
+  it("restores directly from a single upload, with no preview or confirm modal", async () => {
     let postedForm: FormData | null = null;
     mockFetch([
       ...baseRoutes(),
       {
         method: "POST",
         match: (p) => p === "/api/v1/backup/import-zip",
-        handler: (init) => {
+        handler: async (init) => {
           postedForm = init?.body as FormData;
+          // A real restore takes long enough to show progress; without some
+          // delay here the mock resolves inside the same tick and there's
+          // nothing left to observe the inline "running" state with.
+          await new Promise((resolve) => setTimeout(resolve, 50));
           return {
             body: {
               dry_run: false,
@@ -349,7 +355,16 @@ describe("BackupPanel native restore", () => {
     });
     expect(importButton).not.toBeDisabled();
     await actor.click(importButton);
-    await actor.click(screen.getByRole("button", { name: /restore now/i }));
+
+    // No confirm dialog in front of it: the request fires immediately, and
+    // progress shows up inline like the Confluence import job panel does.
+    expect(
+      screen.queryByRole("button", { name: /restore now/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/restoring wikihub backup/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
 
     await waitFor(() => expect(postedForm).not.toBeNull());
     expect(postedForm!.get("dry_run")).toBe("false");

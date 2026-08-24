@@ -632,7 +632,6 @@ export function BackupPanel() {
   const [availableSpaces, setAvailableSpaces] = useState<Space[] | null>(null);
   const [isLoadingAvailableSpaces, setIsLoadingAvailableSpaces] =
     useState(false);
-  const [confirmApply, setConfirmApply] = useState(false);
   const [confirmDiscardArchive, setConfirmDiscardArchive] = useState(false);
   const [discardingArchivePending, setDiscardingArchivePending] =
     useState(false);
@@ -1780,11 +1779,14 @@ export function BackupPanel() {
     void startConfluenceImport();
   }
 
-  // No preview/dry-run step: uploading a huge trusted archive twice (once to
-  // preview, once to apply) was slow enough to look hung, so this now
-  // restores directly on a single upload. Existing records are still only
-  // ever skipped, never overwritten (the backend defaults
-  // overwrite_space_keys to none when the field is omitted).
+  // No preview/dry-run step and no confirm modal: uploading a huge trusted
+  // archive twice (once to preview, once to apply) was slow enough to look
+  // hung, and gating the run behind a popup just added a click before
+  // progress was visible. This restores directly on a single upload, with
+  // progress shown inline below the cards - same shape as the Confluence
+  // import job panel. Existing records are still only ever skipped, never
+  // overwritten (the backend defaults overwrite_space_keys to none when the
+  // field is omitted).
   async function submitImport() {
     if (!file) return;
     setPending("apply");
@@ -1802,7 +1804,6 @@ export function BackupPanel() {
         rawBody: form,
       });
       setReport(result);
-      setConfirmApply(false);
       toast.success("Import applied.");
       router.refresh();
     } catch (err) {
@@ -1811,7 +1812,6 @@ export function BackupPanel() {
           ? err.message
           : "Could not read the backup file.",
       );
-      setConfirmApply(false);
     } finally {
       setPending(null);
     }
@@ -2200,7 +2200,7 @@ export function BackupPanel() {
                   className="w-full"
                   disabled={!file || pending !== null}
                   aria-busy={pending === "apply"}
-                  onClick={() => setConfirmApply(true)}
+                  onClick={() => void submitImport()}
                 >
                   {pending === "apply" ? (
                     <Loader2 className="animate-spin" />
@@ -2710,7 +2710,10 @@ export function BackupPanel() {
                         : "Cancellation requested.",
                     );
                   } catch (cancelError) {
-                    setError(
+                    // setError would land in the Restore WikiHub Backup
+                    // card's own error slot, nowhere near this button - a
+                    // failure here needs to surface right where it happened.
+                    toast.error(
                       cancelError instanceof ApiError
                         ? cancelError.message
                         : "Could not cancel the import.",
@@ -2745,6 +2748,30 @@ export function BackupPanel() {
                 </ul>
               </details>
             ) : null}
+          </div>
+        ) : null}
+
+        {/* WikiHub restore: progress - no confirm modal in front of it, and
+            shaped like the Confluence job panel below rather than tucked
+            inside the card. There's no phased job here (a single upload
+            request), so the bar is an indeterminate sweep. */}
+        {pending === "apply" && activeSection === "import" ? (
+          <div className="border-border bg-surface-raised mt-4 rounded-lg border p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-base font-semibold">Restoring WikiHub backup…</p>
+              <Badge variant="info">running</Badge>
+            </div>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Uploading and applying {file?.name ?? "the archive"}. Large
+              backups can take a while - keep this tab open.
+            </p>
+            <div
+              className="bg-surface-sunken relative mt-3 h-2 overflow-hidden rounded-full"
+              role="progressbar"
+              aria-label="Restore in progress"
+            >
+              <div className="bg-primary progress-indeterminate absolute inset-y-0 w-2/5 rounded-full" />
+            </div>
           </div>
         ) : null}
 
@@ -3222,15 +3249,6 @@ export function BackupPanel() {
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
-        open={confirmApply}
-        onOpenChange={setConfirmApply}
-        title="Restore this backup?"
-        description="New spaces, pages, users, groups and permissions will be written. Existing records are skipped, never overwritten. This cannot be undone automatically — export a backup first if you are unsure."
-        confirmLabel="Restore now"
-        pending={pending === "apply"}
-        onConfirm={() => submitImport()}
-      />
       <ConfirmDialog
         open={leaveTarget !== null}
         onOpenChange={(open) => {
