@@ -2058,7 +2058,7 @@ export function BackupPanel() {
                   <Loader2 className="size-3.5 shrink-0 animate-spin" />
                 )}
                 {portableBackupJob.status === "complete"
-                  ? "Export is ready — download started automatically."
+                  ? "Export is ready. It should download automatically — if not, click the button."
                   : portableBackupJob.status === "failed"
                     ? portableBackupJob.error ?? "Export failed."
                     : portableBackupJob.status === "cancelled"
