@@ -112,7 +112,10 @@ describe("BackupPanel native export scope", () => {
     render(<BackupPanel />);
 
     await actor.click(
-      screen.getByRole("button", { name: /create full backup zip/i }),
+      screen.getByRole("button", { name: /export wikihub backup/i }),
+    );
+    await actor.click(
+      screen.getByRole("button", { name: /create backup zip/i }),
     );
 
     await waitFor(() => expect(jobsPosted).toHaveLength(1));
@@ -124,10 +127,13 @@ describe("BackupPanel native export scope", () => {
     const actor = userEvent.setup();
     render(<BackupPanel />);
 
+    await actor.click(
+      screen.getByRole("button", { name: /export wikihub backup/i }),
+    );
     await actor.click(screen.getByRole("radio", { name: /select spaces/i }));
 
     expect(
-      screen.getByRole("button", { name: /create full backup zip/i }),
+      screen.getByRole("button", { name: /create backup zip/i }),
     ).toBeDisabled();
 
     await actor.click(screen.getByRole("button", { name: /choose spaces/i }));
@@ -165,13 +171,16 @@ describe("BackupPanel native export scope", () => {
     const actor = userEvent.setup();
     render(<BackupPanel />);
 
+    await actor.click(
+      screen.getByRole("button", { name: /export wikihub backup/i }),
+    );
     await actor.click(screen.getByRole("radio", { name: /select spaces/i }));
     await actor.click(screen.getByRole("button", { name: /choose spaces/i }));
     await actor.click(await screen.findByRole("checkbox", { name: /Engineering/ }));
     await actor.click(screen.getByRole("button", { name: /^done$/i }));
 
     const exportButton = screen.getByRole("button", {
-      name: /create full backup zip/i,
+      name: /create backup zip/i,
     });
     expect(exportButton).not.toBeDisabled();
     await actor.click(exportButton);

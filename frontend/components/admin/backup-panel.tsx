@@ -625,6 +625,7 @@ export function BackupPanel() {
   const [exportSpaceFilter, setExportSpaceFilter] = useState("");
   const [isExportSpacePickerOpen, setIsExportSpacePickerOpen] =
     useState(false);
+  const [isExportOptionsOpen, setIsExportOptionsOpen] = useState(false);
   const [availableSpaces, setAvailableSpaces] = useState<Space[] | null>(null);
   const [isLoadingAvailableSpaces, setIsLoadingAvailableSpaces] =
     useState(false);
@@ -920,6 +921,7 @@ export function BackupPanel() {
         },
       });
       setPortableBackupJob(job);
+      if (kind === "full_export") setIsExportOptionsOpen(false);
       toast.success("Backup export queued. It will continue in the background.");
     } catch (downloadError) {
       toast.error(
@@ -1896,95 +1898,15 @@ export function BackupPanel() {
                 — on a new server, after data loss, or before a major upgrade.
               </p>
 
-              {/* Password hashes option — only relevant to WikiHub restore */}
-              <label className="border-border bg-surface-sunken mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-xs transition-colors duration-150 hover:bg-surface-hover">
-                <input
-                  type="checkbox"
-                  checked={includeCredentials}
-                  onChange={(e) => setIncludeCredentials(e.target.checked)}
-                  className="accent-primary mt-0.5 size-3.5 shrink-0 cursor-pointer rounded"
-                />
-                <span>
-                  <span className="font-medium text-foreground">
-                    Include password hashes
-                  </span>
-                  <span className="text-muted-foreground mt-0.5 block leading-normal">
-                    Off by default. Enables offline cracking of weak passwords
-                    — only enable for a migration and store the file securely.
-                    Without it, restored accounts need a password set before
-                    signing in.
-                  </span>
-                </span>
-              </label>
-
-              {/* Scope — every space by default, or a hand-picked subset */}
-              <div className="border-border bg-surface-sunken mt-2.5 rounded-lg border p-3 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  <label className="flex cursor-pointer items-center gap-1.5">
-                    <input
-                      type="radio"
-                      name="export-space-scope"
-                      checked={exportSpaceScope === "all"}
-                      onChange={() => setExportSpaceScope("all")}
-                      className="accent-primary size-3.5 cursor-pointer"
-                    />
-                    <span className="font-medium text-foreground">
-                      All spaces
-                    </span>
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-1.5">
-                    <input
-                      type="radio"
-                      name="export-space-scope"
-                      checked={exportSpaceScope === "selected"}
-                      onChange={() => setExportSpaceScope("selected")}
-                      className="accent-primary size-3.5 cursor-pointer"
-                    />
-                    <span className="font-medium text-foreground">
-                      Select spaces…
-                    </span>
-                  </label>
-                  {exportSpaceScope === "selected" ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="ml-auto h-7 text-xs"
-                      onClick={() => setIsExportSpacePickerOpen(true)}
-                    >
-                      <ListChecks className="size-3.5" />
-                      {exportSelectedSpaceKeys.length > 0
-                        ? `${exportSelectedSpaceKeys.length} selected`
-                        : "Choose spaces"}
-                    </Button>
-                  ) : null}
-                </div>
-                <p className="text-muted-foreground mt-1.5 leading-normal">
-                  {exportSpaceScope === "all"
-                    ? "Every space, page, user, group and permission in this workspace."
-                    : "Only the selected spaces' pages and permissions. Users and groups are always included in full."}
-                </p>
-              </div>
-
               <div className="mt-auto pt-4">
                 <Button
                   type="button"
                   variant="primary"
                   className="w-full"
-                  disabled={
-                    isDownloading ||
-                    (exportSpaceScope === "selected" &&
-                      exportSelectedSpaceKeys.length === 0)
-                  }
-                  aria-busy={isDownloading}
-                  onClick={() => void createPortableExport("full_export")}
+                  onClick={() => setIsExportOptionsOpen(true)}
                 >
-                  {isDownloading ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <Download />
-                  )}
-                  {isDownloading ? "Queueing export…" : "Create full backup ZIP"}
+                  <Download />
+                  Export WikiHub Backup
                 </Button>
               </div>
             </div>
@@ -2880,6 +2802,116 @@ export function BackupPanel() {
           </div>
         ) : null}
       </section>
+
+      <Dialog open={isExportOptionsOpen} onOpenChange={setIsExportOptionsOpen}>
+        <DialogContent
+          title="Export WikiHub Backup"
+          description="A complete .zip of spaces, pages, revisions and attachments — used to restore WikiHub itself."
+          className="max-w-lg"
+        >
+          <div className="space-y-3">
+            {/* Password hashes option — only relevant to WikiHub restore */}
+            <label className="border-border bg-surface-sunken flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-xs transition-colors duration-150 hover:bg-surface-hover">
+              <input
+                type="checkbox"
+                checked={includeCredentials}
+                onChange={(e) => setIncludeCredentials(e.target.checked)}
+                className="accent-primary mt-0.5 size-3.5 shrink-0 cursor-pointer rounded"
+              />
+              <span>
+                <span className="font-medium text-foreground">
+                  Include password hashes
+                </span>
+                <span className="text-muted-foreground mt-0.5 block leading-normal">
+                  Off by default. Enables offline cracking of weak passwords
+                  — only enable for a migration and store the file securely.
+                  Without it, restored accounts need a password set before
+                  signing in.
+                </span>
+              </span>
+            </label>
+
+            {/* Scope — every space by default, or a hand-picked subset */}
+            <div className="border-border bg-surface-sunken rounded-lg border p-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="export-space-scope"
+                    checked={exportSpaceScope === "all"}
+                    onChange={() => setExportSpaceScope("all")}
+                    className="accent-primary size-3.5 cursor-pointer"
+                  />
+                  <span className="font-medium text-foreground">
+                    All spaces
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="export-space-scope"
+                    checked={exportSpaceScope === "selected"}
+                    onChange={() => setExportSpaceScope("selected")}
+                    className="accent-primary size-3.5 cursor-pointer"
+                  />
+                  <span className="font-medium text-foreground">
+                    Select spaces…
+                  </span>
+                </label>
+                {exportSpaceScope === "selected" ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="ml-auto h-7 text-xs"
+                    onClick={() => setIsExportSpacePickerOpen(true)}
+                  >
+                    <ListChecks className="size-3.5" />
+                    {exportSelectedSpaceKeys.length > 0
+                      ? `${exportSelectedSpaceKeys.length} selected`
+                      : "Choose spaces"}
+                  </Button>
+                ) : null}
+              </div>
+              <p className="text-muted-foreground mt-1.5 leading-normal">
+                {exportSpaceScope === "all"
+                  ? "Every space, page, user, group and permission in this workspace."
+                  : "Only the selected spaces' pages and permissions. Users and groups are always included in full."}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsExportOptionsOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={
+                isDownloading ||
+                (exportSpaceScope === "selected" &&
+                  exportSelectedSpaceKeys.length === 0)
+              }
+              aria-busy={isDownloading}
+              onClick={() => void createPortableExport("full_export")}
+            >
+              {isDownloading ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Download />
+              )}
+              {isDownloading ? "Queueing export…" : "Create backup ZIP"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={isExportSpacePickerOpen}
