@@ -2852,7 +2852,7 @@ export function BackupPanel() {
                   </Button>
                 ) : null}
               </div>
-              <p className="text-muted-foreground mt-1.5 leading-normal">
+              <p className="text-muted-foreground mt-1.5 min-h-9 leading-normal">
                 {exportSpaceScope === "all"
                   ? "Every space, page, user, group and permission in this workspace."
                   : "Only the selected spaces' pages and permissions. Users and groups are always included in full."}
