@@ -67,6 +67,17 @@ async def list_favorites(user: CurrentUser, service: SpaceServiceDep) -> list[Sp
     return await service.list_favorites(user)
 
 
+@router.get(
+    "/top-visited", response_model=list[SpaceRead], summary="Your most-visited spaces"
+)
+async def list_top_visited(
+    user: CurrentUser,
+    service: SpaceServiceDep,
+    limit: int = Query(default=5, ge=1, le=20),
+) -> list[SpaceRead]:
+    return await service.list_top_visited(user, limit=limit)
+
+
 @router.post(
     "",
     response_model=SpaceRead,
@@ -83,12 +94,16 @@ async def create_space(
     return await service.to_read(space, user)
 
 
-# NOTE: declared after /recent and /favorites so those literal paths are not
-# swallowed by the {key} parameter.
+# NOTE: declared after /recent, /favorites and /top-visited so those literal
+# paths are not swallowed by the {key} parameter.
 @router.get("/{key}", response_model=SpaceRead, summary="Get one space")
 async def get_space(key: str, user: CurrentUser, service: SpaceServiceDep) -> SpaceRead:
     space = await service.get_by_key(key)
     await service.require_view(space, user)
+    # Every space page (and every wiki page inside it) fetches its parent
+    # space this way, so this is the one place that reliably sees "the user
+    # opened this space" without a separate call from the frontend.
+    await service.record_visit(space, user)
     return await service.to_read(space, user)
 
 

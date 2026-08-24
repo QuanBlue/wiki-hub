@@ -6,9 +6,10 @@ import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import Select, delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceStatus
+from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceStatus, SpaceVisit
 
 
 class SpaceRepository:
@@ -104,6 +105,36 @@ class SpaceRepository:
                 SpaceFavorite.space_id == space_id, SpaceFavorite.user_id == user_id
             )
         )
+
+    # -- visits --------------------------------------------------------------
+    async def record_visit(self, space_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        """Bump the (user, space) visit counter, creating the row on first visit.
+
+        A single upsert rather than a read-then-write so two concurrent
+        requests from the same user can never race and drop a count.
+        """
+        stmt = pg_insert(SpaceVisit).values(
+            user_id=user_id, space_id=space_id, visit_count=1
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[SpaceVisit.user_id, SpaceVisit.space_id],
+            set_={
+                "visit_count": SpaceVisit.visit_count + 1,
+                "last_visited_at": func.now(),
+            },
+        )
+        await self.session.execute(stmt)
+
+    async def top_visited(self, user_id: uuid.UUID, *, limit: int = 5) -> Sequence[Space]:
+        """This user's spaces ordered by how often they open them."""
+        stmt = (
+            self._base_query(include_archived=False)
+            .join(SpaceVisit, SpaceVisit.space_id == Space.id)
+            .where(SpaceVisit.user_id == user_id)
+            .order_by(SpaceVisit.visit_count.desc(), SpaceVisit.last_visited_at.desc())
+            .limit(limit)
+        )
+        return (await self.session.execute(stmt)).scalars().unique().all()
 
     # -- writes ------------------------------------------------------------
     def add(self, space: Space) -> Space:

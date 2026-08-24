@@ -162,3 +162,30 @@ class SpaceFavorite(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class SpaceVisit(Base):
+    """Per-user visit counter for a space, one row per (user, space) pair.
+
+    Feeds the sidebar's "Most visited" list - a ranking by actual usage
+    rather than plain membership. Recorded server-side (not the best-effort
+    localStorage "recently visited" page history) so it is accurate and the
+    same across every device a user signs in from.
+    """
+
+    __tablename__ = "space_visits"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    space_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    visit_count: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
+    last_visited_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

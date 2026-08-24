@@ -55,6 +55,11 @@ export function listFavoriteSpaces(): Promise<Space[]> {
   return get<Space[]>("/api/v1/spaces/favorites");
 }
 
+/** This user's own most-opened spaces, ranked by a server-side visit counter. */
+export function listTopVisitedSpaces(limit = 5): Promise<Space[]> {
+  return get<Space[]>(`/api/v1/spaces/top-visited?limit=${limit}`);
+}
+
 export function getSpace(key: string): Promise<Space> {
   return get<Space>(`/api/v1/spaces/${encodeURIComponent(key)}`);
 }

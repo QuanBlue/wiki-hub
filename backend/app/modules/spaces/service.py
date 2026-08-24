@@ -236,6 +236,22 @@ class SpaceService:
         visible = [space for space in spaces if await self._is_listable(space, user)]
         return await self.to_read_many(visible, user)
 
+    async def record_visit(self, space: Space, user: User) -> None:
+        """Count one more open of ``space`` by ``user``.
+
+        Called from the "get one space" endpoint, which every space page
+        (and every page inside it, since each fetches its parent space)
+        already hits on load - so this needs no separate call from the
+        frontend and can't fall out of sync with what was actually opened.
+        """
+        await self.spaces.record_visit(space.id, user.id)
+
+    async def list_top_visited(self, user: User, *, limit: int = 5) -> list[SpaceRead]:
+        """This user's own most-opened spaces, for the sidebar's "Most visited"."""
+        spaces = await self.spaces.top_visited(user.id, limit=limit)
+        visible = [space for space in spaces if await self._is_listable(space, user)]
+        return await self.to_read_many(visible, user)
+
     async def list_members(self, space: Space) -> list[SpaceMemberRead]:
         members = await self.spaces.list_members(space.id)
         return [

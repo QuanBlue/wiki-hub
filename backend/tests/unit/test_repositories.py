@@ -90,6 +90,8 @@ async def test_space_repository_covers_memberships_favourites_and_listing() -> N
             _scalars(["id-1"]),
             Mock(scalar_one_or_none=Mock(return_value=None)),
             Mock(),
+            Mock(),
+            _scalars(["top"]),
         ]
     )
     session.delete = AsyncMock()
@@ -108,6 +110,8 @@ async def test_space_repository_covers_memberships_favourites_and_listing() -> N
     assert await spaces.favorite_ids(user_id) == {"id-1"}
     await spaces.add_favorite(space_id, user_id)
     await spaces.remove_favorite(space_id, user_id)
+    await spaces.record_visit(space_id, user_id)
+    assert list(await spaces.top_visited(user_id)) == ["top"]
     space = Mock()
     assert spaces.add(space) is space
     await spaces.delete(space)

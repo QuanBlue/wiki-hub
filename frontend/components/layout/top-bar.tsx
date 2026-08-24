@@ -1,6 +1,6 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { BookOpen, Search } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -10,6 +10,7 @@ import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { UserMenu } from "@/components/layout/user-menu";
+import { Button } from "@/components/ui/button";
 import type { Me } from "@/types/api";
 
 /**
@@ -48,6 +49,11 @@ export function TopBar({ siteName: propSiteName, user }: { siteName?: string; us
         </div>
 
         <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" asChild aria-label="Help" title="Help">
+            <Link href="/help">
+              <BookOpen className="size-4" aria-hidden />
+            </Link>
+          </Button>
           <ThemeToggle />
           <UserMenu user={user} />
         </div>

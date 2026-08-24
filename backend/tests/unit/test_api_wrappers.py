@@ -161,6 +161,8 @@ async def test_space_route_wrappers_delegate_to_services(monkeypatch: pytest.Mon
     service.list_spaces = AsyncMock(return_value=[])
     service.list_recent = AsyncMock(return_value=[])
     service.list_favorites = AsyncMock(return_value=[])
+    service.list_top_visited = AsyncMock(return_value=[])
+    service.record_visit = AsyncMock()
     service.to_read = AsyncMock(return_value=SimpleNamespace(key=space.key))
     service.create = AsyncMock(return_value=space)
     service.update = AsyncMock(return_value=space)
@@ -175,9 +177,11 @@ async def test_space_route_wrappers_delegate_to_services(monkeypatch: pytest.Mon
     assert await spaces_api.list_spaces(user, service) == []
     assert await spaces_api.list_recent(user, service) == []
     assert await spaces_api.list_favorites(user, service) == []
+    assert await spaces_api.list_top_visited(user, service) == []
     user.is_superuser = True
     await spaces_api.create_space(None, user, service)
     assert (await spaces_api.get_space("ENG", user, service)).key == "ENG"
+    service.record_visit.assert_awaited_once_with(space, user)
     assert (await spaces_api.update_space("ENG", None, user, service)).key == "ENG"
     assert (await spaces_api.archive_space("ENG", user, service)).key == "ENG"
     assert (await spaces_api.unarchive_space("ENG", user, service)).key == "ENG"

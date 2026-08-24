@@ -2,7 +2,6 @@
 
 import {
   Database,
-  BookOpen,
   FolderCog,
   HardDrive,
   Home,
@@ -36,13 +35,6 @@ const OVERVIEW_NAV: NavItem[] = [
   { href: "/", label: "Home", icon: Home, permission: "home" },
   { href: "/spaces", label: "Spaces", icon: LayoutGrid, permission: "spaces" },
 ];
-
-const HELP_NAV: NavItem = {
-  href: "/help",
-  label: "Help",
-  icon: BookOpen,
-  permission: "home",
-};
 
 // All administration sections gate on the same "settings" permission - they
 // are one cluster only superusers reach (app/admin/layout.tsx enforces the
@@ -187,20 +179,19 @@ function NavSection({
 }
 
 /**
- * Up to `MY_SPACES_LIMIT` spaces the user is a member of, inline so a
- * frequent space is one click away; the rest stay a single "View all" link
- * rather than growing the rail without bound. Hidden entirely when the rail
- * is collapsed to icons - a growing name list has nowhere to go there.
+ * The user's own most-opened spaces (server-ranked by a per-user visit
+ * counter, not just membership), inline so a frequently used space is one
+ * click away. Hidden entirely when the rail is collapsed to icons - a
+ * growing name list has nowhere to go there - and once the user has no
+ * visit history yet (a brand new account).
  */
-function MySpacesSection({
+function TopSpacesSection({
   spaces,
-  moreCount,
   collapsed,
   pathname,
   onNavigate,
 }: {
   spaces: Space[];
-  moreCount: number;
   collapsed: boolean;
   pathname: string;
   onNavigate: () => void;
@@ -211,7 +202,7 @@ function MySpacesSection({
     <>
       <div className="border-border my-3 border-t" />
       <p className="text-muted-foreground px-2 pb-1 text-[11px] font-semibold tracking-wide uppercase">
-        My spaces
+        Most visited
       </p>
       <ul className="space-y-0.5">
         {spaces.map((space) => {
@@ -249,16 +240,14 @@ function MySpacesSection({
           );
         })}
       </ul>
-      {moreCount > 0 ? (
-        <Link
-          href="/spaces"
-          onClick={onNavigate}
-          className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring mt-0.5 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-        >
-          <MoreHorizontal className="size-4 shrink-0" aria-hidden />
-          <span>View all spaces</span>
-        </Link>
-      ) : null}
+      <Link
+        href="/spaces"
+        onClick={onNavigate}
+        className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring mt-0.5 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+      >
+        <MoreHorizontal className="size-4 shrink-0" aria-hidden />
+        <span>View all spaces</span>
+      </Link>
     </>
   );
 }
@@ -266,13 +255,11 @@ function MySpacesSection({
 export function Sidebar({
   user,
   permissions,
-  mySpaces,
-  moreSpacesCount,
+  topSpaces,
 }: {
   user: Me;
   permissions: SidebarPermissions;
-  mySpaces: Space[];
-  moreSpacesCount: number;
+  topSpaces: Space[];
 }) {
   const pathname = usePathname();
   const {
@@ -294,7 +281,7 @@ export function Sidebar({
   const adminItems = ADMIN_NAV.filter((item) =>
     permissions[item.permission].includes(role),
   );
-  const showMySpaces = permissions.spaces.includes(role);
+  const showTopSpaces = permissions.spaces.includes(role);
 
   // Navigating on a phone must close the drawer, otherwise it covers the page
   // the user just asked for.
@@ -388,10 +375,9 @@ export function Sidebar({
           withDivider={false}
         />
 
-        {showMySpaces ? (
-          <MySpacesSection
-            spaces={mySpaces}
-            moreCount={moreSpacesCount}
+        {showTopSpaces ? (
+          <TopSpacesSection
+            spaces={topSpaces}
             collapsed={railCollapsed}
             pathname={pathname}
             onNavigate={onNavigate}
@@ -401,14 +387,6 @@ export function Sidebar({
         <NavSection
           title="Administration"
           items={adminItems}
-          pathname={pathname}
-          collapsed={railCollapsed}
-          onNavigate={onNavigate}
-        />
-
-        <NavSection
-          title="Resources"
-          items={[HELP_NAV]}
           pathname={pathname}
           collapsed={railCollapsed}
           onNavigate={onNavigate}

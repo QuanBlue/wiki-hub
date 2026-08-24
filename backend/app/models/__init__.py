@@ -36,6 +36,7 @@ from app.models.space import (
     SpaceRole,
     SpaceStatus,
     SpaceVisibility,
+    SpaceVisit,
 )
 from app.models.user import User
 from app.models.user_session import UserSession
@@ -71,6 +72,7 @@ __all__ = [
     "SpaceStatus",
     "SpaceUserPermission",
     "SpaceVisibility",
+    "SpaceVisit",
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
     "User",

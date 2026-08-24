@@ -189,3 +189,19 @@ async def test_personal_spaces_are_not_directory_listed_for_other_users() -> Non
     team = SimpleNamespace(key="ENG", visibility=SpaceVisibility.open)
     service.permissions.is_system_admin = AsyncMock(return_value=False)
     assert await service._is_listable(team, other) is True
+
+
+@pytest.mark.asyncio
+async def test_record_visit_and_list_top_visited() -> None:
+    service = make_service()
+    current = space()
+    actor = SimpleNamespace(id=uuid.uuid4())
+    service.spaces.record_visit = AsyncMock()
+    await service.record_visit(current, actor)
+    service.spaces.record_visit.assert_awaited_once_with(current.id, actor.id)
+
+    service.spaces.top_visited = AsyncMock(return_value=[current])
+    service.spaces.favorite_ids = AsyncMock(return_value=set())
+    result = await service.list_top_visited(actor, limit=5)
+    assert [space_read.key for space_read in result] == ["ENG"]
+    service.spaces.top_visited.assert_awaited_once_with(actor.id, limit=5)
