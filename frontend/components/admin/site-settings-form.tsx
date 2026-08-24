@@ -23,7 +23,6 @@ import {
   Folder,
   FolderOpen,
   GraduationCap,
-  HardDrive,
   HelpCircle,
   ImagePlus,
   Info,
@@ -132,13 +131,12 @@ const ROLE_OPTIONS: Array<{ value: AppRole; label: string }> = [
 ];
 
 const SETTINGS_TABS: Array<{
-  id: "appearance" | "general" | "storage" | "sidebar";
+  id: "appearance" | "general" | "sidebar";
   label: string;
   icon: LucideIcon;
 }> = [
   { id: "appearance", label: "Theme & Branding", icon: Palette },
   { id: "general", label: "General workspace", icon: SlidersHorizontal },
-  { id: "storage", label: "Storage & quotas", icon: HardDrive },
   { id: "sidebar", label: "Sidebar access", icon: ShieldCheck },
 ];
 
@@ -173,22 +171,13 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     settings.overrides.custom_logo_url ?? settings.effective.custom_logo_url ?? null,
   );
 
-  const [maxUpload, setMaxUpload] = useState(
-    settings.overrides.max_upload_size_mb?.toString() ?? "",
-  );
-  const [maxBackupImport, setMaxBackupImport] = useState(
-    settings.overrides.max_backup_import_size_mb?.toString() ?? "",
-  );
   const [sessionTtlHours, setSessionTtlHours] = useState(
     settings.overrides.session_ttl_hours?.toString() ?? "",
-  );
-  const [types, setTypes] = useState(
-    settings.overrides.allowed_attachment_types?.join(", ") ?? "",
   );
   const [sidebarPermissions, setSidebarPermissions] =
     useState<SidebarPermissions>(settings.effective.sidebar_permissions);
   const [activeTab, setActiveTab] = useState<
-    "appearance" | "general" | "storage" | "sidebar"
+    "appearance" | "general" | "sidebar"
   >("appearance");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -293,16 +282,6 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           ? null
           : logoIcon || null,
       custom_logo_url: customLogoUrl || null,
-      max_upload_size_mb: maxUpload.trim() ? Number(maxUpload) : null,
-      max_backup_import_size_mb: maxBackupImport.trim()
-        ? Number(maxBackupImport)
-        : null,
-      allowed_attachment_types: types.trim()
-        ? types
-            .split(",")
-            .map((t) => t.trim())
-            .filter(Boolean)
-        : null,
       sidebar_permissions: sidebarPermissions,
       session_ttl_hours: sessionTtlHours.trim()
         ? Number(sessionTtlHours)
@@ -346,10 +325,6 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const initialSiteName = settings.overrides.site_name ?? "";
   const initialSessionTtl = settings.overrides.session_ttl_hours?.toString() ?? "";
 
-  const initialMaxUpload = settings.overrides.max_upload_size_mb?.toString() ?? "";
-  const initialMaxBackup = settings.overrides.max_backup_import_size_mb?.toString() ?? "";
-  const initialTypes = settings.overrides.allowed_attachment_types?.join(", ") ?? "";
-
   const initialSidebarPermissions = settings.overrides.sidebar_permissions ?? settings.effective.sidebar_permissions;
 
   const effectiveDisplayName = siteName.trim() || settings.effective.site_name;
@@ -365,11 +340,6 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const isGeneralChanged =
     siteName.trim() !== initialSiteName.trim() ||
     sessionTtlHours.trim() !== initialSessionTtl.trim();
-
-  const isStorageChanged =
-    maxUpload.trim() !== initialMaxUpload.trim() ||
-    maxBackupImport.trim() !== initialMaxBackup.trim() ||
-    types.trim() !== initialTypes.trim();
 
   const isSidebarChanged =
     JSON.stringify(sidebarPermissions) !== JSON.stringify(initialSidebarPermissions);
@@ -896,163 +866,6 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                     <p className="text-muted-foreground text-[11px]">
                       Duration of user sessions before re-authentication is required.
                       Default: 12h.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Card 2: Storage & File Quotas */}
-            <section
-              id="storage-settings"
-              role="tabpanel"
-              className={cn(
-                "border-border bg-surface rounded-xl border shadow-sm",
-                activeTab !== "storage" && "hidden",
-              )}
-            >
-              {/* Sticky Header with Action & Save Buttons */}
-              <div className="border-border bg-surface/98 backdrop-blur-md sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b -mt-px -mx-px px-6 py-3.5 rounded-t-xl transition-all shadow-xs">
-                <div className="flex items-center gap-2.5">
-                  <HardDrive className="text-info size-5 shrink-0" />
-                  <div>
-                    <h3 className="text-foreground font-semibold text-sm sm:text-base">
-                      Storage &amp; File Quotas
-                    </h3>
-                    <p className="text-muted-foreground mt-0.5 text-xs hidden sm:block">
-                      Control imports and attachment limits.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs h-8"
-                    disabled={pending || (!isStorageChanged && !maxUpload && !maxBackupImport && !types)}
-                    onClick={() => {
-                      setMaxUpload("");
-                      setMaxBackupImport("");
-                      setTypes("");
-                    }}
-                  >
-                    <RotateCcw className="size-3.5" />
-                    Reset Storage
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    size="sm"
-                    className="text-xs h-8 font-semibold shadow-xs gap-1.5"
-                    disabled={pending || !isStorageChanged}
-                  >
-                    {pending ? (
-                      <>
-                        <Loader2 className="size-3.5 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="size-3.5" />
-                        Save Storage
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="p-6 space-y-6">
-                <div className="grid gap-6 sm:grid-cols-2">
-                  {/* Max Backup Import */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label
-                        htmlFor="max-backup-import"
-                        className="text-sm font-semibold"
-                      >
-                        Max Confluence / Backup Archive (MB)
-                      </Label>
-                      {inheritedTag(
-                        settings.overrides.max_backup_import_size_mb !== null,
-                      )}
-                    </div>
-                    <Input
-                      id="max-backup-import"
-                      type="number"
-                      min={1}
-                      max={102400}
-                      value={maxBackupImport}
-                      onChange={(e) => setMaxBackupImport(e.target.value)}
-                      placeholder={String(
-                        settings.effective.max_backup_import_size_mb,
-                      )}
-                      disabled={pending}
-                      className="text-sm"
-                    />
-                    <p className="text-muted-foreground text-[11px]">
-                      Upper limit for uploaded Confluence spaces or full backups.
-                      Default: 1024 MB.
-                    </p>
-                  </div>
-
-                  {/* Max Attachment Size */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label
-                        htmlFor="max-upload-size"
-                        className="text-sm font-semibold"
-                      >
-                        Max Single Attachment Size (MB)
-                      </Label>
-                      {inheritedTag(
-                        settings.overrides.max_upload_size_mb !== null,
-                      )}
-                    </div>
-                    <Input
-                      id="max-upload-size"
-                      type="number"
-                      min={1}
-                      max={10240}
-                      value={maxUpload}
-                      onChange={(e) => setMaxUpload(e.target.value)}
-                      placeholder={String(settings.effective.max_upload_size_mb)}
-                      disabled={pending}
-                      className="text-sm"
-                    />
-                    <p className="text-muted-foreground text-[11px]">
-                      Upper limit for inline files attached to pages. Default: 50 MB.
-                    </p>
-                  </div>
-
-                  {/* Allowed File Types */}
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <div className="flex items-center justify-between">
-                      <Label
-                        htmlFor="allowed-types"
-                        className="text-sm font-semibold"
-                      >
-                        Allowed Attachment File Extensions
-                      </Label>
-                      {inheritedTag(
-                        settings.overrides.allowed_attachment_types !== null,
-                      )}
-                    </div>
-                    <Input
-                      id="allowed-types"
-                      value={types}
-                      onChange={(e) => setTypes(e.target.value)}
-                      placeholder={settings.effective.allowed_attachment_types.join(
-                        ", ",
-                      )}
-                      disabled={pending}
-                      className="text-sm font-mono"
-                    />
-                    <p className="text-muted-foreground text-[11px]">
-                      Comma-separated list (e.g.{" "}
-                      <code className="text-foreground">png, jpg, pdf, zip</code>). Use{" "}
-                      <code className="text-foreground">*</code> to permit all file
-                      types.
                     </p>
                   </div>
                 </div>

@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 
 import { StoragePanel } from "@/components/admin/storage-panel";
+import { StorageQuotasCard } from "@/components/admin/storage-quotas-card";
+import { getSiteSettings } from "@/lib/admin";
 
 export const metadata: Metadata = { title: "Object storage" };
 export const dynamic = "force-dynamic";
 
-export default function AdminStoragePage() {
+export default async function AdminStoragePage() {
+  const settings = await getSiteSettings();
+
   return (
     <div className="space-y-6">
       <header className="border-border border-b pb-5">
@@ -19,6 +23,7 @@ export default function AdminStoragePage() {
           Browse and manage files held in the workspace storage bucket.
         </p>
       </header>
+      <StorageQuotasCard settings={settings} />
       <StoragePanel />
     </div>
   );
