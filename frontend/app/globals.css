@@ -301,9 +301,30 @@
     }
   }
 
+  /* Indeterminate progress bar: used where a background job is known to be
+     running but reports no numeric percentage (e.g. the native backup
+     export). The inner fill sweeps back and forth across the track. */
+  .progress-indeterminate {
+    animation: wh-progress-indeterminate 1.3s ease-in-out infinite;
+  }
+
+  @keyframes wh-progress-indeterminate {
+    0% {
+      left: -40%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .loading-shimmer {
       animation: none;
+    }
+
+    .progress-indeterminate {
+      animation: none;
+      left: 0;
     }
   }
 

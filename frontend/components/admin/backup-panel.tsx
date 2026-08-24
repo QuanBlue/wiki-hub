@@ -613,6 +613,10 @@ export function BackupPanel() {
   const [confluenceExportProfile, setConfluenceExportProfile] = useState("");
   const [portableBackupJob, setPortableBackupJob] =
     useState<PortableBackupJob | null>(null);
+  // Guards the auto-download below against firing twice for the same job
+  // (e.g. a duplicate poll tick) - a ref rather than state since it must not
+  // itself trigger a re-render.
+  const autoDownloadedJobIdRef = useRef<string | null>(null);
 
   // Native-export space scope - distinct from the Confluence import picker's
   // selectedSpaces/importAllSpaces/spaceFilter above, which is a separate flow.
@@ -682,6 +686,18 @@ export function BackupPanel() {
   ].join(", ");
   const confluenceArchiveName =
     storedConfluenceUpload?.fileName ?? confluenceFile?.name ?? null;
+
+  // A queued/running job is still in flight server-side, distinct from
+  // `isDownloading` which only covers the initial POST that creates it.
+  const isFullExportRunning =
+    portableBackupJob?.kind === "full_export" &&
+    (portableBackupJob.status === "queued" ||
+      portableBackupJob.status === "running");
+  const isConfluenceExportRunning =
+    portableBackupJob?.kind === "confluence_export" &&
+    (portableBackupJob.status === "queued" ||
+      portableBackupJob.status === "running");
+  const isPortableJobRunning = isFullExportRunning || isConfluenceExportRunning;
 
   const normalizedExportSpaceFilter = exportSpaceFilter.trim().toLocaleLowerCase();
   const filteredAvailableSpaces = (availableSpaces ?? []).filter(
@@ -896,6 +912,18 @@ export function BackupPanel() {
     };
   }, [isExportSpacePickerOpen, availableSpaces]);
 
+  /** Save a completed export to disk without waiting for the user to click
+   * the "Download" link - same technique as a normal `<a download>` click,
+   * just fired programmatically. */
+  function triggerBrowserDownload(url: string, filename: string) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   async function createPortableExport(
     kind: "full_export" | "confluence_export",
   ) {
@@ -944,7 +972,17 @@ export function BackupPanel() {
           `/api/v1/backup/jobs/${portableBackupJob.id}`,
         );
         setPortableBackupJob(job);
-        if (job.status === "complete") toast.success("Backup export is ready to download.");
+        if (job.status === "complete") {
+          toast.success("Backup export is ready to download.");
+          if (
+            job.download_url &&
+            job.output_filename &&
+            autoDownloadedJobIdRef.current !== job.id
+          ) {
+            autoDownloadedJobIdRef.current = job.id;
+            triggerBrowserDownload(job.download_url, job.output_filename);
+          }
+        }
         if (job.status === "failed") toast.error(job.error ?? "Backup export failed.");
       } catch {
         // Keep polling on a transient request failure; the job itself is durable.
@@ -1903,10 +1941,16 @@ export function BackupPanel() {
                   type="button"
                   variant="primary"
                   className="w-full"
+                  disabled={isFullExportRunning}
+                  aria-busy={isFullExportRunning}
                   onClick={() => setIsExportOptionsOpen(true)}
                 >
-                  <Download />
-                  Export WikiHub Backup
+                  {isFullExportRunning ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Download />
+                  )}
+                  {isFullExportRunning ? "Exporting…" : "Export WikiHub Backup"}
                 </Button>
               </div>
             </div>
@@ -1986,15 +2030,20 @@ export function BackupPanel() {
                   type="button"
                   variant="primary"
                   className="w-full"
-                  disabled={isDownloading || !confluenceExportProfile}
+                  disabled={
+                    isDownloading ||
+                    isConfluenceExportRunning ||
+                    !confluenceExportProfile
+                  }
+                  aria-busy={isDownloading || isConfluenceExportRunning}
                   onClick={() => void createPortableExport("confluence_export")}
                 >
-                  {isDownloading ? (
+                  {isDownloading || isConfluenceExportRunning ? (
                     <Loader2 className="animate-spin" />
                   ) : (
                     <ArrowUpFromLine />
                   )}
-                  Export DC XML
+                  {isConfluenceExportRunning ? "Exporting…" : "Export DC XML"}
                 </Button>
               </div>
             </div>
@@ -2002,23 +2051,39 @@ export function BackupPanel() {
         </div>
 
         {portableBackupJob && (
-          <div className="border-border bg-surface-sunken mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm">
-            <span className="text-muted-foreground text-xs">
-              {portableBackupJob.status === "complete"
-                ? "Export is ready."
-                : portableBackupJob.status === "failed"
-                  ? portableBackupJob.error ?? "Export failed."
-                  : "Export is running in the background…"}
-            </span>
-            {portableBackupJob.download_url && portableBackupJob.output_filename && (
-              <Button asChild variant="secondary" size="sm">
-                <a
-                  href={portableBackupJob.download_url}
-                  download={portableBackupJob.output_filename}
-                >
-                  <Download /> Download {portableBackupJob.output_filename}
-                </a>
-              </Button>
+          <div className="border-border bg-surface-sunken mt-4 rounded-lg border px-4 py-3 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-muted-foreground flex items-center gap-2 text-xs">
+                {isPortableJobRunning && (
+                  <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                )}
+                {portableBackupJob.status === "complete"
+                  ? "Export is ready — download started automatically."
+                  : portableBackupJob.status === "failed"
+                    ? portableBackupJob.error ?? "Export failed."
+                    : portableBackupJob.status === "cancelled"
+                      ? "Export was cancelled."
+                      : "Export is running in the background…"}
+              </span>
+              {portableBackupJob.download_url && portableBackupJob.output_filename && (
+                <Button asChild variant="secondary" size="sm">
+                  <a
+                    href={portableBackupJob.download_url}
+                    download={portableBackupJob.output_filename}
+                  >
+                    <Download /> Download {portableBackupJob.output_filename}
+                  </a>
+                </Button>
+              )}
+            </div>
+            {isPortableJobRunning && (
+              <div
+                className="bg-surface relative mt-2.5 h-1.5 overflow-hidden rounded-full"
+                role="progressbar"
+                aria-label="Export in progress"
+              >
+                <div className="bg-primary progress-indeterminate absolute inset-y-0 w-2/5 rounded-full" />
+              </div>
             )}
           </div>
         )}

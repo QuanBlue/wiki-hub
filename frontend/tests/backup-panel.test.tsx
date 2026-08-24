@@ -191,4 +191,111 @@ describe("BackupPanel native export scope", () => {
       space_keys: ["ENG"],
     });
   });
+
+  it("disables the trigger and shows progress while the job is queued", async () => {
+    mockFetch([
+      ...baseRoutes(),
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/jobs",
+        handler: () => ({
+          body: {
+            id: "job-1",
+            kind: "full_export",
+            status: "queued",
+            phase: "queued",
+            output_filename: null,
+            download_url: null,
+            error: null,
+            space_keys: [],
+          },
+        }),
+      },
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    await actor.click(
+      screen.getByRole("button", { name: /export wikihub backup/i }),
+    );
+    await actor.click(
+      screen.getByRole("button", { name: /create backup zip/i }),
+    );
+
+    // The POST response alone already carries status "queued", so this
+    // needs no interval tick - it's the same render pass as the other tests.
+    const trigger = await screen.findByRole("button", {
+      name: /exporting…/i,
+    });
+    expect(trigger).toBeDisabled();
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+  });
+
+  it("auto-downloads and re-enables the trigger once the job completes", async () => {
+    // The specific GET route must be listed before the wildcard one from
+    // baseRoutes() (which always answers "queued") since mockFetch's
+    // routing takes the first match in array order.
+    mockFetch([
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/jobs/job-1",
+        handler: () => ({
+          body: {
+            id: "job-1",
+            kind: "full_export",
+            status: "complete",
+            phase: "complete",
+            output_filename: "backup.zip",
+            download_url: "/api/v1/backup/jobs/job-1/download",
+            error: null,
+            space_keys: [],
+          },
+        }),
+      },
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/jobs",
+        handler: () => ({
+          body: {
+            id: "job-1",
+            kind: "full_export",
+            status: "queued",
+            phase: "queued",
+            output_filename: null,
+            download_url: null,
+            error: null,
+            space_keys: [],
+          },
+        }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    // Real timers: the component's 1500ms poll interval is part of the
+    // behavior under test, and this suite has no fake-timer convention.
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    await actor.click(
+      screen.getByRole("button", { name: /export wikihub backup/i }),
+    );
+    await actor.click(
+      screen.getByRole("button", { name: /create backup zip/i }),
+    );
+    await screen.findByRole("button", { name: /exporting…/i });
+
+    await waitFor(
+      () =>
+        expect(
+          screen.getByRole("button", { name: /^export wikihub backup$/i }),
+        ).not.toBeDisabled(),
+      { timeout: 4000 },
+    );
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    clickSpy.mockRestore();
+  }, 8000);
 });
