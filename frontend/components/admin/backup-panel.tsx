@@ -11,13 +11,13 @@ import {
   ArchiveRestore,
   HardDrive,
   Info,
+  ListChecks,
   Loader2,
   Pause,
   Play,
   RotateCcw,
   Search,
   Upload,
-  UploadCloud,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -28,7 +28,6 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -46,6 +45,7 @@ import type {
   ConfluenceUploadTarget,
   ImportReport,
   SiteSettings,
+  Space,
 } from "@/types/api";
 
 type UploadStats = {
@@ -70,6 +70,7 @@ type PortableBackupJob = {
   output_filename: string | null;
   download_url: string | null;
   error: string | null;
+  space_keys: string[];
 };
 
 type StoredConfluenceUpload = {
@@ -612,6 +613,21 @@ export function BackupPanel() {
   const [confluenceExportProfile, setConfluenceExportProfile] = useState("");
   const [portableBackupJob, setPortableBackupJob] =
     useState<PortableBackupJob | null>(null);
+
+  // Native-export space scope - distinct from the Confluence import picker's
+  // selectedSpaces/importAllSpaces/spaceFilter above, which is a separate flow.
+  const [exportSpaceScope, setExportSpaceScope] = useState<"all" | "selected">(
+    "all",
+  );
+  const [exportSelectedSpaceKeys, setExportSelectedSpaceKeys] = useState<
+    string[]
+  >([]);
+  const [exportSpaceFilter, setExportSpaceFilter] = useState("");
+  const [isExportSpacePickerOpen, setIsExportSpacePickerOpen] =
+    useState(false);
+  const [availableSpaces, setAvailableSpaces] = useState<Space[] | null>(null);
+  const [isLoadingAvailableSpaces, setIsLoadingAvailableSpaces] =
+    useState(false);
   const [confirmApply, setConfirmApply] = useState(false);
   const [confirmDiscardArchive, setConfirmDiscardArchive] = useState(false);
   const [discardingArchivePending, setDiscardingArchivePending] =
@@ -665,6 +681,14 @@ export function BackupPanel() {
   ].join(", ");
   const confluenceArchiveName =
     storedConfluenceUpload?.fileName ?? confluenceFile?.name ?? null;
+
+  const normalizedExportSpaceFilter = exportSpaceFilter.trim().toLocaleLowerCase();
+  const filteredAvailableSpaces = (availableSpaces ?? []).filter(
+    (space) =>
+      !normalizedExportSpaceFilter ||
+      space.name.toLocaleLowerCase().includes(normalizedExportSpaceFilter) ||
+      space.key.toLocaleLowerCase().includes(normalizedExportSpaceFilter),
+  );
 
   const displayConfluenceLogs = useMemo(() => {
     const result: ConfluenceImportLog[] = [];
@@ -828,20 +852,72 @@ export function BackupPanel() {
     };
   }, []);
 
+  // frontend/lib/spaces.ts's listAllSpaces imports next/headers and can't run
+  // in this client component, so this mirrors its pagination loop locally.
+  async function loadAllSpacesClient(): Promise<Space[]> {
+    const spaces: Space[] = [];
+    const limit = 200;
+    let offset = 0;
+    while (true) {
+      const batch = await apiFetch<Space[]>(
+        `/api/v1/spaces?include_archived=true&limit=${limit}&offset=${offset}`,
+      );
+      spaces.push(...batch);
+      if (batch.length < limit) return spaces;
+      offset += batch.length;
+    }
+  }
+
+  // Fetch the live space list lazily, only the first time the export space
+  // picker is opened - most admins never touch this, so there's no reason to
+  // fetch it on every panel mount.
+  useEffect(() => {
+    if (!isExportSpacePickerOpen || availableSpaces !== null) return;
+    let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch the live space list the first time the export picker opens
+    setIsLoadingAvailableSpaces(true);
+    void loadAllSpacesClient()
+      .then((spaces) => {
+        if (active) setAvailableSpaces(spaces);
+      })
+      .catch((err) => {
+        if (active) {
+          toast.error(
+            err instanceof Error ? err.message : "Could not load spaces.",
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setIsLoadingAvailableSpaces(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isExportSpacePickerOpen, availableSpaces]);
+
   async function createPortableExport(
     kind: "full_export" | "confluence_export",
   ) {
     if (isDownloading) return;
     setIsDownloading(true);
     try {
+      // apiFetch JSON.stringifies `body` itself - passing an already-stringified
+      // string here double-encodes it into a JSON string literal, which the
+      // backend then rejects (a dict/object is required, not a string).
       const job = await apiFetch<PortableBackupJob>("/api/v1/backup/jobs", {
         method: "POST",
-        body: JSON.stringify({
+        body: {
           kind,
           include_credentials: kind === "full_export" && includeCredentials,
           confluence_profile:
             kind === "confluence_export" ? confluenceExportProfile : null,
-        }),
+          space_keys:
+            kind === "full_export"
+              ? exportSpaceScope === "all"
+                ? []
+                : exportSelectedSpaceKeys
+              : [],
+        },
       });
       setPortableBackupJob(job);
       toast.success("Backup export queued. It will continue in the background.");
@@ -1841,12 +1917,65 @@ export function BackupPanel() {
                 </span>
               </label>
 
+              {/* Scope — every space by default, or a hand-picked subset */}
+              <div className="border-border bg-surface-sunken mt-2.5 rounded-lg border p-3 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="export-space-scope"
+                      checked={exportSpaceScope === "all"}
+                      onChange={() => setExportSpaceScope("all")}
+                      className="accent-primary size-3.5 cursor-pointer"
+                    />
+                    <span className="font-medium text-foreground">
+                      All spaces
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="export-space-scope"
+                      checked={exportSpaceScope === "selected"}
+                      onChange={() => setExportSpaceScope("selected")}
+                      className="accent-primary size-3.5 cursor-pointer"
+                    />
+                    <span className="font-medium text-foreground">
+                      Select spaces…
+                    </span>
+                  </label>
+                  {exportSpaceScope === "selected" ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="ml-auto h-7 text-xs"
+                      onClick={() => setIsExportSpacePickerOpen(true)}
+                    >
+                      <ListChecks className="size-3.5" />
+                      {exportSelectedSpaceKeys.length > 0
+                        ? `${exportSelectedSpaceKeys.length} selected`
+                        : "Choose spaces"}
+                    </Button>
+                  ) : null}
+                </div>
+                <p className="text-muted-foreground mt-1.5 leading-normal">
+                  {exportSpaceScope === "all"
+                    ? "Every space, page, user, group and permission in this workspace."
+                    : "Only the selected spaces' pages and permissions. Users and groups are always included in full."}
+                </p>
+              </div>
+
               <div className="mt-auto pt-4">
                 <Button
                   type="button"
                   variant="primary"
                   className="w-full"
-                  disabled={isDownloading}
+                  disabled={
+                    isDownloading ||
+                    (exportSpaceScope === "selected" &&
+                      exportSelectedSpaceKeys.length === 0)
+                  }
                   aria-busy={isDownloading}
                   onClick={() => void createPortableExport("full_export")}
                 >
@@ -2751,6 +2880,111 @@ export function BackupPanel() {
           </div>
         ) : null}
       </section>
+
+      <Dialog
+        open={isExportSpacePickerOpen}
+        onOpenChange={setIsExportSpacePickerOpen}
+      >
+        <DialogContent title="Select Spaces to Export" className="max-w-2xl">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">
+                {exportSelectedSpaceKeys.length}/{(availableSpaces ?? []).length}{" "}
+                Space(s) selected
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-52 flex-1">
+                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+                <Input
+                  type="search"
+                  value={exportSpaceFilter}
+                  onChange={(event) => setExportSpaceFilter(event.target.value)}
+                  placeholder="Filter by space name or key"
+                  aria-label="Filter spaces to export"
+                  className="pl-9"
+                />
+              </div>
+              <span className="text-muted-foreground text-xs" aria-live="polite">
+                {filteredAvailableSpaces.length} of {(availableSpaces ?? []).length}{" "}
+                shown
+              </span>
+            </div>
+            <div className="border-border max-h-64 overflow-y-auto rounded-md border">
+              {isLoadingAvailableSpaces ? (
+                <div className="text-muted-foreground flex items-center justify-center gap-2 px-3 py-8 text-sm">
+                  <Loader2 className="size-4 animate-spin" />
+                  Loading spaces…
+                </div>
+              ) : filteredAvailableSpaces.length ? (
+                filteredAvailableSpaces.map((space) => (
+                  <label
+                    key={space.key}
+                    className="border-border hover:bg-surface-sunken flex cursor-pointer items-center gap-3 border-b px-3 py-2 text-sm last:border-0"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={exportSelectedSpaceKeys.includes(space.key)}
+                      onChange={(event) => {
+                        setExportSelectedSpaceKeys(
+                          event.target.checked
+                            ? [...exportSelectedSpaceKeys, space.key]
+                            : exportSelectedSpaceKeys.filter(
+                                (key) => key !== space.key,
+                              ),
+                        );
+                      }}
+                      className="accent-primary size-4"
+                    />
+                    <span className="font-medium">{space.name}</span>
+                    <span className="text-muted-foreground">
+                      {space.key} · {space.status}
+                    </span>
+                  </label>
+                ))
+              ) : (
+                <p className="text-muted-foreground px-3 py-6 text-center text-sm">
+                  No spaces match “{exportSpaceFilter}”.
+                </p>
+              )}
+            </div>
+            <DialogFooter className="justify-between sm:justify-between">
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setExportSelectedSpaceKeys(
+                      Array.from(
+                        new Set([
+                          ...exportSelectedSpaceKeys,
+                          ...filteredAvailableSpaces.map((space) => space.key),
+                        ]),
+                      ),
+                    );
+                  }}
+                >
+                  {normalizedExportSpaceFilter ? "Select visible" : "Select all"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setExportSelectedSpaceKeys([])}
+                >
+                  Clear selection
+                </Button>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsExportSpacePickerOpen(false)}
+              >
+                Done
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isSpaceModalOpen} onOpenChange={setIsSpaceModalOpen}>
         <DialogContent title="Select Spaces to Import" className="max-w-2xl">
