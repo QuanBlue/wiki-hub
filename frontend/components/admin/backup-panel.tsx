@@ -2343,7 +2343,7 @@ export function BackupPanel() {
                   ) : (
                     <Upload />
                   )}
-                  Import backup
+                  Restore backup
                 </Button>
               </div>
             </div>

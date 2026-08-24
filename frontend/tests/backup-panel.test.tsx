@@ -356,7 +356,7 @@ describe("BackupPanel native restore", () => {
     ).not.toBeInTheDocument();
 
     const importButton = screen.getByRole("button", {
-      name: /^import backup$/i,
+      name: /^restore backup$/i,
     });
     expect(importButton).not.toBeDisabled();
     await actor.click(importButton);
@@ -405,7 +405,7 @@ describe("BackupPanel native restore", () => {
     await actor.click(screen.getByRole("radio", { name: /select spaces/i }));
 
     expect(
-      screen.getByRole("button", { name: /^import backup$/i }),
+      screen.getByRole("button", { name: /^restore backup$/i }),
     ).toBeDisabled();
 
     await actor.click(screen.getByRole("button", { name: /choose spaces/i }));
@@ -457,7 +457,7 @@ describe("BackupPanel native restore", () => {
     await actor.click(screen.getByRole("button", { name: /^done$/i }));
 
     const importButton = screen.getByRole("button", {
-      name: /^import backup$/i,
+      name: /^restore backup$/i,
     });
     expect(importButton).not.toBeDisabled();
     await actor.click(importButton);
