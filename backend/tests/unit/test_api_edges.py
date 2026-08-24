@@ -490,7 +490,7 @@ async def test_group_endpoint_wrappers(monkeypatch: pytest.MonkeyPatch) -> None:
     service.can_manage_group = AsyncMock(return_value=True)
     await groups.update_group(group.id, GroupUpdate(name="New"), actor, service, session)
     await groups.delete_group(group.id, actor, service)
-    member = SimpleNamespace(id=uuid.uuid4(), username="bob", full_name="Bob")
+    member = SimpleNamespace(id=uuid.uuid4(), username="bob", full_name="Bob", email="bob@example.com")
     session.execute.return_value = Mock(
         scalars=Mock(return_value=Mock(all=Mock(return_value=[member])))
     )

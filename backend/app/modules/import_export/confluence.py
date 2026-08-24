@@ -48,6 +48,23 @@ class ConfluenceGroup:
 
 
 @dataclass(slots=True)
+class ConfluenceUserInfo:
+    """The directory record for one Confluence account: its real email and display name.
+
+    Confluence's own site export never carries a *password*, but the
+    ``InternalUser``/``ConfluenceUserImpl`` objects in ``entities.xml`` do
+    carry ``emailAddress`` and ``displayName`` when the archive is a full
+    site backup (as opposed to a single-space content export). Without this,
+    the importer has no real email to give a newly-created account and falls
+    back to a fabricated placeholder that has nothing to do with Confluence.
+    """
+
+    username: str
+    email: str | None = None
+    display_name: str | None = None
+
+
+@dataclass(slots=True)
 class ConfluenceSpace:
     source_id: str
     key: str
@@ -59,13 +76,17 @@ class ConfluenceSpace:
 
 
 class ConfluenceSpaceList(list[ConfluenceSpace]):
-    """A list of Confluence spaces that also carries parsed group definitions from the archive."""
+    """A list of Confluence spaces that also carries parsed group/user directory data."""
 
     def __init__(
-        self, spaces: list[ConfluenceSpace] = (), groups: list[ConfluenceGroup] = ()
+        self,
+        spaces: list[ConfluenceSpace] = (),
+        groups: list[ConfluenceGroup] = (),
+        users: list[ConfluenceUserInfo] = (),
     ) -> None:
         super().__init__(spaces)
         self.groups: list[ConfluenceGroup] = list(groups)
+        self.users: list[ConfluenceUserInfo] = list(users)
 
 
 @dataclass(slots=True)
@@ -123,6 +144,7 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
         pages: list[ConfluencePage] = []
         attachment_page_ids: list[str] = []
         user_names: dict[str, str] = {}
+        user_info: dict[str, tuple[str | None, str | None]] = {}
         group_names: dict[str, str] = {}
         group_members: dict[str, set[str]] = {}
 
@@ -248,6 +270,8 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                         or _text(props, "lowerName")
                     )
                     user_key = _text(props, "key") or _text(props, "userKey") or _text(props, "externalId")
+                    email_val = _text(props, "emailAddress") or _text(props, "email")
+                    display_name_val = _text(props, "displayName") or _text(props, "fullName")
                     if username_val:
                         user_names[source_id] = username_val
                         user_names[username_val] = username_val
@@ -255,6 +279,8 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                         if user_key:
                             user_names[user_key] = username_val
                             user_names[user_key.lower()] = username_val
+                        if email_val or display_name_val:
+                            user_info[username_val] = (email_val or None, display_name_val or None)
 
                 elif cls_name == "Page" and source_id:
                     title = _text(props, "title")
@@ -350,6 +376,11 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
         if gname
     ]
 
+    parsed_users = [
+        ConfluenceUserInfo(username=uname, email=email, display_name=display_name)
+        for uname, (email, display_name) in user_info.items()
+    ]
+
     # Resolve space permissions
     for (
         space_ref,
@@ -399,7 +430,7 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
             spaces[page.space_id].pages.append(page)
 
     sorted_spaces = sorted(spaces.values(), key=lambda item: item.key)
-    return ConfluenceSpaceList(sorted_spaces, parsed_groups)
+    return ConfluenceSpaceList(sorted_spaces, parsed_groups, parsed_users)
 
 
 def iter_page_bodies(path: Path) -> Iterator[tuple[str, str]]:

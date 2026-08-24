@@ -158,7 +158,7 @@ async def list_group_members(
         .all()
     )
     return [
-        GroupMemberRead(user_id=row.id, username=row.username, full_name=row.full_name)
+        GroupMemberRead(user_id=row.id, username=row.username, full_name=row.full_name, email=row.email)
         for row in rows
     ]
 

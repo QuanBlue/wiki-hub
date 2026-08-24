@@ -46,6 +46,7 @@ class GroupMemberRead(BaseModel):
     user_id: uuid.UUID
     username: str
     full_name: str
+    email: str
 
 
 class GroupMemberUpsert(BaseModel):

@@ -21,15 +21,24 @@ logger = get_logger(__name__)
 from app.models.attachment import PageAttachment
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.page import WikiPage
-from app.models.permission import Group, GroupMember, Permission, SpaceGroupPermission
+from app.models.permission import (
+    Group,
+    GroupMember,
+    GroupOwner,
+    Permission,
+    SpaceGroupPermission,
+    SpaceUserPermission,
+)
 from app.models.restriction import (
     PageGroupRestriction,
     PageRestrictionPermission,
     PageUserRestriction,
 )
 from app.models.space import Space, SpaceMember, SpaceRole, SpaceVisibility
+from app.modules.permissions.service import ROLE_PERMISSIONS
 from app.modules.import_export.confluence import (
     ConfluencePage,
+    ConfluencePermission,
     ConfluenceSpace,
     iter_attachments,
     iter_page_bodies,
@@ -49,6 +58,37 @@ _INVALID_IMPORT_USERNAME = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
 def _is_invalid_import_username(username: str) -> bool:
     """Return whether Confluence supplied an internal id instead of a name."""
     return bool(_INVALID_IMPORT_USERNAME.fullmatch(username.strip()))
+
+
+_PUBLIC_VIEW_PERM_TYPES = frozenset(
+    {"VIEWSPACE", "SETSPACEPERMISSIONS", "SPACEADMIN", "ADMINISTER"}
+)
+_PUBLIC_VIEW_GROUP_NAMES = frozenset(
+    {"confluence-users", "confluence-administrators", "users", "anonymous"}
+)
+
+
+def _space_has_public_view(permissions: list[ConfluencePermission]) -> bool:
+    """Whether a Confluence space's own permissions grant view to everyone.
+
+    A permission naming neither a user nor a group is Confluence's actual
+    anonymous-access entry ("Anyone can view"). A permission with no
+    ``group_name`` but a real ``user_name`` is just that one person's own
+    grant - it says nothing about who else can view the space - so it must
+    not be folded into the same "public" bucket. Confusing the two used to
+    mark nearly every imported space "open": almost every space has at least
+    one named-user permission (its Confluence admin, typically), so the two
+    cases collapsing together made real per-group restrictions moot.
+    """
+    for perm in permissions:
+        if perm.perm_type not in _PUBLIC_VIEW_PERM_TYPES:
+            continue
+        grp_name = (perm.group_name or "").strip().lower()
+        if grp_name in _PUBLIC_VIEW_GROUP_NAMES:
+            return True
+        if not perm.group_name and not perm.user_name:
+            return True
+    return False
 
 
 def _slug(value: str, occupied: set[str]) -> str:
@@ -842,6 +882,10 @@ class ConfluenceImportService:
     def __init__(self, session: AsyncSession, storage: ObjectStorage) -> None:
         self.session, self.storage = session, storage
         self._user_cache: dict[str, uuid.UUID] = {}
+        #: lowercase username -> (email, display name) read from the archive's
+        #: own user directory. Populated by run_import() once the archive is
+        #: scanned; empty for callers (like tests) that never set it.
+        self._user_directory: dict[str, tuple[str | None, str | None]] = {}
 
     def _scan_archive_sync(self, archive: ImportArchive) -> list[ConfluenceSpace]:
         s3_client = getattr(self.storage, "_client", None)
@@ -931,10 +975,13 @@ class ConfluenceImportService:
             self._user_cache[username_lower] = user.id
             return user.id
 
+        directory_email, directory_display_name = self._user_directory.get(
+            username_lower, (None, None)
+        )
         new_user = User(
             username=normalized_username,
-            email=f"{normalized_username}@imported.confluence",
-            full_name=normalized_username,
+            email=directory_email or f"{normalized_username}@imported.confluence",
+            full_name=directory_display_name or normalized_username,
             password_hash=None,
             is_active=True,
             is_superuser=False,
@@ -1187,6 +1234,11 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             )
             await session.commit()
             scanned = await anyio.to_thread.run_sync(scan_archive, path)
+            service._user_directory = {
+                info.username.strip().lower(): (info.email, info.display_name)
+                for info in getattr(scanned, "users", [])
+                if info.username
+            }
             selected = {space.key for space in scanned} if job.import_all else set(job.space_keys)
             job.phase = "importing"
             await log(
@@ -1213,12 +1265,16 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             imported_groups = getattr(scanned, "groups", [])
 
             # Only import groups that have members or are referenced in space/page permissions
+            # of a space the operator actually selected - a Confluence archive can span many
+            # spaces, and a group only referenced by an unselected one should not be pulled in.
             active_group_names: set[str] = set()
             for group_data in imported_groups:
                 if group_data.members:
                     active_group_names.add(group_data.name.strip().lower())
 
             for source_space in scanned:
+                if source_space.key not in selected:
+                    continue
                 if source_space.permissions:
                     for perm in source_space.permissions:
                         if perm.group_name:
@@ -1255,6 +1311,10 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                         )
                         session.add(new_group)
                         await session.flush()
+                        # Mirrors PermissionService.create_group(): owner_id alone is a
+                        # fallback the read path tolerates, but every other write path
+                        # keeps GroupOwner as the source of truth for multi-owner groups.
+                        session.add(GroupOwner(group_id=new_group.id, user_id=job.created_by_id))
                         group_by_name[gname_lower] = new_group
 
                     grp = group_by_name[gname_lower]
@@ -1324,13 +1384,8 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 user_roles: dict[str, SpaceRole] = {}
 
                 if source_space.permissions:
-                    public_view = False
+                    public_view = _space_has_public_view(source_space.permissions)
                     for perm in source_space.permissions:
-                        if perm.perm_type in {"VIEWSPACE", "SETSPACEPERMISSIONS", "SPACEADMIN", "ADMINISTER"}:
-                            grp_name = (perm.group_name or "").lower()
-                            if grp_name in {"confluence-users", "confluence-administrators", "users", "anonymous", ""}:
-                                public_view = True
-
                         if perm.user_name:
                             username_clean = perm.user_name.strip().lower()
                             if _is_invalid_import_username(username_clean):
@@ -1361,13 +1416,28 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 session.add(
                     SpaceMember(space_id=space.id, user_id=job.created_by_id, role=SpaceRole.admin)
                 )
+                for permission in ROLE_PERMISSIONS[SpaceRole.admin]:
+                    session.add(
+                        SpaceUserPermission(
+                            space_id=space.id, user_id=job.created_by_id, permission=permission
+                        )
+                    )
                 added_user_ids = {job.created_by_id}
 
-                # Grant space membership to users resolved from Confluence permissions
+                # Grant space membership to users resolved from Confluence permissions.
+                # SpaceMember only backs the legacy /members endpoint and the
+                # last-admin guard; SpaceUserPermission is what effective_permissions()
+                # and the Admin > Space > Access screen read, so both must be written.
                 for uname, role in user_roles.items():
                     uid = await service._resolve_or_create_user(uname)
                     if uid and uid not in added_user_ids:
                         session.add(SpaceMember(space_id=space.id, user_id=uid, role=role))
+                        for permission in ROLE_PERMISSIONS[role]:
+                            session.add(
+                                SpaceUserPermission(
+                                    space_id=space.id, user_id=uid, permission=permission
+                                )
+                            )
                         added_user_ids.add(uid)
 
                 # Grant SpaceGroupPermissions for groups referenced in space permissions

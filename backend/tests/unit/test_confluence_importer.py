@@ -1,6 +1,6 @@
 import zipfile
 
-from app.modules.import_export.confluence import iter_attachments, scan_archive
+from app.modules.import_export.confluence import ConfluencePermission, iter_attachments, scan_archive
 from app.modules.import_export.service import (
     _build_attachments_table_html,
     _build_gallery_html,
@@ -9,6 +9,7 @@ from app.modules.import_export.service import (
     _normalize_confluence_code_macros,
     _normalize_confluence_html,
     _slug,
+    _space_has_public_view,
 )
 
 
@@ -425,3 +426,31 @@ def test_normalize_confluence_strips_stray_parameter_and_placeholder_tags():
     assert "Keep" in normalized
     assert "value" not in normalized
     assert "hint" not in normalized
+
+
+def test_space_has_public_view_true_for_named_public_group():
+    perms = [ConfluencePermission(perm_type="VIEWSPACE", group_name="confluence-users")]
+    assert _space_has_public_view(perms) is True
+
+
+def test_space_has_public_view_true_for_true_anonymous_entry():
+    perms = [ConfluencePermission(perm_type="VIEWSPACE", user_name=None, group_name=None)]
+    assert _space_has_public_view(perms) is True
+
+
+def test_space_has_public_view_false_for_named_user_grant_without_group():
+    # Regression: (None or "") used to collapse to the same "" this code
+    # treated as "public", so a permission naming a specific user (not a
+    # group) made the whole space look open to everyone.
+    perms = [ConfluencePermission(perm_type="VIEWSPACE", user_name="admin", group_name=None)]
+    assert _space_has_public_view(perms) is False
+
+
+def test_space_has_public_view_false_for_restricted_named_group():
+    perms = [ConfluencePermission(perm_type="VIEWSPACE", group_name="finance-team")]
+    assert _space_has_public_view(perms) is False
+
+
+def test_space_has_public_view_ignores_unrelated_permission_types():
+    perms = [ConfluencePermission(perm_type="COMMENT", user_name=None, group_name=None)]
+    assert _space_has_public_view(perms) is False
