@@ -132,7 +132,9 @@ class BackupService:
         )
 
     # -- export ------------------------------------------------------------
-    async def export_document(self, *, include_credentials: bool = False) -> BackupDocument:
+    async def export_document(
+        self, *, include_credentials: bool = False, space_keys: list[str] | None = None
+    ) -> BackupDocument:
         """Serialise the instance.
 
         ``include_credentials`` defaults to False: the result is a browser
@@ -141,9 +143,20 @@ class BackupService:
         target for every weak password in the instance. Migrating to new
         hardware is a real need, so the opt-in exists — as a deliberate,
         audited choice.
+
+        ``space_keys`` scopes the export to those spaces (empty/None exports
+        every space, the default). Users, groups and their memberships/global
+        permissions stay unscoped regardless - a restore into a fresh instance
+        still needs the full identity graph for the included spaces'
+        permissions to resolve. Every space-linked table below already gates
+        on its row's space being present in ``spaces_by_id``, so filtering the
+        spaces query here is the only change this scoping needs.
         """
         users = list((await self.session.execute(select(User).order_by(User.username))).scalars())
-        spaces = list((await self.session.execute(select(Space).order_by(Space.key))).scalars())
+        spaces_query = select(Space).order_by(Space.key)
+        if space_keys:
+            spaces_query = spaces_query.where(Space.key.in_(space_keys))
+        spaces = list((await self.session.execute(spaces_query)).scalars())
 
         users_by_id = {u.id: u for u in users}
         spaces_by_id = {s.id: s for s in spaces}
@@ -361,6 +374,7 @@ class BackupService:
                 app_version=settings.project_version,
                 site_name=effective.site_name,
                 includes_credentials=include_credentials,
+                space_keys=space_keys or [],
                 counts={
                     "users": len(doc_users),
                     "spaces": len(doc_spaces),
@@ -409,18 +423,39 @@ class BackupService:
         return document
 
     async def export_full_package(
-        self, path: str, storage: ObjectStorage, *, include_credentials: bool = False
+        self,
+        path: str,
+        storage: ObjectStorage,
+        *,
+        include_credentials: bool = False,
+        space_keys: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create the portable ZIP artifact, including every referenced binary.
 
         The document deliberately records archive paths rather than source
         object keys; storage layouts are implementation details and must never
         leak into a restore target.
+
+        ``space_keys`` mirrors :meth:`export_document`'s scoping. This method
+        re-queries pages/spaces independently of the (already-scoped)
+        ``document`` rather than reusing it, so both local queries need the
+        same filter - otherwise an attachment belonging to an out-of-scope
+        page would still be appended, referencing a space absent from
+        ``document.spaces``.
         """
-        document = await self.export_document(include_credentials=include_credentials)
-        pages = list((await self.session.execute(select(WikiPage))).scalars())
+        document = await self.export_document(
+            include_credentials=include_credentials, space_keys=space_keys
+        )
+        pages_query = select(WikiPage)
+        spaces_query = select(Space)
+        if space_keys:
+            pages_query = pages_query.where(
+                WikiPage.space_id.in_(select(Space.id).where(Space.key.in_(space_keys)))
+            )
+            spaces_query = spaces_query.where(Space.key.in_(space_keys))
+        pages = list((await self.session.execute(pages_query)).scalars())
         page_by_id = {page.id: page for page in pages}
-        spaces = list((await self.session.execute(select(Space))).scalars())
+        spaces = list((await self.session.execute(spaces_query)).scalars())
         space_by_id = {space.id: space for space in spaces}
         attachments = list((await self.session.execute(select(PageAttachment))).scalars())
         users = list((await self.session.execute(select(User))).scalars())

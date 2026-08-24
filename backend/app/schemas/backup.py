@@ -188,6 +188,9 @@ class BackupMeta(BaseModel):
     app_version: str
     site_name: str
     includes_credentials: bool
+    #: Space keys this export was scoped to; empty means every space. Additive
+    #: field with a default, so older archives without it still restore fine.
+    space_keys: list[str] = Field(default_factory=list)
     counts: dict[str, int] = Field(default_factory=dict)
 
 
@@ -257,6 +260,7 @@ class BackupJobRead(BaseModel):
     counters: dict[str, int] = Field(default_factory=dict)
     include_credentials: bool = False
     confluence_profile: str | None = None
+    space_keys: list[str] = Field(default_factory=list)
     output_filename: str | None = None
     download_url: str | None = None
     error: str | None = None

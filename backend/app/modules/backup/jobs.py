@@ -38,6 +38,15 @@ async def create_export_job(
         raise ValueError("Unknown backup export type.")
     if kind == "confluence_export" and confluence_profile not in CONFLUENCE_DC_PROFILES:
         raise ValueError("A Confluence Data Center compatibility profile is required.")
+    if kind == "full_export" and space_keys:
+        existing = set(
+            (
+                await session.execute(select(Space.key).where(Space.key.in_(space_keys)))
+            ).scalars()
+        )
+        unknown = sorted(set(space_keys) - existing)
+        if unknown:
+            raise ValueError(f"Unknown space key(s): {', '.join(unknown)}")
     job = BackupJob(
         kind=kind,
         created_by_id=actor_id,
@@ -73,7 +82,10 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
         if job.kind == "full_export":
             service = BackupService(session)
             manifest = await service.export_full_package(
-                local_path, storage, include_credentials=job.include_credentials
+                local_path,
+                storage,
+                include_credentials=job.include_credentials,
+                space_keys=job.space_keys,
             )
             job.counters = {
                 str(key): int(value) for key, value in manifest.get("counts", {}).items()

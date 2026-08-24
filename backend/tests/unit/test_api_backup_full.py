@@ -98,6 +98,7 @@ async def test_create_backup_export(monkeypatch):
         m.counters = {}
         m.include_credentials = False
         m.confluence_profile = None
+        m.space_keys = []
         m.output_filename = None
         m.error = None
         from datetime import datetime, UTC
@@ -144,6 +145,7 @@ async def test_get_backup_job():
     m.counters = {}
     m.include_credentials = False
     m.confluence_profile = None
+    m.space_keys = []
     m.output_filename = None
     m.error = None
     from datetime import datetime, UTC

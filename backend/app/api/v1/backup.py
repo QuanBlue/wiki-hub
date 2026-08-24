@@ -68,6 +68,7 @@ async def _job_read(job: BackupJob) -> BackupJobRead:
         counters=job.counters,
         include_credentials=job.include_credentials,
         confluence_profile=job.confluence_profile,
+        space_keys=job.space_keys,
         output_filename=job.output_filename,
         download_url=(
             "/api/v1/storage/object?key="

@@ -127,6 +127,32 @@ class TestExport:
         assert counts["space_members"] == len(doc.space_members)
         assert counts["space_favorites"] == len(doc.space_favorites) == 1
 
+    async def test_document_scopes_to_selected_spaces(self, session: AsyncSession) -> None:
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        eng: Space = seeded["space"]  # type: ignore[assignment]
+        sales = await SpaceService(session).create(SpaceCreate(key="SALES", name="Sales"), alice)
+        session.add(WikiPage(space_id=eng.id, title="Eng Home", slug="home", content="<p>eng</p>"))
+        session.add(
+            WikiPage(space_id=sales.id, title="Sales Home", slug="home", content="<p>sales</p>")
+        )
+        await session.flush()
+
+        service = BackupService(session, actor=seeded["admin"])  # type: ignore[arg-type]
+        doc = await service.export_document(space_keys=["ENG"])
+
+        assert [s.key for s in doc.spaces] == ["ENG"]
+        assert {p.space_key for p in doc.pages} == {"ENG"}
+        assert doc.wikihub_backup.space_keys == ["ENG"]
+        # Users/groups stay fully included regardless of the space scope -
+        # a restore into a fresh instance still needs the whole identity
+        # graph for the included space's permissions to resolve.
+        assert len(doc.users) == 3
+
+        unscoped = await service.export_document()
+        assert {s.key for s in unscoped.spaces} == {"ENG", "SALES"}
+        assert unscoped.wikihub_backup.space_keys == []
+
 
 class TestRoundTrip:
     async def test_full_zip_restores_attachment_and_internal_avatar(
@@ -184,6 +210,82 @@ class TestRoundTrip:
         assert objects[restored_alice.avatar_object_key] == b"avatar bytes"
         assert report.created["attachment"] == 1
         assert report.created["avatar"] == 1
+
+    async def test_full_zip_scoped_to_selected_spaces_restores_only_that_space(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        eng: Space = seeded["space"]  # type: ignore[assignment]
+        sales = await SpaceService(session).create(SpaceCreate(key="SALES", name="Sales"), alice)
+        eng_page = WikiPage(space_id=eng.id, title="Eng Home", slug="home", content="<p>eng</p>")
+        sales_page = WikiPage(
+            space_id=sales.id, title="Sales Home", slug="home", content="<p>sales</p>"
+        )
+        session.add_all([eng_page, sales_page])
+        await session.flush()
+        session.add_all(
+            [
+                PageAttachment(
+                    page_id=eng_page.id,
+                    filename="eng.txt",
+                    content_type="text/plain",
+                    object_key="attachments/eng.txt",
+                ),
+                PageAttachment(
+                    page_id=sales_page.id,
+                    filename="sales.txt",
+                    content_type="text/plain",
+                    object_key="attachments/sales.txt",
+                ),
+            ]
+        )
+        objects = {
+            "attachments/eng.txt": b"eng bytes",
+            "attachments/sales.txt": b"sales bytes",
+        }
+
+        async def get(key: str) -> bytes:
+            return objects[key]
+
+        async def put(key: str, data: bytes, **_kwargs: object) -> None:
+            objects[key] = data
+
+        async def delete(key: str) -> None:
+            objects.pop(key, None)
+
+        storage = cast(ObjectStorage, SimpleNamespace(get=get, put=put, delete=delete))
+        archive = str(tmp_path / "scoped.zip")
+
+        manifest = await BackupService(session, actor=seeded["admin"]).export_full_package(  # type: ignore[arg-type]
+            archive, storage, space_keys=["ENG"]
+        )
+        assert manifest["counts"]["spaces"] == 1
+        # SpaceService.create() auto-creates a "eng"-slug home page for ENG,
+        # so scoping to ENG carries that page plus the "home" one added above
+        # - both are ENG's, so 2 is the correct scoped count (SALES's own
+        # auto page + "home" page, 2 more, are correctly excluded).
+        assert manifest["counts"]["pages"] == 2
+        assert manifest["counts"]["attachments"] == 1
+
+        await _wipe(session)
+        await BackupService(session).restore_full_package(archive, storage, dry_run=False)
+
+        restored_spaces = (await session.execute(select(Space))).scalars().all()
+        assert [s.key for s in restored_spaces] == ["ENG"]
+        restored_pages = (await session.execute(select(WikiPage))).scalars().all()
+        assert len(restored_pages) == 2
+        restored_home = next(p for p in restored_pages if p.slug == "home")
+        restored_attachment = (
+            await session.execute(
+                select(PageAttachment).where(PageAttachment.page_id == restored_home.id)
+            )
+        ).scalar_one()
+        assert objects[restored_attachment.object_key] == b"eng bytes"
+        # The full identity graph still restores even though only one space
+        # was exported.
+        restored_users = (await session.execute(select(User))).scalars().all()
+        assert len(restored_users) == 3
 
     async def test_full_zip_overwrite_replaces_pages_but_keeps_space_membership(
         self, session: AsyncSession, tmp_path: Path

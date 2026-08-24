@@ -1,3 +1,1 @@
 - cho tích hợp với mail để gửi mail thông báo (đổi password, có người yêu cầu quyền truy cập vào space/page, bị disable,...)
-- Export workspace data cho phép chọn space export hoặc all space
-- Export/Import backup data all (bao gồm: space, page, user, group, permission, file attachment,....) 
