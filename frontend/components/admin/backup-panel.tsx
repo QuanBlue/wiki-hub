@@ -2812,14 +2812,24 @@ export function BackupPanel() {
               </div>
             ) : null}
             {report.entries.length > 0 ? (
-              <details className="mt-4">
-                <summary className="hover:bg-surface-hover hover:text-foreground text-muted-foreground -mx-1 cursor-pointer rounded px-1 text-sm transition-colors duration-150">
+              // Same box chrome as the Confluence "Import activity" log
+              // below (bordered panel, padded summary header, divided
+              // scrollable list) - these previously looked like two
+              // unrelated widgets on the same page.
+              <details
+                className="border-border bg-surface mt-4 rounded-md border"
+                open
+              >
+                <summary className="hover:bg-surface-hover cursor-pointer px-3 py-2 text-sm font-medium transition-colors duration-150">
                   Per-item detail ({report.entries.length}
                   {report.entries_truncated ? ", truncated" : ""})
                 </summary>
-                <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto text-sm">
+                <ul className="border-border max-h-44 divide-y overflow-y-auto border-t text-xs">
                   {report.entries.map((entry, index) => (
-                    <li key={`${entry.kind}-${entry.label}-${index}`}>
+                    <li
+                      key={`${entry.kind}-${entry.label}-${index}`}
+                      className="px-3 py-2"
+                    >
                       <Badge
                         variant={
                           entry.outcome === "created"
