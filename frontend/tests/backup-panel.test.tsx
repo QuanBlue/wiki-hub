@@ -299,3 +299,62 @@ describe("BackupPanel native export scope", () => {
     clickSpy.mockRestore();
   }, 8000);
 });
+
+describe("BackupPanel native restore", () => {
+  it("restores directly from a single upload, with no preview step", async () => {
+    let postedForm: FormData | null = null;
+    mockFetch([
+      ...baseRoutes(),
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/import-zip",
+        handler: (init) => {
+          postedForm = init?.body as FormData;
+          return {
+            body: {
+              dry_run: false,
+              includes_credentials: false,
+              created: { space: 1 },
+              skipped: {},
+              errors: {},
+              users_without_password: [],
+              entries: [],
+              entries_truncated: false,
+            },
+          };
+        },
+      },
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    // No label is wired to the file input, so it's queried by id.
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    const file = new File(["zip-bytes"], "wikihub-full-backup.zip", {
+      type: "application/zip",
+    });
+    await actor.upload(fileInput, file);
+
+    expect(
+      screen.queryByRole("button", { name: /preview changes/i }),
+    ).not.toBeInTheDocument();
+
+    const importButton = screen.getByRole("button", {
+      name: /^import backup$/i,
+    });
+    expect(importButton).not.toBeDisabled();
+    await actor.click(importButton);
+    await actor.click(screen.getByRole("button", { name: /restore now/i }));
+
+    await waitFor(() => expect(postedForm).not.toBeNull());
+    expect(postedForm!.get("dry_run")).toBe("false");
+    expect(postedForm!.get("file")).toBeInstanceOf(File);
+
+    expect(await screen.findByText("Import result")).toBeInTheDocument();
+  });
+});

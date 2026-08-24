@@ -607,8 +607,7 @@ export function BackupPanel() {
   const [isUploading, setIsUploading] = useState(false);
   const [confluencePending, setConfluencePending] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
-  const [overwriteBackupSpaces, setOverwriteBackupSpaces] = useState<string[]>([]);
-  const [pending, setPending] = useState<"preview" | "apply" | null>(null);
+  const [pending, setPending] = useState<"apply" | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [confluenceExportProfile, setConfluenceExportProfile] = useState("");
   const [portableBackupJob, setPortableBackupJob] =
@@ -1781,17 +1780,19 @@ export function BackupPanel() {
     void startConfluenceImport();
   }
 
-  async function submitImport(dryRun: boolean) {
+  // No preview/dry-run step: uploading a huge trusted archive twice (once to
+  // preview, once to apply) was slow enough to look hung, so this now
+  // restores directly on a single upload. Existing records are still only
+  // ever skipped, never overwritten (the backend defaults
+  // overwrite_space_keys to none when the field is omitted).
+  async function submitImport() {
     if (!file) return;
-    setPending(dryRun ? "preview" : "apply");
+    setPending("apply");
     setError(null);
     try {
       const form = new FormData();
       form.append("file", file);
-      form.append("dry_run", String(dryRun));
-      if (file.name.toLocaleLowerCase().endsWith(".zip")) {
-        form.append("overwrite_space_keys", JSON.stringify(overwriteBackupSpaces));
-      }
+      form.append("dry_run", "false");
 
       const endpoint = file.name.toLocaleLowerCase().endsWith(".zip")
         ? "/api/v1/backup/import-zip"
@@ -1801,11 +1802,9 @@ export function BackupPanel() {
         rawBody: form,
       });
       setReport(result);
-      if (!dryRun) {
-        setConfirmApply(false);
-        toast.success("Import applied.");
-        router.refresh();
-      }
+      setConfirmApply(false);
+      toast.success("Import applied.");
+      router.refresh();
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -2149,7 +2148,7 @@ export function BackupPanel() {
                 <code className="text-foreground bg-surface-sunken rounded px-1 py-0.5 font-mono text-[11px]">
                   .json
                 </code>{" "}
-                backup to preview its changes. Existing records are{" "}
+                backup to restore it. Existing records are{" "}
                 <span className="text-foreground font-medium">
                   skipped, never overwritten
                 </span>
@@ -2181,7 +2180,6 @@ export function BackupPanel() {
                       }
                       setFile(selectedFile);
                       setReport(null);
-                      setOverwriteBackupSpaces([]);
                       setError(null);
                     }}
                     className="border-border bg-surface file:bg-surface-sunken file:text-foreground hover:border-border-strong block w-full cursor-pointer rounded-md border text-sm transition-colors duration-150 file:mr-3 file:cursor-pointer file:border-0 file:px-3 file:py-2 file:text-sm"
@@ -2197,69 +2195,20 @@ export function BackupPanel() {
                   </p>
                 ) : null}
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="secondary"
-                    disabled={!file || pending !== null}
-                    onClick={() => submitImport(true)}
-                  >
-                    {pending === "preview" ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <Upload />
-                    )}
-                    Preview changes
-                  </Button>
-                  <Button
-                    variant="primary"
-                    disabled={!report || report.dry_run === false || pending !== null}
-                    onClick={() => setConfirmApply(true)}
-                  >
-                    Apply import
-                  </Button>
-                </div>
-
-                {report?.dry_run &&
-                file?.name.toLocaleLowerCase().endsWith(".zip") &&
-                report.entries.some(
-                  (entry) => entry.kind === "space" && entry.reason === "key_exists",
-                ) ? (
-                  <div className="border-warning/30 bg-warning-bg rounded-md border p-3 text-sm">
-                    <p className="font-medium">Conflicting spaces</p>
-                    <p className="text-muted-foreground mt-1">
-                      Leave unchecked to skip. Selecting overwrite replaces only
-                      page content, revisions, restrictions and attachments;
-                      destination membership and permissions stay unchanged.
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
-                      {report.entries
-                        .filter(
-                          (entry) =>
-                            entry.kind === "space" && entry.reason === "key_exists",
-                        )
-                        .map((entry) => (
-                          <label
-                            key={entry.label}
-                            className="flex cursor-pointer items-center gap-2"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={overwriteBackupSpaces.includes(entry.label)}
-                              onChange={(event) =>
-                                setOverwriteBackupSpaces((current) =>
-                                  event.target.checked
-                                    ? [...current, entry.label]
-                                    : current.filter((key) => key !== entry.label),
-                                )
-                              }
-                              className="accent-primary size-4"
-                            />
-                            Overwrite {entry.label}
-                          </label>
-                        ))}
-                    </div>
-                  </div>
-                ) : null}
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  disabled={!file || pending !== null}
+                  aria-busy={pending === "apply"}
+                  onClick={() => setConfirmApply(true)}
+                >
+                  {pending === "apply" ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Upload />
+                  )}
+                  Import backup
+                </Button>
               </div>
             </div>
           </div>
@@ -3272,11 +3221,11 @@ export function BackupPanel() {
       <ConfirmDialog
         open={confirmApply}
         onOpenChange={setConfirmApply}
-        title="Apply this import?"
-        description="Rows shown as 'created' in the preview will be written. Existing accounts and spaces are left untouched. This cannot be undone automatically — export a backup first if you are unsure."
-        confirmLabel="Apply import"
+        title="Restore this backup?"
+        description="New spaces, pages, users, groups and permissions will be written. Existing records are skipped, never overwritten. This cannot be undone automatically — export a backup first if you are unsure."
+        confirmLabel="Restore now"
         pending={pending === "apply"}
-        onConfirm={() => submitImport(false)}
+        onConfirm={() => submitImport()}
       />
       <ConfirmDialog
         open={leaveTarget !== null}
