@@ -23,8 +23,7 @@ export default async function AdminStoragePage() {
           Browse and manage files held in the workspace storage bucket.
         </p>
       </header>
-      <StorageQuotasCard settings={settings} />
-      <StoragePanel />
+      <StoragePanel quotas={<StorageQuotasCard settings={settings} />} />
     </div>
   );
 }

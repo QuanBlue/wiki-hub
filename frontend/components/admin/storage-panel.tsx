@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Boxes,
   Check,
   ChevronDown,
   ChevronRight,
@@ -16,8 +17,9 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  UserRound,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import type {
   StorageDeleteResult,
   StorageObject,
@@ -367,6 +370,24 @@ function FolderRowWrapper({
 }
 
 // ---------------------------------------------------------------------------
+// Kind metadata - shared between the overview breakdown and the type filter
+// ---------------------------------------------------------------------------
+
+const KIND_ORDER: StorageObject["kind"][] = [
+  "page_attachment",
+  "avatar",
+  "import_archive",
+  "other",
+];
+
+const KIND_META: Record<StorageObject["kind"], { label: string; icon: typeof FileText }> = {
+  page_attachment: { label: "Page files", icon: FileText },
+  avatar: { label: "Avatars", icon: UserRound },
+  import_archive: { label: "Import archives", icon: FileArchive },
+  other: { label: "Other objects", icon: File },
+};
+
+// ---------------------------------------------------------------------------
 // Main panel
 // ---------------------------------------------------------------------------
 
@@ -490,7 +511,7 @@ function MultiFilter({
   );
 }
 
-export function StoragePanel() {
+export function StoragePanel({ quotas }: { quotas?: ReactNode } = {}) {
   const [objects, setObjects] = useState<StorageObject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -624,6 +645,20 @@ export function StoragePanel() {
     [objects],
   );
 
+  /** Per-kind counts/sizes for the overview grid, always in KIND_ORDER. */
+  const breakdown = useMemo(() => {
+    const byKind = new Map<StorageObject["kind"], { count: number; size: number }>(
+      KIND_ORDER.map((kind) => [kind, { count: 0, size: 0 }]),
+    );
+    for (const object of objects) {
+      const entry = byKind.get(object.kind);
+      if (!entry) continue;
+      entry.count += 1;
+      entry.size += object.size;
+    }
+    return byKind;
+  }, [objects]);
+
   async function handleDownload(key: string, name: string) {
     try {
       const { url } = await apiFetch<StoragePresignedUrl>(
@@ -670,30 +705,96 @@ export function StoragePanel() {
     }
   }
 
+  function toggleKindFilter(kind: StorageObject["kind"]) {
+    setKindFilters((current) =>
+      current.includes(kind)
+        ? current.filter((value) => value !== kind)
+        : [...current, kind],
+    );
+  }
+
   return (
     <>
-      {!loading && !error ? (
-        <section className="border-border bg-surface-raised flex max-w-md items-center gap-5 rounded-lg border px-4 py-3 shadow-sm">
-          <div className="border-border shrink-0 border-r pr-5">
-            <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-[0.08em]">
-              Storage overview
-            </p>
-            <p className="text-muted-foreground mt-1 text-xs">
-              Current bucket usage
-            </p>
-          </div>
-          <div className="flex divide-x">
-            <div className="pr-5">
-                <p className="text-muted-foreground text-[11px]">Objects</p>
-                <p className="mt-1 text-lg font-semibold tabular-nums">{objects.length}</p>
-            </div>
-            <div className="pl-5">
-                <p className="text-muted-foreground text-[11px]">Storage used</p>
-                <p className="mt-1 text-lg font-semibold tabular-nums">{formatBytes(totalSize)}</p>
-            </div>
-          </div>
-        </section>
-      ) : null}
+      {loading ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div
+              key={i}
+              className="border-border bg-surface-raised h-17.5 animate-pulse rounded-lg border"
+            />
+          ))}
+        </div>
+      ) : error ? null : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {/* Total: always resets the type filter back to "all". */}
+          <button
+            type="button"
+            onClick={() => setKindFilters([])}
+            aria-pressed={kindFilters.length === 0}
+            className={cn(
+              "flex items-center gap-3 rounded-lg border px-4 py-3 text-left shadow-sm transition-colors duration-150 cursor-pointer",
+              kindFilters.length === 0
+                ? "border-primary bg-primary/5 ring-primary/20 ring-1"
+                : "border-border bg-surface-raised hover:bg-surface-hover",
+            )}
+          >
+            <span className="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-full">
+              <Boxes className="size-4.5" />
+            </span>
+            <span className="min-w-0">
+              <span className="text-muted-foreground block text-[11px] font-medium uppercase tracking-[0.06em]">
+                Total
+              </span>
+              <span className="block text-base font-semibold tabular-nums">
+                {formatBytes(totalSize)}
+              </span>
+              <span className="text-muted-foreground block text-[11px] tabular-nums">
+                {objects.length} object{objects.length === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
+
+          {/* Per-kind breakdown: doubles as a shortcut for the Type filter. */}
+          {KIND_ORDER.map((kind) => {
+            const { label, icon: Icon } = KIND_META[kind];
+            const stats = breakdown.get(kind) ?? { count: 0, size: 0 };
+            const active = kindFilters.includes(kind);
+            return (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => toggleKindFilter(kind)}
+                aria-pressed={active}
+                title={`Filter by ${label}`}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg border px-4 py-3 text-left shadow-sm transition-colors duration-150 cursor-pointer",
+                  active
+                    ? "border-primary bg-primary/5 ring-primary/20 ring-1"
+                    : "border-border bg-surface-raised hover:bg-surface-hover",
+                )}
+              >
+                <span className="bg-surface-sunken text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full">
+                  <Icon className="size-4.5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="text-muted-foreground block truncate text-[11px] font-medium uppercase tracking-[0.06em]">
+                    {label}
+                  </span>
+                  <span className="block text-base font-semibold tabular-nums">
+                    {formatBytes(stats.size)}
+                  </span>
+                  <span className="text-muted-foreground block text-[11px] tabular-nums">
+                    {stats.count} object{stats.count === 1 ? "" : "s"}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {quotas ? <div className="mt-5">{quotas}</div> : null}
+
       <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-end">
         <div className="flex flex-wrap gap-2">
           <MultiFilter
@@ -701,12 +802,7 @@ export function StoragePanel() {
             allLabel="All types"
             selected={kindFilters}
             onChange={setKindFilters}
-            options={[
-              { id: "page_attachment", label: "Page files" },
-              { id: "avatar", label: "Avatars" },
-              { id: "import_archive", label: "Import archives" },
-              { id: "other", label: "Other objects" },
-            ]}
+            options={KIND_ORDER.map((kind) => ({ id: kind, label: KIND_META[kind].label }))}
           />
           <MultiFilter
             label="Space"
