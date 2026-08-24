@@ -2386,6 +2386,7 @@ export function BackupPanel() {
                       {isUploading ? (
                         <Button
                           variant="secondary"
+                          className="flex-1"
                           onClick={() => cancelConfluenceUpload("pause")}
                         >
                           <Pause /> Pause upload
@@ -2393,6 +2394,7 @@ export function BackupPanel() {
                       ) : null}
                       <Button
                         variant="danger"
+                        className="flex-1"
                         disabled={cancelUploadPending}
                         onClick={() => setConfirmCancelUpload(true)}
                       >
@@ -2402,7 +2404,8 @@ export function BackupPanel() {
                   ) : !isFinalizingArchive ? (
                     <>
                       <Button
-                        variant="secondary"
+                        variant="primary"
+                        className="flex-1"
                         disabled={
                           (!confluenceFile &&
                             !canResumeStoredUpload &&
@@ -2437,6 +2440,7 @@ export function BackupPanel() {
                       {storedConfluenceUpload && !confluenceArchive ? (
                         <Button
                           variant="danger"
+                          className="flex-1"
                           disabled={cancelUploadPending}
                           onClick={() => setConfirmCancelUpload(true)}
                         >
