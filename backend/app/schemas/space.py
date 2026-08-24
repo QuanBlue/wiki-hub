@@ -39,6 +39,13 @@ class SpaceRead(BaseModel):
     updated_at: datetime
     created_by_username: str | None = None
     member_count: int = 0
+    #: Distinct groups holding an additive permission on this space.
+    group_permission_count: int = 0
+    #: Distinct non-superuser users holding a direct additive permission on
+    #: this space. System administrators are excluded: they already have
+    #: full access to every space by default, so listing them here would
+    #: make every space look explicitly "licensed" to them.
+    direct_user_permission_count: int = 0
     is_favorite: bool = False
     #: The requesting user's role, or ``None`` when they are not a member.
     my_role: SpaceRole | None = None

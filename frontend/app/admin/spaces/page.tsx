@@ -1,12 +1,5 @@
-import {
-  Archive,
-  FolderKanban,
-  Globe2,
-  LockKeyhole,
-  Users,
-} from "lucide-react";
+import { Archive, FolderKanban, Users } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Suspense } from "react";
 
 import {
@@ -15,7 +8,6 @@ import {
 } from "@/components/admin/list-controls";
 import { AdminSpaceRow } from "@/components/admin/space-row-actions";
 import { CreateSpaceForm } from "@/components/spaces/create-space-form";
-import { Badge } from "@/components/ui/badge";
 import { listAllUsers } from "@/lib/admin";
 import { listAllSpaces } from "@/lib/spaces";
 
@@ -130,22 +122,44 @@ export default async function AdminSpacesPage({
           </Suspense>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-210 text-sm">
             <thead>
               <tr className="border-border bg-surface-sunken text-muted-foreground border-b text-left">
-                <th className="w-[43%] px-4 py-3 font-medium">Space</th>
-                <th className="w-[17%] px-4 py-3 font-medium">Visibility</th>
-                <th className="w-[14%] px-4 py-3 font-medium">Members</th>
-                <th className="w-[14%] px-4 py-3 font-medium">Status</th>
-                <th className="w-[12%] px-4 py-3 text-right font-medium">
+                <th rowSpan={2} className="w-[35%] px-4 py-3 align-middle font-medium">
+                  Space
+                </th>
+                <th rowSpan={2} className="w-[15%] px-4 py-3 align-middle font-medium">
+                  Visibility
+                </th>
+                <th
+                  colSpan={2}
+                  className="border-border w-[22%] border-b px-4 py-2 text-center font-medium"
+                >
+                  Licensed users
+                </th>
+                <th rowSpan={2} className="w-[12%] py-3 pr-4 pl-8 align-middle font-medium">
+                  Status
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[16%] px-4 py-3 text-right align-middle font-medium"
+                >
                   Actions
+                </th>
+              </tr>
+              <tr className="border-border bg-surface-sunken text-muted-foreground border-b text-left">
+                <th className="px-2 py-2 text-center text-xs font-medium whitespace-nowrap">
+                  Groups
+                </th>
+                <th className="px-2 py-2 text-center text-xs font-medium whitespace-nowrap">
+                  Individual users
                 </th>
               </tr>
             </thead>
             <tbody>
               {spaces.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center">
+                  <td colSpan={6} className="px-4 py-12 text-center">
                     <FolderKanban className="text-muted-foreground mx-auto size-7" />
                     <p className="mt-3 font-medium">No spaces yet</p>
                     <p className="text-muted-foreground mt-1 text-sm">
@@ -156,7 +170,7 @@ export default async function AdminSpacesPage({
                 </tr>
               ) : filteredSpaces.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center">
+                  <td colSpan={6} className="px-4 py-12 text-center">
                     <p className="font-medium">No spaces found</p>
                     <p className="text-muted-foreground mt-1 text-sm">
                       Try a different name or space key.

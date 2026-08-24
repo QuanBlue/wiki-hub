@@ -227,6 +227,18 @@ export function EditGroupDialog({
   const prevGroupIdRef = useRef<string | null>(null);
   const prevOpenRef = useRef<boolean>(false);
 
+  async function loadMembers(groupId: string) {
+    setLoadingMembers(true);
+    try {
+      const data = await listGroupMembers(groupId);
+      setMembers(data);
+    } catch {
+      // Best-effort load
+    } finally {
+      setLoadingMembers(false);
+    }
+  }
+
   useEffect(() => {
     if (!open) {
       prevOpenRef.current = false;
@@ -255,18 +267,6 @@ export function EditGroupDialog({
     }
     prevOpenRef.current = open;
   }, [group, open]);
-
-  async function loadMembers(groupId: string) {
-    setLoadingMembers(true);
-    try {
-      const data = await listGroupMembers(groupId);
-      setMembers(data);
-    } catch {
-      // Best-effort load
-    } finally {
-      setLoadingMembers(false);
-    }
-  }
 
   if (!group) return null;
 
@@ -428,6 +428,7 @@ export function EditGroupDialog({
       user_id: userId,
       username: u?.username || userId,
       full_name: u?.full_name || u?.username || userId,
+      email: u?.email || "",
       isNew: true,
     };
   });
@@ -441,13 +442,17 @@ export function EditGroupDialog({
   const filteredMembers = allDisplayedMembers.filter((m) => {
     if (!memberSearchQuery.trim()) return true;
     const q = memberSearchQuery.toLowerCase().trim();
-    return (m.full_name || m.username).toLowerCase().includes(q) || m.username.toLowerCase().includes(q);
+    return (
+      (m.full_name || m.username).toLowerCase().includes(q) ||
+      m.username.toLowerCase().includes(q) ||
+      (m.email || "").toLowerCase().includes(q)
+    );
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-2xl"
+        className="max-w-4xl"
         title={`Edit group "${group.name}"`}
         description="Manage group details, member assignments, and global permissions."
       >
@@ -501,7 +506,7 @@ export function EditGroupDialog({
         ) : null}
 
         {/* Tab Content Container with Fixed Height */}
-        <div className="mt-4 h-[380px] min-h-[380px]">
+        <div className="mt-4 h-120 min-h-120">
           {/* Tab 1: General Details */}
           {activeTab === "details" ? (
             <div className="space-y-4 pr-1 h-full overflow-visible pb-2">
@@ -637,7 +642,7 @@ export function EditGroupDialog({
               </div>
 
               {/* Expansive Members List Table filling 100% of remaining space */}
-              <div className="border-border flex-1 h-full min-h-0 overflow-y-auto rounded-lg border divide-y">
+              <div className="border-border flex-1 h-full min-h-0 overflow-y-auto rounded-lg border">
                 {loadingMembers ? (
                   <div className="p-8 text-center text-sm text-muted-foreground">
                     <Loader2 className="mx-auto size-5 animate-spin mb-2" />
@@ -648,35 +653,59 @@ export function EditGroupDialog({
                     No members found.
                   </div>
                 ) : (
-                  filteredMembers.map((member) => (
-                    <div key={member.user_id} className="flex items-center justify-between px-3 py-2 text-xs hover:bg-surface-hover transition-colors">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="bg-primary-subtle text-primary flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
-                          {(member.full_name || member.username)[0]?.toUpperCase()}
-                        </span>
-                        <div className="min-w-0 flex items-center gap-2">
-                          <p className="font-medium truncate text-foreground">{member.full_name || member.username}</p>
-                          <p className="text-[11px] text-muted-foreground truncate">@{member.username}</p>
-                          {member.isNew ? (
-                            <Badge variant="success" className="text-[10px] py-0 px-1.5 font-semibold uppercase tracking-wider">
-                              New
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs hover:bg-danger-bg hover:text-danger text-muted-foreground px-2"
-                        onClick={() => handleStageRemoveMember(member.user_id)}
-                        title="Remove member from group"
-                      >
-                        <UserMinus className="size-3.5" />
-                        Remove
-                      </Button>
-                    </div>
-                  ))
+                  <table className="w-full text-xs">
+                    <thead className="bg-surface-sunken text-muted-foreground sticky top-0">
+                      <tr className="border-border border-b text-left">
+                        <th className="px-3 py-2 font-medium">User</th>
+                        <th className="px-3 py-2 font-medium">Username</th>
+                        <th className="px-3 py-2 font-medium">Email</th>
+                        <th className="px-3 py-2 text-right font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-border divide-y">
+                      {filteredMembers.map((member) => (
+                        <tr
+                          key={member.user_id}
+                          className="hover:bg-surface-hover transition-colors"
+                        >
+                          <td className="px-3 py-2">
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <span className="bg-primary-subtle text-primary flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+                                {(member.full_name || member.username)[0]?.toUpperCase()}
+                              </span>
+                              <span className="truncate font-medium text-foreground">
+                                {member.full_name || member.username}
+                              </span>
+                              {member.isNew ? (
+                                <Badge variant="success" className="shrink-0 px-1.5 py-0 text-[10px] font-semibold tracking-wider uppercase">
+                                  New
+                                </Badge>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="text-muted-foreground px-3 py-2 whitespace-nowrap">
+                            @{member.username}
+                          </td>
+                          <td className="text-muted-foreground max-w-56 truncate px-3 py-2">
+                            {member.email || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="hover:bg-danger-bg hover:text-danger text-muted-foreground h-7 px-2 text-xs"
+                              onClick={() => handleStageRemoveMember(member.user_id)}
+                              title="Remove member from group"
+                            >
+                              <UserMinus className="size-3.5" />
+                              Remove
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
               </div>
             </div>

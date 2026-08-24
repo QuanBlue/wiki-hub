@@ -152,11 +152,13 @@ export function AdminSpaceRow({
             </span>
           </span>
         </td>
-        <td className="text-muted-foreground px-4 py-3">
-          {space.member_count} member
-          {space.member_count === 1 ? "" : "s"}
+        <td className="text-muted-foreground px-2 py-3 text-center">
+          {space.group_permission_count}
         </td>
-        <td className="px-4 py-3">
+        <td className="text-muted-foreground px-2 py-3 text-center">
+          {space.direct_user_permission_count}
+        </td>
+        <td className="py-3 pr-4 pl-8">
           <Badge
             variant={space.status === "active" ? "success" : "warning"}
           >

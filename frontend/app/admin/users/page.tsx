@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 // list becomes unwieldy.
 const PAGE_SIZE = 10;
 const USER_PAGE_SIZES = [10, 25, 50, 100] as const;
-const COLUMN_WIDTHS = ["28%", "23%", "19%", "10%", "10%", "10%"];
+const COLUMN_WIDTHS = ["26%", "20%", "24%", "10%", "10%", "10%"];
 
 function ColumnWidths() {
   return <colgroup>{COLUMN_WIDTHS.map((width, index) => <col key={index} style={{ width }} />)}</colgroup>;
@@ -84,7 +84,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
         <table className="w-full min-w-[760px] table-fixed text-sm"><ColumnWidths /><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-4 py-3 font-medium">User</th><th className="px-4 py-3 font-medium">E-mail</th><th className="px-4 py-3 font-medium">Groups</th><th className="px-4 py-3 font-medium">Role</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3 text-right font-medium">Actions</th></tr></thead><tbody>{page.items.length === 0 ? <tr><td colSpan={6} className="px-4 py-12 text-center"><UserRound className="text-muted-foreground mx-auto size-7" /><p className="mt-3 font-medium">No users found</p><p className="text-muted-foreground mt-1 text-sm">Try changing the search or filters.</p></td></tr> : page.items.map((user) => <tr key={user.id} className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0">
           <td className="px-4 py-3"><div className="flex items-center gap-3"><span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold">{initials(user.full_name || user.username)}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="truncate font-medium">{user.full_name || user.username}</span>{me?.id === user.id ? <Badge variant="info">you</Badge> : null}{user.is_protected ? <Badge title="Built-in account: it cannot be modified, deactivated or deleted.">protected</Badge> : null}</div><p className="text-muted-foreground truncate text-xs">@{user.username}</p></div></div></td>
           <td className="text-muted-foreground truncate px-4 py-3" title={user.email}>{user.email}</td>
-          <td className="px-4 py-3">{user.groups.length ? <div className="flex flex-wrap gap-1">{user.groups.map((group) => <Badge key={group} variant="neutral" className="max-w-24 truncate">{group}</Badge>)}</div> : <span className="text-muted-foreground">—</span>}</td>
+          <td className="px-4 py-3">{user.groups.length ? <div className="flex flex-wrap gap-1">{user.groups.map((group) => <Badge key={group} variant="neutral" title={group} className="max-w-full truncate">{group}</Badge>)}</div> : <span className="text-muted-foreground">—</span>}</td>
           <td className="px-4 py-3"><Badge variant={user.is_superuser ? "info" : "neutral"}>{user.is_superuser ? "Admin" : "Member"}</Badge></td>
           <td className="px-4 py-3"><Badge variant={user.is_active ? "success" : "warning"}>{user.is_active ? "Active" : "Disabled"}</Badge></td>
           <td className="px-4 py-3"><UserRowActions user={user} isSelf={me?.id === user.id} /></td>

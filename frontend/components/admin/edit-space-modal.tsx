@@ -6,6 +6,7 @@ import {
   Check,
   Globe2,
   LockKeyhole,
+  Pencil,
   Plus,
   ShieldCheck,
   SlidersHorizontal,
@@ -49,6 +50,12 @@ const PERMISSIONS: [SpacePermission, string][] = [
 ];
 
 type TabKey = "general" | "access" | "danger";
+
+// Groups the backend's Licensed-users count excludes because they already
+// carry blanket admin access (see DEFAULT_ADMIN_GROUP_NAMES in the backend's
+// SpaceService) - kept in sync with that list, not derived from it, since
+// the frontend has no direct import path into the backend module.
+const DEFAULT_ADMIN_GROUP_NAMES = new Set(["confluence-administrators"]);
 
 function isDefaultGroup(g: Group) {
   return (
@@ -95,18 +102,14 @@ function EditSpaceModalContent({
   const [userIdToAdd, setUserIdToAdd] = useState("");
   const [pending, setPending] = useState(false);
 
+  // Both permission tables open read-only - a stray click can't change
+  // access until an administrator deliberately opts into editing one.
+  const [groupsLocked, setGroupsLocked] = useState(true);
+  const [usersLocked, setUsersLocked] = useState(true);
+
   const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [unsavedPromptOpen, setUnsavedPromptOpen] = useState(false);
-
-  useEffect(() => {
-    setInitialName(space.name);
-    setName(space.name);
-    setInitialVisibility(space.visibility);
-    setVisibility(space.visibility);
-    setActiveTab("general");
-    void loadSpacePermissions();
-  }, [space.key, space.name, space.visibility]);
 
   async function loadSpacePermissions() {
     try {
@@ -127,6 +130,17 @@ function EditSpaceModalContent({
       // Best-effort load
     }
   }
+
+  useEffect(() => {
+    setInitialName(space.name);
+    setName(space.name);
+    setInitialVisibility(space.visibility);
+    setVisibility(space.visibility);
+    setActiveTab("general");
+    setGroupsLocked(true);
+    setUsersLocked(true);
+    void loadSpacePermissions();
+  }, [space.key, space.name, space.visibility]);
 
   // Calculate if there are unsaved changes
   const isGeneralChanged =
@@ -217,6 +231,8 @@ function EditSpaceModalContent({
       await Promise.all(requests);
       toast.success("Space access & permissions saved.");
       setInitialAssignments(assignments);
+      setGroupsLocked(true);
+      setUsersLocked(true);
       onOpenChange(false);
       if (onSpaceUpdated) onSpaceUpdated();
       router.refresh();
@@ -241,10 +257,18 @@ function EditSpaceModalContent({
       .map((a) => a.principal_id),
   );
 
+  // The confluence-administrators group already has full access everywhere
+  // by default (see DEFAULT_ADMIN_GROUP_NAMES), so the Space directory table
+  // never counts it - hide it here too unless it also holds a real per-space
+  // grant, or the row count and the directory number drift apart.
   const displayedGroups = groups.filter(
-    (g) => assignedGroupIds.has(g.id) || isDefaultGroup(g),
+    (g) => assignedGroupIds.has(g.id) && !DEFAULT_ADMIN_GROUP_NAMES.has(g.name.toLowerCase()),
   );
 
+  // Superusers are excluded from the directory's Individual users *count*
+  // for the same reason, but administrators still want to see who actually
+  // holds full access to a space - so, unlike groups, a superuser with a
+  // real grant here still shows as a row (flagged via isDefaultUser below).
   const displayedUsers = users.filter((u) => assignedUserIds.has(u.id));
 
   function hasGroupPermission(group: Group, permission: SpacePermission) {
@@ -560,44 +584,63 @@ function EditSpaceModalContent({
 
             {/* Group Permissions Table */}
             <div className="border-border bg-surface rounded-lg border shadow-xs overflow-hidden">
-              <div className="border-border border-b p-3 flex items-center gap-2 bg-surface-sunken/40">
-                <Select value={groupIdToAdd} onValueChange={setGroupIdToAdd} disabled={groups.length === 0}>
-                  <SelectTrigger className="h-8 text-xs bg-background flex-1">
-                    <SelectValue placeholder="Add a group...">
-                      {groups.find((g) => g.id === groupIdToAdd)?.name || "Add a group..."}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {groups.map((g) => {
-                      const isAdded = assignedGroupIds.has(g.id);
-                      const isDefault = isDefaultGroup(g);
-                      return (
-                        <SelectItem key={g.id} value={g.id} disabled={isAdded}>
-                          <div className="flex items-center justify-between w-full gap-2">
-                            <span>{g.name}</span>
-                            {isAdded ? (
-                              <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
-                                Added
-                              </Badge>
-                            ) : isDefault ? (
-                              <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
-                                Default
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+              <div className="border-border border-b p-3 flex items-center justify-between gap-2 bg-surface-sunken/40">
+                {groupsLocked ? (
+                  <p className="text-xs text-muted-foreground">
+                    Group permissions are read-only. Edit to make changes.
+                  </p>
+                ) : (
+                  <div className="flex flex-1 items-center gap-2">
+                    <Select value={groupIdToAdd} onValueChange={setGroupIdToAdd} disabled={groups.length === 0}>
+                      <SelectTrigger className="h-8 text-xs bg-background flex-1">
+                        <SelectValue placeholder="Add a group...">
+                          {groups.find((g) => g.id === groupIdToAdd)?.name || "Add a group..."}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {groups.map((g) => {
+                          const isAdded = assignedGroupIds.has(g.id);
+                          const isDefault = isDefaultGroup(g);
+                          return (
+                            <SelectItem key={g.id} value={g.id} disabled={isAdded}>
+                              <div className="flex items-center justify-between w-full gap-2">
+                                <span>{g.name}</span>
+                                {isAdded ? (
+                                  <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
+                                    Added
+                                  </Badge>
+                                ) : isDefault ? (
+                                  <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
+                                    Default
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 text-xs px-3 shrink-0"
+                      onClick={handleAddGroup}
+                      disabled={!groupIdToAdd || pending}
+                    >
+                      <Plus className="size-3.5" /> Add group
+                    </Button>
+                  </div>
+                )}
                 <Button
                   type="button"
                   size="sm"
-                  className="h-8 text-xs px-3"
-                  onClick={handleAddGroup}
-                  disabled={!groupIdToAdd || pending}
+                  variant="ghost"
+                  className="shrink-0 text-xs"
+                  onClick={() => setGroupsLocked((current) => !current)}
+                  disabled={pending}
                 >
-                  <Plus className="size-3.5" /> Add group
+                  {groupsLocked ? <Pencil className="size-3.5" /> : <Check className="size-3.5" />}
+                  {groupsLocked ? "Edit" : "Done"}
                 </Button>
               </div>
 
@@ -639,9 +682,10 @@ function EditSpaceModalContent({
                               <td key={permission} className="px-1.5 py-2 text-center">
                                 <input
                                   type="checkbox"
-                                  className="accent-primary size-3.5 cursor-pointer rounded border-border"
+                                  className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label={`${group.name}: ${label}`}
                                   checked={hasGroupPermission(group, permission)}
+                                  disabled={groupsLocked}
                                   onChange={(e) => toggleGroupPermission(group, permission, e.target.checked)}
                                 />
                               </td>
@@ -657,48 +701,67 @@ function EditSpaceModalContent({
 
             {/* User Permissions Table */}
             <div className="border-border bg-surface rounded-lg border shadow-xs overflow-hidden">
-              <div className="border-border border-b p-3 flex items-center gap-2 bg-surface-sunken/40">
-                <Select value={userIdToAdd} onValueChange={setUserIdToAdd} disabled={users.length === 0}>
-                  <SelectTrigger className="h-8 text-xs bg-background flex-1">
-                    <SelectValue placeholder="Add a user...">
-                      {users.find((u) => u.id === userIdToAdd)?.full_name ||
-                        users.find((u) => u.id === userIdToAdd)?.username ||
-                        "Add a user..."}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {users.map((u) => {
-                      const isAdded = assignedUserIds.has(u.id);
-                      const isAdmin = isDefaultUser(u);
-                      return (
-                        <SelectItem key={u.id} value={u.id} disabled={isAdded}>
-                          <div className="flex items-center justify-between w-full gap-2">
-                            <span>
-                              {u.full_name || u.username} (@{u.username})
-                            </span>
-                            {isAdded ? (
-                              <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
-                                Added
-                              </Badge>
-                            ) : isAdmin ? (
-                              <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
-                                Admin
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+              <div className="border-border border-b p-3 flex items-center justify-between gap-2 bg-surface-sunken/40">
+                {usersLocked ? (
+                  <p className="text-xs text-muted-foreground">
+                    Individual user permissions are read-only. Edit to make changes.
+                  </p>
+                ) : (
+                  <div className="flex flex-1 items-center gap-2">
+                    <Select value={userIdToAdd} onValueChange={setUserIdToAdd} disabled={users.length === 0}>
+                      <SelectTrigger className="h-8 text-xs bg-background flex-1">
+                        <SelectValue placeholder="Add a user...">
+                          {users.find((u) => u.id === userIdToAdd)?.full_name ||
+                            users.find((u) => u.id === userIdToAdd)?.username ||
+                            "Add a user..."}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {users.map((u) => {
+                          const isAdded = assignedUserIds.has(u.id);
+                          const isAdmin = isDefaultUser(u);
+                          return (
+                            <SelectItem key={u.id} value={u.id} disabled={isAdded}>
+                              <div className="flex items-center justify-between w-full gap-2">
+                                <span>
+                                  {u.full_name || u.username} (@{u.username})
+                                </span>
+                                {isAdded ? (
+                                  <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
+                                    Added
+                                  </Badge>
+                                ) : isAdmin ? (
+                                  <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
+                                    Admin
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 text-xs px-3 shrink-0"
+                      onClick={handleAddUser}
+                      disabled={!userIdToAdd || pending}
+                    >
+                      <Plus className="size-3.5" /> Add user
+                    </Button>
+                  </div>
+                )}
                 <Button
                   type="button"
                   size="sm"
-                  className="h-8 text-xs px-3"
-                  onClick={handleAddUser}
-                  disabled={!userIdToAdd || pending}
+                  variant="ghost"
+                  className="shrink-0 text-xs"
+                  onClick={() => setUsersLocked((current) => !current)}
+                  disabled={pending}
                 >
-                  <Plus className="size-3.5" /> Add user
+                  {usersLocked ? <Pencil className="size-3.5" /> : <Check className="size-3.5" />}
+                  {usersLocked ? "Edit" : "Done"}
                 </Button>
               </div>
 
@@ -743,9 +806,10 @@ function EditSpaceModalContent({
                               <td key={permission} className="px-1.5 py-2 text-center">
                                 <input
                                   type="checkbox"
-                                  className="accent-primary size-3.5 cursor-pointer rounded border-border"
+                                  className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label={`${user.username}: ${label}`}
                                   checked={hasUserPermission(user, permission)}
+                                  disabled={usersLocked}
                                   onChange={(e) => toggleUserPermission(user, permission, e.target.checked)}
                                 />
                               </td>
@@ -898,6 +962,8 @@ function EditSpaceModalContent({
               onClick={() => {
                 setAssignments(initialAssignments);
                 setVisibility(initialVisibility);
+                setGroupsLocked(true);
+                setUsersLocked(true);
                 setUnsavedPromptOpen(false);
                 onOpenChange(false);
               }}

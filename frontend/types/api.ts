@@ -190,6 +190,10 @@ export interface Space {
   updated_at: string;
   created_by_username: string | null;
   member_count: number;
+  /** Distinct groups holding a direct permission on this space. */
+  group_permission_count: number;
+  /** Distinct non-superuser users holding a direct permission on this space. */
+  direct_user_permission_count: number;
   is_favorite: boolean;
   /** The current user's role in this space, or null if not a member. */
   my_role: SpaceRole | null;
@@ -221,6 +225,7 @@ export interface GroupMember {
   user_id: string;
   username: string;
   full_name: string;
+  email: string;
 }
 
 export interface SpacePermissionAssignment {
