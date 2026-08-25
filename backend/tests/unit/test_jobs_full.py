@@ -1,13 +1,20 @@
 import uuid
 import pytest
 from unittest.mock import AsyncMock, Mock
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 
-from app.modules.backup.jobs import create_export_job, run_backup_job
-from app.models.backup_job import BackupJob
+from app.modules.backup.jobs import (
+    create_export_job,
+    create_import_job,
+    reap_abandoned_export_jobs,
+    run_backup_job,
+)
+from app.modules.backup.service import STALE_JOB_AFTER, ExportCancelled
+from app.models.backup_job import BackupArchive, BackupJob
 from app.models.page import WikiPage
 from app.models.space import Space
 from app.models.attachment import PageAttachment
+from app.schemas.backup import ImportReport
 
 @pytest.mark.asyncio
 async def test_create_export_job():
@@ -25,6 +32,45 @@ async def test_create_export_job():
 
     job2 = await create_export_job(session, actor_id=user_id, kind="confluence_export", confluence_profile="dc-8")
     assert job2.kind == "confluence_export"
+
+
+@pytest.mark.asyncio
+async def test_create_import_job():
+    session = AsyncMock()
+    user_id = uuid.uuid4()
+    archive_id = uuid.uuid4()
+
+    # Unknown archive.
+    session.get.return_value = None
+    with pytest.raises(ValueError, match="Unknown backup archive"):
+        await create_import_job(session, actor_id=user_id, archive_id=archive_id)
+
+    # Archive still mid-upload - nothing to restore yet.
+    archive = Mock(status="uploading")
+    session.get.return_value = archive
+    with pytest.raises(ValueError, match="has not finished uploading"):
+        await create_import_job(session, actor_id=user_id, archive_id=archive_id)
+
+    # A scanned archive is ready.
+    archive.status = "scanned"
+    job = await create_import_job(
+        session,
+        actor_id=user_id,
+        archive_id=archive_id,
+        overwrite_space_keys=["ENG"],
+        space_keys=["ENG", "SALES"],
+    )
+    assert job.kind == "full_import"
+    assert job.archive_id == archive_id
+    assert job.overwrite_space_keys == ["ENG"]
+    assert job.space_keys == ["ENG", "SALES"]
+    assert job.status == "queued"
+
+    # An already-uploaded (not yet scanned) archive is also accepted.
+    archive.status = "uploaded"
+    job2 = await create_import_job(session, actor_id=user_id, archive_id=archive_id)
+    assert job2.space_keys == []
+    assert job2.overwrite_space_keys == []
 
 
 @pytest.mark.asyncio
@@ -82,7 +128,7 @@ async def test_run_backup_job_complete(monkeypatch):
 
     captured_space_keys = []
 
-    async def mock_export(self, path, storage, include_credentials=False, space_keys=None):
+    async def mock_export(self, path, storage, include_credentials=False, space_keys=None, job=None):
         captured_space_keys.append(space_keys)
         with open(path, "w") as f:
             f.write("test")
@@ -98,7 +144,7 @@ async def test_run_backup_job_complete(monkeypatch):
     job = BackupJob(id=job_id, kind="confluence_export", status="queued", cancel_requested=False, created_at=datetime.now(UTC), confluence_profile="dc-8", space_keys=["TEST"])
     session.get.return_value = job
 
-    async def mock_conf_export(path, storage, *, profile, spaces, pages, attachments):
+    async def mock_conf_export(path, storage, *, profile, spaces, pages, attachments, session=None, job=None):
         with open(path, "w") as f:
             f.write("test")
 
@@ -115,7 +161,7 @@ async def test_run_backup_job_complete(monkeypatch):
     # 5. Cancelled during execution
     job = BackupJob(id=job_id, kind="full_export", status="queued", cancel_requested=False, created_at=datetime.now(UTC))
     session.get.return_value = job
-    async def mock_export_cancel(self, path, storage, include_credentials=False, space_keys=None):
+    async def mock_export_cancel(self, path, storage, include_credentials=False, space_keys=None, job=None):
         job.cancel_requested = True
         return {"counts": {}}
     monkeypatch.setattr("app.modules.backup.jobs.BackupService.export_full_package", mock_export_cancel)
@@ -127,3 +173,190 @@ async def test_run_backup_job_complete(monkeypatch):
     session.get.return_value = job
     with pytest.raises(ValueError, match="Unknown backup job"):
         await run_backup_job(session, storage, job_id)
+
+
+def _restore_job(**overrides):
+    defaults = dict(
+        id=uuid.uuid4(),
+        kind="full_import",
+        status="queued",
+        phase="queued",
+        counters={},
+        cancel_requested=False,
+        created_at=datetime.now(UTC),
+        archive_id=uuid.uuid4(),
+        overwrite_space_keys=[],
+        space_keys=[],
+    )
+    return BackupJob(**{**defaults, **overrides})
+
+
+@pytest.mark.asyncio
+async def test_run_backup_job_full_import_downloads_then_restores(monkeypatch):
+    """A restore job downloads its already-uploaded archive, applies it, and
+    stores the resulting `ImportReport` on `job.result` - the piece the old
+    synchronous `/backup/import-zip` endpoint used to hand back directly in
+    its HTTP response."""
+    session = AsyncMock()
+    storage = AsyncMock()
+    job = _restore_job()
+    archive = Mock(object_key="backups/imports/x/file.zip", size_bytes=1000)
+
+    def get_side_effect(model, _pk):
+        return job if model is BackupJob else archive
+
+    session.get.side_effect = get_side_effect
+
+    captured = {}
+
+    async def mock_restore(self, path, storage, *, dry_run, overwrite_space_keys, space_keys, job):
+        captured["dry_run"] = dry_run
+        captured["job"] = job
+        return ImportReport(
+            dry_run=False, version=2, includes_credentials=False, created={"page": 1}
+        )
+
+    monkeypatch.setattr(
+        "app.modules.backup.jobs.BackupService.restore_full_package", mock_restore
+    )
+
+    await run_backup_job(session, storage, job.id)
+
+    assert job.status == "complete"
+    assert job.phase == "complete"
+    assert job.result == {
+        "dry_run": False,
+        "version": 2,
+        "includes_credentials": False,
+        "created": {"page": 1},
+        "skipped": {},
+        "errors": {},
+        "users_without_password": [],
+        "entries": [],
+        "entries_truncated": False,
+        "conflicting_space_keys": [],
+    }
+    assert captured["dry_run"] is False
+    assert captured["job"] is job
+    storage.download_to_file.assert_awaited_once()
+    assert storage.download_to_file.await_args.args[0] == archive.object_key
+
+
+@pytest.mark.asyncio
+async def test_run_backup_job_full_import_cancelled(monkeypatch):
+    session = AsyncMock()
+    storage = AsyncMock()
+    job = _restore_job()
+    archive = Mock(object_key="k", size_bytes=1000)
+
+    def get_side_effect(model, _pk):
+        return job if model is BackupJob else archive
+
+    session.get.side_effect = get_side_effect
+
+    async def mock_restore(self, path, storage, *, dry_run, overwrite_space_keys, space_keys, job):
+        raise ExportCancelled("Export cancelled by administrator.")
+
+    monkeypatch.setattr(
+        "app.modules.backup.jobs.BackupService.restore_full_package", mock_restore
+    )
+
+    await run_backup_job(session, storage, job.id)
+    assert job.status == "cancelled"
+    assert job.phase == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_run_backup_job_full_import_missing_archive_fails():
+    """No `archive_id` (or a deleted archive) fails the job cleanly instead of
+    crashing the worker - `BackupArchive.archive_id` is a `SET NULL` foreign
+    key, so this is reachable if the archive row is ever removed."""
+    session = AsyncMock()
+    storage = AsyncMock()
+    job = _restore_job(archive_id=None)
+    session.get.return_value = job
+
+    with pytest.raises(ValueError, match="no uploaded archive"):
+        await run_backup_job(session, storage, job.id)
+    assert job.status == "failed"
+
+
+def _running_job(**overrides):
+    defaults = dict(
+        id=uuid.uuid4(), kind="full_export", status="running", phase="exporting",
+        counters={}, cancel_requested=False, created_at=datetime.now(UTC),
+    )
+    return BackupJob(**{**defaults, **overrides})
+
+
+@pytest.mark.asyncio
+async def test_reap_abandoned_export_jobs():
+    """Regression test for a reported bug: a job whose worker had been restarted
+    stayed "running" forever, so the admin UI's progress bar never stopped and
+    Cancel had nobody left to act on the request - even after a page reload.
+    """
+    stale = datetime.now(UTC) - STALE_JOB_AFTER - timedelta(seconds=1)
+    orphaned = _running_job(heartbeat_at=stale)
+    orphaned_after_cancel = _running_job(heartbeat_at=stale, cancel_requested=True)
+    # Rows predating heartbeats cannot be proven alive, so they are reaped too.
+    never_beat = _running_job(heartbeat_at=None)
+
+    session = AsyncMock()
+    result = Mock()
+    result.scalars.return_value.all.return_value = [
+        orphaned,
+        orphaned_after_cancel,
+        never_beat,
+    ]
+    session.execute.return_value = result
+
+    assert await reap_abandoned_export_jobs(session) == 3
+    session.commit.assert_awaited_once()
+
+    assert (orphaned.status, orphaned.phase) == ("failed", "failed")
+    assert orphaned.error == "The export worker stopped before this job finished."
+    assert (never_beat.status, never_beat.phase) == ("failed", "failed")
+    # An operator who asked for cancellation should not be told it failed.
+    assert (orphaned_after_cancel.status, orphaned_after_cancel.phase) == (
+        "cancelled",
+        "cancelled",
+    )
+    assert orphaned_after_cancel.error is None
+
+
+@pytest.mark.asyncio
+async def test_reap_abandoned_export_jobs_leaves_live_jobs_alone():
+    """The query must be what excludes healthy jobs: a live worker's job is
+    still running and reaping it would report a false failure."""
+    session = AsyncMock()
+    result = Mock()
+    result.scalars.return_value.all.return_value = []
+    session.execute.return_value = result
+
+    assert await reap_abandoned_export_jobs(session) == 0
+    # Nothing to write - and no empty transaction left behind either.
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reap_every_running_job_skips_the_heartbeat_filter():
+    """A worker's own startup knows it is running nothing, so it finalises
+    every running row without waiting out a heartbeat timeout - that is what
+    makes a job orphaned by a worker restart clear in seconds instead of
+    minutes."""
+    session = AsyncMock()
+    result = Mock()
+    result.scalars.return_value.all.return_value = []
+    session.execute.return_value = result
+
+    def executed_where_clause():
+        # `heartbeat_at` is always in the SELECT column list, so only the
+        # filter tells the two sweeps apart.
+        return str(session.execute.await_args.args[0]).split("WHERE", 1)[1]
+
+    await reap_abandoned_export_jobs(session, every_running_job=True)
+    assert "heartbeat_at" not in executed_where_clause()
+
+    session.execute.reset_mock()
+    await reap_abandoned_export_jobs(session)
+    assert "heartbeat_at" in executed_where_clause()

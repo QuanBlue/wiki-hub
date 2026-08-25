@@ -185,7 +185,11 @@ class TestRoundTrip:
             return objects[key]
 
         async def put(key: str, data: bytes, **_kwargs: object) -> None:
-            objects[key] = data
+            # Restore now streams attachment/avatar bytes via `archive.open()`
+            # handles rather than materialising them first, so this fake
+            # storage - unlike the real S3-backed one, which reads any
+            # file-like `Body` itself - has to read the handle the same way.
+            objects[key] = data.read() if hasattr(data, "read") else data
 
         async def delete(key: str) -> None:
             objects.pop(key, None)
@@ -253,7 +257,11 @@ class TestRoundTrip:
             return objects[key]
 
         async def put(key: str, data: bytes, **_kwargs: object) -> None:
-            objects[key] = data
+            # Restore now streams attachment/avatar bytes via `archive.open()`
+            # handles rather than materialising them first, so this fake
+            # storage - unlike the real S3-backed one, which reads any
+            # file-like `Body` itself - has to read the handle the same way.
+            objects[key] = data.read() if hasattr(data, "read") else data
 
         async def delete_object(key: str) -> None:
             objects.pop(key, None)
@@ -323,7 +331,11 @@ class TestRoundTrip:
             return objects[key]
 
         async def put(key: str, data: bytes, **_kwargs: object) -> None:
-            objects[key] = data
+            # Restore now streams attachment/avatar bytes via `archive.open()`
+            # handles rather than materialising them first, so this fake
+            # storage - unlike the real S3-backed one, which reads any
+            # file-like `Body` itself - has to read the handle the same way.
+            objects[key] = data.read() if hasattr(data, "read") else data
 
         async def delete_object(key: str) -> None:
             objects.pop(key, None)
@@ -385,7 +397,11 @@ class TestRoundTrip:
             return objects[key]
 
         async def put(key: str, data: bytes, **_kwargs: object) -> None:
-            objects[key] = data
+            # Restore now streams attachment/avatar bytes via `archive.open()`
+            # handles rather than materialising them first, so this fake
+            # storage - unlike the real S3-backed one, which reads any
+            # file-like `Body` itself - has to read the handle the same way.
+            objects[key] = data.read() if hasattr(data, "read") else data
 
         async def delete(key: str) -> None:
             objects.pop(key, None)
@@ -452,7 +468,11 @@ class TestRoundTrip:
             return objects[key]
 
         async def put(key: str, data: bytes, **_kwargs: object) -> None:
-            objects[key] = data
+            # Restore now streams attachment/avatar bytes via `archive.open()`
+            # handles rather than materialising them first, so this fake
+            # storage - unlike the real S3-backed one, which reads any
+            # file-like `Body` itself - has to read the handle the same way.
+            objects[key] = data.read() if hasattr(data, "read") else data
 
         async def delete(key: str) -> None:
             objects.pop(key, None)
@@ -534,7 +554,11 @@ class TestRoundTrip:
             return objects[key]
 
         async def put(key: str, data: bytes, **_kwargs: object) -> None:
-            objects[key] = data
+            # Restore now streams attachment/avatar bytes via `archive.open()`
+            # handles rather than materialising them first, so this fake
+            # storage - unlike the real S3-backed one, which reads any
+            # file-like `Body` itself - has to read the handle the same way.
+            objects[key] = data.read() if hasattr(data, "read") else data
 
         async def delete(key: str) -> None:
             objects.pop(key, None)
@@ -584,7 +608,11 @@ class TestRoundTrip:
             return objects[key]
 
         async def put(key: str, data: bytes, **_kwargs: object) -> None:
-            objects[key] = data
+            # Restore now streams attachment/avatar bytes via `archive.open()`
+            # handles rather than materialising them first, so this fake
+            # storage - unlike the real S3-backed one, which reads any
+            # file-like `Body` itself - has to read the handle the same way.
+            objects[key] = data.read() if hasattr(data, "read") else data
 
         async def delete(key: str) -> None:
             objects.pop(key, None)
@@ -634,7 +662,11 @@ class TestRoundTrip:
             return objects[key]
 
         async def put(key: str, data: bytes, **_kwargs: object) -> None:
-            objects[key] = data
+            # Restore now streams attachment/avatar bytes via `archive.open()`
+            # handles rather than materialising them first, so this fake
+            # storage - unlike the real S3-backed one, which reads any
+            # file-like `Body` itself - has to read the handle the same way.
+            objects[key] = data.read() if hasattr(data, "read") else data
 
         async def delete_object(key: str) -> None:
             objects.pop(key, None)

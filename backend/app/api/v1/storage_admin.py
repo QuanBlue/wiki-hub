@@ -13,6 +13,7 @@ from typing import Annotated
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -225,11 +226,16 @@ async def read_storage_object(
     filename = filename.replace("\r", "").replace("\n", "").replace('"', "").replace("\\", "")
     disposition = "inline" if inline else "attachment"
     media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    return Response(
-        content=await storage.get(key),
-        media_type=media_type,
-        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
-    )
+    # Stream rather than `storage.get()`: a multi-GB export archive fully
+    # materialised in RAM before the first byte reaches the client is what was
+    # making the browser's download manager report "Site wasn't available" -
+    # the backend held the whole response building for minutes with nothing to
+    # send, so the connection looked dead and the download stalled at 0 B.
+    content_length, chunks = await storage.get_stream(key)
+    headers = {"Content-Disposition": f'{disposition}; filename="{filename}"'}
+    if content_length:
+        headers["Content-Length"] = str(content_length)
+    return StreamingResponse(chunks, media_type=media_type, headers=headers)
 
 
 @router.put("/object", response_class=Response, summary="Upload a storage multipart part")

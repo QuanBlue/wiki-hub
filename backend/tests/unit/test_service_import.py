@@ -9,6 +9,18 @@ from app.core.exceptions import BadRequestError
 from app.modules.backup.service import BackupService
 from app.schemas.backup import BackupDocument
 
+
+def _mock_site_settings(service: BackupService):
+    """`restore_full_package` now looks up the effective site setting for its
+    size cap before doing anything else - stub it out rather than routing it
+    through each test's generic `session.execute` dispatcher, which is keyed
+    to space/page queries these tests already care about."""
+    return patch.object(
+        service.site_settings,
+        "get_effective",
+        AsyncMock(return_value=Mock(max_backup_import_size_bytes=10**12)),
+    )
+
 @pytest.fixture
 def mock_session():
     return AsyncMock(spec=Session)
@@ -35,13 +47,14 @@ async def test_restore_full_package(service: BackupService):
     mock_scanned.document.avatars = []
     
     with patch("app.modules.backup.service.scan_full_backup", return_value=mock_scanned), \
-         patch("app.modules.backup.service.zipfile.ZipFile"):
+         patch("app.modules.backup.service.zipfile.ZipFile"), \
+         _mock_site_settings(service):
         def make_result(items):
             res = Mock()
             res.all.return_value = items
             res.scalars.return_value = items
             return res
-            
+
         async def side_effect(*args, **kwargs):
             return side_effect.result
         side_effect.result = make_result([("id1", "SPACE1")])
@@ -76,7 +89,8 @@ async def test_restore_full_package_dry_run(service: BackupService):
     mock_scanned.document.wikihub_backup.includes_credentials = False
     
     with patch("app.modules.backup.service.scan_full_backup", return_value=mock_scanned), \
-         patch("app.modules.backup.service.zipfile.ZipFile"):
+         patch("app.modules.backup.service.zipfile.ZipFile"), \
+         _mock_site_settings(service):
         def make_result(items):
             res = Mock()
             res.all.return_value = items

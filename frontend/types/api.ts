@@ -322,6 +322,24 @@ export interface SiteSettings {
   updated_by_username: string | null;
 }
 
+//: A WikiHub `.zip` backup archive uploaded (and, once scanned, its
+//: contained spaces listed) via `/api/v1/backup/archives/*` - the restore
+//: counterpart of `ConfluenceArchive` below, minus the richer
+//: `ConfluenceSpaceCandidate` per-space fields (no `conflict`/counts yet).
+export interface BackupArchiveSpace {
+  key: string;
+  name: string;
+}
+export interface BackupArchive {
+  id: string;
+  filename: string;
+  size_bytes: number;
+  sha256: string | null;
+  status: string;
+  error: string | null;
+  spaces: BackupArchiveSpace[];
+}
+
 export interface ConfluenceSpaceCandidate {
   key: string;
   name: string;

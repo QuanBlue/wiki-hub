@@ -6,14 +6,33 @@ import pytest
 
 from app.api.v1.backup import (
     _enqueue,
+    cancel_backup_job,
     create_backup_export,
     get_backup_job,
     import_full_backup_zip,
-    inspect_full_backup_zip,
+    list_backup_jobs,
 )
-from app.core.exceptions import BadRequestError, PayloadTooLargeError, ServiceUnavailableError
+from app.core.exceptions import BadRequestError, ConflictError, PayloadTooLargeError, ServiceUnavailableError
 from app.models.backup_job import BackupJob
 from app.schemas.backup import BackupExportCreate
+
+
+def _stub_effective_import_limit(monkeypatch, max_bytes: int) -> None:
+    """Stub `SiteSettingsService.get_effective()`'s import-size cap directly,
+    rather than faking the DB row it would otherwise read - the endpoints
+    under test now consult the admin-editable site setting instead of the
+    static `settings.max_import_size_bytes` these tests used to monkeypatch.
+    """
+
+    class _Effective:
+        max_backup_import_size_bytes = max_bytes
+
+    async def _get_effective(self):
+        return _Effective()
+
+    monkeypatch.setattr(
+        "app.services.site_settings.SiteSettingsService.get_effective", _get_effective
+    )
 
 
 @pytest.mark.asyncio
@@ -45,6 +64,10 @@ async def test_enqueue_success(monkeypatch):
 async def test_upload_legacy_restore_package(monkeypatch):
     service = Mock()
     service.restore_full_package = AsyncMock(return_value={"status": "ok"})
+    # `import_full_backup_zip` now enforces the admin-editable site setting
+    # (not the static `settings.max_import_size_bytes` this test used to
+    # monkeypatch) - stub it directly rather than faking a DB row.
+    _stub_effective_import_limit(monkeypatch, 1000)
     
     # 1. Invalid extension
     file = AsyncMock()
@@ -66,10 +89,6 @@ async def test_upload_legacy_restore_package(monkeypatch):
         await import_full_backup_zip(service, file, False, "[]", "invalid")
 
     # 4. Success payload
-    class MockSettings:
-        max_import_size_bytes = 1000
-    monkeypatch.setattr("app.api.v1.backup.settings", MockSettings)
-
     file.read = AsyncMock(side_effect=[b"x" * 500, b""])
     res = await import_full_backup_zip(service, file, False, '["SPACE"]', '["ENG"]')
     assert res == {"status": "ok"}
@@ -85,42 +104,6 @@ async def test_upload_legacy_restore_package(monkeypatch):
     file.read = AsyncMock(side_effect=[b"x" * 1500])
     with pytest.raises(PayloadTooLargeError):
         await import_full_backup_zip(service, file, False, '["SPACE"]')
-
-
-@pytest.mark.asyncio
-async def test_inspect_full_backup_zip(monkeypatch, tmp_path):
-    service = Mock()  # only present to enforce CurrentSuperuser; unused here.
-
-    with pytest.raises(BadRequestError, match="Choose a .zip file created by WikiHub"):
-        bad_file = AsyncMock()
-        bad_file.filename = "test.txt"
-        await inspect_full_backup_zip(service, bad_file)
-
-    class MockSettings:
-        max_import_size_bytes = 1000
-
-    monkeypatch.setattr("app.api.v1.backup.settings", MockSettings)
-
-    file = AsyncMock()
-    file.filename = "backup.zip"
-    file.read = AsyncMock(side_effect=[b"x" * 10, b""])
-
-    # `name=` is special-cased by Mock() itself, so it has to be assigned
-    # after construction rather than passed as a constructor kwarg.
-    eng, sales = Mock(key="ENG"), Mock(key="SALES")
-    eng.name, sales.name = "Engineering", "Sales"
-    scanned = Mock()
-    scanned.document.spaces = [eng, sales]
-    with patch(
-        "app.api.v1.backup.BackupService.scan_full_package", return_value=scanned
-    ) as mocked_scan:
-        result = await inspect_full_backup_zip(service, file)
-
-    assert [item.model_dump() for item in result] == [
-        {"key": "ENG", "name": "Engineering"},
-        {"key": "SALES", "name": "Sales"},
-    ]
-    mocked_scan.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -143,9 +126,14 @@ async def test_create_backup_export(monkeypatch):
         m.status = "pending"
         m.phase = "setup"
         m.counters = {}
+        m.cancel_requested = False
+        m.heartbeat_at = None
         m.include_credentials = False
         m.confluence_profile = None
         m.space_keys = []
+        m.archive_id = None
+        m.overwrite_space_keys = []
+        m.result = None
         m.output_filename = None
         m.error = None
         from datetime import datetime, UTC
@@ -190,15 +178,137 @@ async def test_get_backup_job():
     m.status = "pending"
     m.phase = "setup"
     m.counters = {}
+    m.cancel_requested = False
+    m.started_at = None
+    m.heartbeat_at = None
     m.include_credentials = False
     m.confluence_profile = None
     m.space_keys = []
+    m.archive_id = None
+    m.overwrite_space_keys = []
+    m.result = None
     m.output_filename = None
     m.error = None
     from datetime import datetime, UTC
     m.created_at = datetime.now(UTC)
     m.updated_at = datetime.now(UTC)
     session.get.return_value = m
-    
+
     res = await get_backup_job(job_id, user, session)
     assert res.id == m.id
+
+
+@pytest.mark.asyncio
+async def test_list_backup_jobs():
+    session = AsyncMock()
+    user = Mock()
+    from datetime import datetime, UTC
+
+    def make_job(**overrides):
+        defaults = dict(
+            id=uuid.uuid4(), created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+            counters={}, cancel_requested=False, include_credentials=False, space_keys=[],
+        )
+        return BackupJob(**{**defaults, **overrides})
+
+    jobs = [
+        make_job(kind="full_export", status="complete", phase="complete"),
+        make_job(kind="confluence_export", status="running", phase="exporting"),
+    ]
+    result = Mock()
+    result.scalars.return_value = jobs
+    session.execute.return_value = result
+
+    res = await list_backup_jobs(user, session)
+    assert [job.id for job in res] == [j.id for j in jobs]
+
+
+@pytest.mark.asyncio
+async def test_cancel_backup_job_not_found():
+    session = AsyncMock()
+    user = Mock()
+    session.get.return_value = None
+    with pytest.raises(BadRequestError, match="Backup job was not found."):
+        await cancel_backup_job(uuid.uuid4(), user, session)
+
+
+@pytest.mark.asyncio
+async def test_cancel_backup_job_already_finished():
+    session = AsyncMock()
+    user = Mock()
+    job = BackupJob(id=uuid.uuid4(), kind="full_export", status="complete")
+    session.get.return_value = job
+    with pytest.raises(ConflictError, match="already finished"):
+        await cancel_backup_job(job.id, user, session)
+
+
+@pytest.mark.asyncio
+async def test_cancel_backup_job_queued_finalizes_immediately():
+    session = AsyncMock()
+    user = Mock()
+    from datetime import datetime, UTC
+
+    job = BackupJob(
+        id=uuid.uuid4(), kind="full_export", status="queued", phase="queued",
+        created_at=datetime.now(UTC), updated_at=datetime.now(UTC), counters={},
+        cancel_requested=False, include_credentials=False, space_keys=[],
+    )
+    session.get.return_value = job
+
+    res = await cancel_backup_job(job.id, user, session)
+    assert res.status == "cancelled"
+    assert res.phase == "cancelled"
+    assert res.cancel_requested is True
+
+
+@pytest.mark.asyncio
+async def test_cancel_backup_job_running_with_live_worker_only_sets_flag():
+    """A worker that is still heartbeating stops itself at its next checkpoint,
+    so the endpoint must not declare the job finished on its behalf."""
+    session = AsyncMock()
+    user = Mock()
+    from datetime import datetime, UTC
+
+    job = BackupJob(
+        id=uuid.uuid4(), kind="full_export", status="running", phase="exporting",
+        created_at=datetime.now(UTC), updated_at=datetime.now(UTC), counters={},
+        cancel_requested=False, include_credentials=False, space_keys=[],
+        heartbeat_at=datetime.now(UTC),
+    )
+    session.get.return_value = job
+
+    res = await cancel_backup_job(job.id, user, session)
+    assert res.status == "running"
+    assert res.cancel_requested is True
+
+
+@pytest.mark.asyncio
+async def test_cancel_backup_job_finalizes_a_job_whose_worker_died():
+    """Regression test for a reported bug: clicking Cancel appeared to do
+    nothing and the progress bar spun forever, even across a page reload.
+
+    The job's worker had been restarted (an `arq --watch` reload), leaving the
+    row saying "running" with nobody left to observe `cancel_requested`. Since
+    the endpoint only finalised *queued* jobs, the row could never change
+    state again. A stale heartbeat now identifies that case so Cancel resolves
+    it on the spot.
+    """
+    from datetime import datetime, timedelta, UTC
+
+    from app.modules.backup.service import STALE_JOB_AFTER
+
+    for heartbeat in (None, datetime.now(UTC) - STALE_JOB_AFTER - timedelta(seconds=1)):
+        session = AsyncMock()
+        user = Mock()
+        job = BackupJob(
+            id=uuid.uuid4(), kind="confluence_export", status="running", phase="exporting",
+            created_at=datetime.now(UTC), updated_at=datetime.now(UTC), counters={},
+            cancel_requested=False, include_credentials=False, space_keys=[],
+            heartbeat_at=heartbeat,
+        )
+        session.get.return_value = job
+
+        res = await cancel_backup_job(job.id, user, session)
+        assert res.status == "cancelled", f"heartbeat={heartbeat!r}"
+        assert res.phase == "cancelled"
+        assert res.cancel_requested is True

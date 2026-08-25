@@ -12,12 +12,13 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from arq import cron
 from arq.connections import RedisSettings
 
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine
-from app.workers.tasks import ping, run_backup_job, run_confluence_import
+from app.workers.tasks import ping, reap_backup_jobs, run_backup_job, run_confluence_import
 
 logger = get_logger(__name__)
 
@@ -29,6 +30,15 @@ def redis_settings() -> RedisSettings:
 async def startup(ctx: dict[str, Any]) -> None:
     configure_logging()
     logger.info("worker_startup", environment=str(settings.env))
+    # A restart is the most common way an export job is orphaned - whatever
+    # this worker was running a moment ago is gone. Sweep immediately instead
+    # of leaving the operator waiting for the first scheduled pass. Never let
+    # this stop the worker from coming up: housekeeping failing (the database
+    # may not be reachable yet at boot) must not cost us a job consumer.
+    try:
+        await reap_backup_jobs(ctx, every_running_job=True)
+    except Exception:  # noqa: BLE001 - startup housekeeping is strictly best-effort
+        logger.warning("backup_job_reap_on_startup_failed", exc_info=True)
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
@@ -40,7 +50,11 @@ class WorkerSettings:
     """arq entrypoint. Task functions are registered here as phases land."""
 
     functions: ClassVar[list[Any]] = [ping, run_confluence_import, run_backup_job]
-    cron_jobs: ClassVar[list[Any]] = []
+    cron_jobs: ClassVar[list[Any]] = [
+        # Every minute: bounds how long a stuck export can hold the UI hostage
+        # when a worker dies without restarting (so `on_startup` never runs).
+        cron(reap_backup_jobs, second=0, run_at_startup=False),
+    ]
     redis_settings = redis_settings()
     on_startup = startup
     on_shutdown = shutdown

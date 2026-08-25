@@ -20,20 +20,36 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 from pydantic import ValidationError
+from sqlalchemy import desc, select
 
 from app.api.deps import ClientInfoDep, CurrentSuperuser, DbSession, Impersonator
 from app.core.config import settings
-from app.core.exceptions import BadRequestError, PayloadTooLargeError, ServiceUnavailableError
-from app.models.backup_job import BackupJob
-from app.modules.backup.jobs import create_export_job
-from app.modules.backup.service import BackupService
+from app.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    PayloadTooLargeError,
+    ServiceUnavailableError,
+)
+from app.models.backup_job import BackupArchive, BackupJob
+from app.modules.backup.archives import BackupArchiveService
+from app.modules.backup.jobs import create_export_job, create_import_job
+from app.modules.backup.service import STALE_JOB_AFTER, BackupService
 from app.schemas.backup import (
+    BackupArchiveRead,
     BackupArchiveSpaceRead,
+    BackupArchiveUploadInit,
+    BackupArchiveUploadPartUrlsRead,
+    BackupArchiveUploadPartUrlsRequest,
+    BackupArchiveUploadProgressRead,
+    BackupArchiveUploadTarget,
     BackupDocument,
     BackupExportCreate,
+    BackupImportCreate,
     BackupJobRead,
     ImportReport,
 )
+from app.services.site_settings import SiteSettingsService
 from app.services.storage import get_storage
 
 router = APIRouter(prefix="/backup", tags=["backup"])
@@ -54,6 +70,25 @@ def get_backup_service(
 BackupServiceDep = Annotated[BackupService, Depends(get_backup_service)]
 
 
+def get_backup_archive_service(session: DbSession) -> BackupArchiveService:
+    return BackupArchiveService(session, get_storage())
+
+
+BackupArchiveServiceDep = Annotated[BackupArchiveService, Depends(get_backup_archive_service)]
+
+
+def _archive_read(item: BackupArchive) -> BackupArchiveRead:
+    return BackupArchiveRead(
+        id=item.id,
+        filename=item.filename,
+        size_bytes=item.size_bytes,
+        sha256=item.sha256,
+        status=item.status,
+        error=item.error,
+        spaces=[BackupArchiveSpaceRead.model_validate(space) for space in item.spaces],
+    )
+
+
 async def _enqueue(job_id: uuid.UUID) -> None:
     try:
         pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
@@ -65,16 +100,46 @@ async def _enqueue(job_id: uuid.UUID) -> None:
         ) from exc
 
 
+def _job_progress(job: BackupJob) -> tuple[int | None, int | None]:
+    """Derive a 0-99/100 percent and an ETA in seconds from `job.counters`.
+
+    Returns `(None, None)` whenever there isn't enough data to make a
+    reasonable estimate (queued, or running but the export hasn't reported
+    any items yet) - the frontend falls back to an indeterminate spinner.
+    """
+    if job.status == "complete":
+        return 100, 0
+    if job.status != "running" or job.started_at is None:
+        return None, None
+    total = job.counters.get("items_total") or 0
+    processed = job.counters.get("items_processed") or 0
+    if total <= 0:
+        return None, None
+    percent = min(99, processed * 100 // total)
+    elapsed = (datetime.now(UTC) - job.started_at).total_seconds()
+    eta_seconds = None
+    if processed > 0 and elapsed > 0:
+        rate = processed / elapsed
+        if rate > 0:
+            eta_seconds = round(max(0, total - processed) / rate)
+    return percent, eta_seconds
+
+
 async def _job_read(job: BackupJob) -> BackupJobRead:
+    percent, eta_seconds = _job_progress(job)
     return BackupJobRead(
         id=job.id,
         kind=job.kind,
         status=job.status,
         phase=job.phase,
         counters=job.counters,
+        cancel_requested=job.cancel_requested,
         include_credentials=job.include_credentials,
         confluence_profile=job.confluence_profile,
         space_keys=job.space_keys,
+        archive_id=job.archive_id,
+        overwrite_space_keys=job.overwrite_space_keys or [],
+        result=job.result,
         output_filename=job.output_filename,
         download_url=(
             "/api/v1/storage/object?key="
@@ -85,6 +150,10 @@ async def _job_read(job: BackupJob) -> BackupJobRead:
             else None
         ),
         error=job.error,
+        started_at=job.started_at,
+        heartbeat_at=job.heartbeat_at,
+        percent=percent,
+        eta_seconds=eta_seconds,
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
@@ -173,53 +242,6 @@ def _parse_space_key_list(raw: str, *, code: str) -> list[str]:
     return parsed
 
 
-@router.post(
-    "/inspect-zip",
-    response_model=list[BackupArchiveSpaceRead],
-    summary="List the spaces contained in a WikiHub backup ZIP",
-)
-async def inspect_full_backup_zip(
-    # Unused beyond enforcing the same CurrentSuperuser auth every other
-    # endpoint on this router requires - this reads archive contents and
-    # must not be reachable by anyone else.
-    service: BackupServiceDep,
-    file: Annotated[UploadFile, File(description="A full .zip produced by a WikiHub export job")],
-) -> list[BackupArchiveSpaceRead]:
-    """Read only the space list out of an archive, for the "select spaces to
-    restore" picker - never touches the database.
-
-    Kept a separate upload from the actual restore (rather than an automatic
-    dry run) so the default "restore everything" path stays a single upload;
-    only picking specific spaces costs a second one, to read what's on offer.
-    """
-    if not file.filename or not file.filename.lower().endswith(".zip"):
-        raise BadRequestError("Choose a .zip file created by WikiHub.", code="invalid_backup_file")
-    staged_path = ""
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix="wikihub-restore-inspect-", suffix=".zip", delete=False
-        ) as staged:
-            staged_path = staged.name
-            total = 0
-            while chunk := await file.read(1024 * 1024):
-                total += len(chunk)
-                if total > settings.max_import_size_bytes:
-                    raise PayloadTooLargeError(
-                        "Backup archive exceeds the configured import limit."
-                    )
-                staged.write(chunk)
-        scanned = BackupService.scan_full_package(staged_path)
-        return [
-            BackupArchiveSpaceRead(key=space.key, name=space.name)
-            for space in scanned.document.spaces
-        ]
-    finally:
-        await file.close()
-        if staged_path:
-            with suppress(OSError):
-                os.unlink(staged_path)
-
-
 @router.post("/import-zip", response_model=ImportReport, summary="Restore a full WikiHub ZIP")
 async def import_full_backup_zip(
     service: BackupServiceDep,
@@ -243,6 +265,9 @@ async def import_full_backup_zip(
         overwrite_space_keys, code="invalid_backup_overwrite"
     )
     scoped_keys = _parse_space_key_list(space_keys, code="invalid_backup_scope")
+    max_size_bytes = (
+        await SiteSettingsService(service.session).get_effective()
+    ).max_backup_import_size_bytes
     staged_path = ""
     try:
         with tempfile.NamedTemporaryFile(
@@ -252,7 +277,7 @@ async def import_full_backup_zip(
             total = 0
             while chunk := await file.read(1024 * 1024):
                 total += len(chunk)
-                if total > settings.max_import_size_bytes:
+                if total > max_size_bytes:
                     raise PayloadTooLargeError(
                         "Backup archive exceeds the configured import limit."
                     )
@@ -269,6 +294,183 @@ async def import_full_backup_zip(
         if staged_path:
             with suppress(FileNotFoundError):
                 os.unlink(staged_path)
+
+
+# -- Direct-to-storage archive upload (large restores) ----------------------
+#
+# Mirrors `app/api/v1/confluence_import.py`'s upload endpoints 1:1: a large
+# WikiHub backup ZIP is uploaded in small, bounded parts straight to object
+# storage instead of as one giant multipart POST through this process, which
+# is what `/import-zip` above cannot avoid (see `BackupArchiveService`'s
+# module docstring for why that matters for anything approaching double-digit
+# gigabytes).
+
+
+@router.post("/archives/uploads", response_model=BackupArchiveUploadTarget, status_code=201)
+async def start_backup_archive_upload(
+    payload: BackupArchiveUploadInit, user: CurrentSuperuser, archives: BackupArchiveServiceDep
+) -> BackupArchiveUploadTarget:
+    archive = await archives.start_upload(
+        filename=payload.filename,
+        size_bytes=payload.size_bytes,
+        actor_id=user.id,
+        sha256=payload.sha256,
+    )
+    return BackupArchiveUploadTarget(
+        archive_id=archive.id,
+        object_key=archive.object_key,
+        max_size_bytes=(
+            await SiteSettingsService(archives.session).get_effective()
+        ).max_backup_import_size_bytes,
+        part_size_bytes=archives.upload_part_size_bytes,
+        status=archive.status,
+        sha256=archive.sha256,
+        reused=archive.status in {"uploaded", "scanned"},
+    )
+
+
+@router.get("/archives/uploads/active", response_model=list[BackupArchiveUploadProgressRead])
+async def list_active_backup_archive_uploads(
+    user: CurrentSuperuser, session: DbSession, archives: BackupArchiveServiceDep
+) -> list[BackupArchiveUploadProgressRead]:
+    """In-progress and scanned (ready-for-restore) archives for this user.
+
+    Scanned archives are included so a new tab can restore the space-picker
+    UI without re-uploading a multi-GB archive that already finished.
+    """
+    imported_archive_ids = select(BackupJob.archive_id).where(BackupJob.archive_id.is_not(None))
+    rows = (
+        (
+            await session.execute(
+                select(BackupArchive)
+                .where(
+                    BackupArchive.created_by_id == user.id,
+                    BackupArchive.status.in_(["uploading", "scanned"]),
+                    BackupArchive.id.not_in(imported_archive_ids),
+                )
+                .order_by(desc(BackupArchive.updated_at), desc(BackupArchive.created_at))
+                .limit(5)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        BackupArchiveUploadProgressRead(
+            archive_id=archive.id,
+            filename=archive.filename,
+            size_bytes=archive.size_bytes,
+            sha256=archive.sha256,
+            status=archive.status,
+            part_size_bytes=archives.upload_part_size_bytes,
+            uploaded_parts=await archives.uploaded_part_numbers(archive),
+        )
+        for archive in rows
+    ]
+
+
+@router.get("/archives/{archive_id}/upload", response_model=BackupArchiveUploadProgressRead)
+async def get_backup_archive_upload_progress(
+    archive_id: uuid.UUID, _user: CurrentSuperuser, archives: BackupArchiveServiceDep
+) -> BackupArchiveUploadProgressRead:
+    archive = await archives.get_archive(archive_id)
+    return BackupArchiveUploadProgressRead(
+        archive_id=archive.id,
+        filename=archive.filename,
+        size_bytes=archive.size_bytes,
+        sha256=archive.sha256,
+        status=archive.status,
+        part_size_bytes=archives.upload_part_size_bytes,
+        uploaded_parts=await archives.uploaded_part_numbers(archive),
+    )
+
+
+@router.post(
+    "/archives/{archive_id}/upload-parts", response_model=BackupArchiveUploadPartUrlsRead
+)
+async def get_backup_archive_upload_part_urls(
+    archive_id: uuid.UUID,
+    payload: BackupArchiveUploadPartUrlsRequest,
+    _user: CurrentSuperuser,
+    archives: BackupArchiveServiceDep,
+) -> BackupArchiveUploadPartUrlsRead:
+    archive = await archives.get_archive(archive_id)
+    max_part = (
+        archive.size_bytes + archives.upload_part_size_bytes - 1
+    ) // archives.upload_part_size_bytes
+    if any(number < 1 or number > max_part for number in payload.part_numbers):
+        raise NotFoundError("Upload part not found.")
+    # Keep resumable uploads same-origin, same reasoning as Confluence's
+    # equivalent endpoint: a direct MinIO URL carries a localhost/internal
+    # hostname and cannot work once WikiHub is reachable from anywhere else.
+    if archive.status != "uploading" or not archive.multipart_upload_id:
+        return BackupArchiveUploadPartUrlsRead(
+            urls=await archives.upload_part_urls(archive, sorted(set(payload.part_numbers)))
+        )
+    urls = {
+        number: (
+            "/api/v1/storage/object?key="
+            + quote(archive.object_key, safe="")
+            + "&upload_id="
+            + quote(archive.multipart_upload_id, safe="")
+            + f"&part_number={number}"
+        )
+        for number in sorted(set(payload.part_numbers))
+    }
+    return BackupArchiveUploadPartUrlsRead(urls=urls)
+
+
+@router.post("/archives/{archive_id}/complete-upload", response_model=BackupArchiveRead)
+async def complete_backup_archive_upload(
+    archive_id: uuid.UUID, _user: CurrentSuperuser, archives: BackupArchiveServiceDep
+) -> BackupArchiveRead:
+    return _archive_read(await archives.complete_upload(await archives.get_archive(archive_id)))
+
+
+@router.delete("/archives/{archive_id}/upload", status_code=204)
+async def cancel_backup_archive_upload(
+    archive_id: uuid.UUID, _user: CurrentSuperuser, archives: BackupArchiveServiceDep
+) -> None:
+    await archives.abort_upload(await archives.get_archive(archive_id))
+
+
+@router.post("/archives/{archive_id}/scan", response_model=BackupArchiveRead)
+async def scan_backup_archive(
+    archive_id: uuid.UUID, _user: CurrentSuperuser, archives: BackupArchiveServiceDep
+) -> BackupArchiveRead:
+    """Populate the archive's space list for the "select spaces to restore" picker."""
+    return _archive_read(await archives.scan(await archives.get_archive(archive_id)))
+
+
+@router.get("/archives/{archive_id}", response_model=BackupArchiveRead)
+async def get_backup_archive(
+    archive_id: uuid.UUID, _user: CurrentSuperuser, archives: BackupArchiveServiceDep
+) -> BackupArchiveRead:
+    return _archive_read(await archives.get_archive(archive_id))
+
+
+@router.post(
+    "/archives/{archive_id}/jobs", response_model=BackupJobRead, status_code=201
+)
+async def create_backup_import(
+    archive_id: uuid.UUID,
+    payload: BackupImportCreate,
+    user: CurrentSuperuser,
+    session: DbSession,
+) -> BackupJobRead:
+    """Queue a restore of an already-uploaded, scanned archive."""
+    try:
+        job = await create_import_job(
+            session,
+            actor_id=user.id,
+            archive_id=archive_id,
+            overwrite_space_keys=payload.overwrite_space_keys,
+            space_keys=payload.space_keys,
+        )
+    except ValueError as exc:
+        raise BadRequestError(str(exc), code="invalid_backup_import") from exc
+    await _enqueue(job.id)
+    return await _job_read(job)
 
 
 @router.post("/jobs", response_model=BackupJobRead, status_code=201)
@@ -291,6 +493,19 @@ async def create_backup_export(
     return await _job_read(job)
 
 
+@router.get("/jobs", response_model=list[BackupJobRead])
+async def list_backup_jobs(_user: CurrentSuperuser, session: DbSession) -> list[BackupJobRead]:
+    """Recent export jobs, newest first.
+
+    Lets the admin panel reattach to an in-flight export after a reload or on
+    a different tab, the same way the Confluence import job list does.
+    """
+    jobs = (
+        await session.execute(select(BackupJob).order_by(BackupJob.created_at.desc()).limit(30))
+    ).scalars()
+    return [await _job_read(job) for job in jobs]
+
+
 @router.get("/jobs/{job_id}", response_model=BackupJobRead)
 async def get_backup_job(
     job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession
@@ -298,4 +513,35 @@ async def get_backup_job(
     job = await session.get(BackupJob, job_id)
     if job is None:
         raise BadRequestError("Backup job was not found.", code="backup_job_not_found")
+    return await _job_read(job)
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=BackupJobRead)
+async def cancel_backup_job(
+    job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession
+) -> BackupJobRead:
+    job = await session.get(BackupJob, job_id)
+    if job is None:
+        raise BadRequestError("Backup job was not found.", code="backup_job_not_found")
+    if job.status in {"complete", "failed", "cancelled"}:
+        raise ConflictError("This export job has already finished.")
+    job.cancel_requested = True
+    # Finalise here whenever nothing is left to observe the flag, rather than
+    # leaving the operator staring at a status that can never change:
+    #   - "queued": no worker has picked the job up, so no loop will see it.
+    #   - "running" with a stale heartbeat: the worker that owned this job is
+    #     gone (crash, restart, deploy). The scheduled reaper would get to it
+    #     eventually; a Cancel click should not have to wait for that.
+    # A live worker is left alone - it observes `cancel_requested` at its next
+    # checkpoint and finalises the job itself, having actually stopped work.
+    heartbeat = job.heartbeat_at
+    worker_is_gone = heartbeat is None or datetime.now(UTC) - heartbeat > STALE_JOB_AFTER
+    if job.status == "queued" or worker_is_gone:
+        job.status, job.phase = "cancelled", "cancelled"
+    await session.flush()
+    # TimestampMixin uses a server-side on-update expression - refresh before
+    # serialising so async SQLAlchemy does not attempt a lazy attribute load
+    # outside its greenlet context. `DbSession` commits the transaction after
+    # this handler returns (see `app/api/deps.py::get_db`).
+    await session.refresh(job)
     return await _job_read(job)

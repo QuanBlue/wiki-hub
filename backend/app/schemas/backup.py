@@ -279,11 +279,91 @@ class BackupJobRead(BaseModel):
     status: str
     phase: str
     counters: dict[str, int] = Field(default_factory=dict)
+    cancel_requested: bool = False
     include_credentials: bool = False
     confluence_profile: str | None = None
     space_keys: list[str] = Field(default_factory=list)
+    #: Restore jobs only (`kind="full_import"`): the `BackupArchive` this job
+    #: applies, and the conflicting spaces it is allowed to replace.
+    archive_id: uuid.UUID | None = None
+    overwrite_space_keys: list[str] = Field(default_factory=list)
     output_filename: str | None = None
     download_url: str | None = None
     error: str | None = None
+    #: Set once a restore (`kind="full_import"`) job reaches "complete" - the
+    #: `ImportReport` the old synchronous `/backup/import-zip` endpoint used
+    #: to return directly in its HTTP response. `None` for export jobs and
+    #: for a restore job that has not finished yet.
+    result: ImportReport | None = None
+    #: Set once the worker actually starts the export (not while still
+    #: queued). Used together with `counters` to derive `percent`/`eta_seconds`.
+    started_at: datetime | None = None
+    #: Last time the worker proved it was still on this job. A running job
+    #: whose heartbeat has gone stale has been abandoned and gets reaped.
+    heartbeat_at: datetime | None = None
+    #: 0-99 while running with known totals, 100 once complete, otherwise
+    #: `None` (queued, or running without enough data yet) - the frontend
+    #: falls back to an indeterminate spinner in that case.
+    percent: int | None = None
+    eta_seconds: int | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class BackupArchiveUploadInit(BaseModel):
+    """Request a direct-to-storage upload slot for a full WikiHub backup ZIP.
+
+    Mirrors `app.schemas.confluence_import.UploadInit` - the chunked-upload
+    machinery that lets a large Confluence archive bypass Starlette's
+    unbounded multipart-file-part spool, reused here for the same reason.
+    """
+
+    filename: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0)
+    sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
+class BackupArchiveUploadTarget(BaseModel):
+    archive_id: uuid.UUID
+    object_key: str
+    max_size_bytes: int
+    part_size_bytes: int
+    uploaded_parts: list[int] = Field(default_factory=list)
+    status: str = "uploading"
+    sha256: str | None = None
+    reused: bool = False
+
+
+class BackupArchiveUploadPartUrlsRequest(BaseModel):
+    part_numbers: list[int] = Field(min_length=1, max_length=32)
+
+
+class BackupArchiveUploadPartUrlsRead(BaseModel):
+    urls: dict[int, str]
+
+
+class BackupArchiveUploadProgressRead(BaseModel):
+    archive_id: uuid.UUID
+    filename: str
+    size_bytes: int
+    sha256: str | None = None
+    status: str
+    part_size_bytes: int
+    uploaded_parts: list[int] = Field(default_factory=list)
+
+
+class BackupArchiveRead(BaseModel):
+    id: uuid.UUID
+    filename: str
+    size_bytes: int
+    sha256: str | None = None
+    status: str
+    error: str | None = None
+    spaces: list[BackupArchiveSpaceRead] = Field(default_factory=list)
+
+
+class BackupImportCreate(BaseModel):
+    """Request a restore job against an already-uploaded, scanned archive."""
+
+    overwrite_space_keys: list[str] = Field(default_factory=list, max_length=5000)
+    space_keys: list[str] = Field(default_factory=list, max_length=5000)

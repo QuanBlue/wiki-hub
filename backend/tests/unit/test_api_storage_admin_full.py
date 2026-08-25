@@ -114,9 +114,16 @@ async def test_read_storage_object():
         await read_storage_object(Mock(), storage, "file.txt", None, False)
         
     storage.exists.return_value = True
-    storage.get.return_value = b"data"
+
+    async def _chunks():
+        yield b"da"
+        yield b"ta"
+
+    storage.get_stream.return_value = (4, _chunks())
     res = await read_storage_object(Mock(), storage, "file.txt", None, False)
-    assert res.body == b"data"
+    assert res.headers["content-length"] == "4"
+    body = b"".join([chunk async for chunk in res.body_iterator])
+    assert body == b"data"
 
 @pytest.mark.asyncio
 async def test_upload_storage_part():

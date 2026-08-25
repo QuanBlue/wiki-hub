@@ -51,6 +51,16 @@ async def test_storage_operations_and_presigned_urls(storage: S3ObjectStorage, t
     client.get_object.return_value = {"Body": body}
     assert await storage.get("a") == b"payload"
 
+    stream_chunks = iter([b"aaaa", b"bbbb", b""])
+    stream_body = Mock()
+    stream_body.read.side_effect = lambda _size: next(stream_chunks)
+    stream_body.close.return_value = None
+    client.get_object.return_value = {"Body": stream_body, "ContentLength": 8}
+    content_length, chunk_iter = await storage.get_stream("a")
+    assert content_length == 8
+    assert [chunk async for chunk in chunk_iter] == [b"aaaa", b"bbbb"]
+    stream_body.close.assert_called_once()
+
     destination = tmp_path / "download.bin"
     client.download_file.return_value = None
     await storage.download_to_file("a", str(destination))
@@ -186,3 +196,78 @@ async def test_storage_bucket_setup_reraises_unknown_errors(
         await storage.ensure_bucket()
     assert isinstance(get_storage(), S3ObjectStorage)
     set_storage(None)
+
+
+# -- open_reader: ranged random access over a remote object -----------------
+
+
+def _range_backed_client(payload: bytes) -> Mock:
+    """A client whose `get_object` honours the `Range` header, like S3 does."""
+    client = Mock()
+    client.head_object.return_value = {"ContentLength": len(payload)}
+
+    def _get_object(*, Bucket: str, Key: str, Range: str) -> dict:
+        first, last = Range.removeprefix("bytes=").split("-")
+        chunk = payload[int(first) : int(last) + 1]
+        body = Mock()
+        body.read.return_value = chunk
+        return {"Body": body}
+
+    client.get_object.side_effect = _get_object
+    return client
+
+
+def test_open_reader_serves_seeks_from_ranged_gets(storage: S3ObjectStorage) -> None:
+    payload = bytes(range(256)) * 64
+    storage._client = _range_backed_client(payload)
+
+    with storage.open_reader("k") as reader:
+        assert reader.read(16) == payload[:16]
+        reader.seek(1000)
+        assert reader.read(8) == payload[1000:1008]
+        # Seeking relative to the end is how `zipfile` finds a ZIP's central
+        # directory, so it has to work on a remote object too.
+        reader.seek(-32, 2)
+        assert reader.read() == payload[-32:]
+        # Reading at EOF terminates rather than looping forever.
+        assert reader.read(16) == b""
+
+
+def test_open_reader_fetches_only_what_is_read(storage: S3ObjectStorage) -> None:
+    """The property the space-list preview depends on: cost tracks bytes
+    read, not object size."""
+    payload = b"\0" * (64 * 1024 * 1024)
+    client = _range_backed_client(payload)
+    storage._client = client
+
+    with storage.open_reader("k") as reader:
+        reader.seek(len(payload) - 128)
+        assert len(reader.read(128)) == 128
+
+    fetched = sum(
+        int(call.kwargs["Range"].removeprefix("bytes=").split("-")[1])
+        - int(call.kwargs["Range"].removeprefix("bytes=").split("-")[0])
+        + 1
+        for call in client.get_object.call_args_list
+    )
+    assert fetched < len(payload) // 100
+
+
+def test_open_reader_maps_a_missing_object_to_not_found(storage: S3ObjectStorage) -> None:
+    storage._client = Mock()
+    storage._client.head_object.side_effect = _client_error("NoSuchKey")
+    with pytest.raises(NotFoundError):
+        storage.open_reader("gone")
+
+
+def test_open_reader_maps_transport_failure_to_unavailable(storage: S3ObjectStorage) -> None:
+    storage._client = Mock()
+    storage._client.head_object.side_effect = BotoCoreError()
+    with pytest.raises(ServiceUnavailableError):
+        storage.open_reader("k")
+
+
+def test_open_reader_rejects_a_seek_before_the_start(storage: S3ObjectStorage) -> None:
+    storage._client = _range_backed_client(b"payload")
+    with storage.open_reader("k") as reader, pytest.raises(OSError):
+        reader.seek(-1)

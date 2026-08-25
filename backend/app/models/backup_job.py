@@ -8,9 +8,10 @@ different lifecycle (it can be downloaded as an export or staged for restore).
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BIGINT, Boolean, ForeignKey, Index, String, Text
+from sqlalchemy import BIGINT, Boolean, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -55,7 +56,19 @@ class BackupJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     phase: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     counters: Mapped[dict[str, int]] = mapped_column(JSONB, nullable=False, default=dict)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Refreshed by the worker while it works. A "running" row whose heartbeat
+    #: has gone stale belongs to a worker that died, and is reaped - without
+    #: this there is no way to tell the two apart, and an orphaned job would
+    #: keep a progress bar spinning in the admin UI forever.
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Set once, when a restore (`kind="full_import"`) job reaches "complete" -
+    #: the `ImportReport` the old synchronous endpoint used to return directly
+    #: in its HTTP response. `counters` stays a throttled progress signal
+    #: written many times while the job runs; this is the opposite shape,
+    #: write-once and much richer than `dict[str, int]`.
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

@@ -44,3 +44,21 @@ if (typeof Element !== "undefined") {
   Element.prototype.getClientRects = () =>
     [{ x: 0, y: 0, bottom: 0, height: 0, left: 0, right: 0, top: 0, width: 0, toJSON: () => ({}) }] as unknown as DOMRectList;
 }
+
+// jsdom's Blob/File (File extends Blob) don't implement `.arrayBuffer()` -
+// real browsers have supported it for years, so this is purely a test-env
+// gap. `sha256File` (backup-panel.tsx) relies on it to fingerprint an
+// upload; FileReader, which jsdom does implement, stands in for it here.
+if (
+  typeof Blob !== "undefined" &&
+  typeof Blob.prototype.arrayBuffer !== "function"
+) {
+  Blob.prototype.arrayBuffer = function (this: Blob): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error ?? new Error("Blob read failed."));
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}

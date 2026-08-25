@@ -22,8 +22,8 @@ import json
 import re
 import zipfile
 from collections.abc import Collection, Mapping
-from datetime import UTC, datetime
-from typing import Any, Literal
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal, NamedTuple
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
@@ -42,6 +42,7 @@ from app.models.permission import (
     SpaceGroupPermission,
     SpaceUserPermission,
 )
+from app.models.backup_job import BackupJob
 from app.models.restriction import PageGroupRestriction, PageUserRestriction
 from app.models.revision import PageRevision
 from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceStatus
@@ -88,6 +89,76 @@ from app.services.site_settings import SiteSettingsService
 from app.services.storage import ObjectStorage
 
 logger = get_logger(__name__)
+
+
+class ExportCancelled(Exception):
+    """Raised mid-export when an operator sets ``BackupJob.cancel_requested``."""
+
+
+#: How often (in processed items) the export loops checkpoint: observe
+#: `cancel_requested` and refresh the heartbeat. Fixed and small on purpose -
+#: large exports must not go long stretches without observing a cancel request.
+_PROGRESS_CHECK_EVERY = 25
+
+#: A running job whose heartbeat is older than this is treated as abandoned by
+#: its worker. Deliberately generous compared to the checkpoint cadence above:
+#: a false positive marks a genuinely running export as failed, so the margin
+#: has to absorb one unusually slow item (a very large attachment download).
+STALE_JOB_AFTER = timedelta(minutes=5)
+
+
+async def checkpoint_backup_job(
+    session: AsyncSession,
+    job: BackupJob,
+    *,
+    counters: Mapping[str, int] | None = None,
+) -> None:
+    """Prove the job is alive, honour a pending cancel, and persist progress.
+
+    Every long-running phase of an export calls this. It is the *only* thing
+    that lets an operator cancel a job that has already started, and the only
+    thing that distinguishes a working job from one whose worker has died.
+    """
+    # Re-read from the database: `cancel_requested` is written by the API in a
+    # different session, so an in-memory copy would never see it.
+    await session.refresh(job)
+    if job.cancel_requested:
+        raise ExportCancelled("Export cancelled by administrator.")
+    job.heartbeat_at = datetime.now(UTC)
+    if counters:
+        job.counters = {**job.counters, **counters}
+    await session.commit()
+
+
+class _PageIndexEntry(NamedTuple):
+    """Just enough to resolve `space_key`/`slug`/`parent_slug` references.
+
+    Deliberately not the `WikiPage` row itself, which also carries `content` -
+    building this index from full rows (simplest, and what the code used to
+    do) means every page's content sits in memory for the whole export just
+    to answer "what space/slug does this id belong to", which does not scale.
+    """
+
+    space_id: UUID
+    slug: str
+    parent_id: UUID | None
+
+
+class _HashingZipEntry:
+    """Write UTF-8 text into an open zip entry while tracking a running
+    sha256 + byte count, so a large entry's manifest checksum never requires
+    holding the whole thing in memory to hash at the end."""
+
+    def __init__(self, handle: Any) -> None:
+        self._handle = handle
+        self.digest = hashlib.sha256()
+        self.size = 0
+
+    def write(self, text: str) -> None:
+        data = text.encode("utf-8")
+        self._handle.write(data)
+        self.digest.update(data)
+        self.size += len(data)
 
 
 #: Any tag carrying an `/api/v1/attachments/<uuid>` reference. Matched as a
@@ -160,6 +231,28 @@ def _relink_attachment_references(
         return _ATTACHMENT_ID_RE.sub(rf"\g<1>{replacement}", tag)
 
     return _ATTACHMENT_TAG_RE.sub(rewrite, content)
+
+
+def _without_handled_conflicts(result: ImportReport, overwritten: set[str]) -> ImportReport:
+    """Drop spaces the caller already chose to overwrite from the conflict list.
+
+    `conflicting_space_keys` exists to ask the admin one question: "these
+    spaces already exist - replace them?". An overwrite restore deletes the
+    conflicting spaces' *pages* but deliberately keeps the `Space` rows
+    themselves, so membership and permissions survive - which means `_apply`
+    still reports every one of them as `key_exists`. Left unfiltered, the
+    answer to that question comes back as the very same question, and the
+    admin is stuck confirming "replace and restore" forever.
+
+    A space named in `overwrite_space_keys` has already been dealt with in
+    this run, so it is no longer an open decision.
+    """
+    if not overwritten:
+        return result
+    remaining = [key for key in result.conflicting_space_keys if key not in overwritten]
+    if len(remaining) == len(result.conflicting_space_keys):
+        return result
+    return result.model_copy(update={"conflicting_space_keys": remaining})
 
 
 class _ReportBuilder:
@@ -506,6 +599,7 @@ class BackupService:
         *,
         include_credentials: bool = False,
         space_keys: list[str] | None = None,
+        job: BackupJob | None = None,
     ) -> dict[str, Any]:
         """Create the portable ZIP artifact, including every referenced binary.
 
@@ -513,112 +607,359 @@ class BackupService:
         object keys; storage layouts are implementation details and must never
         leak into a restore target.
 
-        ``space_keys`` mirrors :meth:`export_document`'s scoping. This method
-        re-queries pages/spaces independently of the (already-scoped)
-        ``document`` rather than reusing it, so both local queries need the
-        same filter - otherwise an attachment belonging to an out-of-scope
-        page would still be appended, referencing a space absent from
-        ``document.spaces``.
+        Deliberately does **not** build on :meth:`export_document`: that
+        method holds every page and every page revision's full content in
+        memory at once as one Pydantic tree, which is fine for a small
+        instance but is what OOM-killed the export worker on a real
+        ~5000-attachment, many-revision instance in practice (fixed
+        2026-08-25). This method instead streams attachments, avatars, pages
+        and page revisions - the things that scale with instance size rather
+        than with schema size - straight into the archive one batch at a
+        time, so peak memory stays bounded regardless of how large the
+        instance is. Small, schema-sized tables (users, spaces, memberships,
+        permissions, ...) are still built as ordinary Python objects; nothing
+        in the whole instance except its content is proportionally large.
+
+        ``job`` is optional and only used to report incremental progress /
+        observe cancellation while the potentially slow, memory-sensitive
+        work happens - passing it is what lets the admin UI show a real
+        percent/ETA and a working Cancel button instead of an indeterminate
+        spinner.
         """
-        document = await self.export_document(
-            include_credentials=include_credentials, space_keys=space_keys
-        )
-        pages_query = select(WikiPage)
-        spaces_query = select(Space)
+        PAGE_BATCH = 500
+
+        if job is not None:
+            await checkpoint_backup_job(self.session, job)
+
+        users = list((await self.session.execute(select(User).order_by(User.username))).scalars())
+        spaces_query = select(Space).order_by(Space.key)
         if space_keys:
-            pages_query = pages_query.where(
-                WikiPage.space_id.in_(select(Space.id).where(Space.key.in_(space_keys)))
-            )
             spaces_query = spaces_query.where(Space.key.in_(space_keys))
-        pages = list((await self.session.execute(pages_query)).scalars())
-        page_by_id = {page.id: page for page in pages}
         spaces = list((await self.session.execute(spaces_query)).scalars())
-        space_by_id = {space.id: space for space in spaces}
-        attachments = list((await self.session.execute(select(PageAttachment))).scalars())
-        users = list((await self.session.execute(select(User))).scalars())
+        users_by_id = {u.id: u for u in users}
+        spaces_by_id = {s.id: s for s in spaces}
+        avatar_users = [user for user in users if user.avatar_object_key]
 
-        payloads: list[tuple[str, bytes, str]] = []
-        for attachment in attachments:
-            page = page_by_id.get(attachment.page_id)
-            space = space_by_id.get(page.space_id) if page else None
-            if page is None or space is None:
-                continue
-            data = await storage.get(attachment.object_key)
-            digest = hashlib.sha256(data).hexdigest()
-            object_path = f"objects/attachments/{digest}"
-            document.attachments.append(
-                BackupAttachment(
-                    id=attachment.id,
-                    page_space_key=space.key,
-                    page_slug=page.slug,
-                    filename=attachment.filename,
-                    content_type=attachment.content_type,
-                    object_path=object_path,
-                    sha256=digest,
-                    size_bytes=len(data),
-                )
-            )
-            payloads.append((object_path, data, attachment.content_type))
-        for user in users:
-            if not user.avatar_object_key:
-                continue
-            data = await storage.get(user.avatar_object_key)
-            digest = hashlib.sha256(data).hexdigest()
-            content_type = user.avatar_content_type or "application/octet-stream"
-            object_path = f"objects/avatars/{digest}"
-            document.avatars.append(
-                BackupAvatar(
-                    username=user.username,
-                    content_type=content_type,
-                    object_path=object_path,
-                    sha256=digest,
-                    size_bytes=len(data),
-                )
-            )
-            payloads.append((object_path, data, content_type))
-
-        # Identical bytes may belong to multiple records. Archive paths are
-        # content-addressed, so write each object once.
-        unique_payloads = {entry_path: data for entry_path, data, _ in payloads}
-        document.wikihub_backup.counts.update(
-            {"attachments": len(document.attachments), "avatars": len(document.avatars)}
+        members = list((await self.session.execute(select(SpaceMember))).scalars())
+        favorites = list((await self.session.execute(select(SpaceFavorite))).scalars())
+        groups = list((await self.session.execute(select(Group).order_by(Group.name))).scalars())
+        group_members = list((await self.session.execute(select(GroupMember))).scalars())
+        group_permissions = list(
+            (await self.session.execute(select(GroupGlobalPermission))).scalars()
         )
-        workspace = document.model_dump_json(indent=None).encode("utf-8")
-        entry_checksums: list[dict[str, Any]] = [
-            {
-                "path": DOCUMENT_PATH,
-                "sha256": hashlib.sha256(workspace).hexdigest(),
-                "size_bytes": len(workspace),
-            }
-        ]
-        for entry_path, data in sorted(unique_payloads.items()):
-            entry_checksums.append(
-                {
-                    "path": entry_path,
-                    "sha256": hashlib.sha256(data).hexdigest(),
-                    "size_bytes": len(data),
-                }
-            )
-        manifest = {
-            "format": FULL_BACKUP_FORMAT,
-            "version": FULL_BACKUP_VERSION,
-            "created_at": datetime.now(UTC).isoformat(),
-            "includes_credentials": include_credentials,
-            "counts": document.wikihub_backup.counts,
-            "entries": entry_checksums,
+        space_user_permissions = list(
+            (await self.session.execute(select(SpaceUserPermission))).scalars()
+        )
+        space_group_permissions = list(
+            (await self.session.execute(select(SpaceGroupPermission))).scalars()
+        )
+        groups_by_id = {group.id: group for group in groups}
+
+        page_index_query = select(
+            WikiPage.id, WikiPage.space_id, WikiPage.slug, WikiPage.parent_id
+        )
+        if space_keys:
+            page_index_query = page_index_query.where(WikiPage.space_id.in_(spaces_by_id.keys()))
+        pages_index: dict[UUID, _PageIndexEntry] = {
+            row.id: _PageIndexEntry(space_id=row.space_id, slug=row.slug, parent_id=row.parent_id)
+            for row in (await self.session.execute(page_index_query)).all()
+            if row.space_id in spaces_by_id
         }
+        revisions_total = (
+            await self.session.execute(
+                select(func.count())
+                .select_from(PageRevision)
+                .where(PageRevision.page_id.in_(pages_index.keys()))
+            )
+        ).scalar_one() if pages_index else 0
+
+        attachments = list((await self.session.execute(select(PageAttachment))).scalars())
+        likes = list((await self.session.execute(select(PageLike))).scalars())
+        page_user_restrictions = list(
+            (await self.session.execute(select(PageUserRestriction))).scalars()
+        )
+        page_group_restrictions = list(
+            (await self.session.execute(select(PageGroupRestriction))).scalars()
+        )
+        overrides = (await self.site_settings.read()).overrides
+        effective = await self.site_settings.get_effective()
+
+        def _page_space_key(page_id: UUID) -> str | None:
+            entry = pages_index.get(page_id)
+            return spaces_by_id[entry.space_id].key if entry and entry.space_id in spaces_by_id else None
+
+        doc_users = []
+        for user in users:
+            entry = BackupUser.model_validate(user)
+            entry.password_hash = user.password_hash if include_credentials else None
+            entry.avatar_url = (
+                user.avatar_url if user.avatar_url and not user.avatar_object_key else None
+            )
+            doc_users.append(entry)
+        doc_spaces = [
+            BackupSpace(
+                id=s.id, key=s.key, name=s.name, description=s.description, icon=s.icon,
+                status=s.status, visibility=s.visibility, created_at=s.created_at, updated_at=s.updated_at,
+                created_by_username=users_by_id[s.created_by_id].username if s.created_by_id in users_by_id else None,
+            )
+            for s in spaces
+        ]
+        doc_members = [
+            BackupSpaceMember(space_key=spaces_by_id[m.space_id].key, username=users_by_id[m.user_id].username, role=m.role)
+            for m in members if m.space_id in spaces_by_id and m.user_id in users_by_id
+        ]
+        doc_favorites = [
+            BackupSpaceFavorite(username=users_by_id[f.user_id].username, space_key=spaces_by_id[f.space_id].key)
+            for f in favorites if f.space_id in spaces_by_id and f.user_id in users_by_id
+        ]
+        doc_groups = [
+            BackupGroup(id=g.id, name=g.name, description=g.description, owner_username=users_by_id[g.owner_id].username, is_active=g.is_active)
+            for g in groups if g.owner_id in users_by_id
+        ]
+        doc_group_members = [
+            BackupGroupMember(group_name=groups_by_id[row.group_id].name, username=users_by_id[row.user_id].username)
+            for row in group_members if row.group_id in groups_by_id and row.user_id in users_by_id
+        ]
+        doc_group_permissions = [
+            BackupGroupGlobalPermission(group_name=groups_by_id[row.group_id].name, permission=row.permission)
+            for row in group_permissions if row.group_id in groups_by_id
+        ]
+        doc_space_user_permissions = [
+            BackupSpaceUserPermission(space_key=spaces_by_id[row.space_id].key, username=users_by_id[row.user_id].username, permission=row.permission)
+            for row in space_user_permissions if row.space_id in spaces_by_id and row.user_id in users_by_id
+        ]
+        doc_space_group_permissions = [
+            BackupSpaceGroupPermission(space_key=spaces_by_id[row.space_id].key, group_name=groups_by_id[row.group_id].name, permission=row.permission)
+            for row in space_group_permissions if row.space_id in spaces_by_id and row.group_id in groups_by_id
+        ]
+        doc_likes = [
+            BackupPageLike(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username)
+            for row in likes if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
+        ]
+        doc_page_user_restrictions = [
+            BackupPageUserRestriction(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username, permission=row.permission)
+            for row in page_user_restrictions if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
+        ]
+        doc_page_group_restrictions = [
+            BackupPageGroupRestriction(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, group_name=groups_by_id[row.group_id].name, permission=row.permission)
+            for row in page_group_restrictions if row.page_id in pages_index and row.group_id in groups_by_id and _page_space_key(row.page_id)
+        ]
+
+        total_items = len(attachments) + len(avatar_users) + len(pages_index) + revisions_total
+        processed_items = 0
+
+        async def _report_progress() -> None:
+            nonlocal processed_items
+            processed_items += 1
+            if job is None or total_items == 0:
+                return
+            # Checked on a fixed item cadence - NOT gated on the reported percent
+            # changing. `percent` below is capped at 99 (`min(99, ...)`), so once
+            # the count crosses that cap every later item reports the same
+            # percent forever; gating the check on "percent changed" would stop
+            # observing `cancel_requested` for the remainder of a large export.
+            # The last item always checks too, so a short (<PROGRESS_CHECK_EVERY)
+            # export still gets one cancellation check at its very end.
+            if (
+                processed_items % _PROGRESS_CHECK_EVERY != 0
+                and processed_items != total_items
+            ):
+                return
+            await checkpoint_backup_job(
+                self.session,
+                job,
+                counters={"items_processed": processed_items, "items_total": total_items},
+            )
+
+        document = BackupDocument(
+            wikihub_backup=BackupMeta(
+                version=BACKUP_VERSION,
+                exported_at=datetime.now(UTC),
+                app_version=settings.project_version,
+                site_name=effective.site_name,
+                includes_credentials=include_credentials,
+                space_keys=space_keys or [],
+                counts={
+                    "users": len(doc_users),
+                    "spaces": len(doc_spaces),
+                    "space_members": len(doc_members),
+                    "space_favorites": len(doc_favorites),
+                    "groups": len(doc_groups),
+                    "pages": len(pages_index),
+                    "page_revisions": revisions_total,
+                    "page_likes": len(doc_likes),
+                    "page_restrictions": len(doc_page_user_restrictions) + len(doc_page_group_restrictions),
+                },
+            ),
+            users=doc_users, spaces=doc_spaces, space_members=doc_members, space_favorites=doc_favorites,
+            groups=doc_groups, group_members=doc_group_members, group_global_permissions=doc_group_permissions,
+            space_user_permissions=doc_space_user_permissions, space_group_permissions=doc_space_group_permissions,
+            pages=[], page_revisions=[],
+            page_likes=doc_likes, page_user_restrictions=doc_page_user_restrictions, page_group_restrictions=doc_page_group_restrictions,
+            site_settings=BackupSiteSettings(**overrides.model_dump()),
+        )
+
+        # Attachment/avatar bytes, and page/revision content, are streamed
+        # straight into the archive rather than collected into a list first -
+        # only the small per-item metadata (digest, size) needs to outlive
+        # each fetch. See the docstring above for why.
+        entry_checksums: list[dict[str, Any]] = []
+        written_paths: set[str] = set()
+
+        def _write_once(archive: zipfile.ZipFile, object_path: str, digest: str, data: bytes) -> None:
+            # Identical bytes may belong to multiple records. Archive paths
+            # are content-addressed, so write each distinct object only once.
+            if object_path in written_paths:
+                return
+            written_paths.add(object_path)
+            archive.writestr(object_path, data)
+            entry_checksums.append({"path": object_path, "sha256": digest, "size_bytes": len(data)})
+
         with zipfile.ZipFile(
             path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
         ) as archive:
-            archive.writestr(DOCUMENT_PATH, workspace)
-            for entry_path, data in sorted(unique_payloads.items()):
-                archive.writestr(entry_path, data)
+            for attachment in attachments:
+                page_space_key = _page_space_key(attachment.page_id)
+                if page_space_key is None:
+                    continue
+                data = await storage.get(attachment.object_key)
+                digest = hashlib.sha256(data).hexdigest()
+                object_path = f"objects/attachments/{digest}"
+                document.attachments.append(
+                    BackupAttachment(
+                        id=attachment.id, page_space_key=page_space_key, page_slug=pages_index[attachment.page_id].slug,
+                        filename=attachment.filename, content_type=attachment.content_type,
+                        object_path=object_path, sha256=digest, size_bytes=len(data),
+                    )
+                )
+                _write_once(archive, object_path, digest, data)
+                del data
+                await _report_progress()
+            for user in avatar_users:
+                data = await storage.get(user.avatar_object_key)
+                digest = hashlib.sha256(data).hexdigest()
+                content_type = user.avatar_content_type or "application/octet-stream"
+                object_path = f"objects/avatars/{digest}"
+                document.avatars.append(
+                    BackupAvatar(username=user.username, content_type=content_type, object_path=object_path, sha256=digest, size_bytes=len(data))
+                )
+                _write_once(archive, object_path, digest, data)
+                del data
+                await _report_progress()
+
+            document.wikihub_backup.counts.update(
+                {"attachments": len(document.attachments), "avatars": len(document.avatars)}
+            )
+
+            # `document.pages`/`.page_revisions` are still `[]` here - splice
+            # their streamed content into this "shell" rather than building
+            # the whole thing (page/revision content included) as one string.
+            shell = document.model_dump_json(indent=None)
+            pages_marker, revisions_marker = '"pages":[]', '"page_revisions":[]'
+            pages_at = shell.index(pages_marker)
+            before_pages = shell[:pages_at] + '"pages":['
+            after_pages = shell[pages_at + len(pages_marker) - 1:]  # keeps the leading "]"
+            revisions_at = after_pages.index(revisions_marker)
+            between = after_pages[:revisions_at] + '"page_revisions":['
+            after_revisions = after_pages[revisions_at + len(revisions_marker) - 1:]  # keeps the leading "]"
+
+            with archive.open(DOCUMENT_PATH, "w") as handle:
+                writer = _HashingZipEntry(handle)
+                writer.write(before_pages)
+
+                async def _page_batches():
+                    page_ids = list(pages_index.keys())
+                    for offset in range(0, len(page_ids), PAGE_BATCH):
+                        batch_ids = page_ids[offset : offset + PAGE_BATCH]
+                        rows = (
+                            await self.session.execute(
+                                select(
+                                    WikiPage.id, WikiPage.slug, WikiPage.title, WikiPage.content,
+                                    WikiPage.content_format, WikiPage.parent_id, WikiPage.created_by_id,
+                                    WikiPage.updated_by_id, WikiPage.created_by_label, WikiPage.updated_by_label,
+                                ).where(WikiPage.id.in_(batch_ids))
+                            )
+                        ).all()
+                        yield rows
+
+                first = True
+                async for batch in _page_batches():
+                    for row in batch:
+                        parent = pages_index.get(row.parent_id) if row.parent_id else None
+                        page_model = BackupPage(
+                            id=row.id, space_key=spaces_by_id[pages_index[row.id].space_id].key,
+                            slug=row.slug, title=row.title, content=row.content, content_format=row.content_format,
+                            parent_slug=parent.slug if parent else None,
+                            created_by_username=users_by_id[row.created_by_id].username if row.created_by_id in users_by_id else None,
+                            updated_by_username=users_by_id[row.updated_by_id].username if row.updated_by_id in users_by_id else None,
+                            created_by_label=row.created_by_label, updated_by_label=row.updated_by_label,
+                        )
+                        if not first:
+                            writer.write(",")
+                        first = False
+                        writer.write(page_model.model_dump_json())
+                        del page_model
+                        await _report_progress()
+                    if job is not None:
+                        await checkpoint_backup_job(self.session, job)
+
+                writer.write(between)
+
+                first = True
+                page_ids = list(pages_index.keys())
+                for offset in range(0, revisions_total, PAGE_BATCH):
+                    rows = (
+                        await self.session.execute(
+                            select(
+                                PageRevision.page_id, PageRevision.version, PageRevision.title,
+                                PageRevision.content, PageRevision.content_format,
+                                PageRevision.created_by_id, PageRevision.change_summary,
+                            )
+                            .where(PageRevision.page_id.in_(page_ids))
+                            .order_by(PageRevision.id)
+                            .limit(PAGE_BATCH)
+                            .offset(offset)
+                        )
+                    ).all()
+                    for row in rows:
+                        entry = pages_index.get(row.page_id)
+                        if entry is None or entry.space_id not in spaces_by_id:
+                            continue
+                        revision_model = BackupPageRevision(
+                            page_space_key=spaces_by_id[entry.space_id].key, page_slug=entry.slug, version=row.version,
+                            title=row.title, content=row.content, content_format=row.content_format,
+                            created_by_username=users_by_id[row.created_by_id].username if row.created_by_id in users_by_id else None,
+                            change_summary=row.change_summary,
+                        )
+                        if not first:
+                            writer.write(",")
+                        first = False
+                        writer.write(revision_model.model_dump_json())
+                        del revision_model
+                        await _report_progress()
+                    if job is not None:
+                        await checkpoint_backup_job(self.session, job)
+
+                writer.write(after_revisions)
+
+            entry_checksums.insert(
+                0, {"path": DOCUMENT_PATH, "sha256": writer.digest.hexdigest(), "size_bytes": writer.size}
+            )
+            entry_checksums.sort(key=lambda entry: entry["path"])
+            manifest = {
+                "format": FULL_BACKUP_FORMAT,
+                "version": FULL_BACKUP_VERSION,
+                "created_at": datetime.now(UTC).isoformat(),
+                "includes_credentials": include_credentials,
+                "counts": document.wikihub_backup.counts,
+                "entries": entry_checksums,
+            }
             archive.writestr(MANIFEST_PATH, json.dumps(manifest, separators=(",", ":")))
         return manifest
 
     @staticmethod
-    def scan_full_package(path: str) -> ScannedPackage:
-        return scan_full_backup(path)
+    def scan_full_package(path: str, *, max_size_bytes: int | None = None) -> ScannedPackage:
+        return scan_full_backup(path, max_size_bytes=max_size_bytes)
 
     async def restore_full_package(
         self,
@@ -628,14 +969,38 @@ class BackupService:
         dry_run: bool = True,
         overwrite_space_keys: set[str] | None = None,
         space_keys: set[str] | None = None,
+        job: BackupJob | None = None,
     ) -> ImportReport:
         """Restore a checksum-verified full ZIP and its owned binaries.
 
         ZIP entries are verified before any database or object-store mutation.
         Existing identities/spaces retain the legacy safe ``skip`` behaviour;
         only files belonging to pages/users created by this restore are added.
+
+        ``job`` is optional so the legacy synchronous `/backup/import-zip`
+        endpoint can keep calling this with no job to check in with - the
+        same shape `export_full_package`'s `job` parameter already uses.
         """
-        scanned = scan_full_backup(path)
+        # The admin-editable site setting (up to 100GB) is what the frontend's
+        # own pre-flight check and the Confluence importer already enforce -
+        # `settings.max_import_size_bytes` is a separate, env-only, 1GB-by-
+        # default fallback that previously silently overrode it here.
+        effective = await self.site_settings.get_effective()
+        scanned = scan_full_backup(path, max_size_bytes=effective.max_backup_import_size_bytes)
+        if job is not None:
+            # Scanning a multi-GB archive is itself a long silent stretch (full
+            # checksum verification of every entry) - this is the first chance
+            # to observe a cancel requested before scanning even finished, and
+            # gives the frontend a real total to show a percentage against.
+            await checkpoint_backup_job(
+                self.session,
+                job,
+                counters={
+                    "items_processed": 0,
+                    "items_total": len(scanned.document.attachments)
+                    + len(scanned.document.avatars),
+                },
+            )
         requested_overwrites = {
             key.strip().upper() for key in overwrite_space_keys or set() if key.strip()
         }
@@ -704,16 +1069,51 @@ class BackupService:
             if restore_savepoint is not None and restore_savepoint.is_active:
                 await restore_savepoint.rollback()
             result = result.model_copy(update={"dry_run": True})
-            return result
+            return _without_handled_conflicts(result, requested_overwrites)
 
         created_object_keys: list[str] = []
         # Every page this restore attached files to, with the ids those files
         # actually landed on - the input to the relink pass below.
         restored_pages: dict[UUID, WikiPage] = {}
         attachment_ids_by_page: dict[UUID, dict[str, UUID]] = {}
+        total_items = len(scanned.document.attachments) + len(scanned.document.avatars)
+        processed_items = 0
+
+        async def _report_progress() -> None:
+            nonlocal processed_items
+            processed_items += 1
+            if job is None or total_items == 0:
+                return
+            # `checkpoint_backup_job` commits - and this loop can be running
+            # inside `restore_savepoint`, a still-open SAVEPOINT that must
+            # stay uncommitted until the loop finishes so a later failure can
+            # roll the destructive overwrite-delete back atomically. A commit
+            # here would release that SAVEPOINT early, and the eventual
+            # `restore_savepoint.commit()`/`.rollback()` calls below would
+            # then be operating on nothing. Skip checkpointing (progress and
+            # cancellation both) for the rest of an overwrite restore rather
+            # than risk that; the scan-time checkpoint above still gives the
+            # operator one chance to cancel before this savepoint even opens.
+            if restore_savepoint is not None and restore_savepoint.is_active:
+                return
+            # Same fixed cadence as export's `_report_progress` - never gated
+            # on the reported percent changing, so cancellation is still
+            # observed after `percent` plateaus at its 99% cap.
+            if (
+                processed_items % _PROGRESS_CHECK_EVERY != 0
+                and processed_items != total_items
+            ):
+                return
+            await checkpoint_backup_job(
+                self.session,
+                job,
+                counters={"items_processed": processed_items, "items_total": total_items},
+            )
+
         try:
             with zipfile.ZipFile(path) as archive:
                 for attachment in scanned.document.attachments:
+                    await _report_progress()
                     page_label = f"{attachment.page_space_key.upper()}/{attachment.page_slug}"
                     if page_label in existing_page_refs:
                         continue
@@ -729,17 +1129,22 @@ class BackupService:
                     ).scalar_one_or_none()
                     if page is None:
                         continue
-                    payload = archive.read(attachment.object_path)
                     safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", attachment.filename)[:200]
                     key = f"attachments/{page.id}/{uuid4()}-{safe_name}"
-                    await storage.put(key, payload, content_type=attachment.content_type)
+                    # Stream the entry straight into storage rather than
+                    # `archive.read()`-ing the whole attachment into RAM first -
+                    # the same fix already applied to export's upload path, for
+                    # the same reason (a multi-GB attachment must not double its
+                    # own size in memory just to be restored).
+                    with archive.open(attachment.object_path) as source:
+                        await storage.put(key, source, content_type=attachment.content_type)
                     created_object_keys.append(key)
                     new_attachment = PageAttachment(
                         page_id=page.id,
                         filename=attachment.filename,
                         content_type=attachment.content_type,
                         object_key=key,
-                        size_bytes=len(payload),
+                        size_bytes=attachment.size_bytes,
                     )
                     # Preserve the original id (same idiom as WikiPage above)
                     # so `/api/v1/attachments/<id>` links already baked into
@@ -758,14 +1163,15 @@ class BackupService:
                     )
                     result.created["attachment"] = result.created.get("attachment", 0) + 1
                 for avatar in scanned.document.avatars:
+                    await _report_progress()
                     if avatar.username in existing_users:
                         continue
                     user = await self.users.get_by_username(avatar.username)
                     if user is None:
                         continue
-                    payload = archive.read(avatar.object_path)
                     key = f"avatars/{user.id}/{uuid4()}"
-                    await storage.put(key, payload, content_type=avatar.content_type)
+                    with archive.open(avatar.object_path) as source:
+                        await storage.put(key, source, content_type=avatar.content_type)
                     created_object_keys.append(key)
                     user.avatar_object_key = key
                     user.avatar_content_type = avatar.content_type
@@ -808,7 +1214,7 @@ class BackupService:
                     await storage.delete(key)
                 except Exception:  # pragma: no cover - provider outage after commit
                     logger.exception("backup_restore_old_object_cleanup_failed", object_key=key)
-        return result
+        return _without_handled_conflicts(result, requested_overwrites)
 
     # -- import ------------------------------------------------------------
     async def import_document(

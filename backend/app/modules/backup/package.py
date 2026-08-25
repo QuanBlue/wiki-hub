@@ -14,7 +14,7 @@ import stat
 import zipfile
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any
+from typing import IO, Any
 
 from pydantic import ValidationError
 
@@ -28,6 +28,17 @@ MANIFEST_PATH = "manifest.json"
 DOCUMENT_PATH = "data/workspace.json"
 MAX_ARCHIVE_ENTRIES = 100_000
 MAX_COMPRESSION_RATIO = 100
+#: `data/workspace.json` is read whole and parsed as one Pydantic tree
+#: (`BackupDocument.model_validate_json`), unlike attachments/avatars, which
+#: are streamed. It holds page/revision *text*, not binaries, so this is a
+#: separate, deliberately generous but still bounded cap - independent of
+#: the overall archive cap (which callers may raise much higher for
+#: attachment-heavy backups) so raising that cap can never let one JSON parse
+#: pull an unbounded amount of RAM.
+MAX_DOCUMENT_BYTES = 4 * 1024 * 1024 * 1024
+#: Bytes read per chunk when a manifest entry is hashed to verify its
+#: checksum, instead of reading the whole entry into memory at once.
+_HASH_CHUNK_BYTES = 4 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +55,14 @@ class ScannedPackage:
     entries: dict[str, PackageEntry]
     archive_sha256: str
     archive_size_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class BackupSpaceSummary:
+    """One row of the "which spaces are in this archive?" preview."""
+
+    key: str
+    name: str
 
 
 def _safe_path(path: str) -> str:
@@ -70,15 +89,162 @@ def _read_limited(archive: zipfile.ZipFile, info: zipfile.ZipInfo, limit: int) -
     return payload
 
 
-def scan_full_backup(path: str) -> ScannedPackage:
+def _verify_entry_checksum(
+    archive: zipfile.ZipFile, info: zipfile.ZipInfo, entry: PackageEntry
+) -> None:
+    """Confirm a declared manifest entry's size/sha256 without holding the
+    whole entry in memory - attachments/avatars can be many GB each, and this
+    runs once per entry just to verify what the manifest already claims."""
+    if info.file_size != entry.size_bytes:
+        raise BadRequestError(
+            "Backup checksum verification failed.", code="backup_checksum_failed"
+        )
+    digest = hashlib.sha256()
+    size = 0
+    with archive.open(info) as source:
+        while chunk := source.read(_HASH_CHUNK_BYTES):
+            digest.update(chunk)
+            size += len(chunk)
+    if size != entry.size_bytes or digest.hexdigest() != entry.sha256:
+        raise BadRequestError(
+            "Backup checksum verification failed.", code="backup_checksum_failed"
+        )
+
+
+def _index_entries(archive: zipfile.ZipFile, limit: int) -> dict[str, zipfile.ZipInfo]:
+    """Validate the archive's central directory and index it by path.
+
+    Every check here reads only ZIP metadata, never entry contents, so it is
+    cheap enough to run before deciding to read anything at all - which is
+    what makes it safe to share between a full scan and the lightweight
+    space-list preview.
+    """
+    infos = archive.infolist()
+    if len(infos) > MAX_ARCHIVE_ENTRIES:
+        raise BadRequestError(
+            "Backup contains too many archive entries.", code="backup_too_many_entries"
+        )
+    total_uncompressed = 0
+    by_path: dict[str, zipfile.ZipInfo] = {}
+    for info in infos:
+        entry_path = _safe_path(info.filename)
+        if entry_path in by_path:
+            raise BadRequestError(
+                "Backup contains duplicate archive paths.", code="duplicate_backup_path"
+            )
+        if stat.S_IFMT(info.external_attr >> 16) == stat.S_IFLNK:
+            raise BadRequestError(
+                "Backup must not contain symbolic links.", code="unsafe_backup_path"
+            )
+        if info.compress_size and info.file_size / info.compress_size > MAX_COMPRESSION_RATIO:
+            raise BadRequestError(
+                "Backup compression ratio is unsafe.", code="backup_compression_ratio"
+            )
+        total_uncompressed += info.file_size
+        if total_uncompressed > limit:
+            raise PayloadTooLargeError("Backup expands beyond the configured import limit.")
+        by_path[entry_path] = info
+    return by_path
+
+
+def _read_manifest(archive: zipfile.ZipFile, by_path: dict[str, zipfile.ZipInfo]) -> dict[str, Any]:
+    if MANIFEST_PATH not in by_path or DOCUMENT_PATH not in by_path:
+        raise BadRequestError(
+            "Backup is missing its manifest or workspace data.", code="malformed_backup"
+        )
+    try:
+        manifest = json.loads(_read_limited(archive, by_path[MANIFEST_PATH], 2 * 1024 * 1024))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise BadRequestError(
+            "Backup manifest is not valid JSON.", code="malformed_backup"
+        ) from exc
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("format") != FULL_BACKUP_FORMAT
+        or manifest.get("version") != FULL_BACKUP_VERSION
+        or not isinstance(manifest.get("entries"), list)
+    ):
+        raise BadRequestError(
+            "Backup manifest is unsupported.", code="unsupported_backup_version"
+        )
+    return manifest
+
+
+def list_backup_spaces(
+    source: IO[bytes] | str, *, max_size_bytes: int | None = None
+) -> list[BackupSpaceSummary]:
+    """List the spaces a backup archive contains, reading as little as possible.
+
+    This backs the "select spaces to restore" picker, which only ever needs
+    space keys and names. `scan_full_backup` would answer the same question,
+    but at a wildly disproportionate cost: it SHA-256s the entire archive and
+    then re-reads every declared entry to verify its checksum, so previewing a
+    16 GB backup meant moving ~33 GB and taking minutes - long enough that the
+    request died in the proxy before the answer arrived.
+
+    Here only the ZIP central directory, `manifest.json`, and
+    `data/workspace.json` are touched, which for that same archive is under
+    4 MB. Combined with a ranged reader (`ObjectStorage.open_reader`), that
+    holds whether the archive lives on disk or in object storage, and stays
+    flat as archives grow.
+
+    Skipping verification is safe precisely because this preview writes
+    nothing: `restore_full_package` re-runs the full `scan_full_backup`,
+    checksums included, before any row is touched.
+    """
+    limit = settings.max_import_size_bytes if max_size_bytes is None else max_size_bytes
+    try:
+        archive = zipfile.ZipFile(source)
+    except zipfile.BadZipFile as exc:
+        raise BadRequestError(
+            "The uploaded file is not a valid ZIP archive.", code="malformed_backup"
+        ) from exc
+
+    with archive:
+        by_path = _index_entries(archive, limit)
+        _read_manifest(archive, by_path)
+        try:
+            document = json.loads(
+                _read_limited(archive, by_path[DOCUMENT_PATH], MAX_DOCUMENT_BYTES)
+            )
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise BadRequestError(
+                "Backup workspace data is invalid.", code="malformed_backup"
+            ) from exc
+
+    # Parsed as plain JSON rather than through `BackupDocument`: validating
+    # the whole tree (thousands of pages and revisions) to read one list is
+    # the same disproportion this function exists to avoid.
+    raw_spaces = document.get("spaces") if isinstance(document, dict) else None
+    if not isinstance(raw_spaces, list):
+        raise BadRequestError("Backup workspace data is invalid.", code="malformed_backup")
+    spaces: list[BackupSpaceSummary] = []
+    for raw in raw_spaces:
+        if not isinstance(raw, dict) or not isinstance(raw.get("key"), str):
+            raise BadRequestError("Backup workspace data is invalid.", code="malformed_backup")
+        name = raw.get("name")
+        spaces.append(
+            BackupSpaceSummary(key=raw["key"], name=name if isinstance(name, str) else raw["key"])
+        )
+    return spaces
+
+
+def scan_full_backup(path: str, *, max_size_bytes: int | None = None) -> ScannedPackage:
     """Verify a full backup ZIP without extracting it anywhere.
 
     A scanned archive is deterministic: apply is allowed only if the archive
     SHA-256 stored by the scan still matches immediately before restore.
+
+    ``max_size_bytes`` governs the overall archive/attachment total and
+    defaults to the static `settings.max_import_size_bytes` when the caller
+    has no runtime-configurable value to pass (e.g. the admin site setting a
+    caller with a session can look up) - it does not affect
+    `MAX_DOCUMENT_BYTES`, which is fixed regardless.
     """
+    limit = settings.max_import_size_bytes if max_size_bytes is None else max_size_bytes
     archive_path = str(path)
     archive_size = __import__("os").path.getsize(archive_path)
-    if archive_size > settings.max_import_size_bytes:
+    if archive_size > limit:
         raise PayloadTooLargeError("Backup archive exceeds the configured import limit.")
     digest = hashlib.sha256()
     with open(archive_path, "rb") as source:
@@ -93,53 +259,9 @@ def scan_full_backup(path: str) -> ScannedPackage:
         ) from exc
 
     with archive:
-        infos = archive.infolist()
-        if len(infos) > MAX_ARCHIVE_ENTRIES:
-            raise BadRequestError(
-                "Backup contains too many archive entries.", code="backup_too_many_entries"
-            )
-        seen: set[str] = set()
-        total_uncompressed = 0
-        by_path: dict[str, zipfile.ZipInfo] = {}
-        for info in infos:
-            entry_path = _safe_path(info.filename)
-            if entry_path in seen:
-                raise BadRequestError(
-                    "Backup contains duplicate archive paths.", code="duplicate_backup_path"
-                )
-            seen.add(entry_path)
-            if stat.S_IFMT(info.external_attr >> 16) == stat.S_IFLNK:
-                raise BadRequestError(
-                    "Backup must not contain symbolic links.", code="unsafe_backup_path"
-                )
-            if info.compress_size and info.file_size / info.compress_size > MAX_COMPRESSION_RATIO:
-                raise BadRequestError(
-                    "Backup compression ratio is unsafe.", code="backup_compression_ratio"
-                )
-            total_uncompressed += info.file_size
-            if total_uncompressed > settings.max_import_size_bytes:
-                raise PayloadTooLargeError("Backup expands beyond the configured import limit.")
-            by_path[entry_path] = info
-
-        if MANIFEST_PATH not in by_path or DOCUMENT_PATH not in by_path:
-            raise BadRequestError(
-                "Backup is missing its manifest or workspace data.", code="malformed_backup"
-            )
-        try:
-            manifest = json.loads(_read_limited(archive, by_path[MANIFEST_PATH], 2 * 1024 * 1024))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise BadRequestError(
-                "Backup manifest is not valid JSON.", code="malformed_backup"
-            ) from exc
-        if (
-            not isinstance(manifest, dict)
-            or manifest.get("format") != FULL_BACKUP_FORMAT
-            or manifest.get("version") != FULL_BACKUP_VERSION
-            or not isinstance(manifest.get("entries"), list)
-        ):
-            raise BadRequestError(
-                "Backup manifest is unsupported.", code="unsupported_backup_version"
-            )
+        by_path = _index_entries(archive, limit)
+        seen = set(by_path)
+        manifest = _read_manifest(archive, by_path)
 
         entries: dict[str, PackageEntry] = {}
         for raw in manifest["entries"]:
@@ -156,14 +278,10 @@ def scan_full_backup(path: str) -> ScannedPackage:
                 raise BadRequestError(
                     "Backup is missing a declared entry.", code="malformed_backup"
                 )
-            payload = _read_limited(archive, by_path[entry.path], settings.max_import_size_bytes)
-            if (
-                len(payload) != entry.size_bytes
-                or hashlib.sha256(payload).hexdigest() != entry.sha256
-            ):
-                raise BadRequestError(
-                    "Backup checksum verification failed.", code="backup_checksum_failed"
-                )
+            # Stream-hash rather than `_read_limited` (which reads the whole
+            # entry into memory to hash it) - an attachment or avatar entry
+            # can be many GB, and this loop verifies every single one.
+            _verify_entry_checksum(archive, by_path[entry.path], entry)
             entries[entry.path] = entry
         if DOCUMENT_PATH not in entries:
             raise BadRequestError(
@@ -171,7 +289,7 @@ def scan_full_backup(path: str) -> ScannedPackage:
             )
         try:
             document = BackupDocument.model_validate_json(
-                _read_limited(archive, by_path[DOCUMENT_PATH], settings.max_import_size_bytes)
+                _read_limited(archive, by_path[DOCUMENT_PATH], MAX_DOCUMENT_BYTES)
             )
         except ValidationError as exc:
             raise BadRequestError(

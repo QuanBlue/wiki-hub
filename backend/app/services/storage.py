@@ -11,10 +11,11 @@ the event loop free without pulling in a second AWS SDK.
 from __future__ import annotations
 
 import abc
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import IO, Any
+from io import BufferedReader, RawIOBase
+from typing import IO, Any, cast
 
 import anyio
 import boto3
@@ -26,6 +27,12 @@ from app.core.exceptions import NotFoundError, ServiceUnavailableError
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+#: Read-ahead for `open_reader`. A ZIP's central directory is read in many
+#: small pieces, so buffering turns that into a few range requests; 1 MiB is
+#: large enough to cover a typical directory in one or two round trips
+#: without over-fetching when only one small entry is wanted.
+_RANGE_READ_BUFFER_BYTES = 1024 * 1024
 
 
 def _open_binary_for_write(path: str) -> IO[bytes]:
@@ -57,6 +64,25 @@ class ObjectStorage(abc.ABC):
 
     @abc.abstractmethod
     async def get(self, key: str) -> bytes: ...
+
+    @abc.abstractmethod
+    async def get_stream(self, key: str) -> tuple[int, AsyncIterator[bytes]]: ...
+
+    @abc.abstractmethod
+    def open_reader(self, key: str) -> IO[bytes]:
+        """A seekable, read-only binary handle over a stored object.
+
+        Deliberately synchronous, and the only method here that is: it exists
+        for library code that needs random access to a *remote* object and is
+        itself synchronous - `zipfile.ZipFile` above all, which seeks to the
+        end of an archive to find its central directory and then seeks
+        directly to whichever entries it is asked for.
+
+        Only the byte ranges actually read are ever fetched, so listing the
+        contents of a multi-GB archive costs kilobytes instead of a full
+        download. Callers must run this (and the reads it serves) in a worker
+        thread - see `anyio.to_thread.run_sync` - never on the event loop.
+        """
 
     @abc.abstractmethod
     async def upload_part(
@@ -115,6 +141,75 @@ class ObjectStorage(abc.ABC):
 
     @abc.abstractmethod
     async def health(self) -> bool: ...
+
+
+class _S3RangeReader(RawIOBase):
+    """Seekable read-only file over an S3 object, backed by ranged GETs.
+
+    Each `read` becomes a `Range:` request for exactly the bytes asked for,
+    so a consumer that only touches part of the object (a ZIP directory
+    lookup, say) never pays for the rest of it.
+    """
+
+    def __init__(self, storage: S3ObjectStorage, key: str, size: int) -> None:
+        self._storage, self._key, self._size, self._pos = storage, key, size, 0
+
+    # -- capabilities -------------------------------------------------------
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def writable(self) -> bool:
+        return False
+
+    # -- positioning --------------------------------------------------------
+    def tell(self) -> int:
+        return self._pos
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        if whence == 0:
+            target = offset
+        elif whence == 1:
+            target = self._pos + offset
+        elif whence == 2:
+            target = self._size + offset
+        else:
+            raise ValueError(f"Unsupported whence: {whence}")
+        # Seeking past either end is a programming error here, not something
+        # to paper over with a clamped position that silently reads the wrong
+        # bytes; `zipfile` only ever seeks to offsets it read from the file.
+        if target < 0:
+            raise OSError("Cannot seek before the start of the object.")
+        self._pos = target
+        return self._pos
+
+    # -- reading ------------------------------------------------------------
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            size = max(0, self._size - self._pos)
+        if size == 0 or self._pos >= self._size:
+            return b""
+        last = min(self._pos + size, self._size) - 1
+        result = self._storage._call_sync(
+            self._storage.client.get_object,
+            Bucket=self._storage.bucket,
+            Key=self._key,
+            Range=f"bytes={self._pos}-{last}",
+        )
+        body = result["Body"]
+        try:
+            payload = body.read()
+        finally:
+            body.close()
+        self._pos += len(payload)
+        return payload
+
+    def readinto(self, buffer: Any) -> int:
+        payload = self.read(len(buffer))
+        buffer[: len(payload)] = payload
+        return len(payload)
 
 
 class S3ObjectStorage(ObjectStorage):
@@ -183,6 +278,25 @@ class S3ObjectStorage(ObjectStorage):
         return self._signing_client
 
     # -- operations ---------------------------------------------------------
+    def _call_sync(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Invoke boto3 directly, mapping its errors the way `_call` does.
+
+        Used only by `open_reader`, whose caller is already on a worker
+        thread; everything else goes through `_call`, which adds the
+        thread hop.
+        """
+        try:
+            return fn(*args, **kwargs)
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "")
+            if error_code in {"NoSuchKey", "NoSuchUpload", "404", "NotFound"}:
+                raise NotFoundError("Object not found in storage.") from exc
+            logger.error("s3_client_error", code=error_code)
+            raise ServiceUnavailableError("Object storage request failed.") from exc
+        except BotoCoreError as exc:
+            logger.error("s3_transport_error", error=str(exc))
+            raise ServiceUnavailableError("Object storage is unreachable.") from exc
+
     async def _call(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         try:
             return await anyio.to_thread.run_sync(lambda: fn(*args, **kwargs))
@@ -220,6 +334,36 @@ class S3ObjectStorage(ObjectStorage):
         result = await self._call(self.client.get_object, Bucket=self.bucket, Key=key)
         body = result["Body"]
         return await anyio.to_thread.run_sync(body.read)
+
+    async def get_stream(self, key: str) -> tuple[int, AsyncIterator[bytes]]:
+        """Return the object's size plus an async chunk iterator.
+
+        For a multi-GB export archive, `get()` would pull the whole file into
+        this process's RAM before the client sees a single byte - exactly the
+        pattern already fixed on the write side of exports. Downloads need the
+        same treatment: read from the S3 body in bounded chunks and hand each
+        one to the caller as it arrives, so memory stays flat regardless of
+        object size and the browser starts receiving bytes immediately.
+        """
+        result = await self._call(self.client.get_object, Bucket=self.bucket, Key=key)
+        body = result["Body"]
+        content_length = int(result.get("ContentLength") or 0)
+
+        async def _chunks() -> AsyncIterator[bytes]:
+            try:
+                while chunk := await anyio.to_thread.run_sync(body.read, 8 * 1024 * 1024):
+                    yield chunk
+            finally:
+                await anyio.to_thread.run_sync(body.close)
+
+        return content_length, _chunks()
+
+    def open_reader(self, key: str) -> IO[bytes]:
+        head = self._call_sync(self.client.head_object, Bucket=self.bucket, Key=key)
+        raw = _S3RangeReader(self, key, int(head.get("ContentLength") or 0))
+        # Buffered so `zipfile`'s many small central-directory reads coalesce
+        # into a handful of range requests instead of one per read.
+        return cast("IO[bytes]", BufferedReader(raw, buffer_size=_RANGE_READ_BUFFER_BYTES))
 
     async def upload_part(
         self, key: str, upload_id: str, part_number: int, data: bytes

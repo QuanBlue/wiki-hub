@@ -77,7 +77,12 @@ async def test_worker_entrypoints(monkeypatch: pytest.MonkeyPatch) -> None:
     backup_run.assert_awaited_once_with(session, storage, uuid.UUID(job_id))
 
     monkeypatch.setattr(worker_settings, "configure_logging", Mock())
+    # Startup sweeps export jobs orphaned by the previous worker; see
+    # `reap_abandoned_export_jobs`.
+    reap = AsyncMock()
+    monkeypatch.setattr(worker_settings, "reap_backup_jobs", reap)
     await worker_settings.startup({})
+    reap.assert_awaited_once()
     dispose = AsyncMock()
     monkeypatch.setattr(worker_settings, "dispose_engine", dispose)
     await worker_settings.shutdown({})
