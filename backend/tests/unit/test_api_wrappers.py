@@ -301,6 +301,9 @@ async def test_confluence_import_route_wrappers(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(imports_api, "enqueue", AsyncMock())
     monkeypatch.setattr(imports_api, "job_read", lambda item: item)
+    # Cross-flow guard is covered by its own tests; stub it so this wrapper
+    # test does not trip over the AsyncMock session it hands the importer.
+    monkeypatch.setattr(imports_api, "assert_no_active_wikihub_restore", AsyncMock())
     assert (
         await imports_api.create_job(
             archive.id,

@@ -28,6 +28,7 @@ from app.schemas.confluence_import import (
     UploadProgressRead,
     UploadTarget,
 )
+from app.services.import_concurrency import assert_no_active_wikihub_restore
 from app.services.site_settings import SiteSettingsService
 from app.services.storage import get_storage
 
@@ -228,6 +229,9 @@ async def get_archive(
 async def create_job(
     archive_id: uuid.UUID, payload: ImportCreate, user: CurrentSuperuser, importer: Service
 ) -> ImportJobRead:
+    # A WikiHub restore writes the same spaces/pages this import would, so the
+    # two must never overlap - see `app/services/import_concurrency.py`.
+    await assert_no_active_wikihub_restore(importer.session)
     job = await importer.create_job(
         await importer.get_archive(archive_id),
         import_all=payload.import_all,
