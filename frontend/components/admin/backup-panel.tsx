@@ -723,6 +723,28 @@ function ArchiveUploadProgress({
  * you had used. Sharing the component is what keeps that from happening again
  * - the two callers now differ only in their wording and their numbers.
  */
+/** One line in the restore card's log, whatever wrote it.
+ *
+ * The browser's own account of the upload and the worker's account of the
+ * restore are the same story to whoever is watching, so they are normalised
+ * to one shape here and shown as one list. */
+type RestoreLogEntry = {
+  id: string;
+  time: string;
+  level: "info" | "warning" | "error";
+  /** What the line is about, when it is about one thing in particular. */
+  label?: string | null;
+  message: string;
+};
+
+function formatLogTime(at: Date): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(at);
+}
+
 function LogDisclosure({
   title,
   count,
@@ -903,14 +925,15 @@ export function BackupPanel() {
   //: have different lifetimes: `restorePreparationLogs` is written in this
   //: browser while the file is fingerprinted, uploaded and scanned - work no
   //: server ever sees - and `restoreJobLogs` is read back from the worker
-  //: once the restore itself is queued, so it survives a refresh.
-  const [restorePreparationLogs, setRestorePreparationLogs] = useState<string[]>(
-    [],
-  );
-  const [restorePreparationLogsExpanded, setRestorePreparationLogsExpanded] =
-    useState(true);
+  //: once the restore itself is queued, so it survives a refresh. They are
+  //: shown as one list (`restoreLogEntries`): a restore is one continuous
+  //: piece of work to the person watching it, and splitting the account of
+  //: it across two cards only asks them to interleave it themselves.
+  const [restorePreparationLogs, setRestorePreparationLogs] = useState<
+    RestoreLogEntry[]
+  >([]);
   const [restoreJobLogs, setRestoreJobLogs] = useState<BackupJobLog[]>([]);
-  const [restoreJobLogsExpanded, setRestoreJobLogsExpanded] = useState(true);
+  const [restoreLogsExpanded, setRestoreLogsExpanded] = useState(true);
   const [selectedSpaces, setSelectedSpaces] = useState<string[]>([]);
   const [importAllSpaces, setImportAllSpaces] = useState(false);
   const [spaceFilter, setSpaceFilter] = useState("");
@@ -1174,13 +1197,6 @@ export function BackupPanel() {
   }, [confluenceLogs]);
 
   useEffect(() => {
-    if (restoreLogsListRef.current) {
-      restoreLogsListRef.current.scrollTop =
-        restoreLogsListRef.current.scrollHeight;
-    }
-  }, [restoreJobLogs]);
-
-  useEffect(() => {
     if (logsListRef.current) {
       logsListRef.current.scrollTop = logsListRef.current.scrollHeight;
     }
@@ -1401,14 +1417,48 @@ export function BackupPanel() {
     }
   }, []);
 
-  const appendRestorePreparationLog = useCallback((message: string) => {
-    const time = new Intl.DateTimeFormat(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(new Date());
-    setRestorePreparationLogs((current) => [...current, `${time} - ${message}`]);
-  }, []);
+  //: Everything that has happened to this restore, oldest first, so the
+  //: newest line is always the last one - which is where the list is
+  //: scrolled to and where a reader's eye already is. Preparation always
+  //: precedes the job (the archive has to be uploaded before it can be
+  //: applied), so concatenating in that order is already chronological.
+  const restoreLogEntries = useMemo<RestoreLogEntry[]>(
+    () => [
+      ...restorePreparationLogs,
+      ...restoreJobLogs.map((log) => ({
+        id: log.id,
+        time: formatLogTime(new Date(log.created_at)),
+        level: (log.level === "warning" || log.level === "error"
+          ? log.level
+          : "info") as RestoreLogEntry["level"],
+        label: log.entity_label,
+        message: log.message,
+      })),
+    ],
+    [restorePreparationLogs, restoreJobLogs],
+  );
+
+  useEffect(() => {
+    if (restoreLogsListRef.current) {
+      restoreLogsListRef.current.scrollTop =
+        restoreLogsListRef.current.scrollHeight;
+    }
+  }, [restoreLogEntries]);
+
+  const appendRestorePreparationLog = useCallback(
+    (message: string, level: RestoreLogEntry["level"] = "info") => {
+      setRestorePreparationLogs((current) => [
+        ...current,
+        {
+          id: `prep-${current.length}`,
+          time: formatLogTime(new Date()),
+          level,
+          message,
+        },
+      ]);
+    },
+    [],
+  );
 
   useEffect(() => {
     uploadActiveRef.current = confluencePending;
@@ -2597,7 +2647,8 @@ export function BackupPanel() {
     setRestoreArchiveRejected(false);
     setPendingRestoreUpload(null);
     setRestorePreparationLogs([]);
-    setRestorePreparationLogsExpanded(true);
+    setRestoreJobLogs([]);
+    setRestoreLogsExpanded(true);
     let reachedScan = false;
     try {
       appendRestorePreparationLog(
@@ -2807,6 +2858,7 @@ export function BackupPanel() {
         err instanceof ApiError
           ? `Failed: ${err.message}`
           : "Failed to upload or scan the archive.",
+        "error",
       );
       setError(
         err instanceof ApiError
@@ -4283,26 +4335,6 @@ export function BackupPanel() {
           </div>
         ) : null}
 
-        {/* WikiHub restore, .zip: what this browser did before any job
-            existed - fingerprint, resume decision, parts, scan. The
-            counterpart of the Confluence card's "Preparation logs", and
-            hidden once the archive is scanned for the same reason: by then
-            the story it tells is over and the space picker is the point. */}
-        {activeSection === "import" && restorePreparationLogs.length > 0 ? (
-          <LogDisclosure
-            title="Preparation logs"
-            count={restorePreparationLogs.length}
-            expanded={restorePreparationLogsExpanded}
-            onExpandedChange={setRestorePreparationLogsExpanded}
-          >
-            {restorePreparationLogs.map((log, index) => (
-              <li key={`${index}-${log}`} className="px-3 py-2">
-                {log}
-              </li>
-            ))}
-          </LogDisclosure>
-        ) : null}
-
         {/* WikiHub restore, .zip: archive ready. The counterpart of the
             Confluence "archive ready for import" bar, and for the same reason:
             once the scan is in, the decision left is which spaces - which is a
@@ -4371,33 +4403,45 @@ export function BackupPanel() {
             use (`renderPortableJobCard`). */}
         {activeSection === "import" ? renderPortableJobCard("restore") : null}
 
-        {/* WikiHub restore, .zip: what the worker is doing right now.
-            `phase` and `counters` are overwritten on every checkpoint, so a
-            percentage alone cannot distinguish steady work from a wedged
-            worker - these lines are the only account of what a multi-hour
-            restore actually touched. Kept after the job finishes: reading
-            back what happened is most of the value. */}
-        {activeSection === "import" && restoreJobLogs.length > 0 ? (
+        {/* WikiHub restore: one account of the whole thing, kept directly
+            under whichever progress bar is showing.
+
+            Two sources, one card: this browser narrates the upload half
+            (fingerprint, resume decision, parts, scan) because no job row
+            exists yet to record it, and the worker narrates the restore
+            itself. Splitting them across two cards made the reader stitch
+            the order back together, and the second card only appeared
+            halfway through.
+
+            Oldest first, newest last, scrolled to the bottom - a log that
+            grows upward makes you re-find your place on every new line. */}
+        {activeSection === "import" && restoreLogEntries.length > 0 ? (
           <LogDisclosure
-            title="Restore activity"
-            count={restoreJobLogs.length}
-            expanded={restoreJobLogsExpanded}
-            onExpandedChange={setRestoreJobLogsExpanded}
+            title="Restore logs"
+            count={restoreLogEntries.length}
+            expanded={restoreLogsExpanded}
+            onExpandedChange={setRestoreLogsExpanded}
             listRef={restoreLogsListRef}
           >
-            {restoreJobLogs.map((log) => (
-              <li key={log.id} className="px-3 py-2">
-                <span
-                  className={cn(
-                    "font-medium",
-                    log.level === "error" && "text-danger",
-                    log.level === "warning" && "text-warning",
-                  )}
-                >
-                  {log.level}
-                </span>{" "}
-                · {log.entity_label ? `${log.entity_label}: ` : ""}
-                {log.message}
+            {restoreLogEntries.map((entry) => (
+              <li key={entry.id} className="flex gap-2 px-3 py-2">
+                <span className="text-muted-foreground shrink-0 tabular-nums">
+                  {entry.time}
+                </span>
+                <span className="min-w-0">
+                  {entry.level !== "info" ? (
+                    <span
+                      className={cn(
+                        "font-medium",
+                        entry.level === "error" ? "text-danger" : "text-warning",
+                      )}
+                    >
+                      {entry.level}{" "}
+                    </span>
+                  ) : null}
+                  {entry.label ? `${entry.label}: ` : ""}
+                  {entry.message}
+                </span>
               </li>
             ))}
           </LogDisclosure>

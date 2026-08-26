@@ -2176,7 +2176,7 @@ describe("BackupPanel native restore", () => {
     expect(jobsPosted[0]).toMatchObject({ space_keys: ["ENG"] });
   });
 
-  it("narrates the upload half, which no job row ever records", async () => {
+  it("narrates the upload half in the same card, which no job row ever records", async () => {
     // Fingerprinting, the resume decision, the parts and the scan all happen
     // in this browser before a restore job exists. Without these lines the
     // card is a bare progress bar for the entire multi-GB upload, while the
@@ -2204,16 +2204,26 @@ describe("BackupPanel native restore", () => {
     // The picker opening is the end of the preparation story.
     await screen.findByRole("button", { name: /^select all$/i }, { timeout: 4000 });
 
-    const logs = await screen.findByText(/preparation logs/i);
-    const list = logs.closest("details") as HTMLElement;
-    expect(within(list).getByText(/calculating archive fingerprint/i)).toBeInTheDocument();
-    expect(within(list).getByText(/archive fingerprint ready/i)).toBeInTheDocument();
-    expect(within(list).getByText(/uploading 1 part/i)).toBeInTheDocument();
-    expect(within(list).getByText(/scanning the archive/i)).toBeInTheDocument();
-    expect(within(list).getByText(/2 spaces ready to restore/i)).toBeInTheDocument();
+    const list = (await screen.findByText(/restore logs/i)).closest(
+      "details",
+    ) as HTMLElement;
+    // Read as DOM rather than by role: the space picker is open on top by
+    // now, and Radix marks everything behind it `aria-hidden`.
+    const lines = Array.from(list.querySelectorAll("li"));
+    // Oldest first, newest last - the order the work actually happened in.
+    expect(lines.map((line) => line.textContent?.toLowerCase() ?? "")).toEqual([
+      expect.stringContaining("selected wikihub-full-backup.zip"),
+      expect.stringContaining("calculating archive fingerprint"),
+      expect.stringContaining("archive fingerprint ready"),
+      expect.stringContaining("uploading 1 part"),
+      expect.stringContaining("upload finished"),
+      expect.stringContaining("multipart upload completed"),
+      expect.stringContaining("scanning the archive"),
+      expect.stringContaining("2 spaces ready to restore"),
+    ]);
   });
 
-  it("shows what the worker is doing, and picks the account back up after a remount", async () => {
+  it("keeps the worker's account in the same card, and picks it back up after a remount", async () => {
     // `phase` and `counters` are overwritten on every checkpoint, so a
     // percentage cannot distinguish steady work from a wedged worker. These
     // lines come from the server, which is what makes them survive a refresh
@@ -2270,9 +2280,13 @@ describe("BackupPanel native restore", () => {
 
     render(<BackupPanel />);
 
+    // One card, whoever wrote the lines.
     const panel = (
-      await screen.findByText(/restore activity/i, {}, { timeout: 4000 })
+      await screen.findByText(/restore logs/i, {}, { timeout: 4000 })
     ).closest("details") as HTMLElement;
+    expect(screen.queryByText(/restore activity/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/preparation logs/i)).not.toBeInTheDocument();
+
     const lines = within(panel).getAllByRole("listitem");
     // Oldest first: the endpoint sorts newest-first so paging returns the
     // interesting end of a long run, but a log only reads as a story forwards.
@@ -2281,6 +2295,9 @@ describe("BackupPanel native restore", () => {
     // The entity is named separately from the prose, so it can be read at a
     // glance rather than parsed out of the sentence.
     expect(lines[0]).toHaveTextContent(/backup\.zip:/);
+    // A level is only worth the space when it is not the ordinary case.
+    expect(lines[0]).not.toHaveTextContent(/info/i);
+    expect(lines[1]).toHaveTextContent(/warning/i);
   });
 
   it("offers to overwrite spaces the restore reports as already existing", async () => {

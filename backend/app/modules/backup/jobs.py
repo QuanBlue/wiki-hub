@@ -183,15 +183,6 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
             prefix="wikihub-restore-", suffix="-full.zip", delete=False
         ) as temp:
             local_path = temp.name
-        await log_backup_event(
-            session,
-            job,
-            "info",
-            "downloading",
-            f"Fetching {archive.filename} from storage: 0%.",
-            entity_type="archive",
-            entity_label=archive.filename,
-        )
         await checkpoint_backup_job(session, job)
 
         chunks_seen = 0
@@ -199,7 +190,13 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
         # tenth. Appending instead would bury every later phase under a
         # hundred near-identical lines on a large archive.
         download_log = await log_backup_event(
-            session, job, "info", "downloading", "Downloading the archive."
+            session,
+            job,
+            "info",
+            "downloading",
+            f"Fetching {archive.filename} from storage: 0%.",
+            entity_type="archive",
+            entity_label=archive.filename,
         )
         last_logged_tenth = 0
 

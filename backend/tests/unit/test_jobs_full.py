@@ -407,7 +407,6 @@ async def test_run_backup_job_full_import_narrates_what_it_is_doing(monkeypatch)
     entries = _logged(session)
     assert [entry.phase for entry in entries] == [
         "downloading",
-        "downloading",
         "restoring",
         "complete",
         "complete",
@@ -417,11 +416,11 @@ async def test_run_backup_job_full_import_narrates_what_it_is_doing(monkeypatch)
     # *which* archive is being applied, not just that something is.
     assert "backup.zip" in entries[0].message
     # The report's counts are spelled out rather than left to the progress bar.
-    assert "1 space" in entries[3].message and "3 pages" in entries[3].message
+    assert "1 space" in entries[2].message and "3 pages" in entries[2].message
     # Spaces that were left alone are a warning, not an aside: they are the
     # part of the backup that did *not* land.
-    assert entries[4].level == "warning"
-    assert "ENG" in entries[4].message
+    assert entries[3].level == "warning"
+    assert "ENG" in entries[3].message
 
 
 @pytest.mark.asyncio

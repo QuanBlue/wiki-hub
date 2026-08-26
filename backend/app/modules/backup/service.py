@@ -136,6 +136,30 @@ async def log_backup_event(
     return entry
 
 
+async def observe_backup_cancellation(session: AsyncSession, job: BackupJob | None) -> None:
+    """Honour a pending cancel without committing anything.
+
+    `checkpoint_backup_job` is the full stop: it also writes a heartbeat and
+    progress counters, and *commits* to make them visible. That commit is the
+    problem in the two places a restore spends most of its time - inside
+    `import_document`'s SAVEPOINT, and inside the overwrite SAVEPOINT that has
+    to stay open so a later failure can roll the destructive delete back
+    atomically. Committing there would release the savepoint early and leave
+    the eventual rollback operating on nothing, so those stretches simply
+    skipped checkpointing - and with it, cancellation. A restore could be
+    minutes past a Cancel click with nothing able to observe the flag.
+
+    Reading is safe where committing is not: this only re-SELECTs the row.
+    Postgres reads at READ COMMITTED, so a fresh SELECT sees the API's
+    committed `cancel_requested` even from inside an open savepoint.
+    """
+    if job is None:
+        return
+    await session.refresh(job)
+    if job.cancel_requested:
+        raise ExportCancelled("Export cancelled by administrator.")
+
+
 async def checkpoint_backup_job(
     session: AsyncSession,
     job: BackupJob,
@@ -1116,7 +1140,7 @@ class BackupService:
         }
         try:
             result = await self.import_document(
-                scanned.document, dry_run=dry_run, space_keys=space_keys
+                scanned.document, dry_run=dry_run, space_keys=space_keys, job=job
             )
         except Exception:
             if restore_savepoint is not None and restore_savepoint.is_active:
@@ -1183,11 +1207,16 @@ class BackupService:
             # roll the destructive overwrite-delete back atomically. A commit
             # here would release that SAVEPOINT early, and the eventual
             # `restore_savepoint.commit()`/`.rollback()` calls below would
-            # then be operating on nothing. Skip checkpointing (progress and
-            # cancellation both) for the rest of an overwrite restore rather
-            # than risk that; the scan-time checkpoint above still gives the
-            # operator one chance to cancel before this savepoint even opens.
+            # then be operating on nothing.
+            #
+            # Progress therefore cannot be reported for the rest of an
+            # overwrite restore. Cancellation still can: observing it is a
+            # read, and a read is safe inside the savepoint. It used to be
+            # skipped along with the commit, which meant an overwrite restore
+            # could not be cancelled at all once it got this far - the
+            # operator waited on a checkpoint that was never coming.
             if restore_savepoint is not None and restore_savepoint.is_active:
+                await observe_backup_cancellation(self.session, job)
                 return
             # Same fixed cadence as export's `_report_progress` - never gated
             # on the reported percent changing, so cancellation is still
@@ -1316,6 +1345,7 @@ class BackupService:
         *,
         dry_run: bool = True,
         space_keys: set[str] | None = None,
+        job: BackupJob | None = None,
     ) -> ImportReport:
         """Restore a document. Conflicts are **skipped and reported**, never
         overwritten.
@@ -1338,6 +1368,13 @@ class BackupService:
         naturally reports "missing_space" once that space is never created.
         Users, groups and their global permissions are never scoped, same as
         on export.
+
+        ``job`` is optional and used only to observe a cancel request while
+        the pages are written. This is the longest silent stretch of a
+        restore - every space, page and revision in the archive - and it used
+        to run with nothing watching the flag, so a Cancel click during it
+        did nothing at all until the attachment loop began, which on a
+        page-heavy backup is minutes later.
         """
         if doc.wikihub_backup.version not in SUPPORTED_BACKUP_VERSIONS:
             raise BadRequestError(
@@ -1360,7 +1397,7 @@ class BackupService:
 
         savepoint = await self.session.begin_nested()
         try:
-            await self._apply(doc, report, no_password)
+            await self._apply(doc, report, no_password, job)
         except Exception:
             # A restore is all-or-nothing. In particular, never commit rows
             # already flushed before a later relationship/constraint failure.
@@ -1403,7 +1440,11 @@ class BackupService:
         return result
 
     async def _apply(
-        self, doc: BackupDocument, report: _ReportBuilder, no_password: list[str]
+        self,
+        doc: BackupDocument,
+        report: _ReportBuilder,
+        no_password: list[str],
+        job: BackupJob | None = None,
     ) -> None:
         protected = await self.users.get_protected()
 
@@ -1691,7 +1732,11 @@ class BackupService:
 
         # --- pages and page-level access --------------------------------
         created_page_refs: set[tuple[str, str]] = set()
-        for page_entry in doc.pages:
+        for index, page_entry in enumerate(doc.pages):
+            # Read-only: `_apply` runs inside `import_document`'s SAVEPOINT,
+            # where a commit would release it early.
+            if index % _PROGRESS_CHECK_EVERY == 0:
+                await observe_backup_cancellation(self.session, job)
             label = f"{page_entry.space_key}/{page_entry.slug}"
             page_space = await self.spaces.get_by_key(page_entry.space_key)
             if page_space is None:

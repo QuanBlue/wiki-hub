@@ -500,3 +500,111 @@ async def test_restore_full_package_zip_exception(service: BackupService, mock_s
 
         mock_storage.delete.assert_called()
         service.session.rollback.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_overwrite_restore_can_still_be_cancelled(
+    service: BackupService, mock_storage, tmp_path
+):
+    """An overwrite restore used to be uncancellable once it started copying.
+
+    `_report_progress` bailed out whenever the overwrite SAVEPOINT was open,
+    because `checkpoint_backup_job` commits and that would release the
+    savepoint the destructive delete depends on. Cancellation was skipped
+    along with the commit, so the operator sat on "stops at its next
+    checkpoint" for a checkpoint that was never coming. Observing the flag is
+    a read, and a read is safe inside the savepoint.
+    """
+    zip_path = tmp_path / "backup.zip"
+    with open(zip_path, "wb") as f:
+        f.write(create_dummy_zip().read())
+
+    doc = BackupDocument(
+        wikihub_backup=BackupMeta(version=1, app_version="1", site_name="T", exported_at=datetime.now(UTC), includes_credentials=False, counts={}),
+        users=[], spaces=[BackupSpace(id=str(uuid4()), key="S", name="Space", status=SpaceStatus.active, visibility=SpaceVisibility.open, created_at=None, updated_at=None)],
+        space_members=[], space_favorites=[], groups=[], group_members=[], group_global_permissions=[], space_user_permissions=[], space_group_permissions=[],
+        pages=[], page_revisions=[], page_likes=[], page_user_restrictions=[], page_group_restrictions=[],
+        attachments=[BackupAttachment(page_space_key="S", page_slug="p", filename="att1.png", content_type="image/png", object_path="att1.png", sha256="abc", size_bytes=10)],
+        avatars=[BackupAvatar(username="u1", content_type="image/png", object_path="ava1.png", sha256="abc", size_bytes=4)],
+    )
+
+    # The flag has to be raised *after* the savepoint opens. A job that was
+    # already cancelled would be caught by the post-scan checkpoint, which
+    # runs before any of this and was never the broken part.
+    job = Mock(cancel_requested=False, counters={}, heartbeat_at=None)
+
+    with patch("app.modules.backup.service.scan_full_backup", return_value=ScannedPackage(document=doc, manifest={}, entries={}, archive_sha256="", archive_size_bytes=0)):
+        service.import_document = AsyncMock(
+            return_value=ImportReport(dry_run=False, version=1, includes_credentials=False, created={"page": 1})
+        )
+
+        async def side_effect(*args, **kwargs):
+            query = str(args[0]).lower()
+            if "select spaces.id" in query and "spaces.key" in query:
+                return make_result([("S1", "S")])
+            if "select pages.id" in query and "where pages.space_id in" in query:
+                return make_result(["page-1"])
+            if "select page_attachments.object_key" in query:
+                return make_result(["old-key-1"])
+            return make_result([])
+
+        service.session.execute.side_effect = side_effect
+        savepoint = AsyncMock()
+        savepoint.is_active = True
+
+        commits_when_savepoint_opened = []
+
+        async def open_savepoint():
+            # The operator presses Cancel while the destructive delete is in
+            # flight - the window that had nothing watching the flag.
+            job.cancel_requested = True
+            commits_when_savepoint_opened.append(service.session.commit.await_count)
+            return savepoint
+
+        service.session.begin_nested = AsyncMock(side_effect=open_savepoint)
+
+        with pytest.raises(ExportCancelled):
+            await service.restore_full_package(
+                str(zip_path), storage=mock_storage, overwrite_space_keys={"S"},
+                dry_run=False, job=job,
+            )
+
+    # Read-only: the savepoint the destructive delete depends on must not have
+    # been released by a commit smuggled in with the cancellation check. The
+    # post-scan checkpoint before it commits legitimately, so the count is
+    # compared from the moment the savepoint opened rather than from zero.
+    assert service.session.commit.await_count == commits_when_savepoint_opened[0]
+
+
+@pytest.mark.asyncio
+async def test_writing_pages_can_be_cancelled(service: BackupService):
+    """The page-write phase ran with nothing watching the cancel flag.
+
+    It is the longest silent stretch of a restore - every space, page and
+    revision in the archive - so a Cancel pressed during it did nothing at
+    all until the attachment loop began, minutes later on a page-heavy
+    backup.
+    """
+    doc = BackupDocument(
+        wikihub_backup=BackupMeta(version=1, app_version="1", site_name="T", exported_at=datetime.now(UTC), includes_credentials=False, counts={}),
+        users=[], spaces=[], space_members=[], space_favorites=[], groups=[], group_members=[],
+        group_global_permissions=[], space_user_permissions=[], space_group_permissions=[],
+        pages=[
+            BackupPage(id=str(uuid4()), space_key="S", slug=f"p{n}", title=f"P{n}", content="x", content_format="markdown")
+            for n in range(3)
+        ],
+        page_revisions=[], page_likes=[], page_user_restrictions=[], page_group_restrictions=[],
+        attachments=[], avatars=[],
+    )
+    job = Mock(cancel_requested=True, counters={}, heartbeat_at=None)
+    service.session.execute.side_effect = lambda *a, **k: make_result([])
+    service.spaces = Mock(get_by_key=AsyncMock(return_value=None))
+    service.users.get_protected = AsyncMock(return_value=None)
+    savepoint = AsyncMock()
+    savepoint.is_active = True
+    service.session.begin_nested = AsyncMock(return_value=savepoint)
+
+    with pytest.raises(ExportCancelled):
+        await service.import_document(doc, dry_run=False, job=job)
+
+    service.session.commit.assert_not_awaited()
