@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BIGINT, Boolean, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import BIGINT, Boolean, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -72,3 +72,39 @@ class BackupJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+
+class BackupJobLog(UUIDPrimaryKeyMixin, Base):
+    """One line of narration from a running backup job.
+
+    `counters` answers "how far along?" and `phase` answers "doing what?", but
+    neither survives being overwritten: both are current-state columns, so a
+    step that has finished leaves no trace.  Watching a multi-hour restore
+    against a progress bar alone gives no way to tell steady work from a
+    wedged worker, and no record afterwards of what it actually touched.
+
+    Deliberately the same shape as `ImportLog`, which the Confluence import
+    already writes and the same admin panel already renders - the two job
+    kinds are shown side by side, and an operator should not have to learn
+    two different accounts of the same kind of work.  They stay separate
+    tables for the reason the module docstring gives: different trust
+    boundaries and lifecycles, and a FK can only point at one job table.
+    """
+
+    __tablename__ = "backup_job_logs"
+    __table_args__ = (Index("ix_backup_job_logs_job_created", "job_id", "created_at"),)
+
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("backup_jobs.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    level: Mapped[str] = mapped_column(String(12), nullable=False)
+    phase: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: What the line is about ("space", "attachment", ...) and which one, kept
+    #: apart from `message` so the UI can style or filter on them later
+    #: without parsing prose.
+    entity_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    entity_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)

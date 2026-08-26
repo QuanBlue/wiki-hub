@@ -23,6 +23,7 @@ from app.modules.backup.service import (
     BackupService,
     ExportCancelled,
     checkpoint_backup_job,
+    log_backup_event,
 )
 from app.services.storage import ObjectStorage
 
@@ -182,18 +183,38 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
             prefix="wikihub-restore-", suffix="-full.zip", delete=False
         ) as temp:
             local_path = temp.name
+        await log_backup_event(
+            session,
+            job,
+            "info",
+            "downloading",
+            f"Fetching {archive.filename} from storage: 0%.",
+            entity_type="archive",
+            entity_label=archive.filename,
+        )
         await checkpoint_backup_job(session, job)
 
         chunks_seen = 0
+        # One log line for the whole download, rewritten in place at each
+        # tenth. Appending instead would bury every later phase under a
+        # hundred near-identical lines on a large archive.
+        download_log = await log_backup_event(
+            session, job, "info", "downloading", "Downloading the archive."
+        )
+        last_logged_tenth = 0
 
         async def _on_download_progress(downloaded: int) -> None:
-            nonlocal chunks_seen
+            nonlocal chunks_seen, last_logged_tenth
             chunks_seen += 1
             if (
                 chunks_seen % _DOWNLOAD_PROGRESS_EVERY_CHUNKS != 0
                 and downloaded < archive.size_bytes
             ):
                 return
+            percent = min(100, int(downloaded * 100 / max(1, archive.size_bytes)))
+            if percent // 10 > last_logged_tenth:
+                last_logged_tenth = percent // 10
+                download_log.message = f"Fetching {archive.filename} from storage: {percent}%."
             await checkpoint_backup_job(
                 session,
                 job,
@@ -210,6 +231,14 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
         # how long the (usually much larger) download took.
         job.phase = "restoring"
         job.started_at = job.heartbeat_at = datetime.now(UTC)
+        download_log.message = f"Fetched {archive.filename} from storage."
+        await log_backup_event(
+            session,
+            job,
+            "info",
+            "restoring",
+            "Archive downloaded. Verifying its contents and applying the backup.",
+        )
         await session.commit()
 
         service = BackupService(session)
@@ -223,18 +252,46 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
         )
         job.result = result.model_dump(mode="json")
         job.status, job.phase = "complete", "complete"
+        created = ", ".join(
+            f"{count} {kind.replace('_', ' ')}{'' if count == 1 else 's'}"
+            for kind, count in sorted(result.created.items())
+            if count
+        )
+        await log_backup_event(
+            session,
+            job,
+            "info",
+            "complete",
+            f"Restore complete. Created {created}." if created else
+            "Restore complete. Every record in the backup already existed.",
+        )
+        if result.conflicting_space_keys:
+            await log_backup_event(
+                session,
+                job,
+                "warning",
+                "complete",
+                f"{len(result.conflicting_space_keys)} space(s) already existed and were left "
+                f"untouched: {', '.join(result.conflicting_space_keys)}.",
+            )
         await session.commit()
     except ExportCancelled:
+        # The rollback discards any log lines still pending in this session,
+        # so the closing line has to be written after it, not before.
         await session.rollback()
         current = await session.get(BackupJob, job.id)
         if current:
             current.status, current.phase = "cancelled", "cancelled"
+            await log_backup_event(
+                session, current, "warning", "cancelled", "Restore cancelled by an administrator."
+            )
             await session.commit()
     except Exception as exc:
         await session.rollback()
         current = await session.get(BackupJob, job.id)
         if current:
             current.status, current.phase, current.error = "failed", "failed", str(exc)[:4000]
+            await log_backup_event(session, current, "error", "failed", str(exc)[:4000])
             await session.commit()
         raise
     finally:

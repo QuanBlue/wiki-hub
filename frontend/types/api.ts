@@ -417,6 +417,19 @@ export interface ConfluenceImportLog {
   message: string;
 }
 
+//: One narration line from a backup job (`GET /api/v1/backup/jobs/:id/logs`).
+//: Same shape as `ConfluenceImportLog` on purpose - the admin panel renders
+//: both kinds of job in the same list, so they must read the same way.
+export interface BackupJobLog {
+  id: string;
+  created_at: string;
+  level: string;
+  phase: string;
+  entity_type: string | null;
+  entity_label: string | null;
+  message: string;
+}
+
 export interface SidebarPermissionsRead {
   permissions: SidebarPermissions;
 }

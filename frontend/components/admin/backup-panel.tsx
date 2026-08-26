@@ -20,6 +20,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -44,6 +45,7 @@ import { cn } from "@/lib/utils";
 import type {
   BackupArchive,
   BackupArchiveUploadProgress,
+  BackupJobLog,
   ConfluenceArchive,
   ConfluenceImportJob,
   ConfluenceImportLog,
@@ -721,6 +723,48 @@ function ArchiveUploadProgress({
  * you had used. Sharing the component is what keeps that from happening again
  * - the two callers now differ only in their wording and their numbers.
  */
+function LogDisclosure({
+  title,
+  count,
+  expanded,
+  onExpandedChange,
+  listRef,
+  children,
+}: {
+  title: string;
+  count: number;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  listRef?: React.Ref<HTMLUListElement>;
+  children: ReactNode;
+}) {
+  return (
+    <details
+      className="border-border bg-surface mt-4 rounded-md border"
+      open={expanded}
+      onToggle={(event) => onExpandedChange(event.currentTarget.open)}
+    >
+      <summary className="hover:bg-surface-hover focus-visible:ring-ring focus-visible:ring-offset-background flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-offset-1">
+        <span>
+          {title} ({count})
+        </span>
+        <ChevronDown
+          className={cn(
+            "text-muted-foreground size-4 transition-transform duration-150",
+            expanded && "rotate-180",
+          )}
+        />
+      </summary>
+      <ul
+        ref={listRef}
+        className="border-border max-h-44 divide-y overflow-y-auto border-t text-xs"
+      >
+        {children}
+      </ul>
+    </details>
+  );
+}
+
 function ImportCompletedDialog({
   open,
   onOpenChange,
@@ -729,6 +773,7 @@ function ImportCompletedDialog({
   summaryLabel,
   counts,
   emptyLabel,
+  notice,
   question,
   confirmLabel,
   onConfirm,
@@ -741,6 +786,10 @@ function ImportCompletedDialog({
   /** Singular nouns keyed by kind; pluralised here. `null` hides the panel. */
   counts: Record<string, number> | null;
   emptyLabel: string;
+  /** Anything the run left unresolved, between the summary and the question.
+   *  The restore flow puts its "these spaces were skipped" offer here so the
+   *  choice is presented rather than sprung as its own modal. */
+  notice?: ReactNode;
   question: string;
   confirmLabel: string;
   onConfirm: () => void;
@@ -765,6 +814,7 @@ function ImportCompletedDialog({
             </ul>
           </div>
         ) : null}
+        {notice}
         <p className="text-muted-foreground text-sm">{question}</p>
         <DialogFooter>
           <Button variant="primary" onClick={onConfirm}>
@@ -832,6 +882,7 @@ export function BackupPanel() {
   const uploadBackupRun = useRef(0);
   const allowConfirmedLeaveRef = useRef(false);
   const logsListRef = useRef<HTMLUListElement>(null);
+  const restoreLogsListRef = useRef<HTMLUListElement>(null);
 
   const [includeCredentials, setIncludeCredentials] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -848,6 +899,18 @@ export function BackupPanel() {
   );
   const [preparationLogs, setPreparationLogs] = useState<string[]>([]);
   const [preparationLogsExpanded, setPreparationLogsExpanded] = useState(true);
+  //: The restore card's own narration. Two sources, kept apart because they
+  //: have different lifetimes: `restorePreparationLogs` is written in this
+  //: browser while the file is fingerprinted, uploaded and scanned - work no
+  //: server ever sees - and `restoreJobLogs` is read back from the worker
+  //: once the restore itself is queued, so it survives a refresh.
+  const [restorePreparationLogs, setRestorePreparationLogs] = useState<string[]>(
+    [],
+  );
+  const [restorePreparationLogsExpanded, setRestorePreparationLogsExpanded] =
+    useState(true);
+  const [restoreJobLogs, setRestoreJobLogs] = useState<BackupJobLog[]>([]);
+  const [restoreJobLogsExpanded, setRestoreJobLogsExpanded] = useState(true);
   const [selectedSpaces, setSelectedSpaces] = useState<string[]>([]);
   const [importAllSpaces, setImportAllSpaces] = useState(false);
   const [spaceFilter, setSpaceFilter] = useState("");
@@ -1111,6 +1174,13 @@ export function BackupPanel() {
   }, [confluenceLogs]);
 
   useEffect(() => {
+    if (restoreLogsListRef.current) {
+      restoreLogsListRef.current.scrollTop =
+        restoreLogsListRef.current.scrollHeight;
+    }
+  }, [restoreJobLogs]);
+
+  useEffect(() => {
     if (logsListRef.current) {
       logsListRef.current.scrollTop = logsListRef.current.scrollHeight;
     }
@@ -1312,6 +1382,32 @@ export function BackupPanel() {
       second: "2-digit",
     }).format(new Date());
     setPreparationLogs((current) => [...current, `${time} - ${message}`]);
+  }, []);
+
+  /** Pull a restore job's narration from the server, newest first.
+   *
+   * Reversed into chronological order here: the endpoint sorts newest-first
+   * so paging returns the interesting end of a long run, but a log read
+   * top-to-bottom is the only way the story makes sense. */
+  const loadRestoreJobLogs = useCallback(async (jobId: string) => {
+    try {
+      const page = await apiFetch<{ items: BackupJobLog[] }>(
+        `/api/v1/backup/jobs/${jobId}/logs`,
+      );
+      setRestoreJobLogs([...page.items].reverse());
+    } catch {
+      // Narration is not the work. A restore that is running fine must not
+      // look broken because its log request failed.
+    }
+  }, []);
+
+  const appendRestorePreparationLog = useCallback((message: string) => {
+    const time = new Intl.DateTimeFormat(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(new Date());
+    setRestorePreparationLogs((current) => [...current, `${time} - ${message}`]);
   }, []);
 
   useEffect(() => {
@@ -1519,6 +1615,9 @@ export function BackupPanel() {
         );
         setPortableBackupJob(job);
         const isRestore = job.kind === "full_import";
+        // Only a restore is narrated; an export's card is a progress bar and
+        // a download link, and would gain nothing from an empty log panel.
+        if (isRestore) await loadRestoreJobLogs(job.id);
         if (job.status === "complete") {
           if (isRestore) {
             // Handle a finished restore exactly once. Without this guard a
@@ -1528,21 +1627,24 @@ export function BackupPanel() {
             settledRestoreJobIdRef.current = job.id;
             const conflicts = job.result?.conflicting_space_keys ?? [];
             router.refresh();
-            if (conflicts.length > 0) {
-              // Still an open decision: these spaces exist and were left
-              // untouched. Spaces this job was asked to overwrite are not
-              // reported here - the server drops them once handled, so
-              // confirming "replace and restore" ends the exchange instead
-              // of asking the same question again.
-              setConflictingImportSpaceKeys(conflicts);
-              setConfirmOverwriteImportSpaces(true);
-              toast.success(
-                `Restore applied. ${conflicts.length} existing ${conflicts.length === 1 ? "space" : "spaces"} already existed and ${conflicts.length === 1 ? "was" : "were"} skipped.`,
-              );
-            } else {
-              setRestoreSuccessReport(job.result ?? null);
-              setIsRestoreSuccessModalOpen(true);
-            }
+            // A finished restore always ends in the same place: the
+            // completion dialog. Spaces that already existed were left
+            // untouched and replacing them is a real follow-up decision, but
+            // it is the user's to open - throwing a destructive "Replace
+            // existing spaces?" prompt at them the instant a restore lands
+            // asks the wrong question at the wrong moment. It becomes an
+            // offer inside the completion dialog instead. Spaces this job was
+            // asked to overwrite are not reported here - the server drops
+            // them once handled, so accepting the offer ends the exchange
+            // rather than asking again.
+            setConflictingImportSpaceKeys(conflicts);
+            setRestoreSuccessReport(job.result ?? null);
+            setIsRestoreSuccessModalOpen(true);
+            toast.success(
+              conflicts.length > 0
+                ? `Restore is complete. ${conflicts.length} ${conflicts.length === 1 ? "space that" : "spaces that"} already existed ${conflicts.length === 1 ? "was" : "were"} skipped.`
+                : "Restore is complete. The backup was applied.",
+            );
           } else {
             toast.success("Backup export is ready to download.");
             if (
@@ -1568,7 +1670,7 @@ export function BackupPanel() {
       }
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [portableBackupJob, router]);
+  }, [portableBackupJob, router, loadRestoreJobLogs]);
 
   useEffect(() => {
     if (
@@ -1678,10 +1780,13 @@ export function BackupPanel() {
         setActiveSection(activeJob.kind === "full_import" ? "import" : "export");
         return activeJob;
       });
+      if (activeJob?.kind === "full_import") {
+        await loadRestoreJobLogs(activeJob.id);
+      }
     } catch {
       // Ignore active job fetch errors on restore
     }
-  }, []);
+  }, [loadRestoreJobLogs]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restore persisted server state on mount
@@ -2491,8 +2596,14 @@ export function BackupPanel() {
     setRestoreResumedBytes(0);
     setRestoreArchiveRejected(false);
     setPendingRestoreUpload(null);
+    setRestorePreparationLogs([]);
+    setRestorePreparationLogsExpanded(true);
     let reachedScan = false;
     try {
+      appendRestorePreparationLog(
+        `Selected ${targetFile.name} (${formatBytes(targetFile.size)}).`,
+      );
+      appendRestorePreparationLog("Calculating archive fingerprint.");
       setIsHashingBackupArchive(true);
       const hashAbortController = new AbortController();
       restoreHashAbort.current = hashAbortController;
@@ -2525,6 +2636,9 @@ export function BackupPanel() {
       );
       restoreHashAbort.current = null;
       if (!stillCurrent()) return;
+      appendRestorePreparationLog(
+        `Archive fingerprint ready: ${sha256.slice(0, 12)}...`,
+      );
       setIsHashingBackupArchive(false);
       setBackupHashStats(null);
 
@@ -2543,6 +2657,9 @@ export function BackupPanel() {
       restoreArchiveIdRef.current = target.archive_id;
 
       if (target.reused) {
+        appendRestorePreparationLog(
+          "This archive is already in object storage. Skipping the upload.",
+        );
         setRestoreUploadProgress(100);
         setRestoreUploadStats({
           loaded: targetFile.size,
@@ -2555,6 +2672,11 @@ export function BackupPanel() {
         const partSize = target.part_size_bytes;
         const totalParts = Math.max(1, Math.ceil(targetFile.size / partSize));
         const uploadedParts = new Set(target.uploaded_parts);
+        appendRestorePreparationLog(
+          uploadedParts.size > 0
+            ? `Resuming upload: ${uploadedParts.size} of ${totalParts} parts are already in storage.`
+            : `Uploading ${totalParts} ${totalParts === 1 ? "part" : "parts"} to object storage.`,
+        );
         let uploadedBytes = uploadedParts.size * partSize;
         setRestoreResumedBytes(uploadedBytes);
         setRestoreUploadProgress(
@@ -2623,10 +2745,14 @@ export function BackupPanel() {
         restoreUploadRequest.current = null;
         if (!stillCurrent()) return;
         setRestoreUploadProgress(100);
+        appendRestorePreparationLog(
+          "Upload finished. Completing multipart upload in object storage.",
+        );
         await apiFetch(
           `/api/v1/backup/archives/${target.archive_id}/complete-upload`,
           { method: "POST" },
         );
+        appendRestorePreparationLog("Multipart upload completed.");
       }
       if (!stillCurrent()) return;
 
@@ -2634,6 +2760,9 @@ export function BackupPanel() {
       // already `"scanned"` (`BackupArchiveService.scan` short-circuits),
       // and this is the one call that actually populates `.spaces`.
       reachedScan = true;
+      appendRestorePreparationLog(
+        "Scanning the archive for its space list. This can take a few minutes.",
+      );
       setIsScanningBackupArchive(true);
       const scanned = await apiFetch<BackupArchive>(
         `/api/v1/backup/archives/${target.archive_id}/scan`,
@@ -2646,6 +2775,9 @@ export function BackupPanel() {
       setImportSelectedSpaceKeys([]);
       setRestoreUploadProgress(null);
       setRestoreUploadStats(null);
+      appendRestorePreparationLog(
+        `Archive scan completed. ${scanned.spaces.length} ${scanned.spaces.length === 1 ? "space" : "spaces"} ready to restore.`,
+      );
       // Straight into the picker, the way the Confluence scan does it: the
       // scan exists to answer "which spaces?", so landing on a bar that asks
       // the user to click once more before being allowed to answer is a step
@@ -2671,6 +2803,11 @@ export function BackupPanel() {
       ) {
         setRestoreArchiveRejected(true);
       }
+      appendRestorePreparationLog(
+        err instanceof ApiError
+          ? `Failed: ${err.message}`
+          : "Failed to upload or scan the archive.",
+      );
       setError(
         err instanceof ApiError
           ? err.message
@@ -2816,6 +2953,7 @@ export function BackupPanel() {
     setRestoreResumedBytes(0);
     setRestoreArchiveRejected(false);
     setPendingRestoreUpload(null);
+    setRestorePreparationLogs([]);
     setError(null);
   }
 
@@ -2872,6 +3010,7 @@ export function BackupPanel() {
           },
         );
         setPortableBackupJob(job);
+        setRestoreJobLogs([]);
         setConfirmOverwriteImportSpaces(false);
         toast.success("Restore queued. It will continue in the background.");
       } catch (err) {
@@ -2940,6 +3079,14 @@ export function BackupPanel() {
     if (!isThisKind) return null;
     const isRestore = forKind === "restore";
     const noun = isRestore ? "Restore" : "Export";
+
+    // A finished restore announces itself in a toast and the completion
+    // dialog; this banner only said the same thing a third time, and the
+    // "Done" button on it quietly threw the archive away - taking with it the
+    // ability to restore further spaces from the same file, which is the one
+    // thing someone is most likely to want next. An export keeps its card:
+    // the download link lives there and has to stay reachable.
+    if (isRestore && portableBackupJob.status === "complete") return null;
 
     return (
       <div
@@ -3015,26 +3162,6 @@ export function BackupPanel() {
                 {portableBackupJob.cancel_requested
                   ? "Cancelling…"
                   : `Cancel ${noun.toLowerCase()}`}
-              </Button>
-            )}
-            {/* A finished restore leaves its archive and space selection on
-                the card. That is worth keeping - it says what just happened -
-                but it needs a way out, and the only one used to be the "Use a
-                different file" link inside the space picker, or the success
-                modal the user had probably already dismissed. */}
-            {isRestore && restoreJobFinished && (backupArchive || file) && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setPortableBackupJob(null);
-                  settledRestoreJobIdRef.current = null;
-                  resetRestoreSelection();
-                  setReport(null);
-                }}
-              >
-                Done
               </Button>
             )}
             {portableBackupJob.download_url &&
@@ -4156,6 +4283,26 @@ export function BackupPanel() {
           </div>
         ) : null}
 
+        {/* WikiHub restore, .zip: what this browser did before any job
+            existed - fingerprint, resume decision, parts, scan. The
+            counterpart of the Confluence card's "Preparation logs", and
+            hidden once the archive is scanned for the same reason: by then
+            the story it tells is over and the space picker is the point. */}
+        {activeSection === "import" && restorePreparationLogs.length > 0 ? (
+          <LogDisclosure
+            title="Preparation logs"
+            count={restorePreparationLogs.length}
+            expanded={restorePreparationLogsExpanded}
+            onExpandedChange={setRestorePreparationLogsExpanded}
+          >
+            {restorePreparationLogs.map((log, index) => (
+              <li key={`${index}-${log}`} className="px-3 py-2">
+                {log}
+              </li>
+            ))}
+          </LogDisclosure>
+        ) : null}
+
         {/* WikiHub restore, .zip: archive ready. The counterpart of the
             Confluence "archive ready for import" bar, and for the same reason:
             once the scan is in, the decision left is which spaces - which is a
@@ -4223,6 +4370,38 @@ export function BackupPanel() {
             progress - percent/ETA/cancel, same shared card the export jobs
             use (`renderPortableJobCard`). */}
         {activeSection === "import" ? renderPortableJobCard("restore") : null}
+
+        {/* WikiHub restore, .zip: what the worker is doing right now.
+            `phase` and `counters` are overwritten on every checkpoint, so a
+            percentage alone cannot distinguish steady work from a wedged
+            worker - these lines are the only account of what a multi-hour
+            restore actually touched. Kept after the job finishes: reading
+            back what happened is most of the value. */}
+        {activeSection === "import" && restoreJobLogs.length > 0 ? (
+          <LogDisclosure
+            title="Restore activity"
+            count={restoreJobLogs.length}
+            expanded={restoreJobLogsExpanded}
+            onExpandedChange={setRestoreJobLogsExpanded}
+            listRef={restoreLogsListRef}
+          >
+            {restoreJobLogs.map((log) => (
+              <li key={log.id} className="px-3 py-2">
+                <span
+                  className={cn(
+                    "font-medium",
+                    log.level === "error" && "text-danger",
+                    log.level === "warning" && "text-warning",
+                  )}
+                >
+                  {log.level}
+                </span>{" "}
+                · {log.entity_label ? `${log.entity_label}: ` : ""}
+                {log.message}
+              </li>
+            ))}
+          </LogDisclosure>
+        ) : null}
 
         {/* WikiHub restore: report */}
         {report && activeSection === "import" ? (
@@ -4828,6 +5007,44 @@ export function BackupPanel() {
         summaryLabel="What was restored"
         counts={restoreSuccessReport?.created ?? null}
         emptyLabel="Nothing new - every record in the backup already existed."
+        notice={
+          conflictingImportSpaceKeys.length > 0 ? (
+            <div className="border-warning/30 bg-warning-bg rounded-md border p-3 text-xs">
+              <div className="flex gap-2.5">
+                <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-foreground font-medium">
+                    {conflictingImportSpaceKeys.length}{" "}
+                    {conflictingImportSpaceKeys.length === 1
+                      ? "space already existed and was"
+                      : "spaces already existed and were"}{" "}
+                    left untouched
+                  </p>
+                  {/* The full list ran to 42 keys in one unbroken paragraph.
+                      Enough to recognise which spaces are meant, with the
+                      count carrying the rest. */}
+                  <p className="text-muted-foreground mt-1 break-words">
+                    {conflictingImportSpaceKeys.slice(0, 8).join(", ")}
+                    {conflictingImportSpaceKeys.length > 8
+                      ? ` and ${conflictingImportSpaceKeys.length - 8} more`
+                      : ""}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="mt-2.5"
+                onClick={() => {
+                  setIsRestoreSuccessModalOpen(false);
+                  setConfirmOverwriteImportSpaces(true);
+                }}
+              >
+                Replace them with the archive&apos;s version
+              </Button>
+            </div>
+          ) : null
+        }
         question="Do you want to restore another backup, or close and continue?"
         confirmLabel="Yes, restore another"
         onConfirm={() => {
@@ -4835,6 +5052,7 @@ export function BackupPanel() {
           // card returns to a clean "choose a file" state.
           setPortableBackupJob(null);
           settledRestoreJobIdRef.current = null;
+          setRestoreJobLogs([]);
           resetRestoreSelection();
           setReport(null);
           setIsRestoreSuccessModalOpen(false);

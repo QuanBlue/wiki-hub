@@ -31,7 +31,7 @@ from app.core.exceptions import (
     PayloadTooLargeError,
     ServiceUnavailableError,
 )
-from app.models.backup_job import BackupArchive, BackupJob
+from app.models.backup_job import BackupArchive, BackupJob, BackupJobLog
 from app.modules.backup.archives import BackupArchiveService
 from app.modules.backup.jobs import create_export_job, create_import_job
 from app.modules.backup.service import STALE_JOB_AFTER, BackupService
@@ -46,6 +46,8 @@ from app.schemas.backup import (
     BackupDocument,
     BackupExportCreate,
     BackupImportCreate,
+    BackupJobLogPage,
+    BackupJobLogRead,
     BackupJobRead,
     ImportReport,
 )
@@ -524,6 +526,42 @@ async def get_backup_job(
     if job is None:
         raise BadRequestError("Backup job was not found.", code="backup_job_not_found")
     return await _job_read(job)
+
+
+@router.get("/jobs/{job_id}/logs", response_model=BackupJobLogPage)
+async def get_backup_job_logs(
+    job_id: uuid.UUID,
+    _user: CurrentSuperuser,
+    session: DbSession,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=250),
+) -> BackupJobLogPage:
+    """Narration for one backup job, newest first.
+
+    Paged the same way as the Confluence importer's `/jobs/{id}/logs`: a
+    restore that copies every attachment writes a bounded number of lines,
+    but a failure can add one per item, and the panel only ever shows the
+    most recent page of them.
+    """
+    rows = (
+        (
+            await session.execute(
+                select(BackupJobLog)
+                .where(BackupJobLog.job_id == job_id)
+                .order_by(BackupJobLog.created_at.desc(), BackupJobLog.id.desc())
+                .offset(offset)
+                .limit(limit + 1)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return BackupJobLogPage(
+        items=[
+            BackupJobLogRead.model_validate(row, from_attributes=True) for row in rows[:limit]
+        ],
+        next_offset=offset + limit if len(rows) > limit else None,
+    )
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=BackupJobRead)

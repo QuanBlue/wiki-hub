@@ -278,6 +278,28 @@ class BackupExportCreate(BaseModel):
     space_keys: list[str] = Field(default_factory=list, max_length=5000)
 
 
+class BackupJobLogRead(BaseModel):
+    """One narration line from a backup job.
+
+    Same fields as `ImportLogRead` on purpose: the admin panel renders both
+    job kinds in the same list, and a difference here would show up as two
+    inconsistent accounts of the same kind of work.
+    """
+
+    id: uuid.UUID
+    created_at: datetime
+    level: str
+    phase: str
+    entity_type: str | None
+    entity_label: str | None
+    message: str
+
+
+class BackupJobLogPage(BaseModel):
+    items: list[BackupJobLogRead]
+    next_offset: int | None
+
+
 class BackupJobRead(BaseModel):
     id: uuid.UUID
     kind: str

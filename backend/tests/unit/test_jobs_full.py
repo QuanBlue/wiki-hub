@@ -10,7 +10,7 @@ from app.modules.backup.jobs import (
     run_backup_job,
 )
 from app.modules.backup.service import STALE_JOB_AFTER, ExportCancelled
-from app.models.backup_job import BackupArchive, BackupJob
+from app.models.backup_job import BackupArchive, BackupJob, BackupJobLog
 from app.models.page import WikiPage
 from app.models.space import Space
 from app.models.attachment import PageAttachment
@@ -360,3 +360,100 @@ async def test_reap_every_running_job_skips_the_heartbeat_filter():
     session.execute.reset_mock()
     await reap_abandoned_export_jobs(session)
     assert "heartbeat_at" in executed_where_clause()
+
+
+def _logged(session) -> list[BackupJobLog]:
+    """Every `BackupJobLog` handed to `session.add`, in the order written."""
+    return [
+        call.args[0]
+        for call in session.add.call_args_list
+        if isinstance(call.args[0], BackupJobLog)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_backup_job_full_import_narrates_what_it_is_doing(monkeypatch):
+    """`phase` and `counters` are overwritten on every checkpoint, so once a
+    step is over nothing records that it happened. A restore that runs for
+    hours behind a single progress bar gives an operator no way to tell steady
+    work from a wedged worker, and no account afterwards of what it touched."""
+    session = AsyncMock()
+    storage = AsyncMock()
+    job = _restore_job()
+    archive = Mock(
+        object_key="backups/imports/x/file.zip", size_bytes=1000, filename="backup.zip"
+    )
+
+    def get_side_effect(model, _pk):
+        return job if model is BackupJob else archive
+
+    session.get.side_effect = get_side_effect
+
+    async def mock_restore(self, path, storage, *, dry_run, overwrite_space_keys, space_keys, job):
+        return ImportReport(
+            dry_run=False,
+            version=2,
+            includes_credentials=False,
+            created={"space": 1, "page": 3},
+            conflicting_space_keys=["ENG"],
+        )
+
+    monkeypatch.setattr(
+        "app.modules.backup.jobs.BackupService.restore_full_package", mock_restore
+    )
+
+    await run_backup_job(session, storage, job.id)
+
+    entries = _logged(session)
+    assert [entry.phase for entry in entries] == [
+        "downloading",
+        "downloading",
+        "restoring",
+        "complete",
+        "complete",
+    ]
+    assert all(entry.job_id == job.id for entry in entries)
+    # The filename is named up front - an operator watching this needs to know
+    # *which* archive is being applied, not just that something is.
+    assert "backup.zip" in entries[0].message
+    # The report's counts are spelled out rather than left to the progress bar.
+    assert "1 space" in entries[3].message and "3 pages" in entries[3].message
+    # Spaces that were left alone are a warning, not an aside: they are the
+    # part of the backup that did *not* land.
+    assert entries[4].level == "warning"
+    assert "ENG" in entries[4].message
+
+
+@pytest.mark.asyncio
+async def test_run_backup_job_full_import_narrates_a_cancellation(monkeypatch):
+    """The closing line has to be written after the rollback, not before it.
+
+    `except ExportCancelled` rolls the session back, which discards every log
+    row still pending in it - so a line added before that call would vanish
+    exactly when the record matters most."""
+    session = AsyncMock()
+    storage = AsyncMock()
+    job = _restore_job()
+    archive = Mock(object_key="k", size_bytes=1000, filename="backup.zip")
+
+    def get_side_effect(model, _pk):
+        return job if model is BackupJob else archive
+
+    session.get.side_effect = get_side_effect
+
+    async def mock_restore(self, path, storage, *, dry_run, overwrite_space_keys, space_keys, job):
+        raise ExportCancelled("Export cancelled by administrator.")
+
+    monkeypatch.setattr(
+        "app.modules.backup.jobs.BackupService.restore_full_package", mock_restore
+    )
+
+    await run_backup_job(session, storage, job.id)
+
+    assert job.status == "cancelled"
+    closing = _logged(session)[-1]
+    assert closing.phase == "cancelled"
+    assert closing.level == "warning"
+    # Added after the rollback: no `session.rollback` call may follow it.
+    add_calls = [c for c in session.method_calls if c[0] in {"add", "rollback"}]
+    assert add_calls[-1][0] == "add"

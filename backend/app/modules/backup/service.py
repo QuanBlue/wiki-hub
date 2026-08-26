@@ -42,7 +42,7 @@ from app.models.permission import (
     SpaceGroupPermission,
     SpaceUserPermission,
 )
-from app.models.backup_job import BackupJob
+from app.models.backup_job import BackupJob, BackupJobLog
 from app.models.restriction import PageGroupRestriction, PageUserRestriction
 from app.models.revision import PageRevision
 from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceStatus
@@ -105,6 +105,35 @@ _PROGRESS_CHECK_EVERY = 25
 #: a false positive marks a genuinely running export as failed, so the margin
 #: has to absorb one unusually slow item (a very large attachment download).
 STALE_JOB_AFTER = timedelta(minutes=5)
+
+
+async def log_backup_event(
+    session: AsyncSession,
+    job: BackupJob,
+    level: str,
+    phase: str,
+    message: str,
+    *,
+    entity_type: str | None = None,
+    entity_label: str | None = None,
+) -> BackupJobLog:
+    """Append one narration line to a backup job.
+
+    Mirrors `import_export.service.log` so the admin panel can render both
+    job kinds the same way.  The row is only *added* to the session - the
+    caller's next `checkpoint_backup_job` or commit is what makes it visible,
+    which keeps this off the hot path of loops that run per attachment.
+    """
+    entry = BackupJobLog(
+        job_id=job.id,
+        level=level,
+        phase=phase,
+        message=message,
+        entity_type=entity_type,
+        entity_label=entity_label,
+    )
+    session.add(entry)
+    return entry
 
 
 async def checkpoint_backup_job(
@@ -992,6 +1021,23 @@ class BackupService:
             # checksum verification of every entry) - this is the first chance
             # to observe a cancel requested before scanning even finished, and
             # gives the frontend a real total to show a percentage against.
+            await log_backup_event(
+                self.session,
+                job,
+                "info",
+                "restoring",
+                "Archive verified: "
+                + ", ".join(
+                    f"{count} {noun if count == 1 else noun + 's'}"
+                    for count, noun in (
+                        (len(scanned.document.spaces), "space"),
+                        (len(scanned.document.pages), "page"),
+                        (len(scanned.document.attachments), "attachment"),
+                        (len(scanned.document.avatars), "avatar"),
+                    )
+                )
+                + ".",
+            )
             await checkpoint_backup_job(
                 self.session,
                 job,
@@ -1018,6 +1064,17 @@ class BackupService:
         old_object_keys: list[str] = []
         restore_savepoint = None
         if requested_overwrites:
+            if job is not None:
+                await log_backup_event(
+                    self.session,
+                    job,
+                    "warning",
+                    "restoring",
+                    f"Replacing {len(requested_overwrites)} existing "
+                    f"{'space' if len(requested_overwrites) == 1 else 'spaces'}: "
+                    f"{', '.join(sorted(requested_overwrites))}. Their current pages and "
+                    "attachments are removed first.",
+                )
             restore_savepoint = await self.session.begin_nested()
             page_ids = list(
                 (
@@ -1071,6 +1128,22 @@ class BackupService:
             result = result.model_copy(update={"dry_run": True})
             return _without_handled_conflicts(result, requested_overwrites)
 
+        if job is not None:
+            applied = ", ".join(
+                f"{count} {kind.replace('_', ' ')}{'' if count == 1 else 's'}"
+                for kind, count in sorted(result.created.items())
+                if count
+            )
+            await log_backup_event(
+                self.session,
+                job,
+                "info",
+                "restoring",
+                f"Spaces, pages and revisions applied. Created {applied}."
+                if applied
+                else "Spaces, pages and revisions applied. Nothing new to create.",
+            )
+
         created_object_keys: list[str] = []
         # Every page this restore attached files to, with the ids those files
         # actually landed on - the input to the relink pass below.
@@ -1078,12 +1151,32 @@ class BackupService:
         attachment_ids_by_page: dict[UUID, dict[str, UUID]] = {}
         total_items = len(scanned.document.attachments) + len(scanned.document.avatars)
         processed_items = 0
+        # One line for the whole file-copying phase, rewritten as it advances.
+        # A line per attachment would be the honest per-item log, and would
+        # also bury every other phase under a hundred thousand rows on a real
+        # backup - the count is what an operator is actually reading for.
+        files_log = (
+            await log_backup_event(
+                self.session,
+                job,
+                "info",
+                "restoring",
+                f"Copying 0/{total_items} attachments and avatars into storage.",
+            )
+            if job is not None and total_items
+            else None
+        )
 
         async def _report_progress() -> None:
             nonlocal processed_items
             processed_items += 1
             if job is None or total_items == 0:
                 return
+            if files_log is not None:
+                files_log.message = (
+                    f"Copying {processed_items}/{total_items} attachments and avatars "
+                    "into storage."
+                )
             # `checkpoint_backup_job` commits - and this loop can be running
             # inside `restore_savepoint`, a still-open SAVEPOINT that must
             # stay uncommitted until the loop finishes so a later failure can

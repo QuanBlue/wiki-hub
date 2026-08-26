@@ -6,6 +6,7 @@ FastAPI route functions directly rather than through a TestClient."""
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -17,6 +18,7 @@ from app.api.v1.backup import (
     get_backup_archive,
     get_backup_archive_upload_part_urls,
     get_backup_archive_upload_progress,
+    get_backup_job_logs,
     list_active_backup_archive_uploads,
     scan_backup_archive,
     start_backup_archive_upload,
@@ -259,3 +261,55 @@ async def test_create_backup_import_success_and_validation_error(monkeypatch):
     monkeypatch.setattr("app.api.v1.backup.create_import_job", mock_create_import_job_err)
     with pytest.raises(BadRequestError):
         await create_backup_import(archive_id, BackupImportCreate(), user, session)
+
+
+class _LogResult:
+    """Minimal SQLAlchemy Result stand-in for the job-log listing."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._rows
+
+
+def _log_row(message: str):
+    return Mock(
+        id=uuid.uuid4(),
+        created_at=datetime(2026, 8, 26, 12, 0, tzinfo=UTC),
+        level="info",
+        phase="restoring",
+        entity_type=None,
+        entity_label=None,
+        message=message,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_backup_job_logs_returns_a_page_of_narration():
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_LogResult([_log_row("one"), _log_row("two")]))
+
+    page = await get_backup_job_logs(uuid.uuid4(), Mock(), session, offset=0, limit=100)
+
+    assert [item.message for item in page.items] == ["one", "two"]
+    # Everything fit, so there is nothing to page on to.
+    assert page.next_offset is None
+
+
+@pytest.mark.asyncio
+async def test_get_backup_job_logs_pages_rather_than_returning_everything():
+    """A restore that fails per item can write one line each. The endpoint
+    over-fetches by one to decide whether more exist, and must not hand that
+    extra row back as though it were part of the page."""
+    session = AsyncMock()
+    rows = [_log_row(str(index)) for index in range(3)]
+    session.execute = AsyncMock(return_value=_LogResult(rows))
+
+    page = await get_backup_job_logs(uuid.uuid4(), Mock(), session, offset=0, limit=2)
+
+    assert [item.message for item in page.items] == ["0", "1"]
+    assert page.next_offset == 2

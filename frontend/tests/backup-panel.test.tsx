@@ -807,9 +807,17 @@ describe("BackupPanel native restore", () => {
       overwrite_space_keys: [],
     });
 
-    expect(
-      await screen.findByText(/restore is complete/i, {}, { timeout: 4000 }),
-    ).toBeInTheDocument();
+    // The outcome is announced once, as a toast. It used to also sit on the
+    // card as a green banner carrying a "Done" button that threw the archive
+    // away - the one thing someone is least likely to want right after a
+    // restore, since restoring more spaces from the same file needs it.
+    await waitFor(
+      () =>
+        expect(toast.success).toHaveBeenCalledWith(
+          expect.stringMatching(/restore is complete/i),
+        ),
+      { timeout: 4000 },
+    );
 
     // A restore with nothing left to decide ends in a success modal - not
     // the "Replace existing spaces?" prompt, which is only for unresolved
@@ -835,7 +843,6 @@ describe("BackupPanel native restore", () => {
         screen.queryByRole("heading", { name: /restore completed successfully/i }),
       ).not.toBeInTheDocument(),
     );
-    expect(screen.queryByText(/restore is complete/i)).not.toBeInTheDocument();
     expect(fileInput.value).toBe("");
     // Back to the same state as a fresh mount: no file, so nothing to do yet.
     expect(
@@ -2169,6 +2176,113 @@ describe("BackupPanel native restore", () => {
     expect(jobsPosted[0]).toMatchObject({ space_keys: ["ENG"] });
   });
 
+  it("narrates the upload half, which no job row ever records", async () => {
+    // Fingerprinting, the resume decision, the parts and the scan all happen
+    // in this browser before a restore job exists. Without these lines the
+    // card is a bare progress bar for the entire multi-GB upload, while the
+    // Confluence card beside it explains itself the whole way.
+    stubUploadXHR();
+    mockFetch([...archiveUploadRoutes(), ...baseRoutes()]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(
+      fileInput,
+      new File(["zip-bytes"], "wikihub-full-backup.zip", {
+        type: "application/zip",
+      }),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+
+    // The picker opening is the end of the preparation story.
+    await screen.findByRole("button", { name: /^select all$/i }, { timeout: 4000 });
+
+    const logs = await screen.findByText(/preparation logs/i);
+    const list = logs.closest("details") as HTMLElement;
+    expect(within(list).getByText(/calculating archive fingerprint/i)).toBeInTheDocument();
+    expect(within(list).getByText(/archive fingerprint ready/i)).toBeInTheDocument();
+    expect(within(list).getByText(/uploading 1 part/i)).toBeInTheDocument();
+    expect(within(list).getByText(/scanning the archive/i)).toBeInTheDocument();
+    expect(within(list).getByText(/2 spaces ready to restore/i)).toBeInTheDocument();
+  });
+
+  it("shows what the worker is doing, and picks the account back up after a remount", async () => {
+    // `phase` and `counters` are overwritten on every checkpoint, so a
+    // percentage cannot distinguish steady work from a wedged worker. These
+    // lines come from the server, which is what makes them survive a refresh
+    // - the point at which a purely local log would be gone.
+    mockFetch([
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/jobs",
+        handler: () => ({
+          body: [{
+            id: "job-9",
+            kind: "full_import",
+            status: "running",
+            phase: "restoring",
+            output_filename: null,
+            download_url: null,
+            error: null,
+            space_keys: [],
+            counters: { items_processed: 5, items_total: 10 },
+          }],
+        }),
+      },
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/jobs/job-9/logs",
+        handler: () => ({
+          body: {
+            items: [
+              {
+                id: "log-2",
+                created_at: "2026-08-26T12:00:01Z",
+                level: "warning",
+                phase: "restoring",
+                entity_type: null,
+                entity_label: null,
+                message: "Replacing 1 existing space: ENG.",
+              },
+              {
+                id: "log-1",
+                created_at: "2026-08-26T12:00:00Z",
+                level: "info",
+                phase: "restoring",
+                entity_type: "archive",
+                entity_label: "backup.zip",
+                message: "Archive verified: 2 spaces, 40 pages.",
+              },
+            ],
+            next_offset: null,
+          },
+        }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    render(<BackupPanel />);
+
+    const panel = (
+      await screen.findByText(/restore activity/i, {}, { timeout: 4000 })
+    ).closest("details") as HTMLElement;
+    const lines = within(panel).getAllByRole("listitem");
+    // Oldest first: the endpoint sorts newest-first so paging returns the
+    // interesting end of a long run, but a log only reads as a story forwards.
+    expect(lines[0]).toHaveTextContent(/archive verified/i);
+    expect(lines[1]).toHaveTextContent(/replacing 1 existing space/i);
+    // The entity is named separately from the prose, so it can be read at a
+    // glance rather than parsed out of the sentence.
+    expect(lines[0]).toHaveTextContent(/backup\.zip:/);
+  });
+
   it("offers to overwrite spaces the restore reports as already existing", async () => {
     stubUploadXHR();
     const jobsPosted: { space_keys: string[]; overwrite_space_keys: string[] }[] =
@@ -2283,14 +2397,32 @@ describe("BackupPanel native restore", () => {
     // The conflict only surfaces once the job (polled every 1500ms) reports
     // "complete" - a real interval, not a mocked one, per this suite's
     // existing convention (see the export-completion test above).
+    //
+    // Every finished restore lands in the same place: the completion dialog.
+    // The destructive "Replace existing spaces?" prompt used to open by
+    // itself the instant the job finished, which asks the most dangerous
+    // question available at the moment attention is lowest. It is an offer
+    // inside the completion dialog now, and has to be taken deliberately.
     expect(
       await screen.findByRole(
         "heading",
-        { name: /replace existing spaces/i },
+        { name: /restore completed successfully/i },
         { timeout: 4000 },
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /replace existing spaces/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/ENG/)).toBeInTheDocument();
+
+    await actor.click(
+      screen.getByRole("button", { name: /replace them with the archive/i }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        name: /replace existing spaces/i,
+      }),
+    ).toBeInTheDocument();
 
     await actor.click(
       screen.getByRole("button", { name: /^replace and restore$/i }),
