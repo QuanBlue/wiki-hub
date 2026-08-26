@@ -1244,6 +1244,18 @@ export function BackupPanel() {
   const restoreUploadNeedsFile = Boolean(
     pendingRestoreUpload && !backupArchive && !file,
   );
+  //: Parts are already staged somewhere - rediscovered on the server from an
+  //: earlier visit, or paused mid-flight in this tab. Deliberately *not*
+  //: derived from `restoreUploadNeedsFile`: handing the file back satisfies
+  //: that flag, which used to collapse the whole resume context the instant
+  //: the picker closed. The card fell back to a plain "Upload and scan" with
+  //: no way to cancel, offering to re-send from zero the multi-GB archive it
+  //: was in the middle of resuming.
+  const restoreUploadResumable = Boolean(
+    !backupArchive &&
+      !restoreArchiveRejected &&
+      (pendingRestoreUpload || restoreUploadProgress != null),
+  );
   const pendingRestoreUploadedBytes = pendingRestoreUpload
     ? Math.min(
         pendingRestoreUpload.uploaded_parts.length *
@@ -3555,7 +3567,7 @@ export function BackupPanel() {
                 const isZipSelected =
                   file?.name.toLocaleLowerCase().endsWith(".zip") ||
                   Boolean(backupArchive) ||
-                  restoreUploadNeedsFile;
+                  restoreUploadResumable;
                 return (
                   <div className="mt-auto space-y-3 pt-4">
                     <div>
@@ -3640,6 +3652,12 @@ export function BackupPanel() {
                           Select {pendingRestoreUpload?.filename} again so
                           WikiHub can read the remaining parts.
                         </p>
+                      ) : restoreUploadResumable && pendingRestoreUpload ? (
+                        <p className="text-muted-foreground mt-1.5 text-xs">
+                          {formatBytes(pendingRestoreUploadedBytes)} of{" "}
+                          {pendingRestoreUpload.filename} is already in
+                          storage. Resume upload sends only what is missing.
+                        </p>
                       ) : backupArchive ? (
                         <p className="text-muted-foreground mt-1.5 text-xs">
                           Use a different file below to replace this
@@ -3722,35 +3740,36 @@ export function BackupPanel() {
                               if (file) void uploadAndScanBackupArchive(file);
                             }}
                           >
-                            {restoreUploadNeedsFile ||
-                            restoreUploadProgress != null ? (
-                              <Play />
-                            ) : (
-                              <Upload />
-                            )}
+                            {restoreUploadResumable ? <Play /> : <Upload />}
                             {restoreUploadNeedsFile
                               ? "Select file to resume"
-                              : restoreUploadProgress != null
+                              : restoreUploadResumable
                                 ? "Resume upload"
                                 : "Upload and scan"}
                           </Button>
-                          {restoreUploadNeedsFile ? (
+                          {/* Cancel belongs beside Resume for as long as
+                              parts are staged - including after the file has
+                              been handed back, which is when it used to
+                              vanish. A staged upload holds the Confluence
+                              card locked, so with no Cancel here the only way
+                              out was a reload. */}
+                          {restoreUploadResumable ? (
                             <Button
                               variant="danger"
                               className="flex-1"
-                              onClick={() =>
-                                void discardPendingRestoreUpload()
-                              }
-                            >
-                              Cancel upload
-                            </Button>
-                          ) : restoreUploadProgress != null ? (
-                            <Button
-                              variant="danger"
-                              className="flex-1"
-                              onClick={() =>
-                                setConfirmCancelBackupUpload(true)
-                              }
+                              disabled={restoreInputsLocked}
+                              onClick={() => {
+                                // Something is in flight in this tab: stop it
+                                // first, behind the confirm that guards
+                                // throwing away real progress. Otherwise the
+                                // only thing to discard is what the server is
+                                // holding.
+                                if (restoreUploadProgress != null) {
+                                  setConfirmCancelBackupUpload(true);
+                                  return;
+                                }
+                                void discardPendingRestoreUpload();
+                              }}
                             >
                               Cancel upload
                             </Button>

@@ -1065,6 +1065,86 @@ describe("BackupPanel native restore", () => {
     ).not.toBeInTheDocument();
   });
 
+
+  it("keeps Resume and Cancel once the file for an interrupted upload is handed back", async () => {
+    // Handing the file back satisfied `restoreUploadNeedsFile`, and the card
+    // took that as "nothing is in progress": it collapsed to a plain "Upload
+    // and scan" with no Cancel beside it, offering to re-send from zero the
+    // multi-GB archive it was in the middle of resuming. The staged parts
+    // also keep the Confluence card locked, so losing Cancel here left a
+    // reload as the only way out.
+    let deleted = false;
+    mockFetch([
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/archives/uploads/active",
+        handler: () => ({
+          body: [
+            {
+              archive_id: "archive-1",
+              filename: "big-backup.zip",
+              size_bytes: 4 * 8 * 1024 * 1024,
+              sha256: "a".repeat(64),
+              status: "uploading",
+              part_size_bytes: 8 * 1024 * 1024,
+              uploaded_parts: [1, 2],
+            },
+          ],
+        }),
+      },
+      {
+        method: "DELETE",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload",
+        handler: () => {
+          deleted = true;
+          return { body: {} };
+        },
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    await screen.findByRole(
+      "button",
+      { name: /^select file to resume$/i },
+      { timeout: 4000 },
+    );
+
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(
+      fileInput,
+      new File(["zip-bytes"], "big-backup.zip", { type: "application/zip" }),
+    );
+
+    // Still a resume, and still escapable.
+    expect(
+      await importSection().findByRole("button", { name: /^resume upload$/i }),
+    ).toBeEnabled();
+    expect(
+      importSection().getByRole("button", { name: /^cancel upload$/i }),
+    ).toBeEnabled();
+    expect(
+      importSection().queryByRole("button", { name: /^upload and scan$/i }),
+    ).not.toBeInTheDocument();
+    // And it says what resuming will actually save.
+    expect(
+      screen.getByText(/is already in storage. Resume upload sends only what is missing/i),
+    ).toBeInTheDocument();
+
+    // Cancel still reaches the server with the file in hand.
+    await actor.click(
+      importSection().getByRole("button", { name: /^cancel upload$/i }),
+    );
+    await waitFor(() => expect(deleted).toBe(true));
+    expect(
+      await importSection().findByRole("button", { name: /^upload and scan$/i }),
+    ).toBeInTheDocument();
+  });
+
   it("locks the Confluence card while a WikiHub restore upload is under way, and frees it on cancel", async () => {
     // Both paths write the same spaces and pages, so only one may be engaged.
     // Before this, the panel happily ran a Confluence upload and a WikiHub
