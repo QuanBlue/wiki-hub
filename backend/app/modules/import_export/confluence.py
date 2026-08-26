@@ -127,6 +127,23 @@ def _timestamp(properties: dict[str, ET.Element], *names: str) -> datetime | Non
     return None
 
 
+def _wrong_format_or(archive: zipfile.ZipFile, fallback: str) -> BadRequestError:
+    """Say "you picked the other card's file" when that is what happened.
+
+    A WikiHub backup is recognised by the same two entries its own reader
+    requires (`app/modules/backup/package.py`); anything else falls back to the
+    generic message, so an archive that is merely broken is not mislabelled.
+    """
+    names = set(archive.namelist())
+    if "manifest.json" in names and "data/workspace.json" in names:
+        return BadRequestError(
+            "This looks like a WikiHub backup, not a Confluence export. "
+            'Use "Restore WikiHub Backup" instead.',
+            code="wrong_archive_format",
+        )
+    return BadRequestError(fallback)
+
+
 def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
     """Read Space/Page metadata without materialising ``entities.xml`` in memory."""
     try:
@@ -138,7 +155,14 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
         try:
             stream = archive.open("entities.xml")
         except KeyError as exc:
-            raise BadRequestError("The Confluence archive does not contain entities.xml.") from exc
+            # The mirror of the check in backup/package.py: the two import
+            # cards both take a `.zip`, so the archive handed to the wrong one
+            # is a routine mistake. Name it instead of reporting a missing
+            # entry the user has no reason to have heard of.
+            raise _wrong_format_or(
+                archive,
+                "The Confluence archive does not contain entities.xml.",
+            ) from exc
 
         spaces: dict[str, ConfluenceSpace] = {}
         pages: list[ConfluencePage] = []

@@ -753,6 +753,50 @@ async def test_scan_archive_sync_falls_back_to_local_download_on_stream_failure(
 
 
 @pytest.mark.asyncio
+async def test_scan_archive_sync_does_not_download_when_the_archive_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A BadRequestError from the ranged reader is a verdict on the contents,
+    not a failure to read them, so the local-download fallback must not run.
+
+    Reported case: a WikiHub backup uploaded to the Confluence card. The
+    streaming scan decided in about a second; falling back downloaded the whole
+    multi-GB archive to reach the same answer 125 seconds later, by which time
+    the frontend proxy had dropped the request and the user saw a bare 500
+    instead of the message naming the mistake.
+    """
+    session = Mock()
+    session.flush = AsyncMock()
+    storage = Mock()
+    storage.exists = AsyncMock(return_value=True)
+    service = ConfluenceImportService(session, storage)
+    archive = ImportArchive(
+        object_key="key",
+        filename="wikihub-full-backup.zip",
+        size_bytes=5,
+        status="uploaded",
+        spaces=[],
+        created_by_id=uuid.uuid4(),
+    )
+    session.execute = AsyncMock(return_value=_ScalarResult([]))
+
+    def fake_scan_archive(path_or_file):
+        if isinstance(path_or_file, SeekableS3File):
+            raise BadRequestError(
+                'This looks like a WikiHub backup, not a Confluence export.',
+                code="wrong_archive_format",
+            )
+        raise AssertionError("the local fallback must not run for a rejected archive")
+
+    monkeypatch.setattr(import_module, "scan_archive", fake_scan_archive)
+
+    with pytest.raises(BadRequestError) as excinfo:
+        await service.scan(archive)
+    assert excinfo.value.code == "wrong_archive_format"
+    storage._client.download_file.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_scan_archive_sync_without_s3_client_uses_storage_download(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

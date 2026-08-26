@@ -171,3 +171,32 @@ def test_scan_confluence_hibernate_memberships(tmp_path):
     assert len(spaces.groups) == 1
     assert spaces.groups[0].name == "confluence-users"
     assert spaces.groups[0].members == ["thongnm1"]
+
+
+def test_scan_names_the_mistake_when_given_a_wikihub_backup(tmp_path):
+    """The two import cards both take a `.zip`, so feeding one the other's
+    archive is routine. Saying "does not contain entities.xml" is true and
+    tells the user nothing about what to do next."""
+    path = tmp_path / "wikihub-full-backup.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("manifest.json", "{}")
+        archive.writestr("data/workspace.json", "{}")
+
+    with pytest.raises(BadRequestError) as excinfo:
+        scan_archive(path)
+    assert "WikiHub backup" in str(excinfo.value)
+    assert "Restore WikiHub Backup" in str(excinfo.value)
+    assert excinfo.value.code == "wrong_archive_format"
+
+
+def test_scan_keeps_the_generic_message_for_a_merely_broken_archive(tmp_path):
+    """Only an archive recognisable as the *other* format gets redirected; a
+    zip that is simply wrong must not be mislabelled as a WikiHub backup."""
+    path = tmp_path / "nonsense.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("readme.txt", "not an export")
+
+    with pytest.raises(BadRequestError) as excinfo:
+        scan_archive(path)
+    assert "entities.xml" in str(excinfo.value)
+    assert "WikiHub backup" not in str(excinfo.value)

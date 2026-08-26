@@ -895,6 +895,15 @@ class ConfluenceImportService:
             try:
                 s3_file = SeekableS3File(s3_client, bucket, archive.object_key, archive.size_bytes)
                 return scan_archive(s3_file)
+            except BadRequestError:
+                # A verdict on what the archive *contains*, not a failure to
+                # read it - the ranged reader got far enough to look inside and
+                # decide. Downloading the whole thing can only reach the same
+                # answer, slower: a WikiHub backup handed to this card took
+                # 125 seconds to be told it was the wrong file, by which time
+                # the frontend proxy had dropped the request and the user saw a
+                # bare 500 instead of the message explaining the mistake.
+                raise
             except Exception as stream_err:
                 logger.warning(
                     "Streaming range-scan failed for %s, falling back to local file download: %s",

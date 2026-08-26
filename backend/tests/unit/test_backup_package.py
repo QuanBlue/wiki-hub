@@ -222,3 +222,75 @@ def test_list_backup_spaces_rejects_malformed_space_rows(tmp_path: Path) -> None
     _write_with_spaces(path, [{"name": "No key here"}])  # type: ignore[list-item]
     with pytest.raises(BadRequestError, match="workspace data is invalid"):
         list_backup_spaces(path)
+
+
+def test_list_spaces_names_the_mistake_when_given_a_confluence_export(tmp_path):
+    """Mirror of the Confluence-side check: a Confluence export handed to the
+    restore card used to come back as "Backup is missing its manifest or
+    workspace data", which is accurate and unhelpful."""
+    path = tmp_path / "Confluence-site-export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", "<root/>")
+        archive.writestr("exportDescriptor.properties", "buildNumber=1")
+
+    with pytest.raises(BadRequestError) as excinfo:
+        list_backup_spaces(str(path))
+    assert "Confluence export" in str(excinfo.value)
+    assert "Import Confluence Backup" in str(excinfo.value)
+    assert excinfo.value.code == "wrong_archive_format"
+
+
+def test_list_spaces_keeps_the_generic_message_for_a_merely_broken_backup(tmp_path):
+    """An archive that is neither format must not be blamed on the other card."""
+    path = tmp_path / "nonsense.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("readme.txt", "not a backup")
+
+    with pytest.raises(BadRequestError) as excinfo:
+        list_backup_spaces(str(path))
+    assert "manifest" in str(excinfo.value)
+    assert "Confluence" not in str(excinfo.value)
+
+
+def test_list_spaces_counts_pages_per_space(tmp_path):
+    """The picker showed a bare key while the Confluence one showed
+    "KEY - N pages", so the same decision was made with less information
+    depending on which card the user had reached it from."""
+    document = {
+        "wikihub_backup": {
+            "version": 2,
+            "exported_at": datetime.now(UTC).isoformat(),
+            "app_version": "test",
+            "site_name": "Test",
+            "includes_credentials": False,
+        },
+        "spaces": [
+            {"key": "ENG", "name": "Engineering"},
+            {"key": "OPS", "name": "Operations"},
+            {"key": "EMPTY", "name": "Nothing here"},
+        ],
+        "pages": [
+            {"space_key": "ENG"},
+            {"space_key": "ENG"},
+            {"space_key": "OPS"},
+        ],
+    }
+    data = json.dumps(document).encode()
+    path = tmp_path / "backup.zip"
+    manifest = {
+        "format": FULL_BACKUP_FORMAT,
+        "version": FULL_BACKUP_VERSION,
+        "entries": [
+            {
+                "path": DOCUMENT_PATH,
+                "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        ],
+    }
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(MANIFEST_PATH, json.dumps(manifest))
+        archive.writestr(DOCUMENT_PATH, data)
+
+    counts = {space.key: space.page_count for space in list_backup_spaces(str(path))}
+    assert counts == {"ENG": 2, "OPS": 1, "EMPTY": 0}

@@ -26,6 +26,12 @@ FULL_BACKUP_FORMAT = "wikihub.full-backup"
 FULL_BACKUP_VERSION = 1
 MANIFEST_PATH = "manifest.json"
 DOCUMENT_PATH = "data/workspace.json"
+#: The entry every Confluence site/space export carries. The two import paths
+#: both take a `.zip` and sit side by side in the admin UI, so handing one the
+#: other's archive is an easy mistake - and one that used to be reported as
+#: "Backup is missing its manifest or workspace data", which is true and
+#: useless. Recognising the other format lets the error name the mistake.
+CONFLUENCE_MARKER_PATH = "entities.xml"
 MAX_ARCHIVE_ENTRIES = 100_000
 MAX_COMPRESSION_RATIO = 100
 #: `data/workspace.json` is read whole and parsed as one Pydantic tree
@@ -63,6 +69,11 @@ class BackupSpaceSummary:
 
     key: str
     name: str
+    #: Pages the archive holds for this space. Counted here because the
+    #: workspace document is already parsed - the picker showed a bare key
+    #: while the Confluence one showed "KEY - N pages", so the same decision
+    #: was made with less information depending on which card you had used.
+    page_count: int = 0
 
 
 def _safe_path(path: str) -> str:
@@ -149,6 +160,12 @@ def _index_entries(archive: zipfile.ZipFile, limit: int) -> dict[str, zipfile.Zi
 
 def _read_manifest(archive: zipfile.ZipFile, by_path: dict[str, zipfile.ZipInfo]) -> dict[str, Any]:
     if MANIFEST_PATH not in by_path or DOCUMENT_PATH not in by_path:
+        if CONFLUENCE_MARKER_PATH in by_path:
+            raise BadRequestError(
+                "This looks like a Confluence export, not a WikiHub backup. "
+                "Use \"Import Confluence Backup\" instead.",
+                code="wrong_archive_format",
+            )
         raise BadRequestError(
             "Backup is missing its manifest or workspace data.", code="malformed_backup"
         )
@@ -218,13 +235,26 @@ def list_backup_spaces(
     raw_spaces = document.get("spaces") if isinstance(document, dict) else None
     if not isinstance(raw_spaces, list):
         raise BadRequestError("Backup workspace data is invalid.", code="malformed_backup")
+    raw_pages = document.get("pages") if isinstance(document, dict) else None
+    page_counts: dict[str, int] = {}
+    if isinstance(raw_pages, list):
+        for raw_page in raw_pages:
+            if isinstance(raw_page, dict):
+                space_key = raw_page.get("space_key")
+                if isinstance(space_key, str):
+                    page_counts[space_key] = page_counts.get(space_key, 0) + 1
+
     spaces: list[BackupSpaceSummary] = []
     for raw in raw_spaces:
         if not isinstance(raw, dict) or not isinstance(raw.get("key"), str):
             raise BadRequestError("Backup workspace data is invalid.", code="malformed_backup")
         name = raw.get("name")
         spaces.append(
-            BackupSpaceSummary(key=raw["key"], name=name if isinstance(name, str) else raw["key"])
+            BackupSpaceSummary(
+                key=raw["key"],
+                name=name if isinstance(name, str) else raw["key"],
+                page_count=page_counts.get(raw["key"], 0),
+            )
         )
     return spaces
 
