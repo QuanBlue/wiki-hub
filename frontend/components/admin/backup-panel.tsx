@@ -5159,8 +5159,15 @@ export function BackupPanel() {
       />
 
       {/* Neither way out is free - one asks for a file back, the other
-          throws away parts already uploaded - so both are spelled out with
-          their cost and neither is preselected as "the safe one". */}
+          throws away parts already uploaded - so the two files are set side
+          by side with what each is worth, and neither button is dressed as
+          "the safe one".
+
+          The names carry the whole difference here (they differ by a date
+          deep inside a 39-character string), so they get their own lines in
+          a comparison block instead of being buried mid-sentence and
+          repeated again inside the buttons - which is what made the buttons
+          wrap into a stacked, unreadable pair. */}
       <Dialog
         open={mismatchedResumeFile !== null}
         onOpenChange={(open) => {
@@ -5169,21 +5176,50 @@ export function BackupPanel() {
       >
         <DialogContent
           title="That is a different file"
-          description={
-            pendingRestoreUpload
-              ? `${formatBytes(pendingRestoreUploadedBytes)} of ${pendingRestoreUpload.filename} is already in storage, but you chose ${mismatchedResumeFile?.name}. Those parts only fit the original file, so resuming needs that one back.`
-              : "The selected file does not match the upload in progress."
-          }
+          description="The parts already uploaded only fit the file they came from, so resuming needs that one back."
         >
+          <div className="border-border bg-surface-sunken divide-border divide-y rounded-md border">
+            <div className="flex gap-2.5 p-3">
+              <ArrowUpFromLine className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+                  Being uploaded
+                </p>
+                <p className="text-foreground mt-0.5 text-xs break-all">
+                  {pendingRestoreUpload?.filename}
+                </p>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  {formatBytes(pendingRestoreUploadedBytes)} of{" "}
+                  {formatBytes(pendingRestoreUpload?.size_bytes ?? 0)} already
+                  in storage
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2.5 p-3">
+              <FileArchive className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+                  You chose
+                </p>
+                <p className="text-foreground mt-0.5 text-xs break-all">
+                  {mismatchedResumeFile?.name}
+                </p>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  {formatBytes(mismatchedResumeFile?.size ?? 0)} · nothing
+                  uploaded yet
+                </p>
+              </div>
+            </div>
+          </div>
           <DialogFooter>
-            <Button variant="primary" onClick={reselectFileForResume}>
-              Choose {pendingRestoreUpload?.filename}
-            </Button>
             <Button
               variant="danger"
               onClick={() => void uploadMismatchedFileInstead()}
             >
-              Discard {formatBytes(pendingRestoreUploadedBytes)} and upload this
+              Discard and upload this
+            </Button>
+            <Button variant="primary" onClick={reselectFileForResume}>
+              Choose the original
             </Button>
           </DialogFooter>
         </DialogContent>

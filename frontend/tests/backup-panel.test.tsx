@@ -1262,19 +1262,24 @@ describe("BackupPanel native restore", () => {
     ) as HTMLInputElement;
     await actor.upload(fileInput, fileOfSize("other-backup.zip", 1234));
 
-    expect(
-      await screen.findByRole("heading", { name: /that is a different file/i }),
-    ).toBeInTheDocument();
-    // Both routes out are named with what they cost.
-    expect(
-      screen.getByRole("button", { name: /choose big-backup\.zip/i }),
-    ).toBeInTheDocument();
+    const modal = (
+      await screen.findByRole("heading", { name: /that is a different file/i })
+    ).closest("[role=dialog]") as HTMLElement;
+    // The two names differ deep inside a long string, so both are shown in
+    // full and set against each other - that is the whole decision. Putting
+    // them inside the buttons instead is what wrapped those into an
+    // unreadable stack.
+    expect(within(modal).getByText("big-backup.zip")).toBeInTheDocument();
+    expect(within(modal).getByText("other-backup.zip")).toBeInTheDocument();
+    // And what each side is worth, so the cost is visible without doing sums.
+    expect(within(modal).getByText(/already in storage/i)).toBeInTheDocument();
+    expect(within(modal).getByText(/nothing uploaded yet/i)).toBeInTheDocument();
     expect(deleted).toBe(false);
 
     // Taking the destructive one drops the staged parts before starting over,
     // so the abandoned upload is not still offered on the next visit.
     await actor.click(
-      screen.getByRole("button", { name: /discard .* and upload this/i }),
+      within(modal).getByRole("button", { name: /^discard and upload this$/i }),
     );
     await waitFor(() => expect(deleted).toBe(true));
     expect(
