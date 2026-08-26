@@ -157,6 +157,21 @@ class BackupArchiveService:
             raise NotFoundError("Backup archive was not found.")
         return archive
 
+    async def spaces_for_display(self, archive: BackupArchive) -> list[dict[str, Any]]:
+        """The archive's space list with its conflict flags recomputed now.
+
+        `archive.spaces` stores whatever `scan` found, conflict flags and all,
+        and those were true only at scan time. A restore creates spaces, so
+        every key it just restored stops being a conflict-free choice the
+        moment it finishes - and the picker, reopened to restore the spaces
+        that were skipped, would still be inviting the user to pick the ones
+        already done.
+
+        Recomputed rather than written back: this is a view of the archive
+        against the current workspace, not a fact about the archive.
+        """
+        return await self._with_conflicts(archive.spaces or [])
+
     async def uploaded_part_numbers(self, archive: BackupArchive) -> list[int]:
         if not archive.multipart_upload_id:
             return []

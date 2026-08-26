@@ -833,23 +833,25 @@ describe("BackupPanel native restore", () => {
       screen.queryByRole("heading", { name: /replace existing spaces/i }),
     ).not.toBeInTheDocument();
 
-    // "Yes, restore another" clears the finished job and the file selection,
-    // so the card is ready for the next archive.
+    // The archive is still staged, so the offer is to restore more spaces
+    // from it - not to go and find another file. A restore covers part of a
+    // backup by design; sending the user back to "choose a file" would mean
+    // re-uploading multiple GB to reach a picker one click away.
     await actor.click(
-      screen.getByRole("button", { name: /^yes, restore another$/i }),
+      screen.getByRole("button", { name: /^yes, choose more spaces$/i }),
     );
     await waitFor(() =>
       expect(
         screen.queryByRole("heading", { name: /restore completed successfully/i }),
       ).not.toBeInTheDocument(),
     );
-    expect(fileInput.value).toBe("");
-    // Back to the same state as a fresh mount: no file, so nothing to do yet.
     expect(
-      importSection().getByRole("button", { name: /^restore backup$/i }),
-    ).toBeDisabled();
+      await screen.findByRole("button", { name: /^select all$/i }),
+    ).toBeInTheDocument();
+    // The finished job's card goes with it - what is on screen now is a new
+    // decision, not the last one's result.
     expect(
-      screen.queryByText(/spaces found\. choose which spaces/i),
+      screen.queryByRole("button", { name: /^cancel restore$/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -910,6 +912,98 @@ describe("BackupPanel native restore", () => {
     expect(
       importSection().getByRole("button", { name: /^restore backup$/i }),
     ).toBeEnabled();
+  });
+
+
+  it("re-reads the archive when reopening the picker, so restored spaces show as taken", async () => {
+    // `conflict` is a fact about the workspace, not the archive, and it was
+    // computed when the archive was scanned. The restore that just finished
+    // created spaces - so reusing the scanned flags would offer the very keys
+    // it had just filled as though they were still free, and the next restore
+    // would silently skip them.
+    stubUploadXHR();
+    let archiveReads = 0;
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/jobs",
+        handler: () => ({
+          body: {
+            id: "job-1", kind: "full_import", status: "queued", phase: "queued",
+            output_filename: null, download_url: null, error: null, space_keys: [],
+          },
+        }),
+      },
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/jobs/job-1",
+        handler: () => ({
+          body: {
+            id: "job-1", kind: "full_import", status: "complete", phase: "complete",
+            output_filename: null, download_url: null, error: null, space_keys: [],
+            result: {
+              dry_run: false, includes_credentials: false, created: { space: 1 },
+              skipped: {}, errors: {}, users_without_password: [],
+              entries: [], entries_truncated: false, conflicting_space_keys: [],
+            },
+          },
+        }),
+      },
+      {
+        // Re-read after the restore: ENG exists now, SALES still does not.
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/archives/archive-1",
+        handler: () => {
+          archiveReads += 1;
+          return {
+            body: {
+              id: "archive-1", filename: "f.zip", size_bytes: 9,
+              sha256: null, status: "scanned", error: null,
+              spaces: [
+                { key: "ENG", name: "Engineering", page_count: 3, conflict: true },
+                { key: "SALES", name: "Sales", page_count: 1, conflict: false },
+              ],
+            },
+          };
+        },
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    await actor.upload(
+      fileInput,
+      new File(["zip-bytes"], "backup.zip", { type: "application/zip" }),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+    // Straight out of the scan the picker knows of no conflicts.
+    await screen.findByRole("button", { name: /^select all$/i }, { timeout: 4000 });
+    expect(screen.queryByText(/^Existed$/)).not.toBeInTheDocument();
+
+    await actor.click(screen.getByRole("button", { name: /^select all$/i }));
+    await actor.click(screen.getByRole("button", { name: /^start restore$/i }));
+
+    await actor.click(
+      await screen.findByRole(
+        "button",
+        { name: /^yes, choose more spaces$/i },
+        { timeout: 4000 },
+      ),
+    );
+
+    // Reopened on the same archive - no re-upload - with fresh flags.
+    await waitFor(() => expect(archiveReads).toBeGreaterThan(0));
+    expect(
+      await screen.findByRole("button", { name: /^select all$/i }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/^Existed$/)).toBeInTheDocument();
   });
 
   it("tells the server when a scanned archive is discarded, so it stays gone", async () => {
@@ -1066,18 +1160,12 @@ describe("BackupPanel native restore", () => {
   });
 
 
-  it("keeps Resume and Cancel once the file for an interrupted upload is handed back", async () => {
-    // Handing the file back satisfied `restoreUploadNeedsFile`, and the card
-    // took that as "nothing is in progress": it collapsed to a plain "Upload
-    // and scan" with no Cancel beside it, offering to re-send from zero the
-    // multi-GB archive it was in the middle of resuming. The staged parts
-    // also keep the Confluence card locked, so losing Cancel here left a
-    // reload as the only way out.
-    let deleted = false;
-    mockFetch([
+  /** The rediscovered-upload routes, with the file it is waiting for. */
+  function interruptedUploadRoutes(onDelete: () => void) {
+    return [
       {
         method: "GET",
-        match: (p) => p === "/api/v1/backup/archives/uploads/active",
+        match: (p: string) => p === "/api/v1/backup/archives/uploads/active",
         handler: () => ({
           body: [
             {
@@ -1094,18 +1182,35 @@ describe("BackupPanel native restore", () => {
       },
       {
         method: "DELETE",
-        match: (p) => p === "/api/v1/backup/archives/archive-1/upload",
+        match: (p: string) => p === "/api/v1/backup/archives/archive-1/upload",
         handler: () => {
-          deleted = true;
+          onDelete();
           return { body: {} };
         },
       },
+    ];
+  }
+
+  /** A `File` that claims a size without allocating it. */
+  function fileOfSize(name: string, size: number) {
+    const file = new File(["zip-bytes"], name, { type: "application/zip" });
+    Object.defineProperty(file, "size", { value: size });
+    return file;
+  }
+
+  it("resumes straight away when the file handed back is the one being uploaded", async () => {
+    // Choosing the file *is* the answer - it says "carry on with this one".
+    // Making the user then press a button whose only job is to repeat that is
+    // a second click for nothing.
+    stubUploadXHR();
+    mockFetch([
+      ...interruptedUploadRoutes(() => {}),
+      ...archiveUploadRoutes(),
       ...baseRoutes(),
     ]);
 
     const actor = userEvent.setup();
     render(<BackupPanel />);
-
     await screen.findByRole(
       "button",
       { name: /^select file to resume$/i },
@@ -1117,31 +1222,63 @@ describe("BackupPanel native restore", () => {
     ) as HTMLInputElement;
     await actor.upload(
       fileInput,
-      new File(["zip-bytes"], "big-backup.zip", { type: "application/zip" }),
+      fileOfSize("big-backup.zip", 4 * 8 * 1024 * 1024),
     );
 
-    // Still a resume, and still escapable.
+    // It went to work on its own, and did not stop to ask.
     expect(
-      await importSection().findByRole("button", { name: /^resume upload$/i }),
-    ).toBeEnabled();
-    expect(
-      importSection().getByRole("button", { name: /^cancel upload$/i }),
-    ).toBeEnabled();
-    expect(
-      importSection().queryByRole("button", { name: /^upload and scan$/i }),
-    ).not.toBeInTheDocument();
-    // And it says what resuming will actually save.
-    expect(
-      screen.getByText(/is already in storage. Resume upload sends only what is missing/i),
+      await screen.findByText(/calculating archive fingerprint/i, {}, { timeout: 4000 }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /that is a different file/i }),
+    ).not.toBeInTheDocument();
+  });
 
-    // Cancel still reaches the server with the file in hand.
+  it("asks before pouring a different file into a half-finished upload", async () => {
+    // The staged parts belong to the other file. Continuing would assemble an
+    // archive out of two different backups, and silently discarding them
+    // would throw away an upload the user may have spent an hour on - so
+    // neither is chosen for them.
+    stubUploadXHR();
+    let deleted = false;
+    mockFetch([
+      ...interruptedUploadRoutes(() => {
+        deleted = true;
+      }),
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await screen.findByRole(
+      "button",
+      { name: /^select file to resume$/i },
+      { timeout: 4000 },
+    );
+
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(fileInput, fileOfSize("other-backup.zip", 1234));
+
+    expect(
+      await screen.findByRole("heading", { name: /that is a different file/i }),
+    ).toBeInTheDocument();
+    // Both routes out are named with what they cost.
+    expect(
+      screen.getByRole("button", { name: /choose big-backup\.zip/i }),
+    ).toBeInTheDocument();
+    expect(deleted).toBe(false);
+
+    // Taking the destructive one drops the staged parts before starting over,
+    // so the abandoned upload is not still offered on the next visit.
     await actor.click(
-      importSection().getByRole("button", { name: /^cancel upload$/i }),
+      screen.getByRole("button", { name: /discard .* and upload this/i }),
     );
     await waitFor(() => expect(deleted).toBe(true));
     expect(
-      await importSection().findByRole("button", { name: /^upload and scan$/i }),
+      await screen.findByText(/calculating archive fingerprint/i, {}, { timeout: 4000 }),
     ).toBeInTheDocument();
   });
 

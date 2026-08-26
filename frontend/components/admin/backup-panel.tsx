@@ -1034,6 +1034,13 @@ export function BackupPanel() {
   //: gesture can), so the card asks for it back and then resumes from
   //: `uploaded_parts` - the same "select the file again" step the Confluence
   //: card uses. `null` once there is nothing pending.
+  //: A file chosen to resume an upload that turns out not to be that file.
+  //: Held rather than acted on: both ways out cost something real - one asks
+  //: for the right file back, the other throws away parts already uploaded -
+  //: so it is the user's call, not a guess.
+  const [mismatchedResumeFile, setMismatchedResumeFile] = useState<File | null>(
+    null,
+  );
   const [pendingRestoreUpload, setPendingRestoreUpload] =
     useState<BackupArchiveUploadProgress | null>(null);
   const [confirmDiscardBackupArchive, setConfirmDiscardBackupArchive] =
@@ -2923,6 +2930,105 @@ export function BackupPanel() {
     }
   }
 
+  /** Decide what a freshly selected restore file means.
+   *
+   * With an unfinished upload waiting for its file back, choosing the file is
+   * the whole answer - it says "carry on with this" - so the upload resumes
+   * on the spot rather than asking for a second click on a button whose only
+   * job would be to repeat what was just said.
+   *
+   * A file that is not the one being resumed cannot be waved through: the
+   * parts in storage belong to the other file, and continuing would build an
+   * archive out of two different backups. Name and size are compared rather
+   * than fingerprints - it is instant, and it is enough to *ask*. The server
+   * still matches on the sampled fingerprint before reusing a single byte, so
+   * a same-name, same-size impostor starts a fresh upload rather than
+   * corrupting the staged one.
+   */
+  async function handleRestoreFileSelected(selectedFile: File) {
+    let wrongFormat = false;
+    await rejectWrongArchiveFormat(selectedFile, "wikihub", (message) => {
+      wrongFormat = true;
+      toast.error(message);
+      setFile(null);
+      if (fileInput.current) fileInput.current.value = "";
+    });
+    if (wrongFormat) return;
+
+    const pending = pendingRestoreUpload;
+    if (!pending) return;
+    if (
+      selectedFile.name === pending.filename &&
+      selectedFile.size === pending.size_bytes
+    ) {
+      void uploadAndScanBackupArchive(selectedFile);
+      return;
+    }
+    setMismatchedResumeFile(selectedFile);
+  }
+
+  /** Give up on the staged parts and upload the file just chosen instead. */
+  async function uploadMismatchedFileInstead() {
+    const next = mismatchedResumeFile;
+    setMismatchedResumeFile(null);
+    if (!next) return;
+    // Delete first: leaving the old parts behind would keep the other file
+    // offered for resume on the next visit, on top of this upload.
+    await discardPendingRestoreUpload();
+    void uploadAndScanBackupArchive(next);
+  }
+
+  /** Ask for the file the staged parts actually belong to. */
+  function reselectFileForResume() {
+    setMismatchedResumeFile(null);
+    setFile(null);
+    if (fileInput.current) {
+      fileInput.current.value = "";
+      fileInput.current.click();
+    }
+  }
+
+  /** Answer "restore more" by reopening the picker on the archive already
+   * staged, rather than sending the user back to choose a file.
+   *
+   * A restore usually covers part of a backup - that is the whole reason the
+   * picker exists - so the likely next step is the spaces that were skipped,
+   * not a different backup. Discarding the archive here meant re-uploading
+   * multiple GB to reach a picker that was one click away.
+   *
+   * The archive is re-read rather than reused from state: its `conflict`
+   * flags were computed when it was scanned, and the restore that just
+   * finished created spaces. Without this the picker would offer the keys it
+   * had just filled as though they were still free.
+   */
+  async function restoreMoreFromSameArchive() {
+    const archive = backupArchive;
+    setPortableBackupJob(null);
+    settledRestoreJobIdRef.current = null;
+    setRestoreJobLogs([]);
+    setReport(null);
+    setIsRestoreSuccessModalOpen(false);
+    if (!archive) {
+      // Nothing staged - a `.json` restore, or the archive was discarded.
+      // Back to a clean "choose a file" card, as before.
+      resetRestoreSelection();
+      return;
+    }
+    setImportSpaceFilter("");
+    setImportSelectedSpaceKeys([]);
+    setConflictingImportSpaceKeys([]);
+    setIsImportSpacePickerOpen(true);
+    try {
+      setBackupArchive(
+        await apiFetch<BackupArchive>(`/api/v1/backup/archives/${archive.id}`),
+      );
+    } catch {
+      // Keep the picker open on what is already known: the flags may be a
+      // scan out of date, but the server rejects a conflicting restore
+      // anyway, and closing the picker under the user would be worse.
+    }
+  }
+
   /** Throw away an unfinished upload rediscovered from a previous visit,
    * without needing the original file back. */
   async function discardPendingRestoreUpload() {
@@ -3614,17 +3720,7 @@ export function BackupPanel() {
                           setRestoreResumedBytes(0);
                           setRestoreArchiveRejected(false);
                           if (selectedFile) {
-                            void rejectWrongArchiveFormat(
-                              selectedFile,
-                              "wikihub",
-                              (message) => {
-                                toast.error(message);
-                                setFile(null);
-                                if (fileInput.current) {
-                                  fileInput.current.value = "";
-                                }
-                              },
-                            );
+                            void handleRestoreFileSelected(selectedFile);
                           }
                         }}
                         className={cn(
@@ -5062,6 +5158,37 @@ export function BackupPanel() {
         }}
       />
 
+      {/* Neither way out is free - one asks for a file back, the other
+          throws away parts already uploaded - so both are spelled out with
+          their cost and neither is preselected as "the safe one". */}
+      <Dialog
+        open={mismatchedResumeFile !== null}
+        onOpenChange={(open) => {
+          if (!open) setMismatchedResumeFile(null);
+        }}
+      >
+        <DialogContent
+          title="That is a different file"
+          description={
+            pendingRestoreUpload
+              ? `${formatBytes(pendingRestoreUploadedBytes)} of ${pendingRestoreUpload.filename} is already in storage, but you chose ${mismatchedResumeFile?.name}. Those parts only fit the original file, so resuming needs that one back.`
+              : "The selected file does not match the upload in progress."
+          }
+        >
+          <DialogFooter>
+            <Button variant="primary" onClick={reselectFileForResume}>
+              Choose {pendingRestoreUpload?.filename}
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => void uploadMismatchedFileInstead()}
+            >
+              Discard {formatBytes(pendingRestoreUploadedBytes)} and upload this
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ImportCompletedDialog
         open={isRestoreSuccessModalOpen}
         onOpenChange={setIsRestoreSuccessModalOpen}
@@ -5108,18 +5235,15 @@ export function BackupPanel() {
             </div>
           ) : null
         }
-        question="Do you want to restore another backup, or close and continue?"
-        confirmLabel="Yes, restore another"
-        onConfirm={() => {
-          // Clear the finished job too, so its progress card goes away and the
-          // card returns to a clean "choose a file" state.
-          setPortableBackupJob(null);
-          settledRestoreJobIdRef.current = null;
-          setRestoreJobLogs([]);
-          resetRestoreSelection();
-          setReport(null);
-          setIsRestoreSuccessModalOpen(false);
-        }}
+        question={
+          backupArchive
+            ? "Do you want to restore more spaces from this backup, or close and continue?"
+            : "Do you want to restore another backup, or close and continue?"
+        }
+        confirmLabel={
+          backupArchive ? "Yes, choose more spaces" : "Yes, restore another"
+        }
+        onConfirm={() => void restoreMoreFromSameArchive()}
       />
 
       <ConfirmDialog

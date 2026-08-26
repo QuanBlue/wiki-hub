@@ -13,7 +13,7 @@ import tempfile
 import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import quote
 
 from arq import create_pool
@@ -80,7 +80,9 @@ def get_backup_archive_service(session: DbSession) -> BackupArchiveService:
 BackupArchiveServiceDep = Annotated[BackupArchiveService, Depends(get_backup_archive_service)]
 
 
-def _archive_read(item: BackupArchive) -> BackupArchiveRead:
+def _archive_read(
+    item: BackupArchive, spaces: list[dict[str, Any]] | None = None
+) -> BackupArchiveRead:
     return BackupArchiveRead(
         id=item.id,
         filename=item.filename,
@@ -88,7 +90,10 @@ def _archive_read(item: BackupArchive) -> BackupArchiveRead:
         sha256=item.sha256,
         status=item.status,
         error=item.error,
-        spaces=[BackupArchiveSpaceRead.model_validate(space) for space in item.spaces],
+        spaces=[
+            BackupArchiveSpaceRead.model_validate(space)
+            for space in (item.spaces if spaces is None else spaces)
+        ],
     )
 
 
@@ -455,7 +460,11 @@ async def scan_backup_archive(
 async def get_backup_archive(
     archive_id: uuid.UUID, _user: CurrentSuperuser, archives: BackupArchiveServiceDep
 ) -> BackupArchiveRead:
-    return _archive_read(await archives.get_archive(archive_id))
+    # Conflicts are recomputed on read, not served from what the scan stored:
+    # a restore creates spaces, so re-reading the archive afterwards has to
+    # show the keys it just filled as taken.
+    archive = await archives.get_archive(archive_id)
+    return _archive_read(archive, await archives.spaces_for_display(archive))
 
 
 @router.post(
