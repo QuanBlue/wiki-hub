@@ -64,6 +64,46 @@ async def test_start_backup_archive_upload():
 
 
 @pytest.mark.asyncio
+async def test_start_backup_archive_upload_reports_parts_already_uploaded():
+    """A resumed archive must carry its existing part numbers back to the
+    client, which skips them. Without this the server could match a
+    half-uploaded multi-GB archive and the browser would still re-send every
+    byte of it."""
+    user = Mock(id=uuid.uuid4())
+    archives = AsyncMock()
+    archives.session = AsyncMock()
+    archives.upload_part_size_bytes = 8 * 1024 * 1024
+    archives.start_upload = AsyncMock(return_value=_archive(status="uploading"))
+    archives.uploaded_part_numbers = AsyncMock(return_value=[1, 2, 3])
+
+    with _mock_effective(10**9):
+        result = await start_backup_archive_upload(
+            BackupArchiveUploadInit(filename="f.zip", size_bytes=100), user, archives
+        )
+    assert result.reused is False
+    assert result.uploaded_parts == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_start_backup_archive_upload_skips_part_lookup_when_complete():
+    """A finished archive needs no part list - the client skips the upload
+    entirely, so asking storage for its parts would be a wasted round trip."""
+    user = Mock(id=uuid.uuid4())
+    archives = AsyncMock()
+    archives.session = AsyncMock()
+    archives.upload_part_size_bytes = 8 * 1024 * 1024
+    archives.start_upload = AsyncMock(return_value=_archive(status="scanned"))
+
+    with _mock_effective(10**9):
+        result = await start_backup_archive_upload(
+            BackupArchiveUploadInit(filename="f.zip", size_bytes=100), user, archives
+        )
+    assert result.reused is True
+    assert result.uploaded_parts == []
+    archives.uploaded_part_numbers.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_list_active_backup_archive_uploads():
     user = Mock(id=uuid.uuid4())
     session = AsyncMock()
@@ -200,6 +240,11 @@ async def test_create_backup_import_success_and_validation_error(monkeypatch):
 
     monkeypatch.setattr("app.api.v1.backup.create_import_job", mock_create_import_job)
     monkeypatch.setattr("app.api.v1.backup._enqueue", AsyncMock())
+    # The "no concurrent Confluence import" guard has its own tests below;
+    # here it would otherwise trip on the AsyncMock session.
+    monkeypatch.setattr(
+        "app.api.v1.backup.assert_no_active_confluence_import", AsyncMock()
+    )
 
     res = await create_backup_import(
         archive_id, BackupImportCreate(space_keys=["ENG"]), user, session

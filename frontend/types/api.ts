@@ -324,11 +324,15 @@ export interface SiteSettings {
 
 //: A WikiHub `.zip` backup archive uploaded (and, once scanned, its
 //: contained spaces listed) via `/api/v1/backup/archives/*` - the restore
-//: counterpart of `ConfluenceArchive` below, minus the richer
-//: `ConfluenceSpaceCandidate` per-space fields (no `conflict`/counts yet).
+//: counterpart of `ConfluenceArchive` below. Carries the same per-space
+//: fields, so both space pickers can show page counts and warn about keys
+//: that already exist.
 export interface BackupArchiveSpace {
   key: string;
   name: string;
+  page_count: number;
+  /** A space with this key already exists here and would be skipped. */
+  conflict: boolean;
 }
 export interface BackupArchive {
   id: string;
@@ -338,6 +342,20 @@ export interface BackupArchive {
   status: string;
   error: string | null;
   spaces: BackupArchiveSpace[];
+}
+
+//: One in-flight or ready-to-restore backup archive, from
+//: `GET /api/v1/backup/archives/uploads/active`. Lets the restore card rebuild
+//: itself from the server after a remount, instead of losing an upload or a
+//: finished scan the moment the user navigates away.
+export interface BackupArchiveUploadProgress {
+  archive_id: string;
+  filename: string;
+  size_bytes: number;
+  sha256: string | null;
+  status: string;
+  part_size_bytes: number;
+  uploaded_parts: number[];
 }
 
 export interface ConfluenceSpaceCandidate {

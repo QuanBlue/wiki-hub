@@ -21,9 +21,25 @@ from app.modules.backup.archives import BackupArchiveService
 from app.modules.backup.package import BackupSpaceSummary
 
 
+class _ScalarResult:
+    """Minimal stand-in for a SQLAlchemy Result: `scan` reads the existing
+    space keys to flag conflicts in the picker."""
+
+    def __init__(self, values):
+        self._values = values
+
+    def scalars(self):
+        return self._values
+
+    def first(self):
+        return self._values[0] if self._values else None
+
+
 @pytest.fixture
 def session():
-    return AsyncMock()
+    mock = AsyncMock()
+    mock.execute = AsyncMock(return_value=_ScalarResult([]))
+    return mock
 
 
 @pytest.fixture
@@ -177,11 +193,13 @@ async def test_scan_reads_spaces_through_a_ranged_reader_without_downloading(arc
     storage.open_reader = Mock(return_value=reader)
     with _mock_effective(10**9), patch(
         "app.modules.backup.archives.list_backup_spaces",
-        return_value=[BackupSpaceSummary(key="ENG", name="Engineering")],
+        return_value=[BackupSpaceSummary(key="ENG", name="Engineering", page_count=7)],
     ) as mocked_list:
         result = await archives.scan(archive)
     assert result.status == "scanned"
-    assert result.spaces == [{"key": "ENG", "name": "Engineering"}]
+    assert result.spaces == [
+        {"key": "ENG", "name": "Engineering", "page_count": 7, "conflict": False}
+    ]
     storage.open_reader.assert_called_once_with("k")
     mocked_list.assert_called_once()
     storage.download_to_file.assert_not_called()
@@ -228,3 +246,179 @@ async def test_scan_reuses_already_scanned_archive(archives, storage):
     result = await archives.scan(archive)
     assert result is archive
     storage.download_to_file.assert_not_called()
+
+
+# -- resuming a partial upload of the same file -----------------------------
+
+
+def _uploading(**overrides) -> BackupArchive:
+    defaults = dict(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="uploading", multipart_upload_id="up-1", sha256="a" * 64,
+        created_by_id=uuid.uuid4(),
+    )
+    return BackupArchive(**{**defaults, **overrides})
+
+
+def _scalars(rows):
+    result = Mock()
+    result.scalars.return_value = iter(rows)
+    return result
+
+
+@pytest.mark.asyncio
+async def test_find_resumable_archive_returns_a_live_partial_upload(archives, session, storage):
+    archive = _uploading()
+    session.execute = AsyncMock(return_value=_scalars([archive]))
+    storage.list_multipart_parts = AsyncMock(return_value=[(1, "etag1")])
+
+    found = await archives.find_resumable_archive(sha256="a" * 64, size_bytes=10)
+    assert found is archive
+
+
+@pytest.mark.asyncio
+async def test_find_resumable_archive_skips_an_expired_multipart_upload(archives, session, storage):
+    """A row can outlive its multipart upload - S3 lifecycle rules expire
+    incomplete uploads. Resuming against one of those would fail on the first
+    part, so it must fall through to a fresh upload instead."""
+    session.execute = AsyncMock(return_value=_scalars([_uploading()]))
+    storage.list_multipart_parts = AsyncMock(side_effect=NotFoundError("gone"))
+
+    assert await archives.find_resumable_archive(sha256="a" * 64, size_bytes=10) is None
+
+
+@pytest.mark.asyncio
+async def test_start_upload_resumes_a_partial_upload_of_the_same_file(archives, storage):
+    """The behaviour the whole change exists for: re-selecting a multi-GB file
+    whose upload was interrupted continues it rather than starting over."""
+    partial = _uploading()
+    archives.find_reusable_archive = AsyncMock(return_value=None)
+    archives.find_resumable_archive = AsyncMock(return_value=partial)
+
+    with _mock_effective(10**9):
+        result = await archives.start_upload(
+            filename="backup.zip", size_bytes=10, actor_id=uuid.uuid4(), sha256="a" * 64
+        )
+    assert result is partial
+    storage.start_multipart_upload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_start_upload_prefers_a_completed_archive_over_a_partial_one(archives):
+    """A finished archive needs no upload at all, so it wins over a partial."""
+    complete = Mock(status="uploaded")
+    archives.find_reusable_archive = AsyncMock(return_value=complete)
+    archives.find_resumable_archive = AsyncMock()
+
+    with _mock_effective(10**9):
+        result = await archives.start_upload(
+            filename="backup.zip", size_bytes=10, actor_id=uuid.uuid4(), sha256="a" * 64
+        )
+    assert result is complete
+    archives.find_resumable_archive.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_start_upload_without_a_fingerprint_never_resumes(archives, storage):
+    archives.find_reusable_archive = AsyncMock()
+    archives.find_resumable_archive = AsyncMock()
+    storage.start_multipart_upload = AsyncMock(return_value="upload-9")
+
+    with _mock_effective(10**9):
+        await archives.start_upload(
+            filename="backup.zip", size_bytes=10, actor_id=uuid.uuid4()
+        )
+    archives.find_reusable_archive.assert_not_called()
+    archives.find_resumable_archive.assert_not_called()
+    storage.start_multipart_upload.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_scan_flags_spaces_whose_key_already_exists(archives, session, storage):
+    """The Confluence picker has always shown this; the restore picker did not,
+    so the only warning about existing spaces arrived *after* the restore, as a
+    list of what it had skipped."""
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="uploaded", created_by_id=uuid.uuid4(),
+    )
+    storage.exists = AsyncMock(return_value=True)
+    storage.open_reader = Mock(return_value=MagicMock())
+    session.execute = AsyncMock(return_value=_ScalarResult(["ENG"]))
+    with _mock_effective(10**9), patch(
+        "app.modules.backup.archives.list_backup_spaces",
+        return_value=[
+            BackupSpaceSummary(key="ENG", name="Engineering", page_count=2),
+            BackupSpaceSummary(key="NEW", name="Brand new", page_count=5),
+        ],
+    ):
+        result = await archives.scan(archive)
+    assert result.spaces == [
+        {"key": "ENG", "name": "Engineering", "page_count": 2, "conflict": True},
+        {"key": "NEW", "name": "Brand new", "page_count": 5, "conflict": False},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rescan_refreshes_conflicts_it_had_cached(archives, session, storage):
+    """A space that existed when the archive was scanned may have been deleted
+    since. Caching the flag would warn about a collision that is no longer
+    there - so it is re-derived even on the already-scanned shortcut."""
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="scanned", created_by_id=uuid.uuid4(),
+        spaces=[{"key": "ENG", "name": "Engineering", "page_count": 2, "conflict": True}],
+    )
+    session.execute = AsyncMock(return_value=_ScalarResult([]))
+
+    result = await archives.scan(archive)
+
+    assert result.spaces == [
+        {"key": "ENG", "name": "Engineering", "page_count": 2, "conflict": False}
+    ]
+    # The shortcut must still avoid touching object storage.
+    storage.open_reader.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_abort_upload_discards_an_archive_that_already_finished_uploading(
+    archives, storage
+):
+    """Discarding a *scanned* archive used to be a no-op.
+
+    `abort_upload` only acted while a multipart upload was still open, so the
+    picker cleared itself, the row stayed "scanned", and the next page load
+    handed the same archive straight back - with the file input locked against
+    it, leaving no way to choose a different backup at all.
+    """
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="scanned", multipart_upload_id=None, created_by_id=uuid.uuid4(),
+        spaces=[{"key": "ENG", "name": "Engineering"}],
+    )
+
+    await archives.abort_upload(archive)
+
+    assert archive.status == "cancelled"
+    # The uploaded object is what is left behind once the parts are gone, and
+    # on a multi-GB backup that is not something to leak.
+    storage.delete.assert_awaited_once_with("k")
+    storage.abort_multipart_upload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_abort_upload_refuses_while_a_restore_is_running_from_it(
+    archives, session, storage
+):
+    """Deleting the object out from under a running job would break it."""
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="scanned", created_by_id=uuid.uuid4(),
+    )
+    session.execute = AsyncMock(return_value=_ScalarResult([uuid.uuid4()]))
+
+    with pytest.raises(ConflictError, match="Cancel the restore first"):
+        await archives.abort_upload(archive)
+
+    storage.delete.assert_not_awaited()
+    assert archive.status == "scanned"

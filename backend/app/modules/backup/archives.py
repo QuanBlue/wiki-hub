@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import suppress
+from typing import Any
 
 import anyio
 from sqlalchemy import select
@@ -28,7 +29,8 @@ from app.core.exceptions import (
     PayloadTooLargeError,
 )
 from app.core.logging import get_logger
-from app.models.backup_job import BackupArchive
+from app.models.backup_job import BackupArchive, BackupJob
+from app.models.space import Space
 from app.modules.backup.package import BackupSpaceSummary, list_backup_spaces
 from app.services.site_settings import SiteSettingsService
 from app.services.storage import ObjectStorage
@@ -49,6 +51,7 @@ class BackupArchiveService:
     async def find_reusable_archive(
         self, *, sha256: str, size_bytes: int
     ) -> BackupArchive | None:
+        """A finished archive whose bytes are already in storage, if one exists."""
         archives = (
             await self.session.execute(
                 select(BackupArchive)
@@ -67,6 +70,48 @@ class BackupArchiveService:
                 return archive
         return None
 
+    async def find_resumable_archive(
+        self, *, sha256: str, size_bytes: int
+    ) -> BackupArchive | None:
+        """An *unfinished* upload of this same file that can be continued.
+
+        `find_reusable_archive` above only matches an archive that finished
+        uploading, which never happens for a backup big enough to need more
+        than one sitting: every attempt at a multi-GB archive then starts a
+        brand-new upload from part 1. Matching a partial upload by the same
+        fingerprint is what lets the client pick up where it left off.
+
+        The match is keyed on the fingerprint rather than on an id the client
+        remembered, so a resume survives a reload, a new tab, or a different
+        browser - the file itself is the key.
+        """
+        archives = (
+            await self.session.execute(
+                select(BackupArchive)
+                .where(
+                    BackupArchive.sha256 == sha256,
+                    BackupArchive.size_bytes == size_bytes,
+                    BackupArchive.status == "uploading",
+                    BackupArchive.multipart_upload_id.is_not(None),
+                )
+                .order_by(BackupArchive.updated_at.desc(), BackupArchive.created_at.desc())
+                .limit(5)
+            )
+        ).scalars()
+        for archive in archives:
+            # The row outliving its multipart upload is normal - S3 lifecycle
+            # rules expire incomplete uploads, and an aborted one is gone
+            # immediately. Only a still-live upload can be resumed; anything
+            # else falls through to a fresh one.
+            try:
+                await self.storage.list_multipart_parts(
+                    archive.object_key, str(archive.multipart_upload_id)
+                )
+            except NotFoundError:
+                continue
+            return archive
+        return None
+
     async def start_upload(
         self, *, filename: str, size_bytes: int, actor_id: uuid.UUID, sha256: str | None = None
     ) -> BackupArchive:
@@ -82,9 +127,15 @@ class BackupArchiveService:
                 f"Archive exceeds the configured {limit // (1024 * 1024)} MB limit."
             )
         if sha256:
+            # A finished archive wins: its bytes are whole, so the client can
+            # skip the upload entirely. Only if there is none does a partial
+            # upload of the same file become worth continuing.
             reusable = await self.find_reusable_archive(sha256=sha256, size_bytes=size_bytes)
             if reusable is not None:
                 return reusable
+            resumable = await self.find_resumable_archive(sha256=sha256, size_bytes=size_bytes)
+            if resumable is not None:
+                return resumable
         archive = BackupArchive(
             object_key=f"backups/imports/{uuid.uuid4()}/{filename}",
             filename=filename,
@@ -149,14 +200,58 @@ class BackupArchiveService:
         return archive
 
     async def abort_upload(self, archive: BackupArchive) -> None:
+        """Throw an archive away, whatever stage it had reached.
+
+        This used to act only while a multipart upload was still open. An
+        archive that had finished uploading and been scanned has no multipart
+        id left, so discarding one did nothing at all: the picker cleared
+        itself, the row stayed "scanned", and the next page load handed the
+        same archive straight back - with the file input locked against it,
+        which left no way to choose a different backup at all.
+        """
+        active_job = (
+            await self.session.execute(
+                select(BackupJob.id)
+                .where(
+                    BackupJob.archive_id == archive.id,
+                    BackupJob.status.in_(["queued", "running"]),
+                )
+                .limit(1)
+            )
+        ).first()
+        if active_job is not None:
+            raise ConflictError(
+                "A restore is running from this archive. Cancel the restore first."
+            )
+
         if archive.multipart_upload_id:
             with suppress(NotFoundError):
                 await self.storage.abort_multipart_upload(
                     archive.object_key, archive.multipart_upload_id
                 )
             archive.multipart_upload_id = None
-            archive.status = "cancelled"
-            await self.session.flush()
+        else:
+            # Upload already completed, so there are no parts to abort - the
+            # object itself is what is left behind, and on a multi-GB backup
+            # that is not something to leak.
+            with suppress(NotFoundError):
+                await self.storage.delete(archive.object_key)
+        archive.status = "cancelled"
+        await self.session.flush()
+
+    async def _with_conflicts(
+        self, spaces: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Flag the spaces whose key already exists in this instance.
+
+        The Confluence picker has always shown this (`ConfluenceImportService.
+        scan`); the restore picker did not, so the only warning about existing
+        spaces arrived after the restore, as a list of what it had skipped.
+        """
+        existing = set((await self.session.execute(select(Space.key))).scalars())
+        return [
+            {**space, "conflict": space.get("key") in existing} for space in spaces
+        ]
 
     async def scan(self, archive: BackupArchive) -> BackupArchive:
         """Populate `archive.spaces` for the "select spaces to restore" picker.
@@ -171,6 +266,11 @@ class BackupArchiveService:
         before anything is written.
         """
         if archive.status == "scanned" and archive.spaces:
+            # Conflicts are re-derived, never cached: a space that existed when
+            # this archive was scanned may have been deleted since, and the
+            # picker must not warn about a collision that is no longer there.
+            archive.spaces = await self._with_conflicts(archive.spaces)
+            await self.session.flush()
             return archive
         if not await self.storage.exists(archive.object_key):
             raise BadRequestError("The archive upload has not completed yet.")
@@ -204,7 +304,16 @@ class BackupArchiveService:
             raise BadRequestError(
                 f"Could not scan backup archive: {scan_error}"
             ) from scan_error
-        archive.spaces = [{"key": space.key, "name": space.name} for space in spaces]
+        archive.spaces = await self._with_conflicts(
+            [
+                {
+                    "key": space.key,
+                    "name": space.name,
+                    "page_count": space.page_count,
+                }
+                for space in spaces
+            ]
+        )
         archive.status = "scanned"
         archive.error = None
         await self.session.flush()

@@ -36,9 +36,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ApiError, apiFetch } from "@/lib/api-client";
+import {
+  detectArchiveFormat,
+  type ArchiveFormat,
+} from "@/lib/archive-format";
 import { cn } from "@/lib/utils";
 import type {
   BackupArchive,
+  BackupArchiveUploadProgress,
   ConfluenceArchive,
   ConfluenceImportJob,
   ConfluenceImportLog,
@@ -574,6 +579,206 @@ function formatDuration(seconds: number | null): string {
   return `${days} ${dayLabel} ${remainingHours} hr remaining`;
 }
 
+/** Fingerprint-in-progress panel, shared by both upload flows.
+ *
+ * The Confluence import and the WikiHub restore run the same
+ * fingerprint-then-chunked-upload sequence, so they get the same panels rather
+ * than two lookalikes that drift apart - which is exactly what had happened:
+ * one was an info strip with labelled Uploaded/Speed/Estimate columns, the
+ * other a raised card with a status badge and the same numbers run together
+ * on one line. */
+function ArchiveHashProgress({
+  filename,
+  stats,
+}: {
+  filename: string | null;
+  stats: HashStats;
+}) {
+  const percent =
+    stats.total > 0 ? Math.round((stats.loaded / stats.total) * 100) : 0;
+  return (
+    <div
+      className="border-info/25 bg-info-bg mt-4 rounded-md border p-3 text-sm"
+      role="status"
+    >
+      <div className="flex gap-2.5">
+        <Info className="text-info mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p>
+            Checking archive fingerprint{" "}
+            <span className="font-medium">{filename}</span>: {percent}%
+          </p>
+          <div
+            aria-label={`Fingerprint ${percent}% complete`}
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={percent}
+            className="bg-surface mt-2 h-2 overflow-hidden rounded-full"
+            role="progressbar"
+          >
+            <div
+              className="bg-info h-full duration-150 motion-safe:transition-[width]"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
+            <span>
+              <span className="text-foreground font-medium">Speed:</span>{" "}
+              {stats.bytesPerSecond > 0
+                ? `${formatBytes(stats.bytesPerSecond)}/s`
+                : "Calculating speed…"}
+            </span>
+            <span>
+              <span className="text-foreground font-medium">Estimate:</span>{" "}
+              {formatDuration(stats.secondsRemaining)}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Upload-in-progress (or paused) panel, shared by both upload flows. */
+function ArchiveUploadProgress({
+  filename,
+  percent,
+  stats,
+  uploading,
+  totalFallback = 0,
+  note,
+}: {
+  filename: string | null;
+  percent: number;
+  stats: UploadStats | null;
+  uploading: boolean;
+  totalFallback?: number;
+  /** Extra line under the stats - e.g. how much a resume skipped. */
+  note?: React.ReactNode;
+}) {
+  return (
+    <div
+      className="border-info/25 bg-info-bg mt-4 rounded-md border p-3 text-sm"
+      role="status"
+    >
+      <div className="flex gap-2.5">
+        <Info className="text-info mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p>
+            {uploading ? "Uploading" : "Upload paused"}{" "}
+            <span className="font-medium">{filename}</span>: {percent}%
+          </p>
+          <div
+            aria-label={`Upload ${percent}% complete`}
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={percent}
+            className="bg-surface mt-2 h-2 overflow-hidden rounded-full"
+            role="progressbar"
+          >
+            <div
+              className="bg-info h-full duration-150 motion-safe:transition-[width]"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
+            <span>
+              <span className="text-foreground font-medium">Uploaded:</span>{" "}
+              {formatBytes(stats?.loaded ?? 0)} /{" "}
+              {formatBytes(stats?.total ?? totalFallback)}
+            </span>
+            {uploading ? (
+              <>
+                <span>
+                  <span className="text-foreground font-medium">Speed:</span>{" "}
+                  {stats && stats.bytesPerSecond > 0
+                    ? `${formatBytes(stats.bytesPerSecond)}/s`
+                    : "Calculating speed…"}
+                </span>
+                <span>
+                  <span className="text-foreground font-medium">Estimate:</span>{" "}
+                  {formatDuration(stats?.secondsRemaining ?? null)}
+                </span>
+              </>
+            ) : null}
+          </div>
+          {note ? (
+            <p className="text-muted-foreground mt-2 text-xs">{note}</p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "X completed successfully - here is what happened - do another?" dialog,
+ * shared by both import flows.
+ *
+ * They had drifted into two different answers to the same moment: the restore
+ * listed what it had written, the Confluence import listed nothing at all, so
+ * finishing the same task told you different things depending on which card
+ * you had used. Sharing the component is what keeps that from happening again
+ * - the two callers now differ only in their wording and their numbers.
+ */
+function ImportCompletedDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  summaryLabel,
+  counts,
+  emptyLabel,
+  question,
+  confirmLabel,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description: string;
+  summaryLabel: string;
+  /** Singular nouns keyed by kind; pluralised here. `null` hides the panel. */
+  counts: Record<string, number> | null;
+  emptyLabel: string;
+  question: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+}) {
+  const entries = counts
+    ? Object.entries(counts).filter(([, count]) => count > 0)
+    : [];
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent title={title} description={description}>
+        {counts ? (
+          <div className="border-border bg-surface-sunken rounded-md border p-3 text-xs">
+            <p className="text-foreground font-medium">{summaryLabel}</p>
+            <ul className="text-muted-foreground mt-1.5 space-y-0.5">
+              {entries.map(([kind, count]) => (
+                <li key={kind}>
+                  {count} {kind.replaceAll("_", " ")}
+                  {count === 1 ? "" : "s"}
+                </li>
+              ))}
+              {entries.length === 0 ? <li>{emptyLabel}</li> : null}
+            </ul>
+          </div>
+        ) : null}
+        <p className="text-muted-foreground text-sm">{question}</p>
+        <DialogFooter>
+          <Button variant="primary" onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            No, close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function CountList({
   title,
   counts,
@@ -611,6 +816,11 @@ export function BackupPanel() {
   const uploadRestoreRun = useRef(0);
   const storedConfluenceUploadRef = useRef<StoredConfluenceUpload | null>(null);
   const uploadActiveRef = useRef(false);
+  // The restore card's own upload. Tracked separately from
+  // `uploadActiveRef` because leaving pauses a different request, but it
+  // gets the same prompt: both are a multi-GB chunked upload that a
+  // navigation would otherwise abandon mid-part with no warning.
+  const restoreUploadActiveRef = useRef(false);
   const exportActiveRef = useRef(false);
   //: Tracks the archive id while an "Upload and scan" run is in flight, i.e.
   //: before it lands in `backupArchive` state below - the only thing a
@@ -701,9 +911,6 @@ export function BackupPanel() {
   // than availableSpaces above (this instance's own spaces) - the common
   // case is restoring into an empty instance, where availableSpaces would
   // just be empty.
-  const [importSpaceScope, setImportSpaceScope] = useState<"all" | "selected">(
-    "all",
-  );
   const [importSelectedSpaceKeys, setImportSelectedSpaceKeys] = useState<
     string[]
   >([]);
@@ -724,6 +931,25 @@ export function BackupPanel() {
     useState(false);
   const [isScanningBackupArchive, setIsScanningBackupArchive] =
     useState(false);
+  //: Bytes already in object storage from an earlier, interrupted attempt at
+  //: this same archive, which this run skipped. Non-zero means the upload
+  //: resumed rather than restarted - worth saying out loud, since otherwise a
+  //: bar starting at 60% just looks like a glitch.
+  const [restoreResumedBytes, setRestoreResumedBytes] = useState(0);
+  //: Set when the server refused the archive itself, rather than the upload
+  //: being interrupted. The distinction decides what the card may offer next:
+  //: re-sending bytes cannot turn a Confluence export into a WikiHub backup,
+  //: so "Resume upload" - and the "nothing was lost, carry on" note beside it
+  //: - is worse than useless here. It sat under a completed 24 GB upload
+  //: inviting the user to continue with a file that will never be accepted.
+  const [restoreArchiveRejected, setRestoreArchiveRejected] = useState(false);
+  //: An upload this user left unfinished server-side, rediscovered on mount.
+  //: The browser cannot re-open the original `File` on its own (only a user
+  //: gesture can), so the card asks for it back and then resumes from
+  //: `uploaded_parts` - the same "select the file again" step the Confluence
+  //: card uses. `null` once there is nothing pending.
+  const [pendingRestoreUpload, setPendingRestoreUpload] =
+    useState<BackupArchiveUploadProgress | null>(null);
   const [confirmDiscardBackupArchive, setConfirmDiscardBackupArchive] =
     useState(false);
   //: Confirm-before-cancel for "Upload and scan" - separate from
@@ -781,6 +1007,14 @@ export function BackupPanel() {
     useState(false);
   const [restoreSuccessReport, setRestoreSuccessReport] =
     useState<ImportReport | null>(null);
+  //: Snapshot of the Confluence job's counters, taken when it completes - the
+  //: restore counterpart is `restoreSuccessReport` above. Held separately from
+  //: `confluenceJob` because "Yes, import another" clears the job, and the
+  //: dialog must not blank out mid-dismissal.
+  const [importSuccessCounts, setImportSuccessCounts] = useState<Record<
+    string,
+    number
+  > | null>(null);
 
   // Modal is opened explicitly by the user clicking "Select spaces & import".
   // Closing happens when a job starts or the archive is discarded.
@@ -829,6 +1063,16 @@ export function BackupPanel() {
     portableBackupJob?.kind === "full_import" &&
     (portableBackupJob.status === "queued" ||
       portableBackupJob.status === "running");
+  //: A restore that has already run. What is left on the card is a result on
+  //: screen, not work in flight - so it must stop holding the cross-flow lock.
+  //: It did not: after a restore finished, the Confluence card stayed disabled
+  //: under a hint insisting a restore was "in progress", and nothing on the
+  //: page offered to end it. The archive selection alone kept it that way.
+  const restoreJobFinished =
+    portableBackupJob?.kind === "full_import" &&
+    (portableBackupJob.status === "complete" ||
+      portableBackupJob.status === "failed" ||
+      portableBackupJob.status === "cancelled");
   const isPortableJobRunning =
     isFullExportRunning || isConfluenceExportRunning || isRestoreJobRunning;
 
@@ -877,9 +1121,68 @@ export function BackupPanel() {
     storedConfluenceUpload && !storedConfluenceUpload.file,
   );
   const canResumeStoredUpload = Boolean(storedConfluenceUpload?.file);
-  const hashProgress = hashStats
-    ? Math.round((hashStats.loaded / Math.max(1, hashStats.total)) * 100)
-    : null;
+
+  //: Catch "I used the wrong card" at selection time rather than an hour into
+  //: a multi-GB upload. The two cards sit side by side and both take a `.zip`,
+  //: and until now the only thing that noticed was the server's scan - which
+  //: runs after the whole archive has been sent. Reading the ZIP index locally
+  //: costs a few MB whatever the archive weighs (lib/archive-format.ts).
+  //:
+  //: The server still enforces this independently; an archive the browser
+  //: cannot classify is allowed through rather than blocked on a guess.
+  const rejectWrongArchiveFormat = useCallback(
+    async (
+      candidate: File,
+      expected: ArchiveFormat,
+      reject: (message: string) => void,
+    ) => {
+      if (!candidate.name.toLocaleLowerCase().endsWith(".zip")) return;
+      const format = await detectArchiveFormat(candidate);
+      if (format === "unknown" || format === expected) return;
+      reject(
+        format === "confluence"
+          ? "This is a Confluence export, not a WikiHub backup. Upload it under “Import Confluence Backup” instead."
+          : "This is a WikiHub backup, not a Confluence export. Upload it under “Restore WikiHub Backup” instead.",
+      );
+    },
+    [],
+  );
+
+  // The restore counterpart of `storedUploadNeedsFile` above: parts are
+  // already staged in object storage, but only a user gesture can hand the
+  // `File` back, so the card has to ask for it before it can resume. It is
+  // deliberately shaped like the Confluence case - a hint under the file
+  // input, a "Select file to resume" button and the shared paused-upload
+  // strip - rather than the separate in-card banner it used to get, which
+  // made the same situation look like a different feature on each side.
+  const restoreUploadNeedsFile = Boolean(
+    pendingRestoreUpload && !backupArchive && !file,
+  );
+  const pendingRestoreUploadedBytes = pendingRestoreUpload
+    ? Math.min(
+        pendingRestoreUpload.uploaded_parts.length *
+          pendingRestoreUpload.part_size_bytes,
+        pendingRestoreUpload.size_bytes,
+      )
+    : 0;
+  // Capped at 99: the final part is what completes an upload, and a
+  // rediscovered one is unfinished by definition, so 100% would be a lie.
+  const pendingRestorePercent =
+    pendingRestoreUpload && pendingRestoreUpload.size_bytes > 0
+      ? Math.min(
+          99,
+          Math.round(
+            (pendingRestoreUploadedBytes / pendingRestoreUpload.size_bytes) *
+              100,
+          ),
+        )
+      : 0;
+  // Hoisted out of the restore card's render so the navigation guard below
+  // can see it too - leaving mid-upload has to prompt, not silently abort.
+  const isPreparingArchive =
+    isHashingBackupArchive ||
+    isUploadingBackupArchive ||
+    isScanningBackupArchive;
   const isHashingArchive = Boolean(confluencePending && hashStats);
   const isFinalizingArchive =
     confluencePending &&
@@ -891,6 +1194,54 @@ export function BackupPanel() {
     confluenceJob &&
     !["completed", "failed", "cancelled"].includes(confluenceJob.status),
   );
+
+  // The two import paths write the same spaces and pages, so only one may be
+  // in flight at a time - the server refuses the overlapping *job* outright
+  // (app/services/import_concurrency.py), and these lock the UI well before
+  // the user gets that far, so nobody spends an hour uploading something they
+  // will not be allowed to apply.
+  //
+  // A *paused* or half-finished upload counts as in flight. It holds real
+  // uploaded parts in object storage and the user is plainly mid-flow, so
+  // leaving the other card live invites exactly the mess this prevents. That
+  // it can block the other path is fine precisely because releasing it is one
+  // click: the holding card always keeps its Cancel/Discard control enabled,
+  // and the locked card names which path holds it.
+  const confluenceFlowActive = Boolean(
+    confluencePending ||
+      isUploading ||
+      confluenceArchive ||
+      importInProgress ||
+      // Paused, or waiting for the file to be handed back so it can resume.
+      storedConfluenceUpload,
+  );
+  const restoreFlowActive = Boolean(
+    !restoreJobFinished &&
+      (isHashingBackupArchive ||
+      isUploadingBackupArchive ||
+      isScanningBackupArchive ||
+      backupArchive ||
+      isRestoreJobRunning ||
+      pending === "apply" ||
+      // Paused mid-upload in this tab, or rediscovered unfinished on the
+      // server - both mean parts are already staged.
+        restoreUploadProgress !== null ||
+        pendingRestoreUpload),
+  );
+  // Each side gates only the other, never itself. If both somehow hold state
+  // at once - only reachable from before this rule existed - neither locks,
+  // which fails open rather than stranding the user with two dead cards. The
+  // server-side guard still refuses the dangerous part in that case.
+  const confluenceLockedByRestore = restoreFlowActive && !confluenceFlowActive;
+  const restoreLockedByConfluence = confluenceFlowActive && !restoreFlowActive;
+  //: Everything that must stop the restore card accepting a new file. The
+  //: cross-flow lock is only half of it: a card also has to lock against
+  //: *itself* while its own job runs, which the Confluence card did via
+  //: `importInProgress` and this one did not. Mid-restore its file input
+  //: stayed live, so a second archive could be chosen and uploaded on top of
+  //: the job that was still writing spaces.
+  const restoreInputsLocked =
+    restoreLockedByConfluence || isRestoreJobRunning || pending === "apply";
   const jobSpacesTotal = confluenceJob?.counters.spaces_total ?? 0;
   const jobSpacesCompleted = confluenceJob?.counters.spaces_completed ?? 0;
   const jobAttachmentsTotal = confluenceJob?.counters.attachments_total ?? 0;
@@ -981,7 +1332,9 @@ export function BackupPanel() {
   useEffect(() => {
     const confirmNavigation = (event: MouseEvent) => {
       if (
-        (!uploadActiveRef.current && !exportActiveRef.current) ||
+        (!uploadActiveRef.current &&
+          !restoreUploadActiveRef.current &&
+          !exportActiveRef.current) ||
         event.defaultPrevented ||
         event.button !== 0 ||
         event.metaKey ||
@@ -999,10 +1352,9 @@ export function BackupPanel() {
       if (target.href === window.location.href || target.hash) return;
       event.preventDefault();
       event.stopPropagation();
-      // The Confluence upload guard takes priority if somehow both are active
-      // at once - it needs to pause an in-flight XHR, which the export guard
-      // does not.
-      if (uploadActiveRef.current) {
+      // An upload guard takes priority if somehow both are active at once -
+      // it needs to pause an in-flight XHR, which the export guard does not.
+      if (uploadActiveRef.current || restoreUploadActiveRef.current) {
         setLeaveTarget(target.href);
       } else {
         // Unlike `leaveTarget` (which does a full `window.location.assign`
@@ -1014,7 +1366,9 @@ export function BackupPanel() {
     };
     const confirmUnload = (event: BeforeUnloadEvent) => {
       if (
-        (!uploadActiveRef.current && !exportActiveRef.current) ||
+        (!uploadActiveRef.current &&
+          !restoreUploadActiveRef.current &&
+          !exportActiveRef.current) ||
         allowConfirmedLeaveRef.current
       ) {
         return;
@@ -1248,6 +1602,13 @@ export function BackupPanel() {
             created_at: new Date().toISOString(),
           };
           finalLogs = [...finalLogs, successLog];
+          // Only the counters that name something created; the rest are
+          // progress bookkeeping and read as noise in a summary.
+          setImportSuccessCounts({
+            space: job.counters.spaces_completed ?? 0,
+            page: job.counters.pages_processed ?? 0,
+            attachment: job.counters.attachments_processed ?? 0,
+          });
           setIsImportSuccessModalOpen(true);
         }
         setConfluenceJob(job);
@@ -1326,6 +1687,45 @@ export function BackupPanel() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restore persisted server state on mount
     void restorePortableBackupJob();
   }, [restorePortableBackupJob]);
+
+  // The restore card's own pre-job state - an upload still in flight, or an
+  // archive already uploaded and scanned and waiting for a space selection.
+  // Both live only in this component's state while the user is on the page,
+  // so navigating away used to throw them away and force a fresh multi-GB
+  // upload. The server knows about both, so rediscover them here rather than
+  // mirroring anything into localStorage.
+  const restoreActiveBackupArchive = useCallback(async () => {
+    try {
+      const active = await apiFetch<BackupArchiveUploadProgress[]>(
+        "/api/v1/backup/archives/uploads/active",
+      );
+      const pending = active[0];
+      if (!pending) return;
+      if (pending.status === "scanned") {
+        // Fully uploaded and scanned: everything the picker needs is
+        // server-side, so the card comes back complete with no file and no
+        // re-upload - straight to "which spaces?".
+        const archive = await apiFetch<BackupArchive>(
+          `/api/v1/backup/archives/${pending.archive_id}`,
+        );
+        setBackupArchive((current) => current ?? archive);
+        setActiveSection("import");
+        return;
+      }
+      // Still uploading. The parts are safe in object storage, but only the
+      // user can hand the File back, so surface it as a resumable upload.
+      setPendingRestoreUpload((current) => current ?? pending);
+      setActiveSection("import");
+    } catch {
+      // A missing/failed lookup just means nothing to restore; the card
+      // stays in its empty state.
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restore persisted server state on mount
+    void restoreActiveBackupArchive();
+  }, [restoreActiveBackupArchive]);
 
   // Load site settings on mount
   useEffect(() => {
@@ -1551,6 +1951,7 @@ export function BackupPanel() {
       void restoreStoredConfluenceUpload();
       void restoreActiveConfluenceJob();
       void restorePortableBackupJob();
+      void restoreActiveBackupArchive();
     };
     const initialRestore = window.setTimeout(restore, 0);
     const restoreWhenVisible = () => {
@@ -1578,6 +1979,7 @@ export function BackupPanel() {
     restoreStoredConfluenceUpload,
     restoreActiveConfluenceJob,
     restorePortableBackupJob,
+    restoreActiveBackupArchive,
   ]);
 
   async function uploadConfluence(
@@ -1962,7 +2364,7 @@ export function BackupPanel() {
       }
       toast.success("Confluence archive upload cancelled.");
     } catch (cancelError) {
-      setConfluenceUploadError(
+      toast.error(
         cancelError instanceof ApiError
           ? cancelError.message
           : "Could not cancel the archive upload.",
@@ -1977,7 +2379,12 @@ export function BackupPanel() {
     // The application confirmation has already explained the consequence.
     // Suppress the browser's generic beforeunload prompt for this exact leave.
     allowConfirmedLeaveRef.current = true;
-    cancelConfluenceUpload("pause");
+    // Whichever card was uploading gets paused, not cancelled: its parts stay
+    // in object storage either way, and the page reload below is what makes
+    // the pause stick. They are checked independently rather than as an
+    // if/else so a state neither card expects still leaves nothing running.
+    if (uploadActiveRef.current) cancelConfluenceUpload("pause");
+    if (restoreUploadActiveRef.current) pauseBackupArchiveUpload();
     window.location.assign(leaveTarget);
   }
 
@@ -2030,7 +2437,7 @@ export function BackupPanel() {
       setConfirmOverwriteSpaces(false);
       toast.success("Confluence import queued.");
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof ApiError ? err.message : "Could not queue the import.",
       );
     } finally {
@@ -2069,10 +2476,22 @@ export function BackupPanel() {
     const run = uploadBackupRun.current + 1;
     uploadBackupRun.current = run;
     const stillCurrent = () => uploadBackupRun.current === run;
+    // Held for the whole operation, not derived from the phase flags below.
+    // Those go false between phases - notably across the `POST .../uploads`
+    // that sits between fingerprinting and the first part - and the leave
+    // guard read on exactly those gaps: click a link in one and the upload
+    // was abandoned with no prompt at all. Confluence never had the bug
+    // because it raises one `confluencePending` for the whole call; this is
+    // the same idea, kept in a ref since only the guard reads it.
+    restoreUploadActiveRef.current = true;
     setError(null);
     setBackupArchive(null);
     setRestoreUploadProgress(null);
     setRestoreUploadStats(null);
+    setRestoreResumedBytes(0);
+    setRestoreArchiveRejected(false);
+    setPendingRestoreUpload(null);
+    let reachedScan = false;
     try {
       setIsHashingBackupArchive(true);
       const hashAbortController = new AbortController();
@@ -2137,6 +2556,7 @@ export function BackupPanel() {
         const totalParts = Math.max(1, Math.ceil(targetFile.size / partSize));
         const uploadedParts = new Set(target.uploaded_parts);
         let uploadedBytes = uploadedParts.size * partSize;
+        setRestoreResumedBytes(uploadedBytes);
         setRestoreUploadProgress(
           Math.round((uploadedBytes / targetFile.size) * 100),
         );
@@ -2213,6 +2633,7 @@ export function BackupPanel() {
       // Always scan, even for a reused archive: cheap/idempotent once
       // already `"scanned"` (`BackupArchiveService.scan` short-circuits),
       // and this is the one call that actually populates `.spaces`.
+      reachedScan = true;
       setIsScanningBackupArchive(true);
       const scanned = await apiFetch<BackupArchive>(
         `/api/v1/backup/archives/${target.archive_id}/scan`,
@@ -2221,10 +2642,15 @@ export function BackupPanel() {
       if (!stillCurrent()) return;
       restoreArchiveIdRef.current = null;
       setBackupArchive(scanned);
-      setImportSpaceScope("all");
+      setImportSpaceFilter("");
       setImportSelectedSpaceKeys([]);
       setRestoreUploadProgress(null);
       setRestoreUploadStats(null);
+      // Straight into the picker, the way the Confluence scan does it: the
+      // scan exists to answer "which spaces?", so landing on a bar that asks
+      // the user to click once more before being allowed to answer is a step
+      // that earns nothing. The bar stays for coming back to the decision.
+      setIsImportSpacePickerOpen(true);
       toast.success("Archive scanned. Choose which spaces to restore.");
     } catch (err) {
       if (!stillCurrent()) return;
@@ -2233,6 +2659,18 @@ export function BackupPanel() {
         // toast - nothing further to report here.
         return;
       }
+      // A 4xx from the scan is a verdict on the file, not on the transfer:
+      // the bytes all arrived and the server looked inside and said no. A 5xx
+      // or a dropped connection is not - that is worth another attempt, which
+      // re-uses the archive already in storage.
+      if (
+        reachedScan &&
+        err instanceof ApiError &&
+        err.status >= 400 &&
+        err.status < 500
+      ) {
+        setRestoreArchiveRejected(true);
+      }
       setError(
         err instanceof ApiError
           ? err.message
@@ -2240,6 +2678,7 @@ export function BackupPanel() {
       );
     } finally {
       if (stillCurrent()) {
+        restoreUploadActiveRef.current = false;
         setIsHashingBackupArchive(false);
         setBackupHashStats(null);
         setIsUploadingBackupArchive(false);
@@ -2248,16 +2687,90 @@ export function BackupPanel() {
     }
   }
 
+  /** Leave a rejected archive behind and pick a different file.
+   *
+   * The single way forward once the server has refused what was uploaded, so
+   * it does both halves of the job: the staged parts are dropped - a rejected
+   * 24 GB archive is worth nothing and must not be left occupying object
+   * storage - and the picker opens. Cancel used to sit beside this as the only
+   * thing that freed those bytes, which made the useful button a two-step and
+   * left the other one looking like the destructive choice.
+   *
+   * Everything the picker needs happens synchronously: `click()` only opens a
+   * file dialog while the browser still considers the click a user gesture,
+   * and awaiting the delete first would spend it. The delete is best-effort
+   * afterwards; an orphaned "uploading" row is never offered for restore. */
+  function uploadAnotherAfterRejection() {
+    const archiveId = restoreArchiveIdRef.current;
+    restoreArchiveIdRef.current = null;
+    uploadBackupRun.current += 1;
+    restoreUploadActiveRef.current = false;
+    setRestoreArchiveRejected(false);
+    setRestoreUploadProgress(null);
+    setRestoreUploadStats(null);
+    setRestoreResumedBytes(0);
+    setFile(null);
+    setError(null);
+    if (fileInput.current) {
+      fileInput.current.value = "";
+      fileInput.current.click();
+    }
+    if (archiveId) {
+      void apiFetch(`/api/v1/backup/archives/${archiveId}/upload`, {
+        method: "DELETE",
+      }).catch(() => {});
+    }
+  }
+
+  /** Throw away an unfinished upload rediscovered from a previous visit,
+   * without needing the original file back. */
+  async function discardPendingRestoreUpload() {
+    const pending = pendingRestoreUpload;
+    setPendingRestoreUpload(null);
+    if (!pending) return;
+    try {
+      await apiFetch(
+        `/api/v1/backup/archives/${pending.archive_id}/upload`,
+        { method: "DELETE" },
+      );
+    } catch {
+      // Best-effort: an orphaned "uploading" row is harmless and is never
+      // offered for restore.
+    }
+    toast.success("Unfinished upload discarded.");
+  }
+
+  /** Stop uploading but keep everything already sent.
+   *
+   * The archive row and its uploaded parts stay untouched in object storage,
+   * so pressing "Upload and scan" again on the same file resumes from where
+   * this left off - the server finds the partial upload by its fingerprint
+   * (`find_resumable_archive`). The selected file is deliberately kept for
+   * exactly that reason; `cancelBackupArchiveUpload` below is the
+   * destructive counterpart that throws the parts away. */
+  function pauseBackupArchiveUpload() {
+    uploadBackupRun.current += 1;
+    restoreUploadActiveRef.current = false;
+    restoreHashAbort.current?.abort();
+    restoreUploadRequest.current?.abort();
+    setIsHashingBackupArchive(false);
+    setIsUploadingBackupArchive(false);
+    setIsScanningBackupArchive(false);
+    setBackupHashStats(null);
+    toast.info("Upload paused. Press Resume upload to carry on.");
+  }
+
   /** Aborts an in-flight "Upload and scan" (fingerprinting, uploading, or
-   * between-request) and best-effort deletes the archive it had started, if
-   * any - restore has no cross-reload resume to preserve, so unlike
-   * Confluence's pause/cancel split, this is the only "stop" concept it
-   * needs. Confirmed by a dialog first (`confirmCancelBackupUpload`) since a
-   * misclick here throws away real upload progress on a possibly multi-GB
-   * file - same guard Confluence's own cancel-upload button has. */
+   * between-request) and best-effort deletes the archive it had started,
+   * discarding every part uploaded so far - the destructive counterpart to
+   * `pauseBackupArchiveUpload`. Confirmed by a dialog first
+   * (`confirmCancelBackupUpload`) since a misclick here throws away real
+   * upload progress on a possibly multi-GB file - same guard Confluence's
+   * own cancel-upload button has. */
   async function cancelBackupArchiveUpload() {
     setCancelBackupUploadPending(true);
     uploadBackupRun.current += 1;
+    restoreUploadActiveRef.current = false;
     restoreHashAbort.current?.abort();
     restoreUploadRequest.current?.abort();
     const archiveId = restoreArchiveIdRef.current;
@@ -2268,6 +2781,9 @@ export function BackupPanel() {
     setBackupHashStats(null);
     setRestoreUploadProgress(null);
     setRestoreUploadStats(null);
+    setRestoreResumedBytes(0);
+    setRestoreArchiveRejected(false);
+    setPendingRestoreUpload(null);
     setFile(null);
     if (fileInput.current) fileInput.current.value = "";
     setConfirmCancelBackupUpload(false);
@@ -2292,21 +2808,41 @@ export function BackupPanel() {
     setBackupArchive(null);
     setFile(null);
     if (fileInput.current) fileInput.current.value = "";
-    setImportSpaceScope("all");
     setImportSelectedSpaceKeys([]);
     setConflictingImportSpaceKeys([]);
     setConfirmOverwriteImportSpaces(false);
     setRestoreUploadProgress(null);
     setRestoreUploadStats(null);
+    setRestoreResumedBytes(0);
+    setRestoreArchiveRejected(false);
+    setPendingRestoreUpload(null);
     setError(null);
   }
 
   /** Discard a scanned archive so a different file can be picked - mirrors
    * `discardConfluenceArchive`. */
-  function discardBackupArchive() {
+  async function discardBackupArchive() {
+    // Tell the server, not just this tab. Clearing only local state left the
+    // archive "scanned" server-side, so the next page load rediscovered it
+    // (`restoreActiveBackupArchive`) and put the card straight back - with the
+    // file input disabled against it, which made a new upload impossible and
+    // pressing Cancel again equally useless.
+    const discarded = backupArchive;
     resetRestoreSelection();
     setConfirmDiscardBackupArchive(false);
-    toast.success("Archive selection cleared.");
+    if (!discarded) return;
+    try {
+      await apiFetch(`/api/v1/backup/archives/${discarded.id}/upload`, {
+        method: "DELETE",
+      });
+      toast.success("Archive selection cleared.");
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : "Could not discard the uploaded archive.",
+      );
+    }
   }
 
   async function submitImport(overwriteSpaceKeys: string[] = []) {
@@ -2324,7 +2860,13 @@ export function BackupPanel() {
             method: "POST",
             body: {
               space_keys:
-                importSpaceScope === "selected" ? importSelectedSpaceKeys : [],
+                // An empty list means "everything" to the server, so a
+                // selection covering the whole archive is sent as one.
+                importSelectedSpaceKeys.length > 0 &&
+                importSelectedSpaceKeys.length <
+                  (backupArchive?.spaces.length ?? 0)
+                  ? importSelectedSpaceKeys
+                  : [],
               overwrite_space_keys: overwriteSpaceKeys,
             },
           },
@@ -2333,7 +2875,7 @@ export function BackupPanel() {
         setConfirmOverwriteImportSpaces(false);
         toast.success("Restore queued. It will continue in the background.");
       } catch (err) {
-        setError(
+        toast.error(
           err instanceof ApiError
             ? err.message
             : "Could not restore the backup file.",
@@ -2361,7 +2903,7 @@ export function BackupPanel() {
       toast.success("Import applied.");
       router.refresh();
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof ApiError
           ? err.message
           : "Could not read the backup file.",
@@ -2473,6 +3015,26 @@ export function BackupPanel() {
                 {portableBackupJob.cancel_requested
                   ? "Cancelling…"
                   : `Cancel ${noun.toLowerCase()}`}
+              </Button>
+            )}
+            {/* A finished restore leaves its archive and space selection on
+                the card. That is worth keeping - it says what just happened -
+                but it needs a way out, and the only one used to be the "Use a
+                different file" link inside the space picker, or the success
+                modal the user had probably already dismissed. */}
+            {isRestore && restoreJobFinished && (backupArchive || file) && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setPortableBackupJob(null);
+                  settledRestoreJobIdRef.current = null;
+                  resetRestoreSelection();
+                  setReport(null);
+                }}
+              >
+                Done
               </Button>
             )}
             {portableBackupJob.download_url &&
@@ -2802,13 +3364,19 @@ export function BackupPanel() {
               </p>
 
               {(() => {
-                const isZipSelected = file?.name
-                  .toLocaleLowerCase()
-                  .endsWith(".zip");
-                const isPreparingArchive =
-                  isHashingBackupArchive ||
-                  isUploadingBackupArchive ||
-                  isScanningBackupArchive;
+                // A scanned archive is a `.zip` by definition, and it can
+                // outlive the `File` that produced it - rediscovered from the
+                // server after a remount there is no `File` at all, only the
+                // archive. Gating the scope picker on `file` alone hid the
+                // whole restore step in exactly that case.
+                // A rediscovered unfinished upload counts too: there is no
+                // `File` behind it, but it is still a `.zip` mid-flight, and
+                // the upload controls - not "Restore backup" - are what it
+                // needs next.
+                const isZipSelected =
+                  file?.name.toLocaleLowerCase().endsWith(".zip") ||
+                  Boolean(backupArchive) ||
+                  restoreUploadNeedsFile;
                 return (
                   <div className="mt-auto space-y-3 pt-4">
                     <div>
@@ -2817,7 +3385,11 @@ export function BackupPanel() {
                         ref={fileInput}
                         type="file"
                         accept="application/json,.json,application/zip,.zip"
-                        disabled={isPreparingArchive || Boolean(backupArchive)}
+                        disabled={
+                          isPreparingArchive ||
+                          Boolean(backupArchive) ||
+                          restoreInputsLocked
+                        }
                         onChange={(e) => {
                           const selectedFile = e.target.files?.[0] ?? null;
                           if (
@@ -2830,7 +3402,7 @@ export function BackupPanel() {
                           ) {
                             setFile(null);
                             setReport(null);
-                            setError(
+                            toast.error(
                               `Backup exceeds the configured ${siteSettings.effective.max_backup_import_size_mb} MB limit.`,
                             );
                             e.target.value = "";
@@ -2842,22 +3414,54 @@ export function BackupPanel() {
                           // A new file invalidates any archive/space
                           // list/selection read from the previous one.
                           setBackupArchive(null);
-                          setImportSpaceScope("all");
                           setImportSelectedSpaceKeys([]);
                           setConflictingImportSpaceKeys([]);
                           setConfirmOverwriteImportSpaces(false);
                           restoreArchiveIdRef.current = null;
                           setRestoreUploadProgress(null);
                           setRestoreUploadStats(null);
+                          setRestoreResumedBytes(0);
+                          setRestoreArchiveRejected(false);
+                          if (selectedFile) {
+                            void rejectWrongArchiveFormat(
+                              selectedFile,
+                              "wikihub",
+                              (message) => {
+                                toast.error(message);
+                                setFile(null);
+                                if (fileInput.current) {
+                                  fileInput.current.value = "";
+                                }
+                              },
+                            );
+                          }
                         }}
                         className={cn(
                           "border-border bg-surface file:bg-surface-sunken file:text-foreground hover:border-border-strong block w-full rounded-md border text-sm transition-colors duration-150 file:mr-3 file:border-0 file:px-3 file:py-2 file:text-sm",
-                          isPreparingArchive || backupArchive
+                          isPreparingArchive ||
+                            backupArchive ||
+                            restoreInputsLocked
                             ? "cursor-not-allowed opacity-50 file:cursor-not-allowed"
                             : "cursor-pointer file:cursor-pointer",
                         )}
                       />
-                      {backupArchive ? (
+                      {restoreLockedByConfluence ? (
+                        <p className="text-muted-foreground mt-1.5 text-xs">
+                          A Confluence import is in progress. Finish or cancel
+                          it to restore a WikiHub backup instead — both write
+                          the same spaces, so only one can run.
+                        </p>
+                      ) : isRestoreJobRunning || pending === "apply" ? (
+                        <p className="text-muted-foreground mt-1.5 text-xs">
+                          A restore is running. Wait for it to finish, or
+                          cancel it below, before choosing another backup.
+                        </p>
+                      ) : restoreUploadNeedsFile ? (
+                        <p className="text-muted-foreground mt-1.5 text-xs">
+                          Select {pendingRestoreUpload?.filename} again so
+                          WikiHub can read the remaining parts.
+                        </p>
+                      ) : backupArchive ? (
                         <p className="text-muted-foreground mt-1.5 text-xs">
                           Use a different file below to replace this
                           selection.
@@ -2865,78 +3469,11 @@ export function BackupPanel() {
                       ) : null}
                     </div>
 
-                    {/* Once uploaded and scanned, the archive's own space
-                        list drives this picker - no more reading the raw
-                        file a second time (that used to hang on a large
-                        archive; now the picker only ever reads what
-                        "Upload and scan" already fetched). */}
-                    {isZipSelected && backupArchive ? (
-                      <div className="border-border bg-surface-sunken rounded-lg border p-3 text-xs">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-foreground font-medium">
-                            {backupArchive.spaces.length}{" "}
-                            {backupArchive.spaces.length === 1
-                              ? "space"
-                              : "spaces"}{" "}
-                            found in {backupArchive.filename}.
-                          </p>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => setConfirmDiscardBackupArchive(true)}
-                          >
-                            Use a different file
-                          </Button>
-                        </div>
-                        <div className="mt-2 flex min-h-8 flex-wrap items-center gap-2">
-                          <label className="flex cursor-pointer items-center gap-1.5">
-                            <input
-                              type="radio"
-                              name="import-space-scope"
-                              checked={importSpaceScope === "all"}
-                              onChange={() => setImportSpaceScope("all")}
-                              className="accent-primary size-3.5 cursor-pointer"
-                            />
-                            <span className="font-medium text-foreground">
-                              All spaces
-                            </span>
-                          </label>
-                          <label className="flex cursor-pointer items-center gap-1.5">
-                            <input
-                              type="radio"
-                              name="import-space-scope"
-                              checked={importSpaceScope === "selected"}
-                              onChange={() => setImportSpaceScope("selected")}
-                              className="accent-primary size-3.5 cursor-pointer"
-                            />
-                            <span className="font-medium text-foreground">
-                              Select spaces…
-                            </span>
-                          </label>
-                          {importSpaceScope === "selected" ? (
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              className="ml-auto h-7 text-xs"
-                              onClick={() => setIsImportSpacePickerOpen(true)}
-                            >
-                              <ListChecks className="size-3.5" />
-                              {importSelectedSpaceKeys.length > 0
-                                ? `${importSelectedSpaceKeys.length} selected`
-                                : "Choose spaces"}
-                            </Button>
-                          ) : null}
-                        </div>
-                        <p className="text-muted-foreground mt-1.5 leading-normal">
-                          {importSpaceScope === "all"
-                            ? "Every space in the archive. Users and groups are always restored in full."
-                            : "Only the selected spaces' pages and permissions. Users and groups are always restored in full."}
-                        </p>
-                      </div>
-                    ) : null}
+                    {/* No in-card space picker: once the archive is scanned,
+                        the full-width "ready to restore" bar below owns that
+                        decision, the way the Confluence flow has always done
+                        it. Two controls for one choice is what made the two
+                        halves of this panel feel like different products. */}
 
                     {error ? (
                       <p
@@ -2949,25 +3486,98 @@ export function BackupPanel() {
 
                     {isZipSelected && !backupArchive ? (
                       isScanningBackupArchive ? null : isPreparingArchive ? (
-                        <Button
-                          variant="danger"
-                          className="w-full"
-                          onClick={() => setConfirmCancelBackupUpload(true)}
-                        >
-                          Cancel upload
-                        </Button>
+                        <div className="flex gap-2">
+                          {isUploadingBackupArchive ? (
+                            <Button
+                              variant="secondary"
+                              className="flex-1"
+                              onClick={pauseBackupArchiveUpload}
+                            >
+                              <Pause /> Pause upload
+                            </Button>
+                          ) : null}
+                          <Button
+                            variant="danger"
+                            className="flex-1"
+                            onClick={() => setConfirmCancelBackupUpload(true)}
+                          >
+                            Cancel upload
+                          </Button>
+                        </div>
                       ) : (
+                        // A refused archive is a dead end, not a pause: the
+                        // only way forward is a different file, so that is what
+                        // the button says and does. Offering "Resume upload"
+                        // here invited the user to re-send 24 GB that the
+                        // server had already looked at and rejected.
+                        restoreArchiveRejected ? (
                         <Button
                           variant="primary"
                           className="w-full"
-                          disabled={!file}
-                          onClick={() =>
-                            file && void uploadAndScanBackupArchive(file)
-                          }
+                          disabled={restoreInputsLocked}
+                          onClick={uploadAnotherAfterRejection}
                         >
-                          <Upload />
-                          Upload and scan
+                          <Upload /> Upload another file
                         </Button>
+                        ) : (
+                        // Paused mid-upload, Cancel has to sit next to Resume:
+                        // a paused upload holds the Confluence card locked, so
+                        // without it here the only way out would be a reload.
+                        <div className="flex gap-2">
+                          <Button
+                            variant="primary"
+                            className="flex-1"
+                            disabled={
+                              (!file && !restoreUploadNeedsFile) ||
+                              restoreInputsLocked
+                            }
+                            onClick={() => {
+                              // Without the original file there is nothing to
+                              // send yet, so the button's whole job is to open
+                              // the picker - same two-step the Confluence card
+                              // uses when its stored upload lost its File.
+                              if (restoreUploadNeedsFile) {
+                                fileInput.current?.click();
+                                return;
+                              }
+                              if (file) void uploadAndScanBackupArchive(file);
+                            }}
+                          >
+                            {restoreUploadNeedsFile ||
+                            restoreUploadProgress != null ? (
+                              <Play />
+                            ) : (
+                              <Upload />
+                            )}
+                            {restoreUploadNeedsFile
+                              ? "Select file to resume"
+                              : restoreUploadProgress != null
+                                ? "Resume upload"
+                                : "Upload and scan"}
+                          </Button>
+                          {restoreUploadNeedsFile ? (
+                            <Button
+                              variant="danger"
+                              className="flex-1"
+                              onClick={() =>
+                                void discardPendingRestoreUpload()
+                              }
+                            >
+                              Cancel upload
+                            </Button>
+                          ) : restoreUploadProgress != null ? (
+                            <Button
+                              variant="danger"
+                              className="flex-1"
+                              onClick={() =>
+                                setConfirmCancelBackupUpload(true)
+                              }
+                            >
+                              Cancel upload
+                            </Button>
+                          ) : null}
+                        </div>
+                        )
                       )
                     ) : (
                       <Button
@@ -2976,8 +3586,7 @@ export function BackupPanel() {
                         disabled={
                           (!file && !backupArchive) ||
                           pending !== null ||
-                          (importSpaceScope === "selected" &&
-                            importSelectedSpaceKeys.length === 0)
+                          restoreInputsLocked
                         }
                         aria-busy={pending === "apply"}
                         onClick={() => void submitImport()}
@@ -3058,7 +3667,8 @@ export function BackupPanel() {
                     disabled={
                       confluencePending ||
                       Boolean(confluenceArchive) ||
-                      importInProgress
+                      importInProgress ||
+                      confluenceLockedByRestore
                     }
                     onChange={(event) => {
                       const nextFile = event.target.files?.[0] ?? null;
@@ -3070,7 +3680,7 @@ export function BackupPanel() {
                           nextFile.size >
                           siteSettings.effective.max_backup_import_size_bytes
                         ) {
-                          setConfluenceUploadError(
+                          toast.error(
                             `Archive exceeds the configured ${siteSettings.effective.max_backup_import_size_mb} MB limit.`,
                           );
                           event.target.value = "";
@@ -3128,19 +3738,39 @@ export function BackupPanel() {
                       setUploadStats(null);
                       setHashStats(null);
                       setIsUploading(false);
+                      if (nextFile) {
+                        void rejectWrongArchiveFormat(
+                          nextFile,
+                          "confluence",
+                          (message) => {
+                            toast.error(message);
+                            setConfluenceFile(null);
+                            if (confluenceFileInput.current) {
+                              confluenceFileInput.current.value = "";
+                            }
+                          },
+                        );
+                      }
                     }}
                     className={cn(
                       "border-border bg-surface file:bg-surface-sunken file:text-foreground hover:border-border-strong block w-full rounded-md border text-sm transition-colors duration-150 file:mr-3 file:border-0 file:px-3 file:py-2 file:text-sm",
-                      confluencePending || confluenceArchive || importInProgress
+                      confluencePending ||
+                        confluenceArchive ||
+                        importInProgress ||
+                        confluenceLockedByRestore
                         ? "cursor-not-allowed opacity-50 file:cursor-not-allowed"
                         : "cursor-pointer file:cursor-pointer",
                     )}
                   />
-                  {(storedUploadNeedsFile || confluenceArchive) && (
+                  {(storedUploadNeedsFile ||
+                    confluenceArchive ||
+                    confluenceLockedByRestore) && (
                     <p className="text-muted-foreground mt-1.5 text-xs">
-                      {storedUploadNeedsFile
-                        ? `Select ${storedConfluenceUpload?.fileName} again so WikiHub can read the remaining parts.`
-                        : "Finish or clear this space selection before choosing another archive."}
+                      {confluenceLockedByRestore
+                        ? "A WikiHub restore is in progress. Finish or cancel it to import a Confluence archive instead — both write the same spaces, so only one can run."
+                        : storedUploadNeedsFile
+                          ? `Select ${storedConfluenceUpload?.fileName} again so WikiHub can read the remaining parts.`
+                          : "Finish or clear this space selection before choosing another archive."}
                     </p>
                   )}
                 </div>
@@ -3195,7 +3825,8 @@ export function BackupPanel() {
                             !storedUploadNeedsFile) ||
                           confluencePending ||
                           Boolean(confluenceArchive) ||
-                          importInProgress
+                          importInProgress ||
+                          confluenceLockedByRestore
                         }
                         onClick={() => {
                           if (storedUploadNeedsFile) {
@@ -3242,46 +3873,10 @@ export function BackupPanel() {
 
         {/* Confluence: fingerprint progress */}
         {isHashingArchive && hashStats ? (
-          <div
-            className="border-info/25 bg-info-bg mt-4 rounded-md border p-3 text-sm"
-            role="status"
-          >
-            <div className="flex gap-2.5">
-              <Info className="text-info mt-0.5 size-4 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p>
-                  Checking archive fingerprint{" "}
-                  <span className="font-medium">{confluenceArchiveName}</span>:{" "}
-                  {hashProgress}%
-                </p>
-                <div
-                  aria-label={`Fingerprint ${hashProgress}% complete`}
-                  aria-valuemax={100}
-                  aria-valuemin={0}
-                  aria-valuenow={hashProgress ?? 0}
-                  className="bg-surface mt-2 h-2 overflow-hidden rounded-full"
-                  role="progressbar"
-                >
-                  <div
-                    className="bg-info h-full duration-150 motion-safe:transition-[width]"
-                    style={{ width: `${hashProgress ?? 0}%` }}
-                  />
-                </div>
-                <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
-                  <span>
-                    <span className="text-foreground font-medium">Speed:</span>{" "}
-                    {hashStats.bytesPerSecond > 0
-                      ? `${formatBytes(hashStats.bytesPerSecond)}/s`
-                      : "Calculating speed…"}
-                  </span>
-                  <span>
-                    <span className="text-foreground font-medium">Estimate:</span>{" "}
-                    {formatDuration(hashStats.secondsRemaining)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ArchiveHashProgress
+            filename={confluenceArchiveName}
+            stats={hashStats}
+          />
         ) : null}
 
         {/* Confluence: finalizing */}
@@ -3307,55 +3902,13 @@ export function BackupPanel() {
         !confluenceArchive &&
         !isFinalizingArchive &&
         !isHashingArchive ? (
-          <div
-            className="border-info/25 bg-info-bg mt-4 rounded-md border p-3 text-sm"
-            role="status"
-          >
-            <div className="flex gap-2.5">
-              <Info className="text-info mt-0.5 size-4 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p>
-                  {isUploading ? "Uploading" : "Upload paused"}{" "}
-                  <span className="font-medium">{confluenceArchiveName}</span>:{" "}
-                  {uploadProgress}%
-                </p>
-                <div
-                  aria-label={`Upload ${uploadProgress}% complete`}
-                  aria-valuemax={100}
-                  aria-valuemin={0}
-                  aria-valuenow={uploadProgress}
-                  className="bg-surface mt-2 h-2 overflow-hidden rounded-full"
-                  role="progressbar"
-                >
-                  <div
-                    className="bg-info h-full duration-150 motion-safe:transition-[width]"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-                <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
-                  <span>
-                    <span className="text-foreground font-medium">Uploaded:</span>{" "}
-                    {formatBytes(uploadStats?.loaded ?? 0)} /{" "}
-                    {formatBytes(uploadStats?.total ?? confluenceArchiveSize)}
-                  </span>
-                  {isUploading ? (
-                    <>
-                      <span>
-                        <span className="text-foreground font-medium">Speed:</span>{" "}
-                        {uploadStats && uploadStats.bytesPerSecond > 0
-                          ? `${formatBytes(uploadStats.bytesPerSecond)}/s`
-                          : "Calculating speed…"}
-                      </span>
-                      <span>
-                        <span className="text-foreground font-medium">Estimate:</span>{" "}
-                        {formatDuration(uploadStats?.secondsRemaining ?? null)}
-                      </span>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </div>
+          <ArchiveUploadProgress
+            filename={confluenceArchiveName}
+            percent={uploadProgress}
+            stats={uploadStats}
+            uploading={isUploading}
+            totalFallback={confluenceArchiveSize}
+          />
         ) : null}
 
         {/* Confluence: preparation logs */}
@@ -3534,88 +4087,52 @@ export function BackupPanel() {
           </div>
         ) : null}
 
-        {/* WikiHub restore, .zip: "Upload and scan" fingerprint progress -
-            same shape as the Confluence archive's own fingerprint card. */}
+        {/* WikiHub restore, .zip: "Upload and scan" fingerprint progress. */}
         {activeSection === "import" &&
         isHashingBackupArchive &&
         backupHashStats ? (
-          <div
-            className="border-info/25 bg-info-bg mt-4 rounded-md border p-3 text-sm"
-            role="status"
-          >
-            <div className="flex gap-2.5">
-              <Info className="text-info mt-0.5 size-4 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p>
-                  Checking archive fingerprint{" "}
-                  <span className="font-medium">{file?.name}</span>:{" "}
-                  {backupHashStats.total > 0
-                    ? Math.round(
-                        (backupHashStats.loaded / backupHashStats.total) * 100,
-                      )
-                    : 0}
-                  %
-                </p>
-                <div
-                  aria-label="Fingerprint progress"
-                  aria-valuemax={100}
-                  aria-valuemin={0}
-                  aria-valuenow={
-                    backupHashStats.total > 0
-                      ? Math.round(
-                          (backupHashStats.loaded / backupHashStats.total) *
-                            100,
-                        )
-                      : 0
-                  }
-                  className="bg-surface mt-2 h-2 overflow-hidden rounded-full"
-                  role="progressbar"
-                >
-                  <div
-                    className="bg-info h-full duration-150 motion-safe:transition-[width]"
-                    style={{
-                      width: `${backupHashStats.total > 0 ? Math.round((backupHashStats.loaded / backupHashStats.total) * 100) : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          <ArchiveHashProgress
+            filename={file?.name ?? null}
+            stats={backupHashStats}
+          />
         ) : null}
 
-        {/* WikiHub restore, .zip: chunked-archive-upload progress - before a
-            `full_import` job even exists to poll. Real percent/speed/ETA
-            from `restoreUploadStats`, same as the Confluence archive
-            upload's own card below. */}
+        {/* WikiHub restore, .zip: chunked-archive-upload progress, before a
+            `full_import` job even exists to poll. Same panel the Confluence
+            upload uses, so the two flows read identically. */}
         {activeSection === "import" &&
-        isUploadingBackupArchive &&
-        restoreUploadProgress != null ? (
-          <div className="border-border bg-surface-raised mt-4 rounded-lg border p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-base font-semibold">
-                Uploading backup archive…
-              </p>
-              <Badge variant="info">running</Badge>
-            </div>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {restoreUploadStats
-                ? `${formatBytes(restoreUploadStats.loaded)} of ${formatBytes(restoreUploadStats.total)}${restoreUploadStats.bytesPerSecond > 0 ? ` · ${formatBytes(restoreUploadStats.bytesPerSecond)}/s` : ""} · ${formatDuration(restoreUploadStats.secondsRemaining)}`
-                : `Uploading ${file?.name ?? "the archive"}. Large backups can take a while - keep this tab open.`}
-            </p>
-            <div
-              className="bg-surface-sunken relative mt-3 h-2 overflow-hidden rounded-full"
-              role="progressbar"
-              aria-label="Upload in progress"
-              aria-valuenow={restoreUploadProgress}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <div
-                className="bg-primary absolute inset-y-0 left-0 rounded-full duration-150 motion-safe:transition-[width]"
-                style={{ width: `${restoreUploadProgress}%` }}
-              />
-            </div>
-          </div>
+        !restoreArchiveRejected &&
+        (restoreUploadProgress != null || restoreUploadNeedsFile) ? (
+          <ArchiveUploadProgress
+            filename={file?.name ?? pendingRestoreUpload?.filename ?? null}
+            percent={restoreUploadProgress ?? pendingRestorePercent}
+            // A rediscovered upload has no live stats - only what the server
+            // says is already stored - so synthesise the one row the paused
+            // panel actually shows ("Uploaded: x / y"); speed and estimate
+            // are hidden while paused anyway.
+            stats={
+              restoreUploadStats ??
+              (pendingRestoreUpload
+                ? {
+                    loaded: pendingRestoreUploadedBytes,
+                    total: pendingRestoreUpload.size_bytes,
+                    bytesPerSecond: 0,
+                    secondsRemaining: null,
+                  }
+                : null)
+            }
+            uploading={isUploadingBackupArchive}
+            totalFallback={file?.size ?? 0}
+            note={
+              restoreResumedBytes > 0
+                ? `Resumed an earlier upload of this file — ${formatBytes(restoreResumedBytes)} was already in storage and is not being sent again.`
+                : restoreUploadNeedsFile
+                  ? "Nothing already uploaded was lost. Select the same file again to carry on from here."
+                  : !isUploadingBackupArchive
+                    ? "Nothing already uploaded was lost. Press Resume upload to carry on from here."
+                    : undefined
+            }
+          />
         ) : null}
 
         {/* WikiHub restore, .zip: scanning the just-uploaded archive for its
@@ -3635,6 +4152,44 @@ export function BackupPanel() {
                 Reading its space list can take a few minutes for large
                 archives. Keep this page open.
               </p>
+            </div>
+          </div>
+        ) : null}
+
+        {/* WikiHub restore, .zip: archive ready. The counterpart of the
+            Confluence "archive ready for import" bar, and for the same reason:
+            once the scan is in, the decision left is which spaces - which is a
+            decision worth its own row rather than a control tucked inside the
+            card. */}
+        {activeSection === "import" &&
+        backupArchive &&
+        !isRestoreJobRunning &&
+        pending !== "apply" ? (
+          <div className="border-border bg-surface-sunken mt-4 flex items-center justify-between gap-3 rounded-md border p-4 text-sm">
+            <div>
+              <p className="font-semibold">WikiHub backup ready to restore</p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                {backupArchive.spaces.length} spaces found. Choose which spaces
+                to restore.
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={restoreInputsLocked}
+                onClick={() => setConfirmDiscardBackupArchive(true)}
+              >
+                Cancel restore
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={restoreInputsLocked}
+                onClick={() => setIsImportSpacePickerOpen(true)}
+              >
+                Select spaces &amp; restore
+              </Button>
             </div>
           </div>
         ) : null}
@@ -4019,7 +4574,12 @@ export function BackupPanel() {
                       className="accent-primary size-4"
                     />
                     <span className="font-medium">{space.name}</span>
-                    <span className="text-muted-foreground">{space.key}</span>
+                    <span className="text-muted-foreground">
+                      {space.key} · {space.page_count} pages
+                    </span>
+                    {space.conflict ? (
+                      <Badge variant="warning">Existed</Badge>
+                    ) : null}
                   </label>
                 ))
               ) : (
@@ -4056,13 +4616,36 @@ export function BackupPanel() {
                   Clear selection
                 </Button>
               </div>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setIsImportSpacePickerOpen(false)}
-              >
-                Done
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsImportSpacePickerOpen(false)}
+                >
+                  Close
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={
+                    restoreInputsLocked ||
+                    pending !== null ||
+                    importSelectedSpaceKeys.length === 0
+                  }
+                  aria-busy={pending === "apply"}
+                  onClick={() => {
+                    setIsImportSpacePickerOpen(false);
+                    void submitImport();
+                  }}
+                >
+                  {pending === "apply" ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Upload />
+                  )}
+                  Start restore
+                </Button>
+              </div>
             </DialogFooter>
           </div>
         </DialogContent>
@@ -4210,105 +4793,53 @@ export function BackupPanel() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <ImportCompletedDialog
         open={isImportSuccessModalOpen}
         onOpenChange={setIsImportSuccessModalOpen}
-      >
-        <DialogContent
-          title="Import Completed Successfully"
-          description="All selected spaces from your Confluence backup have been successfully imported."
-        >
-          <p className="text-muted-foreground text-sm">
-            Do you want to import another Confluence archive or continue with a
-            new import?
-          </p>
-          <DialogFooter>
-            <Button
-              variant="primary"
-              onClick={() => {
-                setConfluenceJob(null);
-                setConfluenceArchive(null);
-                setConfluenceFile(null);
-                if (confluenceFileInput.current) {
-                  confluenceFileInput.current.value = "";
-                }
-                setUploadProgress(null);
-                setUploadStats(null);
-                setHashStats(null);
-                setPreparationLogs([]);
-                setConfluenceLogs([]);
-                setIsImportSuccessModalOpen(false);
-              }}
-            >
-              Yes, import another
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setIsImportSuccessModalOpen(false);
-              }}
-            >
-              No, close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="Import Completed Successfully"
+        description="All selected spaces from your Confluence backup have been successfully imported."
+        summaryLabel="What was imported"
+        counts={importSuccessCounts}
+        emptyLabel="Nothing new - every record in the archive already existed."
+        question="Do you want to import another Confluence archive, or close and continue?"
+        confirmLabel="Yes, import another"
+        onConfirm={() => {
+          setConfluenceJob(null);
+          setConfluenceArchive(null);
+          setConfluenceFile(null);
+          if (confluenceFileInput.current) {
+            confluenceFileInput.current.value = "";
+          }
+          setUploadProgress(null);
+          setUploadStats(null);
+          setHashStats(null);
+          setPreparationLogs([]);
+          setConfluenceLogs([]);
+          setImportSuccessCounts(null);
+          setIsImportSuccessModalOpen(false);
+        }}
+      />
 
-      <Dialog
+      <ImportCompletedDialog
         open={isRestoreSuccessModalOpen}
         onOpenChange={setIsRestoreSuccessModalOpen}
-      >
-        <DialogContent
-          title="Restore Completed Successfully"
-          description="The WikiHub backup has been restored into this instance."
-        >
-          {restoreSuccessReport ? (
-            <div className="border-border bg-surface-sunken rounded-md border p-3 text-xs">
-              <p className="text-foreground font-medium">What was restored</p>
-              <ul className="text-muted-foreground mt-1.5 space-y-0.5">
-                {Object.entries(restoreSuccessReport.created).map(
-                  ([kind, count]) => (
-                    <li key={kind}>
-                      {count} {kind.replaceAll("_", " ")}
-                      {count === 1 ? "" : "s"}
-                    </li>
-                  ),
-                )}
-                {Object.keys(restoreSuccessReport.created).length === 0 ? (
-                  <li>
-                    Nothing new — every record in the backup already existed.
-                  </li>
-                ) : null}
-              </ul>
-            </div>
-          ) : null}
-          <p className="text-muted-foreground text-sm">
-            Do you want to restore another backup, or close and continue?
-          </p>
-          <DialogFooter>
-            <Button
-              variant="primary"
-              onClick={() => {
-                // Clear the finished job too, so its progress card goes away
-                // and the card returns to a clean "choose a file" state.
-                setPortableBackupJob(null);
-                settledRestoreJobIdRef.current = null;
-                resetRestoreSelection();
-                setReport(null);
-                setIsRestoreSuccessModalOpen(false);
-              }}
-            >
-              Yes, restore another
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => setIsRestoreSuccessModalOpen(false)}
-            >
-              No, close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="Restore Completed Successfully"
+        description="The WikiHub backup has been restored into this instance."
+        summaryLabel="What was restored"
+        counts={restoreSuccessReport?.created ?? null}
+        emptyLabel="Nothing new - every record in the backup already existed."
+        question="Do you want to restore another backup, or close and continue?"
+        confirmLabel="Yes, restore another"
+        onConfirm={() => {
+          // Clear the finished job too, so its progress card goes away and the
+          // card returns to a clean "choose a file" state.
+          setPortableBackupJob(null);
+          settledRestoreJobIdRef.current = null;
+          resetRestoreSelection();
+          setReport(null);
+          setIsRestoreSuccessModalOpen(false);
+        }}
+      />
 
       <ConfirmDialog
         open={leaveTarget !== null}
@@ -4316,7 +4847,16 @@ export function BackupPanel() {
           if (!open) setLeaveTarget(null);
         }}
         title="Pause this upload and leave?"
-        description="The current part will stop. Completed parts and your selected archive stay on this device, so you can resume the upload from this page later."
+        description={
+          // The Confluence card stashes the File itself, so it can offer to
+          // pick straight up again. The restore card cannot - the browser
+          // only hands a File over on a user gesture - so it promises the
+          // uploaded parts and asks for the file back, which is exactly what
+          // it does on return.
+          confluencePending
+            ? "The current part will stop. Completed parts and your selected archive stay on this device, so you can resume the upload from this page later."
+            : "The current part will stop. Everything uploaded so far stays in storage, so you can select the same file on this page later and carry on from where it stopped."
+        }
         confirmLabel="Pause and leave"
         onConfirm={leaveWhileUploading}
       />
@@ -4363,9 +4903,9 @@ export function BackupPanel() {
       <ConfirmDialog
         open={confirmDiscardBackupArchive}
         onOpenChange={setConfirmDiscardBackupArchive}
-        title="Use a different file?"
-        description="This clears the scanned archive and its space selection. If you pick the same file again, it's recognized instead of uploaded again; a different file uploads from scratch."
-        confirmLabel="Use a different file"
+        title="Cancel this restore?"
+        description="The uploaded archive is deleted from storage along with its space selection. Restoring this backup afterwards means uploading it again from scratch."
+        confirmLabel="Cancel restore"
         destructive
         onConfirm={discardBackupArchive}
       />

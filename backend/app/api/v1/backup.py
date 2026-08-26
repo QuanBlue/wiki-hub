@@ -49,6 +49,7 @@ from app.schemas.backup import (
     BackupJobRead,
     ImportReport,
 )
+from app.services.import_concurrency import assert_no_active_confluence_import
 from app.services.site_settings import SiteSettingsService
 from app.services.storage import get_storage
 
@@ -316,6 +317,7 @@ async def start_backup_archive_upload(
         actor_id=user.id,
         sha256=payload.sha256,
     )
+    complete = archive.status in {"uploaded", "scanned"}
     return BackupArchiveUploadTarget(
         archive_id=archive.id,
         object_key=archive.object_key,
@@ -323,9 +325,14 @@ async def start_backup_archive_upload(
             await SiteSettingsService(archives.session).get_effective()
         ).max_backup_import_size_bytes,
         part_size_bytes=archives.upload_part_size_bytes,
+        # Parts already in storage from an earlier, interrupted attempt at this
+        # same file. The client skips them, so a multi-GB upload picks up where
+        # it stopped rather than starting over. Empty for a brand-new archive,
+        # and irrelevant once `reused` says the bytes are already whole.
+        uploaded_parts=[] if complete else await archives.uploaded_part_numbers(archive),
         status=archive.status,
         sha256=archive.sha256,
-        reused=archive.status in {"uploaded", "scanned"},
+        reused=complete,
     )
 
 
@@ -459,6 +466,9 @@ async def create_backup_import(
     session: DbSession,
 ) -> BackupJobRead:
     """Queue a restore of an already-uploaded, scanned archive."""
+    # A Confluence import writes the same spaces/pages this restore would, so
+    # the two must never overlap - see `app/services/import_concurrency.py`.
+    await assert_no_active_confluence_import(session)
     try:
         job = await create_import_job(
             session,

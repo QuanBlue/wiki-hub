@@ -2,13 +2,32 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { toast } from "sonner";
+
 import { BackupPanel } from "@/components/admin/backup-panel";
+
+// Rejections that undo the user's selection are reported as toasts, not as a
+// box pinned under an input that is empty again. No <Toaster/> is mounted in
+// these tests, so assert on the call rather than on rendered text.
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  },
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  // The sonner mock is module-level, so its calls would leak between tests.
+  vi.mocked(toast.error).mockClear();
+  vi.mocked(toast.success).mockClear();
+});
 
 type RouteHandler = (
   init?: RequestInit,
@@ -76,6 +95,11 @@ function baseRoutes(): Array<{ method: string; match: (pathname: string) => bool
     },
     {
       method: "GET",
+      match: (p) => p === "/api/v1/backup/archives/uploads/active",
+      handler: () => ({ body: [] }),
+    },
+    {
+      method: "GET",
       match: (p) => p.startsWith("/api/v1/backup/jobs/"),
       handler: () => ({
         body: {
@@ -133,6 +157,48 @@ class FakeUploadXHR {
   }
 }
 
+/** Like `FakeUploadXHR` but the request stays in flight until `abort()` is
+ * called, so a test can actually reach the *paused* state rather than racing
+ * an upload that completes instantly. */
+class PausableUploadXHR {
+  static last: PausableUploadXHR | null = null;
+  status = 0;
+  upload: { onprogress: ((event: ProgressEvent) => void) | null } = {
+    onprogress: null,
+  };
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onabort: (() => void) | null = null;
+  open() {
+    /* no-op */
+  }
+  setRequestHeader() {
+    /* no-op */
+  }
+  send() {
+    PausableUploadXHR.last = this;
+    queueMicrotask(() => {
+      this.upload.onprogress?.({
+        lengthComputable: true,
+        loaded: 1,
+        total: 2,
+      } as ProgressEvent);
+    });
+    // Deliberately never fires onload - the upload hangs until aborted.
+  }
+  abort() {
+    this.onabort?.();
+  }
+}
+
+function stubPausableUploadXHR() {
+  PausableUploadXHR.last = null;
+  vi.stubGlobal(
+    "XMLHttpRequest",
+    PausableUploadXHR as unknown as typeof XMLHttpRequest,
+  );
+}
+
 function stubUploadXHR() {
   vi.stubGlobal(
     "XMLHttpRequest",
@@ -144,6 +210,68 @@ function stubUploadXHR() {
  * Confluence import card in the same always-mounted section, and both cards
  * use identical wording ("Upload and scan", "Cancel upload") for their own
  * upload steps. Restore-only button queries go through this. */
+
+/** A minimal but genuine ZIP, so `detectArchiveFormat` walks a real central
+ * directory rather than a stubbed-out blob. Stored (uncompressed) entries keep
+ * this short; nothing here is ever decompressed. */
+function makeZip(entries: Record<string, string>, filename: string): File {
+  const encoder = new TextEncoder();
+  const locals: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(entries)) {
+    const nameBytes = encoder.encode(name);
+    const data = encoder.encode(content);
+    const local = new Uint8Array(30 + nameBytes.length + data.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint32(18, data.length, true);
+    lv.setUint32(22, data.length, true);
+    lv.setUint16(26, nameBytes.length, true);
+    local.set(nameBytes, 30);
+    local.set(data, 30 + nameBytes.length);
+    locals.push(local);
+
+    const central = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint32(20, data.length, true);
+    cv.setUint32(24, data.length, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint32(42, offset, true);
+    central.set(nameBytes, 46);
+    centrals.push(central);
+    offset += local.length;
+  }
+  const cdSize = centrals.reduce((sum, c) => sum + c.length, 0);
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, centrals.length, true);
+  ev.setUint16(10, centrals.length, true);
+  ev.setUint32(12, cdSize, true);
+  ev.setUint32(16, offset, true);
+  return new File(
+    [new Blob([...locals, ...centrals, eocd] as BlobPart[])],
+    filename,
+    { type: "application/zip" },
+  );
+}
+
+function wikihubBackupZip(filename: string): File {
+  return makeZip(
+    { "manifest.json": "{}", "data/workspace.json": "{}" },
+    filename,
+  );
+}
+
+function confluenceExportZip(filename: string): File {
+  return makeZip(
+    { "entities.xml": "<root/>", "exportDescriptor.properties": "b=1" },
+    filename,
+  );
+}
+
 function importSection() {
   return within(screen.getByTestId("wikihub-restore-card"));
 }
@@ -519,7 +647,65 @@ describe("BackupPanel native restore", () => {
     ).toHaveAttribute("aria-selected", "false");
   });
 
-  it("restores directly from a single upload, with no preview or confirm modal", async () => {
+  it("locks its own card while its own restore job is running", async () => {
+    // The Confluence card has always locked against itself via
+    // `importInProgress`; this one only ever locked against the *other* flow.
+    // Mid-restore its file input stayed live - the reported screenshot shows
+    // "Choose File" clickable under a job at 32% - so a second archive could
+    // be selected and uploaded on top of the job still writing spaces.
+    const runningJob = {
+      id: "job-restore-1",
+      kind: "full_import",
+      status: "running",
+      phase: "restoring",
+      counters: {},
+      cancel_requested: false,
+      output_filename: null,
+      download_url: null,
+      error: null,
+      space_keys: [],
+      archive_id: "archive-1",
+      overwrite_space_keys: [],
+      result: null,
+      started_at: new Date().toISOString(),
+      percent: 32,
+      eta_seconds: 377,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    mockFetch([
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/jobs",
+        handler: () => ({ body: [runningJob] }),
+      },
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/jobs/job-restore-1",
+        handler: () => ({ body: runningJob }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    render(<BackupPanel />);
+
+    // The panel auto-switches to this tab for a running restore.
+    const input = (await waitFor(
+      () => document.getElementById("backup-file") as HTMLInputElement,
+      { timeout: 4000 },
+    )) as HTMLInputElement;
+    await waitFor(() => expect(input).toBeDisabled(), { timeout: 4000 });
+    expect(
+      screen.getByText(/a restore is running\. wait for it to finish/i),
+    ).toBeInTheDocument();
+    // Cancel is the one control that must stay live - the lock has to be
+    // releasable from the side holding it.
+    expect(
+      screen.getByRole("button", { name: /cancel restore/i }),
+    ).toBeEnabled();
+  });
+
+  it("lands in the space picker straight after the scan, and restores from there", async () => {
     stubUploadXHR();
     const jobsPosted: unknown[] = [];
     mockFetch([
@@ -595,21 +781,19 @@ describe("BackupPanel native restore", () => {
       screen.queryByRole("button", { name: /preview changes/i }),
     ).not.toBeInTheDocument();
 
-    // The archive uploads and is scanned first - "Restore backup" only
-    // becomes available once that's done, so a huge file is never read a
-    // second time just to preview its spaces.
+    // The archive uploads and is scanned first, and the scan opens the picker
+    // itself - the scan exists to answer "which spaces?", so making the user
+    // click once more before being allowed to answer earns nothing.
     await actor.click(
       importSection().getByRole("button", { name: /^upload and scan$/i }),
     );
-    expect(
-      await screen.findByText(/2 spaces found in f\.zip/i),
-    ).toBeInTheDocument();
-
-    const importButton = screen.getByRole("button", {
-      name: /^restore backup$/i,
-    });
-    expect(importButton).not.toBeDisabled();
-    await actor.click(importButton);
+    const selectAll = await screen.findByRole(
+      "button",
+      { name: /^select all$/i },
+      { timeout: 4000 },
+    );
+    await actor.click(selectAll);
+    await actor.click(screen.getByRole("button", { name: /^start restore$/i }));
 
     // No confirm dialog in front of it: job creation fires immediately, and
     // progress shows up inline like the export job card.
@@ -658,8 +842,1072 @@ describe("BackupPanel native restore", () => {
       importSection().getByRole("button", { name: /^restore backup$/i }),
     ).toBeDisabled();
     expect(
-      screen.queryByText(/spaces found in f\.zip/i),
+      screen.queryByText(/spaces found\. choose which spaces/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("brings back a scanned archive after navigating away and returning", async () => {
+    // A remount used to wipe the restore card entirely: the scanned archive
+    // lived only in component state, so leaving the page and coming back
+    // meant re-uploading a multi-GB file just to pick spaces again.
+    mockFetch([
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/archives/uploads/active",
+        handler: () => ({
+          body: [
+            {
+              archive_id: "archive-1",
+              filename: "f.zip",
+              size_bytes: 9,
+              sha256: "a".repeat(64),
+              status: "scanned",
+              part_size_bytes: 8 * 1024 * 1024,
+              uploaded_parts: [1],
+            },
+          ],
+        }),
+      },
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/archives/archive-1",
+        handler: () => ({
+          body: {
+            id: "archive-1",
+            filename: "f.zip",
+            size_bytes: 9,
+            sha256: "a".repeat(64),
+            status: "scanned",
+            error: null,
+            spaces: [{ key: "ENG", name: "Engineering" }],
+          },
+        }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    render(<BackupPanel />);
+
+    // Straight back to "which spaces?", on the right tab, with no file and no
+    // upload needed.
+    expect(
+      await screen.findByRole(
+        "button",
+        { name: /select spaces & restore/i },
+        { timeout: 4000 },
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /import \/ restore/i }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      importSection().getByRole("button", { name: /^restore backup$/i }),
+    ).toBeEnabled();
+  });
+
+  it("tells the server when a scanned archive is discarded, so it stays gone", async () => {
+    // Reported: pressing "Cancel restore" and reloading brought the same card
+    // straight back, with the file input disabled against it - so no new
+    // backup could be chosen, and pressing Cancel again was equally useless.
+    // Clearing local state alone left the row "scanned" server-side, and the
+    // next mount rediscovered it.
+    let deletedArchive: string | null = null;
+    mockFetch([
+      {
+        method: "DELETE",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload",
+        handler: () => {
+          deletedArchive = "archive-1";
+          return { body: {} };
+        },
+      },
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/archives/uploads/active",
+        handler: () => ({
+          body: deletedArchive
+            ? []
+            : [
+                {
+                  archive_id: "archive-1",
+                  filename: "f.zip",
+                  size_bytes: 8,
+                  sha256: "a".repeat(64),
+                  status: "scanned",
+                  part_size_bytes: 8 * 1024 * 1024,
+                  uploaded_parts: [1],
+                },
+              ],
+        }),
+      },
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/archives/archive-1",
+        handler: () => ({
+          body: {
+            id: "archive-1",
+            filename: "f.zip",
+            size_bytes: 8,
+            sha256: "a".repeat(64),
+            status: "scanned",
+            error: null,
+            spaces: [
+              { key: "ENG", name: "Engineering", page_count: 2, conflict: false },
+            ],
+          },
+        }),
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    const view = render(<BackupPanel />);
+
+    // Rediscovered from the server on mount.
+    await screen.findByRole(
+      "button",
+      { name: /select spaces & restore/i },
+      { timeout: 4000 },
+    );
+    await actor.click(screen.getByRole("button", { name: /^cancel restore$/i }));
+    await actor.click(
+      await screen.findByRole("button", { name: /^cancel restore$/i }),
+    );
+    await waitFor(() => expect(deletedArchive).toBe("archive-1"));
+
+    // Remount: the card must not come back, and the input must be usable.
+    view.unmount();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+    await waitFor(() =>
+      expect(
+        document.getElementById("backup-file") as HTMLInputElement,
+      ).toBeEnabled(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /select spaces & restore/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers to resume an unfinished upload found on the server after a remount", async () => {
+    let deleted = false;
+    mockFetch([
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/archives/uploads/active",
+        handler: () => ({
+          body: [
+            {
+              archive_id: "archive-1",
+              filename: "big-backup.zip",
+              size_bytes: 4 * 8 * 1024 * 1024,
+              sha256: "a".repeat(64),
+              status: "uploading",
+              part_size_bytes: 8 * 1024 * 1024,
+              uploaded_parts: [1, 2],
+            },
+          ],
+        }),
+      },
+      {
+        method: "DELETE",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload",
+        handler: () => {
+          deleted = true;
+          return { body: {} };
+        },
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    // The browser cannot reopen the File by itself, so the card asks for it
+    // back - presented the way the Confluence card presents its own
+    // interrupted upload: the shared paused-progress strip plus a "select the
+    // file again" hint under the input, rather than the bespoke in-card
+    // banner this used to get, which made the same situation look like a
+    // different feature depending on which half of the panel you were in.
+    expect(
+      await screen.findByRole(
+        "progressbar",
+        { name: /upload 50% complete/i },
+        { timeout: 4000 },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^Uploaded:$/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/again so WikiHub can read the remaining parts/i),
+    ).toBeInTheDocument();
+    expect(
+      importSection().getByRole("button", { name: /^select file to resume$/i }),
+    ).toBeEnabled();
+    expect(screen.queryByText(/unfinished upload of/i)).not.toBeInTheDocument();
+
+    // Discarding it does not need the file either - and it is now reached by
+    // the same "Cancel upload" the Confluence card offers, not a "Discard it"
+    // link only this card had.
+    await actor.click(
+      importSection().getByRole("button", { name: /^cancel upload$/i }),
+    );
+    await waitFor(() => expect(deleted).toBe(true));
+    expect(
+      screen.queryByRole("progressbar", { name: /upload 50% complete/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("locks the Confluence card while a WikiHub restore upload is under way, and frees it on cancel", async () => {
+    // Both paths write the same spaces and pages, so only one may be engaged.
+    // Before this, the panel happily ran a Confluence upload and a WikiHub
+    // restore at once and left the user to guess which status panel was which.
+    stubUploadXHR();
+    let releaseParts: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseParts = resolve;
+    });
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload-parts",
+        handler: async () => {
+          await gate;
+          return {
+            body: {
+              urls: {
+                "1": "http://localhost/api/v1/storage/object?key=x&upload_id=y&part_number=1",
+              },
+            },
+          };
+        },
+      },
+      {
+        method: "DELETE",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload",
+        handler: () => ({ body: {} }),
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    const confluenceInput = document.getElementById(
+      "confluence-backup-file",
+    ) as HTMLInputElement;
+    expect(confluenceInput).toBeEnabled();
+
+    // Start a restore upload.
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(
+      fileInput,
+      new File(["zip-bytes"], "f.zip", { type: "application/zip" }),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+
+    // The other path is now locked - the file input too, not just the button,
+    // so nobody picks an archive they will not be allowed to apply.
+    await waitFor(() => expect(confluenceInput).toBeDisabled());
+    expect(
+      screen.getByText(/a wikihub restore is in progress/i),
+    ).toBeInTheDocument();
+
+    // The lock must always be releasable from the side holding it.
+    const cancel = importSection().getByRole("button", {
+      name: /^cancel upload$/i,
+    });
+    expect(cancel).toBeEnabled();
+    expect(
+      importSection().getByRole("button", { name: /^pause upload$/i }),
+    ).toBeEnabled();
+
+    await actor.click(cancel);
+    await actor.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: /^cancel upload$/i,
+      }),
+    );
+    releaseParts?.();
+
+    await waitFor(() => expect(confluenceInput).toBeEnabled());
+    expect(
+      screen.queryByText(/a wikihub restore is in progress/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("locks the restore card while a Confluence archive is waiting to be imported", async () => {
+    // A scanned-but-not-yet-applied Confluence archive is a real commitment,
+    // not just an upload - it must lock the restore path the same way.
+    mockFetch([
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/confluence-imports/uploads/active",
+        handler: () => ({
+          body: [
+            {
+              archive_id: "conf-1",
+              filename: "confluence.zip",
+              size_bytes: 10,
+              sha256: null,
+              status: "scanned",
+              part_size_bytes: 8 * 1024 * 1024,
+              uploaded_parts: [1],
+            },
+          ],
+        }),
+      },
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/confluence-imports/archives/conf-1",
+        handler: () => ({
+          body: {
+            id: "conf-1",
+            filename: "confluence.zip",
+            size_bytes: 10,
+            sha256: null,
+            status: "scanned",
+            error: null,
+            spaces: [
+              {
+                key: "ENG",
+                name: "Engineering",
+                page_count: 3,
+                attachment_count: 0,
+                conflict: false,
+              },
+            ],
+          },
+        }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    await waitFor(() => expect(fileInput).toBeDisabled(), { timeout: 4000 });
+    expect(
+      screen.getByText(/a confluence import is in progress/i),
+    ).toBeInTheDocument();
+    // Clearing the Confluence side stays available so the lock can be released.
+    expect(
+      screen.getByRole("button", { name: /^cancel import$/i }),
+    ).toBeEnabled();
+  });
+
+  it("keeps the Confluence card locked while a restore upload is only paused", async () => {
+    // A paused upload still holds real uploaded parts in object storage and
+    // the user is plainly mid-flow, so the other path must stay locked. This
+    // was the gap: pausing dropped every "busy" flag and quietly unlocked the
+    // other card.
+    stubUploadXHR();
+    let releaseParts: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseParts = resolve;
+    });
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload-parts",
+        handler: async () => {
+          await gate;
+          return {
+            body: {
+              urls: {
+                "1": "http://localhost/api/v1/storage/object?key=x&upload_id=y&part_number=1",
+              },
+            },
+          };
+        },
+      },
+      {
+        method: "DELETE",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload",
+        handler: () => ({ body: {} }),
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    const confluenceInput = document.getElementById(
+      "confluence-backup-file",
+    ) as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(
+      fileInput,
+      new File(["zip-bytes"], "f.zip", { type: "application/zip" }),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+    await waitFor(() => expect(confluenceInput).toBeDisabled());
+
+    // Pause - and the lock must hold.
+    await actor.click(
+      await importSection().findByRole("button", { name: /^pause upload$/i }),
+    );
+    expect(
+      await importSection().findByRole("button", { name: /^resume upload$/i }),
+    ).toBeInTheDocument();
+    expect(confluenceInput).toBeDisabled();
+    expect(
+      screen.getByText(/a wikihub restore is in progress/i),
+    ).toBeInTheDocument();
+
+    // Cancel must be reachable while paused, or the lock has no escape hatch.
+    const cancel = importSection().getByRole("button", {
+      name: /^cancel upload$/i,
+    });
+    expect(cancel).toBeEnabled();
+    await actor.click(cancel);
+    await actor.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: /^cancel upload$/i,
+      }),
+    );
+    releaseParts?.();
+
+    await waitFor(() => expect(confluenceInput).toBeEnabled());
+  });
+
+  it("locks the restore card while a Confluence upload is paused", async () => {
+    // The reported screenshot: Confluence paused at 3% with 800 MB already
+    // staged, yet every restore control stayed live. A paused upload holds
+    // real parts in object storage, so it must keep the other path locked.
+    stubPausableUploadXHR();
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/auth/renew",
+        handler: () => ({ body: {} }),
+      },
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/confluence-imports/uploads",
+        handler: () => ({
+          body: {
+            archive_id: "conf-1",
+            object_key: "imports/confluence/conf-1/c.zip",
+            max_size_bytes: 999_999_999_999,
+            part_size_bytes: 8 * 1024 * 1024,
+            uploaded_parts: [],
+            status: "uploading",
+            sha256: null,
+            reused: false,
+          },
+        }),
+      },
+      {
+        method: "POST",
+        match: (p) =>
+          p === "/api/v1/confluence-imports/archives/conf-1/upload-parts",
+        handler: () => ({
+          body: {
+            urls: {
+              "1": "http://localhost/api/v1/storage/object?key=x&upload_id=y&part_number=1",
+            },
+          },
+        }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    const restoreInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    expect(restoreInput).toBeEnabled();
+
+    const confluenceInput = document.getElementById(
+      "confluence-backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(
+      confluenceInput,
+      new File(["confluence-bytes"], "c.zip", { type: "application/zip" }),
+    );
+    await actor.click(
+      screen.getByRole("button", { name: /^upload and scan$/i }),
+    );
+
+    // Uploading: the restore card locks.
+    await waitFor(() => expect(restoreInput).toBeDisabled(), { timeout: 4000 });
+
+    // Pause it - this is the state that used to silently unlock the other card.
+    await actor.click(
+      await screen.findByRole("button", { name: /^pause upload$/i }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /^pause upload$/i }),
+      ).not.toBeInTheDocument(),
+    );
+
+    expect(restoreInput).toBeDisabled();
+    expect(
+      screen.getByText(/a confluence import is in progress/i),
+    ).toBeInTheDocument();
+    // The holding card keeps a way out, so the lock is never a dead end.
+    expect(
+      screen.getByRole("button", { name: /^cancel upload$/i }),
+    ).toBeEnabled();
+  });
+
+  it("shows the same upload panel for a restore as for a Confluence import", async () => {
+    // The two flows run the identical fingerprint-then-chunked-upload
+    // sequence, so their progress panels must read identically. They had
+    // drifted: Confluence showed an info strip with labelled
+    // Uploaded/Speed/Estimate columns, the restore a raised card with a status
+    // badge and the same numbers run together on one line.
+    stubPausableUploadXHR();
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) =>
+          p === "/api/v1/backup/archives/archive-1/upload-parts",
+        handler: () => ({
+          body: {
+            urls: {
+              "1": "http://localhost/api/v1/storage/object?key=x&upload_id=y&part_number=1",
+            },
+          },
+        }),
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+    await actor.upload(
+      document.getElementById("backup-file") as HTMLInputElement,
+      new File(["zip-bytes"], "f.zip", { type: "application/zip" }),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+
+    // Confluence's wording and labelled columns, not the old bespoke card.
+    const panel = await screen.findByRole(
+      "progressbar",
+      { name: /upload \d+% complete/i },
+      { timeout: 4000 },
+    );
+    expect(panel).toBeInTheDocument();
+    expect(screen.getByText(/^Uploaded:$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Speed:$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Estimate:$/)).toBeInTheDocument();
+    // The old card's status badge is gone.
+    expect(screen.queryByText(/^running$/)).not.toBeInTheDocument();
+  });
+
+  it("asks to pause before navigating away from a restore upload", async () => {
+    // Next.js client navigation fires no unload event, so an in-flight
+    // multipart upload used to be abandoned mid-part the instant a sidebar
+    // link was clicked - silently, and only on this card: the Confluence
+    // upload had had this prompt all along.
+    stubPausableUploadXHR();
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload-parts",
+        handler: () => ({
+          body: {
+            urls: {
+              "1": "http://localhost/api/v1/storage/object?key=x&upload_id=y&part_number=1",
+            },
+          },
+        }),
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const assign = vi.fn();
+    const realLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...realLocation, href: realLocation.href, assign },
+    });
+    // The guard only intercepts real in-app links, so give it one.
+    const link = document.createElement("a");
+    link.href = "/spaces";
+    link.textContent = "Spaces";
+    document.body.appendChild(link);
+
+    try {
+      const actor = userEvent.setup();
+      render(<BackupPanel />);
+      await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+      await actor.upload(
+        document.getElementById("backup-file") as HTMLInputElement,
+        new File(["zip-bytes"], "f.zip", { type: "application/zip" }),
+      );
+      await actor.click(
+        importSection().getByRole("button", { name: /^upload and scan$/i }),
+      );
+      await screen.findByRole(
+        "button",
+        { name: /^pause upload$/i },
+        { timeout: 4000 },
+      );
+
+      await actor.click(link);
+      expect(
+        await screen.findByText(/pause this upload and leave\?/i),
+      ).toBeInTheDocument();
+      // The restore card cannot stash the File the way Confluence does, so it
+      // must not promise the archive is still here on return.
+      expect(
+        screen.getByText(/select the same file on this page later/i),
+      ).toBeInTheDocument();
+      // Until confirmed, nothing has moved and nothing has been aborted.
+      expect(assign).not.toHaveBeenCalled();
+
+      await actor.click(screen.getByRole("button", { name: /pause and leave/i }));
+      await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+      expect(String(assign.mock.calls[0][0])).toContain("/spaces");
+    } finally {
+      link.remove();
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: realLocation,
+      });
+    }
+  });
+
+  it("asks to pause even before the first part of a restore goes out", async () => {
+    // The guard must hold for the whole "Upload and scan" call, not just the
+    // phases that have a visible progress bar. `POST .../uploads` sits between
+    // fingerprinting and the first part, and on a large archive - where the
+    // server has to look up a resumable multipart upload - it is not quick.
+    // Deriving the guard from the phase flags left that window unguarded, so a
+    // link clicked there abandoned the upload silently.
+    stubPausableUploadXHR();
+    let startRequested = false;
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/uploads",
+        handler: async () => {
+          startRequested = true;
+          // Never resolves: the upload stays parked in that window.
+          await new Promise(() => {});
+          return { body: {} };
+        },
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const assign = vi.fn();
+    const realLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...realLocation, href: realLocation.href, assign },
+    });
+    const link = document.createElement("a");
+    link.href = "/spaces";
+    link.textContent = "Spaces";
+    document.body.appendChild(link);
+
+    try {
+      const actor = userEvent.setup();
+      render(<BackupPanel />);
+      await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+      await actor.upload(
+        document.getElementById("backup-file") as HTMLInputElement,
+        new File(["zip-bytes"], "f.zip", { type: "application/zip" }),
+      );
+      await actor.click(
+        importSection().getByRole("button", { name: /^upload and scan$/i }),
+      );
+      // Fingerprinting is done and the start request is parked: the exact
+      // window that used to be unguarded.
+      await waitFor(() => expect(startRequested).toBe(true), { timeout: 4000 });
+
+      await actor.click(link);
+      expect(
+        await screen.findByText(/pause this upload and leave\?/i),
+      ).toBeInTheDocument();
+    } finally {
+      link.remove();
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: realLocation,
+      });
+    }
+  });
+
+  it("refuses a Confluence export picked in the restore card, before uploading", async () => {
+    // The two cards look alike and both take a `.zip`. Until this check the
+    // only thing that noticed was the server's scan - which runs after the
+    // whole archive is uploaded, so on a multi-GB export the mistake cost an
+    // hour before it was reported.
+    stubUploadXHR();
+    let uploadStarted = false;
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/uploads",
+        handler: () => {
+          uploadStarted = true;
+          return { body: {} };
+        },
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    const input = document.getElementById("backup-file") as HTMLInputElement;
+    await actor.upload(input, confluenceExportZip("Confluence-site-export.zip"));
+
+    await waitFor(
+      () =>
+        expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+          expect.stringMatching(/this is a confluence export/i),
+        ),
+      { timeout: 4000 },
+    );
+    // The selection is dropped too, so "Restore backup" cannot act on it.
+    await waitFor(() => expect(input.files?.length ?? 0).toBe(0));
+    expect(uploadStarted).toBe(false);
+  });
+
+  it("accepts a real WikiHub backup in the restore card", async () => {
+    // The guard must not fire on the archive the card is for - a check that
+    // rejects everything would "pass" the test above and break the feature.
+    stubUploadXHR();
+    mockFetch([...archiveUploadRoutes(), ...baseRoutes()]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    const input = document.getElementById("backup-file") as HTMLInputElement;
+    await actor.upload(input, wikihubBackupZip("wikihub-full-backup.zip"));
+
+    await waitFor(() => expect(input.files?.length ?? 0).toBe(1));
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    ).toBeEnabled();
+  });
+
+  it("refuses a WikiHub backup picked in the Confluence card", async () => {
+    stubUploadXHR();
+    mockFetch([...baseRoutes()]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    const input = document.getElementById(
+      "confluence-backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(input, wikihubBackupZip("wikihub-full-backup.zip"));
+
+    await waitFor(
+      () =>
+        expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+          expect.stringMatching(/this is a wikihub backup/i),
+        ),
+      { timeout: 4000 },
+    );
+    await waitFor(() => expect(input.files?.length ?? 0).toBe(0));
+  });
+
+  it("offers one way out - upload another file - when the scan rejects the archive", async () => {
+    // The reported screenshot: 24.81 GB uploaded to 100%, the scan refused the
+    // archive, and the card answered with "Resume upload" plus "Nothing already
+    // uploaded was lost - press Resume upload to carry on from here". Re-sending
+    // those bytes cannot change the server's verdict on what is in them, and
+    // Cancel beside it made the only useful action a two-step.
+    stubUploadXHR();
+    let deletedArchive: string | null = null;
+    mockFetch([
+      {
+        method: "DELETE",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload",
+        handler: () => {
+          deletedArchive = "archive-1";
+          return { body: {} };
+        },
+      },
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/scan",
+        handler: () => ({
+          status: 400,
+          body: {
+            error: {
+              code: "wrong_archive_format",
+              message:
+                "This looks like a Confluence export, not a WikiHub backup.",
+            },
+          },
+        }),
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+    await actor.upload(
+      document.getElementById("backup-file") as HTMLInputElement,
+      wikihubBackupZip("looks-fine-locally.zip"),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+
+    expect(
+      await screen.findByRole("alert", {}, { timeout: 4000 }),
+    ).toHaveTextContent(/confluence export/i);
+
+    const card = importSection();
+    const again = card.getByRole("button", { name: /upload another file/i });
+    expect(again).toBeEnabled();
+    // Neither dead end survives: one is impossible, the other is now implied.
+    expect(
+      card.queryByRole("button", { name: /resume upload/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      card.queryByRole("button", { name: /^cancel upload$/i }),
+    ).not.toBeInTheDocument();
+    // And the "nothing was lost, carry on" panel is gone with it.
+    expect(screen.queryByText(/carry on from here/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("progressbar", { name: /upload \d+% complete/i }),
+    ).not.toBeInTheDocument();
+
+    // The one button also drops the staged parts, so a refused 24 GB archive
+    // does not quietly keep occupying object storage.
+    await actor.click(again);
+    await waitFor(() => expect(deletedArchive).toBe("archive-1"));
+    // Releasing them frees the Confluence card too, which previously needed a
+    // separate press of Cancel.
+    await waitFor(() =>
+      expect(
+        document.getElementById("confluence-backup-file") as HTMLInputElement,
+      ).toBeEnabled(),
+    );
+  });
+
+  it("still offers a resume when the upload broke rather than the archive", async () => {
+    // The distinction this rests on: a 5xx is not a verdict on the file, so
+    // the resume path must survive. Collapsing both into "pick another file"
+    // would make every hiccup cost a full re-upload.
+    stubUploadXHR();
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/scan",
+        handler: () => ({
+          status: 503,
+          body: { error: { code: "unavailable", message: "Scan unavailable." } },
+        }),
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+    await actor.upload(
+      document.getElementById("backup-file") as HTMLInputElement,
+      wikihubBackupZip("f.zip"),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+
+    expect(
+      await screen.findByRole("alert", {}, { timeout: 4000 }),
+    ).toHaveTextContent(/scan unavailable/i);
+    const card = importSection();
+    expect(card.getByRole("button", { name: /resume upload/i })).toBeEnabled();
+    expect(
+      card.queryByRole("button", { name: /choose a different file/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("resumes an interrupted upload instead of re-sending parts already in storage", async () => {
+    // The point of fingerprint-matching a partial upload: a multi-GB archive
+    // whose upload was interrupted continues from where it stopped. The
+    // server reports the parts it already holds; none of them may be re-PUT.
+    stubUploadXHR();
+    const partSize = 8 * 1024 * 1024;
+    const partsRequested: number[][] = [];
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/uploads",
+        handler: () => ({
+          body: {
+            archive_id: "archive-1",
+            object_key: "backups/imports/archive-1/f.zip",
+            max_size_bytes: 999_999_999,
+            part_size_bytes: partSize,
+            // Parts 1 and 2 survived the earlier attempt.
+            uploaded_parts: [1, 2],
+            status: "uploading",
+            sha256: "a".repeat(64),
+            reused: false,
+          },
+        }),
+      },
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload-parts",
+        handler: (init) => {
+          partsRequested.push(JSON.parse(String(init?.body)).part_numbers);
+          return {
+            body: {
+              urls: {
+                "3": "http://localhost/api/v1/storage/object?key=x&upload_id=y&part_number=3",
+              },
+            },
+          };
+        },
+      },
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/complete-upload",
+        handler: () => ({ body: { id: "archive-1", status: "uploaded" } }),
+      },
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/scan",
+        handler: () => ({
+          body: {
+            id: "archive-1",
+            filename: "f.zip",
+            size_bytes: partSize * 3,
+            sha256: "a".repeat(64),
+            status: "scanned",
+            error: null,
+            spaces: [{ key: "ENG", name: "Engineering" }],
+          },
+        }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    // Three parts' worth of bytes, two of which the server already has.
+    await actor.upload(
+      fileInput,
+      new File([new Uint8Array(partSize * 2 + 10)], "f.zip", {
+        type: "application/zip",
+      }),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+
+    // The scan opens the picker itself.
+    await screen.findByRole(
+      "button",
+      { name: /^start restore$/i },
+      { timeout: 4000 },
+    );
+    // Only the missing part was ever asked for.
+    expect(partsRequested).toEqual([[3]]);
+  });
+
+  it("keeps the uploaded parts when an upload is paused, and discards them on cancel", async () => {
+    stubUploadXHR();
+    let releaseParts: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseParts = resolve;
+    });
+    let deleteCalled = false;
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload-parts",
+        handler: async () => {
+          await gate;
+          return {
+            body: {
+              urls: {
+                "1": "http://localhost/api/v1/storage/object?key=x&upload_id=y&part_number=1",
+              },
+            },
+          };
+        },
+      },
+      {
+        method: "DELETE",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload",
+        handler: () => {
+          deleteCalled = true;
+          return { body: {} };
+        },
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(
+      fileInput,
+      new File(["zip-bytes"], "f.zip", { type: "application/zip" }),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+
+    // Pause is non-destructive: no DELETE, the file stays selected, and the
+    // button turns into "Resume upload" so the parts already sent are reused.
+    await actor.click(
+      await importSection().findByRole("button", { name: /^pause upload$/i }),
+    );
+    expect(deleteCalled).toBe(false);
+    expect(fileInput.value).not.toBe("");
+    expect(
+      await importSection().findByRole("button", { name: /^resume upload$/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/upload paused/i)).toBeInTheDocument();
+    releaseParts?.();
   });
 
   it("requires confirmation before cancelling an in-progress archive upload", async () => {
@@ -812,7 +2060,7 @@ describe("BackupPanel native restore", () => {
     );
 
     expect(
-      await screen.findByText(/2 spaces found in f\.zip/i),
+      await screen.findByText(/2 spaces found\. choose which spaces/i),
     ).toBeInTheDocument();
     expect(uploadPartsCalled).toBe(false);
   });
@@ -835,7 +2083,7 @@ describe("BackupPanel native restore", () => {
       new File(["{}"], "backup.json", { type: "application/json" }),
     );
     expect(
-      screen.queryByRole("radio", { name: /select spaces/i }),
+      screen.queryByRole("button", { name: /select spaces & restore/i }),
     ).not.toBeInTheDocument();
     expect(
       importSection().queryByRole("button", { name: /upload and scan/i }),
@@ -845,23 +2093,17 @@ describe("BackupPanel native restore", () => {
       fileInput,
       new File(["zip-bytes"], "backup.zip", { type: "application/zip" }),
     );
-    // Before the archive is uploaded and scanned, there's no scope picker
-    // yet - just the "Upload and scan" action.
+    // Before the archive is uploaded and scanned there is no "ready to
+    // restore" bar yet - just the "Upload and scan" action.
     expect(
-      screen.queryByRole("radio", { name: /select spaces/i }),
+      screen.queryByRole("button", { name: /select spaces & restore/i }),
     ).not.toBeInTheDocument();
     await actor.click(
       importSection().getByRole("button", { name: /^upload and scan$/i }),
     );
-    await actor.click(await screen.findByRole("radio", { name: /select spaces/i }));
-
-    expect(
-      screen.getByRole("button", { name: /^restore backup$/i }),
-    ).toBeDisabled();
-
-    await actor.click(screen.getByRole("button", { name: /choose spaces/i }));
-
-    // Instant - already in memory from the scan, no second read of the file.
+    // The picker opens on its own; its rows are instant, already in memory
+    // from the scan rather than a second read of the file.
+    await screen.findByRole("button", { name: /^start restore$/i }, { timeout: 4000 });
     expect(await screen.findByText("Engineering")).toBeInTheDocument();
     expect(screen.getByText("Sales")).toBeInTheDocument();
   });
@@ -909,16 +2151,19 @@ describe("BackupPanel native restore", () => {
       importSection().getByRole("button", { name: /^upload and scan$/i }),
     );
 
-    await actor.click(await screen.findByRole("radio", { name: /select spaces/i }));
-    await actor.click(screen.getByRole("button", { name: /choose spaces/i }));
-    await actor.click(await screen.findByRole("checkbox", { name: /Engineering/ }));
-    await actor.click(screen.getByRole("button", { name: /^done$/i }));
+    await actor.click(
+      await screen.findByRole(
+        "checkbox",
+        { name: /Engineering/ },
+        { timeout: 4000 },
+      ),
+    );
 
-    const importButton = screen.getByRole("button", {
-      name: /^restore backup$/i,
-    });
-    expect(importButton).not.toBeDisabled();
-    await actor.click(importButton);
+    // The picker starts the restore itself, the way the Confluence one starts
+    // the import - it used to only close, leaving a second button to find.
+    const start = screen.getByRole("button", { name: /^start restore$/i });
+    expect(start).not.toBeDisabled();
+    await actor.click(start);
 
     await waitFor(() => expect(jobsPosted).toHaveLength(1));
     expect(jobsPosted[0]).toMatchObject({ space_keys: ["ENG"] });
@@ -1025,10 +2270,15 @@ describe("BackupPanel native restore", () => {
     await actor.click(
       importSection().getByRole("button", { name: /^upload and scan$/i }),
     );
-    await screen.findByText(/spaces found in f\.zip/i);
+    // The scan opens the picker; restore everything from there.
     await actor.click(
-      screen.getByRole("button", { name: /^restore backup$/i }),
+      await screen.findByRole(
+        "button",
+        { name: /^select all$/i },
+        { timeout: 4000 },
+      ),
     );
+    await actor.click(screen.getByRole("button", { name: /^start restore$/i }));
 
     // The conflict only surfaces once the job (polled every 1500ms) reports
     // "complete" - a real interval, not a mocked one, per this suite's

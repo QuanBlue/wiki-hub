@@ -78,6 +78,11 @@ class BackupArchiveSpaceRead(BaseModel):
 
     key: str
     name: str
+    page_count: int = 0
+    #: True when a space with this key already exists here. Mirrors
+    #: `ConfluenceSpaceCandidate.conflict` so both pickers can warn before the
+    #: restore rather than reporting the skip afterwards.
+    conflict: bool = False
 
 
 class BackupSpaceMember(BaseModel):
