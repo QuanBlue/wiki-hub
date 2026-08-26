@@ -171,6 +171,26 @@ docker info >/dev/null 2>&1 \
     || die "the Docker daemon is not reachable. Start Docker and retry."
 ok "docker $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?') with compose plugin"
 
+# Two Docker engines on one machine is not hypothetical, and it fails in a way
+# that wastes hours. Docker Desktop's WSL integration replaces /run/docker.sock
+# inside the distro, so this script (and every `docker` command) drives Desktop
+# while a native dockerd keeps running with its own containers still bound to
+# 3000/8000. Compose then reports the stack healthy on an engine whose
+# published ports nobody can reach, while the browser talks to a stale
+# container belonging to the other engine and spins forever.
+#
+# The port-conflict avoidance below cannot catch this: it treats a port as free
+# when *our* project publishes it, which is true on the engine we can see and
+# irrelevant to the one actually holding the socket.
+if ps -eo args 2>/dev/null | grep -q '^/usr/bin/dockerd' \
+    && [[ "$(docker info --format '{{.Name}}' 2>/dev/null || true)" == "docker-desktop" ]]; then
+    warn "two Docker engines are running: a native dockerd in this distro, and"
+    warn "Docker Desktop - which this script is talking to. If the app comes up"
+    warn "healthy but localhost hangs, that is why. Pick one engine:"
+    warn "  Docker Desktop > Settings > Resources > WSL Integration > untick this"
+    warn "  distro, then: sudo systemctl restart docker.socket docker.service"
+fi
+
 # Compose status is parsed with Python further down. `python3` is not a safe
 # name to hardcode: on Windows it resolves to the Microsoft Store stub, which
 # exits non-zero after printing an install advert. Probe each candidate by
@@ -321,7 +341,12 @@ if [[ $FRESH -eq 1 ]]; then
 elif [[ ${CLEAN_FRONTEND:-0} -eq 1 ]]; then
     step "Removing frontend container and volumes (--clean-frontend)"
     "${COMPOSE[@]}" down frontend -v
-    ok "frontend volumes removed"
+    # `down -v` only removes volumes, and .next is not one - it is a directory
+    # on the host bind mount, so it survived the very reset that was meant to
+    # clear it. Leaving it behind is what this flag exists to avoid: a build
+    # cache compiled against the node_modules that was just deleted.
+    rm -rf "$ROOT/frontend/.next"
+    ok "frontend volumes and Next.js cache removed"
 fi
 
 # --- 5. start ---------------------------------------------------------------
@@ -479,7 +504,25 @@ else
     warn "skipped: backend/scripts/seed.py does not exist yet"
 fi
 
-# --- 8. summary -------------------------------------------------------------
+# --- 8. host reachability ----------------------------------------------------
+# Compose health is judged from inside the containers, so it says nothing about
+# whether the published port works. When something else owns that port - the
+# other engine above, a leftover proxy, a host firewall - every check passes and
+# the summary below still prints a URL that hangs in the browser. Ask the host
+# the same question the user's browser will.
+if command -v curl >/dev/null 2>&1; then
+    # -L matters: `/` is a 307 to /login, which curl reports as success and
+    # which the app answers without rendering anything. Follow it, so this
+    # asks for a page that had to be built and streamed - the thing that
+    # actually breaks - rather than a redirect that always works.
+    if ! curl -fsSL -m 20 -o /dev/null "http://localhost:${FRONTEND_PORT}/" 2>/dev/null; then
+        warn "the stack is healthy, but http://localhost:${FRONTEND_PORT} does not answer"
+        warn "from this host. Something else owns that port - see the engine note"
+        warn "above, or try a different port: FRONTEND_PORT_HOST=3100 $0 --dev"
+    fi
+fi
+
+# --- 9. summary -------------------------------------------------------------
 if [[ $DEV_MODE -eq 1 ]]; then
     step "WikiHub is up (DEV MODE - hot reload)"
 else

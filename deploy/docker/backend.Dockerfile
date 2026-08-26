@@ -10,8 +10,18 @@
 # --- build stage: compile wheels so the runtime image needs no toolchain -----
 FROM python:3.12-slim-trixie AS builder
 
-ENV PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# Unlike the runtime stage, this one deliberately does NOT set
+# PIP_NO_CACHE_DIR: downloads go into the BuildKit cache mount on the pip step
+# below, which lives outside the image and so costs the final image nothing.
+# On a slow or lossy link that cache is what makes a failed build cheap to
+# retry - every wheel that already came down is reused instead of re-fetched.
+#
+# The retry/timeout bumps exist for the same reason. pip's defaults assume a
+# healthy connection; at ~100 kB/s one stalled read raises `IncompleteRead`
+# and kills the build after minutes of otherwise fine downloading.
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_RETRIES=10 \
+    PIP_TIMEOUT=120
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential libpq-dev \
@@ -26,8 +36,25 @@ RUN mkdir -p app && touch app/__init__.py
 
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --upgrade pip setuptools wheel \
-    && pip install . \
+# `--resume-retries` is the one that matters on a lossy link: PIP_RETRIES only
+# covers failures to *establish* a request, so a transfer that dies part-way
+# through the body surfaces as `OSError: Connection broken: IncompleteRead` and
+# fails the build outright. It exists only in pip >= 25.1, which is why it is
+# passed here rather than as a PIP_* env var - the distro pip on the line above
+# is older and rejects options it does not know.
+#
+# The loop is the backstop for everything resume cannot rescue (a dropped
+# connection to the index, a DNS blip). Each attempt starts from the cache
+# mount, so a retry re-fetches only what is still missing.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip setuptools wheel \
+    && installed=0 \
+    && for attempt in 1 2 3 4 5; do \
+         if pip install --resume-retries 5 .; then installed=1; break; fi; \
+         echo "pip install attempt $attempt failed; retrying in 5s"; \
+         sleep 5; \
+       done \
+    && [ "$installed" = 1 ] \
     # Keep the resolved dependencies, drop the stub project itself so the only
     # importable `app` package is the real source tree at /app.
     && pip uninstall -y wikihub
@@ -73,7 +100,10 @@ RUN /opt/venv/bin/playwright install --with-deps chromium \
     # official .deb (pinned + checksummed) over Debian's apt package: it is
     # self-contained, needs no Haskell runtime pulled in from apt, and is a
     # current release with better HTML-reader/skylighting behaviour.
-    && curl -fsSL -o /tmp/pandoc.deb \
+    # --retry for the same reason pip gets PIP_RETRIES above; --retry-all-errors
+    # because a truncated transfer is not one of the statuses --retry covers.
+    && curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
+        -o /tmp/pandoc.deb \
         "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-1-amd64.deb" \
     && dpkg -i /tmp/pandoc.deb \
     && rm -f /tmp/pandoc.deb \

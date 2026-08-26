@@ -67,6 +67,15 @@ services:
     # directory, and exits - leaving the container restart-looping until the
     # healthcheck times out. Nothing can legitimately hold the lock at the
     # moment this container starts.
+    #
+    # .next is dropped whenever npm ci runs, and only then. The two live in
+    # different places - node_modules in an anonymous volume, .next on the host
+    # bind mount - so rebuilding the image discards the first and keeps the
+    # second, leaving a build cache compiled against dependencies that are no
+    # longer installed. Next does not detect that: it boots, serves 200s, and
+    # the browser sits in a reload loop printing "missing required error
+    # components, refreshing...". Nothing in .next is worth keeping once its
+    # node_modules is gone, so clearing it here costs only the first compile.
     command:
       - sh
       - -c
@@ -75,9 +84,16 @@ services:
         lock_hash=$$(sha256sum package-lock.json | awk '{print $$1}');
         stamp=/app/node_modules/.wikihub-package-lock;
         if [ ! -f "$$stamp" ] || [ "$$(cat "$$stamp")" != "$$lock_hash" ]; then
-          npm ci && printf '%s' "$$lock_hash" > "$$stamp";
+          npm ci && printf '%s' "$$lock_hash" > "$$stamp" && rm -rf /app/.next;
         fi;
         npm run dev:docker
+    # dev:docker passes `-H 0.0.0.0`, and it has to. Left to its default,
+    # `next dev` here binds a v6-only wildcard socket: the container answers
+    # its own `localhost` (and so its healthcheck) perfectly while docker-proxy,
+    # which dials the container's IPv4 address, cannot connect at all. The
+    # container then sits there reported healthy and unreachable from the host,
+    # and the browser - reaching some requests over ::1 and losing others - ends
+    # up in a reload loop printing "missing required error components".
     environment:
       NODE_ENV: development
       # Watchpack polling is reliable for Docker bind mounts on Windows.
