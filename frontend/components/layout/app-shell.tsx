@@ -5,7 +5,7 @@ import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { TopBar } from "@/components/layout/top-bar";
 import { getSidebarPermissions } from "@/lib/navigation";
 import { getSidebarPreferences } from "@/lib/sidebar-preferences";
-import { listTopVisitedSpaces } from "@/lib/spaces";
+import { listSpaces, listTopVisitedSpaces } from "@/lib/spaces";
 import type { Me } from "@/types/api";
 
 /** How many of the user's most-visited spaces show inline in the sidebar. */
@@ -34,7 +34,7 @@ export async function AppShell({
   hideSidebar?: boolean;
   fullWidth?: boolean;
 }) {
-  const [sidebarPermissions, sidebarPreferences, topSpaces] = await Promise.all([
+  const [sidebarPermissions, sidebarPreferences, visitedSpaces] = await Promise.all([
     getSidebarPermissions(),
     getSidebarPreferences(),
     // Only the rail needs this, but fetching it here (rather than in
@@ -42,6 +42,14 @@ export async function AppShell({
     // of the navigation.
     hideSidebar ? Promise.resolve([]) : listTopVisitedSpaces(TOP_SPACES_LIMIT),
   ]);
+  // New users have no visit history yet. Keep the sidebar useful by showing
+  // the first spaces from the directory until their own ranking is populated.
+  const topSpaces =
+    visitedSpaces.length > 0
+      ? visitedSpaces
+      : hideSidebar
+        ? []
+        : await listSpaces(false, TOP_SPACES_LIMIT);
 
   return (
     <SidebarProvider

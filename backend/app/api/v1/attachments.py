@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import uuid
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Response, UploadFile, status
@@ -21,6 +20,13 @@ from app.models.attachment import PageAttachment
 from app.models.page import WikiPage
 from app.models.permission import Permission
 from app.models.space import Space
+from app.modules.attachments.store import (
+    attachment_content_url,
+    attachment_extension_allowed,
+    reject_svg,
+    safe_attachment_filename,
+    store_attachment,
+)
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
 from app.services.site_settings import SiteSettingsService
@@ -53,16 +59,12 @@ class AttachmentMetadataRead(BaseModel):
     created_at: str
 
 
-def _safe_filename(filename: str | None) -> str:
-    name = Path(filename or "").name.strip()
-    if not name or name in {".", ".."}:
-        raise BadRequestError("The attachment must have a filename.")
-    return name[:255]
-
-
-def _allowed_attachment(filename: str, allowed_extensions: list[str]) -> bool:
-    extension = Path(filename).suffix.lower().lstrip(".")
-    return "*" in allowed_extensions or (bool(extension) and extension in allowed_extensions)
+# Kept as module-level names: the validation itself lives in
+# `app.modules.attachments.store` so the document importer applies exactly the
+# same gates, but these aliases keep this module's existing callers and tests
+# importing from where they always have.
+_safe_filename = safe_attachment_filename
+_allowed_attachment = attachment_extension_allowed
 
 
 @upload_router.post(
@@ -84,40 +86,32 @@ async def upload_attachment(
     page = await PageService(session).get_by_slug(space, slug)
     await PageService(session).require_page_editor(page, user)
 
-    filename = _safe_filename(file.filename)
+    filename = safe_attachment_filename(file.filename)
     content_type = (file.content_type or "application/octet-stream").lower()
-    # SVG is active content when displayed inline; never accept it as an image attachment.
-    if content_type == "image/svg+xml" or filename.lower().endswith(".svg"):
-        raise UnsupportedMediaTypeError("SVG files cannot be uploaded as page attachments.")
+    reject_svg(filename, content_type)
 
     effective = await SiteSettingsService(session).get_effective()
-    if not _allowed_attachment(filename, effective.allowed_attachment_types):
+    # Rejected before a single byte is read: there is no reason to pull 50 MB
+    # off the wire for a file type this workspace will not keep.
+    if not attachment_extension_allowed(filename, effective.allowed_attachment_types):
         raise UnsupportedMediaTypeError("This file type is not allowed by workspace settings.")
+    # One byte over the ceiling is enough to know it is over the ceiling.
     data = await file.read(effective.max_upload_size_bytes + 1)
-    if not data:
-        raise BadRequestError("The attachment is empty.")
-    if len(data) > effective.max_upload_size_bytes:
-        raise PayloadTooLargeError(
-            f"Attachments must be {effective.max_upload_size_mb} MB or smaller."
-        )
 
-    attachment_id = uuid.uuid4()
-    attachment = PageAttachment(
-        id=attachment_id,
-        page_id=page.id,
+    attachment = await store_attachment(
+        session,
+        storage,
+        page=page,
         filename=filename,
+        data=data,
         content_type=content_type,
-        object_key=f"attachments/{page.id}/{attachment_id}/{filename}",
-        size_bytes=len(data),
+        effective=effective,
     )
-    session.add(attachment)
-    await storage.put(attachment.object_key, data, content_type=content_type)
-    await session.flush()
     return AttachmentUploadRead(
         id=attachment.id,
         filename=attachment.filename,
         content_type=attachment.content_type,
-        content_url=f"/api/v1/attachments/{attachment.id}/content",
+        content_url=attachment_content_url(attachment),
     )
 
 
@@ -183,4 +177,43 @@ async def read_attachment(
         content=await storage.get(attachment.object_key),
         media_type=attachment.content_type,
         headers={"Content-Disposition": content_disposition},
+    )
+
+
+@router.put("/{attachment_id}/content", response_model=AttachmentMetadataRead, summary="Replace a page attachment")
+async def replace_attachment(
+    attachment_id: uuid.UUID,
+    file: Annotated[UploadFile, File(description="The edited attachment content")],
+    user: CurrentUser,
+    session: DbSession,
+    storage: StorageDep,
+) -> AttachmentMetadataRead:
+    """Replace an attachment blob while keeping its page link and identity."""
+    attachment = await session.get(PageAttachment, attachment_id)
+    if attachment is None:
+        raise NotFoundError("Attachment not found.")
+    page = await session.get(WikiPage, attachment.page_id)
+    if page is None:
+        raise NotFoundError("Attachment page not found.")
+    await PageService(session).require_page_editor(page, user)
+
+    effective = await SiteSettingsService(session).get_effective()
+    data = await file.read(effective.max_upload_size_bytes + 1)
+    if not data:
+        raise BadRequestError("The attachment is empty.")
+    if len(data) > effective.max_upload_size_bytes:
+        raise PayloadTooLargeError(
+            f"Attachments must be {effective.max_upload_size_mb} MB or smaller."
+        )
+
+    await storage.put(attachment.object_key, data, content_type=attachment.content_type)
+    attachment.size_bytes = len(data)
+    await session.flush()
+    return AttachmentMetadataRead(
+        id=attachment.id,
+        page_id=attachment.page_id,
+        filename=attachment.filename,
+        content_type=attachment.content_type,
+        size_bytes=attachment.size_bytes,
+        created_at=attachment.created_at.isoformat(),
     )

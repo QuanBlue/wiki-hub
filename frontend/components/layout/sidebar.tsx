@@ -182,8 +182,8 @@ function NavSection({
  * The user's own most-opened spaces (server-ranked by a per-user visit
  * counter, not just membership), inline so a frequently used space is one
  * click away. Hidden entirely when the rail is collapsed to icons - a
- * growing name list has nowhere to go there - and once the user has no
- * visit history yet (a brand new account).
+ * growing name list has nowhere to go there. AppShell supplies the first
+ * directory spaces as a fallback for brand-new accounts with no visit history.
  */
 function TopSpacesSection({
   spaces,

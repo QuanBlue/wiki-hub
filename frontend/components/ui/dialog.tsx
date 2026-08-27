@@ -21,8 +21,8 @@ export const DialogClose = DialogPrimitive.Close;
 
 export const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
-    title: string;
+  Omit<React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>, "title"> & {
+    title: React.ReactNode;
     description?: string;
   }
 >(function DialogContent(

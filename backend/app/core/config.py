@@ -123,6 +123,20 @@ class Settings(BaseSettings):
     export_max_inline_total_bytes: int = 40 * 1024 * 1024
     pandoc_binary: str = "pandoc"
 
+    # --- document import (Word / PDF / HTML / Markdown -> a wiki page) ------
+    #: Conversion is a subprocess (pandoc) or a CPU-bound thread (PyMuPDF), and
+    #: either can be handed a pathological file. This is the ceiling per file -
+    #: deliberately far above the export render timeout, because a 400-page
+    #: .docx with hundreds of embedded images is slow but legitimate.
+    document_import_convert_timeout_seconds: int = 300
+    #: What one document is allowed to unpack into. A .docx/.odt/.epub is a zip,
+    #: so these are the zip-bomb ceiling: the extraction walk aborts the file
+    #: the moment either is exceeded, rather than filling the worker's disk.
+    document_import_max_media_bytes: int = 100 * 1024 * 1024
+    document_import_max_media_count: int = 300
+    #: Refuse absurd PDFs outright instead of grinding through them for minutes.
+    document_import_max_pdf_pages: int = 2000
+
     # --- uploads ----------------------------------------------------------
     max_upload_size_mb: int = 50
     max_import_size_mb: int = 1024

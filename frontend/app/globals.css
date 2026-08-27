@@ -1,5 +1,229 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@lamberl-lee/file-preview/styles/index.css";
+
+.fv-root {
+  --fv-primary: var(--primary);
+  --fv-primary-foreground: var(--primary-foreground);
+  --fv-muted: var(--muted);
+  --fv-muted-foreground: var(--muted-foreground);
+  --fv-border: var(--border);
+  --fv-radius: var(--radius);
+  --fv-canvas-bg: var(--surface-sunken);
+  --fv-toolbar-bg: var(--surface-sunken);
+  --fv-toolbar-fg: var(--foreground);
+  --fv-danger: var(--danger);
+  --fv-danger-foreground: var(--danger-foreground);
+}
+
+.fv-root[data-fv-theme="dark"] {
+  --fv-primary: var(--primary);
+  --fv-primary-foreground: var(--primary-foreground);
+  --fv-muted: var(--muted);
+  --fv-muted-foreground: var(--muted-foreground);
+  --fv-border: var(--border);
+  --fv-canvas-bg: var(--surface-sunken);
+  --fv-toolbar-bg: var(--surface-sunken);
+  --fv-toolbar-fg: var(--foreground);
+}
+
+.pptx-thumbnail-canvas {
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  flex: 0 0 auto;
+  overflow: hidden;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.pptx-thumbnail-canvas:hover {
+  border-color: var(--border-strong);
+}
+
+.pptx-thumbnail-canvas[data-active="true"] {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.pptx-main-slide {
+  min-height: 18rem;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.pptx-main-slide > div {
+  margin: 0 auto;
+  flex: 0 0 auto;
+  max-width: none;
+}
+
+/* Word pages have an intrinsic paper width. Keep that width intact so wide
+   tables are scrollable instead of being squeezed and clipped by the modal. */
+.fv-root,
+.fv-root .fv-docx,
+.fv-root .fv-docx__viewport {
+  min-width: 0;
+}
+
+.fv-root .docx-preview-container,
+.fv-root .docx-preview-container .docx-wrapper {
+  width: max-content;
+  min-width: 100%;
+}
+
+.fv-root .fv-pdf {
+  height: 100%;
+  min-height: 24rem;
+}
+
+.fv-root .fv-pdf__canvas-area {
+  align-items: flex-start;
+  justify-content: safe center;
+}
+
+/* Replace the package toolbar's download slot with the card's expand action.
+   The original download action remains available in the modal footer/fallback. */
+.pdf-preview-card .fv-pdf__controls > .fv-btn:last-child {
+  display: none;
+}
+
+.pdf-preview-card .fv-pdf__controls {
+  padding-right: 2rem;
+}
+
+.pdf-preview-card[data-header-controls="true"] .fv-pdf__controls {
+  display: none;
+}
+
+.pdf-preview-card .pdf-expand-button {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  z-index: 20;
+}
+
+.pdf-preview-card[data-expanded="true"] {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.pdf-preview-card[data-expanded="true"] .fv-pdf {
+  height: 100%;
+  min-height: 0;
+}
+
+.office-preview-card[data-expanded="true"] {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.office-preview-card[data-expanded="true"] > .office-preview-content,
+.office-preview-card[data-expanded="true"] > .pptx-attachment-preview {
+  min-height: 0;
+  flex: 1;
+}
+
+.office-preview-card--docx {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.office-preview-card--docx .office-preview-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.office-preview-card--docx .office-docx-preview-host {
+  overflow: auto;
+}
+
+.office-preview-card--docx .office-docx-preview-host[data-fit-width="true"] {
+  overflow-x: hidden;
+}
+
+.office-preview-card--docx .office-docx-scale {
+  width: 100%;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.office-preview-card--docx .fv-docx {
+  min-height: 100%;
+  height: auto;
+}
+
+.office-preview-card--docx .fv-docx__viewport {
+  overflow: visible;
+}
+
+.office-preview-card--docx .docx-preview-container {
+  width: 100%;
+  min-width: 0;
+}
+
+.office-preview-card--docx .docx-preview-container .docx-wrapper {
+  width: 100%;
+  min-width: 0;
+}
+
+.office-preview-card--docx .office-docx-toolbar {
+  padding-right: 2.75rem;
+}
+
+.office-preview-card--docx .office-expand-button {
+  top: 0.25rem;
+  right: 0.5rem;
+}
+
+.office-preview-card[data-expanded="true"] > .office-preview-content {
+  min-height: 0;
+  flex: 1;
+}
+
+.office-expand-button {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  z-index: 20;
+}
+
+.office-preview-card--pptx .pptx-toolbar {
+  padding-right: 2.75rem;
+}
+
+.office-preview-card--pptx .office-expand-button {
+  top: 0.25rem;
+  right: 0.5rem;
+}
+
+/* Preview controls keep the same affordance whether they render in a local
+   toolbar or are portalled into the Attachment details header. */
+.attachment-preview-actions button:not(:disabled),
+.pdf-preview-card button:not(:disabled),
+.office-preview-card button:not(:disabled),
+.pptx-attachment-preview button:not(:disabled) {
+  cursor: pointer;
+}
+
+.attachment-preview-actions button:not(:disabled):active,
+.pdf-preview-card button:not(:disabled):active,
+.office-preview-card button:not(:disabled):active,
+.pptx-attachment-preview button:not(:disabled):active {
+  background-color: var(--surface-selected);
+}
+
 
 /* ===========================================================================
    WikiHub design tokens

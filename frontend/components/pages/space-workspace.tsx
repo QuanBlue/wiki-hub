@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Download,
   FileText,
+  FileUp,
   Folder,
   Globe,
   FolderOpen,
@@ -47,6 +48,8 @@ import { EditSpaceModal } from "@/components/admin/edit-space-modal";
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
+import { DocumentImportProgress } from "@/components/pages/document-import-progress";
+import { ImportPagesDialog } from "@/components/pages/import-pages-dialog";
 import { MovePageDialog } from "@/components/pages/move-page-dialog";
 import { SourceCodeEditor } from "@/components/pages/source-code-editor";
 import {
@@ -88,6 +91,7 @@ import type {
   SpaceVisibility,
   SpaceMember,
   WikiPage,
+  DocumentImportJob,
 } from "@/types/api";
 import type { CSSProperties } from "react";
 
@@ -771,6 +775,8 @@ export function SpaceWorkspace({
     () => initialSidebarWidth,
   );
   const [dragging, setDragging] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importJob, setImportJob] = useState<DocumentImportJob | null>(null);
   const [favorite, setFavorite] = useState(space.is_favorite);
   const [favoritePending, setFavoritePending] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -820,6 +826,28 @@ export function SpaceWorkspace({
   const [deletePagePending, setDeletePagePending] = useState(false);
   const [movePageOpen, setMovePageOpen] = useState(false);
   const [editSpaceModalOpen, setEditSpaceModalOpen] = useState(false);
+
+  // Re-attach to an import that is still running. Without this, reloading the
+  // page mid-import looks like the import simply vanished, and the only sign
+  // it is still going is pages appearing in the tree by themselves.
+  useEffect(() => {
+    if (!canEdit || space.status !== "active") return;
+    let cancelled = false;
+    void api
+      .get<DocumentImportJob[]>(
+        `/api/v1/spaces/${encodeURIComponent(space.key)}/document-imports/active`,
+      )
+      .then((jobs) => {
+        if (!cancelled && jobs.length > 0) setImportJob((current) => current ?? jobs[0]);
+      })
+      .catch(() => {
+        // Nothing to re-attach to, or the request failed - either way there is
+        // nothing to show and nothing worth interrupting the reader for.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canEdit, space.key, space.status]);
   const canAdmin =
     canManageRestrictions ||
     space.my_role === "admin" ||
@@ -1743,12 +1771,24 @@ export function SpaceWorkspace({
                   Page Tree
                 </p>
                 {space.status === "active" && canEdit ? (
-                  <CreatePageDialog
-                    spaceKey={space.key}
-                    triggerLabel="New"
-                    triggerVariant="ghost"
-                    triggerSize="sm"
-                  />
+                  <div className="flex items-center gap-0.5">
+                    <CreatePageDialog
+                      spaceKey={space.key}
+                      triggerLabel="New"
+                      triggerVariant="ghost"
+                      triggerSize="sm"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      title="Import pages from files"
+                      aria-label="Import pages from files"
+                      onClick={() => setImportDialogOpen(true)}
+                    >
+                      <FileUp />
+                    </Button>
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -2109,6 +2149,14 @@ export function SpaceWorkspace({
                           <Clock3 />
                           Page history
                         </DropdownMenuItem>
+                        {canEdit && space.status === "active" ? (
+                          <DropdownMenuItem
+                            onSelect={() => setImportDialogOpen(true)}
+                          >
+                            <FileUp />
+                            Import from file…
+                          </DropdownMenuItem>
+                        ) : null}
                         <DropdownMenuItem disabled>
                           <FileText />
                           Attachments
@@ -2253,6 +2301,14 @@ export function SpaceWorkspace({
                             <Clock3 />
                             Page history
                           </DropdownMenuItem>
+                          {canEdit && space.status === "active" ? (
+                            <DropdownMenuItem
+                              onSelect={() => setImportDialogOpen(true)}
+                            >
+                              <FileUp />
+                              Import from file…
+                            </DropdownMenuItem>
+                          ) : null}
                           <DropdownMenuItem disabled>
                             <FileText />
                             Attachments (soon)
@@ -2301,6 +2357,20 @@ export function SpaceWorkspace({
               ) : null}
             </div>
           </div>
+
+          {importJob ? (
+            /* Inline rather than a modal: an import can take minutes, and
+               there is no reason to stop someone reading while it runs. */
+            <div className="mt-4">
+              <DocumentImportProgress
+                job={importJob}
+                spaceKey={space.key}
+                onJobChange={setImportJob}
+                onDismiss={() => setImportJob(null)}
+                onFinished={() => router.refresh()}
+              />
+            </div>
+          ) : null}
 
           {recoveryDraft && !editing && !overviewEditing ? (
             <div className="border-warning/30 bg-warning-bg text-warning mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3">
@@ -2746,6 +2816,18 @@ export function SpaceWorkspace({
             groups={groups}
             open={editSpaceModalOpen}
             onOpenChange={setEditSpaceModalOpen}
+          />
+
+          {/* One controlled instance shared by both entry points: the sidebar
+              button and the More-actions item. Nesting a second Radix trigger
+              inside the dropdown would fight the menu for focus. */}
+          <ImportPagesDialog
+            spaceKey={space.key}
+            parentPage={isHomePage ? null : currentPage}
+            open={importDialogOpen}
+            onOpenChange={setImportDialogOpen}
+            trigger={null}
+            onStarted={(job) => setImportJob(job)}
           />
 
           <ConfirmDialog

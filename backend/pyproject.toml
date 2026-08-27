@@ -41,6 +41,18 @@ dependencies = [
   "markdown-it-py>=3.0",
   "python-slugify>=8.0",
   "filetype>=1.2",
+  # Allowlist HTML sanitizer (Rust `ammonia`). Content imported from .docx/.pdf/
+  # .html is untrusted and is stored in page_revisions, which the page-history
+  # modal renders with dangerouslySetInnerHTML - the hand-rolled denylist in
+  # app/modules/pages/export_content.py is not sufficient for that.
+  "nh3>=0.2.18,<1",
+  # PDF import. pandoc cannot read PDF at all, and the permissive alternatives
+  # (pypdf, pdfminer.six) give a flat text stream - they cannot interleave
+  # embedded images in reading order or infer headings from font metrics.
+  # LICENSING: PyMuPDF is AGPL-3.0 while WikiHub is Apache-2.0. Fine for a
+  # self-hosted deployment; revisit before distributing WikiHub as a
+  # closed-source product. Recorded in docs/licensing.md.
+  "pymupdf>=1.24,<2",
   # --- observability ---
   "structlog>=24.4",
   "orjson>=3.10",

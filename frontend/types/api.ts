@@ -513,3 +513,43 @@ export interface ExportBundle {
   };
   theme: "light" | "dark";
 }
+
+/** One file in a document import, and what became of it. */
+export interface DocumentImportItem {
+  id: string;
+  position: number;
+  filename: string;
+  size_bytes: number;
+  source_format: string;
+  status: "queued" | "running" | "complete" | "failed" | "cancelled";
+  error: string | null;
+  /** Non-fatal notes: images dropped, a scanned PDF, content truncated. */
+  warnings: string[];
+  /** Null until the page exists, and null again if it is later deleted -
+   *  `page_title` and `page_slug` keep the record readable either way. */
+  page_id: string | null;
+  page_title: string | null;
+  page_slug: string | null;
+  attachments_created: number;
+}
+
+/** A batch of documents being turned into pages. */
+export interface DocumentImportJob {
+  id: string;
+  space_key: string;
+  parent_id: string | null;
+  status: "queued" | "running" | "complete" | "failed" | "cancelled";
+  phase: string;
+  counters: Record<string, number>;
+  cancel_requested: boolean;
+  error: string | null;
+  /** Null while there is not yet enough data to estimate; show an
+   *  indeterminate bar rather than a number the server made up. */
+  percent: number | null;
+  eta_seconds: number | null;
+  started_at: string | null;
+  heartbeat_at: string | null;
+  created_at: string;
+  updated_at: string;
+  items: DocumentImportItem[];
+}

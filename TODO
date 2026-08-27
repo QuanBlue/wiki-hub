@@ -1,5 +1,9 @@
 - cho tích hợp với mail để gửi mail thông báo (đổi password, có người yêu cầu quyền truy cập vào space/page, bị disable,...)
 - view change trong all update 
+- import store thi file import khong save vao obj storage -> khong xem duoc trong admin > object storage -> mat co che han che upload lai khi import file da upload
+
+Doing
+- Tính năng chỉnh file word, excel trực tiếp trong phần preview attachment đó (nếu đó là file word hoặc excel)
+- Cho thêm tính năng preview file word, excel, powerpoint trong phần preview attachment đó
 - revision history hien thi khong dung (edit lan dau)
-- Tien trinh export nen co estimate tgian, % hoan thanh, cancel export (dang)
-- import page nhanh bang file word hay pdf, html,...
+- test export full (co pass, k pass, cancel) + export confluence

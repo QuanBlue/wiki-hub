@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "node node_modules/@lamberl-lee/file-preview/scripts/copy-pdf-worker.mjs",
     "dev": "next dev --turbopack",
     "dev:docker": "next dev --webpack -H 0.0.0.0",
     "build": "next build",
@@ -17,9 +18,11 @@
     "test:e2e": "playwright test --pass-with-no-tests"
   },
   "dependencies": {
+    "@aiden0z/pptx-renderer": "^1.2.4",
     "@codemirror/lang-html": "^6.4.12",
     "@codemirror/lang-markdown": "^6.5.2",
     "@hookform/resolvers": "^3.10.0",
+    "@lamberl-lee/file-preview": "^0.8.0",
     "@lezer/highlight": "^1.2.3",
     "@radix-ui/react-alert-dialog": "^1.1.6",
     "@radix-ui/react-avatar": "^1.1.3",
@@ -55,11 +58,17 @@
     "cmdk": "^1.0.4",
     "codemirror": "^6.0.2",
     "date-fns": "^4.1.0",
+    "docx": "^9.7.1",
+    "docx-preview": "^0.3.7",
+    "exceljs": "^4.4.0",
     "highlight.js": "^11.11.1",
+    "jszip": "^3.10.1",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.475.0",
+    "mammoth": "^1.12.1",
     "next": "^16.3.0",
     "next-themes": "^0.4.4",
+    "pdfjs-dist": "^5.7.284",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.54.2",
@@ -71,6 +80,7 @@
     "@eslint/eslintrc": "^3",
     "@playwright/test": "^1.50.0",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^14.6.1",
@@ -90,5 +100,8 @@
     "typescript": "^5",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^3.0.5"
+  },
+  "overrides": {
+    "pdfjs-dist": "$pdfjs-dist"
   }
 }

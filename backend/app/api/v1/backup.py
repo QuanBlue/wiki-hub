@@ -52,6 +52,7 @@ from app.schemas.backup import (
     ImportReport,
 )
 from app.services.import_concurrency import assert_no_active_confluence_import
+from app.services.job_progress import job_progress
 from app.services.site_settings import SiteSettingsService
 from app.services.storage import get_storage
 
@@ -108,33 +109,8 @@ async def _enqueue(job_id: uuid.UUID) -> None:
         ) from exc
 
 
-def _job_progress(job: BackupJob) -> tuple[int | None, int | None]:
-    """Derive a 0-99/100 percent and an ETA in seconds from `job.counters`.
-
-    Returns `(None, None)` whenever there isn't enough data to make a
-    reasonable estimate (queued, or running but the export hasn't reported
-    any items yet) - the frontend falls back to an indeterminate spinner.
-    """
-    if job.status == "complete":
-        return 100, 0
-    if job.status != "running" or job.started_at is None:
-        return None, None
-    total = job.counters.get("items_total") or 0
-    processed = job.counters.get("items_processed") or 0
-    if total <= 0:
-        return None, None
-    percent = min(99, processed * 100 // total)
-    elapsed = (datetime.now(UTC) - job.started_at).total_seconds()
-    eta_seconds = None
-    if processed > 0 and elapsed > 0:
-        rate = processed / elapsed
-        if rate > 0:
-            eta_seconds = round(max(0, total - processed) / rate)
-    return percent, eta_seconds
-
-
 async def _job_read(job: BackupJob) -> BackupJobRead:
-    percent, eta_seconds = _job_progress(job)
+    percent, eta_seconds = job_progress(job)
     return BackupJobRead(
         id=job.id,
         kind=job.kind,

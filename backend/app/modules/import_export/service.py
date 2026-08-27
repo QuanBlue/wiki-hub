@@ -35,6 +35,7 @@ from app.models.restriction import (
     PageUserRestriction,
 )
 from app.models.space import Space, SpaceMember, SpaceRole, SpaceVisibility
+from app.modules.pages.tiptap_html import new_task_item, new_task_list
 from app.modules.permissions.service import ROLE_PERMISSIONS
 from app.modules.import_export.confluence import (
     ConfluencePage,
@@ -408,11 +409,11 @@ def _normalize_confluence_html(content: str) -> str:
     soup = BeautifulSoup(content, "html.parser")
 
     # 1. Normalize Task Lists: <ac:task-list> / <ac:task>
+    # The markup comes from `pages.tiptap_html`, shared with the document
+    # importer: two importers emitting subtly different task markup means one of
+    # them produces lists the editor quietly degrades to plain bullets.
     for task_list in soup.find_all(["ac:task-list", "task-list"]):
-        ul_tag = soup.new_tag(
-            "ul",
-            attrs={"class": "task-list space-y-1.5 my-3 pl-1", "data-type": "taskList"},
-        )
+        ul_tag = new_task_list(soup)
         for task in task_list.find_all(["ac:task", "task"]):
             status_tag = task.find(["ac:task-status", "task-status"])
             status_text = status_tag.get_text().strip().lower() if status_tag else ""
@@ -428,40 +429,7 @@ def _normalize_confluence_html(content: str) -> str:
                     task_id_tag.decompose()
                 body_html = task.get_text().strip()
 
-            li_tag = soup.new_tag(
-                "li",
-                attrs={
-                    "class": "task-list-item flex items-start gap-2 text-sm text-foreground my-1",
-                    "data-type": "taskItem",
-                    "data-checked": "true" if is_checked else "false",
-                },
-            )
-
-            checkbox_tag = soup.new_tag(
-                "input",
-                attrs={
-                    "type": "checkbox",
-                    "class": "accent-primary size-4 mt-0.5 rounded border-border shrink-0 cursor-default",
-                },
-            )
-            if is_checked:
-                checkbox_tag["checked"] = "checked"
-            checkbox_tag["disabled"] = "disabled"
-
-            span_tag = soup.new_tag(
-                "span",
-                attrs={
-                    "class": "task-body min-w-0"
-                    + (" line-through text-muted-foreground" if is_checked else "")
-                },
-            )
-            body_soup = BeautifulSoup(body_html, "html.parser")
-            for item in list(body_soup.contents):
-                span_tag.append(item)
-
-            li_tag.append(checkbox_tag)
-            li_tag.append(span_tag)
-            ul_tag.append(li_tag)
+            ul_tag.append(new_task_item(soup, body=body_html, checked=is_checked))
         task_list.replace_with(ul_tag)
 
     # 2. Normalize Confluence Page Layout Grid: <ac:layout>, <ac:layout-section>, <ac:layout-cell>

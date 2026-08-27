@@ -18,7 +18,13 @@ from arq.connections import RedisSettings
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine
-from app.workers.tasks import ping, reap_backup_jobs, run_backup_job, run_confluence_import
+from app.workers.tasks import (
+    ping,
+    reap_backup_jobs,
+    run_backup_job,
+    run_confluence_import,
+    run_document_import,
+)
 
 logger = get_logger(__name__)
 
@@ -49,7 +55,12 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """arq entrypoint. Task functions are registered here as phases land."""
 
-    functions: ClassVar[list[Any]] = [ping, run_confluence_import, run_backup_job]
+    functions: ClassVar[list[Any]] = [
+        ping,
+        run_confluence_import,
+        run_backup_job,
+        run_document_import,
+    ]
     cron_jobs: ClassVar[list[Any]] = [
         # Every minute: bounds how long a stuck export can hold the UI hostage
         # when a worker dies without restarting (so `on_startup` never runs).

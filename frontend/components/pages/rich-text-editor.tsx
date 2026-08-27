@@ -31,6 +31,7 @@ import { Fragment, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import { dropPoint } from "@tiptap/pm/transform";
 import { TableMap } from "@tiptap/pm/tables";
+import dynamic from "next/dynamic";
 import {
   EditorContent,
   useEditor,
@@ -148,11 +149,37 @@ import {
 } from "@/lib/code-highlight";
 import { cn } from "@/lib/utils";
 import {
+  isEditableOfficeAttachment,
+  isOfficeAttachment,
+} from "@/lib/office-attachments";
+import {
   SlashCommand,
   insertToggle,
   placeCursorInToggleSummary,
 } from "@/components/pages/slash-command";
 import type { WikiPage } from "@/types/api";
+
+const OfficeAttachmentPreview = dynamic(
+  () =>
+    import("@/components/pages/office-attachment-preview").then(
+      (module) => module.OfficeAttachmentPreview,
+    ),
+  { ssr: false },
+);
+const OfficeAttachmentEditor = dynamic(
+  () =>
+    import("@/components/pages/office-attachment-editor").then(
+      (module) => module.OfficeAttachmentEditor,
+    ),
+  { ssr: false },
+);
+const PdfAttachmentPreview = dynamic(
+  () =>
+    import("@/components/pages/pdf-attachment-preview").then(
+      (module) => module.PdfAttachmentPreview,
+    ),
+  { ssr: false },
+);
 
 const TableCellWithBackground = TableCell.extend({
   addAttributes() {
@@ -5628,6 +5655,7 @@ export function RichTextEditor({
         // never has to reset its own state on the way out.
         key={selectedAttachmentId ?? "none"}
         attachmentId={selectedAttachmentId}
+        canEditOffice
         onClose={() => setSelectedAttachmentId(null)}
       />
     </div>
@@ -5910,9 +5938,11 @@ function HighlightedText({
 
 function AttachmentDetailsModal({
   attachmentId,
+  canEditOffice = false,
   onClose,
 }: {
   attachmentId: string | null;
+  canEditOffice?: boolean;
   onClose: () => void;
 }) {
   const [loading, setLoading] = useState(false);
@@ -5923,6 +5953,12 @@ function AttachmentDetailsModal({
   const [wrapLines, setWrapLines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+  const [isEditingOffice, setIsEditingOffice] = useState(false);
+  const [attachmentRevision, setAttachmentRevision] = useState(0);
+  const [isPdfExpanded, setIsPdfExpanded] = useState(false);
+  const [isOfficeExpanded, setIsOfficeExpanded] = useState(false);
+  const [previewToolbarContainer, setPreviewToolbarContainer] =
+    useState<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // All hooks must run unconditionally (rules of hooks)
@@ -6043,7 +6079,7 @@ function AttachmentDetailsModal({
   // All hooks above — safe to do early return now
   if (!attachmentId) return null;
 
-  const contentUrl = `/api/v1/attachments/${attachmentId}/content`;
+  const contentUrl = `/api/v1/attachments/${attachmentId}/content${attachmentRevision ? `?v=${attachmentRevision}` : ""}`;
 
   const formatSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes";
@@ -6063,6 +6099,12 @@ function AttachmentDetailsModal({
 
   const isImage = metadata ? metadata.content_type.startsWith("image/") : false;
   const isPdf = metadata ? metadata.content_type === "application/pdf" : false;
+  const isOffice = metadata ? isOfficeAttachment(metadata.filename) : false;
+  const isEditableOffice = metadata
+    ? isEditableOfficeAttachment(metadata.filename)
+    : false;
+  const hasTextPreview = textContent !== null;
+  const attachmentTitle = <span className="inline-flex items-center gap-1.5">Attachment details{metadata ? <span className="group relative inline-flex"><button type="button" aria-label="Show attachment information" aria-describedby="attachment-information" className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-6 cursor-pointer items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none"><Info className="size-4" /></button><span id="attachment-information" role="tooltip" className="bg-surface-raised border-border text-muted-foreground pointer-events-none absolute top-full left-0 z-50 mt-2 grid w-max max-w-[min(28rem,calc(100vw-4rem))] grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border p-3 text-xs font-normal opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><span className="text-foreground font-semibold">File:</span><span className="break-all">{metadata.filename}</span><span className="text-foreground font-semibold">Size:</span><span>{formatSize(metadata.size_bytes)}</span><span className="text-foreground font-semibold">Type:</span><span className="break-all">{metadata.content_type}</span><span className="text-foreground font-semibold">Uploaded:</span><span>{formatDate(metadata.created_at)}</span></span></span> : null}</span>;
 
   const handleSearchInputKeyDown = (
     event: React.KeyboardEvent<HTMLInputElement>,
@@ -6087,7 +6129,18 @@ function AttachmentDetailsModal({
         if (!open) onClose();
       }}
     >
-      <DialogContent title="Attachment details" className="max-w-3xl">
+      <DialogContent
+        title={attachmentTitle}
+        className={cn(
+          "max-w-3xl",
+          hasTextPreview &&
+            "flex h-[84vh] max-h-[84vh] w-[min(100vw-2rem,64rem)] max-w-none flex-col overflow-hidden",
+          isPdfExpanded &&
+              "flex h-[90vh] max-h-[90vh] w-[90vw] max-w-none flex-col overflow-hidden",
+            isOfficeExpanded &&
+              "flex h-[84vh] max-h-[84vh] w-[80vw] max-w-none flex-col overflow-hidden",
+          )}
+      >
         {loading ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2">
             <Loader2 className="text-muted-foreground size-8 animate-spin" />
@@ -6101,12 +6154,27 @@ function AttachmentDetailsModal({
             </Button>
           </div>
         ) : metadata ? (
-          <div className="space-y-4">
+          <div
+            className={cn(
+              "space-y-4",
+              (isPdfExpanded || isOfficeExpanded || hasTextPreview) &&
+                "flex min-h-0 flex-1 flex-col gap-4 space-y-0",
+            )}
+          >
             {/* Compact details bar */}
-            <div className="bg-surface-sunken border-border text-muted-foreground flex flex-wrap gap-x-6 gap-y-2 rounded-md border px-3 py-1.5 text-xs">
-              <div>
+            <div
+              className="hidden"
+            >
+              <div className={cn(isOffice && "min-w-0 shrink")}>
                 <span className="text-foreground font-semibold">File: </span>
-                <span className="break-all">{metadata.filename}</span>
+                <span
+                  className={cn(
+                    isOffice && "inline-block max-w-full truncate align-bottom sm:max-w-56",
+                  )}
+                  title={metadata.filename}
+                >
+                  {metadata.filename}
+                </span>
               </div>
               <div>
                 <span className="text-foreground font-semibold">Size: </span>
@@ -6114,7 +6182,9 @@ function AttachmentDetailsModal({
               </div>
               <div>
                 <span className="text-foreground font-semibold">Type: </span>
-                <span>{metadata.content_type}</span>
+                <span title={metadata.content_type}>
+                  {metadata.content_type}
+                </span>
               </div>
               <div>
                 <span className="text-foreground font-semibold">
@@ -6124,10 +6194,32 @@ function AttachmentDetailsModal({
               </div>
             </div>
 
-            <div className="border-border overflow-hidden rounded-lg border">
+            <div
+              className={cn(
+                "border-border overflow-hidden rounded-lg border",
+                (isPdfExpanded || isOfficeExpanded || hasTextPreview) &&
+                  "flex min-h-0 flex-1 flex-col",
+              )}
+            >
               <div className="bg-surface-sunken text-muted-foreground flex items-center justify-between border-b px-3 py-1.5 text-xs font-semibold tracking-wider uppercase">
                 <span>Preview</span>
-                {textContent !== null && (
+                <div className="flex items-center gap-1 tracking-normal normal-case">
+                  <div
+                    ref={setPreviewToolbarContainer}
+                    className={cn(
+                      "attachment-preview-actions flex items-center gap-1",
+                      !isOffice && !isPdf && "hidden",
+                    )}
+                  />
+                {canEditOffice && isEditableOffice ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingOffice((editing) => !editing)}
+                    className="text-primary hover:bg-primary-subtle hover:text-primary-hover focus-visible:ring-ring inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium normal-case tracking-normal transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                  >
+                    {isEditingOffice ? "Preview" : "Edit"}
+                  </button>
+                ) : textContent !== null && (
                   <div className="flex items-center gap-3 tracking-normal normal-case">
                     <div className="flex items-center gap-1.5">
                       <div className="relative">
@@ -6196,9 +6288,47 @@ function AttachmentDetailsModal({
                     </button>
                   </div>
                 )}
+                </div>
               </div>
-              <div className="bg-surface flex max-h-96 min-h-32 items-center justify-center overflow-auto p-4">
-                {isImage ? (
+              <div
+                className={cn(
+                  "bg-surface min-h-32 items-center justify-center overflow-auto p-4",
+                (isPdfExpanded || isOfficeExpanded) && (isPdf || isOffice)
+                    ? "flex min-h-0 max-h-none flex-1 !items-start !justify-start !overflow-hidden !p-0"
+                    : isEditingOffice
+                    ? "flex"
+                    : isPdf
+                      ? "flex max-h-[min(70vh,36rem)] !items-start !justify-start !p-0"
+                  : isOffice
+                      ? "flex max-h-[min(56vh,30rem)] !items-start !justify-start !overflow-hidden !p-0"
+                    : textContent !== null
+                      ? "flex min-h-0 flex-1 !overflow-hidden"
+                      : "flex max-h-96",
+                )}
+              >
+                {isEditingOffice && canEditOffice && isEditableOffice ? (
+                  <OfficeAttachmentEditor
+                    attachmentId={attachmentId}
+                    contentUrl={contentUrl}
+                    filename={metadata.filename}
+                    contentType={metadata.content_type}
+                    onCancel={() => setIsEditingOffice(false)}
+                    onSaved={(sizeBytes) => {
+                      setMetadata((current) => current ? { ...current, size_bytes: sizeBytes } : current);
+                      setAttachmentRevision((revision) => revision + 1);
+                      setIsEditingOffice(false);
+                    }}
+                  />
+                ) : isOffice ? (
+                  <OfficeAttachmentPreview
+                    contentUrl={contentUrl}
+                    filename={metadata.filename}
+                    contentType={metadata.content_type}
+                    expanded={isOfficeExpanded}
+                    onExpandedChange={setIsOfficeExpanded}
+                    toolbarContainer={previewToolbarContainer}
+                  />
+                ) : isImage ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={contentUrl}
@@ -6206,7 +6336,7 @@ function AttachmentDetailsModal({
                     className="max-h-80 w-auto rounded border object-contain shadow-sm"
                   />
                 ) : textContent !== null ? (
-                  <div className="wikihub-code bg-code-bg border-code-border max-h-80 w-full overflow-auto rounded border font-mono text-xs leading-relaxed select-text">
+                  <div className="wikihub-code bg-code-bg border-code-border h-full max-h-none w-full overflow-auto rounded border font-mono text-xs leading-relaxed select-text">
                     {lines.map((line, idx) => (
                       <div
                         key={idx}
@@ -6247,26 +6377,13 @@ function AttachmentDetailsModal({
                     </span>
                   </div>
                 ) : isPdf ? (
-                  <object
-                    data={contentUrl}
-                    type="application/pdf"
-                    className="h-80 w-full rounded border"
-                  >
-                    <div className="p-4 text-center">
-                      <FileText className="text-muted-foreground mx-auto size-12" />
-                      <p className="text-muted-foreground mt-2 text-sm">
-                        Your browser cannot display this PDF inline.
-                      </p>
-                      <a
-                        href={contentUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-primary mt-1 inline-block text-sm hover:underline"
-                      >
-                        Open the PDF in a new tab
-                      </a>
-                    </div>
-                  </object>
+                  <PdfAttachmentPreview
+                    contentUrl={contentUrl}
+                    filename={metadata.filename}
+                    expanded={isPdfExpanded}
+                    onExpandedChange={setIsPdfExpanded}
+                    toolbarContainer={previewToolbarContainer}
+                  />
                 ) : (
                   <div className="py-6 text-center">
                     <FileText className="text-muted-foreground mx-auto size-12" />
@@ -6278,7 +6395,11 @@ function AttachmentDetailsModal({
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter
+              className={cn(
+                hasTextPreview && "mt-0 shrink-0",
+              )}
+            >
               <Button type="button" variant="secondary" onClick={onClose}>
                 Close
               </Button>

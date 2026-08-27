@@ -8,6 +8,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+#: Ceiling on stored page content. Raised from 200k when document import landed:
+#: a converted 300-page Word file exceeds 200k routinely, and a page the
+#: importer creates has to stay editable - with the old cap, opening such a page
+#: and pressing Save returned 422 from `PageUpdate`, on a page WikiHub itself
+#: created. Both schemas below therefore share one constant; they must never
+#: drift apart. Not raised further: at a million characters the Tiptap editor is
+#: already sluggish and every revision duplicates the content in page_revisions.
+MAX_PAGE_CONTENT_CHARS = 1_000_000
+
 
 class PageRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -49,7 +58,7 @@ class PageLikeRead(BaseModel):
 
 class PageCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
-    content: str = Field(default="", max_length=200_000)
+    content: str = Field(default="", max_length=MAX_PAGE_CONTENT_CHARS)
     content_format: Literal["html", "markdown"] = "html"
     parent_id: uuid.UUID | None = None
 
@@ -61,5 +70,5 @@ class PageMove(BaseModel):
 
 class PageUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
-    content: str | None = Field(default=None, max_length=200_000)
+    content: str | None = Field(default=None, max_length=MAX_PAGE_CONTENT_CHARS)
     content_format: Literal["html", "markdown"] | None = None

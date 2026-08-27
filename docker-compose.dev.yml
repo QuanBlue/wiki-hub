@@ -83,7 +83,7 @@ services:
         rm -f /app/.next/dev/lock;
         lock_hash=$$(sha256sum package-lock.json | awk '{print $$1}');
         stamp=/app/node_modules/.wikihub-package-lock;
-        if [ ! -f "$$stamp" ] || [ "$$(cat "$$stamp")" != "$$lock_hash" ]; then
+        if [ ! -f "$$stamp" ] || [ "$$(cat "$$stamp")" != "$$lock_hash" ] || [ ! -f /app/node_modules/@lamberl-lee/file-preview/package.json ]; then
           npm ci && printf '%s' "$$lock_hash" > "$$stamp" && rm -rf /app/.next;
         fi;
         npm run dev:docker

@@ -10,6 +10,7 @@ from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction, AuditLog
 from app.models.backup_job import BackupArchive, BackupJob
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.document_import import DocumentImportItem, DocumentImportJob
 from app.models.draft import PageDraft
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.page import PageLike, WikiPage
@@ -48,6 +49,8 @@ __all__ = [
     "BackupArchive",
     "BackupJob",
     "Base",
+    "DocumentImportItem",
+    "DocumentImportJob",
     "GlobalPermission",
     "Group",
     "GroupGlobalPermission",

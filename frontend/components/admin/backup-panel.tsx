@@ -41,6 +41,14 @@ import {
   detectArchiveFormat,
   type ArchiveFormat,
 } from "@/lib/archive-format";
+import {
+  ArchiveHashProgress,
+  ArchiveUploadProgress,
+  type TransferStats,
+  formatBytes,
+  formatDuration,
+} from "@/components/ui/job-progress";
+import { LogDisclosure, formatLogTime } from "@/components/ui/log-disclosure";
 import { cn } from "@/lib/utils";
 import type {
   BackupArchive,
@@ -56,19 +64,10 @@ import type {
   Space,
 } from "@/types/api";
 
-type UploadStats = {
-  loaded: number;
-  total: number;
-  bytesPerSecond: number;
-  secondsRemaining: number | null;
-};
-
-type HashStats = {
-  loaded: number;
-  total: number;
-  bytesPerSecond: number;
-  secondsRemaining: number | null;
-};
+// Both were the same four fields; they are `TransferStats` now, defined
+// beside the panels that render them.
+type UploadStats = TransferStats;
+type HashStats = TransferStats;
 
 type PortableBackupJob = {
   id: string;
@@ -550,169 +549,6 @@ async function sha256File(
   return hasher.digest();
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  const index = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)) - 1,
-    units.length - 1,
-  );
-  return `${(bytes / 1024 ** (index + 1)).toFixed(index > 1 ? 2 : 1)} ${units[index]}`;
-}
-
-function formatDuration(seconds: number | null): string {
-  if (seconds === null || !Number.isFinite(seconds)) return "Calculating…";
-  if (seconds < 60) return `${Math.ceil(seconds)} sec remaining`;
-  if (seconds < 60 * 60) {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.ceil(seconds % 60);
-    return `${minutes} min ${remainingSeconds} sec remaining`;
-  }
-  if (seconds < 24 * 60 * 60) {
-    const hours = Math.floor(seconds / (60 * 60));
-    const remainingMinutes = Math.floor((seconds % (60 * 60)) / 60);
-    if (remainingMinutes === 0) return `${hours} hr remaining`;
-    return `${hours} hr ${remainingMinutes} min remaining`;
-  }
-  const days = Math.floor(seconds / (24 * 60 * 60));
-  const remainingHours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
-  const dayLabel = days === 1 ? "day" : "days";
-  if (remainingHours === 0) return `${days} ${dayLabel} remaining`;
-  return `${days} ${dayLabel} ${remainingHours} hr remaining`;
-}
-
-/** Fingerprint-in-progress panel, shared by both upload flows.
- *
- * The Confluence import and the WikiHub restore run the same
- * fingerprint-then-chunked-upload sequence, so they get the same panels rather
- * than two lookalikes that drift apart - which is exactly what had happened:
- * one was an info strip with labelled Uploaded/Speed/Estimate columns, the
- * other a raised card with a status badge and the same numbers run together
- * on one line. */
-function ArchiveHashProgress({
-  filename,
-  stats,
-}: {
-  filename: string | null;
-  stats: HashStats;
-}) {
-  const percent =
-    stats.total > 0 ? Math.round((stats.loaded / stats.total) * 100) : 0;
-  return (
-    <div
-      className="border-info/25 bg-info-bg mt-4 rounded-md border p-3 text-sm"
-      role="status"
-    >
-      <div className="flex gap-2.5">
-        <Info className="text-info mt-0.5 size-4 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p>
-            Checking archive fingerprint{" "}
-            <span className="font-medium">{filename}</span>: {percent}%
-          </p>
-          <div
-            aria-label={`Fingerprint ${percent}% complete`}
-            aria-valuemax={100}
-            aria-valuemin={0}
-            aria-valuenow={percent}
-            className="bg-surface mt-2 h-2 overflow-hidden rounded-full"
-            role="progressbar"
-          >
-            <div
-              className="bg-info h-full duration-150 motion-safe:transition-[width]"
-              style={{ width: `${percent}%` }}
-            />
-          </div>
-          <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
-            <span>
-              <span className="text-foreground font-medium">Speed:</span>{" "}
-              {stats.bytesPerSecond > 0
-                ? `${formatBytes(stats.bytesPerSecond)}/s`
-                : "Calculating speed…"}
-            </span>
-            <span>
-              <span className="text-foreground font-medium">Estimate:</span>{" "}
-              {formatDuration(stats.secondsRemaining)}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Upload-in-progress (or paused) panel, shared by both upload flows. */
-function ArchiveUploadProgress({
-  filename,
-  percent,
-  stats,
-  uploading,
-  totalFallback = 0,
-  note,
-}: {
-  filename: string | null;
-  percent: number;
-  stats: UploadStats | null;
-  uploading: boolean;
-  totalFallback?: number;
-  /** Extra line under the stats - e.g. how much a resume skipped. */
-  note?: React.ReactNode;
-}) {
-  return (
-    <div
-      className="border-info/25 bg-info-bg mt-4 rounded-md border p-3 text-sm"
-      role="status"
-    >
-      <div className="flex gap-2.5">
-        <Info className="text-info mt-0.5 size-4 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p>
-            {uploading ? "Uploading" : "Upload paused"}{" "}
-            <span className="font-medium">{filename}</span>: {percent}%
-          </p>
-          <div
-            aria-label={`Upload ${percent}% complete`}
-            aria-valuemax={100}
-            aria-valuemin={0}
-            aria-valuenow={percent}
-            className="bg-surface mt-2 h-2 overflow-hidden rounded-full"
-            role="progressbar"
-          >
-            <div
-              className="bg-info h-full duration-150 motion-safe:transition-[width]"
-              style={{ width: `${percent}%` }}
-            />
-          </div>
-          <div className="text-muted-foreground mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
-            <span>
-              <span className="text-foreground font-medium">Uploaded:</span>{" "}
-              {formatBytes(stats?.loaded ?? 0)} /{" "}
-              {formatBytes(stats?.total ?? totalFallback)}
-            </span>
-            {uploading ? (
-              <>
-                <span>
-                  <span className="text-foreground font-medium">Speed:</span>{" "}
-                  {stats && stats.bytesPerSecond > 0
-                    ? `${formatBytes(stats.bytesPerSecond)}/s`
-                    : "Calculating speed…"}
-                </span>
-                <span>
-                  <span className="text-foreground font-medium">Estimate:</span>{" "}
-                  {formatDuration(stats?.secondsRemaining ?? null)}
-                </span>
-              </>
-            ) : null}
-          </div>
-          {note ? (
-            <p className="text-muted-foreground mt-2 text-xs">{note}</p>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
  * "X completed successfully - here is what happened - do another?" dialog,
  * shared by both import flows.
@@ -736,56 +572,6 @@ type RestoreLogEntry = {
   label?: string | null;
   message: string;
 };
-
-function formatLogTime(at: Date): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(at);
-}
-
-function LogDisclosure({
-  title,
-  count,
-  expanded,
-  onExpandedChange,
-  listRef,
-  children,
-}: {
-  title: string;
-  count: number;
-  expanded: boolean;
-  onExpandedChange: (expanded: boolean) => void;
-  listRef?: React.Ref<HTMLUListElement>;
-  children: ReactNode;
-}) {
-  return (
-    <details
-      className="border-border bg-surface mt-4 rounded-md border"
-      open={expanded}
-      onToggle={(event) => onExpandedChange(event.currentTarget.open)}
-    >
-      <summary className="hover:bg-surface-hover focus-visible:ring-ring focus-visible:ring-offset-background flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-offset-1">
-        <span>
-          {title} ({count})
-        </span>
-        <ChevronDown
-          className={cn(
-            "text-muted-foreground size-4 transition-transform duration-150",
-            expanded && "rotate-180",
-          )}
-        />
-      </summary>
-      <ul
-        ref={listRef}
-        className="border-border max-h-44 divide-y overflow-y-auto border-t text-xs"
-      >
-        {children}
-      </ul>
-    </details>
-  );
-}
 
 function ImportCompletedDialog({
   open,
@@ -1156,16 +942,6 @@ export function BackupPanel() {
     portableBackupJob?.kind === "full_import" &&
     (portableBackupJob.status === "queued" ||
       portableBackupJob.status === "running");
-  //: A restore that has already run. What is left on the card is a result on
-  //: screen, not work in flight - so it must stop holding the cross-flow lock.
-  //: It did not: after a restore finished, the Confluence card stayed disabled
-  //: under a hint insisting a restore was "in progress", and nothing on the
-  //: page offered to end it. The archive selection alone kept it that way.
-  const restoreJobFinished =
-    portableBackupJob?.kind === "full_import" &&
-    (portableBackupJob.status === "complete" ||
-      portableBackupJob.status === "failed" ||
-      portableBackupJob.status === "cancelled");
   const isPortableJobRunning =
     isFullExportRunning || isConfluenceExportRunning || isRestoreJobRunning;
 
@@ -1321,17 +1097,20 @@ export function BackupPanel() {
       storedConfluenceUpload,
   );
   const restoreFlowActive = Boolean(
-    !restoreJobFinished &&
-      (isHashingBackupArchive ||
+    isHashingBackupArchive ||
       isUploadingBackupArchive ||
       isScanningBackupArchive ||
       backupArchive ||
       isRestoreJobRunning ||
       pending === "apply" ||
+      // Keep the other path disabled while the completion decision is still
+      // in front of the user, even if the staged archive has not been
+      // rehydrated yet (for example immediately after a refresh).
+      isRestoreSuccessModalOpen ||
       // Paused mid-upload in this tab, or rediscovered unfinished on the
       // server - both mean parts are already staged.
-        restoreUploadProgress !== null ||
-        pendingRestoreUpload),
+      restoreUploadProgress !== null ||
+      pendingRestoreUpload,
   );
   // Each side gates only the other, never itself. If both somehow hold state
   // at once - only reachable from before this rule existed - neither locks,
@@ -2265,16 +2044,15 @@ export function BackupPanel() {
       setHashStats(null);
       let resumeArchive = saved;
       if (resumeArchive?.sha256 && resumeArchive.sha256 !== selectedSha256) {
-        rememberCancelledUpload(resumeArchive.archiveId);
-        void clearStoredUpload();
-        void apiFetch(
-          `/api/v1/confluence-imports/archives/${resumeArchive.archiveId}/upload`,
-          { method: "DELETE" },
-        ).catch(() => {
-          // The selected file is different. Do not let the abandoned upload
-          // come back into the UI even if server cleanup is delayed.
-        });
-        resumeArchive = null;
+        setConfluenceUploadError(null);
+        toast.error(
+          `Select ${resumeArchive.fileName} to resume the paused upload.`,
+        );
+        setConfluenceFile(null);
+        if (confluenceFileInput.current) {
+          confluenceFileInput.current.value = "";
+        }
+        return;
       }
       const resumeProgress = resumeArchive
         ? await apiFetch<ConfluenceUploadProgress>(
@@ -2286,16 +2064,15 @@ export function BackupPanel() {
         resumeProgress?.sha256 &&
         resumeProgress.sha256 !== selectedSha256
       ) {
-        rememberCancelledUpload(resumeArchive.archiveId);
-        void clearStoredUpload();
-        void apiFetch(
-          `/api/v1/confluence-imports/archives/${resumeArchive.archiveId}/upload`,
-          { method: "DELETE" },
-        ).catch(() => {
-          // Best-effort cleanup only; the local cancelled marker is enough to
-          // keep this stale upload out of the current workflow.
-        });
-        resumeArchive = null;
+        setConfluenceUploadError(null);
+        toast.error(
+          `Select ${resumeArchive.fileName} to resume the paused upload.`,
+        );
+        setConfluenceFile(null);
+        if (confluenceFileInput.current) {
+          confluenceFileInput.current.value = "";
+        }
+        return;
       }
       const target = resumeArchive
         ? {
@@ -3124,6 +2901,10 @@ export function BackupPanel() {
     setRestoreArchiveRejected(false);
     setPendingRestoreUpload(null);
     setRestorePreparationLogs([]);
+    setRestoreJobLogs([]);
+    setPortableBackupJob(null);
+    setRestoreSuccessReport(null);
+    settledRestoreJobIdRef.current = null;
     setError(null);
   }
 
@@ -3986,6 +3767,23 @@ export function BackupPanel() {
                         nextFile,
                         storedConfluenceUpload,
                       );
+                      if (
+                        storedConfluenceUpload &&
+                        nextFile &&
+                        !matchesInterruptedUpload
+                      ) {
+                        // Keep the paused upload and its Cancel/Resume escape
+                        // hatch intact. A different file must not replace or
+                        // delete already-uploaded parts just because it was
+                        // selected from the picker.
+                        setConfluenceFile(null);
+                        setConfluenceUploadError(null);
+                        event.target.value = "";
+                        toast.error(
+                          `Select ${storedConfluenceUpload.fileName} to resume the paused upload.`,
+                        );
+                        return;
+                      }
                       if (matchesInterruptedUpload && storedConfluenceUpload) {
                         const nextStored = {
                           ...storedConfluenceUpload,

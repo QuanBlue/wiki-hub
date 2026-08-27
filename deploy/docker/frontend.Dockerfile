@@ -15,6 +15,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
+# The PDF renderer loads this worker at runtime from /public. Copy it in the
+# builder stage as well as postinstall so multi-stage builds cannot lose the
+# generated asset from the dependency stage.
+RUN node node_modules/@lamberl-lee/file-preview/scripts/copy-pdf-worker.mjs
 
 # NEXT_PUBLIC_* values are inlined at build time. The API proxy destination is
 # also resolved while Next.js builds, so keep the container-internal backend
