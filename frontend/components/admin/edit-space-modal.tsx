@@ -5,6 +5,7 @@ import {
   ArchiveRestore,
   Check,
   Globe2,
+  HardDrive,
   LockKeyhole,
   Pencil,
   Plus,
@@ -33,6 +34,7 @@ import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type {
   Group,
+  InstanceInfo,
   Space,
   SpacePermission,
   SpacePermissionAssignment,
@@ -92,6 +94,20 @@ function EditSpaceModalContent({
   const [initialVisibility, setInitialVisibility] = useState(space.visibility);
   const [visibility, setVisibility] = useState(space.visibility);
 
+  // Blank means "follow the workspace". Kept as a string so clearing the
+  // field is distinguishable from typing a 0.
+  const spaceUploadLimit = (limit: number | null | undefined) =>
+    limit ? String(limit) : "";
+  const [initialUploadLimit, setInitialUploadLimit] = useState(
+    spaceUploadLimit(space.max_upload_size_mb),
+  );
+  const [uploadLimit, setUploadLimit] = useState(
+    spaceUploadLimit(space.max_upload_size_mb),
+  );
+  const [workspaceUploadLimitMb, setWorkspaceUploadLimitMb] = useState<number | null>(
+    null,
+  );
+
   const [groups, setGroups] = useState<Group[]>(initialGroups || []);
   const [users, setUsers] = useState<User[]>(initialUsers || []);
 
@@ -136,16 +152,37 @@ function EditSpaceModalContent({
     setName(space.name);
     setInitialVisibility(space.visibility);
     setVisibility(space.visibility);
+    setInitialUploadLimit(spaceUploadLimit(space.max_upload_size_mb));
+    setUploadLimit(spaceUploadLimit(space.max_upload_size_mb));
     setActiveTab("general");
     setGroupsLocked(true);
     setUsersLocked(true);
     void loadSpacePermissions();
-  }, [space.key, space.name, space.visibility]);
+  }, [space.key, space.name, space.visibility, space.max_upload_size_mb]);
+
+  // Only needed to show what "inherit" resolves to, so a failure is silent.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<InstanceInfo>("/api/v1/meta")
+      .then((meta) => {
+        if (!cancelled) {
+          setWorkspaceUploadLimitMb(
+            Math.round(meta.max_upload_size_bytes / (1024 * 1024)),
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Calculate if there are unsaved changes
   const isGeneralChanged =
     visibility !== initialVisibility ||
-    name.trim() !== initialName.trim();
+    name.trim() !== initialName.trim() ||
+    uploadLimit.trim() !== initialUploadLimit.trim();
 
   const isAssignmentsChanged = (() => {
     if (initialAssignments.length !== assignments.length) return true;
@@ -177,12 +214,15 @@ function EditSpaceModalContent({
     try {
       // 1. Update space properties if changed
       if (isGeneralChanged) {
+        const trimmedLimit = uploadLimit.trim();
         await api.patch(`/api/v1/spaces/${encodeURIComponent(space.key)}`, {
           name: name.trim() || space.name,
           visibility,
+          max_upload_size_mb: trimmedLimit ? Number(trimmedLimit) : null,
         });
         setInitialVisibility(visibility);
         setInitialName(name);
+        setInitialUploadLimit(trimmedLimit);
       }
 
       // 2. Compute assignment diffs
@@ -545,6 +585,43 @@ function EditSpaceModalContent({
                   <SelectItem value="restricted">Restricted</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Attachment size limit */}
+            <div className="border-border bg-surface flex items-center justify-between gap-3 rounded-lg border p-3.5 shadow-xs">
+              <div>
+                <Label
+                  htmlFor="space-upload-limit"
+                  className="text-foreground flex items-center gap-1.5 text-xs font-semibold"
+                >
+                  <HardDrive className="size-3.5 text-muted-foreground" />
+                  Attachment size limit
+                </Label>
+                <p className="text-muted-foreground mt-0.5 text-[11px]">
+                  {uploadLimit.trim()
+                    ? "Applies to every upload into this Space."
+                    : workspaceUploadLimitMb
+                      ? `Leave blank to follow the workspace limit of ${workspaceUploadLimitMb} MB.`
+                      : "Leave blank to follow the workspace limit."}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Input
+                  id="space-upload-limit"
+                  type="number"
+                  min={1}
+                  max={10240}
+                  inputMode="numeric"
+                  value={uploadLimit}
+                  onChange={(e) => setUploadLimit(e.target.value)}
+                  placeholder={
+                    workspaceUploadLimitMb ? String(workspaceUploadLimitMb) : "Inherited"
+                  }
+                  className="bg-background h-8 w-28 text-sm"
+                  disabled={pending}
+                />
+                <span className="text-muted-foreground text-xs">MB</span>
+              </div>
             </div>
           </div>
         ) : null}

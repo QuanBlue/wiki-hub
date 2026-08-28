@@ -184,6 +184,8 @@ export interface Space {
   description: string;
   icon: string;
   font_family?: string | null;
+  /** Attachment ceiling in MB, or null when the Space follows the workspace. */
+  max_upload_size_mb?: number | null;
   status: SpaceStatus;
   visibility: SpaceVisibility;
   created_at: string;

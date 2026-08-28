@@ -79,12 +79,15 @@ ENV PYTHONUNBUFFERED=1 \
 #   - libpq + curl: asyncpg fallback / container healthcheck (unchanged)
 #   - fonts-*: Chromium needs real fonts to render text at all; emoji in page
 #     content would render as tofu without fonts-noto-color-emoji
+#   - ffmpeg: reads the subtitle and audio tracks embedded in a video
+#     attachment and converts a chosen subtitle stream to WebVTT for the
+#     preview player. Browsers expose neither on their own.
 # WeasyPrint's native libs (libcairo2/libpango/libgdk-pixbuf/libffi/libjpeg)
 # are gone along with the WeasyPrint-based PDF export they existed for.
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
-        libpq5 curl fonts-dejavu-core fonts-liberation2 fonts-noto-color-emoji \
+        libpq5 curl ffmpeg fonts-dejavu-core fonts-liberation2 fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin wikihub
 

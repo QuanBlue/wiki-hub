@@ -50,6 +50,14 @@ class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     phase: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     counters: Mapped[dict[str, int]] = mapped_column(JSONB, nullable=False, default=dict)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: Refreshed by the worker while it works, exactly like `BackupJob` and
+    #: `DocumentImportJob`. A "running" row whose heartbeat has gone stale
+    #: belongs to a worker that died - without this there is no way to tell
+    #: that apart from an import that is simply slow, and cancelling a running
+    #: import means waiting for a worker loop that no longer exists.
+    heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

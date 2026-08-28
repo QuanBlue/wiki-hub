@@ -41,7 +41,7 @@ async def test_upload_attachment_empty_and_disallowed(monkeypatch):
 
     class MockSpaceService:
         def __init__(self, session): pass
-        async def get_by_key(self, k): return Mock()
+        async def get_by_key(self, k): return Mock(max_upload_size_mb=None)
     class MockPageService:
         def __init__(self, session): pass
         async def get_by_slug(self, s, slug): return Mock()

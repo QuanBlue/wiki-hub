@@ -381,15 +381,23 @@ async def test_rescan_refreshes_conflicts_it_had_cached(archives, session, stora
 
 
 @pytest.mark.asyncio
-async def test_abort_upload_discards_an_archive_that_already_finished_uploading(
+async def test_abort_upload_retires_a_scanned_archive_without_deleting_its_object(
     archives, storage
 ):
-    """Discarding a *scanned* archive used to be a no-op.
+    """Cancelling a restore retires the row but keeps the uploaded file.
 
-    `abort_upload` only acted while a multipart upload was still open, so the
-    picker cleared itself, the row stayed "scanned", and the next page load
-    handed the same archive straight back - with the file input locked against
-    it, leaving no way to choose a different backup at all.
+    Two separate things had to be true here, and the first was fixed by
+    breaking the second. `abort_upload` originally only acted while a
+    multipart upload was open, so discarding a *scanned* archive was a no-op:
+    the picker cleared itself, the row stayed "scanned", and the next page
+    load handed the same archive straight back with the file input locked
+    against it. Marking the row cancelled fixed that - but it was done by
+    deleting the object too, which threw away an upload that may have taken
+    hours, with no way to ask for it back.
+
+    Retiring the row is what closes the picker; deleting the bytes was never
+    part of it. The object is listed under `backups/imports/` in the admin
+    storage panel, so removing it is an explicit decision made there.
     """
     archive = BackupArchive(
         id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
@@ -400,10 +408,88 @@ async def test_abort_upload_discards_an_archive_that_already_finished_uploading(
     await archives.abort_upload(archive)
 
     assert archive.status == "cancelled"
-    # The uploaded object is what is left behind once the parts are gone, and
-    # on a multi-GB backup that is not something to leak.
-    storage.delete.assert_awaited_once_with("k")
+    storage.delete.assert_not_awaited()
     storage.abort_multipart_upload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_find_reusable_archive_matches_a_cancelled_row_whose_object_remains(
+    archives, session, storage
+):
+    """A cancelled archive is a file still in the bucket, so it is reusable.
+
+    Without this the file kept by `abort_upload` above would be unreachable:
+    re-selecting the same backup would upload every byte again *and* leave a
+    second copy of it behind.
+    """
+    cancelled = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="cancelled", multipart_upload_id=None, created_by_id=uuid.uuid4(),
+    )
+    session.execute = AsyncMock(return_value=_ScalarResult([cancelled]))
+    storage.exists = AsyncMock(return_value=True)
+
+    found = await archives.find_reusable_archive(sha256="a" * 64, size_bytes=10)
+    assert found is cancelled
+
+
+@pytest.mark.asyncio
+async def test_find_reusable_archive_skips_a_cancelled_row_deleted_by_hand(
+    archives, session, storage
+):
+    """Deleting the object in the storage panel really does undo the reuse."""
+    cancelled = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="cancelled", multipart_upload_id=None, created_by_id=uuid.uuid4(),
+    )
+    session.execute = AsyncMock(return_value=_ScalarResult([cancelled]))
+    storage.exists = AsyncMock(return_value=False)
+
+    assert await archives.find_reusable_archive(sha256="a" * 64, size_bytes=10) is None
+
+
+@pytest.mark.asyncio
+async def test_start_upload_revives_a_cancelled_archive_it_reuses(archives, storage):
+    """Reusing a cancelled row has to put it back in the restore flow.
+
+    Handing it back still marked "cancelled" would leave the client with an
+    archive the panel does not consider ready and `/archives/uploads/active`
+    does not list - the reuse would look like nothing happened.
+    """
+    cancelled = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="cancelled", multipart_upload_id=None, created_by_id=uuid.uuid4(),
+        spaces=[{"key": "ENG", "name": "Engineering"}],
+    )
+    archives.find_reusable_archive = AsyncMock(return_value=cancelled)
+
+    with _mock_effective(10**9):
+        result = await archives.start_upload(
+            filename="f.zip", size_bytes=10, actor_id=uuid.uuid4(), sha256="a" * 64
+        )
+
+    # Scanned, not merely uploaded: the space list from the earlier scan is
+    # still on the row, so the picker opens without re-reading the archive.
+    assert result is cancelled
+    assert cancelled.status == "scanned"
+    storage.start_multipart_upload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_start_upload_revives_an_unscanned_cancelled_archive_as_uploaded(archives):
+    """No space list means there is still a scan to do."""
+    cancelled = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="cancelled", multipart_upload_id=None, created_by_id=uuid.uuid4(),
+        spaces=[],
+    )
+    archives.find_reusable_archive = AsyncMock(return_value=cancelled)
+
+    with _mock_effective(10**9):
+        await archives.start_upload(
+            filename="f.zip", size_bytes=10, actor_id=uuid.uuid4(), sha256="a" * 64
+        )
+    assert cancelled.status == "uploaded"
 
 
 @pytest.mark.asyncio

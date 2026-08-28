@@ -169,6 +169,17 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
     `ImportReport` the old synchronous `/backup/import-zip` endpoint used to
     return directly in its HTTP response.
     """
+    # Held as a plain UUID because the handlers below run *after* a rollback,
+    # and a rollback expires every ORM attribute in the session - including
+    # this one. Reading `job.id` there fires SQLAlchemy's expired-attribute
+    # loader, which issues its SELECT synchronously and so raises
+    # MissingGreenlet on an async session. That killed the finaliser before it
+    # could write the closing status: a cancelled restore stayed "running" /
+    # "downloading" with `cancel_requested` set, leaving the admin panel
+    # spinning on "Cancelling restore..." until the five-minute reaper swept
+    # it up. The export path below never had the bug because it already takes
+    # its `job_id` as a parameter.
+    job_id = job.id
     job.status, job.phase, job.error = "running", "downloading", None
     job.started_at = job.heartbeat_at = datetime.now(UTC)
     await session.commit()
@@ -276,7 +287,7 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
         # The rollback discards any log lines still pending in this session,
         # so the closing line has to be written after it, not before.
         await session.rollback()
-        current = await session.get(BackupJob, job.id)
+        current = await session.get(BackupJob, job_id)
         if current:
             current.status, current.phase = "cancelled", "cancelled"
             await log_backup_event(
@@ -285,7 +296,7 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
             await session.commit()
     except Exception as exc:
         await session.rollback()
-        current = await session.get(BackupJob, job.id)
+        current = await session.get(BackupJob, job_id)
         if current:
             current.status, current.phase, current.error = "failed", "failed", str(exc)[:4000]
             await log_backup_event(session, current, "error", "failed", str(exc)[:4000])

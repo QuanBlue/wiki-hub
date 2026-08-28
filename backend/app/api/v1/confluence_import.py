@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from arq import create_pool
@@ -14,7 +15,7 @@ from app.api.deps import CurrentSuperuser, DbSession
 from app.core.config import settings
 from app.core.exceptions import ConflictError, NotFoundError, ServiceUnavailableError
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
-from app.modules.import_export.service import ConfluenceImportService
+from app.modules.import_export.service import STALE_IMPORT_AFTER, ConfluenceImportService
 from app.schemas.confluence_import import (
     ArchiveRead,
     ImportCreate,
@@ -296,10 +297,20 @@ async def cancel(job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession)
     if item.status in {"completed", "cancelled", "failed"}:
         raise ConflictError("This import job has already finished.")
     item.cancel_requested = True
-    # A queued ARQ job may sit behind a long-running import. There is no worker
-    # loop to observe the flag yet, so cancel it durably here instead of leaving
-    # the operator staring at an immutable "queued" state.
-    if item.status in {"queued", "retrying"}:
+    # Finalise here whenever nothing is left to observe the flag, rather than
+    # leaving the operator staring at a status that can never change:
+    #   - "queued"/"retrying": a queued ARQ job may sit behind a long-running
+    #     import, so no worker loop has reached this job yet.
+    #   - "running" with a stale heartbeat: the worker that owned this import is
+    #     gone (crash, container restart, deploy). The scheduled reaper would
+    #     get to it eventually; a Cancel click should not have to wait.
+    # A live worker is left alone - it observes `cancel_requested` at its next
+    # progress tick and finalises the job itself, having actually stopped work.
+    # This mirrors `cancel_backup_job`, which has always done both.
+    heartbeat = item.heartbeat_at
+    never_started = item.status in {"queued", "retrying"}
+    worker_is_gone = heartbeat is None or datetime.now(UTC) - heartbeat > STALE_IMPORT_AFTER
+    if never_started or worker_is_gone:
         item.status = "cancelled"
         item.phase = "cancelled"
         session.add(
@@ -307,7 +318,11 @@ async def cancel(job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession)
                 job_id=item.id,
                 level="warning",
                 phase="cancelled",
-                message="Import cancelled before the worker started it.",
+                message=(
+                    "Import cancelled before the worker started it."
+                    if never_started
+                    else "Import cancelled. Its worker was no longer running."
+                ),
             )
         )
     else:

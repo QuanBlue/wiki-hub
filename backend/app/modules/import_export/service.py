@@ -6,12 +6,13 @@ import urllib.parse
 import uuid
 import zipfile
 from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
 
 import anyio
 from bs4 import BeautifulSoup
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, PayloadTooLargeError
@@ -52,6 +53,68 @@ class ImportCancelled(Exception):
     """Raised when an import job is cancelled by an administrator."""
 
 
+#: How stale an import's heartbeat may get before its worker is presumed dead.
+#:
+#: Deliberately far longer than the five minutes `backup_jobs` and
+#: `document_import_jobs` allow themselves. Those checkpoint on a tight,
+#: bounded cadence throughout; this import has one stretch that legitimately
+#: goes quiet for a long time - `iter_page_bodies` reads an entire multi-GB
+#: archive in a single pass with nothing to report until it finishes. Reaping
+#: on their timing would kill healthy imports of exactly the large archives
+#: this matters most for, which is a worse bug than the one being fixed. A
+#: worker that restarts sweeps its own leftovers immediately at startup, so
+#: this window only governs the rarer case of a worker that dies and stays
+#: dead.
+STALE_IMPORT_AFTER = timedelta(minutes=15)
+
+
+async def reap_abandoned_confluence_imports(
+    session: AsyncSession, *, every_running_job: bool = False
+) -> int:
+    """Finalise "running" imports whose worker died, and report how many.
+
+    Same contract as `reap_abandoned_export_jobs` and
+    `reap_abandoned_document_imports`, and swept by the same cron rather than
+    adding a third entry. `import_jobs` was the one job table with neither a
+    heartbeat nor a reaper, and cancelling a *running* import works by setting
+    `cancel_requested` for the worker loop to observe - so when that worker was
+    gone, the row stayed "running" forever, the progress bar never moved again,
+    and Cancel logged "the current import step will stop shortly" over a step
+    that no longer existed.
+
+    ``every_running_job`` widens this to *all* running rows and is only correct
+    from a worker's own startup: a worker that has just come up is running
+    nothing, so anything still marked running belongs to the process it
+    replaced. With several replicas a starting worker would be finalising its
+    peers' live jobs, so that path must stay startup-only.
+    """
+    query = select(ImportJob).where(ImportJob.status == "running")
+    if not every_running_job:
+        cutoff = datetime.now(UTC) - STALE_IMPORT_AFTER
+        query = query.where(
+            or_(ImportJob.heartbeat_at.is_(None), ImportJob.heartbeat_at < cutoff)
+        )
+    abandoned = (await session.execute(query)).scalars().all()
+    for job in abandoned:
+        # Cancellation still wins: a job the operator cancelled is reported as
+        # cancelled, not as a failure they did not cause.
+        if job.cancel_requested:
+            job.status, job.phase = "cancelled", "cancelled"
+            message = "Import cancelled by administrator."
+            level = "warning"
+        else:
+            job.status, job.phase = "failed", "failed"
+            job.error = "The import worker stopped before this job finished."
+            message = job.error
+            level = "error"
+        session.add(
+            ImportLog(job_id=job.id, level=level, phase=job.phase, message=message)
+        )
+    if abandoned:
+        await session.commit()
+    return len(abandoned)
+
+
 INVALID_IMPORT_USERNAME = "invalid_user"
 _INVALID_IMPORT_USERNAME = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
 
@@ -59,6 +122,23 @@ _INVALID_IMPORT_USERNAME = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
 def _is_invalid_import_username(username: str) -> bool:
     """Return whether Confluence supplied an internal id instead of a name."""
     return bool(_INVALID_IMPORT_USERNAME.fullmatch(username.strip()))
+
+
+def space_key_for(source_key: str) -> str:
+    """The WikiHub `Space.key` a Confluence space of this key will occupy.
+
+    Confluence keys arrive in whatever case the source used ("devsecops");
+    every writer of `Space.key` in WikiHub stores upper case - `SpaceCreate`
+    normalises what the UI sends, `BackupService` restores with
+    `.strip().upper()`. Going through this one function is what stops the
+    import from disagreeing with them, and, just as importantly, from
+    disagreeing with *itself*: the conflict flag the space picker shows, the
+    existence check the import makes, and the key it finally writes all have
+    to answer "which space is this?" the same way, or the picker offers no
+    Replace for a space that does exist and the import quietly builds a
+    second copy of it alongside.
+    """
+    return source_key.strip().upper()
 
 
 _PUBLIC_VIEW_PERM_TYPES = frozenset(
@@ -889,12 +969,14 @@ class ConfluenceImportService:
             return scan_archive(path)
 
     async def scan(self, archive: ImportArchive) -> ImportArchive:
-        existing = set((await self.session.execute(select(Space.key))).scalars())
+        existing = {
+            key.upper() for key in (await self.session.execute(select(Space.key))).scalars()
+        }
         if archive.status == "scanned" and archive.spaces:
             archive.spaces = [
                 {
                     **item,
-                    "conflict": item.get("key") in existing,
+                    "conflict": space_key_for(item.get("key") or "") in existing,
                 }
                 for item in archive.spaces
             ]
@@ -925,7 +1007,7 @@ class ConfluenceImportService:
                 "name": item.name,
                 "page_count": len(item.pages),
                 "attachment_count": item.attachment_count,
-                "conflict": item.key in existing,
+                "conflict": space_key_for(item.key) in existing,
             }
             for item in spaces
         ]
@@ -1026,11 +1108,14 @@ class ConfluenceImportService:
         if archive is None:
             raise NotFoundError("Import archive was not found.")
         if archive.spaces:
-            existing = set((await self.session.execute(select(Space.key))).scalars())
+            existing = {
+                key.upper()
+                for key in (await self.session.execute(select(Space.key))).scalars()
+            }
             archive.spaces = [
                 {
                     **item,
-                    "conflict": item.get("key") in existing,
+                    "conflict": space_key_for(item.get("key") or "") in existing,
                 }
                 for item in archive.spaces
             ]
@@ -1164,6 +1249,11 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
     current_job: ImportJob = job
     current_archive: ImportArchive = archive
     job.status, job.phase = "running", "downloading"
+    # Stamped together with the status: a "running" row with no heartbeat is
+    # what `reap_abandoned_confluence_imports` treats as abandoned, so one must
+    # never be observable merely because the first progress tick has not
+    # happened yet.
+    job.heartbeat_at = datetime.now(UTC)
     download_log = await log(
         session, job, "info", "downloading", "Downloading archive to worker scratch space: 0%."
     )
@@ -1180,7 +1270,14 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     raise ImportCancelled("Import cancelled by administrator.")
                 percent = min(100, int(downloaded_bytes * 100 / max(1, current_archive.size_bytes)))
                 if percent == current_job.counters.get("download_percent", 0):
+                    # Still alive even when the percentage has not moved: on a
+                    # 26GB archive a single percent is a quarter of an hour, and
+                    # a job that only beat on whole percents would read as
+                    # abandoned for most of its own download.
+                    current_job.heartbeat_at = datetime.now(UTC)
+                    await session.commit()
                     return
+                current_job.heartbeat_at = datetime.now(UTC)
                 current_job.counters = {
                     **current_job.counters,
                     "downloaded_bytes": min(downloaded_bytes, current_archive.size_bytes),
@@ -1324,21 +1421,57 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     )
                     await session.commit()
                     return
-                existing = (
-                    await session.execute(select(Space).where(Space.key == source_space.key))
-                ).scalar_one_or_none()
-                if existing:
+                job.heartbeat_at = datetime.now(UTC)
+                # Confluence hands over whatever case its own key used, and
+                # this import used to store it verbatim while every other
+                # writer of `Space.key` upper-cases: `SpaceCreate` normalises
+                # what the UI sends, and `BackupService` restores with
+                # `space_entry.key.strip().upper()`. That disagreement is what
+                # produced two spaces named the same thing - a restore had
+                # already created "DEVSECOPS", the case-sensitive `==` below
+                # did not see it behind Confluence's "devsecops", and the
+                # import made a second copy of all 164 pages.
+                #
+                # It does not stop at a duplicate row: `ix_spaces_key` is
+                # case-sensitive so the pair is perfectly legal, while
+                # `SpaceRepository.get_by_key` matches on `upper(key)` and so
+                # finds *both* - every read of that space then dies on
+                # MultipleResultsFound. Normalising here, and comparing the
+                # way `get_by_key` does, is what keeps the two agreeing.
+                space_key = space_key_for(source_space.key)
+                # Every row occupying this key, not just one. Replace has to
+                # leave exactly one space behind or it has not replaced
+                # anything - and an instance that already collected a
+                # case-differing pair (the bug above, before it was fixed) is
+                # precisely where an operator reaches for Replace. Taking
+                # `scalar_one_or_none()` here would instead raise
+                # MultipleResultsFound and fail the import on the one archive
+                # that could have healed it.
+                duplicates = list(
+                    (
+                        await session.execute(
+                            select(Space).where(func.upper(Space.key) == space_key)
+                        )
+                    ).scalars()
+                )
+                if duplicates:
                     if job.overwrite_existing:
-                        await session.delete(existing)
+                        for duplicate in duplicates:
+                            await session.delete(duplicate)
                         await session.flush()
                         await log(
                             session,
                             job,
                             "warning",
                             "spaces",
-                            "Existing space was replaced with the archive version.",
+                            (
+                                "Existing space was replaced with the archive version."
+                                if len(duplicates) == 1
+                                else f"{len(duplicates)} existing spaces sharing this key "
+                                "were replaced with the archive version."
+                            ),
                             entity_type="space",
-                            entity_label=source_space.key,
+                            entity_label=space_key,
                         )
                     else:
                         job.counters = {
@@ -1352,7 +1485,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                             "spaces",
                             "Skipped: Space key already exists.",
                             entity_type="space",
-                            entity_label=source_space.key,
+                            entity_label=space_key,
                         )
                         await session.commit()
                         continue
@@ -1383,7 +1516,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 visibility = SpaceVisibility.restricted if is_restricted else SpaceVisibility.open
 
                 space = Space(
-                    key=source_space.key,
+                    key=space_key,
                     name=source_space.name,
                     created_by_id=job.created_by_id,
                     visibility=visibility,
@@ -1698,6 +1831,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                             "attachments_processed": attachments_imported,
                             "attachments_total": total_attachments,
                         }
+                        job.heartbeat_at = datetime.now(UTC)
                         await session.commit()
 
             if attachment_urls:

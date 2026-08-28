@@ -1126,6 +1126,13 @@ export function BackupPanel() {
   //: the job that was still writing spaces.
   const restoreInputsLocked =
     restoreLockedByConfluence || isRestoreJobRunning || pending === "apply";
+  //: True exactly while the full-width "WikiHub backup ready to restore" bar
+  //: is on screen - the same condition it renders under. Once the archive is
+  //: scanned that bar owns the restore decision ("Select spaces & restore" /
+  //: "Cancel restore"), so the card's own "Restore backup" button steps aside
+  //: rather than offering a second, unscoped way to trigger the same thing.
+  const restoreDecisionOwnedByReadyBar =
+    backupArchive !== null && !isRestoreJobRunning && pending !== "apply";
   const jobSpacesTotal = confluenceJob?.counters.spaces_total ?? 0;
   const jobSpacesCompleted = confluenceJob?.counters.spaces_completed ?? 0;
   const jobAttachmentsTotal = confluenceJob?.counters.attachments_total ?? 0;
@@ -3661,7 +3668,16 @@ export function BackupPanel() {
                         disabled={
                           (!file && !backupArchive) ||
                           pending !== null ||
-                          restoreInputsLocked
+                          restoreInputsLocked ||
+                          // A scanned archive hands the decision to the
+                          // "ready to restore" bar below, so this button must
+                          // not stay live beside it: `submitImport()` with no
+                          // space selection queues every space in the archive
+                          // - the unscoped restore that bar exists to make
+                          // the operator choose against, one stray click
+                          // away. "Cancel restore" clears the archive and
+                          // this comes back for the next file.
+                          restoreDecisionOwnedByReadyBar
                         }
                         aria-busy={pending === "apply"}
                         onClick={() => void submitImport()}
@@ -5143,7 +5159,7 @@ export function BackupPanel() {
         open={confirmDiscardBackupArchive}
         onOpenChange={setConfirmDiscardBackupArchive}
         title="Cancel this restore?"
-        description="The uploaded archive is deleted from storage along with its space selection. Restoring this backup afterwards means uploading it again from scratch."
+        description="This clears the space selection and stops offering the backup for restore. The uploaded file itself stays in object storage, so choosing it again picks up without re-uploading - delete it under Administration > Object storage once you no longer need it."
         confirmLabel="Cancel restore"
         destructive
         onConfirm={discardBackupArchive}

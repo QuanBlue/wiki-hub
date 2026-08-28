@@ -123,6 +123,22 @@ class Settings(BaseSettings):
     export_max_inline_total_bytes: int = 40 * 1024 * 1024
     pandoc_binary: str = "pandoc"
 
+    # --- ONLYOFFICE document editing --------------------------------------
+    # The browser loads the editor bundle directly from the document server,
+    # while the document server itself reaches WikiHub through this internal
+    # URL to download attachments and deliver completed files.  Keeping those
+    # addresses separate makes the integration work both in compose and
+    # behind a production reverse proxy.
+    onlyoffice_enabled: bool = False
+    #: How the document server reaches WikiHub.
+    onlyoffice_backend_url: str = ""
+    #: How WikiHub reaches the document server. Saved documents are always
+    #: fetched from this address: the server advertises download links built
+    #: from the address the *browser* uses, which the backend cannot resolve.
+    onlyoffice_internal_url: str = ""
+    onlyoffice_jwt_secret: str = ""
+    onlyoffice_token_ttl_seconds: int = 86_400
+
     # --- document import (Word / PDF / HTML / Markdown -> a wiki page) ------
     #: Conversion is a subprocess (pandoc) or a CPU-bound thread (PyMuPDF), and
     #: either can be handed a pathological file. This is the ceiling per file -
@@ -200,8 +216,26 @@ class Settings(BaseSettings):
             raise ValueError("WIKIHUB_FRONTEND_INTERNAL_URL must be an http:// or https:// URL")
         return value.rstrip("/")
 
+    @field_validator("onlyoffice_backend_url", "onlyoffice_internal_url")
+    @classmethod
+    def _validate_optional_http_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if value and not value.startswith(("http://", "https://")):
+            raise ValueError("ONLYOFFICE URLs must start with http:// or https://")
+        return value
+
     @model_validator(mode="after")
     def _harden_production(self) -> Settings:
+        if self.onlyoffice_enabled:
+            if not self.onlyoffice_backend_url or not self.onlyoffice_internal_url:
+                raise ValueError(
+                    "WIKIHUB_ONLYOFFICE_BACKEND_URL and WIKIHUB_ONLYOFFICE_INTERNAL_URL "
+                    "must be set when ONLYOFFICE editing is enabled"
+                )
+            if len(self.onlyoffice_jwt_secret) < 32:
+                raise ValueError(
+                    "WIKIHUB_ONLYOFFICE_JWT_SECRET must be a random value of at least 32 characters"
+                )
         if self.env is Environment.production:
             weak = not self.secret_key or "change-me" in self.secret_key.lower()
             if weak or len(self.secret_key) < 32:

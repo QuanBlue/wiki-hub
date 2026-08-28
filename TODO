@@ -3,11 +3,11 @@
 - import store thi file import khong save vao obj storage -> khong xem duoc file import duoc upload trong admin > object storage -> co the mat co che han che upload lai khi import file da upload
 - user activity http://wiki.gpmn.net:8090/display/~hieppdh
 - Import WIki: Created by invalid_user, last modified by admin on Aug 28, 2026
-- vỉew video
+
 
 
 Doing
 - Tính năng chỉnh file word, excel trực tiếp trong phần preview attachment đó (nếu đó là file word hoặc excel)
-- Cho thêm tính năng preview file word, excel, powerpoint trong phần preview attachment đó
+
 - revision history hien thi khong dung (edit lan dau)
 - test export full (co pass, k pass, cancel) + export confluence

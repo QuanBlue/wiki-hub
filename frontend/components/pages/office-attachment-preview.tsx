@@ -14,8 +14,17 @@ import { xlsxPlugin } from "@lamberl-lee/file-preview/plugins/xlsx";
 import { Download, Expand, FileText, Shrink, ZoomIn, ZoomOut } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
-import { type CSSProperties, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
+
+import { prepareWorkbookForPreview } from "@/lib/xlsx-preview-workbook";
 
 const officePreviewRegistry = createPreviewPluginRegistry([
   ...createBasePreviewRegistry().list(),
@@ -121,26 +130,68 @@ export function OfficeAttachmentPreview({
   const xlsxColumnHeadersRef = useRef<HTMLDivElement>(null);
   const xlsxEmptyGridRef = useRef<HTMLDivElement>(null);
   const xlsxRowHeadersRef = useRef<HTMLDivElement>(null);
+  const fileType = useMemo(
+    () => detectFileType(filename, contentType),
+    [contentType, filename],
+  );
+
+  const isPptx = fileType === "pptx" || /\.pptx$/i.test(filename);
+  const isDocx = fileType === "docx" || /\.docx$/i.test(filename);
+  const isXlsx = fileType === "xlsx" || /\.xlsx$/i.test(filename);
+
+  // Workbooks are previewed from a corrected copy: see lib/xlsx-preview-workbook
+  // for what the renderer gets wrong about a raw file and why.
+  // Keyed by the attachment it was built from, so switching attachments reads
+  // as "not resolved yet" without an extra state write on every render pass.
+  const [xlsxSource, setXlsxSource] = useState<{ key: string; url: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!isXlsx) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    void (async () => {
+      try {
+        const response = await fetch(contentUrl);
+        if (!response.ok) throw new Error(`Attachment request failed: ${response.status}`);
+        const workbook = await prepareWorkbookForPreview(await response.arrayBuffer());
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(new Blob([workbook], { type: contentType }));
+        setXlsxSource({ key: contentUrl, url: objectUrl });
+      } catch {
+        // Trimming is a correction, not a requirement. If the workbook cannot
+        // be read here, let the renderer fetch it itself rather than losing
+        // the preview entirely.
+        if (!cancelled) setXlsxSource({ key: contentUrl, url: contentUrl });
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [contentType, contentUrl, isXlsx]);
+
+  const previewUrl = isXlsx
+    ? xlsxSource?.key === contentUrl
+      ? xlsxSource.url
+      : null
+    : contentUrl;
   const file = useMemo(
     () => ({
-      id: contentUrl,
+      id: previewUrl ?? contentUrl,
       name: filename,
       size: 0,
       type: contentType,
-      fileType: detectFileType(filename, contentType),
+      fileType,
       source: {
         kind: "url" as const,
-        url: contentUrl,
+        url: previewUrl ?? contentUrl,
         name: filename,
         mimeType: contentType,
       },
     }),
-    [contentType, contentUrl, filename],
+    [contentType, contentUrl, fileType, filename, previewUrl],
   );
-
-  const isPptx = file.fileType === "pptx" || /\.pptx$/i.test(filename);
-  const isDocx = file.fileType === "docx" || /\.docx$/i.test(filename);
-  const isXlsx = file.fileType === "xlsx" || /\.xlsx$/i.test(filename);
   const useHeaderControls =
     (isDocx || isXlsx) &&
     toolbarContainer !== null &&
@@ -593,12 +644,14 @@ export function OfficeAttachmentPreview({
           style={isDocx ? { zoom: docxZoom / 100 } : undefined}
         >
           <LocaleProvider value={enUS}>
-            <PluginPreviewRenderer
-              file={file}
-              registry={officePreviewRegistry}
-              largeFilePolicy="off"
-              onError={(error) => setPreviewError(error.message)}
-            />
+            {previewUrl ? (
+              <PluginPreviewRenderer
+                file={file}
+                registry={officePreviewRegistry}
+                largeFilePolicy="off"
+                onError={(error) => setPreviewError(error.message)}
+              />
+            ) : null}
           </LocaleProvider>
         </div>
       </div>

@@ -389,7 +389,40 @@
   display: none;
 }
 
+/* A worksheet is a document, not app chrome. Excel paints a cell with no
+   colour of its own as black on white, so inheriting WikiHub's foreground
+   tints every unstyled cell in light mode and renders the sheet white-on-white
+   in dark mode. Per-cell colours are inline styles and still win over this. */
+.office-preview-card--xlsx .fv-xlsx__table {
+  color: #000000;
+  background-color: #ffffff;
+}
+
 .office-preview-card--xlsx .fv-xlsx__toolbar {
+  display: none;
+}
+
+/* Sheet tabs are the one package control WikiHub does not mirror into the
+   Preview header, and the other sheets of a workbook are unreachable without
+   them. Bring the toolbar back for multi-sheet workbooks only - the package
+   renders the tab strip nowhere else - and keep every other control hidden.
+
+   `order` moves it below the grid, where a spreadsheet's sheet tabs belong.
+   It is painted above the generated row/column header overlays (z-index 90 and
+   100 below) so a scrolled row number can never bleed through it. */
+.office-preview-card--xlsx .fv-xlsx__toolbar:has(.fv-xlsx__sheet-tabs) {
+  position: relative;
+  z-index: 110;
+  order: 2;
+  display: flex;
+  flex: 0 0 auto;
+  padding: 0.25rem 0.5rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+  background: var(--surface-sunken);
+}
+
+.office-preview-card--xlsx .fv-xlsx__toolbar-right {
   display: none;
 }
 

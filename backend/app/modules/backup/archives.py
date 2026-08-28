@@ -51,14 +51,24 @@ class BackupArchiveService:
     async def find_reusable_archive(
         self, *, sha256: str, size_bytes: int
     ) -> BackupArchive | None:
-        """A finished archive whose bytes are already in storage, if one exists."""
+        """A finished archive whose bytes are already in storage, if one exists.
+
+        "cancelled" counts. Since `abort_upload` stopped deleting the object,
+        a cancelled row is a file still sitting in the bucket, and the whole
+        point of keeping it is that picking the same backup again costs
+        nothing. Excluding it would mean every cancelled restore charged a
+        fresh multi-GB upload *and* left a second copy of the same bytes
+        behind. `storage.exists` below is what keeps this honest: a row whose
+        object really is gone - deleted by hand from the storage panel - is
+        skipped, and the caller starts a genuine upload.
+        """
         archives = (
             await self.session.execute(
                 select(BackupArchive)
                 .where(
                     BackupArchive.sha256 == sha256,
                     BackupArchive.size_bytes == size_bytes,
-                    BackupArchive.status.in_(["uploaded", "scanned"]),
+                    BackupArchive.status.in_(["uploaded", "scanned", "cancelled"]),
                     BackupArchive.multipart_upload_id.is_(None),
                 )
                 .order_by(BackupArchive.updated_at.desc(), BackupArchive.created_at.desc())
@@ -132,6 +142,14 @@ class BackupArchiveService:
             # upload of the same file become worth continuing.
             reusable = await self.find_reusable_archive(sha256=sha256, size_bytes=size_bytes)
             if reusable is not None:
+                if reusable.status == "cancelled":
+                    # Choosing a previously cancelled backup again is a
+                    # re-selection, not a re-upload: its bytes never left the
+                    # bucket. Revive to "scanned" when the space list from the
+                    # earlier scan is still on the row, so the picker opens
+                    # immediately instead of re-reading a multi-GB archive.
+                    reusable.status = "scanned" if reusable.spaces else "uploaded"
+                    await self.session.flush()
                 return reusable
             resumable = await self.find_resumable_archive(sha256=sha256, size_bytes=size_bytes)
             if resumable is not None:
@@ -215,14 +233,29 @@ class BackupArchiveService:
         return archive
 
     async def abort_upload(self, archive: BackupArchive) -> None:
-        """Throw an archive away, whatever stage it had reached.
+        """Take an archive out of the restore flow, whatever stage it reached.
 
-        This used to act only while a multipart upload was still open. An
-        archive that had finished uploading and been scanned has no multipart
-        id left, so discarding one did nothing at all: the picker cleared
-        itself, the row stayed "scanned", and the next page load handed the
-        same archive straight back - with the file input locked against it,
-        which left no way to choose a different backup at all.
+        Out of the flow, not out of the bucket. Cancelling a restore is a
+        decision about this workspace's data; it is not a decision to throw
+        away the file the operator uploaded, which may have taken hours to
+        get here. A finished upload is a real object under `backups/imports/`,
+        listed and deletable in Administration > Object storage, so deleting
+        it belongs to whoever goes there and asks for it - and until they do,
+        `find_reusable_archive` can hand the same bytes straight back instead
+        of charging another multi-GB upload for the same file.
+
+        An *unfinished* multipart upload is the one thing that still has to
+        go. Its parts are not an object yet: nothing lists them, nothing in
+        the admin panel can delete them, and abandoning them leaks storage
+        that no operator can ever reach. Those are aborted, as before.
+
+        This method also used to act *only* while a multipart upload was open,
+        which left a different hole: a scanned archive has no multipart id, so
+        discarding one did nothing at all - the picker cleared itself, the row
+        stayed "scanned", and the next page load handed the same archive
+        straight back with the file input locked against it. Marking the row
+        cancelled is what closes that, and it does not depend on deleting
+        anything.
         """
         active_job = (
             await self.session.execute(
@@ -245,12 +278,7 @@ class BackupArchiveService:
                     archive.object_key, archive.multipart_upload_id
                 )
             archive.multipart_upload_id = None
-        else:
-            # Upload already completed, so there are no parts to abort - the
-            # object itself is what is left behind, and on a multi-GB backup
-            # that is not something to leak.
-            with suppress(NotFoundError):
-                await self.storage.delete(archive.object_key)
+        # No `else`: a completed upload's object stays put. See the docstring.
         archive.status = "cancelled"
         await self.session.flush()
 

@@ -35,6 +35,7 @@ from app.core.exceptions import (
 from app.core.logging import get_logger
 from app.models.page import WikiPage
 from app.models.space import Space
+from app.modules.attachments.limits import limits_for_space
 from app.modules.attachments.store import safe_attachment_filename
 from app.modules.document_import.convert import format_for_filename
 from app.modules.document_import.service import (
@@ -157,7 +158,7 @@ async def create_document_import(
     # export can run.
     await assert_no_active_wikihub_restore(session)
 
-    effective = await SiteSettingsService(session).get_effective()
+    effective = limits_for_space(await SiteSettingsService(session).get_effective(), space)
     documents: list[StagedDocument] = []
     for file in files:
         filename = safe_attachment_filename(file.filename)

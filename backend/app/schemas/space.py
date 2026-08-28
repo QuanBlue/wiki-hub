@@ -33,6 +33,8 @@ class SpaceRead(BaseModel):
     description: str
     icon: str
     font_family: str | None = None
+    #: Attachment ceiling in MB, or None when the space follows the workspace.
+    max_upload_size_mb: int | None = None
     status: SpaceStatus
     visibility: SpaceVisibility
     created_at: datetime
@@ -58,6 +60,7 @@ class SpaceCreate(BaseModel):
     description: str = Field(default="", max_length=200_000)
     icon: str = Field(default="", max_length=16)
     font_family: str | None = Field(default=None, max_length=50)
+    max_upload_size_mb: int | None = Field(default=None, ge=1, le=10_240)
     visibility: SpaceVisibility = SpaceVisibility.open
 
     @field_validator("key")
@@ -77,6 +80,7 @@ class SpaceUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=200_000)
     icon: str | None = Field(default=None, max_length=16)
     font_family: str | None = Field(default=None, max_length=50)
+    max_upload_size_mb: int | None = Field(default=None, ge=1, le=10_240)
     status: SpaceStatus | None = None
     visibility: SpaceVisibility | None = None
 

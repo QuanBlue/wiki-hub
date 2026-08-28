@@ -166,12 +166,19 @@ async def test_storage_attachment_backup_and_settings_wrappers(
     assert not deleted.archive_cleared and not deleted.attachment_deleted
 
     attachment = SimpleNamespace(
-        page_id=uuid.uuid4(), content_type="text/plain", filename='a\\"\n.txt', object_key="k"
+        page_id=uuid.uuid4(),
+        content_type="text/plain",
+        filename='a\\"\n.txt',
+        object_key="k",
+        size_bytes=4,
     )
     page = SimpleNamespace(space_id=uuid.uuid4())
     space = SimpleNamespace()
     session.get = AsyncMock(side_effect=[attachment, page, space])
-    storage.get = AsyncMock(return_value=b"hello")
+    async def _hello():
+        yield b"hello"
+
+    storage.get_stream = AsyncMock(return_value=(5, _hello()))
     monkeypatch.setattr(
         attachments,
         "SpaceService",
@@ -180,7 +187,9 @@ async def test_storage_attachment_backup_and_settings_wrappers(
     monkeypatch.setattr(
         attachments, "PageService", lambda _session: SimpleNamespace(require_page_view=AsyncMock())
     )
-    response = await attachments.read_attachment(uuid.uuid4(), user, session, storage)
+    response = await attachments.read_attachment(
+        uuid.uuid4(), SimpleNamespace(headers={}), user, session, storage
+    )
     assert (
         response.media_type == "text/plain"
         and "attachment" in response.headers["content-disposition"]

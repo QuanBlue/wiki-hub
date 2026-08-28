@@ -16,6 +16,7 @@ from enum import StrEnum
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -88,6 +89,10 @@ class Space(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     icon: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     #: Custom font family for pages in this space (NULL inherits instance default).
     font_family: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    #: Attachment size ceiling for this space, in MB (NULL inherits the
+    #: workspace setting). A space full of screen recordings needs a different
+    #: number from one holding meeting notes.
+    max_upload_size_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     status: Mapped[SpaceStatus] = mapped_column(
         _enum_column(SpaceStatus, "space_status"),

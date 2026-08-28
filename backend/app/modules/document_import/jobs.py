@@ -28,6 +28,7 @@ from app.models.document_import import DocumentImportItem, DocumentImportJob
 from app.models.revision import PageRevision
 from app.models.space import Space
 from app.models.user import User
+from app.modules.attachments.limits import limits_for_space
 from app.modules.attachments.store import (
     attachment_content_url,
     prepare_attachment,
@@ -77,7 +78,9 @@ async def run_document_import(
             )
             return
 
-        effective = await SiteSettingsService(session).get_effective()
+        effective = limits_for_space(
+            await SiteSettingsService(session).get_effective(), space
+        )
         items = sorted(job.items, key=lambda item: item.position)
 
         for item in items:
@@ -94,7 +97,7 @@ async def run_document_import(
         await _finalize_cancelled(session, job_id)
     except Exception as exc:
         await session.rollback()
-        await _finalize_failed(session, job, str(exc)[:_MAX_ERROR_CHARS], refetch=True)
+        await _finalize_failed(session, job, str(exc)[:_MAX_ERROR_CHARS], refetch_id=job_id)
         raise
     finally:
         await _delete_staged_uploads(storage, job_id)
@@ -351,10 +354,24 @@ async def _finalize_cancelled(session: AsyncSession, job_id: uuid.UUID) -> None:
 
 
 async def _finalize_failed(
-    session: AsyncSession, job: DocumentImportJob, message: str, *, refetch: bool = False
+    session: AsyncSession,
+    job: DocumentImportJob,
+    message: str,
+    *,
+    refetch_id: uuid.UUID | None = None,
 ) -> None:
-    if refetch:
-        refreshed = await session.get(DocumentImportJob, job.id)
+    """Write the closing "failed" status, optionally re-reading the row first.
+
+    `refetch_id` is a plain UUID rather than `job.id` on purpose: the only
+    caller that needs a refetch is the one that just rolled back, and a
+    rollback expires every ORM attribute in the session. Reading `job.id`
+    there fires the expired-attribute loader synchronously, which raises
+    MissingGreenlet on an async session and kills the finaliser - leaving the
+    row stuck on "running" for the reaper to clean up minutes later. Same
+    trap, same fix as `_run_restore_job` in `app/modules/backup/jobs.py`.
+    """
+    if refetch_id is not None:
+        refreshed = await session.get(DocumentImportJob, refetch_id)
         if refreshed is None:
             return
         job = refreshed

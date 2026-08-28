@@ -74,26 +74,40 @@ def _user() -> SimpleNamespace:
     )
 
 
+async def _body(payload: bytes):
+    yield payload
+
+
+def _request(range_header: str | None = None) -> SimpleNamespace:
+    headers = {"range": range_header} if range_header else {}
+    return SimpleNamespace(headers=headers)
+
+
 @pytest.mark.asyncio
 async def test_attachment_endpoint_errors_and_success(monkeypatch: pytest.MonkeyPatch) -> None:
     user = _user()
     session = Mock()
-    storage = Mock(get=AsyncMock(return_value=b"data"))
+    storage = Mock(get_stream=AsyncMock(return_value=(4, _body(b"data"))))
+    request = _request()
     with pytest.raises(NotFoundError):
         session.get = AsyncMock(return_value=None)
-        await attachments.read_attachment(uuid.uuid4(), user, session, storage)
+        await attachments.read_attachment(uuid.uuid4(), request, user, session, storage)
 
     attachment = SimpleNamespace(page_id=uuid.uuid4())
     session.get = AsyncMock(side_effect=[attachment, None])
     with pytest.raises(NotFoundError):
-        await attachments.read_attachment(uuid.uuid4(), user, session, storage)
+        await attachments.read_attachment(uuid.uuid4(), request, user, session, storage)
     page = SimpleNamespace(space_id=uuid.uuid4())
     session.get = AsyncMock(side_effect=[attachment, page, None])
     with pytest.raises(NotFoundError):
-        await attachments.read_attachment(uuid.uuid4(), user, session, storage)
+        await attachments.read_attachment(uuid.uuid4(), request, user, session, storage)
 
     attachment = SimpleNamespace(
-        page_id=uuid.uuid4(), content_type="text/plain", filename='a\\"\n.txt', object_key="k"
+        page_id=uuid.uuid4(),
+        content_type="text/plain",
+        filename='a\\"\n.txt',
+        object_key="k",
+        size_bytes=4,
     )
     page = SimpleNamespace(space_id=uuid.uuid4())
     space = SimpleNamespace(id=page.space_id)
@@ -111,9 +125,90 @@ async def test_attachment_endpoint_errors_and_success(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(attachments, "SpaceService", _SpaceService)
     monkeypatch.setattr(attachments, "PageService", _PageService)
-    response = await attachments.read_attachment(uuid.uuid4(), user, session, storage)
+    response = await attachments.read_attachment(uuid.uuid4(), request, user, session, storage)
     assert response.status_code == 200
     assert "attachment" in response.headers["content-disposition"]
+    assert response.headers["accept-ranges"] == "bytes"
+
+
+@pytest.mark.asyncio
+async def test_attachment_endpoint_serves_a_requested_byte_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Media players scrub by asking for ranges; they must get 206 back."""
+    user = _user()
+    attachment = SimpleNamespace(
+        page_id=uuid.uuid4(),
+        content_type="video/mp4",
+        filename="clip.mp4",
+        object_key="k",
+        size_bytes=1000,
+    )
+    page = SimpleNamespace(space_id=uuid.uuid4())
+    space = SimpleNamespace(id=page.space_id)
+
+    async def _chunks():
+        yield b"partial"
+
+    session = Mock(get=AsyncMock(side_effect=[attachment, page, space]))
+    storage = Mock(get_range=AsyncMock(return_value=(1000, _chunks())))
+    monkeypatch.setattr(
+        attachments,
+        "SpaceService",
+        lambda _session: SimpleNamespace(permissions=SimpleNamespace(require=AsyncMock())),
+    )
+    monkeypatch.setattr(
+        attachments,
+        "PageService",
+        lambda _session: SimpleNamespace(require_page_view=AsyncMock()),
+    )
+
+    response = await attachments.read_attachment(
+        uuid.uuid4(), _request("bytes=100-199"), user, session, storage
+    )
+
+    assert response.status_code == 206
+    assert response.headers["content-range"] == "bytes 100-199/1000"
+    assert response.headers["content-length"] == "100"
+    storage.get_range.assert_awaited_once_with("k", 100, 199)
+
+
+@pytest.mark.asyncio
+async def test_attachment_endpoint_rejects_a_range_past_the_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = _user()
+    attachment = SimpleNamespace(
+        page_id=uuid.uuid4(),
+        content_type="video/mp4",
+        filename="clip.mp4",
+        object_key="k",
+        size_bytes=1000,
+    )
+    page = SimpleNamespace(space_id=uuid.uuid4())
+    space = SimpleNamespace(id=page.space_id)
+    session = Mock(get=AsyncMock(side_effect=[attachment, page, space]))
+    storage = Mock(
+        get_stream=AsyncMock(return_value=(1000, _body(b"data"))), get_range=AsyncMock()
+    )
+    monkeypatch.setattr(
+        attachments,
+        "SpaceService",
+        lambda _session: SimpleNamespace(permissions=SimpleNamespace(require=AsyncMock())),
+    )
+    monkeypatch.setattr(
+        attachments,
+        "PageService",
+        lambda _session: SimpleNamespace(require_page_view=AsyncMock()),
+    )
+
+    response = await attachments.read_attachment(
+        uuid.uuid4(), _request("bytes=4000-"), user, session, storage
+    )
+
+    assert response.status_code == 416
+    assert response.headers["content-range"] == "bytes */1000"
+    storage.get_range.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -129,7 +224,7 @@ async def test_editor_attachment_upload_validates_and_stores_file(
         def __init__(self, _session):
             pass
 
-        get_by_key = AsyncMock(return_value=SimpleNamespace())
+        get_by_key = AsyncMock(return_value=SimpleNamespace(max_upload_size_mb=None))
 
     class _PageService:
         def __init__(self, _session):
@@ -578,6 +673,7 @@ async def test_confluence_import_endpoint_guards(monkeypatch: pytest.MonkeyPatch
         phase="queued",
         counters={},
         cancel_requested=False,
+        heartbeat_at=None,
         error=None,
         created_at=now,
         updated_at=now,
@@ -638,6 +734,10 @@ async def test_confluence_import_endpoint_guards(monkeypatch: pytest.MonkeyPatch
     assert (await confluence_import.cancel(queued.id, actor, session)).status == "cancelled"
     running = SimpleNamespace(**job.__dict__)
     running.status = "running"
+    # A beating heartbeat: a live worker is left to observe `cancel_requested`
+    # and stop itself. Without one this row would read as abandoned and be
+    # finalised here instead - see the reaper tests in tests/integration.
+    running.heartbeat_at = datetime.now(UTC)
     session.get = AsyncMock(return_value=running)
     assert (await confluence_import.cancel(running.id, actor, session)).status == "running"
     session.get = AsyncMock(return_value=None)

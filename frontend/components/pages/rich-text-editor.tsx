@@ -46,6 +46,7 @@ import type { NodeViewProps } from "@tiptap/core";
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowLeft,
   Bold,
   AlignCenter,
   AlignLeft,
@@ -166,6 +167,13 @@ const OfficeAttachmentPreview = dynamic(
     ),
   { ssr: false },
 );
+const VideoAttachmentPreview = dynamic(
+  () =>
+    import("@/components/pages/video-attachment-preview").then(
+      (module) => module.VideoAttachmentPreview,
+    ),
+  { ssr: false },
+);
 const OfficeAttachmentEditor = dynamic(
   () =>
     import("@/components/pages/office-attachment-editor").then(
@@ -180,6 +188,187 @@ const PdfAttachmentPreview = dynamic(
     ),
   { ssr: false },
 );
+
+const AUDIO_WAVEFORM_BARS = Array.from({ length: 112 }, (_, index) => {
+  const position = index / 111;
+  const pulse = 0.55 + 0.45 * Math.sin(index * 1.7) ** 2;
+  return Math.round(26 + 68 * (1 - position * 0.55) * pulse);
+});
+
+function AudioAttachmentPreview({
+  contentUrl,
+  contentType,
+  filename,
+}: {
+  contentUrl: string;
+  contentType?: string;
+  filename: string;
+}) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const frequencyDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+  const lastWaveUpdateRef = useRef(0);
+  const [waveLevels, setWaveLevels] = useState(AUDIO_WAVEFORM_BARS);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const stopWaveform = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+  }, []);
+
+  const startWaveform = useCallback(async () => {
+    const audio = audioRef.current;
+    if (!audio || typeof window === "undefined") return;
+
+    try {
+      if (!audioContextRef.current) {
+        const AudioContextConstructor =
+          window.AudioContext ??
+          (
+            window as typeof window & {
+              webkitAudioContext?: typeof AudioContext;
+            }
+          ).webkitAudioContext;
+        if (!AudioContextConstructor) return;
+
+        const context = new AudioContextConstructor();
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 128;
+        analyser.smoothingTimeConstant = 0.78;
+        const source = context.createMediaElementSource(audio);
+        source.connect(analyser);
+        analyser.connect(context.destination);
+        audioContextRef.current = context;
+        analyserRef.current = analyser;
+        sourceRef.current = source;
+        frequencyDataRef.current = new Uint8Array(analyser.frequencyBinCount);
+      }
+
+      await audioContextRef.current.resume();
+      setIsPlaying(true);
+      stopWaveform();
+
+      const renderWaveform = (timestamp: number) => {
+        const analyser = analyserRef.current;
+        const frequencyData = frequencyDataRef.current;
+        if (!analyser || !frequencyData) return;
+
+        analyser.getByteFrequencyData(frequencyData);
+        // Updating at 24fps gives the waveform natural movement while keeping
+        // the attachment modal responsive during long playback.
+        if (timestamp - lastWaveUpdateRef.current >= 42) {
+          lastWaveUpdateRef.current = timestamp;
+          // Speech and music usually have little energy in the final high
+          // frequency bins. Repeat the active low/mid spectrum across the
+          // whole display and blend it with the overall energy so every part
+          // of the waveform continues to respond to playback.
+          const usableBins = Math.max(
+            8,
+            Math.floor(frequencyData.length * 0.55),
+          );
+          let overallEnergy = 0;
+          for (let bin = 0; bin < usableBins; bin += 1) {
+            overallEnergy += frequencyData[bin] ?? 0;
+          }
+          overallEnergy /= usableBins * 255;
+          const barsPerPass = Math.ceil(AUDIO_WAVEFORM_BARS.length / 3);
+          setWaveLevels(
+            AUDIO_WAVEFORM_BARS.map((_, index) => {
+              const pass = Math.floor(index / barsPerPass);
+              const position =
+                (index % barsPerPass) / Math.max(1, barsPerPass - 1);
+              const mirroredPosition = pass % 2 === 0 ? position : 1 - position;
+              const start = Math.floor(mirroredPosition * (usableBins - 1));
+              const end = Math.min(usableBins, start + 2);
+              let total = 0;
+              for (let bin = start; bin < end; bin += 1)
+                total += frequencyData[bin] ?? 0;
+              const localEnergy = total / (end - start) / 255;
+              const amplitude = localEnergy * 0.72 + overallEnergy * 0.28;
+              return Math.max(
+                14,
+                Math.min(96, Math.round(14 + amplitude * 82)),
+              );
+            }),
+          );
+        }
+        animationFrameRef.current = requestAnimationFrame(renderWaveform);
+      };
+
+      animationFrameRef.current = requestAnimationFrame(renderWaveform);
+    } catch {
+      // Native controls remain usable even if the browser blocks Web Audio.
+      setIsPlaying(true);
+    }
+  }, [stopWaveform]);
+
+  useEffect(
+    () => () => {
+      stopWaveform();
+      sourceRef.current?.disconnect();
+      analyserRef.current?.disconnect();
+      void audioContextRef.current?.close();
+    },
+    [stopWaveform],
+  );
+
+  return (
+    <div className="flex h-full w-full min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="bg-primary-subtle text-primary flex size-10 shrink-0 items-center justify-center rounded-md">
+          <FileAudio className="size-5" aria-hidden="true" />
+        </span>
+        <span
+          className="text-foreground truncate text-sm font-medium"
+          title={filename}
+        >
+          {filename}
+        </span>
+      </div>
+      <div
+        className="bg-surface-sunken flex h-20 items-center gap-px overflow-hidden rounded-md px-3"
+        aria-label="Animated audio waveform"
+        role="img"
+      >
+        {waveLevels.map((height, index) => (
+          <span
+            key={index}
+            aria-hidden="true"
+            className={cn(
+              "min-w-px flex-1 rounded-full transition-[height,background-color] duration-100 ease-out",
+              isPlaying ? "bg-primary/80" : "bg-muted-foreground/30",
+            )}
+            style={{ height: `${height}%` }}
+          />
+        ))}
+      </div>
+      <audio
+        ref={audioRef}
+        controls
+        preload="metadata"
+        className="w-full"
+        aria-label={`Preview audio: ${filename}`}
+        onPlay={() => void startWaveform()}
+        onPause={() => {
+          setIsPlaying(false);
+          stopWaveform();
+        }}
+        onEnded={() => {
+          setIsPlaying(false);
+          stopWaveform();
+        }}
+      >
+        <source src={contentUrl} type={contentType} />
+        Your browser does not support audio playback.
+      </audio>
+    </div>
+  );
+}
 
 const TableCellWithBackground = TableCell.extend({
   addAttributes() {
@@ -2511,6 +2700,8 @@ function AttachmentTile({
   const href = String(node.attrs.href ?? "");
   const displayMode = String(node.attrs.displayMode ?? "card");
   const [hovered, setHovered] = useState(false);
+  const [toolbarBelow, setToolbarBelow] = useState(false);
+  const attachmentRef = useRef<HTMLSpanElement>(null);
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
   const icon = attachmentIcon(filename);
 
@@ -2519,6 +2710,16 @@ function AttachmentTile({
 
   const keepToolsVisible = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    const attachment = attachmentRef.current;
+    const editorSurface = attachment?.closest(".ProseMirror");
+    if (attachment && editorSurface) {
+      // EditorContent scrolls horizontally for wide tables. That surface clips
+      // an attachment menu rendered above the first row, so flip it below the
+      // tile when there is not enough room above it.
+      const attachmentTop = attachment.getBoundingClientRect().top;
+      const editorTop = editorSurface.getBoundingClientRect().top;
+      setToolbarBelow(attachmentTop - editorTop < 52);
+    }
     setHovered(true);
   }, []);
 
@@ -2585,7 +2786,10 @@ function AttachmentTile({
   const floatingToolbar = showToolbar ? (
     <div
       className={cn(
-        "absolute z-50 flex items-center gap-1 rounded-lg border border-border bg-surface-raised p-1 shadow-lg text-xs whitespace-nowrap animate-in fade-in zoom-in-95 duration-100 select-none bottom-full mb-1.5 left-0 min-w-max after:absolute after:top-full after:left-0 after:right-0 after:h-2 after:content-['']",
+        "border-border bg-surface-raised animate-in fade-in zoom-in-95 absolute left-0 z-50 flex min-w-max items-center gap-1 rounded-lg border p-1 text-xs whitespace-nowrap shadow-lg duration-100 select-none",
+        toolbarBelow
+          ? "top-full mt-1.5 before:absolute before:right-0 before:bottom-full before:left-0 before:h-2 before:content-['']"
+          : "bottom-full mb-1.5 after:absolute after:top-full after:right-0 after:left-0 after:h-2 after:content-['']",
       )}
       contentEditable={false}
       onMouseEnter={keepToolsVisible}
@@ -2593,7 +2797,7 @@ function AttachmentTile({
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center rounded-md bg-surface-sunken/80 p-0.5 border border-border/50">
+      <div className="bg-surface-sunken/80 border-border/50 flex items-center rounded-md border p-0.5">
         <button
           type="button"
           onClick={(e) => {
@@ -2601,7 +2805,7 @@ function AttachmentTile({
             updateAttributes({ displayMode: "card" });
           }}
           className={cn(
-            "px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer",
+            "focus-visible:ring-ring flex cursor-pointer items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none",
             isCard
               ? "bg-primary text-primary-foreground shadow-2xs"
               : "text-muted-foreground hover:text-foreground hover:bg-surface-raised",
@@ -2618,7 +2822,7 @@ function AttachmentTile({
             updateAttributes({ displayMode: "link" });
           }}
           className={cn(
-            "px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer",
+            "focus-visible:ring-ring flex cursor-pointer items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none",
             !isCard
               ? "bg-primary text-primary-foreground shadow-2xs"
               : "text-muted-foreground hover:text-foreground hover:bg-surface-raised",
@@ -2630,12 +2834,12 @@ function AttachmentTile({
         </button>
       </div>
 
-      <div className="h-3.5 w-px bg-border mx-0.5" />
+      <div className="bg-border mx-0.5 h-3.5 w-px" />
 
       <button
         type="button"
         onClick={handleOpenDetails}
-        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors cursor-pointer"
+        className="text-muted-foreground hover:text-foreground hover:bg-surface-sunken focus-visible:ring-ring cursor-pointer rounded p-1 transition-colors focus-visible:ring-2 focus-visible:outline-none"
         title="View file details and preview"
       >
         <Info className="size-3.5" />
@@ -2653,7 +2857,7 @@ function AttachmentTile({
           a.click();
           document.body.removeChild(a);
         }}
-        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-surface-sunken transition-colors flex items-center justify-center cursor-pointer"
+        className="text-muted-foreground hover:text-foreground hover:bg-surface-sunken focus-visible:ring-ring flex cursor-pointer items-center justify-center rounded p-1 transition-colors focus-visible:ring-2 focus-visible:outline-none"
         title="Download file"
       >
         <Download className="size-3.5" />
@@ -2665,7 +2869,7 @@ function AttachmentTile({
           e.stopPropagation();
           deleteNode();
         }}
-        className="p-1 rounded text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-500/20 transition-colors cursor-pointer"
+        className="focus-visible:ring-ring cursor-pointer rounded p-1 text-red-500 transition-colors hover:bg-red-500/10 hover:text-red-600 focus-visible:ring-2 focus-visible:outline-none dark:text-red-400 dark:hover:bg-red-500/20 dark:hover:text-red-300"
         title="Remove attachment"
       >
         <Trash2 className="size-3.5 text-red-500 dark:text-red-400" />
@@ -2677,7 +2881,8 @@ function AttachmentTile({
     return (
       <NodeViewWrapper
         as="span"
-        className="relative inline-block align-baseline mr-1.5 my-0.5 group/attachment-wrapper"
+        ref={attachmentRef}
+        className="group/attachment-wrapper relative my-0.5 mr-1.5 inline-block align-baseline"
         onDragStartCapture={beginMove}
         onDragEndCapture={endMove}
         onMouseEnter={keepToolsVisible}
@@ -2703,17 +2908,17 @@ function AttachmentTile({
           contentEditable={false}
           draggable={editor.isEditable}
           className={cn(
-            "attachment-link inline-flex items-center gap-1 text-primary hover:underline font-medium text-xs align-baseline",
+            "attachment-link text-primary inline-flex items-center gap-1 align-baseline text-xs font-medium hover:underline",
             editor.isEditable
               ? "cursor-grab active:cursor-grabbing"
               : "cursor-pointer",
-            selected && "outline-primary/40 outline-2 outline",
+            selected && "outline-primary/40 outline outline-2",
           )}
         >
-          <span className="text-muted-foreground shrink-0 size-3.5 flex items-center justify-center">
+          <span className="text-muted-foreground flex size-3.5 shrink-0 items-center justify-center">
             <Paperclip className="size-3" />
           </span>
-          <span className="truncate max-w-[260px]">{filename}</span>
+          <span className="max-w-[260px] truncate">{filename}</span>
         </a>
       </NodeViewWrapper>
     );
@@ -2722,7 +2927,8 @@ function AttachmentTile({
   return (
     <NodeViewWrapper
       as="span"
-      className="relative mr-2 mb-2 inline-block align-top group/attachment-wrapper"
+      ref={attachmentRef}
+      className="group/attachment-wrapper relative mr-2 mb-2 inline-block align-top"
       onDragStartCapture={beginMove}
       onDragEndCapture={endMove}
       onMouseEnter={keepToolsVisible}
@@ -2748,25 +2954,28 @@ function AttachmentTile({
         contentEditable={false}
         draggable={editor.isEditable}
         className={cn(
-          "group/attachment border-border bg-surface-raised hover:border-primary focus-visible:ring-ring flex w-28 sm:w-32 flex-col items-center gap-1.5 rounded-md border p-2 !no-underline shadow-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
+          "group/attachment border-border bg-surface-raised hover:border-primary focus-visible:ring-ring flex w-28 flex-col items-center gap-1.5 rounded-md border p-2 !no-underline shadow-sm transition-colors focus-visible:ring-2 focus-visible:outline-none sm:w-32",
           editor.isEditable
             ? "cursor-grab active:cursor-grabbing"
             : "cursor-pointer",
           selected && "border-primary ring-primary/40 ring-2",
         )}
       >
-        <span className="bg-surface-sunken text-muted-foreground group-hover/attachment:text-primary flex h-16 w-full items-center justify-center rounded transition-colors overflow-hidden p-1">
+        <span className="bg-surface-sunken text-muted-foreground group-hover/attachment:text-primary flex h-16 w-full items-center justify-center overflow-hidden rounded p-1 transition-colors">
           {/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(filename) && href ? (
             <img
               src={href}
               alt={filename}
-              className="h-full w-full object-contain rounded"
+              className="h-full w-full rounded object-contain"
             />
           ) : (
             icon
           )}
         </span>
-        <span className="text-foreground w-full truncate text-center text-[11px] leading-tight" title={filename}>
+        <span
+          className="text-foreground w-full truncate text-center text-[11px] leading-tight"
+          title={filename}
+        >
           {filename}
         </span>
       </a>
@@ -2832,7 +3041,10 @@ const AttachmentNode = TiptapNode.create({
               filename = titleVal;
             } else if (dataAttVal && dataAttVal.toLowerCase() !== "download") {
               filename = dataAttVal;
-            } else if (downloadAttr && downloadAttr.toLowerCase() !== "download") {
+            } else if (
+              downloadAttr &&
+              downloadAttr.toLowerCase() !== "download"
+            ) {
               filename = downloadAttr;
             }
           }
@@ -3035,8 +3247,7 @@ export function normalizeConfluenceCodeMacros(content: string): string {
         const textMatch =
           inner.match(
             /<ac:plain-text-link-body[^>]*>([\s\S]*?)<\/ac:plain-text-link-body>/i,
-          ) ||
-          inner.match(/<ac:link-body[^>]*>([\s\S]*?)<\/ac:link-body>/i);
+          ) || inner.match(/<ac:link-body[^>]*>([\s\S]*?)<\/ac:link-body>/i);
         const text = textMatch
           ? textMatch[1].replace(/<[^>]+>/g, "").trim()
           : filename;
@@ -4204,7 +4415,7 @@ function LinkFloatingToolbar({
   return (
     <div
       ref={containerRef}
-      className="border-border bg-surface-raised fixed z-50 flex items-center gap-0.5 rounded-lg border p-1 text-xs shadow-lg animate-in fade-in zoom-in-95 duration-100 select-none before:absolute before:-top-3 before:left-0 before:right-0 before:h-3 before:content-['']"
+      className="border-border bg-surface-raised animate-in fade-in zoom-in-95 fixed z-50 flex items-center gap-0.5 rounded-lg border p-1 text-xs shadow-lg duration-100 select-none before:absolute before:-top-3 before:right-0 before:left-0 before:h-3 before:content-['']"
       style={{ left: position.left, top: position.top }}
       onMouseEnter={keepToolbar}
       onMouseLeave={scheduleHide}
@@ -4214,7 +4425,7 @@ function LinkFloatingToolbar({
       <button
         type="button"
         onClick={openLink}
-        className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground rounded p-1.5 transition-colors cursor-pointer"
+        className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground cursor-pointer rounded p-1.5 transition-colors"
         title={
           position.target === "_self"
             ? `Open link in current window (${position.href})`
@@ -4227,7 +4438,7 @@ function LinkFloatingToolbar({
       <button
         type="button"
         onClick={copyLink}
-        className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground rounded p-1.5 transition-colors cursor-pointer"
+        className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground cursor-pointer rounded p-1.5 transition-colors"
         title="Copy link URL"
       >
         {copied ? (
@@ -4252,7 +4463,7 @@ function LinkFloatingToolbar({
           });
           setPosition(null);
         }}
-        className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground rounded p-1.5 transition-colors cursor-pointer"
+        className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground cursor-pointer rounded p-1.5 transition-colors"
         title="Edit link"
       >
         <Pencil className="size-3.5" />
@@ -4261,7 +4472,7 @@ function LinkFloatingToolbar({
       <button
         type="button"
         onClick={removeLink}
-        className="p-1.5 rounded text-red-500 hover:text-red-600 hover:bg-red-500/10 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-500/20 transition-colors cursor-pointer"
+        className="cursor-pointer rounded p-1.5 text-red-500 transition-colors hover:bg-red-500/10 hover:text-red-600 dark:text-red-400 dark:hover:bg-red-500/20 dark:hover:text-red-300"
         title="Remove link"
       >
         <Unlink className="size-3.5 text-red-500 dark:text-red-400" />
@@ -4446,7 +4657,9 @@ function RichTextToolbar({
     };
   }, [openLinkDialog]);
 
-  function saveLink(event?: React.FormEvent<HTMLFormElement> | React.MouseEvent) {
+  function saveLink(
+    event?: React.FormEvent<HTMLFormElement> | React.MouseEvent,
+  ) {
     event?.preventDefault();
     event?.stopPropagation();
     if (!editor) return;
@@ -4734,7 +4947,7 @@ function RichTextToolbar({
 
   return (
     <div
-      className="border-border bg-surface-sunken sticky top-topbar md:top-0 z-20 flex flex-nowrap items-center gap-1 overflow-hidden rounded-t-md border px-1 py-1 shadow-xs [&>button]:shrink-0"
+      className="border-border bg-surface-sunken top-topbar sticky z-20 flex flex-nowrap items-center gap-1 overflow-hidden rounded-t-md border px-1 py-1 shadow-xs md:top-0 [&>button]:shrink-0"
       role="toolbar"
       aria-label="Page formatting"
     >
@@ -5624,7 +5837,7 @@ export function RichTextEditor({
         />
       ) : (
         <div
-          className="border-border bg-surface-sunken sticky top-topbar md:top-0 z-20 h-10 rounded-t-md border shadow-xs"
+          className="border-border bg-surface-sunken top-topbar sticky z-20 h-10 rounded-t-md border shadow-xs md:top-0"
           aria-hidden
         />
       )}
@@ -5784,7 +5997,7 @@ export function RichTextContent({
     <div
       ref={editorContainerRef}
       className={cn(
-        "relative wikihub-reader wikihub-page-content",
+        "wikihub-reader wikihub-page-content relative",
         exportMode && "wikihub-export",
       )}
     >
@@ -6099,13 +6312,55 @@ function AttachmentDetailsModal({
 
   const isImage = metadata ? metadata.content_type.startsWith("image/") : false;
   const isPdf = metadata ? metadata.content_type === "application/pdf" : false;
+  const isVideo = metadata
+    ? metadata.content_type.startsWith("video/") ||
+      /\.(mp4|m4v|mov|webm|ogv|avi|mkv|wmv|flv)$/i.test(metadata.filename)
+    : false;
+  const isAudio = metadata
+    ? metadata.content_type.startsWith("audio/") ||
+      /\.(mp3|wav|flac|ogg|oga|m4a|aac|opus)$/i.test(metadata.filename)
+    : false;
+  const mediaType =
+    metadata?.content_type === "application/octet-stream"
+      ? undefined
+      : metadata?.content_type;
   const isOffice = metadata ? isOfficeAttachment(metadata.filename) : false;
   const isXlsxPreview = metadata ? /\.xlsx$/i.test(metadata.filename) : false;
   const isEditableOffice = metadata
     ? isEditableOfficeAttachment(metadata.filename)
     : false;
   const hasTextPreview = textContent !== null;
-  const attachmentTitle = <span className="inline-flex items-center gap-1.5">Attachment details{metadata ? <span className="group relative inline-flex"><button type="button" aria-label="Show attachment information" aria-describedby="attachment-information" className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-6 cursor-pointer items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none"><Info className="size-4" /></button><span id="attachment-information" role="tooltip" className="bg-surface-raised border-border text-muted-foreground pointer-events-none absolute top-full left-0 z-50 mt-2 grid w-max max-w-[min(28rem,calc(100vw-4rem))] grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border p-3 text-xs font-normal opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><span className="text-foreground font-semibold">File:</span><span className="break-all">{metadata.filename}</span><span className="text-foreground font-semibold">Size:</span><span>{formatSize(metadata.size_bytes)}</span><span className="text-foreground font-semibold">Type:</span><span className="break-all">{metadata.content_type}</span><span className="text-foreground font-semibold">Uploaded:</span><span>{formatDate(metadata.created_at)}</span></span></span> : null}</span>;
+  const attachmentTitle = (
+    <span className="inline-flex items-center gap-1.5">
+      Attachment details
+      {metadata ? (
+        <span className="group relative inline-flex">
+          <button
+            type="button"
+            aria-label="Show attachment information"
+            aria-describedby="attachment-information"
+            className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-6 cursor-pointer items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none"
+          >
+            <Info className="size-4" />
+          </button>
+          <span
+            id="attachment-information"
+            role="tooltip"
+            className="bg-surface-raised border-border text-muted-foreground pointer-events-none absolute top-full left-0 z-50 mt-2 grid w-max max-w-[min(28rem,calc(100vw-4rem))] grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border p-3 text-xs font-normal opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+          >
+            <span className="text-foreground font-semibold">File:</span>
+            <span className="break-all">{metadata.filename}</span>
+            <span className="text-foreground font-semibold">Size:</span>
+            <span>{formatSize(metadata.size_bytes)}</span>
+            <span className="text-foreground font-semibold">Type:</span>
+            <span className="break-all">{metadata.content_type}</span>
+            <span className="text-foreground font-semibold">Uploaded:</span>
+            <span>{formatDate(metadata.created_at)}</span>
+          </span>
+        </span>
+      ) : null}
+    </span>
+  );
 
   const handleSearchInputKeyDown = (
     event: React.KeyboardEvent<HTMLInputElement>,
@@ -6123,6 +6378,21 @@ function AttachmentDetailsModal({
     }
   };
 
+  const toggleOfficeEditing = () => {
+    if (isEditingOffice) {
+      setIsEditingOffice(false);
+      // A force-save callback is asynchronous. Refresh the preview after it
+      // has had time to replace the object so returning from the editor never
+      // keeps a stale browser-cached document on screen.
+      window.setTimeout(
+        () => setAttachmentRevision((revision) => revision + 1),
+        1500,
+      );
+      return;
+    }
+    setIsEditingOffice(true);
+  };
+
   return (
     <Dialog
       open={!!attachmentId}
@@ -6134,13 +6404,16 @@ function AttachmentDetailsModal({
         title={attachmentTitle}
         className={cn(
           "max-w-3xl",
+          isEditingOffice &&
+            "flex h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-[min(100vw-2rem,112rem)] max-w-none flex-col overflow-hidden",
           hasTextPreview &&
             "flex h-[84vh] max-h-[84vh] w-[min(100vw-2rem,64rem)] max-w-none flex-col overflow-hidden",
           isPdfExpanded &&
-              "flex h-[90vh] max-h-[90vh] w-[90vw] max-w-none flex-col overflow-hidden",
-            isOfficeExpanded &&
-              "flex h-[84vh] max-h-[84vh] w-[80vw] max-w-none flex-col overflow-hidden",
-          )}
+            "flex h-[90vh] max-h-[90vh] w-[90vw] max-w-none flex-col overflow-hidden",
+          isOfficeExpanded &&
+            !isEditingOffice &&
+            "flex h-[84vh] max-h-[84vh] w-[80vw] max-w-none flex-col overflow-hidden",
+        )}
       >
         {loading ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2">
@@ -6158,19 +6431,21 @@ function AttachmentDetailsModal({
           <div
             className={cn(
               "space-y-4",
-              (isPdfExpanded || isOfficeExpanded || hasTextPreview) &&
+              (isEditingOffice ||
+                isPdfExpanded ||
+                isOfficeExpanded ||
+                hasTextPreview) &&
                 "flex min-h-0 flex-1 flex-col gap-4 space-y-0",
             )}
           >
             {/* Compact details bar */}
-            <div
-              className="hidden"
-            >
+            <div className="hidden">
               <div className={cn(isOffice && "min-w-0 shrink")}>
                 <span className="text-foreground font-semibold">File: </span>
                 <span
                   className={cn(
-                    isOffice && "inline-block max-w-full truncate align-bottom sm:max-w-56",
+                    isOffice &&
+                      "inline-block max-w-full truncate align-bottom sm:max-w-56",
                   )}
                   title={metadata.filename}
                 >
@@ -6198,7 +6473,10 @@ function AttachmentDetailsModal({
             <div
               className={cn(
                 "border-border overflow-hidden rounded-lg border",
-                (isPdfExpanded || isOfficeExpanded || hasTextPreview) &&
+                (isEditingOffice ||
+                  isPdfExpanded ||
+                  isOfficeExpanded ||
+                  hasTextPreview) &&
                   "flex min-h-0 flex-1 flex-col",
                 isXlsxPreview && "overflow-visible",
               )}
@@ -6206,120 +6484,135 @@ function AttachmentDetailsModal({
               <div className="bg-surface-sunken text-muted-foreground flex items-center justify-between border-b px-3 py-1.5 text-xs font-semibold tracking-wider uppercase">
                 <span>Preview</span>
                 <div className="flex items-center gap-1 tracking-normal normal-case">
-                  <div
-                    ref={setPreviewToolbarContainer}
-                    className={cn(
-                      "attachment-preview-actions flex items-center gap-1",
-                      !isOffice && !isPdf && "hidden",
-                    )}
-                  />
-                {canEditOffice && isEditableOffice ? (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingOffice((editing) => !editing)}
-                    className="text-primary hover:bg-primary-subtle hover:text-primary-hover focus-visible:ring-ring inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium normal-case tracking-normal transition-colors focus-visible:ring-2 focus-visible:outline-none"
-                  >
-                    {isEditingOffice ? "Preview" : "Edit"}
-                  </button>
-                ) : textContent !== null && (
-                  <div className="flex items-center gap-3 tracking-normal normal-case">
-                    <div className="flex items-center gap-1.5">
-                      <div className="relative">
-                        <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
-                        <Input
-                          ref={searchInputRef}
-                          value={searchQuery}
-                          onChange={(e) => {
-                            setSearchQuery(e.target.value);
-                            setActiveMatchIdx(0);
-                          }}
-                          onKeyDown={handleSearchInputKeyDown}
-                          placeholder="Search content..."
-                          className="h-7 w-40 pr-2 pl-7 text-xs"
-                        />
-                      </div>
-                      {matches.length > 0 && (
-                        <div className="text-muted-foreground flex items-center gap-1 text-xs select-none">
-                          <span className="text-foreground font-medium">
-                            {activeMatchIdx + 1}/{matches.length}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setActiveMatchIdx(
-                                (prev) =>
-                                  (prev - 1 + matches.length) % matches.length,
-                              )
-                            }
-                            className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
-                            title="Previous match"
-                          >
-                            <ChevronDown className="size-4 rotate-180" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setActiveMatchIdx(
-                                (prev) => (prev + 1) % matches.length,
-                              )
-                            }
-                            className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
-                            title="Next match"
-                          >
-                            <ChevronDown className="size-4" />
-                          </button>
-                        </div>
+                  {!isEditingOffice ? (
+                    <div
+                      ref={setPreviewToolbarContainer}
+                      className={cn(
+                        "attachment-preview-actions flex items-center gap-1",
+                        !isOffice && !isPdf && !isVideo && "hidden",
                       )}
-                    </div>
+                    />
+                  ) : null}
+                  <a
+                    href={contentUrl}
+                    download={metadata.filename}
+                    className="text-muted-foreground border-border bg-surface hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1 rounded border px-2 text-xs font-medium tracking-normal normal-case transition-[color,background-color,border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                    title={`Download ${metadata.filename}`}
+                  >
+                    <Download className="size-3.5" aria-hidden="true" />
+                    <span>Download</span>
+                  </a>
+                  {canEditOffice && isEditableOffice ? (
                     <button
                       type="button"
-                      onClick={() => setWrapLines((w) => !w)}
-                      className={cn(
-                        "hover:bg-surface-hover focus-visible:ring-ring flex size-7 cursor-pointer items-center justify-center rounded border border-transparent transition-all duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                        wrapLines
-                          ? "bg-primary-subtle text-primary border-primary-subtle font-medium"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                      title={
-                        wrapLines
-                          ? "Disable line wrapping"
-                          : "Enable line wrapping"
-                      }
+                      onClick={toggleOfficeEditing}
+                      className="text-primary border-primary/30 bg-primary-subtle/60 hover:bg-primary-subtle hover:border-primary/50 hover:text-primary-hover active:bg-primary-subtle focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1 rounded border px-2 text-xs font-medium tracking-normal normal-case transition-[color,background-color,border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
                     >
-                      <WrapText className="size-4" />
+                      {isEditingOffice ? (
+                        <ArrowLeft className="size-3.5" aria-hidden="true" />
+                      ) : (
+                        <Pencil className="size-3.5" aria-hidden="true" />
+                      )}
+                      {isEditingOffice ? "Back to preview" : "Edit"}
                     </button>
-                  </div>
-                )}
+                  ) : (
+                    textContent !== null && (
+                      <div className="flex items-center gap-3 tracking-normal normal-case">
+                        <div className="flex items-center gap-1.5">
+                          <div className="relative">
+                            <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
+                            <Input
+                              ref={searchInputRef}
+                              value={searchQuery}
+                              onChange={(e) => {
+                                setSearchQuery(e.target.value);
+                                setActiveMatchIdx(0);
+                              }}
+                              onKeyDown={handleSearchInputKeyDown}
+                              placeholder="Search content..."
+                              className="h-7 w-40 pr-2 pl-7 text-xs"
+                            />
+                          </div>
+                          {matches.length > 0 && (
+                            <div className="text-muted-foreground flex items-center gap-1 text-xs select-none">
+                              <span className="text-foreground font-medium">
+                                {activeMatchIdx + 1}/{matches.length}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActiveMatchIdx(
+                                    (prev) =>
+                                      (prev - 1 + matches.length) %
+                                      matches.length,
+                                  )
+                                }
+                                className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
+                                title="Previous match"
+                              >
+                                <ChevronDown className="size-4 rotate-180" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActiveMatchIdx(
+                                    (prev) => (prev + 1) % matches.length,
+                                  )
+                                }
+                                className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
+                                title="Next match"
+                              >
+                                <ChevronDown className="size-4" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setWrapLines((w) => !w)}
+                          className={cn(
+                            "hover:bg-surface-hover focus-visible:ring-ring flex size-7 cursor-pointer items-center justify-center rounded border border-transparent transition-all duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                            wrapLines
+                              ? "bg-primary-subtle text-primary border-primary-subtle font-medium"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                          title={
+                            wrapLines
+                              ? "Disable line wrapping"
+                              : "Enable line wrapping"
+                          }
+                        >
+                          <WrapText className="size-4" />
+                        </button>
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
               <div
                 className={cn(
                   "bg-surface min-h-32 items-center justify-center overflow-auto p-4",
-                (isPdfExpanded || isOfficeExpanded) && (isPdf || isOffice)
-                    ? "flex min-h-0 max-h-none flex-1 !items-start !justify-start !overflow-hidden !p-0"
+                  (isPdfExpanded || isOfficeExpanded) && (isPdf || isOffice)
+                    ? "flex max-h-none min-h-0 flex-1 !items-start !justify-start !overflow-hidden !p-0"
                     : isEditingOffice
-                    ? "flex"
-                    : isPdf
-                      ? "flex max-h-[min(70vh,36rem)] !items-start !justify-start !p-0"
-                    : isOffice
-                      ? `flex max-h-[min(56vh,30rem)] !items-start !justify-start !p-0 ${isXlsxPreview ? "!overflow-visible" : "!overflow-hidden"}`
-                    : textContent !== null
-                      ? "flex min-h-0 flex-1 !overflow-hidden"
-                      : "flex max-h-96",
+                      ? "flex min-h-0 flex-1 !overflow-hidden !p-0"
+                      : isPdf
+                        ? "flex max-h-[min(70vh,36rem)] !items-start !justify-start !p-0"
+                        : isOffice
+                          ? `flex max-h-[min(66vh,36rem)] !items-start !justify-start !p-0 ${isXlsxPreview ? "!overflow-visible" : "!overflow-hidden"}`
+                          : isVideo
+                            ? "flex max-h-[min(70vh,36rem)] !items-stretch !justify-stretch !overflow-hidden !bg-black !p-0"
+                            : isAudio
+                              ? "flex max-h-72 w-full !p-5"
+                              : textContent !== null
+                                ? "flex min-h-0 flex-1 !overflow-hidden"
+                                : "flex max-h-96",
                 )}
               >
                 {isEditingOffice && canEditOffice && isEditableOffice ? (
                   <OfficeAttachmentEditor
                     attachmentId={attachmentId}
-                    contentUrl={contentUrl}
                     filename={metadata.filename}
-                    contentType={metadata.content_type}
-                    onCancel={() => setIsEditingOffice(false)}
-                    onSaved={(sizeBytes) => {
-                      setMetadata((current) => current ? { ...current, size_bytes: sizeBytes } : current);
-                      setAttachmentRevision((revision) => revision + 1);
-                      setIsEditingOffice(false);
-                    }}
                   />
                 ) : isOffice ? (
                   <OfficeAttachmentPreview
@@ -6336,6 +6629,23 @@ function AttachmentDetailsModal({
                     src={contentUrl}
                     alt={metadata.filename}
                     className="max-h-80 w-auto rounded border object-contain shadow-sm"
+                  />
+                ) : isVideo ? (
+                  <div className="h-full max-h-[min(70vh,36rem)] w-full">
+                    <VideoAttachmentPreview
+                      key={attachmentId}
+                      attachmentId={attachmentId}
+                      contentUrl={contentUrl}
+                      contentType={mediaType}
+                      filename={metadata.filename}
+                      toolbarContainer={previewToolbarContainer}
+                    />
+                  </div>
+                ) : isAudio ? (
+                  <AudioAttachmentPreview
+                    contentUrl={contentUrl}
+                    contentType={mediaType}
+                    filename={metadata.filename}
                   />
                 ) : textContent !== null ? (
                   <div className="wikihub-code bg-code-bg border-code-border h-full max-h-none w-full overflow-auto rounded border font-mono text-xs leading-relaxed select-text">
@@ -6397,25 +6707,6 @@ function AttachmentDetailsModal({
               </div>
             </div>
 
-            <DialogFooter
-              className={cn(
-                hasTextPreview && "mt-0 shrink-0",
-              )}
-            >
-              <Button type="button" variant="secondary" onClick={onClose}>
-                Close
-              </Button>
-              <Button asChild>
-                <a
-                  href={contentUrl}
-                  download={metadata.filename}
-                  className="gap-1.5"
-                >
-                  <Download className="size-4" />
-                  <span>Download</span>
-                </a>
-              </Button>
-            </DialogFooter>
           </div>
         ) : null}
       </DialogContent>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -11,6 +12,7 @@ from app.api.v1 import pages as pages_api
 from app.api.v1 import spaces as spaces_api
 from app.models.permission import Permission
 from app.models.restriction import PageRestrictionPermission
+from app.modules.import_export.service import STALE_IMPORT_AFTER
 from app.modules.pages.export_service import ExportResult
 
 
@@ -329,6 +331,7 @@ async def test_confluence_import_route_wrappers(monkeypatch: pytest.MonkeyPatch)
         id=job.id,
         status="queued",
         phase="queued",
+        heartbeat_at=None,
         cancel_requested=False,
         archive_id=archive.id,
         import_all=True,
@@ -354,3 +357,64 @@ async def test_confluence_import_route_wrappers(monkeypatch: pytest.MonkeyPatch)
     )
     session.get = AsyncMock(return_value=retry_item)
     assert await imports_api.retry(job.id, user, session) is not None
+
+
+def _running_import(**overrides) -> SimpleNamespace:
+    defaults = {
+        "id": uuid.uuid4(),
+        "status": "running",
+        "phase": "downloading",
+        "heartbeat_at": datetime.now(UTC),
+        "cancel_requested": False,
+        "archive_id": uuid.uuid4(),
+        "import_all": True,
+        "space_keys": [],
+        "overwrite_existing": False,
+        "counters": {},
+        "error": None,
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
+    }
+    return SimpleNamespace(**{**defaults, **overrides})
+
+
+@pytest.mark.asyncio
+async def test_cancel_import_finalises_when_the_worker_is_gone():
+    """Cancel must not defer to a worker that no longer exists.
+
+    Cancelling a *running* import works by setting `cancel_requested` for the
+    worker loop to observe. When that worker died - a crash, a container
+    restart, a deploy - the row stayed "running" forever: the progress bar
+    never moved again and Cancel only wrote "the current import step will stop
+    shortly" about a step that was not running at all.
+    """
+    session = AsyncMock()
+    item = _running_import(heartbeat_at=datetime.now(UTC) - STALE_IMPORT_AFTER * 2)
+    session.get = AsyncMock(return_value=item)
+
+    result = await imports_api.cancel(item.id, Mock(), session)
+
+    assert (result.status, result.phase) == ("cancelled", "cancelled")
+    assert item.cancel_requested is True
+    logged = [c.args[0] for c in session.add.call_args_list]
+    assert any("no longer running" in entry.message for entry in logged)
+
+
+@pytest.mark.asyncio
+async def test_cancel_import_leaves_a_live_worker_to_stop_itself():
+    """The other half: a beating heartbeat means someone is still working.
+
+    Finalising here would race the worker - it would go on downloading against
+    a row already marked cancelled, and its own closing write would land on
+    top. The flag is enough; it observes it at the next progress tick.
+    """
+    session = AsyncMock()
+    item = _running_import(heartbeat_at=datetime.now(UTC))
+    session.get = AsyncMock(return_value=item)
+
+    result = await imports_api.cancel(item.id, Mock(), session)
+
+    assert (result.status, result.phase) == ("running", "downloading")
+    assert item.cancel_requested is True
+    logged = [c.args[0] for c in session.add.call_args_list]
+    assert any("stop shortly" in entry.message for entry in logged)

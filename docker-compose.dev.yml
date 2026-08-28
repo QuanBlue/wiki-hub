@@ -96,6 +96,7 @@ services:
     # up in a reload loop printing "missing required error components".
     environment:
       NODE_ENV: development
+      NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL: ${NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL:-http://localhost:${ONLYOFFICE_PORT_HOST:-8080}}
       # Watchpack polling is reliable for Docker bind mounts on Windows.
       WATCHPACK_POLLING: "true"
       WATCHPACK_POLLING_INTERVAL: "500"

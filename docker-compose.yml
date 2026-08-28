@@ -91,6 +91,29 @@ services:
       "
     restart: "no"
 
+  onlyoffice:
+    # Full-fidelity DOCX/XLSX editing engine. The browser reaches it via the
+    # published port, while it reaches WikiHub through the compose network.
+    image: onlyoffice/documentserver:9.4.0.1
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${WIKIHUB_ONLYOFFICE_JWT_SECRET:-wikihub-local-onlyoffice-dev-secret-replace-before-production}
+      JWT_HEADER: Authorization
+      JWT_IN_BODY: "true"
+      # WikiHub is reached through the private compose network. This is kept
+      # limited to the document-server container; public deployments should
+      # route the value below through their internal service hostname.
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+    ports:
+      - "${ONLYOFFICE_PORT_HOST:-8080}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/healthcheck >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
   backend:
     build:
       context: .
@@ -110,12 +133,18 @@ services:
       # NOT in depends_on below - frontend already depends on backend, and
       # export simply returns a clean 503 if the frontend happens to be down.
       WIKIHUB_FRONTEND_INTERNAL_URL: http://frontend:3000
+      WIKIHUB_ONLYOFFICE_ENABLED: "true"
+      WIKIHUB_ONLYOFFICE_BACKEND_URL: http://backend:8000
+      WIKIHUB_ONLYOFFICE_INTERNAL_URL: http://onlyoffice
+      WIKIHUB_ONLYOFFICE_JWT_SECRET: ${WIKIHUB_ONLYOFFICE_JWT_SECRET:-wikihub-local-onlyoffice-dev-secret-replace-before-production}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      onlyoffice:
         condition: service_healthy
     ports:
       - "${BACKEND_PORT_HOST:-8000}:8000"
@@ -169,14 +198,18 @@ services:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
         API_INTERNAL_BASE_URL: http://backend:8000
         NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-WikiHub}
+        NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL: ${NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL:-http://localhost:${ONLYOFFICE_PORT_HOST:-8080}}
     restart: unless-stopped
     environment:
       # Server-side rendering talks to the API over the compose network.
       API_INTERNAL_BASE_URL: http://backend:8000
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
       NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-WikiHub}
+      NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL: ${NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL:-http://localhost:${ONLYOFFICE_PORT_HOST:-8080}}
     depends_on:
       backend:
+        condition: service_healthy
+      onlyoffice:
         condition: service_healthy
     ports:
       - "${FRONTEND_PORT_HOST:-3000}:3000"

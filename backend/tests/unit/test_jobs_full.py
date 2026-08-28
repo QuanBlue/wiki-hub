@@ -3,6 +3,8 @@ import pytest
 from unittest.mock import AsyncMock, Mock
 from datetime import datetime, timedelta, UTC
 
+from sqlalchemy.exc import MissingGreenlet
+
 from app.modules.backup.jobs import (
     create_export_job,
     create_import_job,
@@ -456,3 +458,87 @@ async def test_run_backup_job_full_import_narrates_a_cancellation(monkeypatch):
     # Added after the rollback: no `session.rollback` call may follow it.
     add_calls = [c for c in session.method_calls if c[0] in {"add", "rollback"}]
     assert add_calls[-1][0] == "add"
+
+
+class _ExpiringJob:
+    """A job row that behaves the way SQLAlchemy does after a rollback.
+
+    `AsyncSession.rollback()` expires every instance in the identity map, and
+    reading an expired attribute fires the loader - which issues its SELECT
+    synchronously and therefore raises `MissingGreenlet` on an async session.
+    A plain `BackupJob` built in a test is attached to nothing and so can never
+    reproduce that, which is exactly why the real bug shipped: the cancel
+    finaliser read `job.id` after its own rollback, blew up, and left the row
+    stuck on "running" until the five-minute reaper found it.
+    """
+
+    def __init__(self, **attrs):
+        object.__setattr__(self, "_expired", False)
+        for name, value in attrs.items():
+            object.__setattr__(self, name, value)
+
+    def expire(self) -> None:
+        object.__setattr__(self, "_expired", True)
+
+    def __getattribute__(self, name):
+        expired = object.__getattribute__(self, "_expired")
+        if expired and not name.startswith("_") and name != "expire":
+            raise MissingGreenlet(
+                "greenlet_spawn has not been called; can't call await_only() here."
+            )
+        return object.__getattribute__(self, name)
+
+
+@pytest.mark.asyncio
+async def test_run_backup_job_full_import_cancel_survives_the_rollback(monkeypatch):
+    """Cancelling a restore must finalise the row, not crash the finaliser.
+
+    Regression: the closing status was written via `session.get(BackupJob,
+    job.id)` *after* `session.rollback()`, so evaluating the argument raised
+    `MissingGreenlet` and the job stayed "running"/"downloading" with
+    `cancel_requested` set - an admin panel spinning on "Cancelling
+    restore..." for as long as the reaper's heartbeat timeout.
+    """
+    session = AsyncMock()
+    storage = AsyncMock()
+    job_id = uuid.uuid4()
+    stale = _ExpiringJob(
+        id=job_id,
+        kind="full_import",
+        status="queued",
+        phase="queued",
+        error=None,
+        counters={},
+        cancel_requested=False,
+        archive_id=uuid.uuid4(),
+        overwrite_space_keys=[],
+        space_keys=[],
+        started_at=None,
+        heartbeat_at=None,
+    )
+    fresh = _restore_job(id=job_id)
+    archive = Mock(object_key="k", size_bytes=1000)
+
+    async def rollback():
+        stale.expire()
+
+    session.rollback.side_effect = rollback
+
+    def get_side_effect(model, _pk):
+        if model is not BackupJob:
+            return archive
+        return fresh if object.__getattribute__(stale, "_expired") else stale
+
+    session.get.side_effect = get_side_effect
+
+    async def mock_restore(self, path, storage, *, dry_run, overwrite_space_keys, space_keys, job):
+        raise ExportCancelled("Export cancelled by administrator.")
+
+    monkeypatch.setattr(
+        "app.modules.backup.jobs.BackupService.restore_full_package", mock_restore
+    )
+
+    await run_backup_job(session, storage, job_id)
+
+    assert fresh.status == "cancelled"
+    assert fresh.phase == "cancelled"

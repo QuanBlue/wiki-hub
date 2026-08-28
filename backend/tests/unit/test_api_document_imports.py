@@ -67,6 +67,8 @@ def _stub_services(monkeypatch, *, can_edit: bool = True, parent=None, max_mb: i
     space = Mock()
     space.id = uuid.uuid4()
     space.key = "ENG"
+    # The space follows the workspace ceiling unless a test says otherwise.
+    space.max_upload_size_mb = None
 
     class _SpaceService:
         def __init__(self, _session):

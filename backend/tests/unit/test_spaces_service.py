@@ -44,6 +44,7 @@ def space():
         description="Docs",
         icon="book",
         font_family="inherit",
+        max_upload_size_mb=None,
         status=SpaceStatus.active,
         visibility=SpaceVisibility.open,
         created_at=datetime.now(UTC),

@@ -69,6 +69,17 @@ class ObjectStorage(abc.ABC):
     async def get_stream(self, key: str) -> tuple[int, AsyncIterator[bytes]]: ...
 
     @abc.abstractmethod
+    async def get_range(
+        self, key: str, start: int, end: int
+    ) -> tuple[int, AsyncIterator[bytes]]:
+        """Stream the inclusive byte range ``start..end`` of an object.
+
+        Returns the object's *total* size alongside the chunks, which is what
+        an HTTP ``Content-Range`` has to report. Media players seek by asking
+        for ranges, so this must never read more than the bytes requested.
+        """
+
+    @abc.abstractmethod
     def open_reader(self, key: str) -> IO[bytes]:
         """A seekable, read-only binary handle over a stored object.
 
@@ -108,6 +119,15 @@ class ObjectStorage(abc.ABC):
     async def presigned_url(
         self, key: str, *, expires_in: int | None = None, download_as: str | None = None
     ) -> str: ...
+
+    @abc.abstractmethod
+    async def presigned_internal_url(self, key: str, *, expires_in: int | None = None) -> str:
+        """A short-lived read URL valid from *inside* the deployment.
+
+        :meth:`presigned_url` signs for the browser-facing endpoint. Server-side
+        readers - ffprobe pulling a video's headers, say - reach object storage
+        by its internal address and must never be handed the public one.
+        """
 
     @abc.abstractmethod
     async def presigned_upload_url(
@@ -358,6 +378,35 @@ class S3ObjectStorage(ObjectStorage):
 
         return content_length, _chunks()
 
+    async def get_range(
+        self, key: str, start: int, end: int
+    ) -> tuple[int, AsyncIterator[bytes]]:
+        result = await self._call(
+            self.client.get_object,
+            Bucket=self.bucket,
+            Key=key,
+            Range=f"bytes={start}-{end}",
+        )
+        body = result["Body"]
+        # S3 answers a ranged GET with `Content-Range: bytes 0-99/12345`; the
+        # part after the slash is the only place the full object size appears.
+        content_range = str(result.get("ContentRange") or "")
+        _, _, declared_total = content_range.rpartition("/")
+        total = (
+            int(declared_total)
+            if declared_total.isdigit()
+            else int(result.get("ContentLength") or 0)
+        )
+
+        async def _chunks() -> AsyncIterator[bytes]:
+            try:
+                while chunk := await anyio.to_thread.run_sync(body.read, 1024 * 1024):
+                    yield chunk
+            finally:
+                await anyio.to_thread.run_sync(body.close)
+
+        return total, _chunks()
+
     def open_reader(self, key: str) -> IO[bytes]:
         head = self._call_sync(self.client.head_object, Bucket=self.bucket, Key=key)
         raw = _S3RangeReader(self, key, int(head.get("ContentLength") or 0))
@@ -440,6 +489,16 @@ class S3ObjectStorage(ObjectStorage):
             lambda: self.signing_client.generate_presigned_url(
                 "get_object",
                 Params=params,
+                ExpiresIn=expires_in or settings.s3_presign_ttl_seconds,
+            )
+        )
+        return str(url)
+
+    async def presigned_internal_url(self, key: str, *, expires_in: int | None = None) -> str:
+        url = await anyio.to_thread.run_sync(
+            lambda: self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket, "Key": key},
                 ExpiresIn=expires_in or settings.s3_presign_ttl_seconds,
             )
         )

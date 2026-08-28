@@ -15,7 +15,7 @@ from app.modules.backup.jobs import reap_abandoned_export_jobs
 from app.modules.backup.jobs import run_backup_job as execute_backup_job
 from app.modules.document_import.jobs import reap_abandoned_document_imports
 from app.modules.document_import.jobs import run_document_import as execute_document_import
-from app.modules.import_export.service import run_import
+from app.modules.import_export.service import reap_abandoned_confluence_imports, run_import
 from app.services.storage import get_storage
 
 logger = get_logger(__name__)
@@ -63,10 +63,14 @@ async def reap_backup_jobs(ctx: dict[str, Any], *, every_running_job: bool = Fal
     Scheduled rather than opportunistic: someone staring at a stuck progress
     bar should not have to trigger anything for it to clear.
 
-    Document imports are swept here too rather than from a second cron entry:
-    the failure is identical (a `running` row nothing is advancing) and one
-    minute-ly sweep covering both job families is easier to reason about than
-    two that could fall out of step.
+    Document imports and Confluence imports are swept here too rather than from
+    further cron entries: the failure is identical (a `running` row nothing is
+    advancing) and one minute-ly sweep covering every job family is easier to
+    reason about than three that could fall out of step.
+
+    Each family keeps its own staleness window - see `STALE_IMPORT_AFTER` for
+    why a Confluence import is given far longer than the others before it is
+    presumed dead.
     """
     async with session_scope() as session:
         reaped = await reap_abandoned_export_jobs(
@@ -75,9 +79,18 @@ async def reap_backup_jobs(ctx: dict[str, Any], *, every_running_job: bool = Fal
         reaped_imports = await reap_abandoned_document_imports(
             session, every_running_job=every_running_job
         )
+        reaped_confluence = await reap_abandoned_confluence_imports(
+            session, every_running_job=every_running_job
+        )
     if reaped:
         logger.info("backup_jobs_reaped", count=reaped, on_startup=every_running_job)
     if reaped_imports:
         logger.info(
             "document_imports_reaped", count=reaped_imports, on_startup=every_running_job
+        )
+    if reaped_confluence:
+        logger.info(
+            "confluence_imports_reaped",
+            count=reaped_confluence,
+            on_startup=every_running_job,
         )

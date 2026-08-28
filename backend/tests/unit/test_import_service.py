@@ -213,7 +213,7 @@ async def test_upload_reuse_and_job_validation() -> None:
     storage.exists = AsyncMock(return_value=False)
     assert await service.find_reusable_archive(sha256="hash", size_bytes=3) is None
     service.find_reusable_archive = AsyncMock(return_value=archive)
-    session.execute.return_value = Mock(scalar_one_or_none=Mock(return_value=None))
+    session.execute.return_value = _EntityResult(None)
     assert (
         await service.start_upload(
             filename="archive.zip", size_bytes=3, actor_id=uuid.uuid4(), sha256="hash"
@@ -451,7 +451,7 @@ async def test_run_import_creates_space_pages_and_bodies(monkeypatch: pytest.Mon
     )
     archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
     session.get.side_effect = [job, archive]
-    session.execute = AsyncMock(return_value=Mock(scalar_one_or_none=Mock(return_value=None)))
+    session.execute = AsyncMock(return_value=_EntityResult(None))
 
     source_page = ConfluencePage(
         source_id="page-1",
@@ -535,7 +535,7 @@ async def test_run_import_handles_home_creation_parenting_timestamps_and_cancel(
     )
     archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
     session.get = AsyncMock(side_effect=[job, archive])
-    session.execute = AsyncMock(return_value=Mock(scalar_one_or_none=Mock(return_value=None)))
+    session.execute = AsyncMock(return_value=_EntityResult(None))
 
     async def download(_key, target, **_kwargs):
         with zipfile.ZipFile(target, "w") as source:
@@ -600,7 +600,7 @@ async def test_run_import_skips_existing_space_without_overwrite(
     )
     archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
     session.get = AsyncMock(side_effect=[job, archive])
-    session.execute = AsyncMock(return_value=Mock(scalar_one_or_none=Mock(return_value=object())))
+    session.execute = AsyncMock(return_value=_EntityResult(object()))
     source = ConfluenceSpace("space", "ENG", "Engineering", [])
 
     async def download(_key, target, **_kwargs):
@@ -1035,7 +1035,7 @@ async def test_run_import_attachment_size_defaults_to_zero_on_missing_zip_entry(
                 item.id = uuid.uuid4()
 
     session.flush = AsyncMock(side_effect=flush)
-    session.execute = AsyncMock(return_value=Mock(scalar_one_or_none=Mock(return_value=None)))
+    session.execute = AsyncMock(return_value=_EntityResult(None))
 
     job = SimpleNamespace(
         id=uuid.uuid4(),
@@ -1123,7 +1123,7 @@ async def test_run_import_marks_space_restricted_without_public_view_permission(
                 item.id = uuid.uuid4()
 
     session.flush = AsyncMock(side_effect=flush)
-    session.execute = AsyncMock(return_value=Mock(scalar_one_or_none=Mock(return_value=None)))
+    session.execute = AsyncMock(return_value=_EntityResult(None))
 
     job = SimpleNamespace(
         id=uuid.uuid4(),

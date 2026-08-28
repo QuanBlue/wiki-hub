@@ -909,9 +909,107 @@ describe("BackupPanel native restore", () => {
     expect(
       screen.getByRole("tab", { name: /import \/ restore/i }),
     ).toHaveAttribute("aria-selected", "true");
+    // Disabled, not enabled: the bar above owns the decision now, and this
+    // button would queue every space in the archive without asking. See
+    // "steps aside for the ready-to-restore bar" below.
     expect(
       importSection().getByRole("button", { name: /^restore backup$/i }),
-    ).toBeEnabled();
+    ).toBeDisabled();
+  });
+
+  it("steps aside for the ready-to-restore bar, and comes back when it is cancelled", async () => {
+    // Reported: with the "ready to restore" bar up, "Restore backup" sat
+    // right above it still live - and one stray click there queues an
+    // unscoped restore of all 43 spaces, which is precisely the choice the
+    // bar exists to put in front of the operator first.
+    let deletedArchive: string | null = null;
+    mockFetch([
+      {
+        method: "DELETE",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/upload",
+        handler: () => {
+          deletedArchive = "archive-1";
+          return { body: {} };
+        },
+      },
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/archives/uploads/active",
+        handler: () => ({
+          body: deletedArchive
+            ? []
+            : [
+                {
+                  archive_id: "archive-1",
+                  filename: "f.zip",
+                  size_bytes: 8,
+                  sha256: "a".repeat(64),
+                  status: "scanned",
+                  part_size_bytes: 8 * 1024 * 1024,
+                  uploaded_parts: [1],
+                },
+              ],
+        }),
+      },
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/archives/archive-1",
+        handler: () => ({
+          body: {
+            id: "archive-1",
+            filename: "f.zip",
+            size_bytes: 8,
+            sha256: "a".repeat(64),
+            status: "scanned",
+            error: null,
+            spaces: [
+              { key: "ENG", name: "Engineering", page_count: 2, conflict: false },
+            ],
+          },
+        }),
+      },
+      ...archiveUploadRoutes(),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    await screen.findByRole(
+      "button",
+      { name: /select spaces & restore/i },
+      { timeout: 4000 },
+    );
+    const restoreButton = importSection().getByRole("button", {
+      name: /^restore backup$/i,
+    });
+    expect(restoreButton).toBeDisabled();
+
+    // Cancel restore, through its confirmation, gives the card back.
+    await actor.click(screen.getByRole("button", { name: /^cancel restore$/i }));
+    await actor.click(
+      await screen.findByRole("button", { name: /^cancel restore$/i }),
+    );
+    await waitFor(() => expect(deletedArchive).toBe("archive-1"));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /select spaces & restore/i }),
+      ).not.toBeInTheDocument(),
+    );
+
+    // Back to normal: no archive holding it down, so a freshly chosen file is
+    // all it takes to make the button live again.
+    const input = document.getElementById("backup-file") as HTMLInputElement;
+    await waitFor(() => expect(input).toBeEnabled());
+    await actor.upload(
+      input,
+      new File(["{}"], "restore.json", { type: "application/json" }),
+    );
+    await waitFor(() =>
+      expect(
+        importSection().getByRole("button", { name: /^restore backup$/i }),
+      ).toBeEnabled(),
+    );
   });
 
 
