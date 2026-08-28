@@ -362,7 +362,7 @@ async def test_storage_and_dependency_edges(monkeypatch: pytest.MonkeyPatch) -> 
     ).url == "/api/v1/storage/object?key=a%2Fb.txt&download_as=b.txt"
 
     session = Mock(
-        scalar=AsyncMock(side_effect=[None, None]), flush=AsyncMock(), delete=AsyncMock()
+        scalar=AsyncMock(side_effect=[None, None, None]), flush=AsyncMock(), delete=AsyncMock()
     )
     deleted = await storage_admin.delete_storage_object(user, storage, session, key="a/b.txt")
     assert deleted.archive_cleared is False
@@ -372,7 +372,7 @@ async def test_storage_and_dependency_edges(monkeypatch: pytest.MonkeyPatch) -> 
     storage.exists = AsyncMock(return_value=True)
     archive = SimpleNamespace(sha256="hash", status="uploaded")
     attachment = SimpleNamespace()
-    session.scalar = AsyncMock(side_effect=[archive, attachment])
+    session.scalar = AsyncMock(side_effect=[archive, None, attachment])
     session.flush = AsyncMock()
     deleted = await storage_admin.delete_storage_object(user, storage, session, key="a/b.txt")
     assert deleted.archive_cleared and deleted.attachment_deleted

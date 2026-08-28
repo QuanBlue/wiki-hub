@@ -6100,6 +6100,7 @@ function AttachmentDetailsModal({
   const isImage = metadata ? metadata.content_type.startsWith("image/") : false;
   const isPdf = metadata ? metadata.content_type === "application/pdf" : false;
   const isOffice = metadata ? isOfficeAttachment(metadata.filename) : false;
+  const isXlsxPreview = metadata ? /\.xlsx$/i.test(metadata.filename) : false;
   const isEditableOffice = metadata
     ? isEditableOfficeAttachment(metadata.filename)
     : false;
@@ -6199,6 +6200,7 @@ function AttachmentDetailsModal({
                 "border-border overflow-hidden rounded-lg border",
                 (isPdfExpanded || isOfficeExpanded || hasTextPreview) &&
                   "flex min-h-0 flex-1 flex-col",
+                isXlsxPreview && "overflow-visible",
               )}
             >
               <div className="bg-surface-sunken text-muted-foreground flex items-center justify-between border-b px-3 py-1.5 text-xs font-semibold tracking-wider uppercase">
@@ -6299,8 +6301,8 @@ function AttachmentDetailsModal({
                     ? "flex"
                     : isPdf
                       ? "flex max-h-[min(70vh,36rem)] !items-start !justify-start !p-0"
-                  : isOffice
-                      ? "flex max-h-[min(56vh,30rem)] !items-start !justify-start !overflow-hidden !p-0"
+                    : isOffice
+                      ? `flex max-h-[min(56vh,30rem)] !items-start !justify-start !p-0 ${isXlsxPreview ? "!overflow-visible" : "!overflow-hidden"}`
                     : textContent !== null
                       ? "flex min-h-0 flex-1 !overflow-hidden"
                       : "flex max-h-96",

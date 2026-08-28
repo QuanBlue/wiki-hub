@@ -20,6 +20,7 @@ from sqlalchemy import select
 from app.api.deps import CurrentSuperuser, DbSession
 from app.core.exceptions import NotFoundError
 from app.models.attachment import PageAttachment
+from app.models.backup_job import BackupArchive
 from app.models.import_job import ImportArchive
 from app.models.page import WikiPage
 from app.models.space import Space
@@ -42,12 +43,28 @@ StorageDep = Annotated[ObjectStorage, Depends(get_storage)]
 
 
 def storage_kind(key: str) -> str:
+    """Classify an object by its key prefix.
+
+    Every prefix this application writes has an entry here. Anything missing
+    lands in "other", which in the admin panel means an unlabelled row under a
+    generic heading - a restore archive sitting in the bucket exactly as
+    intended still reads as "the upload was never saved". The prefixes are the
+    ones the writers actually use: `BackupArchiveService.start_upload`,
+    `run_full_backup_job`, `ConfluenceImportService.start_upload`, and
+    `staged_object_key`.
+    """
     if key.startswith("attachments/"):
         return "page_attachment"
     if key.startswith("avatars/"):
         return "avatar"
-    if key.startswith("confluence-imports/"):
+    if key.startswith("imports/confluence/"):
         return "import_archive"
+    if key.startswith("imports/documents/"):
+        return "document_import"
+    if key.startswith("backups/imports/"):
+        return "backup_archive"
+    if key.startswith("backups/exports/"):
+        return "backup_export"
     return "other"
 
 
@@ -260,9 +277,10 @@ async def delete_storage_object(
 ) -> DeleteResult:
     """Delete an object from S3 and clean up any database references.
 
-    * If the key matches a **Confluence import archive**, its ``sha256`` hash
-      is cleared and its status set to ``"cancelled"`` so the same archive can
-      be re-uploaded without a duplicate-detection conflict.
+    * If the key matches a **Confluence import archive** or an uploaded
+      **backup restore archive**, its ``sha256`` hash is cleared and its status
+      set to ``"cancelled"`` so the same archive can be re-uploaded without a
+      duplicate-detection conflict.
 
     * If the key matches a **page attachment**, the ``page_attachments`` row is
       deleted. The page will display a broken media placeholder, which is the
@@ -283,6 +301,21 @@ async def delete_storage_object(
     if archive is not None:
         archive.sha256 = None
         archive.status = "cancelled"
+        await session.flush()
+        archive_cleared = True
+
+    # --- Backup restore archive ---------------------------------------------
+    # Without this the row survives its own bytes: it keeps its "uploaded" /
+    # "scanned" status and its hash, so `/backup/archives/uploads/active` goes
+    # on offering the archive as ready to restore, and the restore that
+    # accepts the offer only fails once the worker tries to fetch the object.
+    backup_archive = await session.scalar(
+        select(BackupArchive).where(BackupArchive.object_key == key)
+    )
+    if backup_archive is not None:
+        backup_archive.sha256 = None
+        backup_archive.multipart_upload_id = None
+        backup_archive.status = "cancelled"
         await session.flush()
         archive_cleared = True
 

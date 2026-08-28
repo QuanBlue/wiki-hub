@@ -153,6 +153,202 @@
   overflow-x: hidden;
 }
 
+.office-preview-card--xlsx {
+  display: flex;
+  flex-direction: column;
+  /* The modal places its preview in a horizontal flex row. Do not let an
+     intrinsically narrow spreadsheet shrink this card; the sheet itself can
+     remain narrow while its scroll viewport spans the entire Preview panel. */
+  width: 100%;
+  min-width: 100%;
+  max-width: none;
+  flex: 1 1 100%;
+  /* The workbook has its own scroll viewport. Clipping this paint boundary
+     keeps scrolling from invalidating the surrounding Preview card. */
+  overflow: hidden;
+}
+
+.office-preview-card--xlsx .office-preview-content,
+.office-preview-card--xlsx .office-xlsx-renderer-host,
+.office-preview-card--xlsx .fv-plugin-renderer,
+.office-preview-card--xlsx .fv-plugin-renderer__content,
+.office-preview-card--xlsx .fv-xlsx {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0%;
+  align-self: stretch;
+}
+
+/* The renderer has one unstyled intermediary wrapper. Its default row layout
+   sizes the spreadsheet to the table's intrinsic width, leaving the scroll
+   rail stranded in the middle of an expanded card. Keep every renderer layer
+   column-oriented so the scroll viewport fills the complete preview width. */
+.office-preview-card--xlsx .office-xlsx-renderer-host,
+.office-preview-card--xlsx .fv-plugin-renderer,
+.office-preview-card--xlsx .fv-plugin-renderer__content {
+  flex-direction: column;
+}
+
+.office-preview-card--xlsx .fv-xlsx__content {
+  flex: 1 1 0%;
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Preserve the familiar spreadsheet canvas when a small zoom leaves room to
+   the right of the populated table. The table stays opaque above this grid;
+   the grid only supplies the otherwise-empty columns and rows. */
+.office-preview-card--xlsx .fv-xlsx__content {
+  background-color: var(--surface);
+  position: relative;
+}
+
+.office-xlsx-column-headers {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 100;
+  overflow: visible;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.office-xlsx-column-headers > span {
+  display: flex;
+  position: absolute;
+  top: 0;
+  height: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background-color: var(--surface);
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
+/* This is the frozen corner between the column-letter header and the row
+   numbers. It sits outside the horizontally translated header layer, so the
+   gutter remains intact while A/B/C… scroll underneath it. */
+.office-xlsx-corner-header {
+  position: absolute;
+  z-index: 120;
+  box-sizing: border-box;
+  pointer-events: none;
+  background-color: var(--surface);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The package keeps these cells for table geometry and sticky sizing only.
+   Their visible header surface is rendered by .office-xlsx-column-headers so
+   collapsed borders from body cells cannot affect it during horizontal scroll. */
+.office-preview-card--xlsx .fv-xlsx__col-header {
+  z-index: 1;
+  border: 0;
+  color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* The blank corner cell must stay above both sticky row numbers and the
+   horizontally-scrolling column headings. Without this independent anchor,
+   a heading can slide underneath the row-number gutter and make its border
+   appear to move while the sheet is scrolled sideways. */
+.office-preview-card--xlsx .fv-xlsx__col-header:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background-color: transparent;
+}
+
+/* The renderer uses collapsed table borders, which can be re-owned by a body
+   cell as it moves underneath the sticky row-number gutter. Keep the native
+   cells for their dimensions but render the visible row headers in a separate
+   overlay below; their borders can no longer be affected by horizontal scroll. */
+.office-preview-card--xlsx .fv-xlsx__row-num {
+  z-index: 1;
+  border: 0;
+  color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.office-xlsx-row-headers {
+  position: absolute;
+  inset-block: 0;
+  z-index: 90;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.office-xlsx-row-headers > span {
+  position: absolute;
+  left: 0;
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background-color: var(--surface);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: inherit;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.office-xlsx-empty-grid {
+  position: absolute;
+  inset-block: 0;
+  z-index: 24;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.office-xlsx-empty-grid-row {
+  position: absolute;
+  display: flex;
+  overflow: hidden;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+}
+
+.office-xlsx-empty-grid-row > span {
+  display: block;
+  height: 100%;
+  flex: 0 0 auto;
+  border-right: 1px solid var(--border);
+}
+
+/* The package applies CSS zoom to this unclassified canvas element. A normal
+   block is sized from the viewport before zoom is applied, which makes wide
+   columns reflow and look squeezed at higher zoom levels. Keep the canvas at
+   the sheet's intrinsic width so zoom scales the complete grid; overflow is
+   intentionally handled by the viewport above. */
+.office-preview-card--xlsx .fv-xlsx__content > div,
+.office-preview-card--xlsx .fv-xlsx__table {
+  width: max-content;
+  min-width: max-content;
+  max-width: none;
+}
+
+/* Make the spreadsheet viewport reference the Preview card itself instead of
+   any package wrapper. This guarantees the vertical scroll rail is flush with
+   the right edge even when a workbook table is much narrower than the card. */
+.office-preview-card--xlsx .fv-xlsx {
+  position: absolute;
+  inset: 0;
+}
+
 .office-preview-card--docx .office-docx-scale {
   width: 100%;
   min-width: 100%;
@@ -185,6 +381,16 @@
 .office-preview-card--docx .office-expand-button {
   top: 0.25rem;
   right: 0.5rem;
+}
+
+/* The package toolbar remains mounted as the Excel renderer's control API.
+   WikiHub renders its compact zoom controls in the Preview header instead. */
+.office-preview-card--xlsx .fv-xlsx__mode-switch {
+  display: none;
+}
+
+.office-preview-card--xlsx .fv-xlsx__toolbar {
+  display: none;
 }
 
 .office-preview-card[data-expanded="true"] > .office-preview-content {

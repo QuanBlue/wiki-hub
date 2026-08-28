@@ -1,10 +1,12 @@
 "use client";
 
 import {
+  Archive,
   Boxes,
   Check,
   ChevronDown,
   ChevronRight,
+  DatabaseBackup,
   Download,
   Eye,
   File,
@@ -380,13 +382,23 @@ const KIND_ORDER: StorageObject["kind"][] = [
   "page_attachment",
   "avatar",
   "import_archive",
+  "document_import",
+  "backup_archive",
+  "backup_export",
   "other",
 ];
 
 const KIND_META: Record<StorageObject["kind"], { label: string; icon: typeof FileText }> = {
   page_attachment: { label: "Page files", icon: FileText },
   avatar: { label: "Avatars", icon: UserRound },
-  import_archive: { label: "Import archives", icon: FileArchive },
+  import_archive: { label: "Confluence imports", icon: FileArchive },
+  document_import: { label: "Document imports", icon: FileText },
+  // The two halves of full backup: the archive an admin uploaded to restore
+  // from, and the archive an export job produced. Both were previously
+  // "Other objects", which is why a restore upload that had landed in the
+  // bucket looked to an admin like it had never been stored at all.
+  backup_archive: { label: "Restore archives", icon: Archive },
+  backup_export: { label: "Backup exports", icon: DatabaseBackup },
   other: { label: "Other objects", icon: File },
 };
 

@@ -1,6 +1,10 @@
 - cho tích hợp với mail để gửi mail thông báo (đổi password, có người yêu cầu quyền truy cập vào space/page, bị disable,...)
 - view change trong all update 
-- import store thi file import khong save vao obj storage -> khong xem duoc trong admin > object storage -> mat co che han che upload lai khi import file da upload
+- import store thi file import khong save vao obj storage -> khong xem duoc file import duoc upload trong admin > object storage -> co the mat co che han che upload lai khi import file da upload
+- user activity http://wiki.gpmn.net:8090/display/~hieppdh
+- Import WIki: Created by invalid_user, last modified by admin on Aug 28, 2026
+- vỉew video
+
 
 Doing
 - Tính năng chỉnh file word, excel trực tiếp trong phần preview attachment đó (nếu đó là file word hoặc excel)

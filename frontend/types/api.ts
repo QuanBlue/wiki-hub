@@ -467,7 +467,14 @@ export interface StorageObject {
   size: number;
   etag: string | null;
   last_modified: string | null;
-  kind: "page_attachment" | "avatar" | "import_archive" | "other";
+  kind:
+    | "page_attachment"
+    | "avatar"
+    | "import_archive"
+    | "document_import"
+    | "backup_archive"
+    | "backup_export"
+    | "other";
   space_id: string | null;
   space_name: string | null;
   page_id: string | null;

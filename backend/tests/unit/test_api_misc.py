@@ -156,7 +156,7 @@ async def test_storage_attachment_backup_and_settings_wrappers(
     storage.exists = AsyncMock(return_value=True)
     storage.delete = AsyncMock()
     session = Mock()
-    session.scalar = AsyncMock(side_effect=[None, None])
+    session.scalar = AsyncMock(side_effect=[None, None, None])
     session.flush = AsyncMock()
     assert (await storage_admin.list_storage_objects(user, storage))[0].key == "a/b.txt"
     assert (

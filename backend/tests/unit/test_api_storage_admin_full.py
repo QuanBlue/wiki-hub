@@ -24,7 +24,10 @@ from app.models.space import Space
 def test_storage_kind():
     assert storage_kind("attachments/1.txt") == "page_attachment"
     assert storage_kind("avatars/user.png") == "avatar"
-    assert storage_kind("confluence-imports/a.zip") == "import_archive"
+    assert storage_kind("imports/confluence/a.zip") == "import_archive"
+    assert storage_kind("imports/documents/job/item/a.docx") == "document_import"
+    assert storage_kind("backups/imports/id/a.zip") == "backup_archive"
+    assert storage_kind("backups/exports/id/a.zip") == "backup_export"
     assert storage_kind("other/path") == "other"
 
 
@@ -58,7 +61,7 @@ async def test_list_storage_objects():
     m2.etag = "2"
     
     m3 = Mock()
-    m3.key = "confluence-imports/3.zip"
+    m3.key = "imports/confluence/3.zip"
     m3.size = 300
     m3.last_modified = dt
     m3.etag = "3"
@@ -81,7 +84,7 @@ async def test_list_storage_objects():
     m_s = Mock()
     m_s.all.side_effect = [
         ["avatars/2.png"],
-        ["confluence-imports/3.zip"]
+        ["imports/confluence/3.zip"]
     ]
     session.scalars.return_value = m_s
     
@@ -143,8 +146,37 @@ async def test_delete_storage_object():
     with pytest.raises(NotFoundError):
         await delete_storage_object(Mock(), storage, session, "key")
         
+    # Confluence archive row, backup restore archive row, attachment row.
     storage.exists.return_value = True
-    session.scalar.side_effect = [Mock(), Mock()]
+    session.scalar.side_effect = [Mock(), None, Mock()]
     res = await delete_storage_object(Mock(), storage, session, "key")
     assert res.archive_cleared is True
     assert res.attachment_deleted is True
+
+
+@pytest.mark.asyncio
+async def test_delete_storage_object_clears_backup_archive():
+    """A deleted restore archive must not stay offered as ready to restore.
+
+    Left alone the row keeps its "uploaded"/"scanned" status and its hash, so
+    `/backup/archives/uploads/active` goes on advertising an archive whose
+    bytes are gone and the restore only fails in the worker.
+    """
+    storage = AsyncMock()
+    session = AsyncMock()
+    storage.exists.return_value = True
+
+    archive = Mock()
+    archive.sha256 = "abc"
+    archive.status = "scanned"
+    archive.multipart_upload_id = "upload-1"
+    session.scalar.side_effect = [None, archive, None]
+
+    res = await delete_storage_object(
+        Mock(), storage, session, "backups/imports/id/backup.zip"
+    )
+    assert res.archive_cleared is True
+    assert res.attachment_deleted is False
+    assert archive.status == "cancelled"
+    assert archive.sha256 is None
+    assert archive.multipart_upload_id is None
