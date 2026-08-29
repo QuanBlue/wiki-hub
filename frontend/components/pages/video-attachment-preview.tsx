@@ -270,11 +270,24 @@ export function VideoAttachmentPreview({
     const pip = documentPip();
     const video = videoRef.current;
     if (!pip || !video) return;
+    const previousInlineStyle = video.style.cssText;
     try {
       const nativeWidth = video.videoWidth || 640;
       const nativeHeight = video.videoHeight || 360;
       const width = Math.min(PIP_MAX_WIDTH, nativeWidth);
       const height = Math.round(width * (nativeHeight / nativeWidth));
+
+      // Chrome appears to size the Picture-in-Picture window off this
+      // element's own on-page rendered box at least as much as - maybe more
+      // than - the width/height options below, and normally the modal's
+      // layout stretches it to whatever shape the video's slot in that
+      // dialog is (`w-full flex-1`), unrelated to the video's real
+      // proportions - which is what actually produced the mismatched window
+      // and its black bars. Pinning it to the exact target size for a
+      // moment before requesting is what gets a correctly-shaped window,
+      // more reliably than the options alone.
+      video.style.width = `${width}px`;
+      video.style.height = `${height}px`;
       const pipWindow = await pip.requestWindow({ width, height });
 
       // Carry the app's styling over so the native controls (and caption
@@ -363,6 +376,7 @@ export function VideoAttachmentPreview({
 
       onEnterPictureInPicture?.();
     } catch (err) {
+      video.style.cssText = previousInlineStyle;
       handedToPipWindowRef.current = false;
       console.error("Failed to enter Picture-in-Picture", err);
     }
