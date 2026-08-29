@@ -30,16 +30,6 @@ type SwitchableAudioTrack = { index: number; label: string; enabled: boolean };
 const SUBTITLES_OFF = "off";
 
 /**
- * Picture-in-Picture exists to keep a video going while you do something
- * else, so closing this modal must not kill playback when the video is
- * floating in a PiP window - only actually leaving PiP should. Keyed by
- * attachment id rather than React state: the preview that eventually
- * reopens is a brand new component instance with no memory of the one that
- * was orphaned in PiP, so the handoff has to live outside any one instance.
- */
-const pipResumeState = new Map<string, { time: number; playing: boolean }>();
-
-/**
  * A browser exposes an audio track list only in some engines, and never for
  * plain progressive MP4 in Chromium. Read it defensively rather than assuming
  * a shape that may not exist at all.
@@ -87,63 +77,37 @@ export function VideoAttachmentPreview({
   const [activeSubtitle, setActiveSubtitle] = useState<string>(SUBTITLES_OFF);
   const [audioTracks, setAudioTracks] = useState<SwitchableAudioTrack[]>([]);
 
+  // Picture-in-Picture is for "keep watching while I do something else" -
+  // once you leave it, by any means (its own "back to tab" control, closing
+  // the floating window, or the browser closing it for you), the intent is
+  // "I'm done watching", so playback stops there rather than quietly
+  // continuing inline behind whatever you switched to.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const handleLeavePip = () => video.pause();
+    video.addEventListener("leavepictureinpicture", handleLeavePip);
+    return () => video.removeEventListener("leavepictureinpicture", handleLeavePip);
+  }, [attachmentId]);
+
   // Closing the modal unmounts this component, but React detaching the
   // <video> node from the DOM does not stop playback on its own - if the
   // element is in Picture-in-Picture, the browser keeps decoding and playing
   // it (audio included) in the background even with no window showing it.
-  // Explicitly pausing here is what actually kills playback rather than
-  // just hiding it - *except* while the video is genuinely floating in a
-  // PiP window, where that would defeat the point of PiP. See the PiP
-  // handoff effect below for what happens to that case instead.
+  // Exiting PiP first (so no floating window survives the preview closing)
+  // and then pausing and clearing the source is what actually kills
+  // playback rather than just hiding it.
   useEffect(() => {
     const video = videoRef.current;
     return () => {
       if (!video) return;
-      if (document.pictureInPictureElement !== video) {
-        video.pause();
-        video.removeAttribute("src");
-        video.load();
-        return;
+      if (document.pictureInPictureElement === video) {
+        void document.exitPictureInPicture().catch(() => {});
       }
-      // Floating in PiP: the browser keeps this now-detached element alive
-      // and rendered in its own window for as long as it stays the PiP
-      // element, so a listener attached here still fires later, after this
-      // component has fully unmounted. Once the user leaves PiP - its own
-      // "back to tab" or close control - hand playback position to a fresh
-      // preview through the same modal-open event the rest of the app
-      // already uses to open this dialog, then release this element.
-      const handleLeavePip = () => {
-        pipResumeState.set(attachmentId, {
-          time: video.currentTime,
-          playing: !video.paused,
-        });
-        window.dispatchEvent(
-          new CustomEvent("wikihub:open-attachment-modal", {
-            detail: { attachmentId },
-          }),
-        );
-        video.pause();
-        video.removeAttribute("src");
-        video.load();
-      };
-      video.addEventListener("leavepictureinpicture", handleLeavePip, { once: true });
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
     };
-  }, [attachmentId]);
-
-  // Picks up where a video left off if it just reopened after outliving its
-  // own preview instance in a Picture-in-Picture window (see above).
-  useEffect(() => {
-    const resume = pipResumeState.get(attachmentId);
-    if (!resume) return;
-    pipResumeState.delete(attachmentId);
-    const video = videoRef.current;
-    if (!video) return;
-    const applyResume = () => {
-      video.currentTime = resume.time;
-      if (resume.playing) void video.play().catch(() => {});
-    };
-    if (video.readyState >= 1) applyResume();
-    else video.addEventListener("loadedmetadata", applyResume, { once: true });
   }, [attachmentId]);
 
   // Mounted with a key of the attachment id, so a different attachment gets a
@@ -171,17 +135,47 @@ export function VideoAttachmentPreview({
     [tracks.subtitles],
   );
 
-  // `<track>` elements are rendered by React; their display state is not a DOM
-  // attribute, so it has to be pushed onto the live TextTrack objects.
+  // The video element also exposes its *own* native caption control - the
+  // "Captions" entry in its right-click menu, and on some platforms a
+  // browser auto-enables a track on its own to match the viewer's OS/browser
+  // caption-language preference. Either can flip a TextTrack's mode without
+  // this component ever calling `setActiveSubtitle`, which used to leave
+  // this button reading "Subtitles off" under a caption that was actively on
+  // screen. `textTracks` fires a "change" event whenever any track's mode
+  // changes for *any* reason, script or native UI, so listening for it keeps
+  // this button truthful to what's really showing instead of just to what
+  // this component last chose.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     const textTracks = video.textTracks;
+    const syncFromDom = () => {
+      let showingId: string = SUBTITLES_OFF;
+      for (let index = 0; index < textTracks.length; index += 1) {
+        if (textTracks[index].mode === "showing") {
+          showingId = subtitles[index]?.id ?? SUBTITLES_OFF;
+          break;
+        }
+      }
+      setActiveSubtitle(showingId);
+    };
+    syncFromDom();
+    textTracks.addEventListener("change", syncFromDom);
+    return () => textTracks.removeEventListener("change", syncFromDom);
+  }, [subtitles]);
+
+  // Applies a choice made from *this* dropdown to the live TextTrack objects
+  // - `<track>` display state isn't a DOM attribute React can set declaratively
+  // - and lets it win over whatever the browser had picked on its own.
+  function selectSubtitle(id: string) {
+    setActiveSubtitle(id);
+    const video = videoRef.current;
+    if (!video) return;
+    const textTracks = video.textTracks;
     for (let index = 0; index < textTracks.length; index += 1) {
-      textTracks[index].mode =
-        subtitles[index]?.id === activeSubtitle ? "showing" : "disabled";
+      textTracks[index].mode = subtitles[index]?.id === id ? "showing" : "disabled";
     }
-  }, [activeSubtitle, subtitles]);
+  }
 
   useEffect(() => {
     const video = videoRef.current;
@@ -229,14 +223,14 @@ export function VideoAttachmentPreview({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-w-72">
               <DropdownMenuLabel>Subtitles</DropdownMenuLabel>
-              <DropdownMenuItem onSelect={() => setActiveSubtitle(SUBTITLES_OFF)}>
+              <DropdownMenuItem onSelect={() => selectSubtitle(SUBTITLES_OFF)}>
                 <Check
                   className={`size-3.5 ${activeSubtitle === SUBTITLES_OFF ? "" : "invisible"}`}
                 />
                 Off
               </DropdownMenuItem>
               {subtitles.map((track) => (
-                <DropdownMenuItem key={track.id} onSelect={() => setActiveSubtitle(track.id)}>
+                <DropdownMenuItem key={track.id} onSelect={() => selectSubtitle(track.id)}>
                   <Check
                     className={`size-3.5 ${activeSubtitle === track.id ? "" : "invisible"}`}
                   />
