@@ -2699,6 +2699,7 @@ function AttachmentTile({
   const filename = String(node.attrs.filename ?? "attachment");
   const href = String(node.attrs.href ?? "");
   const displayMode = String(node.attrs.displayMode ?? "card");
+  const diffKind = String(node.attrs.diffKind ?? "");
   const [hovered, setHovered] = useState(false);
   const [toolbarBelow, setToolbarBelow] = useState(false);
   const attachmentRef = useRef<HTMLSpanElement>(null);
@@ -2892,6 +2893,7 @@ function AttachmentTile({
         <a
           href={editor.isEditable ? undefined : href}
           data-attachment-href={href}
+          data-diff-kind={diffKind || undefined}
           data-display-mode="link"
           title={filename}
           target="_self"
@@ -2913,6 +2915,8 @@ function AttachmentTile({
               ? "cursor-grab active:cursor-grabbing"
               : "cursor-pointer",
             selected && "outline-primary/40 outline outline-2",
+            diffKind === "add" && "bg-success-bg text-success",
+            diffKind === "delete" && "bg-danger-bg text-danger line-through",
           )}
         >
           <span className="text-muted-foreground flex size-3.5 shrink-0 items-center justify-center">
@@ -2938,6 +2942,7 @@ function AttachmentTile({
       <a
         href={editor.isEditable ? undefined : href}
         data-attachment-href={href}
+        data-diff-kind={diffKind || undefined}
         data-display-mode="card"
         title={filename}
         target="_self"
@@ -2959,6 +2964,8 @@ function AttachmentTile({
             ? "cursor-grab active:cursor-grabbing"
             : "cursor-pointer",
           selected && "border-primary ring-primary/40 ring-2",
+          diffKind === "add" && "border-success bg-success-bg/60",
+          diffKind === "delete" && "border-danger bg-danger-bg/60",
         )}
       >
         <span className="bg-surface-sunken text-muted-foreground group-hover/attachment:text-primary flex h-16 w-full items-center justify-center overflow-hidden rounded p-1 transition-colors">
@@ -3013,6 +3020,10 @@ const AttachmentNode = TiptapNode.create({
               ? "card"
               : "link"),
       },
+      diffKind: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-diff-kind"),
+      },
     };
   },
 
@@ -3052,6 +3063,7 @@ const AttachmentNode = TiptapNode.create({
             href: el.getAttribute("href"),
             filename,
             displayMode: isExplicitLink ? "link" : "card",
+            diffKind: el.getAttribute("data-diff-kind"),
           };
         },
       },
@@ -3071,6 +3083,7 @@ const AttachmentNode = TiptapNode.create({
             href,
             filename: text,
             displayMode: displayAttr === "card" ? "card" : "link",
+            diffKind: el.getAttribute("data-diff-kind"),
           };
         },
       },
@@ -3088,6 +3101,7 @@ const AttachmentNode = TiptapNode.create({
         target: "_self",
         "data-attachment": filename,
         "data-display-mode": displayMode,
+        "data-diff-kind": node.attrs.diffKind || undefined,
         class:
           displayMode === "link"
             ? "attachment-link inline-flex items-center gap-1 text-primary hover:underline font-medium text-xs align-baseline"
@@ -3099,6 +3113,39 @@ const AttachmentNode = TiptapNode.create({
 
   addNodeView() {
     return ReactNodeViewRenderer(AttachmentTile);
+  },
+});
+
+// Diff markup is parsed by the same read-only editor as page content so node
+// views (attachments, images, toggles, and code blocks) remain available.
+const DiffHighlightMark = Mark.create({
+  name: "diffHighlight",
+  excludes: "",
+
+  addAttributes() {
+    return {
+      kind: {
+        default: "add",
+        parseHTML: (element) =>
+          element.classList.contains("wh-diff-delete") ? "delete" : "add",
+      },
+    };
+  },
+
+  parseHTML() {
+    return [
+      { tag: "mark.wh-diff-add" },
+      { tag: "mark.wh-diff-delete" },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    const kind = HTMLAttributes.kind === "delete" ? "delete" : "add";
+    return [
+      "mark",
+      { class: kind === "delete" ? "wh-diff-delete" : "wh-diff-add" },
+      0,
+    ];
   },
 });
 
@@ -3139,6 +3186,7 @@ const editorExtensions = [
     autolink: true,
     defaultProtocol: "https",
   }),
+  DiffHighlightMark,
   AttachmentNode,
   ResizableImage.configure({
     allowBase64: false,
@@ -3377,18 +3425,20 @@ const editorClassName =
   "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
   "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
   "[&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-md " +
-  // Table rhythm (margin, padding, line-height) is kept identical to
-  // readerClassName below so a table is the same height in the editor and in
-  // the live preview. Only the editor-only min-w-24 differs, so columns stay
-  // comfortably grabbable while editing.
-  "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_table]:w-full [&_table]:border-collapse [&_th]:min-w-24 [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_th]:leading-[1.45] [&_td]:min-w-24 [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5 [&_td]:leading-[1.45] [&_.selectedCell]:bg-primary-subtle";
+  // Table rhythm (margin, cell minimum width, padding, and line-height) is
+  // kept identical to readerClassName below so rows have the same height in
+  // the editor and in the live preview.
+  "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_.tableWrapper]:overflow-y-hidden [&_table]:w-full [&_table]:border-collapse [&_th]:min-w-24 [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_th]:leading-[1.45] [&_td]:min-w-24 [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5 [&_td]:leading-[1.45] [&_.selectedCell]:bg-primary-subtle";
 
 // Imported pages are read like documentation, not like an editor canvas.
 // Keep this separate from editorClassName so editing remains comfortable while
 // imported Confluence pages retain their compact, scan-friendly rhythm.
 export const readerClassName =
   "wikihub-reader text-sm leading-[1.45] " +
-  "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 " +
+  // The last-paragraph trim belongs to the document root only. Applying it
+  // to every descendant also removes the bottom margin from each table cell,
+  // making preview rows shorter than their editable counterparts.
+  "[&_p]:my-2 [&_p:first-child]:mt-0 [&>p:last-child]:mb-0 " +
   "[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-tight " +
   "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:leading-tight " +
   "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:leading-tight " +
@@ -3401,7 +3451,10 @@ export const readerClassName =
   "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
   "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
   "[&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-[42rem] [&_img]:rounded-md " +
-  "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5";
+  // Tables are persisted with their column widths in `colwidth` attributes.
+  // Fixed layout makes the reader honour those widths instead of allowing an
+  // unbroken word to redistribute every column after the page is saved.
+  "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_.tableWrapper]:overflow-y-hidden [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_th]:min-w-24 [&_th]:break-words [&_th]:whitespace-normal [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_th]:leading-[1.45] [&_td]:min-w-24 [&_td]:break-words [&_td]:whitespace-normal [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5 [&_td]:leading-[1.45]";
 
 function ToolbarButton({
   editor,
@@ -6639,6 +6692,7 @@ function AttachmentDetailsModal({
                       contentType={mediaType}
                       filename={metadata.filename}
                       toolbarContainer={previewToolbarContainer}
+                      onEnterPictureInPicture={onClose}
                     />
                   </div>
                 ) : isAudio ? (

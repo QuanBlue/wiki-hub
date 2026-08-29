@@ -2593,7 +2593,7 @@ export function SpaceWorkspace({
                           aria-label="Live page preview"
                           className="border-border bg-surface-raised min-w-0 rounded-md border shadow-sm xl:h-full xl:flex-1"
                         >
-                          <div className="border-border bg-surface-sunken flex items-center gap-2 border-b px-4 py-2.5">
+                          <div className="border-border bg-surface-sunken flex items-center gap-2 border-b px-4 py-1">
                             <Eye className="text-primary size-4" aria-hidden />
                             <p className="text-xs font-semibold tracking-wide uppercase">
                               Live preview
@@ -2640,7 +2640,7 @@ export function SpaceWorkspace({
                               </Button>
                             </div>
                           </div>
-                          <div className="p-5">
+                          <div className="p-4">
                             {(
                               editMode === "markdown"
                                 ? markdownDraft

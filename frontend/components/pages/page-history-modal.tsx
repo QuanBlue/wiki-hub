@@ -23,6 +23,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { RichTextContent } from "@/components/pages/rich-text-editor";
 import {
   linkifyPlainTextUrls,
   normalizeConfluenceCodeMacros,
@@ -81,10 +82,34 @@ function DiffLine({
   );
 }
 
-function highlightedRevisionHtml(
+function attachmentKey(link: Element): string | null {
+  const href = link.getAttribute("href") ?? "";
+  const filename = link.getAttribute("data-attachment") ?? "";
+  if (!filename && !/\/api\/v1\/attachments\/[a-f0-9-]{36}/i.test(href)) {
+    return null;
+  }
+  return href || `filename:${filename}`;
+}
+
+function attachmentKeys(content: string): Set<string> {
+  if (typeof DOMParser === "undefined") return new Set();
+  const parser = new DOMParser();
+  const source = parser.parseFromString(
+    linkifyPlainTextUrls(normalizeConfluenceCodeMacros(content)),
+    "text/html",
+  );
+  return new Set(
+    Array.from(source.querySelectorAll("a[data-attachment], a[href]"))
+      .map(attachmentKey)
+      .filter((key): key is string => Boolean(key)),
+  );
+}
+
+export function highlightedRevisionHtml(
   content: string,
   diff: PageRevisionDiff,
   side: "old" | "new",
+  comparisonContent: string,
 ): string {
   if (typeof DOMParser === "undefined") return content;
 
@@ -93,6 +118,41 @@ function highlightedRevisionHtml(
     linkifyPlainTextUrls(normalizeConfluenceCodeMacros(content)),
     "text/html",
   );
+  const comparisonAttachmentKeys = attachmentKeys(comparisonContent);
+  const diffKind = side === "old" ? "delete" : "add";
+  for (const link of Array.from(source.querySelectorAll("a[data-attachment], a[href]"))) {
+    const key = attachmentKey(link);
+    if (key && !comparisonAttachmentKeys.has(key)) {
+      link.setAttribute("data-diff-kind", diffKind);
+    }
+  }
+  const markerClass = side === "old" ? "wh-diff-delete" : "wh-diff-add";
+  const lineClass = side === "old" ? "wh-diff-line-delete" : "wh-diff-line-add";
+  const changedLines = new Set(
+    diff.lines
+      .filter((line) =>
+        side === "old"
+          ? line.operation === "delete" || line.operation === "replace"
+          : line.operation === "add" || line.operation === "replace",
+      )
+      .map((line) => (side === "old" ? line.old_text : line.new_text) ?? "")
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter(Boolean),
+  );
+  for (const block of Array.from(
+    source.querySelectorAll("p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, tr"),
+  )) {
+    const text = (
+      block.tagName === "TR"
+        ? Array.from(block.querySelectorAll(":scope > th, :scope > td"))
+            .map((cell) => cell.textContent ?? "")
+            .join(" ")
+        : block.textContent ?? ""
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    if (changedLines.has(text)) block.classList.add(lineClass);
+  }
   const terms = Array.from(
     new Set(
       diff.lines
@@ -116,8 +176,6 @@ function highlightedRevisionHtml(
     current = walker.nextNode();
   }
 
-  const markerClass = side === "old" ? "wh-diff-delete" : "wh-diff-add";
-  const lineClass = side === "old" ? "wh-diff-line-delete" : "wh-diff-line-add";
   for (const textNode of textNodes) {
     let remaining = textNode.nodeValue ?? "";
     if (!remaining.trim()) continue;
@@ -163,16 +221,18 @@ function highlightedRevisionHtml(
 
 function HighlightedRevisionContent({
   revision,
+  comparisonRevision,
   diff,
   side,
 }: {
   revision: PageRevisionItem;
+  comparisonRevision: PageRevisionItem | undefined;
   diff: PageRevisionDiff;
   side: "old" | "new";
 }) {
   const html = useMemo(
-    () => highlightedRevisionHtml(revision.content, diff, side),
-    [diff, revision.content, side],
+    () => highlightedRevisionHtml(revision.content, diff, side, comparisonRevision?.content ?? ""),
+    [comparisonRevision?.content, diff, revision.content, side],
   );
 
   if (revision.content_format !== "html") {
@@ -183,10 +243,12 @@ function HighlightedRevisionContent({
       className={cn(
         "min-h-full text-foreground",
         readerClassName,
+        "revision-history-content",
         "[&_.wh-diff-line-add]:rounded-sm [&_.wh-diff-line-add]:bg-success-bg/70 [&_.wh-diff-line-add]:px-2 [&_.wh-diff-line-delete]:rounded-sm [&_.wh-diff-line-delete]:bg-danger-bg/70 [&_.wh-diff-line-delete]:px-2 [&_.wh-diff-add]:rounded-sm [&_.wh-diff-add]:bg-success-bg [&_.wh-diff-add]:px-0.5 [&_.wh-diff-add]:font-semibold [&_.wh-diff-add]:text-success [&_.wh-diff-delete]:rounded-sm [&_.wh-diff-delete]:bg-danger-bg [&_.wh-diff-delete]:px-0.5 [&_.wh-diff-delete]:font-semibold [&_.wh-diff-delete]:text-danger [&_.wh-diff-delete]:line-through",
       )}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    >
+      <RichTextContent content={html} />
+    </div>
   );
 }
 
@@ -505,7 +567,7 @@ export function PageHistoryModal({
                         className="font-sans min-h-0 flex-1 overflow-y-auto rounded-md bg-surface p-4 text-sm leading-relaxed"
                       >
                         {selectedFromRev?.content_format === "html" ? (
-                          <HighlightedRevisionContent revision={selectedFromRev} diff={diffData!} side="old" />
+                          <HighlightedRevisionContent revision={selectedFromRev} comparisonRevision={selectedToRev} diff={diffData!} side="old" />
                         ) : (
                           <div className="whitespace-pre-wrap">{selectedFromRev?.content}</div>
                         )}
@@ -538,7 +600,7 @@ export function PageHistoryModal({
                         className="font-sans min-h-0 flex-1 overflow-y-auto rounded-md bg-surface p-4 text-sm leading-relaxed"
                       >
                         {selectedToRev?.content_format === "html" ? (
-                          <HighlightedRevisionContent revision={selectedToRev} diff={diffData!} side="new" />
+                          <HighlightedRevisionContent revision={selectedToRev} comparisonRevision={selectedFromRev} diff={diffData!} side="new" />
                         ) : (
                           <div className="whitespace-pre-wrap">{selectedToRev?.content}</div>
                         )}

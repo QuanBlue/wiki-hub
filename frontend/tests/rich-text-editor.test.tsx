@@ -517,6 +517,53 @@ describe("RichTextEditor images", () => {
 });
 
 describe("RichTextEditor tables", () => {
+  it("renders the same table structure in the editor and live reader", async () => {
+    const content =
+      "<table><tbody><tr><td><p>First</p><p>Second</p></td><td><p>Value</p></td></tr><tr><td><p></p></td><td><p></p></td></tr></tbody></table>";
+    const { container } = render(
+      <>
+        <RichTextEditor content={content} onChange={vi.fn()} />
+        <RichTextContent content={content} />
+      </>,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".ProseMirror table")).toHaveLength(2);
+    });
+
+    const [editorTable, readerTable] = Array.from(
+      container.querySelectorAll(".ProseMirror table"),
+    );
+    expect(editorTable.innerHTML).toBe(readerTable.innerHTML);
+    const reader = container.querySelectorAll(".ProseMirror")[1];
+    expect(reader).toHaveClass("[&>p:last-child]:mb-0");
+    expect(reader).not.toHaveClass("[&_p:last-child]:mb-0");
+  });
+
+  it("keeps saved table widths fixed and wraps long cell content in the reader", async () => {
+    const { container } = render(
+      <RichTextContent
+        content='<table><tbody><tr><td colwidth="420">First column</td><td colwidth="140">Second column</td><td colwidth="180">AReallyLongUnbrokenValueThatMustWrapInsideItsSavedColumn</td></tr></tbody></table>'
+      />,
+    );
+
+    const reader = await waitFor(() => {
+      const element = container.querySelector(".ProseMirror");
+      expect(element).not.toBeNull();
+      return element as HTMLElement;
+    });
+
+    expect(reader).toHaveClass("[&_table]:table-fixed");
+    expect(reader).toHaveClass("[&_td]:break-words");
+    expect(reader).toHaveClass("[&_td]:min-w-24", "[&_td]:leading-[1.45]");
+    expect(reader).toHaveClass("[&_.tableWrapper]:overflow-y-hidden");
+    const table = reader.querySelector("table") as HTMLTableElement;
+    expect(table).toBeInTheDocument();
+    expect(
+      Array.from(table.querySelectorAll("col"), (column) => column.style.width),
+    ).toEqual(["420px", "140px", "180px"]);
+  });
+
   it("resizes a row from its lower edge and persists the height", async () => {
     const onChange = vi.fn();
     const { container } = render(
@@ -585,6 +632,20 @@ describe("RichTextEditor attachments", () => {
     expect(link.querySelector("svg")).not.toBeNull();
     // A saved page is not editable, so nothing there should offer to move.
     expect(link).toHaveAttribute("draggable", "false");
+  });
+
+  it("keeps diff state on a saved attachment tile", async () => {
+    render(
+      <RichTextContent
+        content={`<p><a href="${attachmentHref}" data-attachment="jmx_exporter_config.yaml" data-display-mode="card" data-diff-kind="add">jmx_exporter_config.yaml</a></p>`}
+      />,
+    );
+
+    const link = await screen.findByRole("link", {
+      name: "jmx_exporter_config.yaml",
+    });
+    expect(link).toHaveAttribute("data-diff-kind", "add");
+    expect(link).toHaveClass("bg-success-bg/60", "border-success");
   });
 
   it("in export mode, never mounts the attachment modal or fetches on click", async () => {
