@@ -82,8 +82,8 @@ function currentSubtitleId(video: HTMLVideoElement, subtitleList: MediaTrack[]):
  * deciding whether they'll actually use it - a closing Document
  * Picture-in-Picture window's own document is being torn down at that point,
  * which can reset the video's playback state (paused, back to 0:00) well
- * before anything waiting on that decision - detectBackToTab's grace period
- * included - gets a chance to run.
+ * before anything waiting on that decision - detectFocusReturned's grace
+ * period included - gets a chance to run.
  */
 function snapshotPlaybackState(video: HTMLVideoElement, subtitleList: MediaTrack[]) {
   return {
@@ -105,23 +105,25 @@ function reopenPreview(attachmentId: string) {
  * A Picture-in-Picture window's own close (X) button and its "back to tab"
  * button both end it - Document and classic PiP alike only ever fire one
  * undifferentiated "pagehide"/"leavepictureinpicture" regardless of which was
- * clicked, with no event detail to tell them apart. The one real difference
- * the platform exposes is what happens *after*: "back to tab" explicitly
- * reactivates this page - that's its whole purpose - and doing so fires a
- * "focus" event here, same as alt-tabbing back to it any other way, whereas
- * a plain close doesn't reach for this page at all. `onSettled` fires once,
- * `true` the moment that focus event arrives, `false` if a short grace
- * period passes with no sign of it - not `document.hasFocus()`, since
- * closing the *only* other window can hand focus back here anyway, by
- * ordinary window-manager behavior having nothing to do with "back to tab".
+ * clicked, with no event detail to tell them apart, and no documented signal
+ * distinguishes them either. What's actually observed on a real desktop
+ * browser: the window's own close hands this page's focus back (there's
+ * nothing else for the window manager to focus once it's gone), while "back
+ * to tab" - despite being the button that supposedly does that - doesn't
+ * raise a "focus" event here within any reasonably short window. So this
+ * reports what it can actually measure - did this page regain focus shortly
+ * after the PiP window started closing - and callers read *not* regaining it
+ * as "back to tab" instead, backwards from what the button's name and
+ * Chrome's own docs would suggest. `onSettled` fires once, `true` the moment
+ * a "focus" event arrives, `false` if a short grace period passes with none.
  */
-function detectBackToTab(onSettled: (cameBackToTab: boolean) => void) {
+function detectFocusReturned(onSettled: (focusReturned: boolean) => void) {
   let settled = false;
-  const finish = (cameBackToTab: boolean) => {
+  const finish = (focusReturned: boolean) => {
     if (settled) return;
     settled = true;
     window.removeEventListener("focus", onFocus);
-    onSettled(cameBackToTab);
+    onSettled(focusReturned);
   };
   const onFocus = () => finish(true);
   window.addEventListener("focus", onFocus);
@@ -313,13 +315,14 @@ export function VideoAttachmentPreview({
       // unmounts, which is exactly when a `useEffect` cleanup would
       // otherwise tear it back down again. Fires the same way whether the
       // window closed via "back to tab" or its own close/X - see
-      // detectBackToTab for how those two get told apart.
+      // detectFocusReturned for how those two get told apart (and why the
+      // reading below is inverted from what the button names suggest).
       pipWindow.addEventListener(
         "pagehide",
         () => {
           const snapshot = snapshotPlaybackState(video, subtitles);
-          detectBackToTab((cameBackToTab) => {
-            if (cameBackToTab) {
+          detectFocusReturned((focusReturned) => {
+            if (!focusReturned) {
               pipResumeState.set(attachmentId, snapshot);
               reopenPreview(attachmentId);
             }
@@ -356,8 +359,8 @@ export function VideoAttachmentPreview({
         "leavepictureinpicture",
         () => {
           const snapshot = snapshotPlaybackState(video, subtitles);
-          detectBackToTab((cameBackToTab) => {
-            if (cameBackToTab) {
+          detectFocusReturned((focusReturned) => {
+            if (!focusReturned) {
               pipResumeState.set(attachmentId, snapshot);
               reopenPreview(attachmentId);
             }
