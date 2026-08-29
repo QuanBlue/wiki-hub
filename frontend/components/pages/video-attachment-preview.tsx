@@ -1,6 +1,6 @@
 "use client";
 
-import { Captions, CaptionsOff, Check, PictureInPicture2, Volume2 } from "lucide-react";
+import { Captions, CaptionsOff, Check, Gauge, PictureInPicture2, Volume2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -28,6 +28,11 @@ type MediaTracks = { subtitles: MediaTrack[]; audio: MediaTrack[] };
 type SwitchableAudioTrack = { index: number; label: string; enabled: boolean };
 
 const SUBTITLES_OFF = "off";
+const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+/** Cap on the floating Picture-in-Picture window's width, in CSS pixels -
+ *  without it, requesting a window sized to the video's native resolution
+ *  produces a "floating" window that fills half the screen. */
+const PIP_MAX_WIDTH = 360;
 
 // The Document Picture-in-Picture API isn't part of TypeScript's DOM lib yet,
 // so its shape is declared by hand rather than relying on `lib.dom.d.ts`.
@@ -42,6 +47,33 @@ function documentPip(): DocumentPictureInPicture | null {
     (window as unknown as { documentPictureInPicture?: DocumentPictureInPicture })
       .documentPictureInPicture ?? null
   );
+}
+
+/**
+ * Picture-in-Picture exists to keep a video going while you do something
+ * else, so leaving this modal open behind it (or worse, killing playback
+ * outright) misses the point. Once PiP starts, the modal closes itself; once
+ * the viewer leaves PiP - "back to tab", or just closing the floating window
+ * - a fresh preview reopens through the same modal-open event the rest of
+ * the app already uses, picking up right where the floating video left off.
+ * Keyed by attachment id rather than React state: the preview that reopens
+ * is a brand new component instance with no memory of the one that was
+ * floating in PiP, so the handoff has to live outside any one instance.
+ */
+const pipResumeState = new Map<
+  string,
+  { time: number; playing: boolean; playbackRate: number; subtitleId: string }
+>();
+
+/** Reads which subtitle (if any) is actually showing directly off the live
+ *  TextTrack objects, so a handoff always captures the truth regardless of
+ *  whether it was chosen through this app's own dropdown or a native control. */
+function currentSubtitleId(video: HTMLVideoElement, subtitleList: MediaTrack[]): string {
+  const textTracks = video.textTracks;
+  for (let index = 0; index < textTracks.length; index += 1) {
+    if (textTracks[index].mode === "showing") return subtitleList[index]?.id ?? SUBTITLES_OFF;
+  }
+  return SUBTITLES_OFF;
 }
 
 /**
@@ -100,16 +132,65 @@ export function VideoAttachmentPreview({
   const [tracks, setTracks] = useState<MediaTracks>({ subtitles: [], audio: [] });
   const [activeSubtitle, setActiveSubtitle] = useState<string>(SUBTITLES_OFF);
   const [audioTracks, setAudioTracks] = useState<SwitchableAudioTrack[]>([]);
+  const [playbackRate, setPlaybackRate] = useState(1);
   // Set the instant the video is manually moved into a Document
   // Picture-in-Picture window (see enterDocumentPip below) - the unmount
   // cleanup reads this to know the element now belongs to that window and
   // must be left alone rather than paused and torn down.
   const handedToPipWindowRef = useRef(false);
+  // A subtitle to restore once tracks have loaded back in, after reopening
+  // from a Picture-in-Picture handoff (see the resume effect below).
+  const pendingSubtitleRef = useRef<string | null>(null);
   const supportsDocumentPip = documentPip() !== null;
 
-  // The classic Picture-in-Picture API (the browser's own context-menu entry
-  // or control-bar button) mirrors only the decoded video frame into its
-  // floating window, not the caption overlay the page renders over the
+  // Mounted with a key of the attachment id, so a different attachment gets a
+  // fresh component rather than needing its state cleared here.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<MediaTracks>(`/api/v1/attachments/${attachmentId}/media-tracks`)
+      .then((result) => {
+        if (!cancelled) setTracks(result);
+      })
+      .catch(() => {
+        // Tracks are an addition to the player, never a precondition for it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attachmentId]);
+
+  // Only tracks with a source are rendered, and the browser lists its
+  // TextTrack objects in that same order - so this one array is what keeps the
+  // menu, the `<track>` elements and `video.textTracks` index-aligned.
+  const subtitles = useMemo(
+    () => tracks.subtitles.filter((track) => track.src),
+    [tracks.subtitles],
+  );
+
+  // Picks up where a video left off if this preview just reopened after
+  // outliving its own instance in a Picture-in-Picture window (see the two
+  // handoff points below). Playback position and rate apply as soon as the
+  // element has metadata; the subtitle choice needs the track list to have
+  // loaded first, so it's stashed in a ref for the effect further down.
+  useEffect(() => {
+    const resume = pipResumeState.get(attachmentId);
+    if (!resume) return;
+    pipResumeState.delete(attachmentId);
+    pendingSubtitleRef.current = resume.subtitleId;
+    const video = videoRef.current;
+    if (!video) return;
+    const applyResume = () => {
+      video.currentTime = resume.time;
+      video.playbackRate = resume.playbackRate;
+      if (resume.playing) void video.play().catch(() => {});
+    };
+    if (video.readyState >= 1) applyResume();
+    else video.addEventListener("loadedmetadata", applyResume, { once: true });
+  }, [attachmentId]);
+
+  // The Picture-in-Picture window (classic or Document) mirrors only the
+  // decoded video frame, not the caption overlay the page draws over the
   // element - so its captions never show up there. Document Picture-in-Picture
   // instead hands the video a real floating *window* this app controls, which
   // renders it exactly like any other page and therefore keeps captions
@@ -117,14 +198,15 @@ export function VideoAttachmentPreview({
   // disabled (see `disablePictureInPicture` below) in favor of the button
   // this renders, so this is the only way to enter Picture-in-Picture there.
   async function enterDocumentPip() {
-    const api = documentPip();
+    const pip = documentPip();
     const video = videoRef.current;
-    if (!api || !video) return;
+    if (!pip || !video) return;
     try {
-      const pipWindow = await api.requestWindow({
-        width: video.videoWidth || 480,
-        height: video.videoHeight || 270,
-      });
+      const nativeWidth = video.videoWidth || 640;
+      const nativeHeight = video.videoHeight || 360;
+      const width = Math.min(PIP_MAX_WIDTH, nativeWidth);
+      const height = Math.round(width * (nativeHeight / nativeWidth));
+      const pipWindow = await pip.requestWindow({ width, height });
 
       // Carry the app's styling over so the native controls (and caption
       // cues, which are styled through the same stylesheet) look right
@@ -162,10 +244,20 @@ export function VideoAttachmentPreview({
       // Not wrapped in a React effect on purpose: this listener has to keep
       // working after this component - and the modal it closes below -
       // unmounts, which is exactly when a `useEffect` cleanup would
-      // otherwise tear it back down again.
+      // otherwise tear it back down again. Fires on "back to tab" and on
+      // the window being closed outright - both end up here.
       pipWindow.addEventListener(
         "pagehide",
         () => {
+          pipResumeState.set(attachmentId, {
+            time: video.currentTime,
+            playing: !video.paused,
+            playbackRate: video.playbackRate,
+            subtitleId: currentSubtitleId(video, subtitles),
+          });
+          window.dispatchEvent(
+            new CustomEvent("wikihub:open-attachment-modal", { detail: { attachmentId } }),
+          );
           video.pause();
           video.removeAttribute("src");
           video.load();
@@ -197,6 +289,15 @@ export function VideoAttachmentPreview({
       video.addEventListener(
         "leavepictureinpicture",
         () => {
+          pipResumeState.set(attachmentId, {
+            time: video.currentTime,
+            playing: !video.paused,
+            playbackRate: video.playbackRate,
+            subtitleId: currentSubtitleId(video, subtitles),
+          });
+          window.dispatchEvent(
+            new CustomEvent("wikihub:open-attachment-modal", { detail: { attachmentId } }),
+          );
           video.pause();
           video.removeAttribute("src");
           video.load();
@@ -206,7 +307,7 @@ export function VideoAttachmentPreview({
     };
     video.addEventListener("enterpictureinpicture", handleEnterPip);
     return () => video.removeEventListener("enterpictureinpicture", handleEnterPip);
-  }, [attachmentId, onEnterPictureInPicture, supportsDocumentPip]);
+  }, [attachmentId, onEnterPictureInPicture, supportsDocumentPip, subtitles]);
 
   // Closing the modal unmounts this component, but React detaching the
   // <video> node from the DOM does not stop playback on its own. Explicitly
@@ -227,30 +328,14 @@ export function VideoAttachmentPreview({
     };
   }, [attachmentId]);
 
-  // Mounted with a key of the attachment id, so a different attachment gets a
-  // fresh component rather than needing its state cleared here.
+  // Restores the subtitle a Picture-in-Picture handoff was showing, once the
+  // reopened preview's own track list has actually loaded back in.
   useEffect(() => {
-    let cancelled = false;
-    api
-      .get<MediaTracks>(`/api/v1/attachments/${attachmentId}/media-tracks`)
-      .then((result) => {
-        if (!cancelled) setTracks(result);
-      })
-      .catch(() => {
-        // Tracks are an addition to the player, never a precondition for it.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [attachmentId]);
-
-  // Only tracks with a source are rendered, and the browser lists its
-  // TextTrack objects in that same order - so this one array is what keeps the
-  // menu, the `<track>` elements and `video.textTracks` index-aligned.
-  const subtitles = useMemo(
-    () => tracks.subtitles.filter((track) => track.src),
-    [tracks.subtitles],
-  );
+    if (!pendingSubtitleRef.current || subtitles.length === 0) return;
+    selectSubtitle(pendingSubtitleRef.current);
+    pendingSubtitleRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtitles]);
 
   // The video element also exposes its *own* native caption control - the
   // "Captions" entry in its right-click menu, and on some platforms a
@@ -265,20 +350,10 @@ export function VideoAttachmentPreview({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const textTracks = video.textTracks;
-    const syncFromDom = () => {
-      let showingId: string = SUBTITLES_OFF;
-      for (let index = 0; index < textTracks.length; index += 1) {
-        if (textTracks[index].mode === "showing") {
-          showingId = subtitles[index]?.id ?? SUBTITLES_OFF;
-          break;
-        }
-      }
-      setActiveSubtitle(showingId);
-    };
+    const syncFromDom = () => setActiveSubtitle(currentSubtitleId(video, subtitles));
     syncFromDom();
-    textTracks.addEventListener("change", syncFromDom);
-    return () => textTracks.removeEventListener("change", syncFromDom);
+    video.textTracks.addEventListener("change", syncFromDom);
+    return () => video.textTracks.removeEventListener("change", syncFromDom);
   }, [subtitles]);
 
   // Applies a choice made from *this* dropdown to the live TextTrack objects
@@ -316,91 +391,122 @@ export function VideoAttachmentPreview({
     setAudioTracks(readAudioTracks(video, tracks.audio));
   }
 
+  // The native "Playback speed" entry in the video's own right-click menu
+  // changes `playbackRate` directly, so this listens for "ratechange" rather
+  // than only reacting to its own dropdown - the same reasoning as the
+  // subtitles sync above.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const sync = () => setPlaybackRate(video.playbackRate);
+    sync();
+    video.addEventListener("ratechange", sync);
+    return () => video.removeEventListener("ratechange", sync);
+  }, [attachmentId]);
+
+  function selectPlaybackRate(rate: number) {
+    const video = videoRef.current;
+    if (video) video.playbackRate = rate;
+    setPlaybackRate(rate);
+  }
+
   const activeLabel =
     subtitles.find((track) => track.id === activeSubtitle)?.label ?? null;
 
   const toolbarButtonClass =
     "text-muted-foreground border-border bg-surface hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1 rounded border px-2 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none";
 
-  const trackControls =
-    subtitles.length > 0 || audioTracks.length > 1 || supportsDocumentPip ? (
-      <>
-        {subtitles.length > 0 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" className={toolbarButtonClass} title="Subtitles">
-                {activeLabel ? (
-                  <Captions className="size-3.5" aria-hidden="true" />
-                ) : (
-                  <CaptionsOff className="size-3.5" aria-hidden="true" />
-                )}
-                <span className="max-w-40 truncate">{activeLabel ?? "Subtitles off"}</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-w-72">
-              <DropdownMenuLabel>Subtitles</DropdownMenuLabel>
-              <DropdownMenuItem onSelect={() => selectSubtitle(SUBTITLES_OFF)}>
+  const trackControls = (
+    <>
+      {subtitles.length > 0 ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className={toolbarButtonClass} title="Subtitles">
+              {activeLabel ? (
+                <Captions className="size-3.5" aria-hidden="true" />
+              ) : (
+                <CaptionsOff className="size-3.5" aria-hidden="true" />
+              )}
+              <span className="max-w-40 truncate">{activeLabel ?? "Subtitles off"}</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-w-72">
+            <DropdownMenuLabel>Subtitles</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => selectSubtitle(SUBTITLES_OFF)}>
+              <Check
+                className={`size-3.5 ${activeSubtitle === SUBTITLES_OFF ? "" : "invisible"}`}
+              />
+              Off
+            </DropdownMenuItem>
+            {subtitles.map((track) => (
+              <DropdownMenuItem key={track.id} onSelect={() => selectSubtitle(track.id)}>
                 <Check
-                  className={`size-3.5 ${activeSubtitle === SUBTITLES_OFF ? "" : "invisible"}`}
+                  className={`size-3.5 ${activeSubtitle === track.id ? "" : "invisible"}`}
                 />
-                Off
+                <span className="truncate">{track.label}</span>
               </DropdownMenuItem>
-              {subtitles.map((track) => (
-                <DropdownMenuItem key={track.id} onSelect={() => selectSubtitle(track.id)}>
-                  <Check
-                    className={`size-3.5 ${activeSubtitle === track.id ? "" : "invisible"}`}
-                  />
-                  <span className="truncate">{track.label}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
 
-        {audioTracks.length > 1 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" className={toolbarButtonClass} title="Audio track">
-                <Volume2 className="size-3.5" aria-hidden="true" />
-                <span className="max-w-40 truncate">
-                  {audioTracks.find((track) => track.enabled)?.label ?? "Audio"}
-                </span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-w-72">
-              <DropdownMenuLabel>Audio track</DropdownMenuLabel>
-              {audioTracks.map((track) => (
-                <DropdownMenuItem
-                  key={track.index}
-                  onSelect={() => selectAudioTrack(track.index)}
-                >
-                  <Check className={`size-3.5 ${track.enabled ? "" : "invisible"}`} />
-                  <span className="truncate">{track.label}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
+      {audioTracks.length > 1 ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className={toolbarButtonClass} title="Audio track">
+              <Volume2 className="size-3.5" aria-hidden="true" />
+              <span className="max-w-40 truncate">
+                {audioTracks.find((track) => track.enabled)?.label ?? "Audio"}
+              </span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-w-72">
+            <DropdownMenuLabel>Audio track</DropdownMenuLabel>
+            {audioTracks.map((track) => (
+              <DropdownMenuItem key={track.index} onSelect={() => selectAudioTrack(track.index)}>
+                <Check className={`size-3.5 ${track.enabled ? "" : "invisible"}`} />
+                <span className="truncate">{track.label}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
 
-        {supportsDocumentPip ? (
-          <button
-            type="button"
-            onClick={() => void enterDocumentPip()}
-            className={toolbarButtonClass}
-            title="Picture in picture"
-          >
-            <PictureInPicture2 className="size-3.5" aria-hidden="true" />
-            Picture in picture
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className={toolbarButtonClass} title="Playback speed">
+            <Gauge className="size-3.5" aria-hidden="true" />
+            <span>{playbackRate === 1 ? "1x" : `${playbackRate}x`}</span>
           </button>
-        ) : null}
-      </>
-    ) : null;
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="max-w-72">
+          <DropdownMenuLabel>Playback speed</DropdownMenuLabel>
+          {PLAYBACK_RATES.map((rate) => (
+            <DropdownMenuItem key={rate} onSelect={() => selectPlaybackRate(rate)}>
+              <Check className={`size-3.5 ${playbackRate === rate ? "" : "invisible"}`} />
+              {rate === 1 ? "Normal" : `${rate}x`}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {supportsDocumentPip ? (
+        <button
+          type="button"
+          onClick={() => void enterDocumentPip()}
+          className={toolbarButtonClass}
+          title="Picture in picture"
+        >
+          <PictureInPicture2 className="size-3.5" aria-hidden="true" />
+          Picture in picture
+        </button>
+      ) : null}
+    </>
+  );
 
   return (
     <div className="flex h-full w-full flex-col gap-2">
-      {trackControls && toolbarContainer
-        ? createPortal(trackControls, toolbarContainer)
-        : null}
+      {toolbarContainer ? createPortal(trackControls, toolbarContainer) : null}
       <video
         ref={videoRef}
         controls
@@ -422,7 +528,7 @@ export function VideoAttachmentPreview({
         Your browser does not support video playback.
       </video>
 
-      {trackControls && !toolbarContainer ? (
+      {!toolbarContainer ? (
         <div className="flex shrink-0 flex-wrap items-center gap-2">{trackControls}</div>
       ) : null}
     </div>
