@@ -308,15 +308,33 @@ export function VideoAttachmentPreview({
       pipWindow.document.body.appendChild(video);
       video.style.width = "100%";
       video.style.height = "100%";
-      // "cover", not "contain": the width/height requested above are only a
-      // hint the browser is free to clamp to whatever it considers a
-      // reasonable window size, so the window actually granted doesn't
-      // reliably end up at the video's own aspect ratio. "contain" would
-      // letterbox that mismatch as visible black bars; "cover" instead fills
-      // the whole window and crops the excess - a closer match to what a
-      // small floating window is expected to look like than empty black
-      // space on the sides.
-      video.style.objectFit = "cover";
+      video.style.objectFit = "contain";
+
+      // The width/height requested above are only a hint the browser is
+      // free to clamp to whatever it considers a reasonable window size, by
+      // an amount there's no way to know in advance - so the window actually
+      // granted doesn't reliably end up at the video's own aspect ratio.
+      // Cropping the video to fill that mismatch (object-fit: cover) hides
+      // it but throws away picture; the video's actual proportions matter
+      // more than exactly what size the window ends up, so this corrects
+      // the window's *shape* instead, to whatever width it was actually
+      // given. Window.resizeTo() can do that after the fact, but the
+      // platform only honors it in response to a genuine user gesture
+      // *inside this window* - a script call right after opening it doesn't
+      // qualify - so this tries immediately (a harmless no-op if the browser
+      // ignores it) and again on the viewer's first interaction with the
+      // floating window, which reliably does.
+      const fixAspectRatio = () => {
+        const targetWidth = pipWindow.innerWidth;
+        const targetHeight = Math.round(targetWidth * (nativeHeight / nativeWidth));
+        try {
+          pipWindow.resizeTo(targetWidth, targetHeight);
+        } catch {
+          // Ignored - same "needs a user gesture" restriction as above.
+        }
+      };
+      fixAspectRatio();
+      pipWindow.addEventListener("click", fixAspectRatio, { once: true });
 
       // Not wrapped in a React effect on purpose: this listener has to keep
       // working after this component - and the modal it closes below -
