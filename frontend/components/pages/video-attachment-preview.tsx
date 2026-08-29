@@ -319,28 +319,53 @@ export function VideoAttachmentPreview({
       pipWindow.document.body.style.background = "#000";
       pipWindow.document.body.style.height = "100vh";
       pipWindow.document.body.style.overflow = "hidden";
+      pipWindow.document.body.style.display = "flex";
+      pipWindow.document.body.style.alignItems = "center";
+      pipWindow.document.body.style.justifyContent = "center";
 
       handedToPipWindowRef.current = true;
       pipWindow.document.body.appendChild(video);
-      video.style.width = "100%";
-      video.style.height = "100%";
-      video.style.objectFit = "contain";
+
+      // Sizes the video to the *exact* pixel dimensions that both fit inside
+      // whatever the window's real content area turns out to be and exactly
+      // preserve the video's own aspect ratio - computed and applied
+      // directly, rather than trusting `width: 100%; height: 100%;
+      // object-fit: contain` to line up with the window on its own. That
+      // indirection is exactly what still left a visible sliver of black
+      // background: the window Chrome actually grants doesn't reliably
+      // match the video's proportions, and 100%/100% has no way to know
+      // that - it just fills whatever box it's given, mismatched or not.
+      // Centered by the body's flexbox above, and rerun on the window's own
+      // "resize" event, so a correction that lands later (see below) - or
+      // the viewer dragging the window's edges by hand - keeps this exact
+      // rather than only right at the moment this first runs.
+      const fitVideoToWindow = () => {
+        const scale = Math.min(
+          pipWindow.innerWidth / nativeWidth,
+          pipWindow.innerHeight / nativeHeight,
+        );
+        video.style.flex = "none";
+        video.style.width = `${Math.round(nativeWidth * scale)}px`;
+        video.style.height = `${Math.round(nativeHeight * scale)}px`;
+        video.style.objectFit = "contain";
+      };
+      fitVideoToWindow();
+      pipWindow.addEventListener("resize", fitVideoToWindow);
 
       // The width/height requested above are only a hint the browser is
       // free to clamp to whatever it considers a reasonable window size, by
       // an amount there's no way to know in advance - so the window actually
-      // granted doesn't reliably end up at the video's own aspect ratio.
-      // Cropping the video to fill that mismatch (object-fit: cover) hides
-      // it but throws away picture; the video's actual proportions matter
-      // more than exactly what size the window ends up, so this corrects
-      // the window's *shape* instead, to whatever width it was actually
-      // given. Window.resizeTo() can do that after the fact, but the
+      // granted doesn't reliably end up at the video's own aspect ratio, and
+      // the video above is now always exactly framed within whatever the
+      // window's shape happens to be. This instead shrinks the window's
+      // *own* shape to match, so there's little to no black margin left
+      // around that video at all. Window.resizeTo() can do that, but the
       // platform only honors it in response to a genuine user gesture
       // *inside this window* - a script call right after opening it doesn't
       // qualify - so this tries immediately (a harmless no-op if the browser
       // ignores it) and again on the viewer's first interaction with the
       // floating window, which reliably does.
-      const fixAspectRatio = () => {
+      const fixWindowShape = () => {
         const targetWidth = pipWindow.innerWidth;
         const targetHeight = Math.round(targetWidth * (nativeHeight / nativeWidth));
         try {
@@ -349,8 +374,8 @@ export function VideoAttachmentPreview({
           // Ignored - same "needs a user gesture" restriction as above.
         }
       };
-      fixAspectRatio();
-      pipWindow.addEventListener("click", fixAspectRatio, { once: true });
+      fixWindowShape();
+      pipWindow.addEventListener("click", fixWindowShape, { once: true });
 
       // Not wrapped in a React effect on purpose: this listener has to keep
       // working after this component - and the modal it closes below -
