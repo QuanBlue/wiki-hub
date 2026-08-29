@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "postinstall": "node node_modules/@lamberl-lee/file-preview/scripts/copy-pdf-worker.mjs && node scripts/copy-pdfjs-module.mjs",
+    "postinstall": "node node_modules/@lamberl-lee/file-preview/scripts/copy-pdf-worker.mjs && node -e \"require('node:fs').existsSync('scripts/copy-pdfjs-module.mjs')&&require('node:child_process').execFileSync(process.execPath,['scripts/copy-pdfjs-module.mjs'],{stdio:'inherit'})\"",
     "dev": "next dev --turbopack",
     "dev:docker": "next dev --webpack -H 0.0.0.0",
     "build": "next build",
