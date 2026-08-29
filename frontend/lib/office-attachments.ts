@@ -22,5 +22,5 @@ export function isOfficeAttachment(filename: string): boolean {
 
 export function isEditableOfficeAttachment(filename: string): boolean {
   const extension = filename.split(".").pop()?.toLowerCase() ?? "";
-  return extension === "docx" || extension === "xlsx";
+  return extension === "docx" || extension === "xlsx" || extension === "pptx";
 }

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "postinstall": "node node_modules/@lamberl-lee/file-preview/scripts/copy-pdf-worker.mjs",
+    "postinstall": "node node_modules/@lamberl-lee/file-preview/scripts/copy-pdf-worker.mjs && node scripts/copy-pdfjs-module.mjs",
     "dev": "next dev --turbopack",
     "dev:docker": "next dev --webpack -H 0.0.0.0",
     "build": "next build",

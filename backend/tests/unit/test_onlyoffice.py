@@ -69,6 +69,20 @@ def test_editor_config_is_signed_and_uses_internal_capability_urls() -> None:
     verify_callback_token(callback)
 
 
+@pytest.mark.parametrize(
+    ("filename", "expected_document_type"),
+    [("architecture.docx", "word"), ("budget.xlsx", "cell"), ("roadmap.pptx", "slide")],
+)
+def test_editor_config_picks_the_document_type_for_each_editable_extension(
+    filename: str, expected_document_type: str
+) -> None:
+    config = editor_config(attachment=_attachment(filename), user=_user())
+    assert config["documentType"] == expected_document_type
+    document = config["document"]
+    assert isinstance(document, dict)
+    assert document["fileType"] == filename.rsplit(".", 1)[-1]
+
+
 def test_ticket_is_scoped_to_attachment_and_purpose() -> None:
     attachment = _attachment()
     config = editor_config(attachment=attachment, user=_user())

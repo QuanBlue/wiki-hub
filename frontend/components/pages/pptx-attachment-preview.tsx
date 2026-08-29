@@ -5,11 +5,56 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Presentation,
+  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+
+/** Safari still ships fullscreen only under its `webkit`-prefixed names. */
+type PrefixedFullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => void;
+};
+type PrefixedFullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => void;
+};
+
+function currentFullscreenElement(): Element | null {
+  const doc = document as PrefixedFullscreenDocument;
+  return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+}
+
+const SYSTEM_SANS_FALLBACK =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const GENERIC_FONT_FAMILY_RE =
+  /\b(sans-serif|serif|monospace|cursive|fantasy|system-ui|ui-sans-serif|ui-serif|ui-monospace|emoji|math|fangsong)\b/i;
+
+/**
+ * The renderer resolves each run's `<a:latin>`/`<a:ea>`/`<a:cs>` typeface
+ * straight to a CSS `font-family` with no generic fallback appended - its
+ * own substitution table only covers a handful of well-known names like
+ * Calibri/Aptos and a few CJK fonts. A deck's actual font (an Apple system
+ * font, a licensed corporate face, a Google Font that isn't installed
+ * locally) is almost never present in the browser rendering the preview, so
+ * unresolved text silently falls through to the *browser's* ultimate
+ * default - Times New Roman on Chrome/Windows - rather than anything
+ * resembling the deck's real look. Appending a generic sans-serif stack
+ * after whatever font-family the renderer already set is a no-op when that
+ * font *is* available, and otherwise degrades to a clean system font
+ * instead of a jarring, wrong-looking serif.
+ */
+function ensureFontFallback(root: Element) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const family = (node as HTMLElement).style?.fontFamily;
+    if (family && !GENERIC_FONT_FAMILY_RE.test(family)) {
+      (node as HTMLElement).style.fontFamily = `${family}, ${SYSTEM_SANS_FALLBACK}`;
+    }
+  }
+}
 
 export function PptxAttachmentPreview({
   contentUrl,
@@ -24,6 +69,7 @@ export function PptxAttachmentPreview({
   toolbarContainer?: HTMLElement | null;
   headerAfterControls?: ReactNode;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<PptxViewer | null>(null);
   const engineRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -39,7 +85,81 @@ export function PptxAttachmentPreview({
   const [error, setError] = useState<string | null>(null);
   const [zoomPercent, setZoomPercent] = useState(100);
   const [viewportRevision, setViewportRevision] = useState(0);
+  const [presenting, setPresenting] = useState(false);
   const useHeaderControls = toolbarContainer !== null && toolbarContainer !== undefined;
+
+  function startPresenting() {
+    // Set eagerly rather than waiting on the fullscreenchange event: a
+    // browser that denies or lacks the Fullscreen API (a permissions-policy
+    // restriction, an older Safari) still gets the in-page slideshow layout,
+    // it just isn't edge-to-edge.
+    setPresenting(true);
+    const target = containerRef.current as PrefixedFullscreenElement | null;
+    try {
+      const request = target?.requestFullscreen?.bind(target) ?? target?.webkitRequestFullscreen?.bind(target);
+      const result = request?.();
+      if (result && typeof (result as Promise<void>).catch === "function") {
+        (result as Promise<void>).catch(() => {
+          // No real fullscreen - the CSS-driven overlay is still a slideshow.
+        });
+      }
+    } catch {
+      // Same fallback as above.
+    }
+  }
+
+  function stopPresenting() {
+    setPresenting(false);
+    if (currentFullscreenElement() !== containerRef.current) return;
+    const doc = document as PrefixedFullscreenDocument;
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    else doc.webkitExitFullscreen?.();
+  }
+
+  // The Fullscreen API is the source of truth once it engages - it reflects
+  // the browser exiting on its own Escape handling, F11, etc. Tearing this
+  // container's own fullscreen down on unmount matches how closing the modal
+  // during Picture-in-Picture is handled for video previews: leaving a
+  // browser-level presentation mode running behind a closed dialog would be
+  // the same class of bug.
+  useEffect(() => {
+    // Captured once, on mount, rather than read from the ref inside the
+    // cleanup: React may have already cleared containerRef.current by the
+    // time an unmount runs this cleanup, but the DOM node itself is stable
+    // for the component's whole lifetime.
+    const container = containerRef.current;
+    function syncPresenting() {
+      setPresenting(currentFullscreenElement() === container);
+    }
+    document.addEventListener("fullscreenchange", syncPresenting);
+    document.addEventListener("webkitfullscreenchange", syncPresenting);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncPresenting);
+      document.removeEventListener("webkitfullscreenchange", syncPresenting);
+      if (currentFullscreenElement() === container) {
+        const doc = document as PrefixedFullscreenDocument;
+        if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+        else doc.webkitExitFullscreen?.();
+      }
+    };
+  }, []);
+
+  // Escape always ends the slideshow, even in the fallback (non-fullscreen)
+  // overlay where the browser has no built-in Escape handling of its own.
+  // This preview lives inside a Radix Dialog, which closes itself on Escape
+  // too - capturing on `window` (ahead of Radix's own capture-phase listener
+  // on `document`) and stopping propagation is what keeps Escape closing only
+  // the slideshow instead of the whole attachment modal along with it.
+  useEffect(() => {
+    if (!presenting) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      stopPresenting();
+    }
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, [presenting]);
 
   useEffect(() => {
     let disposed = false;
@@ -70,7 +190,24 @@ export function PptxAttachmentPreview({
           // empty background when parsed lazily. Parse slide content eagerly;
           // thumbnails remain incremental so the UI still becomes usable fast.
           lazySlides: false,
-          pdfjs: false,
+          // Pasted vector art and SmartArt fallbacks are stored as EMF images
+          // that embed a PDF preview. The renderer only decodes those through
+          // PDF.js running in its own Worker; without this, that whole image -
+          // often a full-bleed background covering the slide - is silently
+          // skipped and the slide renders blank. The module has to be a
+          // static URL (see scripts/copy-pdfjs-module.mjs), not a bundler
+          // import: the Worker loads it with a runtime `import(moduleUrl)`.
+          //
+          // That import runs inside a Worker booted from a `blob:` URL, whose
+          // base URL for resolving specifiers is the blob URL itself, not the
+          // page origin - a root-relative path like "/vendor/..." fails there
+          // with "Failed to resolve module specifier" (caught and swallowed,
+          // so the image just silently never appears). Passing a fully
+          // qualified URL sidesteps that resolution entirely.
+          pdfjs: {
+            moduleUrl: new URL("/vendor/pdfjs/pdf.min.mjs", window.location.origin).href,
+            workerUrl: new URL("/vendor/pdfjs/pdf.worker.min.mjs", window.location.origin).href,
+          },
           zipLimits: RECOMMENDED_ZIP_LIMITS,
         });
         viewerRef.current = viewer;
@@ -104,6 +241,7 @@ export function PptxAttachmentPreview({
           thumbnail.dataset.active = index === activeSlideRef.current ? "true" : "false";
           thumbnailsRef.current?.appendChild(thumbnail);
           const handle = viewer.renderThumbnailToContainer(index, thumbnail, { width: 132 });
+          ensureFontFallback(thumbnail);
           thumbnail.addEventListener("click", () => setActiveSlide(index));
           if (handle) handles.push(handle);
           if ((index + 1) % 3 === 0 || index === viewer.slideCount - 1) {
@@ -142,13 +280,15 @@ export function PptxAttachmentPreview({
     main.replaceChildren();
     const availableWidth = Math.max(1, viewport.clientWidth - 32);
     const availableHeight = Math.max(1, viewport.clientHeight - 32);
-    const fitScale = expanded
-      ? availableHeight / viewer.slideHeight
-      : Math.min(
-          availableWidth / viewer.slideWidth,
-          availableHeight / viewer.slideHeight,
-        );
-    const scale = fitScale * (zoomPercent / 100);
+    const containScale = Math.min(
+      availableWidth / viewer.slideWidth,
+      availableHeight / viewer.slideHeight,
+    );
+    // Presenting always letterboxes to the screen, like PowerPoint's own
+    // Slide Show - zoom is a preview-panel concept and doesn't apply once
+    // the deck is filling the display.
+    const fitScale = presenting ? containScale : expanded ? availableHeight / viewer.slideHeight : containScale;
+    const scale = presenting ? fitScale : fitScale * (zoomPercent / 100);
     const renderedWidth = viewer.slideWidth * scale;
     const renderedHeight = viewer.slideHeight * scale;
     // The renderer applies `scale()` to the slide element, but transformed
@@ -172,6 +312,7 @@ export function PptxAttachmentPreview({
     slideShell.style.margin = "0";
     main.appendChild(slideShell);
     mainHandleRef.current = viewer.renderSlideToContainer(activeSlide, slideShell, scale);
+    ensureFontFallback(slideShell);
     thumbnailsRef.current?.querySelectorAll<HTMLElement>(".pptx-thumbnail-canvas").forEach((thumbnail, index) => {
       thumbnail.dataset.active = index === activeSlide ? "true" : "false";
     });
@@ -180,7 +321,7 @@ export function PptxAttachmentPreview({
       behavior: "smooth",
     });
     activeSlideRef.current = activeSlide;
-  }, [activeSlide, expanded, slideCount, viewportRevision, zoomPercent]);
+  }, [activeSlide, expanded, presenting, slideCount, viewportRevision, zoomPercent]);
 
   useLayoutEffect(() => {
     if (!expanded) return;
@@ -245,8 +386,37 @@ export function PptxAttachmentPreview({
       </button>
     </>
   );
+  const presentControl = (
+    <button
+      type="button"
+      onClick={startPresenting}
+      aria-label="Start slideshow"
+      title="Start slideshow"
+      className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none"
+    >
+      <Presentation className="size-4" />
+    </button>
+  );
+  const toolbarContent = presenting
+    ? null
+    : useHeaderControls && toolbarContainer
+      ? createPortal(<>{zoomControls}{presentControl}{headerAfterControls}</>, toolbarContainer)
+      : (
+          <div className="pptx-toolbar bg-surface-sunken text-muted-foreground flex h-9 shrink-0 items-center justify-end gap-1 border-b px-2">
+            {zoomControls}
+            {presentControl}
+          </div>
+        );
   return (
-    <div className="relative h-full min-h-80 min-w-0" aria-busy={loading}>
+    <div
+      ref={containerRef}
+      className={
+        presenting
+          ? "fixed inset-0 z-100 h-screen w-screen bg-black"
+          : "relative h-full min-h-80 min-w-0"
+      }
+      aria-busy={loading}
+    >
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -left-[2000px] top-0 h-[540px] w-[960px] overflow-hidden opacity-0"
@@ -254,16 +424,10 @@ export function PptxAttachmentPreview({
         <div ref={engineRef} className="h-full w-full" />
       </div>
       <div className="pptx-attachment-preview flex h-full min-h-80 min-w-0 flex-col gap-2 overflow-hidden">
-        {useHeaderControls && toolbarContainer
-          ? createPortal(<>{zoomControls}{headerAfterControls}</>, toolbarContainer)
-          : (
-              <div className="pptx-toolbar bg-surface-sunken text-muted-foreground flex h-9 shrink-0 items-center justify-end gap-1 border-b px-2">
-                {zoomControls}
-              </div>
-            )}
+        {toolbarContent}
         <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
-        <aside ref={thumbnailsRef} className="pptx-thumbnails bg-surface-sunken flex w-40 shrink-0 flex-col gap-2 overflow-y-auto rounded-md border p-1.5" aria-label="PowerPoint slides" />
-        <section ref={viewportRef} className="bg-surface-sunken relative flex min-w-0 flex-1 items-start justify-start overflow-auto rounded-md border p-3" aria-label={`Slide ${activeSlide + 1} of ${slideCount}`}>
+        <aside ref={thumbnailsRef} className={`pptx-thumbnails bg-surface-sunken flex w-40 shrink-0 flex-col gap-2 overflow-y-auto rounded-md border p-1.5${presenting ? " hidden" : ""}`} aria-label="PowerPoint slides" />
+        <section ref={viewportRef} className={presenting ? "relative flex min-w-0 flex-1 items-center justify-center overflow-hidden bg-black" : "bg-surface-sunken relative flex min-w-0 flex-1 items-start justify-start overflow-auto rounded-md border p-3"} aria-label={`Slide ${activeSlide + 1} of ${slideCount}`}>
         <div ref={mainRef} className="pptx-main-slide flex min-h-full items-start justify-center" />
         <button type="button" onClick={() => setActiveSlide((current) => Math.max(0, current - 1))} disabled={activeSlide === 0} aria-label="Previous slide" className="bg-surface-raised text-foreground hover:bg-surface-hover focus-visible:ring-ring absolute top-1/2 left-3 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border shadow-sm transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40">
           <ChevronLeft className="size-4" />
@@ -272,6 +436,17 @@ export function PptxAttachmentPreview({
           <ChevronRight className="size-4" />
         </button>
         <span className="bg-surface-raised text-muted-foreground absolute right-3 bottom-3 rounded px-2 py-1 text-xs shadow-sm">{activeSlide + 1} / {slideCount}</span>
+        {presenting ? (
+          <button
+            type="button"
+            onClick={stopPresenting}
+            aria-label="Exit presentation"
+            title="Exit presentation (Esc)"
+            className="bg-surface-raised text-foreground hover:bg-surface-hover focus-visible:ring-ring absolute top-3 right-3 flex size-9 items-center justify-center rounded-full border shadow-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
+          >
+            <X className="size-4" />
+          </button>
+        ) : null}
         </section>
         </div>
       </div>

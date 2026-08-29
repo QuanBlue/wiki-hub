@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 type OnlyOfficeEditor = { destroyEditor: () => void };
 
 type OnlyOfficeConfig = {
-  documentType: "word" | "cell";
+  documentType: "word" | "cell" | "slide";
   document: { key: string; title: string; fileType: string };
   editorConfig: Record<string, unknown>;
   token: string;

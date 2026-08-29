@@ -15,7 +15,8 @@ from app.models.attachment import PageAttachment
 from app.models.user import User
 
 _TICKET_TYPE = "onlyoffice_attachment"
-_VALID_EXTENSIONS = {"docx", "xlsx"}
+_VALID_EXTENSIONS = {"docx", "xlsx", "pptx"}
+_DOCUMENT_TYPES = {"docx": "word", "xlsx": "cell", "pptx": "slide"}
 
 
 def is_enabled() -> bool:
@@ -94,9 +95,8 @@ def editor_config(*, attachment: PageAttachment, user: User) -> dict[str, Any]:
     callback_url = (
         f"{base_url}/api/v1/attachments/{attachment.id}/office/callback?{callback_query}"
     )
-    is_word = extension == "docx"
     config: dict[str, Any] = {
-        "documentType": "word" if is_word else "cell",
+        "documentType": _DOCUMENT_TYPES[extension],
         "type": "desktop",
         "width": "100%",
         "height": "100%",
