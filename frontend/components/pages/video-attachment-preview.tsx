@@ -308,7 +308,15 @@ export function VideoAttachmentPreview({
       pipWindow.document.body.appendChild(video);
       video.style.width = "100%";
       video.style.height = "100%";
-      video.style.objectFit = "contain";
+      // "cover", not "contain": the width/height requested above are only a
+      // hint the browser is free to clamp to whatever it considers a
+      // reasonable window size, so the window actually granted doesn't
+      // reliably end up at the video's own aspect ratio. "contain" would
+      // letterbox that mismatch as visible black bars; "cover" instead fills
+      // the whole window and crops the excess - a closer match to what a
+      // small floating window is expected to look like than empty black
+      // space on the sides.
+      video.style.objectFit = "cover";
 
       // Not wrapped in a React effect on purpose: this listener has to keep
       // working after this component - and the modal it closes below -
