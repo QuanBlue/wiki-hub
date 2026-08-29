@@ -3,22 +3,18 @@
 import {
   AlertTriangle,
   BookOpen,
-  CheckCircle2,
   ChevronRight,
   CircleAlert,
-  FileCode,
   FileText,
   FolderKanban,
   Info,
   KeyRound,
-  Layers,
   Lightbulb,
-  Palette,
+  Paperclip,
   Search,
   Settings2,
   ShieldCheck,
   Sparkles,
-  Terminal,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -31,6 +27,7 @@ import { cn } from "@/lib/utils";
 export type HelpCategory =
   | "Workspace"
   | "Writing"
+  | "Attachments & Media"
   | "Account"
   | "Administration";
 
@@ -149,6 +146,11 @@ const categories: CategoryDefinition[] = [
     icon: FileText,
   },
   {
+    title: "Attachments & Media",
+    description: "Preview, edit, present, and import documents, video, and images.",
+    icon: Paperclip,
+  },
+  {
     title: "Account",
     description: "Manage your profile, password, and active sign-in sessions.",
     icon: KeyRound,
@@ -185,27 +187,88 @@ const sections: HelpSection[] = [
           Type keywords, space names, or page titles to jump directly to any document.
         </Callout>
 
+        <Callout variant="note" title="WHAT SEARCH ACTUALLY MATCHES">
+          Search looks for your text inside space names/keys/descriptions and page
+          titles/content - a plain substring match, not a ranked full-text search. It
+          does not currently search attachment filenames or attachment content, and
+          only ever shows results you have permission to see. There are no date, space,
+          or author filters.
+        </Callout>
+
         <p className="mt-3">
           <strong>Key Interface Regions:</strong>
         </p>
         <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
-            <strong>Top Navigation Bar (56px)</strong>: Hosts the global search
-            box, quick notification alerts, active workspace title, and user
-            profile menu.
+            <strong>Top Navigation Bar</strong>: the search pill (opens the same{" "}
+            <Kbd>Ctrl</Kbd>+<Kbd>K</Kbd> modal), a <strong>Help</strong> link (book
+            icon, takes you here), the Light/Dark theme toggle, and your user menu.
+            WikiHub has no notification bell - there is no push/alert system yet (see
+            the note in <em>Safe Operation &amp; System Troubleshooting</em>).
           </li>
           <li>
-            <strong>Left Sidebar Rail</strong>: Provides quick links to{" "}
-            <strong>Home</strong>, <strong>Spaces Explorer</strong>, your pinned{" "}
-            <strong>My Spaces</strong> list (using clean <Code>Layers</Code> icons),
-            and <strong>Help Center</strong>.
+            <strong>Left Sidebar Rail</strong>: <strong>Home</strong> and{" "}
+            <strong>Spaces</strong>, then your <strong>Most visited</strong> spaces -
+            an automatic, server-ranked list based on which spaces you actually open,
+            not a manually pinned one - and, for admins, an{" "}
+            <strong>Administration</strong> section.
           </li>
           <li>
-            <strong>Sidebar Collapse</strong>: Click the sidebar collapse button or
-            press <Kbd>Ctrl</Kbd> + <Kbd>\</Kbd> to maximize reading space. Your
-            collapsed preference is preserved automatically.
+            <strong>Sidebar Collapse</strong>: click the collapse/expand button, or
+            drag the sidebar&apos;s right edge past its minimum width, to shrink it to
+            icons-only. Your preference is remembered on this device.
           </li>
         </ul>
+      </>
+    ),
+  },
+  {
+    id: "keyboard-shortcuts",
+    title: "Keyboard Shortcuts Reference",
+    category: "Workspace",
+    description:
+      "Every keyboard shortcut WikiHub actually recognises, in one place.",
+    keywords: ["keyboard", "shortcut", "hotkey", "ctrl", "cmd", "escape"],
+    body: (
+      <>
+        <p>There is no command palette beyond Search - just this fixed set:</p>
+
+        <div className="border-border bg-surface mt-3 overflow-hidden rounded-lg border shadow-xs">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-border bg-surface-sunken border-b font-semibold">
+                <th className="p-2.5 w-40">Shortcut</th>
+                <th className="p-2.5">Where &amp; what it does</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>K</Kbd></td>
+                <td className="p-2.5">Anywhere - opens or closes Global Search. Then <Kbd>↑</Kbd>/<Kbd>↓</Kbd> to move the selection, <Kbd>Enter</Kbd> to open it, <Kbd>Esc</Kbd> to close.</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>S</Kbd></td>
+                <td className="p-2.5">While editing a page - saves immediately, intercepting the browser&apos;s own Save-page dialog.</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>R</Kbd></td>
+                <td className="p-2.5">While editing - intercepted to ask <em>&ldquo;Reload site?&rdquo;</em> instead of silently discarding unsaved changes.</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Kbd>/</Kbd></td>
+                <td className="p-2.5">Start of an empty line in the editor - opens the slash command menu (see <em>Slash Commands</em>).</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Kbd>←</Kbd> / <Kbd>→</Kbd></td>
+                <td className="p-2.5">In a PowerPoint attachment preview - previous/next slide (works both inside and outside fullscreen Present mode).</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Kbd>Esc</Kbd></td>
+                <td className="p-2.5">Closes the currently focused overlay - a dialog, the mobile sidebar drawer, or (checked first) just the PowerPoint slideshow without closing its parent attachment window.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </>
     ),
   },
@@ -249,44 +312,231 @@ const sections: HelpSection[] = [
             vector icon.
           </li>
           <li>
-            <strong>Space Visibility Rules</strong>:
+            <strong>Space Visibility</strong>:
             <ul className="list-disc pl-5 mt-1 space-y-1">
               <li>
-                <strong className="text-success">Public</strong>: Readable by anyone
-                with access to WikiHub.
+                <strong className="text-success">Open</strong>: any signed-in
+                workspace member can read the space.
               </li>
               <li>
-                <strong className="text-warning">Internal</strong>: Visible to all
-                authenticated workspace members.
-              </li>
-              <li>
-                <strong className="text-danger">Restricted / Private</strong>: Accessible
-                only to explicitly invited users and assigned security groups.
+                <strong className="text-danger">Restricted</strong>: only the specific
+                people and groups granted access can read it.
               </li>
             </ul>
           </li>
           <li>
-            <strong>Space Member Roles</strong>:
-            <ul className="list-disc pl-5 mt-1 space-y-1">
-              <li>
-                <strong>Manager</strong>: Full control to edit space settings, assign
-                members, archive, or delete the space.
-              </li>
-              <li>
-                <strong>Contributor</strong>: Can create, edit, move, and comment on
-                pages.
-              </li>
-              <li>
-                <strong>Reader</strong>: Read-only access to published space pages.
-              </li>
-            </ul>
+            <strong>Per-user &amp; per-group permissions</strong>: instead of a fixed
+            list of named roles, WikiHub grants specific capabilities directly to a
+            user or a group - <Code>View</Code>, <Code>Add</Code>, <Code>Delete</Code>,{" "}
+            <Code>Delete own</Code>, <Code>Restrictions</Code>, <Code>Export</Code>,
+            and <Code>Admin</Code> - from a space&apos;s own{" "}
+            <strong>Edit space &gt; Access &amp; Permissions</strong> tab, or from{" "}
+            <strong>Administration &gt; Spaces</strong> (see{" "}
+            <em>Space Access &amp; Effective Permissions</em> for the full picture,
+            including how to check any one person&apos;s resolved access).
           </li>
           <li>
-            <strong>Favourites / Pinning</strong>: Click the <Code>★ Star</Code> icon on
-            any space header to pin it directly into your left sidebar under{" "}
-            <strong>MY SPACES</strong>.
+            <strong>Editing a space</strong>: click <strong>Edit space</strong>{" "}
+            (pencil icon in the space sidebar footer, admins only) for three tabs:{" "}
+            <strong>General</strong> (name, visibility, and an optional per-space
+            attachment-size limit that overrides the workspace default),{" "}
+            <strong>Access &amp; Permissions</strong> (the same tables as above), and{" "}
+            <strong>Space settings &amp; Danger zone</strong> (Archive/Restore the
+            space, or permanently Delete it - permanent deletion is only available
+            from <strong>Administration &gt; Spaces</strong>, not here).
+          </li>
+          <li>
+            <strong>Favouriting</strong>: Click the <Code>★ Star</Code> icon on a
+            space&apos;s header to add it to your favourites. Favourited spaces show up
+            under <strong>My favorite spaces</strong> on the Home page, and under the{" "}
+            <strong>Starred</strong> tab of the Spaces directory (
+            <Code>/spaces?tab=starred</Code>).
+            <br />
+            The sidebar&apos;s own <strong>Most visited</strong> list is separate and
+            automatic - it ranks whichever spaces you actually open most, independent of
+            what you&apos;ve starred.
           </li>
         </ol>
+      </>
+    ),
+  },
+  {
+    id: "my-work",
+    title: "Finding pages you've visited, edited, or saved",
+    category: "Workspace",
+    description:
+      "Three personal activity views for your own history - not in the sidebar yet, but one URL away.",
+    keywords: [
+      "recently visited",
+      "recently worked on",
+      "history",
+      "my work",
+      "saved",
+      "activity",
+    ],
+    body: (
+      <>
+        <p>
+          Beyond the workspace-wide activity feed on <strong>Home</strong>, WikiHub keeps
+          three personal views of your own history:
+        </p>
+
+        <Callout variant="note" title="NOT LINKED FROM THE SIDEBAR YET">
+          These pages exist and work today, but there is no menu item pointing at them
+          yet - bookmark whichever ones you use.
+        </Callout>
+
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>
+              Recently visited <Code>/recent/visited</Code>
+            </strong>
+            : pages you&apos;ve opened on this device, most recent first. Stored in this
+            browser only, like <Code>Save for later</Code> below.
+          </li>
+          <li>
+            <strong>
+              Recently worked on <Code>/recent/worked-on</Code>
+            </strong>
+            : pages you personally created or edited. This one is pulled from the
+            server, so it is the same list on every device you sign in from.
+          </li>
+          <li>
+            <strong>
+              Saved for later <Code>/saved</Code>
+            </strong>
+            : everything you&apos;ve bookmarked with the <Code>Save for later</Code>{" "}
+            button (see <em>Liking, saving &amp; sharing a page</em> below).
+          </li>
+        </ul>
+
+        <p className="mt-3 text-sm">
+          <strong>Home</strong> itself (the logo, or <strong>Home</strong> in the
+          sidebar) shows a different, workspace-wide view: <strong>All updates</strong> -
+          every page anyone has edited, grouped by author - alongside your favourite
+          spaces in the right-hand panel.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "page-engagement",
+    title: "Liking, saving & sharing a page",
+    category: "Workspace",
+    description:
+      "Flag useful pages, bookmark ones you'll need again, and lock down a single sensitive page.",
+    keywords: [
+      "like",
+      "save for later",
+      "share",
+      "bookmark",
+      "page access",
+      "restrict",
+      "restriction",
+    ],
+    body: (
+      <>
+        <p>
+          Below a page&apos;s title, the page toolbar carries a small set of actions
+          separate from editing:
+        </p>
+
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Like</strong>: click <Code>Like</Code> to flag a page as useful. The
+            count is visible to everyone and the button switches to{" "}
+            <Code>Liked</Code> for you - a lightweight signal for what actually gets
+            read, not a moderation tool.
+          </li>
+          <li>
+            <strong>Save for later</strong>: click the star{" "}
+            <Code>Save for later</Code> button to bookmark a page.
+            <Callout variant="important" title="THIS DEVICE ONLY">
+              Saved-for-later status lives in this browser, not your account - saving on
+              your laptop will not show up on your phone, and clearing browser data
+              clears it too. Everything you&apos;ve saved is listed at{" "}
+              <Code>/saved</Code>.
+            </Callout>
+          </li>
+          <li>
+            <strong>Share</strong>: click <Code>Share</Code> to copy the page&apos;s
+            direct link to your clipboard, ready to paste into chat or email.
+          </li>
+          <li>
+            <strong>Page access</strong>: on a page you can manage, click{" "}
+            <Code>Page access</Code> to grant specific people or groups{" "}
+            <Code>Can view</Code> or <Code>Can edit</Code> on that one page - tighter
+            than its space&apos;s general member roles, and view restrictions inherit
+            down to child pages. With no restrictions added, a page simply follows its
+            space&apos;s access rules.
+          </li>
+        </ul>
+
+        <p className="mt-3 text-sm text-muted-foreground">
+          Real-world use case: a space stays open to the whole team, but the one page
+          documenting an incident postmortem or a compensation policy gets{" "}
+          <Code>Page access</Code> restricted to just the people who need it.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "page-actions-menu",
+    title: "The “⋯” menu: move, view width, export & delete",
+    category: "Workspace",
+    description:
+      "Every page action beyond editing text lives behind the ⋯ button next to a page's title.",
+    keywords: [
+      "move page",
+      "full width",
+      "delete page",
+      "page tree",
+      "reorganize",
+      "more actions",
+    ],
+    body: (
+      <>
+        <p>
+          Click the <Code>⋯</Code> (<strong>More page actions</strong>) icon next to{" "}
+          <strong>Edit</strong> for everything that isn&apos;t inline editing:
+        </p>
+
+        <ul className="list-disc pl-5 space-y-1.5 text-sm">
+          <li>
+            <strong>Move page</strong>: pick a destination <strong>Space</strong> and a{" "}
+            <strong>Parent page</strong> (searchable, or <Code>Top-level page</Code>) to
+            relocate a page anywhere - even into a different space. Its child pages
+            move with it, and the picker won&apos;t let you drop a page inside one of
+            its own descendants.
+          </li>
+          <li>
+            <strong>Page history</strong>: opens the revision timeline (see{" "}
+            <em>Revision History, Visual Diff &amp; Export</em>).
+          </li>
+          <li>
+            <strong>Import from file…</strong>: convert documents into new child pages
+            (see <em>Importing documents as new pages</em> in Attachments &amp; Media).
+          </li>
+          <li>
+            <strong>View</strong> → <strong>Full width</strong> /{" "}
+            <strong>Normal width</strong>: widen the reading column, useful for pages
+            dense with tables or screenshots.
+          </li>
+          <li>
+            <strong>Export</strong> → <strong>HTML</strong> / <strong>PDF</strong> /{" "}
+            <strong>Word</strong>: see <em>Revision History, Visual Diff &amp; Export</em>{" "}
+            for exactly what each format preserves.
+          </li>
+          <li>
+            <strong className="text-danger">Delete page</strong>: permanently removes
+            the page.
+          </li>
+        </ul>
+
+        <Callout variant="warning" title="DELETING NEVER ORPHANS CHILD PAGES">
+          Deleting a page moves any of its child pages up one level rather than deleting
+          them too - their content always stays reachable.
+        </Callout>
       </>
     ),
   },
@@ -453,6 +703,11 @@ const sections: HelpSection[] = [
                 <td className="p-2.5 font-medium">Page Picker Link</td>
                 <td className="p-2.5">Search and insert an inline link to another wiki page.</td>
               </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Code>/subpage</Code></td>
+                <td className="p-2.5 font-medium">Create Sub-page</td>
+                <td className="p-2.5">Spawn a new child page under this one, without leaving the editor.</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -494,13 +749,14 @@ const sections: HelpSection[] = [
           </li>
         </ul>
 
-        <p className="mt-4 font-semibold text-foreground">File Attachments &amp; Detail Modal:</p>
+        <p className="mt-4 font-semibold text-foreground">File Attachments:</p>
         <p className="text-sm">
-          Upload PDF documents, archives (<Code>.zip</Code>, <Code>.tar.gz</Code>), or
-          code files (<Code>.ts</Code>, <Code>.py</Code>, <Code>.json</Code>). Clicking an
-          attachment opens an interactive <strong>File Detail Modal</strong> displaying
-          file size, creation timestamp, download button, and a syntax-highlighted
-          live preview for text/code attachments.
+          Upload PDF documents, archives (<Code>.zip</Code>, <Code>.tar.gz</Code>), code
+          files, video, or Office documents the same way. Clicking any attachment opens
+          the same interactive preview modal - see the{" "}
+          <strong>Attachments &amp; Media</strong> guide for what each file type can do
+          once it&apos;s uploaded, including in-place Office editing, PowerPoint
+          slideshows, and video Picture-in-Picture.
         </p>
       </>
     ),
@@ -631,6 +887,412 @@ const sections: HelpSection[] = [
           paragraph - faithful in color and text, not in exact shape. PDF and HTML
           have no such limit.
         </Callout>
+      </>
+    ),
+  },
+  {
+    id: "drafts-and-autosave",
+    title: "Draft Auto-save & Recovery",
+    category: "Writing",
+    description:
+      "Every edit is safeguarded by a server-synced draft, with a recovery banner if you never actually published it.",
+    keywords: [
+      "draft",
+      "autosave",
+      "auto-save",
+      "recovery",
+      "discard",
+      "unsaved",
+      "conflict",
+    ],
+    body: (
+      <>
+        <p>
+          Publishing a page (clicking <Code>Save</Code>) and merely having unsaved
+          changes are two different things in WikiHub - a dedicated draft system sits
+          between them so a closed tab or a crashed browser never costs you real work.
+        </p>
+
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Auto-save toggle</strong>: while editing, switch on{" "}
+            <Code>Auto-save</Code> (in the editor toolbar) to save your in-progress edit
+            to the server every 30 seconds - separately from actually publishing the
+            page. A local copy is also kept in your browser as a fallback.
+          </li>
+          <li>
+            <strong>Recovering a draft</strong>: if you navigate away (or your browser
+            closes) with an unpublished draft still pending, coming back to that page
+            shows a <Code>Draft not released</Code> banner - &ldquo;This draft was last
+            saved on {"{date}"} and has not been saved to the page.&rdquo; Click{" "}
+            <strong>Open editor</strong> to resume exactly where you left off, or{" "}
+            <strong>Discard draft</strong> to throw it away.
+          </li>
+          <li>
+            <strong>Conflict warning</strong>: if someone else published changes to the
+            page after your draft was created, the banner adds{" "}
+            <em>&ldquo;The page has changed since this draft was created.&rdquo;</em> so
+            you know to check for overlap before resuming.
+          </li>
+        </ul>
+
+        <Callout variant="tip" title="DISCARDING IS SAFE, NOT SILENT">
+          <strong>Discard draft</strong> asks &ldquo;Discard unreleased draft?&rdquo;
+          before doing anything - it only ever removes the saved draft and restores the
+          page to its current, already-published content.
+        </Callout>
+      </>
+    ),
+  },
+  {
+    id: "format-conversion",
+    title: "Switching Between Rich Text, Markdown & HTML",
+    category: "Writing",
+    description:
+      "Convert a page's underlying format on the fly, with an explicit warning about what a lossy conversion changes.",
+    keywords: [
+      "markdown",
+      "html",
+      "convert",
+      "live preview",
+      "split",
+      "source",
+      "lossy",
+    ],
+    body: (
+      <>
+        <p>
+          Switching a page&apos;s edit mode between <strong>Rich text</strong> and{" "}
+          <strong>Markdown</strong> source is not just a different view of the same
+          data - the underlying content format actually changes, so WikiHub confirms it
+          first.
+        </p>
+
+        <Callout variant="warning" title="CONVERT TO MARKDOWN IS LOSSY-AWARE">
+          Markdown cannot represent every rich-text feature - text colors, cell
+          backgrounds, and merged table cells have no Markdown syntax. To preserve them
+          anyway, WikiHub embeds their raw HTML directly inside the Markdown source
+          rather than silently dropping them. Converting back to HTML is always
+          lossless.
+        </Callout>
+
+        <p className="mt-3 font-semibold text-foreground">
+          While editing in Markdown source:
+        </p>
+        <ul className="list-disc pl-5 space-y-1.5 text-sm">
+          <li>
+            <strong>Live preview</strong>: toggle a rendered preview of your Markdown
+            alongside the raw source.
+          </li>
+          <li>
+            <strong>Split / Full layout</strong>: choose side-by-side source-and-preview,
+            or a preview-only view for proofreading before you save.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+
+  // ---------------------------------------------------------------------------
+  // ATTACHMENTS & MEDIA CATEGORY
+  // ---------------------------------------------------------------------------
+  {
+    id: "attachment-previews",
+    title: "Previewing Files Without Leaving the Page",
+    category: "Attachments & Media",
+    description:
+      "Open any uploaded file - image, PDF, video, code, or Office document - in a live preview modal, no download required.",
+    keywords: [
+      "attachment",
+      "preview",
+      "modal",
+      "pdf",
+      "zoom",
+      "rotate",
+      "download",
+      "code",
+      "search",
+    ],
+    body: (
+      <>
+        <p>
+          Click any attachment in a page to open the <strong>Attachment details</strong>{" "}
+          modal - the same modal for every file type, with a preview panel that adapts
+          to what the file actually is:
+        </p>
+
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Images</strong>: zoom and pan.
+          </li>
+          <li>
+            <strong>PDFs</strong>: continuous multi-page viewer with zoom out / actual
+            size / zoom in, a <strong>Rotate pages</strong> button (90° steps), and an
+            expand-to-full-size toggle.
+          </li>
+          <li>
+            <strong>Video</strong>: full playback controls plus subtitles, audio-track
+            switching, and Picture-in-Picture - see{" "}
+            <em>Video: Subtitles, Audio Tracks &amp; Picture-in-Picture</em> below.
+          </li>
+          <li>
+            <strong>Word, Excel &amp; PowerPoint</strong>: a faithful rendered preview
+            (with its own zoom controls) and, while you are editing the page, an{" "}
+            <strong>Edit</strong> button - see <em>Editing Word, Excel &amp; PowerPoint
+            in Place</em> below.
+          </li>
+          <li>
+            <strong>Code &amp; text files</strong> (<Code>.py</Code>, <Code>.ts</Code>,{" "}
+            <Code>.json</Code>, <Code>.md</Code>, <Code>.log</Code>, etc.):
+            syntax-highlighted with line numbers, a <strong>Search content…</strong> box
+            with a match counter and Previous/Next-match navigation (
+            <Kbd>Enter</Kbd> / <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> to cycle matches), and a
+            word-wrap toggle.
+          </li>
+          <li>
+            <strong>Everything else</strong> (archives, binaries, unrecognized types):
+            file details and a <strong>Download</strong> button.
+          </li>
+        </ul>
+
+        <Callout variant="tip" title="FILE DETAILS AT A GLANCE">
+          Hover the <Code>ⓘ</Code> icon next to the &ldquo;Attachment details&rdquo;
+          title for filename, size, MIME type, and upload date - without opening
+          Download.
+        </Callout>
+
+        <p className="mt-3 text-sm text-muted-foreground">
+          Real-world use case: checking the exact contents of a teammate&apos;s{" "}
+          <Code>config.json</Code>, reviewing a signed PDF contract, or eyeballing a
+          design PNG - all without ever leaving the wiki page it&apos;s attached to.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "office-editing",
+    title: "Editing Word, Excel & PowerPoint in Place",
+    category: "Attachments & Media",
+    description:
+      "Open the built-in document editor directly from an attachment preview - no download, edit, and re-upload cycle.",
+    keywords: [
+      "onlyoffice",
+      "word",
+      "excel",
+      "powerpoint",
+      "docx",
+      "xlsx",
+      "pptx",
+      "edit",
+      "autosave",
+    ],
+    body: (
+      <>
+        <p>
+          WikiHub can embed a full <strong>ONLYOFFICE</strong> document editor directly
+          inside the attachment preview modal for <Code>.docx</Code>,{" "}
+          <Code>.xlsx</Code>, and <Code>.pptx</Code> files - the same ribbon, formulas,
+          formatting, and slide layouts as the desktop apps, running in the browser.
+        </p>
+
+        <ol className="list-decimal pl-5 space-y-2 text-sm">
+          <li>
+            While <strong>editing</strong> the page (the Edit button only appears in
+            edit mode, not for someone just reading the page), open the attachment and
+            click <strong>Edit</strong> (pencil icon) next to Download.
+          </li>
+          <li>
+            Changes <strong>autosave</strong> as you type - there is no manual Save
+            button, and the toolbar shows <Code>Saving changes…</Code> or{" "}
+            <Code>{"{filename}"} · Changes save automatically</Code>. Every save bumps
+            the attachment&apos;s revision, so it stays accounted for in the page&apos;s
+            activity.
+          </li>
+          <li>
+            Click <strong>Back to preview</strong> to return to the read-only render at
+            any time.
+          </li>
+        </ol>
+
+        <Callout variant="note" title="ONLY .DOCX / .XLSX / .PPTX ARE EDITABLE">
+          Other Office formats - <Code>.doc</Code>, <Code>.ppt</Code>,{" "}
+          <Code>.xls</Code>, <Code>.odp</Code>, <Code>.ods</Code>, and template variants
+          like <Code>.dotx</Code>/<Code>.potx</Code>/<Code>.xltx</Code> - preview
+          correctly but must be edited elsewhere and re-uploaded.
+        </Callout>
+
+        <Callout variant="warning" title="REQUIRES AN ADMIN-CONNECTED DOCUMENT SERVER">
+          The Edit button only appears when an administrator has configured and
+          connected an ONLYOFFICE Document Server. If it&apos;s missing entirely, or
+          shows &ldquo;The workspace document editor is not configured,&rdquo; ask your
+          administrator.
+        </Callout>
+
+        <p className="mt-3 text-sm text-muted-foreground">
+          Real-world use case: fixing a typo in a shared spec <Code>.docx</Code> or
+          updating a budget <Code>.xlsx</Code> without leaving the wiki or e-mailing a
+          new copy back and forth.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "video-playback",
+    title: "Video: Subtitles, Audio Tracks & Picture-in-Picture",
+    category: "Attachments & Media",
+    description:
+      "Play uploaded videos with subtitle and audio-track switching, and keep watching in a floating window while you work elsewhere.",
+    keywords: [
+      "video",
+      "subtitle",
+      "caption",
+      "audio track",
+      "picture-in-picture",
+      "pip",
+      "mp4",
+    ],
+    body: (
+      <>
+        <p>
+          Click a video attachment to open the standard HTML5 player with play/pause,
+          seek, volume, and fullscreen.
+        </p>
+
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Subtitles</strong>: if the video has caption tracks, a{" "}
+            <strong>Subtitles</strong> button appears in the preview toolbar - pick a
+            track, or <Code>Off</Code>.
+          </li>
+          <li>
+            <strong>Audio tracks</strong>: for videos with more than one audio track, an{" "}
+            <strong>Audio track</strong> picker lets you switch between them (only where
+            the browser itself exposes multiple tracks - not every format supports
+            this).
+          </li>
+          <li>
+            <strong>Picture-in-Picture</strong>: use the PiP icon in the player&apos;s
+            own controls (or right-click → <em>Picture in Picture</em>) to pop the video
+            into a small floating window that stays on top of every other window and
+            tab.
+          </li>
+        </ul>
+
+        <Callout variant="tip" title="PIP KEEPS PLAYING THROUGH A CLOSED MODAL">
+          Closing the attachment preview while a video is floating in Picture-in-Picture
+          does <strong>not</strong> stop it - exactly like closing a browser tab
+          doesn&apos;t stop a PiP video elsewhere on the web. Leaving PiP (its own
+          &ldquo;back to tab&rdquo; or close control) reopens the preview automatically,
+          resuming right where you left off. Only closing that reopened preview actually
+          stops playback.
+        </Callout>
+
+        <p className="mt-3 text-sm text-muted-foreground">
+          Real-world use case: watching a recorded demo or training clip in the corner
+          of your screen while you take notes or reply in chat in another tab.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "pptx-slideshow",
+    title: "Presenting a PowerPoint Deck: Fullscreen Slideshow",
+    category: "Attachments & Media",
+    description:
+      "Run a PowerPoint attachment as a real fullscreen slideshow, straight from its preview.",
+    keywords: [
+      "powerpoint",
+      "pptx",
+      "slideshow",
+      "present",
+      "presentation",
+      "fullscreen",
+    ],
+    body: (
+      <>
+        <p>
+          Open any <Code>.pptx</Code> attachment - it renders as a paginated deck with a
+          thumbnail rail on the left and the current slide on the right. Use the
+          on-screen <Code>‹ ›</Code> arrows, or <Kbd>←</Kbd>/<Kbd>→</Kbd>, to move
+          between slides at any time.
+        </p>
+
+        <ol className="list-decimal pl-5 space-y-2 text-sm">
+          <li>
+            Click <strong>Present</strong> (the small monitor icon in the toolbar) to
+            start a fullscreen slideshow: the deck fills the entire screen,
+            letterboxed to the slide&apos;s own aspect ratio, with no browser chrome or
+            thumbnail rail in the way.
+          </li>
+          <li>
+            Press <Kbd>Esc</Kbd>, or click the <Code>✕</Code> in the top-right corner,
+            to exit - back to the normal preview, not the whole attachment window.
+          </li>
+        </ol>
+
+        <p className="mt-3 text-sm text-muted-foreground">
+          Real-world use case: presenting a slide deck straight from the wiki page
+          it&apos;s attached to during a meeting, with no extra software and no
+          re-downloading the file first.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "importing-documents",
+    title: "Importing Documents as New Pages",
+    category: "Attachments & Media",
+    description:
+      "Turn existing Word, PDF, Markdown, and other documents into wiki pages in bulk - no copy-pasting.",
+    keywords: [
+      "import",
+      "docx",
+      "pdf",
+      "markdown",
+      "epub",
+      "convert",
+      "bulk",
+      "drag and drop",
+    ],
+    body: (
+      <>
+        <p>
+          From any page, open the <Code>⋯</Code> menu and choose{" "}
+          <strong>Import from file…</strong>.
+        </p>
+
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            Drag and drop, or browse for, up to <strong>20 files</strong> at once.
+            Supported formats: Word (<Code>.docx</Code>), OpenDocument Text (
+            <Code>.odt</Code>), Rich Text (<Code>.rtf</Code>), EPUB (
+            <Code>.epub</Code>), HTML (<Code>.html</Code>/<Code>.htm</Code>), Markdown (
+            <Code>.md</Code>/<Code>.markdown</Code>), and PDF (<Code>.pdf</Code>).
+          </li>
+          <li>
+            Each file becomes a new <strong>child page</strong> under the page you
+            started from (or at the top level of the space, from Home) - headings,
+            formatting, and images carry over automatically.
+          </li>
+          <li>
+            Import runs as a background job with a live per-file progress indicator
+            (queued / running / complete / failed), each finished file linking straight
+            to its new page, so you can keep working while a large batch converts.
+          </li>
+        </ul>
+
+        <Callout variant="note" title="NOT THE SAME AS CONFLUENCE IMPORT">
+          This is different from <strong>Confluence Archive Import</strong> under{" "}
+          <strong>Administration &gt; Backup</strong>: that one restores a whole
+          exported Confluence <em>space</em>, including permissions and history, and is
+          admin-only. <strong>Import from file…</strong> converts individual documents
+          into fresh pages, and is available to anyone who can edit the space.
+        </Callout>
+
+        <p className="mt-3 text-sm text-muted-foreground">
+          Real-world use case: migrating a folder of existing Word or PDF runbooks into
+          the wiki as a properly organized page tree, in one pass.
+        </p>
       </>
     ),
   },
@@ -775,9 +1437,26 @@ const sections: HelpSection[] = [
                   preventing white/blue flash during page refreshes.
                 </td>
               </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5 font-semibold">Font Picker</td>
+                <td className="p-2.5">
+                  Clicking a font in the list opens a <strong>Font Specimen</strong>{" "}
+                  modal - an interactive type tester with a free-text sample input, four
+                  preset sample sentences, five size presets (14–36px), a full
+                  document-hierarchy mockup, and a glyph/character-set matrix - before
+                  you commit with <strong>Apply This Font</strong>.
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
+
+        <Callout variant="tip" title="LIGHT/DARK PREVIEW WITHOUT SAVING">
+          The <strong>Preview Theme</strong> sandbox has its own{" "}
+          <strong>Light Preview</strong> / <strong>Dark Preview</strong> toggle, so you
+          can check a brand color against a mock document in both modes before a single
+          real user sees it.
+        </Callout>
       </>
     ),
   },
@@ -842,11 +1521,161 @@ const sections: HelpSection[] = [
     ),
   },
   {
+    id: "admin-users-groups",
+    title: "Managing Users & Groups",
+    category: "Administration",
+    description:
+      "Create accounts directly (there is no e-mail invite flow), assign roles, and bundle people into groups for reusable permission grants.",
+    keywords: [
+      "users",
+      "groups",
+      "create user",
+      "invite",
+      "password",
+      "deactivate",
+      "delete user",
+      "role",
+    ],
+    body: (
+      <>
+        <Callout variant="important" title="THERE IS NO E-MAIL INVITE FLOW">
+          WikiHub does not send invitation e-mails. An administrator creates every
+          account directly under <strong>Administration &gt; Users &gt; Create
+          user</strong> and shares the temporary password with that person out of band
+          (chat, in person, etc.).
+        </Callout>
+
+        <p className="mt-3 font-semibold text-foreground">1. Users:</p>
+        <ul className="list-disc pl-5 space-y-1.5 text-sm">
+          <li>
+            The directory shows summary tiles (Total / Administrators / Members /
+            Active / Disabled), with search and Status/Role filters.
+          </li>
+          <li>
+            <strong>Create user</strong>: first/last name, username (checked for
+            availability as you type), e-mail, a password with a live strength
+            checklist (8+ characters, upper &amp; lower case, a number or symbol), and a
+            role of <Code>Member</Code> or <Code>Administrator</Code>.
+          </li>
+          <li>
+            Per-user actions: <strong>Reset password</strong>,{" "}
+            <strong>Deactivate</strong>/<strong>Activate account</strong>, and{" "}
+            <strong>Delete user…</strong>. Your own account and the protected bootstrap
+            admin account are excluded from these destructive actions, so you can never
+            lock yourself out.
+          </li>
+        </ul>
+
+        <p className="mt-4 font-semibold text-foreground">2. Groups:</p>
+        <ul className="list-disc pl-5 space-y-1.5 text-sm">
+          <li>
+            Groups bundle users for reusable space-permission grants - assign a group
+            once in a space&apos;s <strong>Access</strong> panel instead of adding every
+            member individually.
+          </li>
+          <li>
+            Each group can also carry <strong>global permissions</strong>: Create
+            spaces, Manage users, Manage groups, System admin.
+          </li>
+          <li>
+            The default system groups (<Code>administrators</Code>, <Code>users</Code>,{" "}
+            <Code>confluence-administrators</Code>, <Code>confluence-users</Code>)
+            cannot be deleted, only edited.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    id: "admin-spaces-access",
+    title: "Space Access & Effective Permissions",
+    category: "Administration",
+    description:
+      "Grant per-space permissions to users or groups, and check exactly what any one person can do in a space.",
+    keywords: [
+      "space access",
+      "permissions",
+      "effective permissions",
+      "groups",
+      "restrict",
+    ],
+    body: (
+      <>
+        <p>
+          <strong>Administration &gt; Spaces</strong> lists every space with Total /
+          Active / Archived tiles. Permanent space deletion is only available here (an
+          individual space&apos;s own settings only offer Archive). Open a space&apos;s{" "}
+          <strong>Access</strong> panel to manage exactly who can do what:
+        </p>
+
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>General access</strong>: <Code>Open</Code> (any workspace member can
+            read) or <Code>Restricted</Code> (only people explicitly granted access).
+          </li>
+          <li>
+            A <strong>Groups</strong> permission table and an{" "}
+            <strong>Individual users</strong> permission table, each with checkboxes for{" "}
+            <Code>View</Code>, <Code>Add</Code>, <Code>Delete</Code>,{" "}
+            <Code>Delete own</Code>, <Code>Restrictions</Code>, <Code>Export</Code>, and{" "}
+            <Code>Admin</Code>. Changes are explicit - Edit, then Save or Cancel - with
+            an unsaved-changes guard if you navigate away mid-edit.
+          </li>
+          <li>
+            <strong>Effective permissions</strong>: pick any user and see their fully
+            resolved permission set for that space - combining Open access, any direct
+            grant, and every group they belong to - instead of manually cross-referencing
+            three sources by hand.
+          </li>
+        </ul>
+
+        <p className="mt-3 text-sm text-muted-foreground">
+          Real-world use case: before turning a space Restricted, use{" "}
+          <strong>Effective permissions</strong> to confirm the one contractor account
+          that still needs read access actually keeps it.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "switch-account",
+    title: "Switch Account (Impersonation)",
+    category: "Administration",
+    description:
+      "Superusers can view WikiHub exactly as another user sees it, to debug a permission problem or reproduce a bug report.",
+    keywords: ["impersonate", "switch account", "debug", "superuser", "view as"],
+    body: (
+      <>
+        <p>
+          Superusers who are not already impersonating someone see a{" "}
+          <strong>Switch account</strong> control (people icon) in the account menu,
+          listing other active accounts. Picking one signs you in as them with no
+          password exchange - useful for confirming &ldquo;why can&apos;t this person
+          see that page&rdquo; without asking them to screen-share.
+        </p>
+
+        <Callout variant="warning" title="EVERY ACTION IS ATTRIBUTED AND VISIBLE">
+          While impersonating, a permanent banner is pinned to the bottom of every
+          screen: &ldquo;Viewing WikiHub as <strong>{"{name}"}</strong>. Your actions
+          are recorded against {"{impersonator}"}.&rdquo; The account menu also shows{" "}
+          <Code>Signed in as {"{impersonator}"}</Code>. Click{" "}
+          <strong>Return to my account</strong> (in the banner or the menu) to end the
+          session.
+        </Callout>
+
+        <p className="mt-3 text-sm text-muted-foreground">
+          The protected bootstrap admin account and your own account are excluded from
+          the switch list.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "backup-and-restore",
     title: "Backup, Confluence Import & DC Export",
     category: "Administration",
     description:
-      "Full ZIP backups, resumable Confluence space import, and Data Center XML export.",
+      "Two distinct export formats, resumable multi-gigabyte uploads, and the safety checks that stop the wrong archive from landing in the wrong place.",
     keywords: [
       "backup",
       "zip",
@@ -856,34 +1685,76 @@ const sections: HelpSection[] = [
       "export",
       "xml",
       "datacenter",
+      "resume",
+      "sha-256",
     ],
     body: (
       <>
         <p>
-          Protect workspace data and migrate from legacy systems under{" "}
-          <strong>Administration &gt; Backup</strong>.
+          <strong>Administration &gt; Backup</strong> has two sections:{" "}
+          <strong>Export / Backup</strong> and <strong>Import / Restore</strong>.
         </p>
 
-        <Callout variant="warning" title="PASSWORD HASH BACKUPS">
-          Full ZIP backups exclude password hashes by default. Include password hashes
-          only for secure system migrations, as the archive becomes highly sensitive.
+        <p className="mt-3 font-semibold text-foreground">
+          1. Two export formats - not interchangeable:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Export WikiHub Backup</strong>: a native, restorable{" "}
+            <Code>.zip</Code> of spaces, pages, revisions, attachments, users, and
+            groups - scoped to <strong>All spaces</strong> or a picked subset via{" "}
+            <strong>Select spaces to export</strong>.
+          </li>
+          <li>
+            <strong>Export Confluence Backup</strong>: an XML archive for Atlassian
+            Confluence Data Center&apos;s own restore tooling, targeting{" "}
+            <strong>Data Center 8.x</strong> or <strong>9.x</strong>. This one is a
+            one-way hand-off - it cannot be used to restore WikiHub itself.
+          </li>
+        </ul>
+
+        <Callout variant="warning" title="INCLUDE PASSWORD HASHES = HANDLE WITH CARE">
+          The WikiHub backup&apos;s <strong>Include password hashes</strong> checkbox is
+          off by default and explicitly warned as enabling offline password cracking if
+          the archive leaks - only enable it for an actual migration, and store the file
+          securely.
         </Callout>
 
-        <ol className="list-decimal pl-5 space-y-2 text-sm mt-3">
+        <p className="mt-4 font-semibold text-foreground">2. Restoring / importing:</p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
-            <strong>Full Workspace ZIP Backups</strong>: Export complete workspace archives
-            including pages, revisions, permissions, attachment files, and user avatars.
+            Both a WikiHub backup restore and a <strong>Confluence Archive
+            Import</strong> upload as resumable, chunked, multi-gigabyte transfers with{" "}
+            <strong>Pause upload</strong> / <strong>Resume upload</strong> controls -
+            safe to start, pause, and pick back up later without re-sending what already
+            made it through.
           </li>
           <li>
-            <strong>Confluence Archive Import</strong>: Upload Confluence export ZIP archives.
-            Uses resumable multipart transfer. Scans spaces, detects key conflicts, lets you
-            select spaces to import, and monitors background import worker jobs with live log output.
+            Confluence import scans the archive for spaces, flags key conflicts, lets
+            you pick which spaces to bring in, and runs as a background job with live
+            log output.
           </li>
           <li>
-            <strong>Confluence Data Center XML Export</strong>: Generate Confluence Data Center
-            compatible XML export archives (select target profile: Data Center 8.x or 9.x).
+            Restoring into an instance that already has spaces triggers a{" "}
+            <strong>Replace existing spaces?</strong> conflict step for anything that
+            would collide.
           </li>
-        </ol>
+        </ul>
+
+        <Callout variant="tip" title="TWO SAFETY NETS AGAINST THE WRONG FILE">
+          A client-side check catches an obviously wrong upload immediately - e.g.
+          picking a Confluence export under WikiHub restore surfaces{" "}
+          <em>
+            &ldquo;This is a Confluence export, not a WikiHub backup. Upload it under
+            &lsquo;Import Confluence Backup&rsquo; instead.&rdquo;
+          </em>{" "}
+          before anything even starts uploading. Separately, resuming an interrupted
+          upload with a <em>different</em> file than the one partially uploaded shows a{" "}
+          <strong>&ldquo;That is a different file&rdquo;</strong> dialog, comparing what
+          was being uploaded against what you just chose (name, size, how much is
+          already stored) and asking you to either{" "}
+          <strong>Discard and upload this</strong> or <strong>Choose the original</strong>.
+        </Callout>
       </>
     ),
   },
@@ -902,8 +1773,11 @@ const sections: HelpSection[] = [
 
         <ul className="list-disc pl-5 space-y-2 text-sm mt-2">
           <li>
-            <strong>Access &amp; Permission Issues</strong>: If a user cannot see a page or space,
-            check both <em>Space Member Permissions</em> and <em>Page-Level Restrictions</em>.
+            <strong>Access &amp; Permission Issues</strong>: If a user cannot see a page
+            or space, check <em>Space access</em>, <em>Page access</em> restrictions,
+            and group membership - or just open <strong>Effective permissions</strong>{" "}
+            in the space&apos;s Access panel for that user and see the resolved answer
+            directly instead of cross-referencing all three by hand.
           </li>
           <li>
             <strong>Upload Failures</strong>: Verify file size limits and allowed extensions under
@@ -918,6 +1792,16 @@ const sections: HelpSection[] = [
             documentation at <Code>/docs</Code> and ReDoc at <Code>/redoc</Code>.
           </li>
         </ul>
+
+        <Callout variant="note" title="SET EXPECTATIONS: WHAT WIKIHUB DOESN'T DO YET">
+          Three things people often go looking for don&apos;t exist in this build, so
+          it&apos;s worth knowing before you go hunting: there is no e-mail invite flow
+          (accounts are created directly - see <em>Managing Users &amp; Groups</em>), no
+          notification system (no bell icon, no page-watch/@-mention alerts - the
+          closest things are the Home activity feed and Recently visited/worked on), and
+          no in-app audit-log viewer (admin actions and impersonation are logged
+          server-side, but there is nowhere in the UI to browse that log yet).
+        </Callout>
       </>
     ),
   },
@@ -932,6 +1816,7 @@ function jumpToSection(id: string) {
 const topicSlugs: Record<HelpCategory, string> = {
   Workspace: "workspace",
   Writing: "writing",
+  "Attachments & Media": "attachments",
   Account: "account",
   Administration: "administration",
 };

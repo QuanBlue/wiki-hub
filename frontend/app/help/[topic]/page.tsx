@@ -9,6 +9,7 @@ import { SITE_NAME } from "@/lib/env";
 const topics: Record<string, HelpCategory> = {
   workspace: "Workspace",
   writing: "Writing",
+  attachments: "Attachments & Media",
   account: "Account",
   administration: "Administration",
 };
