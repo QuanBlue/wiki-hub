@@ -76,6 +76,25 @@ function currentSubtitleId(video: HTMLVideoElement, subtitleList: MediaTrack[]):
   return SUBTITLES_OFF;
 }
 
+function captureResumeState(
+  video: HTMLVideoElement,
+  attachmentId: string,
+  subtitleList: MediaTrack[],
+) {
+  pipResumeState.set(attachmentId, {
+    time: video.currentTime,
+    playing: !video.paused,
+    playbackRate: video.playbackRate,
+    subtitleId: currentSubtitleId(video, subtitleList),
+  });
+}
+
+function reopenPreview(attachmentId: string) {
+  window.dispatchEvent(
+    new CustomEvent("wikihub:open-attachment-modal", { detail: { attachmentId } }),
+  );
+}
+
 /**
  * A browser exposes an audio track list only in some engines, and never for
  * plain progressive MP4 in Chromium. Read it defensively rather than assuming
@@ -241,23 +260,43 @@ export function VideoAttachmentPreview({
       video.style.height = "100%";
       video.style.objectFit = "contain";
 
+      // The browser's own "back to tab" control means "keep watching, just
+      // bring the tab forward", so that (or anything else that closes this
+      // window without going through the button below) resumes the preview.
+      // But the platform gives no way to tell "back to tab" apart from any
+      // other way the window closes - not even from a plain close/X, since
+      // Document Picture-in-Picture only ever fires one undifferentiated
+      // "pagehide" regardless of cause - so an explicit close control of our
+      // own, understood to mean "done watching", is the only reliable way to
+      // offer a real stop.
+      let closedForGood = false;
+      const closeButton = pipWindow.document.createElement("button");
+      closeButton.type = "button";
+      closeButton.title = "Close and stop";
+      closeButton.setAttribute("aria-label", "Close and stop");
+      closeButton.textContent = "✕";
+      closeButton.style.cssText =
+        "position:fixed;top:6px;right:6px;z-index:2147483647;width:26px;height:26px;" +
+        "border-radius:9999px;border:none;background:rgba(0,0,0,0.55);color:#fff;" +
+        "font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;" +
+        "justify-content:center;padding:0;";
+      closeButton.addEventListener("click", () => {
+        closedForGood = true;
+        pipWindow.close();
+      });
+      pipWindow.document.body.appendChild(closeButton);
+
       // Not wrapped in a React effect on purpose: this listener has to keep
       // working after this component - and the modal it closes below -
       // unmounts, which is exactly when a `useEffect` cleanup would
-      // otherwise tear it back down again. Fires on "back to tab" and on
-      // the window being closed outright - both end up here.
+      // otherwise tear it back down again.
       pipWindow.addEventListener(
         "pagehide",
         () => {
-          pipResumeState.set(attachmentId, {
-            time: video.currentTime,
-            playing: !video.paused,
-            playbackRate: video.playbackRate,
-            subtitleId: currentSubtitleId(video, subtitles),
-          });
-          window.dispatchEvent(
-            new CustomEvent("wikihub:open-attachment-modal", { detail: { attachmentId } }),
-          );
+          if (!closedForGood) {
+            captureResumeState(video, attachmentId, subtitles);
+            reopenPreview(attachmentId);
+          }
           video.pause();
           video.removeAttribute("src");
           video.load();
@@ -289,15 +328,15 @@ export function VideoAttachmentPreview({
       video.addEventListener(
         "leavepictureinpicture",
         () => {
-          pipResumeState.set(attachmentId, {
-            time: video.currentTime,
-            playing: !video.paused,
-            playbackRate: video.playbackRate,
-            subtitleId: currentSubtitleId(video, subtitles),
-          });
-          window.dispatchEvent(
-            new CustomEvent("wikihub:open-attachment-modal", { detail: { attachmentId } }),
-          );
+          // The classic PiP window's own close (X) button pauses the video as
+          // part of leaving, while "back to tab" leaves it exactly as it was
+          // - the platform doesn't expose which one was clicked any more
+          // directly than that, so a still-playing video is read as "back to
+          // tab, keep watching" and an already-paused one as "done".
+          if (!video.paused) {
+            captureResumeState(video, attachmentId, subtitles);
+            reopenPreview(attachmentId);
+          }
           video.pause();
           video.removeAttribute("src");
           video.load();
