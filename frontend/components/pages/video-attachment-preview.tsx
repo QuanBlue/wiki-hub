@@ -32,7 +32,7 @@ const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 /** Cap on the floating Picture-in-Picture window's width, in CSS pixels -
  *  without it, requesting a window sized to the video's native resolution
  *  produces a "floating" window that fills half the screen. */
-const PIP_MAX_WIDTH = 360;
+const PIP_MAX_WIDTH = 240;
 
 // The Document Picture-in-Picture API isn't part of TypeScript's DOM lib yet,
 // so its shape is declared by hand rather than relying on `lib.dom.d.ts`.
@@ -283,9 +283,12 @@ export function VideoAttachmentPreview({
       // layout stretches it to whatever shape the video's slot in that
       // dialog is (`w-full flex-1`), unrelated to the video's real
       // proportions - which is what actually produced the mismatched window
-      // and its black bars. Pinning it to the exact target size for a
-      // moment before requesting is what gets a correctly-shaped window,
-      // more reliably than the options alone.
+      // and its black bars. Setting an explicit width/height alone doesn't
+      // override that: `flex-1` is `flex: 1 1 0%`, and flex-basis/flex-grow
+      // win over a plain `width` along the flex container's main axis, so
+      // the element kept stretching to fill its slot regardless. Turning
+      // flex-grow/shrink off is what actually lets the pinned size stick.
+      video.style.flex = "none";
       video.style.width = `${width}px`;
       video.style.height = `${height}px`;
       const pipWindow = await pip.requestWindow({ width, height });
