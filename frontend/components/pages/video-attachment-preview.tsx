@@ -1,6 +1,6 @@
 "use client";
 
-import { Captions, CaptionsOff, Check, Volume2 } from "lucide-react";
+import { Captions, CaptionsOff, Check, PictureInPicture2, Volume2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -28,6 +28,21 @@ type MediaTracks = { subtitles: MediaTrack[]; audio: MediaTrack[] };
 type SwitchableAudioTrack = { index: number; label: string; enabled: boolean };
 
 const SUBTITLES_OFF = "off";
+
+// The Document Picture-in-Picture API isn't part of TypeScript's DOM lib yet,
+// so its shape is declared by hand rather than relying on `lib.dom.d.ts`.
+type DocumentPipWindow = Window & { document: Document };
+type DocumentPictureInPicture = {
+  requestWindow: (options?: { width?: number; height?: number }) => Promise<DocumentPipWindow>;
+};
+
+function documentPip(): DocumentPictureInPicture | null {
+  if (typeof window === "undefined") return null;
+  return (
+    (window as unknown as { documentPictureInPicture?: DocumentPictureInPicture })
+      .documentPictureInPicture ?? null
+  );
+}
 
 /**
  * A browser exposes an audio track list only in some engines, and never for
@@ -64,6 +79,7 @@ export function VideoAttachmentPreview({
   contentType,
   filename,
   toolbarContainer,
+  onEnterPictureInPicture,
 }: {
   attachmentId: string;
   contentUrl: string;
@@ -71,39 +87,140 @@ export function VideoAttachmentPreview({
   filename: string;
   /** Where the track controls belong: the Preview header, beside Download. */
   toolbarContainer?: HTMLElement | null;
+  /**
+   * Picture-in-Picture is meant to keep playing while you go do something
+   * else, and this modal has nothing left to show once it starts - just a
+   * "Playing in picture-in-picture" placeholder - so the caller uses this to
+   * close it out from under the floating video instead of leaving it lying
+   * open behind it.
+   */
+  onEnterPictureInPicture?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [tracks, setTracks] = useState<MediaTracks>({ subtitles: [], audio: [] });
   const [activeSubtitle, setActiveSubtitle] = useState<string>(SUBTITLES_OFF);
   const [audioTracks, setAudioTracks] = useState<SwitchableAudioTrack[]>([]);
+  // Set the instant the video is manually moved into a Document
+  // Picture-in-Picture window (see enterDocumentPip below) - the unmount
+  // cleanup reads this to know the element now belongs to that window and
+  // must be left alone rather than paused and torn down.
+  const handedToPipWindowRef = useRef(false);
+  const supportsDocumentPip = documentPip() !== null;
 
-  // Picture-in-Picture is for "keep watching while I do something else" -
-  // once you leave it, by any means (its own "back to tab" control, closing
-  // the floating window, or the browser closing it for you), the intent is
-  // "I'm done watching", so playback stops there rather than quietly
-  // continuing inline behind whatever you switched to.
+  // The classic Picture-in-Picture API (the browser's own context-menu entry
+  // or control-bar button) mirrors only the decoded video frame into its
+  // floating window, not the caption overlay the page renders over the
+  // element - so its captions never show up there. Document Picture-in-Picture
+  // instead hands the video a real floating *window* this app controls, which
+  // renders it exactly like any other page and therefore keeps captions
+  // working. Where it's supported, the browser's own entry points are
+  // disabled (see `disablePictureInPicture` below) in favor of the button
+  // this renders, so this is the only way to enter Picture-in-Picture there.
+  async function enterDocumentPip() {
+    const api = documentPip();
+    const video = videoRef.current;
+    if (!api || !video) return;
+    try {
+      const pipWindow = await api.requestWindow({
+        width: video.videoWidth || 480,
+        height: video.videoHeight || 270,
+      });
+
+      // Carry the app's styling over so the native controls (and caption
+      // cues, which are styled through the same stylesheet) look right
+      // instead of unstyled black-on-white.
+      for (const styleSheet of Array.from(document.styleSheets)) {
+        try {
+          const rules = Array.from(styleSheet.cssRules)
+            .map((rule) => rule.cssText)
+            .join("\n");
+          const style = pipWindow.document.createElement("style");
+          style.textContent = rules;
+          pipWindow.document.head.appendChild(style);
+        } catch {
+          // A cross-origin stylesheet's rules can't be read - link to it
+          // instead so it still loads inside the PiP window's own document.
+          if (styleSheet.href) {
+            const link = pipWindow.document.createElement("link");
+            link.rel = "stylesheet";
+            link.href = styleSheet.href;
+            pipWindow.document.head.appendChild(link);
+          }
+        }
+      }
+      pipWindow.document.body.style.margin = "0";
+      pipWindow.document.body.style.background = "#000";
+      pipWindow.document.body.style.height = "100vh";
+      pipWindow.document.body.style.overflow = "hidden";
+
+      handedToPipWindowRef.current = true;
+      pipWindow.document.body.appendChild(video);
+      video.style.width = "100%";
+      video.style.height = "100%";
+      video.style.objectFit = "contain";
+
+      // Not wrapped in a React effect on purpose: this listener has to keep
+      // working after this component - and the modal it closes below -
+      // unmounts, which is exactly when a `useEffect` cleanup would
+      // otherwise tear it back down again.
+      pipWindow.addEventListener(
+        "pagehide",
+        () => {
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+          video.remove();
+        },
+        { once: true },
+      );
+
+      onEnterPictureInPicture?.();
+    } catch (err) {
+      handedToPipWindowRef.current = false;
+      console.error("Failed to enter Picture-in-Picture", err);
+    }
+  }
+
+  // The browser's own classic Picture-in-Picture (native context-menu entry
+  // or control-bar button, still the only option where Document
+  // Picture-in-Picture isn't supported) fires this regardless of how it was
+  // triggered. This modal has nothing useful left to show once it starts, so
+  // hand off to the floating window the same way the button above does.
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
-    const handleLeavePip = () => video.pause();
-    video.addEventListener("leavepictureinpicture", handleLeavePip);
-    return () => video.removeEventListener("leavepictureinpicture", handleLeavePip);
-  }, [attachmentId]);
+    if (!video || supportsDocumentPip) return;
+    const handleEnterPip = () => {
+      onEnterPictureInPicture?.();
+      // Same reasoning as the Document PiP listener above: attached here,
+      // outside any effect cleanup, so it survives this component unmounting
+      // when the call above closes the modal.
+      video.addEventListener(
+        "leavepictureinpicture",
+        () => {
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+        },
+        { once: true },
+      );
+    };
+    video.addEventListener("enterpictureinpicture", handleEnterPip);
+    return () => video.removeEventListener("enterpictureinpicture", handleEnterPip);
+  }, [attachmentId, onEnterPictureInPicture, supportsDocumentPip]);
 
   // Closing the modal unmounts this component, but React detaching the
-  // <video> node from the DOM does not stop playback on its own - if the
-  // element is in Picture-in-Picture, the browser keeps decoding and playing
-  // it (audio included) in the background even with no window showing it.
-  // Exiting PiP first (so no floating window survives the preview closing)
-  // and then pausing and clearing the source is what actually kills
-  // playback rather than just hiding it.
+  // <video> node from the DOM does not stop playback on its own. Explicitly
+  // pausing and clearing the source here is what actually kills playback
+  // rather than just hiding it - *except* when the video has just been
+  // handed off to a Picture-in-Picture window (classic or Document), where
+  // that would defeat the point of Picture-in-Picture. The listeners
+  // attached above are what eventually stop it once the viewer actually
+  // leaves Picture-in-Picture.
   useEffect(() => {
     const video = videoRef.current;
     return () => {
-      if (!video) return;
-      if (document.pictureInPictureElement === video) {
-        void document.exitPictureInPicture().catch(() => {});
-      }
+      if (!video || handedToPipWindowRef.current) return;
+      if (document.pictureInPictureElement === video) return;
       video.pause();
       video.removeAttribute("src");
       video.load();
@@ -202,17 +319,16 @@ export function VideoAttachmentPreview({
   const activeLabel =
     subtitles.find((track) => track.id === activeSubtitle)?.label ?? null;
 
+  const toolbarButtonClass =
+    "text-muted-foreground border-border bg-surface hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1 rounded border px-2 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none";
+
   const trackControls =
-    subtitles.length > 0 || audioTracks.length > 1 ? (
+    subtitles.length > 0 || audioTracks.length > 1 || supportsDocumentPip ? (
       <>
         {subtitles.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="text-muted-foreground border-border bg-surface hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1 rounded border px-2 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                title="Subtitles"
-              >
+              <button type="button" className={toolbarButtonClass} title="Subtitles">
                 {activeLabel ? (
                   <Captions className="size-3.5" aria-hidden="true" />
                 ) : (
@@ -244,11 +360,7 @@ export function VideoAttachmentPreview({
         {audioTracks.length > 1 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="text-muted-foreground border-border bg-surface hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1 rounded border px-2 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                title="Audio track"
-              >
+              <button type="button" className={toolbarButtonClass} title="Audio track">
                 <Volume2 className="size-3.5" aria-hidden="true" />
                 <span className="max-w-40 truncate">
                   {audioTracks.find((track) => track.enabled)?.label ?? "Audio"}
@@ -269,6 +381,18 @@ export function VideoAttachmentPreview({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
+
+        {supportsDocumentPip ? (
+          <button
+            type="button"
+            onClick={() => void enterDocumentPip()}
+            className={toolbarButtonClass}
+            title="Picture in picture"
+          >
+            <PictureInPicture2 className="size-3.5" aria-hidden="true" />
+            Picture in picture
+          </button>
+        ) : null}
       </>
     ) : null;
 
@@ -281,6 +405,7 @@ export function VideoAttachmentPreview({
         ref={videoRef}
         controls
         preload="metadata"
+        disablePictureInPicture={supportsDocumentPip}
         className="min-h-0 w-full flex-1 bg-black object-contain"
         aria-label={`Preview video: ${filename}`}
       >
