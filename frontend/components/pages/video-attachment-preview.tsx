@@ -30,6 +30,16 @@ type SwitchableAudioTrack = { index: number; label: string; enabled: boolean };
 const SUBTITLES_OFF = "off";
 
 /**
+ * Picture-in-Picture exists to keep a video going while you do something
+ * else, so closing this modal must not kill playback when the video is
+ * floating in a PiP window - only actually leaving PiP should. Keyed by
+ * attachment id rather than React state: the preview that eventually
+ * reopens is a brand new component instance with no memory of the one that
+ * was orphaned in PiP, so the handoff has to live outside any one instance.
+ */
+const pipResumeState = new Map<string, { time: number; playing: boolean }>();
+
+/**
  * A browser exposes an audio track list only in some engines, and never for
  * plain progressive MP4 in Chromium. Read it defensively rather than assuming
  * a shape that may not exist at all.
@@ -76,6 +86,65 @@ export function VideoAttachmentPreview({
   const [tracks, setTracks] = useState<MediaTracks>({ subtitles: [], audio: [] });
   const [activeSubtitle, setActiveSubtitle] = useState<string>(SUBTITLES_OFF);
   const [audioTracks, setAudioTracks] = useState<SwitchableAudioTrack[]>([]);
+
+  // Closing the modal unmounts this component, but React detaching the
+  // <video> node from the DOM does not stop playback on its own - if the
+  // element is in Picture-in-Picture, the browser keeps decoding and playing
+  // it (audio included) in the background even with no window showing it.
+  // Explicitly pausing here is what actually kills playback rather than
+  // just hiding it - *except* while the video is genuinely floating in a
+  // PiP window, where that would defeat the point of PiP. See the PiP
+  // handoff effect below for what happens to that case instead.
+  useEffect(() => {
+    const video = videoRef.current;
+    return () => {
+      if (!video) return;
+      if (document.pictureInPictureElement !== video) {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        return;
+      }
+      // Floating in PiP: the browser keeps this now-detached element alive
+      // and rendered in its own window for as long as it stays the PiP
+      // element, so a listener attached here still fires later, after this
+      // component has fully unmounted. Once the user leaves PiP - its own
+      // "back to tab" or close control - hand playback position to a fresh
+      // preview through the same modal-open event the rest of the app
+      // already uses to open this dialog, then release this element.
+      const handleLeavePip = () => {
+        pipResumeState.set(attachmentId, {
+          time: video.currentTime,
+          playing: !video.paused,
+        });
+        window.dispatchEvent(
+          new CustomEvent("wikihub:open-attachment-modal", {
+            detail: { attachmentId },
+          }),
+        );
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      };
+      video.addEventListener("leavepictureinpicture", handleLeavePip, { once: true });
+    };
+  }, [attachmentId]);
+
+  // Picks up where a video left off if it just reopened after outliving its
+  // own preview instance in a Picture-in-Picture window (see above).
+  useEffect(() => {
+    const resume = pipResumeState.get(attachmentId);
+    if (!resume) return;
+    pipResumeState.delete(attachmentId);
+    const video = videoRef.current;
+    if (!video) return;
+    const applyResume = () => {
+      video.currentTime = resume.time;
+      if (resume.playing) void video.play().catch(() => {});
+    };
+    if (video.readyState >= 1) applyResume();
+    else video.addEventListener("loadedmetadata", applyResume, { once: true });
+  }, [attachmentId]);
 
   // Mounted with a key of the attachment id, so a different attachment gets a
   // fresh component rather than needing its state cleared here.
