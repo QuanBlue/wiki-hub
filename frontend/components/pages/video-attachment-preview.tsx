@@ -62,7 +62,7 @@ function documentPip(): DocumentPictureInPicture | null {
  */
 const pipResumeState = new Map<
   string,
-  { time: number; playing: boolean; playbackRate: number; subtitleId: string }
+  { time: number; playing: boolean; playbackRate: number; muted: boolean; subtitleId: string }
 >();
 
 /** Reads which subtitle (if any) is actually showing directly off the live
@@ -76,23 +76,56 @@ function currentSubtitleId(video: HTMLVideoElement, subtitleList: MediaTrack[]):
   return SUBTITLES_OFF;
 }
 
-function captureResumeState(
-  video: HTMLVideoElement,
-  attachmentId: string,
-  subtitleList: MediaTrack[],
-) {
-  pipResumeState.set(attachmentId, {
+/**
+ * Reads a resumable snapshot of the video's current state. Callers grab this
+ * *immediately* when a Picture-in-Picture window starts closing, before
+ * deciding whether they'll actually use it - a closing Document
+ * Picture-in-Picture window's own document is being torn down at that point,
+ * which can reset the video's playback state (paused, back to 0:00) well
+ * before anything waiting on that decision - detectBackToTab's grace period
+ * included - gets a chance to run.
+ */
+function snapshotPlaybackState(video: HTMLVideoElement, subtitleList: MediaTrack[]) {
+  return {
     time: video.currentTime,
     playing: !video.paused,
     playbackRate: video.playbackRate,
+    muted: video.muted,
     subtitleId: currentSubtitleId(video, subtitleList),
-  });
+  };
 }
 
 function reopenPreview(attachmentId: string) {
   window.dispatchEvent(
     new CustomEvent("wikihub:open-attachment-modal", { detail: { attachmentId } }),
   );
+}
+
+/**
+ * A Picture-in-Picture window's own close (X) button and its "back to tab"
+ * button both end it - Document and classic PiP alike only ever fire one
+ * undifferentiated "pagehide"/"leavepictureinpicture" regardless of which was
+ * clicked, with no event detail to tell them apart. The one real difference
+ * the platform exposes is what happens *after*: "back to tab" explicitly
+ * reactivates this page - that's its whole purpose - and doing so fires a
+ * "focus" event here, same as alt-tabbing back to it any other way, whereas
+ * a plain close doesn't reach for this page at all. `onSettled` fires once,
+ * `true` the moment that focus event arrives, `false` if a short grace
+ * period passes with no sign of it - not `document.hasFocus()`, since
+ * closing the *only* other window can hand focus back here anyway, by
+ * ordinary window-manager behavior having nothing to do with "back to tab".
+ */
+function detectBackToTab(onSettled: (cameBackToTab: boolean) => void) {
+  let settled = false;
+  const finish = (cameBackToTab: boolean) => {
+    if (settled) return;
+    settled = true;
+    window.removeEventListener("focus", onFocus);
+    onSettled(cameBackToTab);
+  };
+  const onFocus = () => finish(true);
+  window.addEventListener("focus", onFocus);
+  window.setTimeout(() => finish(false), 300);
 }
 
 /**
@@ -192,20 +225,35 @@ export function VideoAttachmentPreview({
   // handoff points below). Playback position and rate apply as soon as the
   // element has metadata; the subtitle choice needs the track list to have
   // loaded first, so it's stashed in a ref for the effect further down.
+  //
+  // Deferred a tick on purpose: development's Strict Mode mounts every
+  // component twice - run effects, clean them up, run them again - to catch
+  // exactly this sort of thing. The kill effect below has nothing to undo on
+  // its *setup* half, only its cleanup, so that spurious first cleanup would
+  // otherwise pause the video this just started playing before the second,
+  // real mount ever got a chance to matter - and by then `pipResumeState`'s
+  // one-shot entry would already be gone, with nothing left to reapply it
+  // from. A `setTimeout` runs after Strict Mode's synchronous double-invoke
+  // has already finished (and gets cancelled by the spurious cleanup before
+  // it can even fire), so this only ever does real work on the settled mount.
   useEffect(() => {
-    const resume = pipResumeState.get(attachmentId);
-    if (!resume) return;
-    pipResumeState.delete(attachmentId);
-    pendingSubtitleRef.current = resume.subtitleId;
-    const video = videoRef.current;
-    if (!video) return;
-    const applyResume = () => {
-      video.currentTime = resume.time;
-      video.playbackRate = resume.playbackRate;
-      if (resume.playing) void video.play().catch(() => {});
-    };
-    if (video.readyState >= 1) applyResume();
-    else video.addEventListener("loadedmetadata", applyResume, { once: true });
+    const timeoutId = window.setTimeout(() => {
+      const resume = pipResumeState.get(attachmentId);
+      if (!resume) return;
+      pipResumeState.delete(attachmentId);
+      pendingSubtitleRef.current = resume.subtitleId;
+      const video = videoRef.current;
+      if (!video) return;
+      const applyResume = () => {
+        video.currentTime = resume.time;
+        video.playbackRate = resume.playbackRate;
+        video.muted = resume.muted;
+        if (resume.playing) void video.play().catch(() => {});
+      };
+      if (video.readyState >= 1) applyResume();
+      else video.addEventListener("loadedmetadata", applyResume, { once: true });
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [attachmentId]);
 
   // The Picture-in-Picture window (classic or Document) mirrors only the
@@ -260,47 +308,26 @@ export function VideoAttachmentPreview({
       video.style.height = "100%";
       video.style.objectFit = "contain";
 
-      // The browser's own "back to tab" control means "keep watching, just
-      // bring the tab forward", so that (or anything else that closes this
-      // window without going through the button below) resumes the preview.
-      // But the platform gives no way to tell "back to tab" apart from any
-      // other way the window closes - not even from a plain close/X, since
-      // Document Picture-in-Picture only ever fires one undifferentiated
-      // "pagehide" regardless of cause - so an explicit close control of our
-      // own, understood to mean "done watching", is the only reliable way to
-      // offer a real stop.
-      let closedForGood = false;
-      const closeButton = pipWindow.document.createElement("button");
-      closeButton.type = "button";
-      closeButton.title = "Close and stop";
-      closeButton.setAttribute("aria-label", "Close and stop");
-      closeButton.textContent = "✕";
-      closeButton.style.cssText =
-        "position:fixed;top:6px;right:6px;z-index:2147483647;width:26px;height:26px;" +
-        "border-radius:9999px;border:none;background:rgba(0,0,0,0.55);color:#fff;" +
-        "font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;" +
-        "justify-content:center;padding:0;";
-      closeButton.addEventListener("click", () => {
-        closedForGood = true;
-        pipWindow.close();
-      });
-      pipWindow.document.body.appendChild(closeButton);
-
       // Not wrapped in a React effect on purpose: this listener has to keep
       // working after this component - and the modal it closes below -
       // unmounts, which is exactly when a `useEffect` cleanup would
-      // otherwise tear it back down again.
+      // otherwise tear it back down again. Fires the same way whether the
+      // window closed via "back to tab" or its own close/X - see
+      // detectBackToTab for how those two get told apart.
       pipWindow.addEventListener(
         "pagehide",
         () => {
-          if (!closedForGood) {
-            captureResumeState(video, attachmentId, subtitles);
-            reopenPreview(attachmentId);
-          }
-          video.pause();
-          video.removeAttribute("src");
-          video.load();
-          video.remove();
+          const snapshot = snapshotPlaybackState(video, subtitles);
+          detectBackToTab((cameBackToTab) => {
+            if (cameBackToTab) {
+              pipResumeState.set(attachmentId, snapshot);
+              reopenPreview(attachmentId);
+            }
+            video.pause();
+            video.removeAttribute("src");
+            video.load();
+            video.remove();
+          });
         },
         { once: true },
       );
@@ -328,18 +355,16 @@ export function VideoAttachmentPreview({
       video.addEventListener(
         "leavepictureinpicture",
         () => {
-          // The classic PiP window's own close (X) button pauses the video as
-          // part of leaving, while "back to tab" leaves it exactly as it was
-          // - the platform doesn't expose which one was clicked any more
-          // directly than that, so a still-playing video is read as "back to
-          // tab, keep watching" and an already-paused one as "done".
-          if (!video.paused) {
-            captureResumeState(video, attachmentId, subtitles);
-            reopenPreview(attachmentId);
-          }
-          video.pause();
-          video.removeAttribute("src");
-          video.load();
+          const snapshot = snapshotPlaybackState(video, subtitles);
+          detectBackToTab((cameBackToTab) => {
+            if (cameBackToTab) {
+              pipResumeState.set(attachmentId, snapshot);
+              reopenPreview(attachmentId);
+            }
+            video.pause();
+            video.removeAttribute("src");
+            video.load();
+          });
         },
         { once: true },
       );
