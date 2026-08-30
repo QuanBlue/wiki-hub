@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { api } from "@/lib/api-client";
+import { isLocalFindActive } from "@/lib/local-find-registry";
 import { cn } from "@/lib/utils";
 import type { SearchResultPage, SearchResultSpace, SearchResults } from "@/types/api";
 
@@ -57,13 +58,17 @@ export function SearchModal({
   const inputRef = useRef<HTMLInputElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  // Global Ctrl+K / Cmd+K keyboard shortcut
+  // Global Ctrl+K / Cmd+K (and Ctrl+F / Cmd+F) keyboard shortcut
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        onOpenChange(!open);
-      }
+      const key = event.key.toLowerCase();
+      if (!(event.metaKey || event.ctrlKey) || (key !== "k" && key !== "f")) return;
+      // Ctrl+F doubles as "find within this content" in a few local previews
+      // (a text attachment's raw contents, say). Defer to those instead of
+      // popping this over them.
+      if (key === "f" && isLocalFindActive()) return;
+      event.preventDefault();
+      onOpenChange(!open);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);

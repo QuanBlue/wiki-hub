@@ -148,6 +148,7 @@ import {
   lowlight,
   type CodeToken,
 } from "@/lib/code-highlight";
+import { markLocalFindActive } from "@/lib/local-find-registry";
 import { cn } from "@/lib/utils";
 import {
   isEditableOfficeAttachment,
@@ -6287,6 +6288,7 @@ function AttachmentDetailsModal({
   }, [attachmentId]);
 
   useEffect(() => {
+    if (!attachmentId) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -6294,8 +6296,14 @@ function AttachmentDetailsModal({
         searchInputRef.current?.select();
       }
     };
-    if (attachmentId) window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    // Tells the app-shell's quick-search shortcut (also Ctrl+F) to step
+    // aside while this preview's own find-in-content is around to claim it.
+    const releaseLocalFind = markLocalFindActive();
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      releaseLocalFind();
+    };
   }, [attachmentId]);
 
   const lines = useMemo(
