@@ -3,9 +3,8 @@
 - import store thi file import khong save vao obj storage -> khong xem duoc file import duoc upload trong admin > object storage -> co the mat co che han che upload lai khi import file da upload
 - user activity http://wiki.gpmn.net:8090/display/~hieppdh
 - Import WIki: Created by invalid_user, last modified by admin on Aug 28, 2026
-tổng hợp hết tất cả tính năng của ứng dụng và cập nhập hướng dẫn trong trang help cực kì chi tiết, nêu rõ tất cả tính năng, cách sử dụng, ứng dụng thực tế,... 
 
-- fill text vo bang bi di chuyen cot
 Doing
+picture in picture (nhan x khong tat han), them nhan space -> dung video- 
 - revision history hien thi khong dung (edit lan dau)
 - test export full (co pass, k pass, cancel) + export confluence
