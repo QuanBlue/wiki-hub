@@ -21,7 +21,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 from app.models.attachment import PageAttachment
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
-from app.models.page import WikiPage
+from app.models.page import INVALID_IMPORT_ACTOR_LABEL, WikiPage
 from app.models.permission import (
     Group,
     GroupMember,
@@ -115,7 +115,8 @@ async def reap_abandoned_confluence_imports(
     return len(abandoned)
 
 
-INVALID_IMPORT_USERNAME = "invalid_user"
+# Kept as an alias: existing tests/imports refer to this name.
+INVALID_IMPORT_USERNAME = INVALID_IMPORT_ACTOR_LABEL
 _INVALID_IMPORT_USERNAME = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
 
 

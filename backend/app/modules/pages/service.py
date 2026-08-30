@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
 from app.models.draft import PageDraft
-from app.models.page import WikiPage
+from app.models.page import INVALID_IMPORT_ACTOR_LABEL, WikiPage
 from app.models.permission import Permission
 from app.models.revision import PageRevision
 from app.models.space import Space, SpaceStatus
@@ -43,6 +43,11 @@ logger = get_logger(__name__)
 
 
 SLUG_CHARS = re.compile(r"[^a-z0-9]+")
+
+
+def _display_actor_label(label: str | None) -> str | None:
+    """Hide the "Confluence author couldn't be resolved" sentinel from API output."""
+    return None if label == INVALID_IMPORT_ACTOR_LABEL else label
 
 
 class PageService:
@@ -75,9 +80,9 @@ class PageService:
             content_format=page.content_format,
             created_at=page.created_at,
             updated_at=page.updated_at,
-            created_by_username=page.created_by_label
+            created_by_username=_display_actor_label(page.created_by_label)
             or (page.created_by.username if page.created_by else None),
-            updated_by_username=page.updated_by_label
+            updated_by_username=_display_actor_label(page.updated_by_label)
             or (page.updated_by.username if page.updated_by else None),
         )
 
@@ -254,7 +259,8 @@ class PageService:
                     created_at=r.created_at,
                     change_summary=r.change_summary,
                     created_by_username=(
-                        page.created_by_label or (author_user.username if author_user else None)
+                        _display_actor_label(page.created_by_label)
+                        or (author_user.username if author_user else None)
                     ),
                     created_by_full_name=author_user.full_name
                     if author_user and author_user.full_name
@@ -284,7 +290,8 @@ class PageService:
             created_at=rev.created_at,
             change_summary=rev.change_summary,
             created_by_username=(
-                page.created_by_label or (author_user.username if author_user else None)
+                _display_actor_label(page.created_by_label)
+                or (author_user.username if author_user else None)
             ),
             created_by_full_name=author_user.full_name
             if author_user and author_user.full_name

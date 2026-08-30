@@ -12,6 +12,13 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.space import Space
 from app.models.user import User
 
+# Sentinel stored in `created_by_label`/`updated_by_label` when a Confluence
+# import couldn't resolve the original author to a real WikiHub account (the
+# source only supplied Confluence's internal actor id). Never surface this
+# raw value to end users - API responses must treat it as "unknown", not as
+# a literal username.
+INVALID_IMPORT_ACTOR_LABEL = "invalid_user"
+
 
 class WikiPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "pages"
