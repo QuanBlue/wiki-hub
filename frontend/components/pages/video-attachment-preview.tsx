@@ -545,6 +545,37 @@ export function VideoAttachmentPreview({
     setPlaybackRate(rate);
   }
 
+  // Space toggles play/pause anywhere in the preview, matching the usual
+  // video-player convention - not just when the video (or its native
+  // controls) happens to have focus, which is the only time the browser's
+  // own built-in handling of it would otherwise kick in.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" && event.key !== " ") return;
+      const target = event.target;
+      // Already toggles natively when the video itself is focused - don't
+      // fight that - and don't hijack the key from a focused button, form
+      // field, or anything else that legitimately uses Space.
+      if (
+        target === video ||
+        target instanceof HTMLButtonElement ||
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      if (video.paused) void video.play().catch(() => {});
+      else video.pause();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [attachmentId]);
+
   const activeLabel =
     subtitles.find((track) => track.id === activeSubtitle)?.label ?? null;
 
