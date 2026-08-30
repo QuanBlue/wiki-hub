@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import anyio
 import pytest
@@ -196,6 +196,88 @@ async def test_storage_bucket_setup_reraises_unknown_errors(
         await storage.ensure_bucket()
     assert isinstance(get_storage(), S3ObjectStorage)
     set_storage(None)
+
+
+# -- download_to_file: must survive a connection dropped mid-transfer -------
+
+
+@pytest.mark.asyncio
+async def test_download_to_file_resumes_after_a_broken_stream(
+    storage: S3ObjectStorage, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `body.read()` failure partway through must not discard the download.
+
+    Reproduces the real-world failure: a multi-GB restore archive whose
+    connection to storage broke mid-stream (`Connection broken:
+    IncompleteRead(...)`) after some bytes had already arrived. The fix
+    retries with a ranged GET resuming from the last confirmed byte instead
+    of failing the whole download.
+    """
+    sleeps: list[float] = []
+
+    async def _no_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(anyio, "sleep", _no_sleep)
+
+    client = Mock()
+    storage._client = client
+
+    first_body = Mock()
+    # The first attempt reads two good chunks, then the connection breaks.
+    first_body.read.side_effect = [b"one-", BotoCoreError()]
+    first_body.close.return_value = None
+
+    second_body = Mock()
+    second_chunks = iter([b"two-", b"three", b""])
+    second_body.read.side_effect = lambda _size: next(second_chunks)
+    second_body.close.return_value = None
+
+    responses = iter([{"Body": first_body}, {"Body": second_body}])
+    client.get_object.side_effect = lambda **_kwargs: next(responses)
+
+    destination = tmp_path / "restore.zip"
+    progress: list[int] = []
+
+    async def on_progress(value: int) -> None:
+        progress.append(value)
+
+    await storage.download_to_file("a", str(destination), on_progress=on_progress)
+
+    assert destination.read_bytes() == b"one-two-three"
+    assert progress == [4, 8, 13]
+
+    # The retried request must resume from the last confirmed byte, not
+    # restart from zero.
+    calls = client.get_object.call_args_list
+    assert "Range" not in calls[0].kwargs
+    assert calls[1].kwargs["Range"] == "bytes=4-"
+    assert sleeps == [2]
+
+
+@pytest.mark.asyncio
+async def test_download_to_file_gives_up_after_repeated_failures(
+    storage: S3ObjectStorage, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(anyio, "sleep", AsyncMock())
+
+    client = Mock()
+    storage._client = client
+
+    def _always_broken(**_kwargs) -> dict:
+        body = Mock()
+        body.read.side_effect = BotoCoreError()
+        body.close.return_value = None
+        return {"Body": body}
+
+    client.get_object.side_effect = _always_broken
+
+    with pytest.raises(ServiceUnavailableError):
+        await storage.download_to_file(
+            "a", str(tmp_path / "restore.zip"), on_progress=AsyncMock()
+        )
+
+    assert client.get_object.call_count == 8
 
 
 # -- open_reader: ranged random access over a remote object -----------------

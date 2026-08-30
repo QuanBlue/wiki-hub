@@ -442,18 +442,57 @@ class S3ObjectStorage(ObjectStorage):
         # callback runs on a worker thread, while the import job and its
         # counters live in this async session, so invoking the async callback
         # here keeps progress updates safe and observable by the UI.
-        result = await self._call(self.client.get_object, Bucket=self.bucket, Key=key)
-        body = result["Body"]
+        #
+        # Reporting progress means hand-rolling this loop instead of handing
+        # the whole transfer to boto3's managed `download_file` above, which
+        # trades away its per-part retries: a multi-GB archive over a slow or
+        # lossy link can have its connection drop mid-stream ("Connection
+        # broken: IncompleteRead(...)") long before every byte has arrived,
+        # and `_call` only guards the request that opens the stream - not the
+        # reads that drain it afterwards. Left alone, that discarded
+        # everything already downloaded and failed the whole restore/export.
+        # Resume with a ranged GET from the last confirmed byte instead of
+        # restarting from zero, the same backstop this project already leans
+        # on for `pip`/`npm ci` over the same kind of link (see the retry
+        # loops in backend.Dockerfile / frontend's postinstall).
         downloaded = 0
+        attempt = 0
+        max_attempts = 8
         destination = await anyio.to_thread.run_sync(_open_binary_for_write, path)
         try:
-            while chunk := await anyio.to_thread.run_sync(body.read, 8 * 1024 * 1024):
-                await anyio.to_thread.run_sync(destination.write, chunk)
-                downloaded += len(chunk)
-                await on_progress(downloaded)
+            while True:
+                get_kwargs: dict[str, Any] = {"Bucket": self.bucket, "Key": key}
+                if downloaded:
+                    get_kwargs["Range"] = f"bytes={downloaded}-"
+                try:
+                    result = await self._call(self.client.get_object, **get_kwargs)
+                    body = result["Body"]
+                    try:
+                        while chunk := await anyio.to_thread.run_sync(body.read, 8 * 1024 * 1024):
+                            await anyio.to_thread.run_sync(destination.write, chunk)
+                            downloaded += len(chunk)
+                            await on_progress(downloaded)
+                    finally:
+                        await anyio.to_thread.run_sync(body.close)
+                    return  # `body.read()` returned empty: the object is fully drained
+                except (ServiceUnavailableError, BotoCoreError, ClientError, OSError) as exc:
+                    attempt += 1
+                    if attempt >= max_attempts:
+                        raise ServiceUnavailableError(
+                            f"Download of {key} kept breaking mid-transfer "
+                            f"({downloaded} bytes read so far) and did not recover "
+                            f"after {max_attempts} attempts."
+                        ) from exc
+                    logger.warning(
+                        "s3_download_interrupted_retrying",
+                        key=key,
+                        downloaded=downloaded,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
+                    await anyio.sleep(min(2**attempt, 30))
         finally:
             await anyio.to_thread.run_sync(destination.close)
-            await anyio.to_thread.run_sync(body.close)
 
     async def upload_file(
         self, key: str, path: str, *, content_type: str = "application/octet-stream"
