@@ -13,7 +13,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.document_import import DocumentImportItem, DocumentImportJob
 from app.models.draft import PageDraft
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
-from app.models.page import PageLike, WikiPage
+from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.permission import (
     GlobalPermission,
     Group,
@@ -41,6 +41,7 @@ from app.models.space import (
 )
 from app.models.user import User
 from app.models.user_session import UserSession
+from app.models.user_tag import UserTag
 
 __all__ = [
     "SINGLETON_ID",
@@ -79,6 +80,8 @@ __all__ = [
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
     "User",
+    "UserPagePin",
     "UserSession",
+    "UserTag",
     "WikiPage",
 ]

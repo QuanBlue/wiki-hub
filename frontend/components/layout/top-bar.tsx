@@ -10,6 +10,7 @@ import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { UserMenu } from "@/components/layout/user-menu";
+import { formatBinding, useShortcutBindings } from "@/lib/keyboard-shortcuts";
 import { Button } from "@/components/ui/button";
 import type { Me } from "@/types/api";
 
@@ -20,6 +21,10 @@ export function TopBar({ siteName: propSiteName, user }: { siteName?: string; us
   const [searchOpen, setSearchOpen] = useState(false);
   const themeSettings = useThemeSettings();
   const effectiveSiteName = themeSettings?.siteName || propSiteName || "WikiHub";
+  // Follows whatever the user has bound, so the hint cannot promise a chord
+  // that no longer opens anything. Empty when they have unbound it entirely.
+  const searchBindings = useShortcutBindings("search.open");
+  const searchHint = searchBindings[0] ? formatBinding(searchBindings[0]) : null;
 
   return (
     <header className="h-topbar border-border bg-surface fixed inset-x-0 top-0 z-30 border-b">
@@ -42,9 +47,11 @@ export function TopBar({ siteName: propSiteName, user }: { siteName?: string; us
           >
             <Search className="size-4 shrink-0" />
             <span className="truncate text-xs">Search {effectiveSiteName}</span>
-            <kbd className="border-border ml-auto hidden rounded border px-1.5 py-0.5 font-mono text-[10px] sm:inline">
-              ⌘K
-            </kbd>
+            {searchHint ? (
+              <kbd className="border-border ml-auto hidden rounded border px-1.5 py-0.5 font-mono text-[10px] sm:inline">
+                {searchHint}
+              </kbd>
+            ) : null}
           </button>
         </div>
 

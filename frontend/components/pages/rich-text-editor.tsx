@@ -148,6 +148,7 @@ import {
   lowlight,
   type CodeToken,
 } from "@/lib/code-highlight";
+import { matchesShortcut } from "@/lib/keyboard-shortcuts";
 import { markLocalFindActive } from "@/lib/local-find-registry";
 import { cn } from "@/lib/utils";
 import {
@@ -6290,11 +6291,10 @@ function AttachmentDetailsModal({
   useEffect(() => {
     if (!attachmentId) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      }
+      if (!matchesShortcut("attachment.find", event)) return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
     };
     window.addEventListener("keydown", handleKeyDown);
     // Tells the app-shell's quick-search shortcut (also Ctrl+F) to step

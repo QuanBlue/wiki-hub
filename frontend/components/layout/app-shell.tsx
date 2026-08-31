@@ -5,11 +5,9 @@ import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { TopBar } from "@/components/layout/top-bar";
 import { getSidebarPermissions } from "@/lib/navigation";
 import { getSidebarPreferences } from "@/lib/sidebar-preferences";
-import { listSpaces, listTopVisitedSpaces } from "@/lib/spaces";
+import { listFavoriteSpaces } from "@/lib/spaces";
+import { listOwnPinnedPages } from "@/lib/pages";
 import type { Me } from "@/types/api";
-
-/** How many of the user's most-visited spaces show inline in the sidebar. */
-const TOP_SPACES_LIMIT = 5;
 
 /**
  * The documentation layout: fixed top bar, collapsible navigation rail on the
@@ -34,23 +32,14 @@ export async function AppShell({
   hideSidebar?: boolean;
   fullWidth?: boolean;
 }) {
-  const [sidebarPermissions, sidebarPreferences, visitedSpaces] = await Promise.all([
+  const [sidebarPermissions, sidebarPreferences, favoriteSpaces, pinnedPages] = await Promise.all([
     getSidebarPermissions(),
     getSidebarPreferences(),
-    // Only the rail needs this, but fetching it here (rather than in
-    // <Sidebar>, a client component) keeps it server-rendered like the rest
-    // of the navigation.
-    hideSidebar ? Promise.resolve([]) : listTopVisitedSpaces(TOP_SPACES_LIMIT),
+    hideSidebar ? Promise.resolve([]) : listFavoriteSpaces(),
+    // Pins are an optional personal feature. Keep the navigation usable during
+    // a rolling deployment before its migration has reached the database.
+    hideSidebar ? Promise.resolve([]) : listOwnPinnedPages().catch(() => []),
   ]);
-  // New users have no visit history yet. Keep the sidebar useful by showing
-  // the first spaces from the directory until their own ranking is populated.
-  const topSpaces =
-    visitedSpaces.length > 0
-      ? visitedSpaces
-      : hideSidebar
-        ? []
-        : await listSpaces(false, TOP_SPACES_LIMIT);
-
   return (
     <SidebarProvider
       initialCollapsed={sidebarPreferences.collapsed}
@@ -62,7 +51,8 @@ export async function AppShell({
           <Sidebar
             user={user}
             permissions={sidebarPermissions}
-            topSpaces={topSpaces}
+            favoriteSpaces={favoriteSpaces}
+            pinnedPages={pinnedPages}
           />
         )}
         <AppMain

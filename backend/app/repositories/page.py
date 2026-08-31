@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
-from sqlalchemy import Select, delete, func, select
+from sqlalchemy import Select, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -87,4 +88,40 @@ class PageRepository:
             .order_by(WikiPage.updated_at.desc())
             .limit(limit)
         )
+        return (await self.session.execute(stmt)).scalars().unique().all()
+
+    async def list_updated_by(
+        self,
+        user_id: uuid.UUID,
+        *,
+        limit: int,
+        before_updated_at: datetime | None = None,
+        before_id: uuid.UUID | None = None,
+    ) -> Sequence[WikiPage]:
+        """List a member's page updates in a stable newest-first order."""
+        stmt = (
+            select(WikiPage)
+            .join(WikiPage.space)
+            .where(
+                WikiPage.updated_by_id == user_id,
+                Space.status != "archived",
+            )
+            .options(
+                selectinload(WikiPage.space),
+                selectinload(WikiPage.created_by),
+                selectinload(WikiPage.updated_by),
+            )
+            .order_by(WikiPage.updated_at.desc(), WikiPage.id.desc())
+            .limit(limit)
+        )
+        if before_updated_at is not None and before_id is not None:
+            stmt = stmt.where(
+                or_(
+                    WikiPage.updated_at < before_updated_at,
+                    and_(
+                        WikiPage.updated_at == before_updated_at,
+                        WikiPage.id < before_id,
+                    ),
+                )
+            )
         return (await self.session.execute(stmt)).scalars().unique().all()

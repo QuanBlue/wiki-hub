@@ -1,22 +1,24 @@
 "use client";
 
-import { KeyRound, Mail, ShieldCheck, UserRound } from "lucide-react";
+import { Keyboard, KeyRound, Mail, ShieldCheck, UserRound } from "lucide-react";
 import { useRef, useState, type KeyboardEvent } from "react";
 
 import { ChangePasswordForm } from "@/components/account/change-password-form";
 import { ProfileForm } from "@/components/account/profile-form";
 import { ProfileSummary } from "@/components/account/profile-summary";
 import { SessionsPanel } from "@/components/account/sessions-panel";
+import { ShortcutSettings } from "@/components/account/shortcut-settings";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Me } from "@/types/api";
 
-type AccountTab = "profile" | "security" | "sessions";
+type AccountTab = "profile" | "security" | "sessions" | "shortcuts";
 
 const tabs: { id: AccountTab; label: string; icon: typeof UserRound }[] = [
   { id: "profile", label: "Profile", icon: UserRound },
   { id: "security", label: "Password & authentication", icon: ShieldCheck },
   { id: "sessions", label: "Sessions", icon: KeyRound },
+  { id: "shortcuts", label: "Keyboard shortcuts", icon: Keyboard },
 ];
 
 export function AccountSettings({ user }: { user: Me }) {
@@ -27,6 +29,7 @@ export function AccountSettings({ user }: { user: Me }) {
     profile: null,
     security: null,
     sessions: null,
+    shortcuts: null,
   });
 
   function selectTab(tab: AccountTab) {
@@ -89,7 +92,8 @@ export function AccountSettings({ user }: { user: Me }) {
           })}
         </div>
         <p className="border-border text-muted-foreground mt-5 border-t px-2 pt-4 text-xs leading-relaxed">
-          Manage your personal profile, credentials, and active security sessions.
+          Manage your personal profile, credentials, active security sessions, and
+          keyboard shortcuts.
         </p>
       </aside>
 
@@ -152,9 +156,15 @@ export function AccountSettings({ user }: { user: Me }) {
             </div>
           )}
         </section>
-      ) : (
+      ) : activeTab === "sessions" ? (
         <section id="sessions-panel" role="tabpanel" aria-labelledby="sessions-tab">
           <SessionsPanel />
+        </section>
+      ) : (
+        <section id="shortcuts-panel" role="tabpanel" aria-labelledby="shortcuts-tab">
+          <div className="max-w-4xl">
+            <ShortcutSettings />
+          </div>
         </section>
       )}
       </div>

@@ -1,9 +1,22 @@
 - cho tích hợp với mail để gửi mail thông báo (đổi password, có người yêu cầu quyền truy cập vào space/page, bị disable,...)
-- view change trong all update 
-- import store thi file import khong save vao obj storage -> khong xem duoc file import duoc upload trong admin > object storage -> co the mat co che han che upload lai khi import file da upload
-- user activity http://wiki.gpmn.net:8090/display/~hieppdh
-- Import WIki: Created by invalid_user, last modified by admin on Aug 28, 2026
-
+- tag 
+- recent spaces và tags chỉ có người dùng đó tạo và xem được
+- 
 Doing
+- user activity http://wiki.gpmn.net:8090/display/~hieppdh
+- view change trong all update 
 - revision history hien thi khong dung (edit lan dau)
 - test export full (co pass, k pass, cancel) + export confluence
+- ---
+Mẫu này phù hợp với profile WikiHub, nhưng nên áp dụng theo hướng “wiki workspace”, không sao chép nguyên bản. Mình đề xuất bố cục 3 cột:
+- Trái: profile card, thông tin thành viên và thống kê đóng góp.
+- Giữa: activity feed dạng All updates, có tab Page / Draft và bộ lọc.
+- Phải: trang ghim, space đã đóng góp gần đây; quick actions chỉ hiện khi xem profile của chính mình.
+Một số phần hiện chưa có dữ liệu hoặc cần quyết định rõ:
+- Email và “last active”: profile công khai hiện cố ý không trả email; có nên chỉ hiển thị cho chính user/admin không?
+- Draft: draft là riêng tư, nên chỉ tab Draft khi xem profile của chính mình; user khác không được xem.
+- Trang ghim: hiện mới có favorite space, chưa có pinned page.
+- Recent spaces của một user và tags hay dùng: chưa có dữ liệu theo user.
+- Thống kê: có thể làm ngay “trang đã cập nhật”, “trang đã tạo”, “space đóng góp”; cần chốt có hiển thị cho mọi người không.
+- Quick actions như tạo page/draft/search: nên chỉ có ở profile của chính người đăng nhập.
+Để mình lên plan chính xác, bạn chốt giúp 3 ý: email/last active có công khai không; trang ghim là page riêng hay dùng favorite hiện có; và profile người khác có được thấy thống kê đầy đủ hay chỉ activity?

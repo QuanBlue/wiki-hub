@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import difflib
+import json
 import re
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 from bs4 import BeautifulSoup
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -634,22 +638,95 @@ class PageService:
     async def list_recent_pages(self, user: User, *, limit: int = 50) -> list[PageRecentItem]:
         pages = await self.pages.list_recent_pages(limit=limit)
         pages = [page for page in pages if await self.spaces.permissions.can_view_page(page, user)]
-        items: list[PageRecentItem] = []
-        for page in pages:
-            author = page.updated_by or page.created_by
-            username = author.username if author else "system"
-            full_name = author.full_name if author and author.full_name else username
-            items.append(
-                PageRecentItem(
-                    id=page.id,
-                    title=page.title,
-                    slug=page.slug,
-                    space_key=page.space.key,
-                    space_name=page.space.name,
-                    created_at=page.created_at,
-                    updated_at=page.updated_at,
-                    user_username=username,
-                    user_full_name=full_name,
-                )
+        return [self._recent_item(page) for page in pages]
+
+    @staticmethod
+    def _recent_item(page: WikiPage) -> PageRecentItem:
+        author = page.updated_by or page.created_by
+        username = author.username if author else "system"
+        return PageRecentItem(
+            id=page.id,
+            title=page.title,
+            slug=page.slug,
+            space_key=page.space.key,
+            space_name=page.space.name,
+            created_at=page.created_at,
+            updated_at=page.updated_at,
+            user_username=username,
+            user_full_name=author.full_name if author and author.full_name else username,
+        )
+
+    @staticmethod
+    def _decode_activity_cursor(cursor: str, user_id: uuid.UUID) -> tuple[datetime, uuid.UUID]:
+        try:
+            encoded = cursor.encode("ascii")
+            padding = b"=" * (-len(encoded) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(encoded + padding))
+            if payload["user_id"] != str(user_id):
+                raise ValueError("cursor belongs to another user")
+            updated_at = datetime.fromisoformat(payload["updated_at"])
+            page_id = uuid.UUID(payload["page_id"])
+            if updated_at.tzinfo is None:
+                raise ValueError("cursor timestamp must have a timezone")
+            return updated_at, page_id
+        except (
+            KeyError,
+            TypeError,
+            ValueError,
+            UnicodeError,
+            binascii.Error,
+            json.JSONDecodeError,
+        ) as error:
+            raise BadRequestError("The activity cursor is invalid.") from error
+
+    @staticmethod
+    def _encode_activity_cursor(page: WikiPage, user_id: uuid.UUID) -> str:
+        payload = json.dumps(
+            {
+                "user_id": str(user_id),
+                "updated_at": page.updated_at.isoformat(),
+                "page_id": str(page.id),
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+    async def list_user_activity(
+        self,
+        viewer: User,
+        member: User,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> tuple[list[PageRecentItem], str | None]:
+        """Return visible page updates by ``member`` using an opaque cursor."""
+        before = self._decode_activity_cursor(cursor, member.id) if cursor else None
+        visible: list[WikiPage] = []
+        batch_size = max(limit + 1, 50)
+
+        while True:
+            pages = await self.pages.list_updated_by(
+                member.id,
+                limit=batch_size,
+                before_updated_at=before[0] if before else None,
+                before_id=before[1] if before else None,
             )
-        return items
+            if not pages:
+                break
+
+            for page in pages:
+                if await self.spaces.permissions.can_view_page(page, viewer):
+                    visible.append(page)
+                    if len(visible) > limit:
+                        last_returned = visible[limit - 1]
+                        return (
+                            [self._recent_item(item) for item in visible[:limit]],
+                            self._encode_activity_cursor(last_returned, member.id),
+                        )
+
+            if len(pages) < batch_size:
+                break
+            last_page = pages[-1]
+            before = (last_page.updated_at, last_page.id)
+
+        return [self._recent_item(item) for item in visible], None

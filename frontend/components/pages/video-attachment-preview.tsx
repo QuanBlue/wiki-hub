@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api-client";
+import { matchesShortcut } from "@/lib/keyboard-shortcuts";
 
 type MediaTrack = {
   id: string;
@@ -553,7 +554,7 @@ export function VideoAttachmentPreview({
     const video = videoRef.current;
     if (!video) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space" && event.key !== " ") return;
+      if (!matchesShortcut("video.playPause", event)) return;
       const target = event.target;
       // Already toggles natively when the video itself is focused - don't
       // fight that - and don't hijack the key from a focused button, form

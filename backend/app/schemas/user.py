@@ -13,6 +13,7 @@ from datetime import datetime
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.permission import GlobalPermission
+from app.schemas.page import PageRecentItem
 
 
 class UserRead(BaseModel):
@@ -40,6 +41,76 @@ class UserRead(BaseModel):
     created_at: datetime
     groups: list[str] = Field(default_factory=list)
     global_permissions: list[GlobalPermission] = Field(default_factory=list)
+
+
+class PublicUserRead(BaseModel):
+    """The collaboration-safe portion of a member profile."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    username: str
+    full_name: str
+    avatar_url: str | None
+    bio: str
+    pronouns: str
+    profile_url: str
+    social_links: list[str] = Field(default_factory=list)
+    company: str
+    email: str
+    created_at: datetime
+    last_active_at: datetime | None = None
+    #: Whether this member can administer the workspace. This is safe profile
+    #: metadata and avoids presenting administrators as ordinary members.
+    is_workspace_admin: bool = False
+
+
+class UserActivityPage(BaseModel):
+    """Cursor-paginated page updates shown on a member profile."""
+
+    items: list[PageRecentItem]
+    next_cursor: str | None = None
+
+
+class UserProfileStats(BaseModel):
+    pages_updated: int = 0
+    pages_created: int = 0
+    spaces_contributed: int = 0
+
+
+class UserDraftItem(BaseModel):
+    id: uuid.UUID
+    page_id: uuid.UUID
+    title: str
+    slug: str
+    space_key: str
+    space_name: str
+    content: str
+    updated_at: datetime
+
+
+class UserPinnedPageItem(BaseModel):
+    id: uuid.UUID
+    title: str
+    slug: str
+    space_key: str
+    space_name: str
+    pinned_at: datetime
+
+
+class UserTagRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+
+
+class UserTagCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        return value.strip()
 
 
 class MeRead(UserRead):

@@ -8,6 +8,7 @@ import {
   Layers,
   LayoutGrid,
   MoreHorizontal,
+  Pin,
   SlidersHorizontal,
   User,
   Users,
@@ -20,7 +21,7 @@ import { useEffect, useState } from "react";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { cn } from "@/lib/utils";
-import type { Me, SidebarPermissions, Space } from "@/types/api";
+import type { Me, SidebarPermissions, Space, UserPinnedPageItem } from "@/types/api";
 
 interface NavItem {
   permission: keyof SidebarPermissions;
@@ -136,6 +137,27 @@ function NavLink({
   );
 }
 
+function SectionToggle({
+  title,
+  expanded,
+  onToggle,
+}: {
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      className="text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex w-full cursor-pointer items-center rounded-md px-2 py-1 text-left text-[11px] font-semibold tracking-wide uppercase transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+    >
+      {title}
+    </button>
+  );
+}
+
 /** A titled group of nav items, with the divider/label the top-level group skips. */
 function NavSection({
   title,
@@ -143,6 +165,8 @@ function NavSection({
   pathname,
   collapsed,
   onNavigate,
+  expanded,
+  onToggle,
   withDivider = true,
 }: {
   title: string;
@@ -150,6 +174,8 @@ function NavSection({
   pathname: string;
   collapsed: boolean;
   onNavigate: () => void;
+  expanded: boolean;
+  onToggle: () => void;
   withDivider?: boolean;
 }) {
   if (items.length === 0) return null;
@@ -157,12 +183,8 @@ function NavSection({
   return (
     <>
       {withDivider ? <div className="border-border my-3 border-t" /> : null}
-      {!collapsed ? (
-        <p className="text-muted-foreground px-2 pb-1 text-[11px] font-semibold tracking-wide uppercase">
-          {title}
-        </p>
-      ) : null}
-      <ul className="space-y-0.5">
+      {!collapsed ? <SectionToggle title={title} expanded={expanded} onToggle={onToggle} /> : null}
+      {expanded ? <ul className="space-y-0.5">
         {items.map((item) => (
           <li key={item.href}>
             <NavLink
@@ -173,7 +195,7 @@ function NavSection({
             />
           </li>
         ))}
-      </ul>
+      </ul> : null}
     </>
   );
 }
@@ -185,27 +207,29 @@ function NavSection({
  * growing name list has nowhere to go there. AppShell supplies the first
  * directory spaces as a fallback for brand-new accounts with no visit history.
  */
-function TopSpacesSection({
+function FavoriteSpacesSection({
   spaces,
   collapsed,
   pathname,
   onNavigate,
+  expanded,
+  onToggle,
 }: {
   spaces: Space[];
   collapsed: boolean;
   pathname: string;
   onNavigate: () => void;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
-  if (collapsed || spaces.length === 0) return null;
+  if (collapsed) return null;
 
   return (
     <>
       <div className="border-border my-3 border-t" />
-      <p className="text-muted-foreground px-2 pb-1 text-[11px] font-semibold tracking-wide uppercase">
-        Most visited
-      </p>
-      <ul className="space-y-0.5">
-        {spaces.map((space) => {
+      <SectionToggle title="Favorite spaces" expanded={expanded} onToggle={onToggle} />
+      {expanded && spaces.length ? <ul className="space-y-0.5">
+        {spaces.slice(0, 5).map((space) => {
           const href = `/spaces/${encodeURIComponent(space.key)}`;
           const active = pathname === href || pathname.startsWith(`${href}/`);
           const hasCustomEmoji = Boolean(space.icon && space.icon !== "📄");
@@ -239,15 +263,53 @@ function TopSpacesSection({
             </li>
           );
         })}
-      </ul>
-      <Link
-        href="/spaces"
+      </ul> : expanded ? <p className="text-muted-foreground px-2 py-1.5 text-xs">No favorite spaces yet.</p> : null}
+      {expanded && spaces.length > 5 ? <Link
+        href="/favorites"
         onClick={onNavigate}
         className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring mt-0.5 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
       >
         <MoreHorizontal className="size-4 shrink-0" aria-hidden />
-        <span>View all spaces</span>
-      </Link>
+        <span>Show all favorite spaces</span>
+      </Link> : null}
+    </>
+  );
+}
+
+function PinnedPagesSection({
+  pages,
+  collapsed,
+  pathname,
+  onNavigate,
+  expanded,
+  onToggle,
+}: {
+  pages: UserPinnedPageItem[];
+  collapsed: boolean;
+  pathname: string;
+  onNavigate: () => void;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  if (collapsed) return null;
+  return (
+    <>
+      <div className="border-border my-3 border-t" />
+      <SectionToggle title="Pinned pages" expanded={expanded} onToggle={onToggle} />
+      {expanded && pages.length ? <ul className="space-y-0.5">
+        {pages.slice(0, 5).map((page) => {
+          const href = `/spaces/${encodeURIComponent(page.space_key)}/pages/${encodeURIComponent(page.slug)}`;
+          const active = pathname === href;
+          return (
+            <li key={page.id}>
+              <Link href={href} aria-current={active ? "page" : undefined} onClick={onNavigate} className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none", active ? "bg-surface-selected text-primary font-medium" : "text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected")}>
+                <Pin className="size-4 shrink-0" aria-hidden />
+                <span className="truncate">{page.title}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul> : expanded ? <p className="text-muted-foreground px-2 py-1.5 text-xs">No pinned pages yet.</p> : null}
     </>
   );
 }
@@ -255,11 +317,13 @@ function TopSpacesSection({
 export function Sidebar({
   user,
   permissions,
-  topSpaces,
+  favoriteSpaces,
+  pinnedPages,
 }: {
   user: Me;
   permissions: SidebarPermissions;
-  topSpaces: Space[];
+  favoriteSpaces: Space[];
+  pinnedPages: UserPinnedPageItem[];
 }) {
   const pathname = usePathname();
   const {
@@ -271,6 +335,15 @@ export function Sidebar({
     setMobileOpen,
   } = useSidebar();
   const [dragging, setDragging] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    overview: true,
+    favorites: true,
+    pinned: true,
+    administration: true,
+  });
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
+  };
   const role =
     user.is_superuser || user.global_permissions.includes("system_admin")
       ? "admin"
@@ -281,7 +354,7 @@ export function Sidebar({
   const adminItems = ADMIN_NAV.filter((item) =>
     permissions[item.permission].includes(role),
   );
-  const showTopSpaces = permissions.spaces.includes(role);
+  const showFavoriteSpaces = permissions.spaces.includes(role);
 
   // Navigating on a phone must close the drawer, otherwise it covers the page
   // the user just asked for.
@@ -373,16 +446,29 @@ export function Sidebar({
           collapsed={railCollapsed}
           onNavigate={onNavigate}
           withDivider={false}
+          expanded={expandedSections.overview}
+          onToggle={() => toggleSection("overview")}
         />
 
-        {showTopSpaces ? (
-          <TopSpacesSection
-            spaces={topSpaces}
+        {showFavoriteSpaces ? (
+          <FavoriteSpacesSection
+            spaces={favoriteSpaces}
             collapsed={railCollapsed}
             pathname={pathname}
             onNavigate={onNavigate}
+            expanded={expandedSections.favorites}
+            onToggle={() => toggleSection("favorites")}
           />
         ) : null}
+
+        <PinnedPagesSection
+          pages={pinnedPages}
+          collapsed={railCollapsed}
+          pathname={pathname}
+          onNavigate={onNavigate}
+          expanded={expandedSections.pinned}
+          onToggle={() => toggleSection("pinned")}
+        />
 
         <NavSection
           title="Administration"
@@ -390,6 +476,8 @@ export function Sidebar({
           pathname={pathname}
           collapsed={railCollapsed}
           onNavigate={onNavigate}
+          expanded={expandedSections.administration}
+          onToggle={() => toggleSection("administration")}
         />
 
         {!railCollapsed ? (

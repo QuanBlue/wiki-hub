@@ -23,6 +23,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { RichTextContent } from "@/components/pages/rich-text-editor";
 import {
   linkifyPlainTextUrls,
@@ -55,6 +56,18 @@ function formatDate(dateStr: string): string {
   } catch {
     return dateStr;
   }
+}
+
+function RevisionAuthor({
+  username,
+  fullName,
+}: {
+  username: string | null;
+  fullName: string | null;
+}) {
+  const label = fullName || username || "System";
+  if (!username || username === "system") return <>{label}</>;
+  return <UserProfileTrigger username={username} fullName={fullName} />;
 }
 
 function DiffLine({
@@ -555,7 +568,10 @@ export function PageHistoryModal({
                         </div>
                         {selectedFromRev ? (
                           <p className="mt-1">
-                            {selectedFromRev.created_by_full_name || selectedFromRev.created_by_username || "System"}
+                            <RevisionAuthor
+                              username={selectedFromRev.created_by_username}
+                              fullName={selectedFromRev.created_by_full_name}
+                            />
                             <span className="mx-1">·</span>
                             {formatDate(selectedFromRev.created_at)}
                           </p>
@@ -588,7 +604,10 @@ export function PageHistoryModal({
                         </div>
                         {selectedToRev ? (
                           <p className="mt-1">
-                            {selectedToRev.created_by_full_name || selectedToRev.created_by_username || "System"}
+                            <RevisionAuthor
+                              username={selectedToRev.created_by_username}
+                              fullName={selectedToRev.created_by_full_name}
+                            />
                             <span className="mx-1">·</span>
                             {formatDate(selectedToRev.created_at)}
                           </p>

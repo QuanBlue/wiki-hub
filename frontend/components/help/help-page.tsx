@@ -231,7 +231,11 @@ const sections: HelpSection[] = [
     keywords: ["keyboard", "shortcut", "hotkey", "ctrl", "cmd", "escape"],
     body: (
       <>
-        <p>There is no command palette beyond Search - just this fixed set:</p>
+        <p>
+          There is no command palette beyond Search - just this set. The ones marked{" "}
+          <strong>Rebindable</strong> are defaults you can change; see{" "}
+          <em>Customising Keyboard Shortcuts</em> under <strong>Account</strong>.
+        </p>
 
         <div className="border-border bg-surface mt-3 overflow-hidden rounded-lg border shadow-xs">
           <table className="w-full text-left text-xs border-collapse">
@@ -239,32 +243,49 @@ const sections: HelpSection[] = [
               <tr className="border-border bg-surface-sunken border-b font-semibold">
                 <th className="p-2.5 w-40">Shortcut</th>
                 <th className="p-2.5">Where &amp; what it does</th>
+                <th className="p-2.5 w-24">Rebindable</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>K</Kbd></td>
                 <td className="p-2.5">Anywhere - opens or closes Global Search. Then <Kbd>↑</Kbd>/<Kbd>↓</Kbd> to move the selection, <Kbd>Enter</Kbd> to open it, <Kbd>Esc</Kbd> to close.</td>
+                <td className="p-2.5">Yes</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>F</Kbd></td>
+                <td className="p-2.5">A second way to open Global Search, in place of the browser&apos;s own find bar. Inside a text or code attachment preview it focuses that preview&apos;s own <strong>Search content</strong> box instead, so you can search the file you are looking at.</td>
+                <td className="p-2.5">Yes</td>
               </tr>
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>S</Kbd></td>
                 <td className="p-2.5">While editing a page - saves immediately, intercepting the browser&apos;s own Save-page dialog.</td>
+                <td className="p-2.5">Yes</td>
               </tr>
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Kbd>Ctrl</Kbd>/<Kbd>⌘</Kbd> + <Kbd>R</Kbd></td>
                 <td className="p-2.5">While editing - intercepted to ask <em>&ldquo;Reload site?&rdquo;</em> instead of silently discarding unsaved changes.</td>
+                <td className="p-2.5">Yes</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Kbd>Space</Kbd></td>
+                <td className="p-2.5">In a video attachment preview - plays or pauses, from anywhere in the preview rather than only while the player itself has focus. Ignored while a button or text field is focused, so it never steals the key from something else.</td>
+                <td className="p-2.5">Yes</td>
               </tr>
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Kbd>/</Kbd></td>
                 <td className="p-2.5">Start of an empty line in the editor - opens the slash command menu (see <em>Slash Commands</em>).</td>
+                <td className="p-2.5">No</td>
               </tr>
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Kbd>←</Kbd> / <Kbd>→</Kbd></td>
                 <td className="p-2.5">In a PowerPoint attachment preview - previous/next slide (works both inside and outside fullscreen Present mode).</td>
+                <td className="p-2.5">No</td>
               </tr>
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Kbd>Esc</Kbd></td>
                 <td className="p-2.5">Closes the currently focused overlay - a dialog, the mobile sidebar drawer, or (checked first) just the PowerPoint slideshow without closing its parent attachment window.</td>
+                <td className="p-2.5">No</td>
               </tr>
             </tbody>
           </table>
@@ -1344,6 +1365,111 @@ const sections: HelpSection[] = [
           devices or click <strong>Revoke all sessions</strong> to invalidate
           all remote tokens immediately.
         </p>
+      </>
+    ),
+  },
+  {
+    id: "keyboard-shortcut-settings",
+    title: "Customising Keyboard Shortcuts",
+    category: "Account",
+    description:
+      "Rebind WikiHub's shortcuts to keys that suit you, add second bindings, and reset to defaults.",
+    keywords: [
+      "keyboard",
+      "shortcut",
+      "hotkey",
+      "rebind",
+      "remap",
+      "customize",
+      "customise",
+      "keybinding",
+      "ctrl",
+      "cmd",
+    ],
+    body: (
+      <>
+        <p>
+          WikiHub&apos;s shortcuts are defaults, not fixed rules. Open{" "}
+          <strong>Your account</strong> from the profile menu and choose{" "}
+          <strong>Keyboard shortcuts</strong> to change any of them.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">1. Rebinding a shortcut:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Click the key badge next to the action you want to change - it switches to{" "}
+            <em>Press keys…</em>
+          </li>
+          <li>
+            Press the combination you want. It is captured and saved the moment you press
+            it; there is no separate Save button.
+          </li>
+          <li>
+            Press <Kbd>Esc</Kbd> to back out without changing anything.
+          </li>
+        </ul>
+
+        <p className="mt-4 font-semibold text-foreground">
+          2. Several keys for one action:
+        </p>
+        <p className="text-sm">
+          Click <Code>+</Code> to give an action a second (or third) combination - handy
+          when you want both an old habit and a new one to work. Global search ships this
+          way, answering to both <Kbd>Ctrl</Kbd>+<Kbd>K</Kbd> and <Kbd>Ctrl</Kbd>+
+          <Kbd>F</Kbd>. Remove one with the <Code>✕</Code> beside it; the last remaining
+          binding cannot be removed, so an action is never left unreachable by accident.
+        </p>
+
+        <p className="mt-4 font-semibold text-foreground">3. Getting back to normal:</p>
+        <p className="text-sm">
+          A circular arrow appears beside any action you have changed - click it to
+          restore just that one. <strong>Reset all to defaults</strong> at the top
+          restores every shortcut at once.
+        </p>
+
+        <p className="mt-4 font-semibold text-foreground">4. Where each shortcut applies:</p>
+        <p className="text-sm">
+          Each action lists the context it works in - anywhere in the app, while editing a
+          page, or while an attachment preview is open. Two actions in{" "}
+          <em>different</em> contexts may safely share a combination, and the narrower one
+          wins while it is active. That is exactly how <Kbd>Ctrl</Kbd>+<Kbd>F</Kbd> works
+          by default: normally it opens global search, but while you have a text file
+          preview open it searches inside that file instead.
+        </p>
+
+        <Callout variant="note" title="CONFLICT WARNINGS">
+          <p>
+            If you assign one combination to two actions in the <em>same</em> context, a
+            warning appears at the top and both badges turn amber. Whichever action
+            handles the key first wins, so the other may not fire. Nothing stops you
+            saving it - the warning is there so a shortcut that has quietly stopped
+            working is never a mystery.
+          </p>
+        </Callout>
+
+        <Callout variant="tip">
+          <p>
+            The hint on the search bar in the top bar follows whatever you have bound, so
+            it always shows the combination that actually works.
+          </p>
+        </Callout>
+
+        <Callout variant="warning" title="WHAT CANNOT BE REBOUND">
+          <p>
+            Some combinations are reserved by the browser itself - <Kbd>Ctrl</Kbd>+
+            <Kbd>W</Kbd>, <Kbd>Ctrl</Kbd>+<Kbd>T</Kbd>, <Kbd>Ctrl</Kbd>+<Kbd>N</Kbd> and
+            similar. They never reach the page, so WikiHub cannot capture them.
+          </p>
+          <p>
+            Text formatting keys inside the editor (<Kbd>Ctrl</Kbd>+<Kbd>B</Kbd> for bold
+            and friends), <Kbd>/</Kbd> for the slash menu, and <Kbd>Esc</Kbd> for closing
+            overlays are also fixed and do not appear in this list.
+          </p>
+          <p>
+            Your shortcuts are stored in the browser you set them in, so they do not
+            follow you to another computer or survive clearing site data.
+          </p>
+        </Callout>
       </>
     ),
   },

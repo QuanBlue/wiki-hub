@@ -789,6 +789,8 @@ class TestRoundTrip:
 
         restored_alice = await AuthService(session).users.get_by_username("alice")
         assert restored_alice is not None and restored_alice.bio == "Knowledge keeper"
+        restored_bob = await AuthService(session).users.get_by_username("bob")
+        assert restored_bob is not None
         restored_space = await SpaceService(session).get_by_key("ENG")
         assert restored_space.visibility is SpaceVisibility.restricted
         restored_child = (
@@ -798,6 +800,10 @@ class TestRoundTrip:
             await session.execute(select(WikiPage).where(WikiPage.slug == "overview"))
         ).scalar_one()
         assert restored_child.parent_id == restored_parent.id
+        assert restored_parent.created_by_id == restored_alice.id
+        assert restored_parent.updated_by_id == restored_alice.id
+        assert restored_child.created_by_id == restored_bob.id
+        assert restored_child.updated_by_id == restored_bob.id
         assert report.created["group"] == 1
         assert report.created["page"] == len(document.pages)
         assert report.created["page_revision"] == 1

@@ -16,21 +16,41 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 from app.api.deps import ActingAuthServiceDep, CurrentUser, DbSession
 from app.core.config import settings
-from app.core.exceptions import BadRequestError, PayloadTooLargeError, UnsupportedMediaTypeError
+from app.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    PayloadTooLargeError,
+    UnsupportedMediaTypeError,
+)
+from app.models.draft import PageDraft
+from app.models.page import UserPagePin, WikiPage
 from app.models.permission import GlobalPermission, Group, GroupMember
+from app.models.space import Space, SpaceStatus
 from app.models.user import User
+from app.models.user_session import UserSession
+from app.models.user_tag import UserTag
+from app.modules.pages.service import PageService
 from app.modules.permissions.service import PermissionService
+from app.repositories.user import UserRepository
 from app.schemas.pagination import Page
 from app.schemas.user import (
     PasswordChange,
     PasswordReset,
+    PublicUserRead,
     SelfProfileUpdate,
+    UserActivityPage,
     UserCreate,
+    UserDraftItem,
+    UserPinnedPageItem,
+    UserProfileStats,
     UserRead,
+    UserTagCreate,
+    UserTagRead,
     UserUpdate,
 )
 from app.services.storage import ObjectStorage, S3ObjectStorage
@@ -129,6 +149,196 @@ async def read_avatar(
         media_type=avatar_user.avatar_content_type or "image/png",
         headers={"Cache-Control": "private, max-age=300"},
     )
+
+
+async def get_public_member(username: str, session: DbSession) -> User:
+    member = await UserRepository(session).get_by_username(username)
+    if member is None or not member.is_active:
+        raise NotFoundError("User not found.")
+    return member
+
+
+@router.get("/{username}/profile", response_model=PublicUserRead, summary="Read a member profile")
+async def get_public_profile(
+    username: str,
+    _viewer: CurrentUser,
+    session: DbSession,
+) -> PublicUserRead:
+    member = await get_public_member(username, session)
+    last_active_at = await session.scalar(
+        select(func.max(UserSession.last_seen_at)).where(UserSession.user_id == member.id)
+    )
+    return PublicUserRead.model_validate(member).model_copy(
+        update={
+            "last_active_at": last_active_at or member.last_login_at,
+            "is_workspace_admin": await PermissionService(session).is_system_admin(member),
+        }
+    )
+
+
+@router.get(
+    "/{username}/activity",
+    response_model=UserActivityPage,
+    summary="List a member's page updates",
+)
+async def list_public_activity(
+    username: str,
+    viewer: CurrentUser,
+    session: DbSession,
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=1024),
+) -> UserActivityPage:
+    member = await get_public_member(username, session)
+    items, next_cursor = await PageService(session).list_user_activity(
+        viewer, member, limit=limit, cursor=cursor
+    )
+    return UserActivityPage(items=items, next_cursor=next_cursor)
+
+
+@router.get(
+    "/{username}/stats", response_model=UserProfileStats, summary="Read member activity totals"
+)
+async def get_profile_stats(
+    username: str,
+    _viewer: CurrentUser,
+    session: DbSession,
+) -> UserProfileStats:
+    """Return aggregate-only totals, never rows from an inaccessible space."""
+    member = await get_public_member(username, session)
+    active_pages = WikiPage.space_id.in_(select(Space.id).where(Space.status == SpaceStatus.active))
+    pages_updated = await session.scalar(
+        select(func.count(WikiPage.id)).where(WikiPage.updated_by_id == member.id, active_pages)
+    )
+    pages_created = await session.scalar(
+        select(func.count(WikiPage.id)).where(WikiPage.created_by_id == member.id, active_pages)
+    )
+    spaces_contributed = await session.scalar(
+        select(func.count(func.distinct(WikiPage.space_id))).where(
+            WikiPage.updated_by_id == member.id, active_pages
+        )
+    )
+    return UserProfileStats(
+        pages_updated=int(pages_updated or 0),
+        pages_created=int(pages_created or 0),
+        spaces_contributed=int(spaces_contributed or 0),
+    )
+
+
+@router.get(
+    "/{username}/drafts", response_model=list[UserDraftItem], summary="List private member drafts"
+)
+async def list_member_drafts(
+    username: str,
+    viewer: CurrentUser,
+    session: DbSession,
+) -> list[UserDraftItem]:
+    member = await get_public_member(username, session)
+    if viewer.id != member.id and not await PermissionService(session).is_system_admin(viewer):
+        raise NotFoundError("User not found.")
+    rows = await session.execute(
+        select(PageDraft, WikiPage, Space)
+        .join(WikiPage, WikiPage.id == PageDraft.page_id)
+        .join(Space, Space.id == WikiPage.space_id)
+        .where(PageDraft.user_id == member.id, Space.status == SpaceStatus.active)
+        .order_by(PageDraft.updated_at.desc())
+        .limit(50)
+    )
+    return [
+        UserDraftItem(
+            id=draft.id,
+            page_id=page.id,
+            title=page.title,
+            slug=page.slug,
+            space_key=space.key,
+            space_name=space.name,
+            content=draft.content,
+            updated_at=draft.updated_at,
+        )
+        for draft, page, space in rows
+    ]
+
+
+@router.get(
+    "/me/pins", response_model=list[UserPinnedPageItem], summary="List your private pinned pages"
+)
+async def list_own_pins(user: CurrentUser, session: DbSession) -> list[UserPinnedPageItem]:
+    rows = await session.execute(
+        select(UserPagePin, WikiPage, Space)
+        .join(WikiPage, WikiPage.id == UserPagePin.page_id)
+        .join(Space, Space.id == WikiPage.space_id)
+        .where(UserPagePin.user_id == user.id, Space.status == SpaceStatus.active)
+        .order_by(UserPagePin.created_at.desc())
+    )
+    permissions = PermissionService(session)
+    items: list[UserPinnedPageItem] = []
+    for pin, page, space in rows:
+        if await permissions.can_view_page(page, user):
+            items.append(
+                UserPinnedPageItem(
+                    id=page.id,
+                    title=page.title,
+                    slug=page.slug,
+                    space_key=space.key,
+                    space_name=space.name,
+                    pinned_at=pin.created_at,
+                )
+            )
+    return items
+
+
+@router.post("/me/pins/{page_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Pin a page")
+async def pin_page(page_id: uuid.UUID, user: CurrentUser, session: DbSession) -> None:
+    page = await session.get(WikiPage, page_id)
+    if page is None or not await PermissionService(session).can_view_page(page, user):
+        raise NotFoundError("Page not found.")
+    existing = await session.get(UserPagePin, {"user_id": user.id, "page_id": page.id})
+    if existing is None:
+        session.add(UserPagePin(user_id=user.id, page_id=page.id))
+        await session.flush()
+
+
+@router.delete("/me/pins/{page_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Unpin a page")
+async def unpin_page(page_id: uuid.UUID, user: CurrentUser, session: DbSession) -> None:
+    await session.execute(
+        delete(UserPagePin).where(UserPagePin.user_id == user.id, UserPagePin.page_id == page_id)
+    )
+
+
+@router.get("/me/tags", response_model=list[UserTagRead], summary="List your private profile tags")
+async def list_own_tags(user: CurrentUser, session: DbSession) -> list[UserTag]:
+    return list(
+        await session.scalars(
+            select(UserTag).where(UserTag.user_id == user.id).order_by(UserTag.created_at.desc())
+        )
+    )
+
+
+@router.post(
+    "/me/tags",
+    response_model=UserTagRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a private profile tag",
+)
+async def create_own_tag(payload: UserTagCreate, user: CurrentUser, session: DbSession) -> UserTag:
+    name = payload.name.strip()
+    existing = await session.scalar(
+        select(UserTag).where(UserTag.user_id == user.id, func.lower(UserTag.name) == name.lower())
+    )
+    if existing is not None:
+        raise ConflictError("You already have a tag with that name.", code="user_tag_exists")
+    tag = UserTag(user_id=user.id, name=name)
+    session.add(tag)
+    await session.flush()
+    return tag
+
+
+@router.delete(
+    "/me/tags/{tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a private profile tag",
+)
+async def delete_own_tag(tag_id: uuid.UUID, user: CurrentUser, session: DbSession) -> None:
+    await session.execute(delete(UserTag).where(UserTag.id == tag_id, UserTag.user_id == user.id))
 
 
 @router.get("", response_model=Page[UserRead], summary="List users")

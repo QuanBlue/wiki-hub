@@ -21,6 +21,7 @@ import {
   Minimize2,
   MoreHorizontal,
   Pencil,
+  Pin,
   RectangleHorizontal,
   RefreshCw,
   Share2,
@@ -47,6 +48,7 @@ import { useSidebar } from "@/components/layout/sidebar-context";
 import { EditSpaceModal } from "@/components/admin/edit-space-modal";
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
+import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
 import { DocumentImportProgress } from "@/components/pages/document-import-progress";
 import { ImportPagesDialog } from "@/components/pages/import-pages-dialog";
@@ -81,6 +83,7 @@ import {
 } from "@/lib/drafts";
 import { findHomePage } from "@/lib/home-page";
 import { getFontFamilyCss } from "@/lib/font-presets";
+import { matchesShortcut } from "@/lib/keyboard-shortcuts";
 import { cn } from "@/lib/utils";
 import type {
   PageContentFormat,
@@ -538,6 +541,22 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
+function formatLastModified(value: string): string {
+  const date = formatDate(value);
+  // Imports can provide a date without a clock value. Do not invent one in
+  // the page metadata; normal WikiHub timestamps include an ISO time portion.
+  if (!/[T\s]\d{2}:\d{2}/.test(value)) return date;
+
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return date;
+  const time = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(timestamp);
+  return `${date} at ${time}`;
+}
+
 function SpaceAvatar({ space }: { space: Space }) {
   return (
     <span
@@ -801,6 +820,8 @@ export function SpaceWorkspace({
     like_count: 0,
   });
   const [likePending, setLikePending] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [pinPending, setPinPending] = useState(false);
   const savedPageKeys = useSyncExternalStore(
     subscribeToSavedPages,
     getSavedPageKeys,
@@ -1018,9 +1039,11 @@ export function SpaceWorkspace({
   const hasUnsavedChanges = pageEditDirty || overviewEditDirty;
   const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
   hasUnsavedChangesRef.current = hasUnsavedChanges;
-  const author = currentPage?.created_by_username ?? space.created_by_username;
-  const updatedBy =
-    currentPage?.updated_by_username ?? space.created_by_username;
+  // A page without archived author metadata must remain unknown. Falling back
+  // to the space creator made restored legacy pages appear to have been
+  // created and updated by the administrator who owns that space.
+  const author = currentPage ? currentPage.created_by_username : space.created_by_username;
+  const updatedBy = currentPage ? currentPage.updated_by_username : space.created_by_username;
   const updatedAt = currentPage?.updated_at ?? space.updated_at;
   const breadcrumbPages = useMemo(() => {
     if (!currentPage) return [];
@@ -1328,15 +1351,13 @@ export function SpaceWorkspace({
     if (!editing) return;
 
     const saveWithShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || (!event.ctrlKey && !event.metaKey)) {
-        return;
-      }
-      if (event.key.toLowerCase() === "r") {
+      if (event.defaultPrevented) return;
+      if (matchesShortcut("page.reload", event)) {
         event.preventDefault();
         setReloadPending(true);
         return;
       }
-      if (event.key.toLowerCase() !== "s") return;
+      if (!matchesShortcut("page.save", event)) return;
       event.preventDefault();
       if (!hasUnsavedChanges || savePending || autoSaveInFlight.current) return;
 
@@ -1450,6 +1471,24 @@ export function SpaceWorkspace({
     }
   }
 
+  async function togglePinned() {
+    if (!currentPage) return;
+    setPinPending(true);
+    try {
+      if (pinned) {
+        await api.delete(`/api/v1/users/me/pins/${encodeURIComponent(currentPage.id)}`);
+      } else {
+        await api.post(`/api/v1/users/me/pins/${encodeURIComponent(currentPage.id)}`);
+      }
+      setPinned((value) => !value);
+      toast.success(pinned ? "Removed from pinned pages." : "Page pinned.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update the pinned page.");
+    } finally {
+      setPinPending(false);
+    }
+  }
+
   useEffect(() => {
     if (!currentPage) return;
     let active = true;
@@ -1465,6 +1504,22 @@ export function SpaceWorkspace({
       active = false;
     };
   }, [currentPage, space.key]);
+
+  useEffect(() => {
+    if (!currentPage) return;
+    let active = true;
+    void api
+      .get<Array<{ id: string }>>("/api/v1/users/me/pins")
+      .then((pins) => {
+        if (active) setPinned(pins.some((pin) => pin.id === currentPage.id));
+      })
+      .catch(() => {
+        if (active) setPinned(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentPage]);
 
   async function shareCurrentPage() {
     const url = window.location.href;
@@ -2149,6 +2204,10 @@ export function SpaceWorkspace({
                           <Clock3 />
                           Page history
                         </DropdownMenuItem>
+                        <DropdownMenuItem disabled={pinPending} onSelect={() => void togglePinned()}>
+                          <Pin className={cn(pinned && "text-primary fill-current")} />
+                          {pinned ? "Remove from pinned pages" : "Pin page"}
+                        </DropdownMenuItem>
                         {canEdit && space.status === "active" ? (
                           <DropdownMenuItem
                             onSelect={() => setImportDialogOpen(true)}
@@ -2264,6 +2323,10 @@ export function SpaceWorkspace({
                       </DropdownMenuItem>
                       {currentPage ? (
                         <>
+                          <DropdownMenuItem disabled={pinPending} onSelect={() => void togglePinned()}>
+                            <Pin className={cn(pinned && "text-primary fill-current")} />
+                            {pinned ? "Remove from pinned pages" : "Pin page"}
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {canExport ? (
                             <DropdownMenuSub>
@@ -2669,9 +2732,9 @@ export function SpaceWorkspace({
                   {title}
                 </h1>
                 <p className="text-muted-foreground mt-2 text-xs">
-                  Created by {author ?? "unknown"}
+                  Created by {author ? <UserProfileTrigger username={author} /> : "unknown"}
                   {updatedAt
-                    ? `, last modified ${updatedBy ? `by ${updatedBy} ` : ""}on ${formatDate(updatedAt)}`
+                    ? <>, last modified {updatedBy ? <>by <UserProfileTrigger username={updatedBy} />{" "}</> : null}on {formatLastModified(updatedAt)}</>
                     : ""}
                 </p>
 

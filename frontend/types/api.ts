@@ -144,6 +144,59 @@ export interface Me extends User {
   impersonator: User | null;
 }
 
+/** Collaboration-safe profile data for another signed-in workspace member. */
+export interface PublicUser {
+  username: string;
+  full_name: string;
+  avatar_url: string | null;
+  bio: string;
+  pronouns: string;
+  profile_url: string;
+  social_links: string[];
+  company: string;
+  email: string;
+  created_at: string;
+  last_active_at: string | null;
+  is_workspace_admin: boolean;
+}
+
+/** Cursor page returned by a member's activity feed. */
+export interface UserActivityPage {
+  items: RecentPageItem[];
+  next_cursor: string | null;
+}
+
+export interface UserProfileStats {
+  pages_updated: number;
+  pages_created: number;
+  spaces_contributed: number;
+}
+
+export interface UserDraftItem {
+  id: string;
+  page_id: string;
+  title: string;
+  slug: string;
+  space_key: string;
+  space_name: string;
+  content: string;
+  updated_at: string;
+}
+
+export interface UserPinnedPageItem {
+  id: string;
+  title: string;
+  slug: string;
+  space_key: string;
+  space_name: string;
+  pinned_at: string;
+}
+
+export interface UserTag {
+  id: string;
+  name: string;
+}
+
 export interface LoginResponse {
   access_token: string;
   token_type: string;

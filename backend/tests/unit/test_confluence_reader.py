@@ -12,6 +12,7 @@ XML = """<root>
 <object class="Space"><id>s1</id><property name="key">ENG</property><property name="name">Engineering</property></object>
 <object class="Page"><id>p1</id><property name="title">ENG</property><property name="space"><id>s1</id></property><property name="contentStatus">current</property><property name="creator"><id>u1</id></property><property name="creationDate">2024-01-01T10:00:00Z</property></object>
 <object class="Page"><id>p2</id><property name="title">Guide</property><property name="space"><id>s1</id></property><property name="parent"><id>p1</id></property><property name="contentStatus">current</property><property name="creatorName">bob</property><property name="lastModifierName">alice</property><property name="lastModificationDate">bad-date</property></object>
+<object class="Page"><id>p3</id><property name="title">Direct author</property><property name="space"><id>s1</id></property><property name="contentStatus">current</property><property name="creator">carol</property><property name="lastModifier">dave</property></object>
 <object class="Page"><id>old</id><property name="title">Old</property><property name="space"><id>s1</id></property><property name="contentStatus">draft</property></object>
 <object class="BodyContent"><property name="content"><id>p2</id></property><property name="body"><![CDATA[<p>Guide</p>]]></property></object>
 <object class="Attachment"><id>a1</id><property name="title">manual.pdf</property><property name="containerContent"><id>p2</id></property><property name="contentType">application/pdf</property></object>
@@ -31,8 +32,10 @@ def test_scan_and_iterate_confluence_archive(tmp_path):
     spaces = scan_archive(path)
     assert len(spaces) == 1
     assert spaces[0].key == "ENG" and spaces[0].attachment_count == 1
-    assert [page.title for page in spaces[0].pages] == ["ENG", "Guide"]
+    assert [page.title for page in spaces[0].pages] == ["ENG", "Guide", "Direct author"]
     assert spaces[0].pages[0].creator == "alice"
+    assert spaces[0].pages[2].creator == "carol"
+    assert spaces[0].pages[2].last_modifier == "dave"
     assert list(iter_page_bodies(path)) == [("p2", "<p>Guide</p>")]
     attachments = list(iter_attachments(path))
     assert attachments[0][0].filename == "manual.pdf"

@@ -9,6 +9,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import IO
 
 from app.core.exceptions import BadRequestError
 
@@ -293,7 +294,9 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                         or _text(props, "userName")
                         or _text(props, "lowerName")
                     )
-                    user_key = _text(props, "key") or _text(props, "userKey") or _text(props, "externalId")
+                    user_key = (
+                        _text(props, "key") or _text(props, "userKey") or _text(props, "externalId")
+                    )
                     email_val = _text(props, "emailAddress") or _text(props, "email")
                     display_name_val = _text(props, "displayName") or _text(props, "fullName")
                     if username_val:
@@ -313,8 +316,15 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                     if title and space_id and status == "current":
                         creator_ref = _reference(props.get("creator"))
                         last_modifier_ref = _reference(props.get("lastModifier"))
-                        creator_name = _text(props, "creatorName")
-                        last_modifier_name = _text(props, "lastModifierName")
+                        # Confluence emits both a reference/object form and a
+                        # compact form where the username is the direct text
+                        # of ``creator`` / ``lastModifier``. The latter has no
+                        # ``<id>`` and used to be treated as missing, causing
+                        # the importer to credit the importing administrator.
+                        creator_name = _text(props, "creatorName") or _text(props, "creator")
+                        last_modifier_name = _text(props, "lastModifierName") or _text(
+                            props, "lastModifier"
+                        )
 
                         page = ConfluencePage(
                             source_id=source_id,

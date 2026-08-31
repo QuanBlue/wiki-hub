@@ -6,7 +6,16 @@ import { cookies } from "next/headers";
 
 import { api } from "@/lib/api-client";
 import { ACCESS_COOKIE_NAME } from "@/lib/auth";
-import type { RecentPageItem, WikiPage } from "@/types/api";
+import type {
+  PublicUser,
+  RecentPageItem,
+  UserActivityPage,
+  UserDraftItem,
+  UserPinnedPageItem,
+  UserProfileStats,
+  UserTag,
+  WikiPage,
+} from "@/types/api";
 
 async function authHeaders(): Promise<Record<string, string>> {
   const token = (await cookies()).get(ACCESS_COOKIE_NAME)?.value;
@@ -28,6 +37,37 @@ export function listPages(spaceKey: string): Promise<WikiPage[]> {
 
 export function listRecentPages(limit = 50): Promise<RecentPageItem[]> {
   return get<RecentPageItem[]>(`/api/v1/pages/recent?limit=${limit}`);
+}
+
+export function getPublicUser(username: string): Promise<PublicUser> {
+  return get<PublicUser>(`/api/v1/users/${encodeURIComponent(username)}/profile`);
+}
+
+export function listUserActivity(
+  username: string,
+  cursor?: string | null,
+): Promise<UserActivityPage> {
+  const params = new URLSearchParams({ limit: "20" });
+  if (cursor) params.set("cursor", cursor);
+  return get<UserActivityPage>(
+    `/api/v1/users/${encodeURIComponent(username)}/activity?${params.toString()}`,
+  );
+}
+
+export function getUserProfileStats(username: string): Promise<UserProfileStats> {
+  return get<UserProfileStats>(`/api/v1/users/${encodeURIComponent(username)}/stats`);
+}
+
+export function listUserDrafts(username: string): Promise<UserDraftItem[]> {
+  return get<UserDraftItem[]>(`/api/v1/users/${encodeURIComponent(username)}/drafts`);
+}
+
+export function listOwnPinnedPages(): Promise<UserPinnedPageItem[]> {
+  return get<UserPinnedPageItem[]>("/api/v1/users/me/pins");
+}
+
+export function listOwnUserTags(): Promise<UserTag[]> {
+  return get<UserTag[]>("/api/v1/users/me/tags");
 }
 
 export function getPage(spaceKey: string, slug: string): Promise<WikiPage> {
