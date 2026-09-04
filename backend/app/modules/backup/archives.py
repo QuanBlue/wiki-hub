@@ -290,10 +290,26 @@ class BackupArchiveService:
         The Confluence picker has always shown this (`ConfluenceImportService.
         scan`); the restore picker did not, so the only warning about existing
         spaces arrived after the restore, as a list of what it had skipped.
+
+        Both sides are normalised the same way `BackupService.import_document`
+        creates spaces (``key.strip().upper()``) before comparing - a raw,
+        un-normalised archive key (Confluence personal spaces travel as
+        lower-case, e.g. ``~jdoe``) otherwise never matches the upper-cased
+        key already in `spaces`, so the picker shows no conflict for a space
+        that in fact already exists. The restore then silently skips it and
+        only says so afterwards, in the completion report, with no "Replace"
+        offered where the picker could have asked upfront.
         """
-        existing = set((await self.session.execute(select(Space.key))).scalars())
+        existing = {
+            key.strip().upper()
+            for key in (await self.session.execute(select(Space.key))).scalars()
+        }
         return [
-            {**space, "conflict": space.get("key") in existing} for space in spaces
+            {
+                **space,
+                "conflict": (space.get("key") or "").strip().upper() in existing,
+            }
+            for space in spaces
         ]
 
     async def scan(self, archive: BackupArchive) -> BackupArchive:

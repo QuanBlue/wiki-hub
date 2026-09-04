@@ -115,8 +115,19 @@ async def renew(
 ) -> None:
     effective_settings = await SiteSettingsService(session).get_effective()
     ttl_seconds = effective_settings.session_ttl_hours * 3600
-    identity = decode_token_identity(request.cookies.get(ACCESS_COOKIE_NAME, ""))
-    await SessionService(session).revoke(user_id=user.id, token_jti=identity.jti)
+    # Deliberately does *not* revoke the token that authenticated this
+    # request. A page keeping a session alive across a many-hour operation
+    # (e.g. uploading a multi-gigabyte Confluence archive) fires plenty of
+    # other authenticated requests around the same time as each periodic
+    # renewal. Revoking the old jti in the same breath as minting the new one
+    # used to race those requests: one already in flight with the
+    # about-to-be-superseded cookie could land after the revoke and before
+    # the browser applied the new Set-Cookie, get a spurious 401, and the UI
+    # would read that as "the session expired" - even though the session was
+    # in fact still alive, just mid-rotation. Leaving the old jti valid until
+    # its own already-recorded `expires_at` closes that race: both cookies
+    # work through the handoff, and the old row still disappears on its own
+    # schedule exactly as it always would have without a renewal.
     token, expires_at = create_access_token(
         str(user.id),
         impersonator=str(impersonator.id) if impersonator else None,

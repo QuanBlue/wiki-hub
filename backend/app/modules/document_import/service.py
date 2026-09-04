@@ -73,6 +73,7 @@ async def create_document_import_job(
     parent_id: uuid.UUID | None,
     documents: list[StagedDocument],
     creator: User,
+    conflict_mode: str = "rename",
 ) -> DocumentImportJob:
     """Persist the job and its items, and stage every file in object storage.
 
@@ -86,6 +87,7 @@ async def create_document_import_job(
         created_by_id=creator.id,
         status="queued",
         phase="queued",
+        conflict_mode=conflict_mode,
         counters={
             "items_total": len(documents),
             "items_processed": 0,
@@ -175,6 +177,7 @@ def to_job_read(job: DocumentImportJob, *, space_key: str) -> DocumentImportJobR
         parent_id=job.parent_id,
         status=job.status,
         phase=job.phase,
+        conflict_mode=job.conflict_mode,
         counters=dict(job.counters or {}),
         cancel_requested=job.cancel_requested,
         error=job.error,

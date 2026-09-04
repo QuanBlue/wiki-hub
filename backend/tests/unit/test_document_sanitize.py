@@ -69,14 +69,18 @@ class TestNothingExecutableSurvives:
         assert sanitize_imported_html("<p>a<!-- secret -->b</p>") == "<p>ab</p>"
 
 
-class TestStyleIsReducedToAlignment:
-    def test_only_text_align_survives(self):
+class TestSafeDocumentStylesSurvive:
+    def test_resource_loading_background_is_dropped_but_safe_styles_survive(self):
         result = sanitize_imported_html(
-            '<p style="background:url(https://evil.example/?c=1); text-align:center">t</p>'
+            '<p style="background:url(https://evil.example/?c=1); color:#17365d; '
+            'background-color:#d9eaf7; font-weight:700; text-align:center">t</p>'
         )
         assert "text-align" in result
+        assert "color" in result
+        assert "background-color" in result
+        assert "font-weight" in result
         assert "evil.example" not in result
-        assert "background" not in result
+        assert "background:url" not in result
 
     def test_table_cell_alignment_is_preserved(self):
         result = sanitize_imported_html(
@@ -86,6 +90,19 @@ class TestStyleIsReducedToAlignment:
 
     def test_heading_alignment_is_preserved(self):
         assert "text-align" in sanitize_imported_html('<h2 style="text-align:center">T</h2>')
+
+    def test_table_row_and_cell_colours_survive(self):
+        result = sanitize_imported_html(
+            '<table style="width:100%"><tr style="background-color:#2f5597">'
+            '<th style="color:#fff; border-color:#1f1f1f">Header</th></tr></table>'
+        )
+        assert 'background-color:#2f5597' in result
+        assert 'color:#fff' in result
+        assert 'border-color:#1f1f1f' in result
+
+    def test_styled_span_survives(self):
+        result = sanitize_imported_html('<p><span style="color:#c00000">red</span></p>')
+        assert '<span style="color:#c00000">red</span>' in result
 
 
 class TestClassValuesAreConstrained:
@@ -125,6 +142,10 @@ class TestLegitimateMarkupSurvives:
             '<ul data-type="taskList"><li data-type="taskItem" data-checked="true">'
             "<p>done</p></li></ul>"
         )
+        assert sanitize_imported_html(html) == html
+
+    def test_a_table_of_contents_node_keeps_its_marker(self):
+        html = '<div data-type="tableOfContents"></div>'
         assert sanitize_imported_html(html) == html
 
     def test_a_table_keeps_its_structure_and_spans(self):

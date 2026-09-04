@@ -21,6 +21,7 @@ from app.db.session import dispose_engine
 from app.workers.tasks import (
     ping,
     reap_backup_jobs,
+    schedule_automated_backup,
     run_backup_job,
     run_confluence_import,
     run_document_import,
@@ -60,11 +61,13 @@ class WorkerSettings:
         run_confluence_import,
         run_backup_job,
         run_document_import,
+        schedule_automated_backup,
     ]
     cron_jobs: ClassVar[list[Any]] = [
         # Every minute: bounds how long a stuck export can hold the UI hostage
         # when a worker dies without restarting (so `on_startup` never runs).
         cron(reap_backup_jobs, second=0, run_at_startup=False),
+        cron(schedule_automated_backup, second=10, run_at_startup=False),
     ]
     redis_settings = redis_settings()
     on_startup = startup

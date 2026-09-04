@@ -70,11 +70,10 @@ async def test_metadata_reports_unimplemented_features_as_false(
     assert features["attachments"] is True
     assert features["comments"] is False
     assert features["search"] is True
-    # Content import/export needs the Pages domain, which does not exist yet.
-    assert features["imports"] == []
-    assert features["exports"] == []
 
     # Implemented, and therefore advertised.
+    assert features["imports"] == ["confluence"]
+    assert features["exports"] == ["pdf", "html", "docx"]
     assert features["spaces"] is True
     assert features["audit_log"] is True
     assert features["backup"] is True

@@ -24,6 +24,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { OfficePreviewViewer } from "@/components/admin/office-preview-viewer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import {
@@ -189,12 +190,27 @@ function FileIcon({ name }: { name: string }) {
   return <File className="text-muted-foreground size-4 shrink-0" />;
 }
 
-type PreviewKind = "image" | "text" | "unsupported";
+type PreviewKind = "image" | "office" | "text" | "unsupported";
+
+//: Must match `_PREVIEW_DOCUMENT_TYPES` in
+//: `backend/app/modules/attachments/onlyoffice.py` - `.csv` is deliberately
+//: absent from both: the plain-text preview below already handles it well,
+//: and routing it through ONLYOFFICE on one side only would leave frontend
+//: and backend disagreeing about what kind of preview a `.csv` gets.
+const OFFICE_PREVIEW_EXTENSIONS = [
+  "docx", "doc", "odt", "rtf",
+  "xlsx", "xls", "ods",
+  "pptx", "ppt", "odp",
+  "pdf",
+];
 
 function previewKind(name: string): PreviewKind {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg", "ico"].includes(ext)) {
     return "image";
+  }
+  if (OFFICE_PREVIEW_EXTENSIONS.includes(ext)) {
+    return "office";
   }
   if (
     [
@@ -571,9 +587,12 @@ export function StoragePanel() {
     setPreviewUrl(null);
     setPreviewText(null);
     setPreviewError(null);
-    setPreviewLoading(kind !== "unsupported");
+    // "office" fetches nothing here - `OfficePreviewViewer` requests its own
+    // signed config and reports its own loading state, the same division of
+    // labour `OfficeAttachmentEditor` already uses for page attachments.
+    setPreviewLoading(kind !== "unsupported" && kind !== "office");
 
-    if (kind === "unsupported") return;
+    if (kind === "unsupported" || kind === "office") return;
 
     void (async () => {
       try {
@@ -972,7 +991,12 @@ export function StoragePanel() {
         <DialogContent
           title={previewNode?.name ?? "File preview"}
           description={previewNode?.path}
-          className="max-w-4xl"
+          className={cn(
+            "max-w-4xl",
+            // A document/spreadsheet/slide viewer earns the extra width a
+            // text or image preview does not need.
+            previewNode && previewKind(previewNode.name) === "office" && "sm:max-w-6xl",
+          )}
         >
           {previewNode && previewKind(previewNode.name) === "unsupported" ? (
             <div className="bg-surface-sunken border-border rounded-lg border border-dashed px-6 py-12 text-center">
@@ -981,6 +1005,18 @@ export function StoragePanel() {
               <p className="text-muted-foreground mt-1 text-sm">
                 This file type cannot be viewed in WikiHub. Download it to open it with a compatible application.
               </p>
+            </div>
+          ) : previewNode && previewKind(previewNode.name) === "office" ? (
+            <div className="h-[75vh]">
+              <OfficePreviewViewer
+                // Remounts the viewer fresh on every different file rather
+                // than resetting its `error`/`ready` state by hand inside an
+                // effect - a stale error from the last file must never flash
+                // while the next one is still loading.
+                key={previewNode.path}
+                storageKey={previewNode.path}
+                filename={previewNode.name}
+              />
             </div>
           ) : previewLoading ? (
             <div className="text-muted-foreground flex items-center justify-center gap-2 py-16 text-sm">

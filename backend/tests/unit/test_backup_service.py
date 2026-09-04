@@ -62,7 +62,11 @@ def test_report_builder_counts_and_truncation(monkeypatch: pytest.MonkeyPatch) -
 async def test_export_document_without_credentials() -> None:
     svc = service()
     empty = Mock(scalars=Mock(return_value=[]))
-    svc.session.execute = AsyncMock(side_effect=[empty] * 16)
+    # 18 queries: users, spaces, members, favorites, groups, group_members,
+    # group_permissions, space_user_permissions, space_group_permissions,
+    # pages, revisions, likes, pins, drafts, user_tags, user_page_labels,
+    # page_user_restrictions, page_group_restrictions - see export_document.
+    svc.session.execute = AsyncMock(side_effect=[empty] * 18)
     result = await svc.export_document()
     assert result.wikihub_backup.includes_credentials is False
     assert result.wikihub_backup.counts == {
@@ -74,6 +78,10 @@ async def test_export_document_without_credentials() -> None:
         "pages": 0,
         "page_revisions": 0,
         "page_likes": 0,
+        "page_pins": 0,
+        "page_drafts": 0,
+        "user_tags": 0,
+        "user_page_labels": 0,
         "page_restrictions": 0,
     }
     svc.audit.record.assert_awaited_once()
@@ -121,7 +129,7 @@ async def test_export_document_serializes_relations_and_credentials() -> None:
         Mock(scalars=Mock(return_value=[space])),
         Mock(scalars=Mock(return_value=[member])),
         Mock(scalars=Mock(return_value=[favorite])),
-    ] + [Mock(scalars=Mock(return_value=[]))] * 12
+    ] + [Mock(scalars=Mock(return_value=[]))] * 14
     svc.session.execute = AsyncMock(side_effect=results)
     result = await svc.export_document(include_credentials=True)
     assert result.users[0].password_hash == "hash"

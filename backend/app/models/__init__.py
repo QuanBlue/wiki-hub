@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction, AuditLog
-from app.models.backup_job import BackupArchive, BackupJob
+from app.models.backup_job import AutomatedBackupSettings, BackupArchive, BackupJob
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.document_import import DocumentImportItem, DocumentImportJob
 from app.models.draft import PageDraft
@@ -42,11 +42,13 @@ from app.models.space import (
 from app.models.user import User
 from app.models.user_session import UserSession
 from app.models.user_tag import UserTag
+from app.models.user_page_label import UserPageLabel
 
 __all__ = [
     "SINGLETON_ID",
     "AuditAction",
     "AuditLog",
+    "AutomatedBackupSettings",
     "BackupArchive",
     "BackupJob",
     "Base",
@@ -83,5 +85,6 @@ __all__ = [
     "UserPagePin",
     "UserSession",
     "UserTag",
+    "UserPageLabel",
     "WikiPage",
 ]

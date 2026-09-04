@@ -24,6 +24,13 @@ TASK_BODY_CLASS = "task-body min-w-0"
 TASK_BODY_CHECKED_CLASS = "task-body min-w-0 line-through text-muted-foreground"
 
 
+def new_table_of_contents(soup: BeautifulSoup) -> Tag:
+    """An empty node that the editor renders as WikiHub's live contents block."""
+    # `div[data-type]` is already part of the importer/editor contract. Using
+    # it here prevents HTML sanitizers from unwrapping an otherwise empty nav.
+    return soup.new_tag("div", attrs={"data-type": "tableOfContents"})
+
+
 def new_task_list(soup: BeautifulSoup) -> Tag:
     """An empty `<ul data-type="taskList">` ready for `new_task_item` children."""
     return soup.new_tag("ul", attrs={"class": TASK_LIST_CLASS, "data-type": "taskList"})

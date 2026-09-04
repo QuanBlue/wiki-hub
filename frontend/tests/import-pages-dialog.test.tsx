@@ -218,6 +218,9 @@ describe("ImportPagesDialog", () => {
     const sent = FakeXHR.last!.body!;
     expect(sent).toBeInstanceOf(FormData);
     expect(sent.getAll("files")).toHaveLength(2);
+    // No page with this name is known to exist - the server is left to decide
+    // rather than assuming a conflict for every import.
+    expect(sent.get("conflict_mode")).toBe("ask");
   });
 
   it("sends the parent page id when importing under a page", async () => {
@@ -258,7 +261,7 @@ describe("ImportPagesDialog", () => {
     expect(await screen.findByText(/under "Runbooks"/)).toBeInTheDocument();
   });
 
-  it("hands the queued job to its caller and closes", async () => {
+  it("hands the queued job to its caller and shows progress in the dialog", async () => {
     stubMeta();
     stubXHR({ body: { id: "job-9", status: "queued", items: [] } });
     const onStarted = vi.fn();
@@ -273,7 +276,52 @@ describe("ImportPagesDialog", () => {
         expect.objectContaining({ id: "job-9" }),
       ),
     );
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/Importing/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel import" })).toBeInTheDocument();
+  });
+
+  it("asks before importing over a page with the same filename title", async () => {
+    stubMeta();
+    stubXHR({ body: { id: "job-10", status: "queued", items: [] } });
+    const user = userEvent.setup();
+    render(
+      <ImportPagesDialog
+        spaceKey="ENG"
+        existingPages={[{ title: "a", parent_id: null }]}
+        onStarted={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /import/i }));
+    await choose([file("a.docx")]);
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+
+    expect(await screen.findByRole("heading", { name: "Page already exists" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Replace existing" }));
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+    expect(FakeXHR.last!.body!.get("conflict_mode")).toBe("replace");
+  });
+
+  it("recognizes a copied filename as a duplicate of its original page", async () => {
+    stubMeta();
+    stubXHR({ body: { id: "job-11", status: "queued", items: [] } });
+    const user = userEvent.setup();
+    render(
+      <ImportPagesDialog
+        spaceKey="ENG"
+        existingPages={[{ title: "a", parent_id: null }]}
+        onStarted={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /import/i }));
+    await choose([file("a (1).pdf")]);
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+
+    expect(await screen.findByRole("heading", { name: "Page already exists" })).toBeInTheDocument();
+    expect(screen.getByText(/matching “a \(1\)” already exists/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Keep both" }));
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+    expect(FakeXHR.last!.body!.get("conflict_mode")).toBe("rename");
   });
 
   it("surfaces the server's own reason when the import is refused", async () => {
@@ -293,6 +341,45 @@ describe("ImportPagesDialog", () => {
     );
     // The dialog stays open so the files do not have to be chosen again.
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("opens the conflict choices when the server detects a missed duplicate", async () => {
+    // No `existingPages` is passed, so the client-side check finds nothing -
+    // this is the docx/pdf case, where the real title is only known once the
+    // server converts the file. The dialog must not assume a conflict just
+    // because it cannot rule one out; it only appears once the server says so.
+    stubMeta();
+    stubXHR({
+      status: 409,
+      body: {
+        error: {
+          code: "document_import_conflict",
+          message: "One or more pages already exist.",
+          details: { conflicts: [{ filename: "a.pdf", title: "a" }] },
+        },
+      },
+    });
+    const { user } = await openDialog();
+    await choose([file("a.pdf")]);
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+
+    expect(await screen.findByRole("heading", { name: "Page already exists" })).toBeInTheDocument();
+    expect(screen.getByText(/matching “a” already exists/i)).toBeInTheDocument();
+  });
+
+  it("imports straight through when the space has no conflicting page", async () => {
+    // The exact regression this guards: submitting into an empty space (or
+    // any space with no matching page) must never show "Page already
+    // exists" - the server is asked directly and comes back clean.
+    stubMeta();
+    stubXHR({ body: { id: "job-12", status: "queued", items: [] } });
+    const { user } = await openDialog();
+    await choose([file("a.pdf")]);
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+    expect(FakeXHR.last!.body!.get("conflict_mode")).toBe("ask");
+    expect(screen.queryByRole("heading", { name: "Page already exists" })).not.toBeInTheDocument();
   });
 
   it("reports a network failure without losing the chosen files", async () => {

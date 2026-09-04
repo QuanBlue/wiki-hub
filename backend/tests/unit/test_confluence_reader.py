@@ -42,6 +42,38 @@ def test_scan_and_iterate_confluence_archive(tmp_path):
     assert attachments[0][1] == "attachments/a1/manual.pdf"
 
 
+SPACE_METADATA_XML = """<root>
+<object class="ConfluenceUserImpl"><id>u1</id><property name="name">alice</property></object>
+<object class="Space"><id>s1</id><property name="key">ENG</property><property name="name">Engineering</property><property name="creationDate">2020-03-04T09:00:00Z</property><property name="creator"><id>u1</id></property></object>
+<object class="Space"><id>s2</id><property name="key">OPS</property><property name="name">Operations</property><property name="creationDate">2021-05-06T09:00:00Z</property><property name="creatorName">bob</property></object>
+<object class="Space"><id>s3</id><property name="key">HR</property><property name="name">HR</property></object>
+</root>"""
+
+
+def test_scan_confluence_space_creator_and_creation_date(tmp_path):
+    path = tmp_path / "export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", SPACE_METADATA_XML)
+
+    spaces = {space.key: space for space in scan_archive(path)}
+
+    # A reference to a User object elsewhere in the export resolves to a
+    # username, same as it does for a page's creator.
+    assert spaces["ENG"].creator == "alice"
+    assert spaces["ENG"].created_at is not None
+    assert spaces["ENG"].created_at.year == 2020
+
+    # The compact form (the username inline, no separate User object) also
+    # resolves without going through the reference lookup.
+    assert spaces["OPS"].creator == "bob"
+    assert spaces["OPS"].created_at.year == 2021
+
+    # A single-space content export commonly omits both altogether - the
+    # importer must fall back to the importing user, not crash.
+    assert spaces["HR"].creator is None
+    assert spaces["HR"].created_at is None
+
+
 def test_confluence_reader_reports_invalid_archives(tmp_path):
     bad = tmp_path / "bad.zip"
     bad.write_bytes(b"not zip")

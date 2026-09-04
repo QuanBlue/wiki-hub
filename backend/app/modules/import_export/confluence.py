@@ -74,6 +74,11 @@ class ConfluenceSpace:
     attachment_count: int = 0
     permissions: list[ConfluencePermission] = field(default_factory=list)
     restrictions: list[ConfluencePageRestriction] = field(default_factory=list)
+    #: When Confluence's export carries them (a full site export usually
+    #: does; a single-space content export sometimes doesn't), the space's
+    #: own creation date and creator - not to be confused with any page's.
+    created_at: datetime | None = None
+    creator: str | None = None
 
 
 class ConfluenceSpaceList(list[ConfluenceSpace]):
@@ -174,6 +179,7 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
         group_members: dict[str, set[str]] = {}
 
         page_user_refs: list[tuple[ConfluencePage, str | None, str | None]] = []
+        space_user_refs: list[tuple[ConfluenceSpace, str | None]] = []
         space_permission_refs: list[
             tuple[str, str, str | None, str | None, str | None, str | None]
         ] = []
@@ -197,7 +203,17 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                     key = _text(props, "key")
                     name = _text(props, "name", key)
                     if key and name:
-                        spaces[source_id] = ConfluenceSpace(source_id, key, name)
+                        creator_ref = _reference(props.get("creator"))
+                        creator_name = _text(props, "creatorName") or _text(props, "creator")
+                        space_obj = ConfluenceSpace(
+                            source_id,
+                            key,
+                            name,
+                            created_at=_timestamp(props, "creationDate", "createdDate"),
+                            creator=creator_name or None,
+                        )
+                        spaces[source_id] = space_obj
+                        space_user_refs.append((space_obj, creator_ref))
 
                 elif "Group" in cls_name and source_id:
                     gname = (
@@ -391,6 +407,15 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
             page.last_modifier = _lookup_user(None, last_modifier_ref)
         elif page.last_modifier:
             page.last_modifier = _lookup_user(page.last_modifier, None)
+
+    # Resolve each space's own creator, same as pages above - it may arrive
+    # as a bare reference id, a compact username, or not at all (a
+    # single-space content export often omits the Space object's creator).
+    for space_obj, creator_ref in space_user_refs:
+        if not space_obj.creator and creator_ref:
+            space_obj.creator = _lookup_user(None, creator_ref)
+        elif space_obj.creator:
+            space_obj.creator = _lookup_user(space_obj.creator, None)
 
     # Resolve group memberships
     for gname, gref, uname, uref in membership_refs:

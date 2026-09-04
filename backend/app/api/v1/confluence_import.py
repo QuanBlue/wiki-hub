@@ -359,6 +359,10 @@ async def retry(job_id: uuid.UUID, user: CurrentSuperuser, session: DbSession) -
         counters=item.counters,
     )
     session.add(replacement)
-    await session.flush()
+    # Commit, not just flush - see the matching note on `create_job` in
+    # app/modules/import_export/service.py: `enqueue` hands this row to the
+    # worker on a separate connection immediately below, and a flush alone
+    # is routinely lost to that race.
+    await session.commit()
     await enqueue(replacement.id)
     return job_read(replacement)

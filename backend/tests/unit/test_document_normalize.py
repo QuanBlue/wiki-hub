@@ -14,6 +14,7 @@ from app.modules.document_import.normalize import (
     normalize_document_html,
 )
 from app.modules.document_import.sanitize import sanitize_imported_html
+from app.schemas.page import MAX_PAGE_CONTENT_CHARS
 
 
 def _html(source: str, **kwargs) -> str:
@@ -50,8 +51,13 @@ class TestUnwrappingNeverLosesText:
         result = _html('<p><span data-type="mention">@ana</span></p>')
         assert 'data-type="mention"' in result
 
+    def test_a_styled_span_is_kept(self):
+        assert _html('<p><span style="color:red">red</span></p>') == (
+            '<p><span style="color:red">red</span></p>'
+        )
+
     def test_a_bare_span_is_unwrapped(self):
-        assert _html('<p><span style="color:red">red</span></p>') == "<p>red</p>"
+        assert _html("<p><span>plain</span></p>") == "<p>plain</p>"
 
     def test_style_and_meta_are_removed_entirely(self):
         result = _html("<style>p{color:red}</style><meta charset='utf-8'><p>body</p>")
@@ -131,6 +137,87 @@ class TestTaskLists:
     def test_a_checkbox_mid_sentence_does_not_make_a_task_list(self):
         source = "<ul><li>text before <input type=\"checkbox\"/> after</li></ul>"
         assert "taskList" not in _html(source)
+
+
+class TestTableOfContents:
+    def test_linked_word_or_html_contents_becomes_a_live_contents_node(self):
+        source = (
+            "<h1>MỤC LỤC</h1>"
+            '<p><a href="#architecture">1 Architecture</a></p>'
+            '<p><a href="#data-model">1.1 Data model</a></p>'
+            "<h1>Architecture</h1><p>Page body</p>"
+        )
+
+        html, title, _ = normalize_document_html(source, filename="design.docx")
+
+        assert html.startswith('<div data-type="tableOfContents"></div>')
+        assert "1.1 Data model" not in html
+        assert html.endswith("<p>Page body</p>")
+        assert title == "Architecture"
+
+    def test_numbered_pdf_contents_becomes_a_live_contents_node(self):
+        source = (
+            "<h1>Mục lục</h1><p>1 Architecture 4</p><p>1.1 Data model 5</p>"
+            "<h1>Architecture</h1><p>Page body</p>"
+        )
+
+        html, _, _ = normalize_document_html(source, filename="design.pdf")
+
+        assert '<div data-type="tableOfContents"></div>' in html
+        assert "Data model 5" not in html
+
+    def test_pdf_contents_heading_can_share_a_line_with_its_first_entry(self):
+        source = (
+            "<h2>MỤC LỤC Architecture ................................ 4</h2>"
+            "<p>Data model ................................ 5</p>"
+            "<p>Operations ................................ 6</p><h2>Architecture</h2>"
+        )
+
+        html, _, _ = normalize_document_html(source, filename="design.pdf")
+
+        assert html.startswith('<div data-type="tableOfContents"></div>')
+        assert "Data model ................................ 5" not in html
+
+    def test_pdf_contents_title_merged_into_a_plain_paragraph_still_becomes_toc(self):
+        # PyMuPDF's block segmentation can glue a short bold contents title
+        # onto the very next line when the two sit close together on the
+        # page. The title is too small a fraction of that paragraph's spans
+        # to read as a heading on its own, so it never becomes an <h*> tag -
+        # unlike the case above, where the whole merged line was bold enough
+        # to already be one.
+        source = (
+            "<p><strong>Mục lục</strong> 1 Architecture ................................ 4</p>"
+            "<p>1.1 Data model ................................ 5</p>"
+            "<h2>Architecture</h2><p>Page body</p>"
+        )
+
+        html, _, _ = normalize_document_html(source, filename="design.pdf")
+
+        assert html.startswith('<div data-type="tableOfContents"></div>')
+        assert "Data model ................................ 5" not in html
+        assert html.endswith("<p>Page body</p>")
+
+    def test_a_sentence_starting_with_contents_is_not_mistaken_for_a_toc(self):
+        source = (
+            "<p>Contents of this document are confidential and must not be "
+            "shared outside the project.</p><p>Second paragraph.</p>"
+        )
+
+        assert _html(source, filename="doc.pdf") == source
+
+    def test_a_contents_heading_without_entries_is_preserved(self):
+        html, title, _ = normalize_document_html(
+            "<h2>Contents</h2><p>Introduction</p>", filename="contents.html"
+        )
+        assert html == "<p>Introduction</p>"
+        assert title == "Contents"
+
+    def test_contents_does_not_become_the_imported_page_title(self):
+        source = (
+            "<h1>MỤC LỤC</h1><p>1 Architecture</p><p>1.1 Data model</p>"
+            "<h1>Architecture</h1>"
+        )
+        assert _title(source, filename="design.pdf") == "Architecture"
 
 
 class TestImagesLinksAndTables:
@@ -237,6 +324,12 @@ class TestTitleDerivation:
 
 
 class TestTruncation:
+    def test_the_shared_page_limit_allows_large_security_reports(self):
+        # The source DMS4 report is about 1.42 MB after sanitizing. Keep the
+        # central contract above that real-world size so imports, edits and
+        # drafts agree on what can be stored.
+        assert MAX_PAGE_CONTENT_CHARS >= 2_100_000
+
     def test_content_under_the_budget_is_untouched(self):
         source = "<p>short</p>"
         html, _, warnings = normalize_document_html(
@@ -272,6 +365,21 @@ class TestTruncation:
         source = "".join(f"<p>{'x' * 100}</p>" for _ in range(50))
         html, _, _ = normalize_document_html(source, filename="d.docx", max_chars=900)
         assert TRUNCATION_NOTICE_CLASS in sanitize_imported_html(html)
+
+    def test_a_styled_layout_wrapper_is_unwrapped_before_truncating(self):
+        # Exported reports often have one large visual wrapper. A generic div
+        # is not a Tiptap node, and treating it as a single truncation block
+        # used to replace the whole document with just the warning notice.
+        source = '<div style="width:100%">' + "".join(
+            f"<p>{'x' * 100}</p>" for _ in range(50)
+        ) + "</div>"
+        html, _, warnings = normalize_document_html(
+            source, filename="report.html", max_chars=900
+        )
+
+        assert warnings
+        assert html.count("<p>") > 0
+        assert not html.startswith('<div style="width:100%">')
 
 
 def test_empty_input_produces_empty_content_and_a_filename_title():

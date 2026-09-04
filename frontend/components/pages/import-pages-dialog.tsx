@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import type { DocumentImportJob, InstanceInfo, WikiPage } from "@/types/api";
+import { DocumentImportProgress } from "@/components/pages/document-import-progress";
 
 /** Mirrors `DOCUMENT_IMPORT_EXTENSIONS` on the backend. Rejecting here as well
  *  is a courtesy, not a control: the server decides. */
@@ -43,9 +44,23 @@ type Candidate = {
   file: File;
 };
 
+type ConflictMode = "ask" | "rename" | "replace";
+
 function extensionOf(name: string): string {
   const index = name.lastIndexOf(".");
   return index === -1 ? "" : name.slice(index + 1).toLowerCase();
+}
+
+function titleFromFilename(name: string): string {
+  return name.replace(/\.[^.]+$/, "").trim();
+}
+
+function titleVariantsFromFilename(name: string): string[] {
+  const title = titleFromFilename(name);
+  const withoutCopySuffix = title.replace(/\s*\(\d+\)$/, "").trim();
+  return withoutCopySuffix && withoutCopySuffix !== title
+    ? [title, withoutCopySuffix]
+    : [title];
 }
 
 function inspect(file: File, maxUploadBytes: number): string | null {
@@ -63,7 +78,10 @@ function inspect(file: File, maxUploadBytes: number): string | null {
 export function ImportPagesDialog({
   spaceKey,
   parentPage,
+  existingPages = [],
   onStarted,
+  onDismiss,
+  onFinished,
   open: controlledOpen,
   onOpenChange: onControlledOpenChange,
   trigger,
@@ -73,7 +91,10 @@ export function ImportPagesDialog({
 }: {
   spaceKey: string;
   parentPage?: Pick<WikiPage, "id" | "title"> | null;
+  existingPages?: Pick<WikiPage, "title" | "parent_id">[];
   onStarted: (job: DocumentImportJob) => void;
+  onDismiss?: () => void;
+  onFinished?: (job: DocumentImportJob) => void;
   /** Controlled mode, so a dropdown item can open the one shared dialog
    *  instead of nesting a second Radix trigger inside a menu. */
   open?: boolean;
@@ -93,6 +114,9 @@ export function ImportPagesDialog({
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadPercent, setUploadPercent] = useState(0);
+  const [importJob, setImportJob] = useState<DocumentImportJob | null>(null);
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
+  const [serverConflictNames, setServerConflictNames] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const requestRef = useRef<XMLHttpRequest | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -104,6 +128,17 @@ export function ImportPagesDialog({
     problem: inspect(candidate.file, maxUploadBytes),
   }));
   const sendable = inspected.filter((c) => c.problem === null);
+  const conflicts = sendable.filter((candidate) =>
+    existingPages.some(
+      (page) =>
+        page.parent_id === (parentPage?.id ?? null) &&
+        titleVariantsFromFilename(candidate.file.name).some(
+          (title) =>
+            page.title.trim().toLocaleLowerCase() === title.toLocaleLowerCase(),
+        ),
+    ),
+  );
+  const firstConflictName = serverConflictNames[0] ?? conflicts[0]?.file.name;
 
   const addFiles = useCallback(
     (incoming: FileList | File[]) => {
@@ -161,6 +196,8 @@ export function ImportPagesDialog({
     setCandidates([]);
     setUploadPercent(0);
     setUploading(false);
+    setImportJob(null);
+    setServerConflictNames([]);
     requestRef.current = null;
   }
 
@@ -184,13 +221,30 @@ export function ImportPagesDialog({
     return () => window.removeEventListener("beforeunload", warn);
   }, [uploading]);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (sendable.length === 0 || uploading) return;
+    if (conflicts.length > 0) {
+      // A filename already visible in this page list matches - ask upfront
+      // rather than spend a round trip finding out what the server would
+      // have said anyway.
+      setConflictDialogOpen(true);
+      return;
+    }
+    // Word and PDF titles are discovered only while their contents are
+    // converted on the server, so this filename-only preflight cannot
+    // reliably find every duplicate. Send the batch with the server free to
+    // decide ("ask"); the catch below reacts to a real conflict instead of
+    // this dialog assuming one exists for every import.
+    void startImport("ask");
+  }
+
+  async function startImport(conflictMode: ConflictMode) {
 
     const form = new FormData();
     for (const candidate of sendable) form.append("files", candidate.file);
     if (parentPage?.id) form.append("parent_id", parentPage.id);
+    form.append("conflict_mode", conflictMode);
 
     setUploading(true);
     setUploadPercent(0);
@@ -222,13 +276,31 @@ export function ImportPagesDialog({
             return;
           }
           let message = "The import could not be started.";
+          let errorCode: string | undefined;
+          let conflictNames: string[] = [];
           try {
             const parsed = JSON.parse(request.responseText);
-            message = parsed?.detail?.message ?? parsed?.detail ?? parsed?.message ?? message;
+            errorCode = parsed?.error?.code ?? parsed?.detail?.code;
+            conflictNames = Array.isArray(parsed?.error?.details?.conflicts)
+              ? parsed.error.details.conflicts
+                  .map((conflict: { filename?: unknown }) => conflict.filename)
+                  .filter((filename: unknown): filename is string => typeof filename === "string")
+              : [];
+            message =
+              parsed?.error?.message ??
+              parsed?.detail?.message ??
+              parsed?.detail ??
+              parsed?.message ??
+              message;
           } catch {
             /* keep the fallback */
           }
-          reject(new Error(typeof message === "string" ? message : "The import could not be started."));
+          const error = new Error(
+            typeof message === "string" ? message : "The import could not be started.",
+          ) as Error & { code?: string; conflictNames?: string[] };
+          error.code = errorCode;
+          error.conflictNames = conflictNames;
+          reject(error);
         };
         request.onerror = () =>
           reject(new Error("The upload failed. Check your connection and try again."));
@@ -236,15 +308,25 @@ export function ImportPagesDialog({
         request.send(form);
       });
 
-      setOpen(false);
-      reset();
+      setCandidates([]);
+      setUploadPercent(0);
+      setUploading(false);
+      setImportJob(job);
+      requestRef.current = null;
       onStarted(job);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         setUploading(false);
         return;
       }
-      toast.error(error instanceof Error ? error.message : "The import could not be started.");
+      if (error instanceof Error && (error as Error & { code?: string }).code === "document_import_conflict") {
+        setServerConflictNames(
+          (error as Error & { conflictNames?: string[] }).conflictNames ?? [],
+        );
+        setConflictDialogOpen(true);
+      } else {
+        toast.error(error instanceof Error ? error.message : "The import could not be started.");
+      }
       setUploading(false);
     }
   }
@@ -262,6 +344,7 @@ export function ImportPagesDialog({
         </DialogTrigger>
       )}
       <DialogContent
+        className="max-w-2xl"
         title="Import pages from files"
         description={
           parentPage
@@ -269,7 +352,19 @@ export function ImportPagesDialog({
             : "Each file becomes a new top-level page in this space."
         }
       >
-        <form onSubmit={submit} className="space-y-4" noValidate>
+        {importJob ? (
+          <DocumentImportProgress
+            job={importJob}
+            spaceKey={spaceKey}
+            onJobChange={setImportJob}
+            onDismiss={() => {
+              setImportJob(null);
+              setOpen(false);
+              onDismiss?.();
+            }}
+            onFinished={(job) => onFinished?.(job)}
+          />
+        ) : <form onSubmit={submit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="import-files">Documents</Label>
             <div
@@ -377,8 +472,47 @@ export function ImportPagesDialog({
                   : "Import"}
             </Button>
           </DialogFooter>
-        </form>
+        </form>}
       </DialogContent>
+      <Dialog open={conflictDialogOpen} onOpenChange={setConflictDialogOpen}>
+        <DialogContent
+          title="Page already exists"
+          description={
+            serverConflictNames.length === 1 || conflicts.length === 1
+              ? `A page matching “${firstConflictName ? titleFromFilename(firstConflictName) : "this file"}” already exists.`
+              : serverConflictNames.length > 1 || conflicts.length > 1
+                ? `${serverConflictNames.length || conflicts.length} pages with the same names already exist.`
+                : "Choose how to handle pages whose imported titles already exist."
+          }
+        >
+          <p className="text-muted-foreground text-sm leading-5">
+            If a matching page is found, replace its content or keep both pages by adding a
+            numbered suffix such as <span className="text-foreground font-medium">(1)</span> or <span className="text-foreground font-medium">(2)</span>.
+          </p>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setConflictDialogOpen(false);
+                void startImport("rename");
+              }}
+            >
+              Keep both
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => {
+                setConflictDialogOpen(false);
+                void startImport("replace");
+              }}
+            >
+              Replace existing
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

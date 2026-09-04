@@ -34,7 +34,8 @@ from app.core.exceptions import BadRequestError
 from app.core.logging import get_logger
 from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction
-from app.models.page import PageLike, WikiPage
+from app.models.draft import PageDraft
+from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.permission import (
     Group,
     GroupGlobalPermission,
@@ -47,6 +48,8 @@ from app.models.restriction import PageGroupRestriction, PageUserRestriction
 from app.models.revision import PageRevision
 from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceStatus
 from app.models.user import User
+from app.models.user_page_label import UserPageLabel
+from app.models.user_tag import UserTag
 from app.modules.backup.package import (
     DOCUMENT_PATH,
     FULL_BACKUP_FORMAT,
@@ -70,8 +73,10 @@ from app.schemas.backup import (
     BackupGroupMember,
     BackupMeta,
     BackupPage,
+    BackupPageDraft,
     BackupPageGroupRestriction,
     BackupPageLike,
+    BackupPagePin,
     BackupPageRevision,
     BackupPageUserRestriction,
     BackupSiteSettings,
@@ -81,6 +86,8 @@ from app.schemas.backup import (
     BackupSpaceMember,
     BackupSpaceUserPermission,
     BackupUser,
+    BackupUserPageLabel,
+    BackupUserTag,
     ImportEntry,
     ImportReport,
 )
@@ -105,6 +112,21 @@ _PROGRESS_CHECK_EVERY = 25
 #: a false positive marks a genuinely running export as failed, so the margin
 #: has to absorb one unusually slow item (a very large attachment download).
 STALE_JOB_AFTER = timedelta(minutes=5)
+
+#: An overwrite restore (``BackupJob.kind == "full_import"`` with
+#: ``overwrite_space_keys`` set) runs its attachment-copy, relink, and
+#: permission-restore phases inside a still-open SAVEPOINT that must not be
+#: committed early, so `_report_progress` deliberately stops checkpointing
+#: the heartbeat for that whole stretch (see its comment in
+#: `restore_full_package`) - committing there would release the SAVEPOINT
+#: before the eventual rollback-on-failure it exists to protect. That
+#: stretch has run past five minutes on a real archive (43 spaces, ~3,000
+#: pages), which the reaper then read as an abandoned worker and marked the
+#: row "failed" while it was still actively - and correctly - running to
+#: completion. Every restore gets this longer grace period rather than
+#: singling out overwrite ones, since a plain restore enters the same
+#: checkpoint-free code path whenever it hits `restore_savepoint`.
+STALE_RESTORE_JOB_AFTER = timedelta(minutes=30)
 
 
 async def log_backup_event(
@@ -179,7 +201,12 @@ async def checkpoint_backup_job(
         raise ExportCancelled("Export cancelled by administrator.")
     job.heartbeat_at = datetime.now(UTC)
     if counters:
-        job.counters = {**job.counters, **counters}
+        # `job.counters or {}`, not bare `job.counters`: a `BackupJob()`
+        # built in Python and never yet flushed has `None` here (the
+        # `nullable=False, default=dict` column default is applied at
+        # INSERT, not on construction) - merging into it directly raised
+        # once this became the normal way callers report counters.
+        job.counters = {**(job.counters or {}), **counters}
     await session.commit()
 
 
@@ -400,6 +427,10 @@ class BackupService:
         pages = list((await self.session.execute(select(WikiPage))).scalars())
         revisions = list((await self.session.execute(select(PageRevision))).scalars())
         likes = list((await self.session.execute(select(PageLike))).scalars())
+        pins = list((await self.session.execute(select(UserPagePin))).scalars())
+        drafts = list((await self.session.execute(select(PageDraft))).scalars())
+        user_tags = list((await self.session.execute(select(UserTag))).scalars())
+        user_page_labels = list((await self.session.execute(select(UserPageLabel))).scalars())
         page_user_restrictions = list(
             (await self.session.execute(select(PageUserRestriction))).scalars()
         )
@@ -564,6 +595,10 @@ class BackupService:
             and row.user_id in users_by_id
             and pages_by_id[row.page_id].space_id in spaces_by_id
         ]
+        doc_pins = [BackupPagePin(page_space_key=spaces_by_id[pages_by_id[row.page_id].space_id].key, page_slug=pages_by_id[row.page_id].slug, username=users_by_id[row.user_id].username) for row in pins if row.page_id in pages_by_id and row.user_id in users_by_id and pages_by_id[row.page_id].space_id in spaces_by_id]
+        doc_drafts = [BackupPageDraft(page_space_key=spaces_by_id[pages_by_id[row.page_id].space_id].key, page_slug=pages_by_id[row.page_id].slug, username=users_by_id[row.user_id].username, content=row.content, content_format=row.content_format, edit_mode=row.edit_mode, base_updated_at=row.base_updated_at) for row in drafts if row.page_id in pages_by_id and row.user_id in users_by_id and pages_by_id[row.page_id].space_id in spaces_by_id]
+        doc_tags = [BackupUserTag(username=users_by_id[row.user_id].username, name=row.name) for row in user_tags if row.user_id in users_by_id]
+        doc_page_labels = [BackupUserPageLabel(page_space_key=spaces_by_id[pages_by_id[row.page_id].space_id].key, page_slug=pages_by_id[row.page_id].slug, username=users_by_id[row.user_id].username, name=row.name) for row in user_page_labels if row.page_id in pages_by_id and row.user_id in users_by_id and pages_by_id[row.page_id].space_id in spaces_by_id]
         doc_page_user_restrictions = [
             BackupPageUserRestriction(
                 page_space_key=spaces_by_id[pages_by_id[row.page_id].space_id].key,
@@ -607,6 +642,8 @@ class BackupService:
                     "pages": len(doc_pages),
                     "page_revisions": len(doc_revisions),
                     "page_likes": len(doc_likes),
+                    "page_pins": len(doc_pins), "page_drafts": len(doc_drafts),
+                    "user_tags": len(doc_tags), "user_page_labels": len(doc_page_labels),
                     "page_restrictions": len(doc_page_user_restrictions)
                     + len(doc_page_group_restrictions),
                 },
@@ -625,6 +662,8 @@ class BackupService:
             page_likes=doc_likes,
             page_user_restrictions=doc_page_user_restrictions,
             page_group_restrictions=doc_page_group_restrictions,
+            page_pins=doc_pins, page_drafts=doc_drafts,
+            user_tags=doc_tags, user_page_labels=doc_page_labels,
             site_settings=BackupSiteSettings(**overrides.model_dump()),
         )
 
@@ -728,6 +767,10 @@ class BackupService:
 
         attachments = list((await self.session.execute(select(PageAttachment))).scalars())
         likes = list((await self.session.execute(select(PageLike))).scalars())
+        pins = list((await self.session.execute(select(UserPagePin))).scalars())
+        drafts = list((await self.session.execute(select(PageDraft))).scalars())
+        user_tags = list((await self.session.execute(select(UserTag))).scalars())
+        user_page_labels = list((await self.session.execute(select(UserPageLabel))).scalars())
         page_user_restrictions = list(
             (await self.session.execute(select(PageUserRestriction))).scalars()
         )
@@ -789,6 +832,19 @@ class BackupService:
             BackupPageLike(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username)
             for row in likes if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
         ]
+        doc_pins = [
+            BackupPagePin(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username)
+            for row in pins if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
+        ]
+        doc_drafts = [
+            BackupPageDraft(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username, content=row.content, content_format=row.content_format, edit_mode=row.edit_mode, base_updated_at=row.base_updated_at)
+            for row in drafts if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
+        ]
+        doc_tags = [BackupUserTag(username=users_by_id[row.user_id].username, name=row.name) for row in user_tags if row.user_id in users_by_id]
+        doc_page_labels = [
+            BackupUserPageLabel(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username, name=row.name)
+            for row in user_page_labels if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
+        ]
         doc_page_user_restrictions = [
             BackupPageUserRestriction(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username, permission=row.permission)
             for row in page_user_restrictions if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
@@ -841,6 +897,10 @@ class BackupService:
                     "pages": len(pages_index),
                     "page_revisions": revisions_total,
                     "page_likes": len(doc_likes),
+                    "page_pins": len(doc_pins),
+                    "page_drafts": len(doc_drafts),
+                    "user_tags": len(doc_tags),
+                    "user_page_labels": len(doc_page_labels),
                     "page_restrictions": len(doc_page_user_restrictions) + len(doc_page_group_restrictions),
                 },
             ),
@@ -849,6 +909,7 @@ class BackupService:
             space_user_permissions=doc_space_user_permissions, space_group_permissions=doc_space_group_permissions,
             pages=[], page_revisions=[],
             page_likes=doc_likes, page_user_restrictions=doc_page_user_restrictions, page_group_restrictions=doc_page_group_restrictions,
+            page_pins=doc_pins, page_drafts=doc_drafts, user_tags=doc_tags, user_page_labels=doc_page_labels,
             site_settings=BackupSiteSettings(**overrides.model_dump()),
         )
 
@@ -1517,6 +1578,13 @@ class BackupService:
                 visibility=space_entry.visibility,
                 created_by_id=creator.id if creator else None,
             )
+            # The row's own created_at/updated_at otherwise default to "now"
+            # on insert (see TimestampMixin), crediting the restore with
+            # having just created every space in the backup.
+            if space_entry.created_at:
+                space.created_at = space_entry.created_at
+            if space_entry.updated_at:
+                space.updated_at = space_entry.updated_at
             if space_entry.id and await self.spaces.get(space_entry.id) is None:
                 space.id = space_entry.id
             self.session.add(space)
@@ -1857,6 +1925,55 @@ class BackupService:
             self.session.add(PageLike(page_id=liked_page.id, user_id=liked_user.id))
             await self.session.flush()
             report.add("page_like", label, "created")
+
+        for entry in doc.page_pins:
+            page = await page_by_reference(entry.page_space_key, entry.page_slug)
+            user = await self.users.get_by_username(entry.username)
+            label = f"{entry.page_space_key}/{entry.page_slug}/{entry.username}"
+            if page is None or user is None:
+                report.add("page_pin", label, "skipped", "missing_reference")
+            elif (await self.session.get(UserPagePin, {"page_id": page.id, "user_id": user.id})) is not None:
+                report.add("page_pin", label, "skipped", "already_pinned")
+            else:
+                self.session.add(UserPagePin(page_id=page.id, user_id=user.id))
+                await self.session.flush()
+                report.add("page_pin", label, "created")
+
+        for entry in doc.page_drafts:
+            page = await page_by_reference(entry.page_space_key, entry.page_slug)
+            user = await self.users.get_by_username(entry.username)
+            label = f"{entry.page_space_key}/{entry.page_slug}/{entry.username}"
+            existing = await self.session.execute(select(PageDraft).where(PageDraft.page_id == (page.id if page else None), PageDraft.user_id == (user.id if user else None))) if page and user else None
+            if page is None or user is None:
+                report.add("page_draft", label, "skipped", "missing_reference")
+            elif existing.scalar_one_or_none() is not None:
+                report.add("page_draft", label, "skipped", "already_exists")
+            else:
+                self.session.add(PageDraft(page_id=page.id, user_id=user.id, content=entry.content, content_format=entry.content_format, edit_mode=entry.edit_mode, base_updated_at=entry.base_updated_at))
+                await self.session.flush()
+                report.add("page_draft", label, "created")
+
+        for entry in doc.user_tags:
+            user = await self.users.get_by_username(entry.username)
+            existing = await self.session.execute(select(UserTag).where(UserTag.user_id == (user.id if user else None), UserTag.name == entry.name)) if user else None
+            if user is None:
+                report.add("user_tag", f"{entry.username}/{entry.name}", "skipped", "missing_user")
+            elif existing.scalar_one_or_none() is not None:
+                report.add("user_tag", f"{entry.username}/{entry.name}", "skipped", "already_exists")
+            else:
+                self.session.add(UserTag(user_id=user.id, name=entry.name)); await self.session.flush(); report.add("user_tag", f"{entry.username}/{entry.name}", "created")
+
+        for entry in doc.user_page_labels:
+            page = await page_by_reference(entry.page_space_key, entry.page_slug)
+            user = await self.users.get_by_username(entry.username)
+            existing = await self.session.execute(select(UserPageLabel).where(UserPageLabel.page_id == (page.id if page else None), UserPageLabel.user_id == (user.id if user else None), UserPageLabel.name == entry.name)) if page and user else None
+            label = f"{entry.page_space_key}/{entry.page_slug}/{entry.username}/{entry.name}"
+            if page is None or user is None:
+                report.add("user_page_label", label, "skipped", "missing_reference")
+            elif existing.scalar_one_or_none() is not None:
+                report.add("user_page_label", label, "skipped", "already_exists")
+            else:
+                self.session.add(UserPageLabel(page_id=page.id, user_id=user.id, name=entry.name)); await self.session.flush(); report.add("user_page_label", label, "created")
 
         for user_restriction_entry in doc.page_user_restrictions:
             label = "/".join(

@@ -8,14 +8,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-#: Ceiling on stored page content. Raised from 200k when document import landed:
-#: a converted 300-page Word file exceeds 200k routinely, and a page the
-#: importer creates has to stay editable - with the old cap, opening such a page
-#: and pressing Save returned 422 from `PageUpdate`, on a page WikiHub itself
-#: created. Both schemas below therefore share one constant; they must never
-#: drift apart. Not raised further: at a million characters the Tiptap editor is
-#: already sluggish and every revision duplicates the content in page_revisions.
-MAX_PAGE_CONTENT_CHARS = 1_000_000
+#: Ceiling on stored page content. Security-report exports can legitimately
+#: exceed one million HTML characters even after their layout wrappers and
+#: unsafe markup have been removed. Two and a half megabytes keeps such reports whole;
+#: the same limit is shared by page updates and drafts so an imported page can
+#: still be edited and saved without a validation failure.
+MAX_PAGE_CONTENT_CHARS = 2_500_000
 
 
 class PageRead(BaseModel):

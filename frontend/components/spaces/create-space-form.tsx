@@ -1,8 +1,16 @@
 "use client";
 
-import { Check, FolderPlus, Loader2, Plus, Search } from "lucide-react";
+import {
+  Check,
+  CheckCircle2,
+  FolderPlus,
+  Loader2,
+  Plus,
+  Search,
+  XCircle,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -16,16 +24,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api, ApiError } from "@/lib/api-client";
+import { api, ApiError, describeApiError } from "@/lib/api-client";
 import type { Space, User } from "@/types/api";
 
+//: Mirrors the backend's rule (see `_check_name_start` in
+//: `app/schemas/space.py`): a space name may not start with a digit or a
+//: symbol, though any Unicode letter (including accented ones) is fine.
+const NAME_START_PATTERN = /^\p{L}/u;
+const NAME_ERROR = "Name must start with a letter, not a digit or special character.";
+
 function deriveKey(name: string): string {
-  return name
+  const base = name
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 32);
+  if (!base) return "";
+  // Keys must start with a letter (e.g. "123" -> "123" is rejected by the
+  // API), so prefix a letter whenever the derived key would start with a
+  // digit or underscore instead of silently failing on submit.
+  return /^[A-Z]/.test(base) ? base : `S${base}`.slice(0, 32);
 }
 
 export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
@@ -39,7 +58,18 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [existingNames, setExistingNames] = useState<Set<string>>(new Set());
   const key = deriveKey(name);
+  const trimmedName = name.trim();
+  const isDuplicateName =
+    !!trimmedName && existingNames.has(trimmedName.toLowerCase());
+  const nameError = !trimmedName
+    ? null
+    : !NAME_START_PATTERN.test(trimmedName)
+      ? NAME_ERROR
+      : isDuplicateName
+        ? `A space named "${trimmedName}" already exists.`
+        : null;
   const normalizedMemberQuery = memberQuery.trim().toLowerCase();
   const filteredUsers = users.filter(
     (user) =>
@@ -48,6 +78,31 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
         .toLowerCase()
         .includes(normalizedMemberQuery),
   );
+
+  // Load existing space names to catch a duplicate before submit, rather
+  // than surfacing it as a conflict only after the request round-trips.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    api
+      .get<Space[]>("/api/v1/spaces", {
+        query: { include_archived: true, limit: 200 },
+      })
+      .then((spaces) => {
+        if (!cancelled) {
+          setExistingNames(
+            new Set(spaces.map((space) => space.name.trim().toLowerCase())),
+          );
+        }
+      })
+      .catch(() => {
+        // Best-effort: if this fails, the duplicate check is simply skipped
+        // and the backend's own conflict check still catches it on submit.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   function reset() {
     setName("");
@@ -70,7 +125,7 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!name.trim() || !key) return;
+    if (!trimmedName || !key || nameError) return;
     setPending(true);
     setError(null);
     try {
@@ -114,9 +169,9 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
       reset();
       router.refresh();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Could not create the space.",
-      );
+      const message = describeApiError(err, "Could not create the space.");
+      setError(message);
+      toast.error(message);
     } finally {
       setPending(false);
     }
@@ -153,15 +208,44 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="new-space-name">Name</Label>
-                <Input
-                  id="new-space-name"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Engineering"
-                  required
-                  autoFocus
-                  disabled={pending}
-                />
+                <div className="relative">
+                  <Input
+                    id="new-space-name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Engineering"
+                    required
+                    autoFocus
+                    disabled={pending}
+                    aria-invalid={nameError ? true : undefined}
+                    aria-describedby={nameError ? "new-space-name-error" : undefined}
+                    className="pr-9"
+                  />
+                  {trimmedName ? (
+                    <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2">
+                      {nameError ? (
+                        <XCircle
+                          className="text-danger size-4"
+                          aria-hidden
+                        />
+                      ) : (
+                        <CheckCircle2
+                          className="text-success size-4"
+                          aria-hidden
+                        />
+                      )}
+                    </span>
+                  ) : null}
+                </div>
+                {nameError ? (
+                  <p id="new-space-name-error" className="text-danger text-xs">
+                    {nameError}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    Start with a letter and use a name no other space has.
+                  </p>
+                )}
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="new-space-description">
@@ -336,7 +420,7 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
               <Button
                 type="submit"
                 variant="primary"
-                disabled={pending || !name.trim() || !key}
+                disabled={pending || !trimmedName || !key || !!nameError}
               >
                 {pending ? <Loader2 className="animate-spin" /> : <Plus />}
                 Create space

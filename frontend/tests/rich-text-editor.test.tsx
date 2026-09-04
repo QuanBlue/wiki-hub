@@ -14,6 +14,22 @@ import {
   normalizeConfluenceCodeMacros,
 } from "@/components/pages/rich-text-editor";
 
+describe("RichTextContent table of contents", () => {
+  it("renders the live table of contents node produced by document imports", async () => {
+    render(
+      <RichTextContent
+        content={'<div data-type="tableOfContents"></div><h1>Architecture</h1><h2>Data model</h2>'}
+      />,
+    );
+
+    const contents = await screen.findByRole("navigation", {
+      name: "Table of contents",
+    });
+    expect(contents).toHaveTextContent("1.Architecture");
+    expect(contents).toHaveTextContent("1.1.Data model");
+  });
+});
+
 describe("RichTextEditor images", () => {
   it("renders a resize handle and persists a width after dragging it", async () => {
     const onChange = vi.fn();
@@ -540,11 +556,95 @@ describe("RichTextEditor tables", () => {
     expect(reader).not.toHaveClass("[&_p:last-child]:mb-0");
   });
 
-  it("keeps saved table widths fixed and wraps long cell content in the reader", async () => {
+  it("keeps imported table colors and cell alignment in the reader", async () => {
     const { container } = render(
       <RichTextContent
-        content='<table><tbody><tr><td colwidth="420">First column</td><td colwidth="140">Second column</td><td colwidth="180">AReallyLongUnbrokenValueThatMustWrapInsideItsSavedColumn</td></tr></tbody></table>'
+        content={
+          '<table><tbody><tr><th style="background-color:#2f5496;color:#e7e6e6;text-align:center">Header</th><td style="text-align:right">Value</td></tr></tbody></table>'
+        }
       />,
+    );
+
+    const reader = await waitFor(() => {
+      const element = container.querySelector(".ProseMirror");
+      expect(element).not.toBeNull();
+      return element as HTMLElement;
+    });
+
+    expect(reader.querySelector("th")).toHaveStyle({
+      backgroundColor: "rgb(47, 84, 150)",
+      color: "rgb(231, 230, 230)",
+      textAlign: "center",
+    });
+    expect(reader.querySelector("td")).toHaveStyle({ textAlign: "right" });
+  });
+
+  it("keeps an imported table header's font size", async () => {
+    const { container } = render(
+      <RichTextContent
+        content={
+          '<table><tbody><tr><th style="font-size:200%">Group heading</th><th style="font-size:150%">Column heading</th></tr></tbody></table>'
+        }
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll("th")).toHaveLength(2);
+    });
+
+    expect(container.querySelector("th")).toHaveStyle({ fontSize: "200%" });
+    expect(container.querySelectorAll("th")[1]).toHaveStyle({
+      fontSize: "150%",
+    });
+  });
+
+  it("keeps imported paragraph and list alignment and font size", async () => {
+    const { container } = render(
+      <RichTextContent
+        content={
+          '<p style="text-align:center"><span style="font-size:125%">Overview</span></p><ol><li style="text-align:right"><span style="font-size:90%">First</span></li><li style="text-align:right">Second</li></ol>'
+        }
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll("li")).toHaveLength(2);
+    });
+
+    expect(container.querySelector("p")).toHaveStyle({ textAlign: "center" });
+    expect(container.querySelector("p span")).toHaveStyle({
+      fontSize: "125%",
+    });
+    expect(container.querySelector("li")).toHaveStyle({ textAlign: "right" });
+    expect(container.querySelector("li span")).toHaveStyle({
+      fontSize: "90%",
+    });
+  });
+
+  it("keeps Word table column proportions responsive", async () => {
+    const { container } = render(
+      <RichTextContent
+        content={
+          '<table style="width:100%"><tbody><tr><td style="width:54.7567%">Left</td><td style="width:45.2433%">Right</td></tr></tbody></table>'
+        }
+      />,
+    );
+
+    const table = await waitFor(() => {
+      const element = container.querySelector("table");
+      expect(element).not.toBeNull();
+      return element as HTMLTableElement;
+    });
+
+    expect(container.querySelector(".ProseMirror")).toHaveClass(
+      "[&_table]:w-full",
+    );
+    expect(table.querySelector("td")).toHaveStyle({ width: "54.7567%" });
+  });
+
+  it("keeps saved table widths fixed and wraps long cell content in the reader", async () => {
+    const { container } = render(
+      <RichTextContent content='<table><tbody><tr><td colwidth="420">First column</td><td colwidth="140">Second column</td><td colwidth="180">AReallyLongUnbrokenValueThatMustWrapInsideItsSavedColumn</td></tr></tbody></table>' />,
     );
 
     const reader = await waitFor(() => {

@@ -1211,7 +1211,17 @@ class ConfluenceImportService:
             },
         )
         self.session.add(job)
-        await self.session.flush()
+        # A commit, not just a flush: the caller enqueues this job for the
+        # worker immediately after, on a separate connection - a flush alone
+        # leaves the row visible only within this transaction, and the worker
+        # routinely wins that race (observed: picking the job up ~4ms after
+        # enqueueing), reading it as not-yet-existing and silently returning
+        # without ever changing its status. The row is then stuck at
+        # "queued" forever, with nothing to indicate the import never ran
+        # (see the matching `session.commit()` in `create_export_job` /
+        # `create_import_job`, the backup-restore equivalent of this method,
+        # which does not have this bug).
+        await self.session.commit()
         return job
 
 
@@ -1516,12 +1526,28 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
 
                 visibility = SpaceVisibility.restricted if is_restricted else SpaceVisibility.open
 
+                # Attribute the space to whoever created it in Confluence, and
+                # keep its original creation date, the same way pages do
+                # below - falling back to the importer only when the export
+                # carries no such record (common for a single-space content
+                # export, which - unlike a full site export - never writes
+                # the Space object's own creator/creationDate).
+                space_creator_is_invalid = bool(
+                    source_space.creator and _is_invalid_import_username(source_space.creator)
+                )
+                space_creator_id = (
+                    await service._resolve_or_create_user(source_space.creator)
+                    if source_space.creator and not space_creator_is_invalid
+                    else job.created_by_id
+                )
                 space = Space(
                     key=space_key,
                     name=source_space.name,
-                    created_by_id=job.created_by_id,
+                    created_by_id=space_creator_id,
                     visibility=visibility,
                 )
+                if source_space.created_at:
+                    space.created_at = source_space.created_at
                 session.add(space)
                 await session.flush()
                 session.add(

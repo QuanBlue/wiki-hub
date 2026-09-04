@@ -126,6 +126,27 @@ export async function apiFetch<T>(
   return payload as T;
 }
 
+/**
+ * Pulls the first field-level validation message out of an API error, e.g.
+ * `"name: Name must start with a letter, not a digit or special character."`,
+ * falling back to the error's top-level message and finally to `fallback`.
+ */
+export function describeApiError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    const fields = err.details?.fields;
+    if (Array.isArray(fields) && fields.length > 0) {
+      const first = fields[0] as { field?: string; message?: string };
+      if (first?.message) {
+        return first.field && first.field !== "body"
+          ? `${first.field}: ${first.message}`
+          : first.message;
+      }
+    }
+    return err.message;
+  }
+  return fallback;
+}
+
 export const api = {
   get: <T>(path: string, options?: RequestOptions) =>
     apiFetch<T>(path, { ...options, method: "GET" }),

@@ -197,6 +197,19 @@ export interface UserTag {
   name: string;
 }
 
+export interface PageLabel {
+  id: string;
+  name: string;
+}
+
+export interface UserPageLabelItem extends PageLabel {
+  page_id: string;
+  title: string;
+  slug: string;
+  space_key: string;
+  space_name: string;
+}
+
 export interface LoginResponse {
   access_token: string;
   token_type: string;
@@ -602,6 +615,7 @@ export interface DocumentImportJob {
   parent_id: string | null;
   status: "queued" | "running" | "complete" | "failed" | "cancelled";
   phase: string;
+  conflict_mode?: "rename" | "replace";
   counters: Record<string, number>;
   cancel_requested: boolean;
   error: string | null;

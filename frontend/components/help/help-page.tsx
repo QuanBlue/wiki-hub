@@ -580,6 +580,9 @@ const sections: HelpSection[] = [
       "source",
       "draft",
       "autosave",
+      "rename",
+      "rename page",
+      "title",
     ],
     body: (
       <>
@@ -596,6 +599,12 @@ const sections: HelpSection[] = [
 
         <p className="mt-4 font-semibold text-foreground">Editing Modes & Tools:</p>
         <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Rename a page</strong>: click <strong>Edit</strong>, then click the
+            title itself at the top of the page - it becomes editable right there,
+            no separate dialog. The page keeps its existing link when you save, so
+            anything that already points to it keeps working.
+          </li>
           <li>
             <strong>Rich-Text Mode</strong>: WYSIWYG editing with full inline
             formatting tools:
@@ -1601,6 +1610,16 @@ const sections: HelpSection[] = [
       "matrix",
       "download",
       "s3",
+      "office",
+      "preview",
+      "word",
+      "excel",
+      "powerpoint",
+      "pdf",
+      "docx",
+      "xlsx",
+      "pptx",
+      "onlyoffice",
     ],
     body: (
       <>
@@ -1640,7 +1659,12 @@ const sections: HelpSection[] = [
           <li>Clean tree formatting with regular text font styling for folders and files.</li>
           <li>Filter objects by search query, file type, space, or page ID.</li>
           <li>Generate secure pre-signed download URLs.</li>
-          <li>Preview images and code/text files inline.</li>
+          <li>
+            Preview images and code/text files inline, plus Word, Excel,
+            PowerPoint and PDF documents (opened read-only through the same
+            document viewer pages use to edit attachments - see it, download
+            it, nothing is ever saved back from here).
+          </li>
           <li>Delete orphan objects with automatic database attachment and archive hash clearance.</li>
         </ul>
       </>
@@ -1801,7 +1825,7 @@ const sections: HelpSection[] = [
     title: "Backup, Confluence Import & DC Export",
     category: "Administration",
     description:
-      "Two distinct export formats, resumable multi-gigabyte uploads, and the safety checks that stop the wrong archive from landing in the wrong place.",
+      "Two distinct export formats, resumable multi-gigabyte uploads, a recurring schedule, and the safety checks that stop the wrong archive from landing in the wrong place.",
     keywords: [
       "backup",
       "zip",
@@ -1813,6 +1837,12 @@ const sections: HelpSection[] = [
       "datacenter",
       "resume",
       "sha-256",
+      "automatic",
+      "automated",
+      "scheduled",
+      "schedule",
+      "retention",
+      "cron",
     ],
     body: (
       <>
@@ -1861,6 +1891,12 @@ const sections: HelpSection[] = [
             log output.
           </li>
           <li>
+            A large Confluence archive can take hours to upload. The page keeps your
+            browser session renewed automatically for as long as that tab stays open -
+            you do not need to stay logged in manually, and other tabs keep working
+            normally throughout.
+          </li>
+          <li>
             Restoring into an instance that already has spaces triggers a{" "}
             <strong>Replace existing spaces?</strong> conflict step for anything that
             would collide.
@@ -1880,6 +1916,55 @@ const sections: HelpSection[] = [
           was being uploaded against what you just chose (name, size, how much is
           already stored) and asking you to either{" "}
           <strong>Discard and upload this</strong> or <strong>Choose the original</strong>.
+        </Callout>
+
+        <p className="mt-4 font-semibold text-foreground">3. Automatic backups (scheduled):</p>
+        <p>
+          The <strong>Automatic backups</strong> panel, above{" "}
+          <strong>Export / Backup</strong>, runs a recurring{" "}
+          <strong>Export WikiHub Backup</strong> on a schedule with no one needing to
+          click anything.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm mt-2">
+          <li>
+            It writes each backup to a directory mounted into the server itself
+            (<Code>WIKIHUB_AUTOMATED_BACKUP_HOST_DIRECTORY</Code> in the deployment&apos;s
+            environment) rather than object storage - a separate copy on separate
+            infrastructure, so a problem with the primary storage does not also take
+            out its own backups. <strong>Enabled</strong> stays greyed out, and{" "}
+            <strong>Run now</strong> stays disabled, until an operator has actually
+            mounted that directory.
+          </li>
+          <li>
+            <strong>Subfolder (optional)</strong> scopes backups to a folder under that
+            mounted volume, e.g. <Code>team-a</Code> writes into <Code>&lt;mounted
+            volume&gt;/team-a</Code> instead of the volume&apos;s root - useful for keeping
+            more than one schedule&apos;s output apart. The folder must already exist on
+            the host: <strong>Save schedule</strong> checks it against the real
+            filesystem and refuses a path that is missing or that would resolve outside
+            the mounted volume, with the reason shown right under the field.
+          </li>
+          <li>
+            Configure <strong>Every N hours/days</strong>, a <strong>Start time</strong>{" "}
+            and <strong>Timezone</strong> (an IANA zone name, e.g.{" "}
+            <Code>Asia/Ho_Chi_Minh</Code>), and how many completed backups to{" "}
+            <strong>Keep</strong> - older ones past that count are deleted automatically
+            as newer ones land. Click <strong>Save schedule</strong> to apply; the panel
+            then shows the computed <strong>Last run</strong> and{" "}
+            <strong>Next run</strong> times.
+          </li>
+          <li>
+            <strong>Run now</strong> queues one immediately without waiting for the
+            schedule or disturbing it. The list below shows recent scheduled backups
+            with <strong>Download</strong> and <strong>Delete</strong> for each.
+          </li>
+        </ul>
+
+        <Callout variant="warning" title="ALWAYS INCLUDES PASSWORD HASHES">
+          Unlike a manual <strong>Export WikiHub Backup</strong>, a scheduled backup
+          always includes password hashes - there is no toggle for it, since nobody is
+          present to opt in each time. Restrict access to the mounted directory the
+          same way you would any other credential store.
         </Callout>
       </>
     ),

@@ -74,7 +74,7 @@ export function UserProfileTrigger({
             type="button"
             aria-label={`Show profile summary for ${label}`}
             className={cn(
-              "bg-primary-subtle text-primary hover:bg-surface-selected focus-visible:ring-ring flex shrink-0 items-center justify-center rounded-full font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+              "bg-primary-subtle text-primary hover:bg-surface-selected focus-visible:ring-ring flex shrink-0 cursor-pointer items-center justify-center rounded-full font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
               className,
             )}
           >

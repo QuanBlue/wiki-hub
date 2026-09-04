@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Lock, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -35,11 +35,13 @@ export function PageRestrictionsDialog({
   page,
   members,
   groups,
+  trigger,
 }: {
   spaceKey: string;
   page: WikiPage;
   members: SpaceMember[];
   groups: Group[];
+  trigger?: ReactElement;
 }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<Restriction[]>([]);
@@ -123,7 +125,7 @@ export function PageRestrictionsDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="ghost" size="sm"><Lock /> Page access</Button>
+        {trigger ?? <Button type="button" variant="ghost" size="sm"><Lock /> Page access</Button>}
       </DialogTrigger>
       <DialogContent title="Page access" description={`Choose who can view or edit "${page.title}". View restrictions inherit to child pages.`} className="max-w-2xl">
         <div className="border-border bg-surface-sunken grid gap-2 rounded-md border p-3 sm:grid-cols-[auto_1fr_auto_auto]">

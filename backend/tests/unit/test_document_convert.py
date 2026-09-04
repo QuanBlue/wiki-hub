@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from bs4 import BeautifulSoup
 
 from app.core.exceptions import BadRequestError, ServiceUnavailableError
 from app.modules.document_import import convert
@@ -27,6 +29,7 @@ from app.modules.document_import.convert import (
     new_media_token,
     replace_media_tokens,
 )
+from app.modules.document_import.sanitize import sanitize_imported_html
 
 
 class FakeProcess:
@@ -122,6 +125,200 @@ class TestPandocArgv:
         argv = build_pandoc_args(source, doc_format="docx", workdir=tmp_path)
         assert argv[-1] == str(source)
         assert argv[-3] == "-o"
+
+
+class TestDocxTableFormatting:
+    def test_nested_tables_do_not_leak_rows_into_the_parent(self):
+        soup = BeautifulSoup(
+            "<table><tbody><tr><td>Outer<table><tr><td>Inner</td></tr></table>"
+            "</td></tr></tbody></table>",
+            "html.parser",
+        )
+
+        rows = convert._direct_html_table_rows(soup.table)
+
+        assert len(rows) == 1
+        assert "Outer" in rows[0].find("td", recursive=False).get_text(strip=True)
+
+    def test_word_cell_shading_alignment_and_borders_are_carried_to_html(self, tmp_path):
+        source = tmp_path / "styled.docx"
+        document = """<?xml version="1.0" encoding="UTF-8"?>
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:body><w:tbl><w:tblGrid><w:gridCol w:w="4795"/><w:gridCol w:w="3961"/></w:tblGrid><w:tr><w:tc>
+            <w:tcPr><w:shd w:fill="2F5496"/><w:vAlign w:val="center"/>
+              <w:tcBorders><w:top w:color="000000"/></w:tcBorders></w:tcPr>
+            <w:p><w:pPr><w:jc w:val="center"/></w:pPr>
+              <w:r><w:rPr><w:color w:val="E7E6E6"/></w:rPr><w:t>Header</w:t></w:r>
+            </w:p>
+          </w:tc></w:tr></w:tbl></w:body>
+        </w:document>"""
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("word/document.xml", document)
+
+        result = convert._enrich_docx_table_formatting(
+            "<table><tr><td>Header</td></tr></table>", source
+        )
+
+        assert 'style="width: 100%"' in result
+        assert 'width: 54.7624%' in result
+        assert 'background-color: #2f5496' in result
+        assert 'vertical-align: middle' in result
+        assert 'border: 1px solid #000000' in result
+        assert 'text-align: center' in result
+        assert 'color: #e7e6e6' in result
+
+
+class TestHtmlTableFormatting:
+    @pytest.mark.asyncio
+    async def test_large_html_reports_skip_style_enrichment_to_keep_content_storable(
+        self, tmp_path
+    ):
+        source = tmp_path / "large-report.html"
+        source.write_text(
+            "x" * (convert.MAX_HTML_STYLE_ENRICHMENT_BYTES + 1),
+            encoding="utf-8",
+        )
+        converted = "<table><tr><td>Report contents</td></tr></table>"
+        patcher, _ = _patch_pandoc(tmp_path, html=converted)
+
+        with patcher:
+            result = await extract_with_pandoc(
+                source, doc_format="html", workdir=tmp_path
+            )
+
+        assert result.html == converted
+
+    @pytest.mark.asyncio
+    async def test_css_selectors_are_inlined_before_the_html_is_stored(self, tmp_path):
+        source = tmp_path / "report.html"
+        source.write_text(
+            """<style>
+            table, th, td { border: 1px solid black; padding: .3em; }
+            .severity-MEDIUM { background-color: #e9c60060; }
+            .severity { background-color: #e9c600; color: #fafafa; font-weight: bold; }
+            </style>
+            <table><tr class="severity-MEDIUM"><th>Type</th><th class="severity">MEDIUM</th></tr>
+            <tr><td>body</td><td>value</td></tr></table>""",
+            encoding="utf-8",
+        )
+        patcher, _ = _patch_pandoc(
+            tmp_path,
+            html=(
+                "<table><tr class=\"severity-MEDIUM\"><th>Type</th>"
+                "<th class=\"severity\">MEDIUM</th></tr>"
+                "<tr><td>body</td><td>value</td></tr></table>"
+            ),
+        )
+
+        with patcher:
+            result = await extract_with_pandoc(
+                source, doc_format="html", workdir=tmp_path
+            )
+
+        assert "background-color: #e9c60060" in result.html
+        assert "background-color: #e9c600" in result.html
+        assert "color: #fafafa" in result.html
+        assert "border: 1px solid black" in result.html
+        assert result.html.count("background-color: #e9c60060") >= 2
+        assert "<strong>MEDIUM</strong>" in result.html
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_report_colspan_does_not_create_a_blank_column(self, tmp_path):
+        source = tmp_path / "netshot.html"
+        source.write_text(
+            """<style>
+            .group-header th { font-size: 200%; }
+            .sub-header th { font-size: 150%; }
+            </style><table>
+            <tr class="group-header"><th colspan="6">kubernetes</th></tr>
+            <tr class="sub-header"><th colspan="6">No vulnerabilities found</th></tr>
+            <tr><th>Type</th><th>Misconf ID</th><th>Check</th><th>Severity</th><th>Message</th></tr>
+            <tr><td>Check</td><td>KSV-0001</td><td>Detail</td><td>LOW</td><td>Message</td></tr>
+            </table>""",
+            encoding="utf-8",
+        )
+        # Pandoc materialises the phantom sixth slot as an empty cell. This is
+        # the shape that previously reached Tiptap and rendered a blank column.
+        patcher, _ = _patch_pandoc(
+            tmp_path,
+            html=(
+                '<table><tr class="group-header"><th colspan="6">kubernetes</th></tr>'
+                '<tr class="sub-header"><th colspan="6">No vulnerabilities found</th></tr>'
+                '<tr><th>Type</th><th>Misconf ID</th><th>Check</th><th>Severity</th><th>Message</th><th></th></tr>'
+                '<tr><td>Check</td><td>KSV-0001</td><td>Detail</td><td>LOW</td><td>Message</td><td></td></tr></table>'
+            ),
+        )
+
+        with patcher:
+            result = await extract_with_pandoc(
+                source, doc_format="html", workdir=tmp_path
+            )
+
+        table = BeautifulSoup(result.html, "html.parser").table
+        rows = convert._direct_html_table_rows(table)
+        assert rows[0].th["colspan"] == "5"
+        assert "font-size: 200%" in rows[0].th["style"]
+        assert rows[1].th["colspan"] == "5"
+        assert "font-size: 150%" in rows[1].th["style"]
+        assert [
+            len(row.find_all(["th", "td"], recursive=False)) for row in rows
+        ] == [1, 1, 5, 5]
+
+    @pytest.mark.asyncio
+    async def test_html_block_and_list_formatting_is_preserved(self, tmp_path):
+        source = tmp_path / "formatted.html"
+        source.write_text(
+            """<style>
+            .summary { text-align: center; font-size: 125%; color: #123456; }
+            .aligned-list { text-align: right; font-size: 90%; }
+            </style>
+            <p class="summary">Overview</p>
+            <ol class="aligned-list"><li>First</li><li>Second</li></ol>""",
+            encoding="utf-8",
+        )
+        patcher, _ = _patch_pandoc(
+            tmp_path,
+            html="<p>Overview</p><ol><li>First</li><li>Second</li></ol>",
+        )
+
+        with patcher:
+            result = await extract_with_pandoc(
+                source, doc_format="html", workdir=tmp_path
+            )
+
+        soup = BeautifulSoup(result.html, "html.parser")
+        assert "text-align: center" in soup.p["style"]
+        assert soup.p.span["style"] == "color: #123456; font-size: 125%"
+        items = soup.ol.find_all("li", recursive=False)
+        assert len(items) == 2
+        assert all("text-align: right" in item["style"] for item in items)
+        assert all(item.span["style"] == "font-size: 90%" for item in items)
+
+        sanitized = BeautifulSoup(sanitize_imported_html(result.html), "html.parser")
+        assert all(
+            "text-align" in item["style"] and "right" in item["style"]
+            for item in sanitized.ol.find_all("li", recursive=False)
+        )
+
+    @pytest.mark.asyncio
+    async def test_google_font_import_without_a_semicolon_is_ignored(self, tmp_path):
+        source = tmp_path / "dms4.html"
+        source.write_text(
+            """<style>
+            @import url("https://fonts.googleapis.com/css?family=Open+Sans:300,400,700")
+            p { text-align: center; }
+            </style><p>DMS4 report</p>""",
+            encoding="utf-8",
+        )
+        patcher, _ = _patch_pandoc(tmp_path, html="<p>DMS4 report</p>")
+
+        with patcher:
+            result = await extract_with_pandoc(
+                source, doc_format="html", workdir=tmp_path
+            )
+
+        assert "DMS4 report" in result.html
+        assert "text-align: center" in result.html
 
 
 class TestPandocFailureModes:

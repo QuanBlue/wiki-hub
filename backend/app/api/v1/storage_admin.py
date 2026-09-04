@@ -18,13 +18,19 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import CurrentSuperuser, DbSession
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.attachment import PageAttachment
 from app.models.backup_job import BackupArchive
 from app.models.import_job import ImportArchive
 from app.models.page import WikiPage
 from app.models.space import Space
 from app.models.user import User
+from app.modules.attachments.onlyoffice import (
+    preview_editor_config,
+    preview_extension,
+    require_enabled as require_onlyoffice_enabled,
+    verify_preview_ticket,
+)
 from app.services.storage import ObjectStorage, S3ObjectStorage, StoredObject
 
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -131,6 +137,12 @@ class DeleteResult(BaseModel):
     key: str
     archive_cleared: bool
     attachment_deleted: bool
+
+
+class OfficePreviewConfigRead(BaseModel):
+    """The signed, read-only ONLYOFFICE configuration for a storage object."""
+
+    config: dict[str, object]
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +262,63 @@ async def read_storage_object(
     # send, so the connection looked dead and the download stalled at 0 B.
     content_length, chunks = await storage.get_stream(key)
     headers = {"Content-Disposition": f'{disposition}; filename="{filename}"'}
+    if content_length:
+        headers["Content-Length"] = str(content_length)
+    return StreamingResponse(chunks, media_type=media_type, headers=headers)
+
+
+@router.get(
+    "/office-preview/config",
+    response_model=OfficePreviewConfigRead,
+    summary="Create a read-only ONLYOFFICE preview configuration for a storage object",
+)
+async def get_office_preview_config(
+    admin: CurrentSuperuser,
+    storage: StorageDep,
+    key: str = Query(..., description="The S3 object key to preview"),
+) -> OfficePreviewConfigRead:
+    """Same shape as an attachment's own `/office/config` (`attachments.py`),
+    narrowed to a storage key rather than a `PageAttachment` row: the admin
+    browser lists objects (avatars, import archives, ...) most of which have
+    no attachment permission to check. `CurrentSuperuser` is the entire
+    authorization for this route, same as every other endpoint in this
+    module - a lesser privilege for opening a preview than for deleting the
+    object outright would be a strange asymmetry.
+    """
+    if not await storage.exists(key):
+        raise NotFoundError(f"Object '{key}' was not found in storage.")
+    filename = unquote(key.rsplit("/", 1)[-1])
+    if preview_extension(filename) is None:
+        raise BadRequestError(
+            "This file type cannot be previewed in the document viewer.",
+            code="office_preview_unsupported",
+        )
+    return OfficePreviewConfigRead(
+        config=preview_editor_config(key=key, filename=filename, user=admin)
+    )
+
+
+@router.get(
+    "/office-preview/content",
+    response_class=Response,
+    summary="Read a storage object for ONLYOFFICE's read-only previewer",
+)
+async def read_storage_object_for_office(
+    storage: StorageDep,
+    key: str = Query(...),
+    token: str = Query(...),
+) -> Response:
+    """Document-server-only content route authenticated by a signed capability -
+    see `read_attachment_for_office` (`attachments.py`) for why this cannot
+    require the browser's session cookie instead."""
+    require_onlyoffice_enabled()
+    verify_preview_ticket(token, key=key)
+    if not await storage.exists(key):
+        raise NotFoundError(f"Object '{key}' was not found in storage.")
+    filename = key.rsplit("/", 1)[-1]
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    content_length, chunks = await storage.get_stream(key)
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     if content_length:
         headers["Content-Length"] = str(content_length)
     return StreamingResponse(chunks, media_type=media_type, headers=headers)

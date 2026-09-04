@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Bookmark,
   Check,
   Clock3,
   CodeXml,
@@ -47,10 +48,11 @@ import { toast } from "sonner";
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { EditSpaceModal } from "@/components/admin/edit-space-modal";
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
+import { PageLabelsDialog } from "@/components/pages/page-labels-dialog";
+import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialog";
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
-import { DocumentImportProgress } from "@/components/pages/document-import-progress";
 import { ImportPagesDialog } from "@/components/pages/import-pages-dialog";
 import { MovePageDialog } from "@/components/pages/move-page-dialog";
 import { SourceCodeEditor } from "@/components/pages/source-code-editor";
@@ -94,7 +96,7 @@ import type {
   SpaceVisibility,
   SpaceMember,
   WikiPage,
-  DocumentImportJob,
+  PageLabel,
 } from "@/types/api";
 import type { CSSProperties } from "react";
 
@@ -795,7 +797,9 @@ export function SpaceWorkspace({
   );
   const [dragging, setDragging] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [importJob, setImportJob] = useState<DocumentImportJob | null>(null);
+  const [attachmentsDialogOpen, setAttachmentsDialogOpen] = useState(false);
+  const [labelsDialogOpen, setLabelsDialogOpen] = useState(false);
+  const [pageLabels, setPageLabels] = useState<PageLabel[]>([]);
   const [favorite, setFavorite] = useState(space.is_favorite);
   const [favoritePending, setFavoritePending] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -829,6 +833,7 @@ export function SpaceWorkspace({
   );
   const [draftContent, setDraftContent] = useState("");
   const [markdownDraft, setMarkdownDraft] = useState("");
+  const [titleDraft, setTitleDraft] = useState("");
   const [savePending, setSavePending] = useState(false);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<
@@ -848,27 +853,6 @@ export function SpaceWorkspace({
   const [movePageOpen, setMovePageOpen] = useState(false);
   const [editSpaceModalOpen, setEditSpaceModalOpen] = useState(false);
 
-  // Re-attach to an import that is still running. Without this, reloading the
-  // page mid-import looks like the import simply vanished, and the only sign
-  // it is still going is pages appearing in the tree by themselves.
-  useEffect(() => {
-    if (!canEdit || space.status !== "active") return;
-    let cancelled = false;
-    void api
-      .get<DocumentImportJob[]>(
-        `/api/v1/spaces/${encodeURIComponent(space.key)}/document-imports/active`,
-      )
-      .then((jobs) => {
-        if (!cancelled && jobs.length > 0) setImportJob((current) => current ?? jobs[0]);
-      })
-      .catch(() => {
-        // Nothing to re-attach to, or the request failed - either way there is
-        // nothing to show and nothing worth interrupting the reader for.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [canEdit, space.key, space.status]);
   const canAdmin =
     canManageRestrictions ||
     space.my_role === "admin" ||
@@ -880,19 +864,21 @@ export function SpaceWorkspace({
   const [overviewEditing, setOverviewEditing] = useState(false);
   const [overviewDraft, setOverviewDraft] = useState(space.description);
   const [overviewSavePending, setOverviewSavePending] = useState(false);
-  const pageEditBaseline = useRef({ html: "", markdown: "" });
+  const pageEditBaseline = useRef({ html: "", markdown: "", title: "" });
   const pageEditDirtyRef = useRef(false);
   const overviewEditBaseline = useRef(space.description);
   const latestPageDraft = useRef({
     currentPage,
     draftContent,
     markdownDraft,
+    titleDraft,
     editMode,
   });
   latestPageDraft.current = {
     currentPage,
     draftContent,
     markdownDraft,
+    titleDraft,
     editMode,
   };
 
@@ -1030,9 +1016,10 @@ export function SpaceWorkspace({
   const pageEditDirty =
     editing &&
     Boolean(currentPage) &&
-    (editMode === "markdown"
-      ? markdownDraft !== pageEditBaseline.current.markdown
-      : draftContent !== pageEditBaseline.current.html);
+    (titleDraft !== pageEditBaseline.current.title ||
+      (editMode === "markdown"
+        ? markdownDraft !== pageEditBaseline.current.markdown
+        : draftContent !== pageEditBaseline.current.html));
   pageEditDirtyRef.current = pageEditDirty;
   const overviewEditDirty =
     overviewEditing && overviewDraft !== overviewEditBaseline.current;
@@ -1243,12 +1230,15 @@ export function SpaceWorkspace({
 
     setDraftContent(html);
     setMarkdownDraft(markdown);
+    setTitleDraft(currentPage.title);
     latestPageDraft.current.draftContent = html;
     latestPageDraft.current.markdownDraft = markdown;
+    latestPageDraft.current.titleDraft = currentPage.title;
     latestPageDraft.current.editMode = mode;
     pageEditBaseline.current = {
       html: serverHtml,
       markdown: serverMarkdown,
+      title: currentPage.title,
     };
     pageEditDirtyRef.current =
       html !== serverHtml || markdown !== serverMarkdown;
@@ -1256,6 +1246,12 @@ export function SpaceWorkspace({
     setPreviewing(false);
     setEditing(true);
     setRecoveryDraft(null);
+  }
+
+  function updateTitleDraft(nextTitle: string) {
+    latestPageDraft.current.titleDraft = nextTitle;
+    pageEditDirtyRef.current = nextTitle !== pageEditBaseline.current.title;
+    setTitleDraft(nextTitle);
   }
 
   function updateDraftContent(nextContent: string) {
@@ -1581,13 +1577,16 @@ export function SpaceWorkspace({
     const nextHtml = mode === "html" ? prettyHtml(html) : html;
     setDraftContent(nextHtml);
     setMarkdownDraft(markdown);
+    setTitleDraft(currentPage.title);
     latestPageDraft.current.draftContent = nextHtml;
     latestPageDraft.current.markdownDraft = markdown;
+    latestPageDraft.current.titleDraft = currentPage.title;
     latestPageDraft.current.editMode = mode;
     pageEditDirtyRef.current = false;
     pageEditBaseline.current = {
       html: mode === "html" ? prettyHtml(html) : html,
       markdown,
+      title: currentPage.title,
     };
     setAutoSaveEnabled(true);
     markAutoSaveStatus("idle");
@@ -1614,8 +1613,10 @@ export function SpaceWorkspace({
     setConversionMode(null);
     setDraftContent("");
     setMarkdownDraft("");
+    setTitleDraft("");
     latestPageDraft.current.draftContent = "";
     latestPageDraft.current.markdownDraft = "";
+    latestPageDraft.current.titleDraft = "";
     pageEditDirtyRef.current = false;
     setPreviewing(false);
   }
@@ -1665,9 +1666,15 @@ export function SpaceWorkspace({
       currentPage: page,
       draftContent: htmlDraft,
       markdownDraft: markdownSource,
+      titleDraft: nextTitle,
       editMode: mode,
     } = latestPageDraft.current;
     if (!page || autoSaveInFlight.current) return false;
+    // An emptied-out title falls back to the page's current one rather than
+    // failing the save outright - the title field enforces this visually
+    // (see the `required` input below), but autosave can still fire mid-edit
+    // with a title the user has not finished retyping.
+    const title = nextTitle.trim() || page.title;
 
     autoSaveInFlight.current = true;
     setSavePending(true);
@@ -1675,6 +1682,7 @@ export function SpaceWorkspace({
       const updated = await api.patch<WikiPage>(
         `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(page.slug)}`,
         {
+          title,
           content: mode === "markdown" ? markdownSource : htmlDraft,
           content_format: formatForMode(mode),
         },
@@ -1682,6 +1690,7 @@ export function SpaceWorkspace({
       pageEditBaseline.current = {
         html: htmlDraft,
         markdown: markdownSource,
+        title,
       };
       pageEditDirtyRef.current = false;
       clearLocalPageDraft(space.key, page.slug);
@@ -1829,14 +1838,14 @@ export function SpaceWorkspace({
                   <div className="flex items-center gap-0.5">
                     <CreatePageDialog
                       spaceKey={space.key}
-                      triggerLabel="New"
+                      triggerLabel=""
                       triggerVariant="ghost"
-                      triggerSize="sm"
+                      triggerSize="icon"
                     />
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       title="Import pages from files"
                       aria-label="Import pages from files"
                       onClick={() => setImportDialogOpen(true)}
@@ -2147,12 +2156,25 @@ export function SpaceWorkspace({
                         onClick={toggleSavedForLater}
                         aria-pressed={savedForLater}
                       >
-                        <Star
+                        <Bookmark
                           className={cn(
                             savedForLater && "text-primary fill-current",
                           )}
                         />
                         {savedForLater ? "Saved" : "Save for later"}
+                      </Button>
+                    ) : null}
+                    {currentPage ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void togglePinned()}
+                        disabled={pinPending}
+                        aria-pressed={pinned}
+                      >
+                        <Pin className={cn(pinned && "text-primary fill-current")} />
+                        {pinned ? "Pinned" : "Pin page"}
                       </Button>
                     ) : null}
                     <Button
@@ -2165,14 +2187,6 @@ export function SpaceWorkspace({
                       Share
                     </Button>
                   </div>
-                  {currentPage && canManageRestrictions ? (
-                    <PageRestrictionsDialog
-                      spaceKey={space.key}
-                      page={currentPage}
-                      members={members}
-                      groups={groups}
-                    />
-                  ) : null}
                   {currentPage ? (
                     <DropdownMenu modal={false}>
                       <DropdownMenuTrigger asChild>
@@ -2204,24 +2218,29 @@ export function SpaceWorkspace({
                           <Clock3 />
                           Page history
                         </DropdownMenuItem>
-                        <DropdownMenuItem disabled={pinPending} onSelect={() => void togglePinned()}>
-                          <Pin className={cn(pinned && "text-primary fill-current")} />
-                          {pinned ? "Remove from pinned pages" : "Pin page"}
-                        </DropdownMenuItem>
-                        {canEdit && space.status === "active" ? (
-                          <DropdownMenuItem
-                            onSelect={() => setImportDialogOpen(true)}
-                          >
-                            <FileUp />
-                            Import from file…
-                          </DropdownMenuItem>
+                        {canManageRestrictions ? (
+                          <PageRestrictionsDialog
+                            spaceKey={space.key}
+                            page={currentPage}
+                            members={members}
+                            groups={groups}
+                            trigger={
+                              <DropdownMenuItem>
+                                <Lock />
+                                Page access
+                              </DropdownMenuItem>
+                            }
+                          />
                         ) : null}
-                        <DropdownMenuItem disabled>
+                        <DropdownMenuItem onSelect={() => setLabelsDialogOpen(true)}>
+                          <Tag />
+                          Labels
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => setAttachmentsDialogOpen(true)}
+                        >
                           <FileText />
                           Attachments
-                          <span className="text-muted-foreground ml-auto text-xs">
-                            Soon
-                          </span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuSub>
@@ -2257,7 +2276,7 @@ export function SpaceWorkspace({
                               <Download />
                               Export
                             </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="w-48">
+                            <DropdownMenuSubContent className="text-muted-foreground w-48 text-sm font-medium">
                               <DropdownMenuItem onSelect={() => exportPage("html")}>
                                 <Download />
                                 Export HTML
@@ -2305,7 +2324,7 @@ export function SpaceWorkspace({
                     >
                       {currentPage ? (
                         <DropdownMenuItem onSelect={toggleSavedForLater}>
-                          <Star
+                          <Bookmark
                             className={cn(
                               savedForLater && "text-primary fill-current",
                             )}
@@ -2321,6 +2340,26 @@ export function SpaceWorkspace({
                         <Share2 />
                         Share
                       </DropdownMenuItem>
+                      {currentPage && canManageRestrictions ? (
+                        <PageRestrictionsDialog
+                          spaceKey={space.key}
+                          page={currentPage}
+                          members={members}
+                          groups={groups}
+                          trigger={
+                            <DropdownMenuItem>
+                              <Lock />
+                              Page access
+                            </DropdownMenuItem>
+                          }
+                        />
+                      ) : null}
+                      {currentPage ? (
+                        <DropdownMenuItem onSelect={() => setLabelsDialogOpen(true)}>
+                          <Tag />
+                          Labels
+                        </DropdownMenuItem>
+                      ) : null}
                       {currentPage ? (
                         <>
                           <DropdownMenuItem disabled={pinPending} onSelect={() => void togglePinned()}>
@@ -2334,7 +2373,7 @@ export function SpaceWorkspace({
                                 <Download />
                                 Export
                               </DropdownMenuSubTrigger>
-                              <DropdownMenuSubContent className="w-48">
+                              <DropdownMenuSubContent className="text-muted-foreground w-48 text-sm font-medium">
                                 <DropdownMenuItem onSelect={() => exportPage("html")}>
                                   <Download />
                                   Export HTML
@@ -2364,17 +2403,11 @@ export function SpaceWorkspace({
                             <Clock3 />
                             Page history
                           </DropdownMenuItem>
-                          {canEdit && space.status === "active" ? (
-                            <DropdownMenuItem
-                              onSelect={() => setImportDialogOpen(true)}
-                            >
-                              <FileUp />
-                              Import from file…
-                            </DropdownMenuItem>
-                          ) : null}
-                          <DropdownMenuItem disabled>
+                          <DropdownMenuItem
+                            onSelect={() => setAttachmentsDialogOpen(true)}
+                          >
                             <FileText />
-                            Attachments (soon)
+                            Attachments
                           </DropdownMenuItem>
                           {canEdit && space.status === "active" ? (
                             <DropdownMenuItem
@@ -2420,20 +2453,6 @@ export function SpaceWorkspace({
               ) : null}
             </div>
           </div>
-
-          {importJob ? (
-            /* Inline rather than a modal: an import can take minutes, and
-               there is no reason to stop someone reading while it runs. */
-            <div className="mt-4">
-              <DocumentImportProgress
-                job={importJob}
-                spaceKey={space.key}
-                onJobChange={setImportJob}
-                onDismiss={() => setImportJob(null)}
-                onFinished={() => router.refresh()}
-              />
-            </div>
-          ) : null}
 
           {recoveryDraft && !editing && !overviewEditing ? (
             <div className="border-warning/30 bg-warning-bg text-warning mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3">
@@ -2502,9 +2521,16 @@ export function SpaceWorkspace({
                 className="space-y-5"
                 noValidate
               >
-                <h1 className="text-foreground text-3xl font-semibold tracking-normal wikihub-page-header">
-                  {currentPage.title}
-                </h1>
+                <input
+                  type="text"
+                  id="page-editor-title"
+                  aria-label="Page title"
+                  value={titleDraft}
+                  onChange={(event) => updateTitleDraft(event.target.value)}
+                  maxLength={255}
+                  required
+                  className="text-foreground wikihub-page-header w-full rounded-md border border-transparent bg-transparent text-3xl font-semibold tracking-normal outline-none transition-colors duration-150 hover:border-border-strong focus-visible:border-border-strong focus-visible:ring-ring focus-visible:ring-2"
+                />
                 <div
                   className={cn(
                     "min-w-0",
@@ -2760,8 +2786,8 @@ export function SpaceWorkspace({
                       : null}
                   </button>
                   <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                    No labels
-                    <Tag className="size-3.5" />
+                    {pageLabels.length ? pageLabels.map((label) => label.name).join(", ") : "No labels"}
+                    <button type="button" onClick={() => setLabelsDialogOpen(true)} className="hover:text-foreground focus-visible:ring-ring rounded-sm focus-visible:ring-2 focus-visible:outline-none" aria-label="Manage page labels" title="Manage page labels"><Tag className="size-3.5" /></button>
                   </span>
                 </div>
 
@@ -2886,12 +2912,24 @@ export function SpaceWorkspace({
               inside the dropdown would fight the menu for focus. */}
           <ImportPagesDialog
             spaceKey={space.key}
-            parentPage={isHomePage ? null : currentPage}
+            parentPage={null}
+            existingPages={pages}
             open={importDialogOpen}
             onOpenChange={setImportDialogOpen}
             trigger={null}
-            onStarted={(job) => setImportJob(job)}
+            onStarted={() => undefined}
+            onFinished={() => router.refresh()}
           />
+
+          {currentPage ? (
+            <PageAttachmentsDialog
+              pageTitle={currentPage.title}
+              content={currentPage.content}
+              open={attachmentsDialogOpen}
+              onOpenChange={setAttachmentsDialogOpen}
+            />
+          ) : null}
+          {currentPage ? <PageLabelsDialog spaceKey={space.key} slug={currentPage.slug} open={labelsDialogOpen} onOpenChange={setLabelsDialogOpen} onChange={setPageLabels} /> : null}
 
           <ConfirmDialog
             open={deletePageOpen}

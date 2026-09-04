@@ -71,6 +71,25 @@ class TestCreateSpace:
         with pytest.raises(ValueError, match="Key must start with a letter"):
             SpaceCreate(key="1bad!", name="Nope")
 
+    async def test_name_starting_with_a_digit_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Name must start with a letter"):
+            SpaceCreate(key="ENG", name="123")
+
+    async def test_name_starting_with_special_character_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Name must start with a letter"):
+            SpaceCreate(key="ENG", name="#Engineering")
+
+    async def test_name_starting_with_accented_letter_is_accepted(
+        self, session: AsyncSession
+    ) -> None:
+        service = SpaceService(session)
+        creator = await _make_user(session)
+
+        space = await service.create(
+            SpaceCreate(key="ENG", name="Ứng dụng"), creator
+        )
+        assert space.name == "Ứng dụng"
+
 
 class TestSpacePermissions:
     async def test_non_member_cannot_update(self, session: AsyncSession) -> None:
@@ -99,6 +118,10 @@ class TestSpacePermissions:
 
         updated = await service.update(space, SpaceUpdate(name="Engineering Docs"), owner)
         assert updated.name == "Engineering Docs"
+
+    async def test_rename_starting_with_a_digit_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Name must start with a letter"):
+            SpaceUpdate(name="2Engineering")
 
     async def test_superuser_can_update_any_space(self, session: AsyncSession) -> None:
         service = SpaceService(session)

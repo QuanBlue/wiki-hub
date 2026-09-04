@@ -9,6 +9,7 @@ import {
   FileArchive,
   Archive,
   ArchiveRestore,
+  FolderOpen,
   HardDrive,
   Info,
   ListChecks,
@@ -20,7 +21,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -93,6 +94,29 @@ type PortableBackupJob = {
   eta_seconds: number | null;
   created_at: string;
   updated_at: string;
+};
+
+type AutomatedBackupSettings = {
+  enabled: boolean;
+  interval_unit: "hours" | "days";
+  interval_value: number;
+  time_of_day: string;
+  timezone: string;
+  retention_count: number;
+  //: Relative to `base_directory`, e.g. "team-a" for `<base_directory>/team-a`.
+  //: `null` writes straight into `base_directory` itself.
+  subdirectory: string | null;
+  directory_configured: boolean;
+  //: The host-mounted volume as the container sees it - fixed at deploy
+  //: time (`WIKIHUB_AUTOMATED_BACKUP_DIRECTORY`), shown for context only.
+  base_directory: string | null;
+  //: `base_directory` narrowed by `subdirectory` - where a backup actually
+  //: lands right now. `null` whenever `directory_configured` is false.
+  directory: string | null;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_status: string | null;
+  last_error: string | null;
 };
 
 //: Returned by `POST /api/v1/backup/archives/uploads` - the target for a
@@ -573,6 +597,20 @@ type RestoreLogEntry = {
   message: string;
 };
 
+/** One line in any job's activity log - WikiHub export, WikiHub restore or
+ * Confluence import all narrate themselves this same way server-side
+ * (`BackupJobLog`/`ConfluenceImportLog` are "the same shape on purpose"), so
+ * this is the one client-side shape `renderJobActivityCard`/
+ * `renderJobLogRows` read, rather than each import type keeping its own. A
+ * `RestoreLogEntry` already satisfies this structurally. */
+type JobLogEntry = {
+  id: string;
+  time: string;
+  level: string;
+  label?: string | null;
+  message: string;
+};
+
 function ImportCompletedDialog({
   open,
   onOpenChange,
@@ -702,6 +740,7 @@ export function BackupPanel() {
   const [confluenceJob, setConfluenceJob] =
     useState<ConfluenceImportJob | null>(null);
   const [confluenceCancelPending, setConfluenceCancelPending] = useState(false);
+  const [confluenceLogsExpanded, setConfluenceLogsExpanded] = useState(true);
   const [confluenceLogs, setConfluenceLogs] = useState<ConfluenceImportLog[]>(
     [],
   );
@@ -873,6 +912,17 @@ export function BackupPanel() {
     string | null
   >(null);
   const [siteSettings, setSiteSettings] = useState<SiteSettings | null>(null);
+  const [automatedSettings, setAutomatedSettings] = useState<AutomatedBackupSettings | null>(null);
+  const [automatedJobs, setAutomatedJobs] = useState<PortableBackupJob[]>([]);
+  const [automatedPending, setAutomatedPending] = useState(false);
+  const [automatedError, setAutomatedError] = useState<string | null>(null);
+  //: Shown right beside the subdirectory field, in addition to the toast
+  //: `saveAutomatedBackups` already raises for every other save failure -
+  //: a bad filesystem path is worth pointing at directly, not just naming
+  //: in a message that has scrolled away by the time it is read twice.
+  const [automatedSubdirectoryError, setAutomatedSubdirectoryError] =
+    useState<string | null>(null);
+  const [deleteAutomatedJobId, setDeleteAutomatedJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [isSpaceModalOpen, setIsSpaceModalOpen] = useState(false);
@@ -925,6 +975,34 @@ export function BackupPanel() {
       ? [`and ${conflictingSelectedSpaces.length - 8} more`]
       : []),
   ].join(", ");
+  // WikiHub restore's counterpart of the two blocks above: the archive is
+  // already scanned (`.conflict` per space) by the time the picker's "Start
+  // restore" button is reachable, so a conflict among the chosen spaces can
+  // be known - and confirmed - before the restore ever runs, the same "ask
+  // first" shape Confluence import already uses. Mirrors `submitImport`'s own
+  // "selection covering everything is sent as no selection at all" rule so
+  // this agrees with what the request will actually cover.
+  const selectedRestoreKeys =
+    importSelectedSpaceKeys.length > 0 &&
+    importSelectedSpaceKeys.length < (backupArchive?.spaces.length ?? 0)
+      ? importSelectedSpaceKeys
+      : (backupArchive?.spaces.map((space) => space.key) ?? []);
+  const conflictingRestoreSpaces =
+    backupArchive?.spaces.filter(
+      (space) => space.conflict && selectedRestoreKeys.includes(space.key),
+    ) ?? [];
+  // `conflictingImportSpaceKeys` is also the one place a restore that ran
+  // *without* the pre-flight check (a space someone else created between
+  // scan and restore, say) can still report a leftover conflict, so the
+  // confirm dialog below reads from this rather than straight from
+  // `conflictingRestoreSpaces` - one description that is right regardless of
+  // which of the two ever opens it.
+  const overwriteImportSpaceKeysSummary = [
+    ...conflictingImportSpaceKeys.slice(0, 8),
+    ...(conflictingImportSpaceKeys.length > 8
+      ? [`and ${conflictingImportSpaceKeys.length - 8} more`]
+      : []),
+  ].join(", ");
   const confluenceArchiveName =
     storedConfluenceUpload?.fileName ?? confluenceFile?.name ?? null;
 
@@ -944,6 +1022,13 @@ export function BackupPanel() {
       portableBackupJob.status === "running");
   const isPortableJobRunning =
     isFullExportRunning || isConfluenceExportRunning || isRestoreJobRunning;
+  //: Whether `renderPortableJobCard("restore")` is (about to be) on screen -
+  //: same condition as its own early return. The restore log lives inside
+  //: that card whenever it is up; `renderRestoreLogPanel`'s standalone call
+  //: site below only needs to cover the rest (no job yet, or "complete").
+  const restoreJobCardVisible =
+    portableBackupJob?.kind === "full_import" &&
+    portableBackupJob.status !== "complete";
 
   const normalizedExportSpaceFilter = exportSpaceFilter.trim().toLocaleLowerCase();
   const filteredAvailableSpaces = (availableSpaces ?? []).filter(
@@ -1191,6 +1276,22 @@ export function BackupPanel() {
   const jobPagesSummary = confluenceJob?.counters.pages_total
     ? `${confluenceJob.counters.pages_processed ?? 0}/${confluenceJob.counters.pages_total} pages`
     : `${confluenceJob?.counters.pages_processed ?? 0} pages`;
+  //: `displayConfluenceLogs` reshaped into the same `JobLogEntry` shape the
+  //: WikiHub restore card's logs already use, so the two feed the exact same
+  //: `renderJobActivityCard`/`renderJobLogRows` - there is only one log list
+  //: implementation, not one per import type that can silently drift apart.
+  const confluenceActivityLogs: JobLogEntry[] = displayConfluenceLogs.map(
+    (log) => ({
+      id: log.id,
+      time: formatLogTime(new Date(log.created_at)),
+      level: log.level,
+      label: log.entity_label,
+      message:
+        log.phase === "downloading" && !log.message.includes("%")
+          ? `${log.message} (${displayedDownloadPercent}%)`
+          : log.message,
+    }),
+  );
 
   async function renewUploadSession() {
     await apiFetch<void>("/api/v1/auth/renew", { method: "POST" });
@@ -1551,7 +1652,7 @@ export function BackupPanel() {
           toast.success("Confluence import completed successfully!");
           const successLog: ConfluenceImportLog = {
             id: "local-success-log",
-            level: "INFO",
+            level: "info",
             phase: "completed",
             entity_type: null,
             entity_label: null,
@@ -1621,8 +1722,18 @@ export function BackupPanel() {
       );
       setPortableBackupJob((current) => {
         if (!activeJob) {
-          // No active job server-side. Leave a just-finished job (complete/
-          // failed/cancelled) visible in this tab rather than wiping it.
+          // No active job server-side. A just-completed export's card stays
+          // (its download link has to remain reachable after a refocus/
+          // reload), but a cancelled or failed job has nothing further to
+          // offer once its one-time toast already fired - left alone it
+          // would sit there through every later refresh, tab switch or new
+          // upload, which is exactly the stale "Restore was cancelled" card
+          // this guards against. Confluence's own equivalent
+          // (`restoreActiveConfluenceJob`) never keeps a finished job at
+          // all; this keeps only the one case that still has a job to do.
+          if (current?.status === "cancelled" || current?.status === "failed") {
+            return null;
+          }
           return current;
         }
         // Same job already tracked in this tab - keep the existing object
@@ -1695,6 +1806,94 @@ export function BackupPanel() {
         // Fallback is handled gracefully by not blocking uploads
       });
   }, []);
+
+  const refreshAutomatedBackups = useCallback(async () => {
+    try {
+      // The schedule is still usable if a legacy/partially-migrated database
+      // cannot list historical job rows yet. A single failed request must not
+      // make the whole card look as though it is loading forever.
+      const config = await apiFetch<AutomatedBackupSettings>(
+        "/api/v1/backup/automatic",
+      );
+      setAutomatedSettings(config);
+      setAutomatedError(null);
+      try {
+        setAutomatedJobs(
+          await apiFetch<PortableBackupJob[]>("/api/v1/backup/automatic/jobs"),
+        );
+      } catch (error) {
+        setAutomatedJobs([]);
+        setAutomatedError(
+          error instanceof ApiError
+            ? `Schedule loaded, but backup history could not load: ${error.message}`
+            : "Schedule loaded, but backup history could not load.",
+        );
+      }
+    } catch (error) {
+      setAutomatedSettings(null);
+      setAutomatedError(
+        error instanceof ApiError
+          ? error.message
+          : "Could not load automatic backup settings.",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load persisted server state on mount
+    void refreshAutomatedBackups();
+  }, [refreshAutomatedBackups]);
+
+  async function saveAutomatedBackups() {
+    if (!automatedSettings) return;
+    setAutomatedPending(true);
+    setAutomatedSubdirectoryError(null);
+    try {
+      const saved = await apiFetch<AutomatedBackupSettings>("/api/v1/backup/automatic", {
+        method: "PATCH",
+        body: {
+          enabled: automatedSettings.enabled,
+          interval_unit: automatedSettings.interval_unit,
+          interval_value: automatedSettings.interval_value,
+          time_of_day: automatedSettings.time_of_day,
+          timezone: automatedSettings.timezone,
+          retention_count: automatedSettings.retention_count,
+          subdirectory: automatedSettings.subdirectory,
+        },
+      });
+      setAutomatedSettings(saved);
+      toast.success("Automatic backup settings saved.");
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "backup_subdirectory_invalid") {
+        setAutomatedSubdirectoryError(error.message);
+      } else {
+        toast.error(error instanceof ApiError ? error.message : "Could not save automatic backups.");
+      }
+    } finally { setAutomatedPending(false); }
+  }
+
+  async function runAutomatedBackupNow() {
+    setAutomatedPending(true);
+    try {
+      await apiFetch("/api/v1/backup/automatic/run", { method: "POST" });
+      toast.success("Automatic backup queued.");
+      await refreshAutomatedBackups();
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Could not queue automatic backup.");
+    } finally { setAutomatedPending(false); }
+  }
+
+  async function deleteAutomatedBackup() {
+    if (!deleteAutomatedJobId) return;
+    setAutomatedPending(true);
+    try {
+      await apiFetch(`/api/v1/backup/automatic/jobs/${deleteAutomatedJobId}`, { method: "DELETE" });
+      toast.success("Automatic backup deleted.");
+      await refreshAutomatedBackups();
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Could not delete automatic backup.");
+    } finally { setAutomatedPending(false); setDeleteAutomatedJobId(null); }
+  }
 
   const restoreStoredConfluenceUpload = useCallback(async () => {
     const run = uploadRestoreRun.current + 1;
@@ -1980,6 +2179,7 @@ export function BackupPanel() {
     setConfluenceUploadNotice(null);
     uploadPauseReason.current = null;
     let sessionRenewalTimer: number | null = null;
+    let visibilityRenewalHandler: (() => void) | null = null;
     let preparingArchive = false;
     if (!saved) {
       setPreparationLogs([]);
@@ -2000,20 +2200,29 @@ export function BackupPanel() {
         secondsRemaining: null,
       });
     }
+    // A miss on the interval below (a backgrounded tab is throttled by the
+    // browser, or the machine slept through it) leaves the *old* cookie's
+    // fixed max-age ticking down uninterrupted, and it lapses for real once
+    // that deadline passes - no amount of catching up afterwards restores a
+    // cookie the browser already discarded. Renewing again the moment the
+    // tab is looked at closes that gap for anything short of a miss that
+    // long, which covers the ordinary case (tab left in the background)
+    // rather than the extreme one (laptop asleep for the whole session TTL).
+    const runRenewal = () =>
+      void renewUploadSession().catch((renewError) => {
+        if (renewError instanceof ApiError && renewError.status === 401) {
+          uploadPauseReason.current = "session-expired";
+          setConfluenceUploadError(SESSION_EXPIRED_UPLOAD_MESSAGE);
+          confluenceUploadRequest.current?.abort();
+        }
+      });
     try {
       await renewUploadSession();
-      sessionRenewalTimer = window.setInterval(
-        () => {
-          void renewUploadSession().catch((renewError) => {
-            if (renewError instanceof ApiError && renewError.status === 401) {
-              uploadPauseReason.current = "session-expired";
-              setConfluenceUploadError(SESSION_EXPIRED_UPLOAD_MESSAGE);
-              confluenceUploadRequest.current?.abort();
-            }
-          });
-        },
-        5 * 60 * 1000,
-      );
+      sessionRenewalTimer = window.setInterval(runRenewal, 5 * 60 * 1000);
+      visibilityRenewalHandler = () => {
+        if (document.visibilityState === "visible") runRenewal();
+      };
+      document.addEventListener("visibilitychange", visibilityRenewalHandler);
       const hashAbortController = new AbortController();
       confluenceHashAbort.current = hashAbortController;
       const hashStartedAt = performance.now();
@@ -2274,6 +2483,9 @@ export function BackupPanel() {
       if (sessionRenewalTimer !== null) {
         window.clearInterval(sessionRenewalTimer);
       }
+      if (visibilityRenewalHandler !== null) {
+        document.removeEventListener("visibilitychange", visibilityRenewalHandler);
+      }
       confluenceUploadRequest.current = null;
       confluenceHashAbort.current = null;
       setHashStats(null);
@@ -2411,15 +2623,6 @@ export function BackupPanel() {
     void startConfluenceImport();
   }
 
-  // No preview/dry-run step and no confirm modal up front for *applying* the
-  // restore: uploading a huge trusted archive twice (once to preview, once
-  // to apply) was slow enough to look hung, and gating the run behind a
-  // popup just added a click before progress was visible. Existing spaces
-  // are skipped, never silently overwritten - but if the archive turns out
-  // to collide with spaces already here, the report says exactly which ones
-  // (`conflicting_space_keys`), and a confirm modal offers a one-click
-  // follow-up restore with those keys as `overwrite_space_keys` - same
-  // "ask, then overwrite" shape as the Confluence import card already uses.
   /** Upload a `.zip` restore archive to object storage in small, bounded
    * parts (never one giant multipart POST), then scan it so its space list
    * is ready for the picker - mirrors `uploadConfluence`'s
@@ -2452,6 +2655,11 @@ export function BackupPanel() {
     setRestorePreparationLogs([]);
     setRestoreJobLogs([]);
     setRestoreLogsExpanded(true);
+    // A previous restore's card (e.g. "Restore was cancelled") otherwise
+    // keeps showing right through this new upload, since nothing else ever
+    // clears a finished job once `portableBackupJob` holds it - starting a
+    // fresh restore is a clean slate, so that stale card goes with it.
+    setPortableBackupJob(null);
     let reachedScan = false;
     try {
       appendRestorePreparationLog(
@@ -3010,6 +3218,23 @@ export function BackupPanel() {
     }
   }
 
+  /** Gate for the space picker's "Start restore" button - same shape as
+   * `requestConfluenceImport`: ask about anything the archive's own scan
+   * already flagged as an existing space before the restore ever runs,
+   * rather than skipping it silently and only offering to fix that up
+   * afterwards. */
+  function requestImportRestore() {
+    if (conflictingRestoreSpaces.length > 0) {
+      setConflictingImportSpaceKeys(
+        conflictingRestoreSpaces.map((space) => space.key),
+      );
+      setConfirmOverwriteImportSpaces(true);
+      return;
+    }
+    setIsImportSpacePickerOpen(false);
+    void submitImport();
+  }
+
   const BACKUP_SECTIONS = [
     {
       id: "export" as const,
@@ -3028,6 +3253,164 @@ export function BackupPanel() {
    * `portableBackupJob.kind` this particular placement owns and the label
    * strings, so both placements stay the exact same UI as new fields/states
    * are added to the shared card in the future. */
+  /** WikiHub restore: one account of the whole thing.
+   *
+   * Two sources, one panel: this browser narrates the upload half
+   * (fingerprint, resume decision, parts, scan) because no job row exists yet
+   * to record it, and the worker narrates the restore itself. Oldest first,
+   * newest last, scrolled to the bottom - a log that grows upward makes you
+   * re-find your place on every new line.
+   *
+   * Rendered two different ways depending on whether a restore is actively
+   * running - see the two call sites - but this is the one definition of
+   * what it looks like, so they cannot drift apart. */
+  /** The rows inside any job's activity log - one implementation for the
+   * WikiHub export card, the WikiHub restore card, the Confluence import
+   * card and the restore's own pre-job panel below, so all four read
+   * identically instead of drifting the way the restore and Confluence
+   * cards previously had. */
+  function renderJobLogRows(entries: JobLogEntry[]) {
+    return entries.map((entry) => {
+      const level = entry.level.toLowerCase();
+      return (
+        <li key={entry.id} className="px-3 py-2">
+          <span className="text-muted-foreground tabular-nums">
+            {entry.time}
+          </span>{" "}
+          <span
+            className={cn(
+              "font-medium",
+              level === "warning"
+                ? "text-warning"
+                : level === "error"
+                  ? "text-danger"
+                  : undefined,
+            )}
+          >
+            {entry.level}
+          </span>{" "}
+          · {entry.label ? `${entry.label}: ` : ""}
+          {entry.message}
+        </li>
+      );
+    });
+  }
+
+  /** WikiHub restore: the browser's own narration of the upload half
+   * (fingerprint, resume decision, parts, scan) before a job row exists to
+   * record it. Once a job exists, its log lives inside that job's own
+   * `renderJobActivityCard` instead (see `renderPortableJobCard`) - this
+   * standalone panel is only for the stretch before that. */
+  function renderRestoreLogPanel() {
+    if (!restoreLogEntries.length) return null;
+    return (
+      <LogDisclosure
+        title="Restore logs"
+        count={restoreLogEntries.length}
+        expanded={restoreLogsExpanded}
+        onExpandedChange={setRestoreLogsExpanded}
+        listRef={restoreLogsListRef}
+      >
+        {renderJobLogRows(restoreLogEntries)}
+      </LogDisclosure>
+    );
+  }
+
+  /** The one job-progress card layout: title, status badge, subtitle,
+   * progress bar, an optional detail line, cancel/trailing actions and its
+   * activity log. Fed by WikiHub export/restore jobs and the Confluence
+   * import job alike (see the call sites) so the three cannot visually
+   * drift apart the way restore and Confluence previously had. */
+  function renderJobActivityCard({
+    title,
+    badgeLabel,
+    badgeVariant,
+    subtitle,
+    extraLine,
+    percent,
+    cancel,
+    trailing,
+    logs,
+    logsTitle,
+    logsExpanded,
+    onLogsExpandedChange,
+    logsListRef,
+  }: {
+    title: string;
+    badgeLabel: string;
+    badgeVariant: "info" | "success" | "danger";
+    subtitle: ReactNode;
+    extraLine?: ReactNode;
+    percent: number | null;
+    cancel?: { label: string; onClick: () => void; disabled: boolean } | null;
+    trailing?: ReactNode;
+    logs: JobLogEntry[];
+    logsTitle: string;
+    logsExpanded: boolean;
+    onLogsExpandedChange: (expanded: boolean) => void;
+    logsListRef: Ref<HTMLUListElement>;
+  }) {
+    return (
+      <div
+        className="border-border bg-surface-raised mt-4 rounded-lg border p-5 shadow-sm"
+        role="status"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="text-base font-semibold">{title}</p>
+          <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+        </div>
+        <p className="text-muted-foreground mt-1 text-sm">{subtitle}</p>
+        <div
+          className="bg-surface-sunken relative mt-3 h-2 overflow-hidden rounded-full"
+          role="progressbar"
+          aria-label={`${title} progress`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent ?? undefined}
+        >
+          {percent != null ? (
+            <div
+              className="bg-primary absolute inset-y-0 left-0 rounded-full duration-150 motion-safe:transition-[width]"
+              style={{ width: `${percent}%` }}
+            />
+          ) : (
+            <div className="bg-primary progress-indeterminate absolute inset-y-0 w-2/5 rounded-full" />
+          )}
+        </div>
+        {extraLine ? (
+          <p className="text-muted-foreground mt-2 text-xs">{extraLine}</p>
+        ) : null}
+        {cancel || trailing ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {cancel ? (
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                disabled={cancel.disabled}
+                onClick={cancel.onClick}
+              >
+                {cancel.label}
+              </Button>
+            ) : null}
+            {trailing}
+          </div>
+        ) : null}
+        {logs.length ? (
+          <LogDisclosure
+            title={logsTitle}
+            count={logs.length}
+            expanded={logsExpanded}
+            onExpandedChange={onLogsExpandedChange}
+            listRef={logsListRef}
+          >
+            {renderJobLogRows(logs)}
+          </LogDisclosure>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderPortableJobCard(forKind: "export" | "restore") {
     if (!portableBackupJob) return null;
     const isThisKind =
@@ -3037,6 +3420,7 @@ export function BackupPanel() {
     if (!isThisKind) return null;
     const isRestore = forKind === "restore";
     const noun = isRestore ? "Restore" : "Export";
+    const status = portableBackupJob.status;
 
     // A finished restore announces itself in a toast and the completion
     // dialog; this banner only said the same thing a third time, and the
@@ -3044,118 +3428,97 @@ export function BackupPanel() {
     // ability to restore further spaces from the same file, which is the one
     // thing someone is most likely to want next. An export keeps its card:
     // the download link lives there and has to stay reachable.
-    if (isRestore && portableBackupJob.status === "complete") return null;
+    if (isRestore && status === "complete") return null;
 
-    return (
-      <div
-        className={cn(
-          "mt-4 rounded-lg border p-4 text-sm",
-          portableBackupJob.status === "failed"
-            ? "border-danger/30 bg-danger/10"
-            : portableBackupJob.status === "complete"
-              ? "border-success/30 bg-success-bg"
-              : isPortableJobRunning
-                ? "border-info/25 bg-info-bg"
-                : "border-border bg-surface-sunken",
-        )}
-        role="status"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-2.5">
-            {isPortableJobRunning && (
-              <Loader2 className="text-info mt-0.5 size-4 shrink-0 animate-spin" />
-            )}
-            <div className="min-w-0">
-              <p
-                className={cn(
-                  "font-medium",
-                  portableBackupJob.status === "failed"
-                    ? "text-danger"
-                    : portableBackupJob.status === "complete"
-                      ? "text-success"
-                      : "text-foreground",
-                )}
-              >
-                {portableBackupJob.status === "complete"
-                  ? `${noun} is ${isRestore ? "complete" : "ready"}`
-                  : portableBackupJob.status === "failed"
-                    ? `${noun} failed`
-                    : portableBackupJob.status === "cancelled"
-                      ? `${noun} was cancelled`
-                      : portableBackupJob.cancel_requested
-                        ? `Cancelling ${noun.toLowerCase()}…`
-                        : `${isRestore ? "Restoring" : "Exporting"} backup…`}
-              </p>
-              <p className="text-muted-foreground mt-0.5 text-xs">
-                {portableBackupJob.status === "complete"
-                  ? isRestore
-                    ? "The backup was applied. This page refreshes automatically."
-                    : "It should download automatically — if not, click the button."
-                  : portableBackupJob.status === "failed"
-                    ? (portableBackupJob.error ??
-                      `The ${noun.toLowerCase()} could not be completed.`)
-                    : portableBackupJob.status === "cancelled"
-                      ? isRestore
-                        ? "No changes were made."
-                        : "No file was produced."
-                      : portableBackupJob.cancel_requested
-                        ? `The ${noun.toLowerCase()} stops at its next checkpoint.`
-                        : portableBackupJob.percent != null
-                          ? `${portableBackupJob.percent}% complete · ${formatDuration(portableBackupJob.eta_seconds)}`
-                          : "Running in the background — this can take a while."}
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {isPortableJobRunning && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={
-                  cancelExportPending || portableBackupJob.cancel_requested
-                }
-                onClick={() => setConfirmCancelExport(true)}
-              >
-                {portableBackupJob.cancel_requested
-                  ? "Cancelling…"
-                  : `Cancel ${noun.toLowerCase()}`}
-              </Button>
-            )}
-            {portableBackupJob.download_url &&
-              portableBackupJob.output_filename && (
-                <Button asChild variant="secondary" size="sm">
-                  <a
-                    href={portableBackupJob.download_url}
-                    download={portableBackupJob.output_filename}
-                  >
-                    <Download /> Download {portableBackupJob.output_filename}
-                  </a>
-                </Button>
-              )}
-          </div>
-        </div>
-        {isPortableJobRunning && (
-          <div
-            className="bg-surface relative mt-3 h-2 overflow-hidden rounded-full"
-            role="progressbar"
-            aria-label={`${noun} in progress`}
-            aria-valuenow={portableBackupJob.percent ?? undefined}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            {portableBackupJob.percent != null ? (
-              <div
-                className="bg-info absolute inset-y-0 left-0 rounded-full duration-150 motion-safe:transition-[width]"
-                style={{ width: `${portableBackupJob.percent}%` }}
-              />
-            ) : (
-              <div className="bg-info progress-indeterminate absolute inset-y-0 w-2/5 rounded-full" />
-            )}
-          </div>
-        )}
-      </div>
-    );
+    const badgeVariant =
+      status === "complete" ? "success" : status === "failed" ? "danger" : "info";
+    const badgeLabel =
+      portableBackupJob.cancel_requested && status === "running"
+        ? "cancelling"
+        : status;
+
+    const title =
+      status === "complete"
+        ? `${noun} is ${isRestore ? "complete" : "ready"}`
+        : status === "failed"
+          ? `${noun} failed`
+          : status === "cancelled"
+            ? `${noun} was cancelled`
+            : portableBackupJob.cancel_requested
+              ? `Cancelling ${noun.toLowerCase()}…`
+              : `${isRestore ? "Restoring" : "Exporting"} backup…`;
+
+    const subtitle =
+      status === "complete"
+        ? isRestore
+          ? "The backup was applied. This page refreshes automatically."
+          : "It should download automatically — if not, click the button."
+        : status === "failed"
+          ? (portableBackupJob.error ??
+            `The ${noun.toLowerCase()} could not be completed.`)
+          : status === "cancelled"
+            ? isRestore
+              ? "No changes were made."
+              : "No file was produced."
+            : portableBackupJob.cancel_requested
+              ? `The ${noun.toLowerCase()} stops at its next checkpoint.`
+              : portableBackupJob.percent != null
+                ? `${portableBackupJob.percent}% complete · ${formatDuration(portableBackupJob.eta_seconds)}`
+                : "Running in the background — this can take a while.";
+
+    const extraLine =
+      isRestore &&
+      isPortableJobRunning &&
+      portableBackupJob.phase === "downloading" &&
+      portableBackupJob.counters.items_total
+        ? `Downloading archive: ${formatBytes(portableBackupJob.counters.items_processed ?? 0)} / ${formatBytes(portableBackupJob.counters.items_total)}`
+        : null;
+
+    // Complete/cancelled read as "done", full bar and all - the same
+    // convention Confluence's own `jobProgressPercent` already uses (100 on
+    // "completed"/"cancelled", but *not* "failed") - rather than freezing
+    // wherever the last checkpoint happened to land, which reads as a
+    // stuck/broken bar once nothing is actually still running. A failure
+    // stays at wherever it actually got to, same as Confluence's.
+    const percent =
+      status === "complete" || status === "cancelled"
+        ? 100
+        : portableBackupJob.percent;
+
+    return renderJobActivityCard({
+      title,
+      badgeLabel,
+      badgeVariant,
+      subtitle,
+      extraLine,
+      percent,
+      cancel: isPortableJobRunning
+        ? {
+            label: portableBackupJob.cancel_requested
+              ? "Cancelling…"
+              : `Cancel ${noun.toLowerCase()}`,
+            onClick: () => setConfirmCancelExport(true),
+            disabled:
+              cancelExportPending || portableBackupJob.cancel_requested,
+          }
+        : null,
+      trailing:
+        portableBackupJob.download_url && portableBackupJob.output_filename ? (
+          <Button asChild variant="secondary" size="sm">
+            <a
+              href={portableBackupJob.download_url}
+              download={portableBackupJob.output_filename}
+            >
+              <Download /> Download {portableBackupJob.output_filename}
+            </a>
+          </Button>
+        ) : null,
+      logs: isRestore ? restoreLogEntries : [],
+      logsTitle: isRestore ? "Restore logs" : "Export logs",
+      logsExpanded: restoreLogsExpanded,
+      onLogsExpandedChange: setRestoreLogsExpanded,
+      logsListRef: restoreLogsListRef,
+    });
   }
 
   return (
@@ -3376,6 +3739,427 @@ export function BackupPanel() {
         </div>
 
         {renderPortableJobCard("export")}
+      </section>
+
+      {/* -- Automatic backups ---------------------------------------------
+          Below the manual export cards, not above them: a manual export is
+          what someone opens this tab to *do*, and the recurring schedule is
+          a one-time setup step most visits never touch. Leading with it put
+          the thing people came for beneath a wall of schedule fields. */}
+      <section
+        id="automatic-backups-section"
+        role="region"
+        aria-labelledby="automatic-backups-title"
+        className={cn(
+          "border-border bg-surface rounded-xl border p-4 shadow-sm",
+          activeSection !== "export" && "hidden",
+        )}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <span className="bg-primary-subtle text-primary flex size-7 shrink-0 items-center justify-center rounded-lg">
+              <RotateCcw className="size-3.5" />
+            </span>
+            <div>
+              <h2 id="automatic-backups-title" className="text-sm font-semibold">
+                Automatic backups
+              </h2>
+              <p className="text-muted-foreground text-xs">
+                A full recovery package - including password hashes - is
+                written on a recurring schedule, with no confirmation step
+                the way a manual export has.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {/* A real switch rather than a field buried in the grid below -
+                whether the schedule is even on is the first thing worth
+                seeing, not something read off row four of a form. */}
+            <label
+              className={cn(
+                "border-border bg-surface has-disabled:opacity-60 flex h-8 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium",
+                "has-disabled:cursor-not-allowed",
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={automatedSettings?.enabled ?? false}
+                disabled={
+                  !automatedSettings || !automatedSettings.directory_configured
+                }
+                onChange={(event) =>
+                  automatedSettings &&
+                  setAutomatedSettings({
+                    ...automatedSettings,
+                    enabled: event.target.checked,
+                  })
+                }
+                className="peer sr-only"
+              />
+              <span
+                aria-hidden
+                className="bg-border-strong peer-checked:bg-success relative h-4 w-7 shrink-0 rounded-full transition-colors duration-150"
+              >
+                <span className="bg-surface absolute top-0.5 left-0.5 size-3 rounded-full shadow-sm transition-transform duration-150 peer-checked:translate-x-3" />
+              </span>
+              {automatedSettings?.enabled ? "Enabled" : "Disabled"}
+            </label>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={automatedPending || !automatedSettings?.directory_configured}
+              onClick={() => void runAutomatedBackupNow()}
+            >
+              <Play /> Run now
+            </Button>
+          </div>
+        </div>
+        {automatedSettings ? (
+          <div className="mt-3.5 space-y-3.5">
+            {/* Storage: the mounted volume is fixed at deploy time and shown
+                for context only; the subfolder under it is the one thing an
+                admin can actually choose here, and it is checked against the
+                real filesystem the moment "Save schedule" is pressed - a
+                path that turns out wrong fails right in front of whoever
+                typed it, not hours later as an unwatched scheduled run. */}
+            <div className="space-y-1.5">
+              <p className="text-muted-foreground text-[10px] font-semibold tracking-[0.08em] uppercase">
+                Storage location
+              </p>
+              <div
+                className={cn(
+                  "flex items-start gap-2 rounded-lg border p-2.5 text-xs",
+                  automatedSettings.directory_configured
+                    ? "border-success/30 bg-success-bg"
+                    : "border-danger/30 bg-danger/10",
+                )}
+              >
+                <FolderOpen
+                  className={cn(
+                    "mt-0.5 size-4 shrink-0",
+                    automatedSettings.directory_configured
+                      ? "text-success"
+                      : "text-danger",
+                  )}
+                />
+                <div className="min-w-0">
+                  <p className="font-medium break-all">
+                    {automatedSettings.directory_configured
+                      ? automatedSettings.directory
+                      : "No backup directory is available"}
+                  </p>
+                  <p className="text-muted-foreground mt-0.5">
+                    {automatedSettings.base_directory ? (
+                      <>
+                        Mounted volume:{" "}
+                        <code className="text-foreground bg-surface-sunken rounded px-1 py-0.5 font-mono">
+                          {automatedSettings.base_directory}
+                        </code>
+                      </>
+                    ) : (
+                      "The host backup volume is not mounted. Set WIKIHUB_AUTOMATED_BACKUP_DIRECTORY and mount a volume there."
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label
+                  htmlFor="automated-backup-subdirectory"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  Subfolder (optional)
+                </label>
+                <Input
+                  id="automated-backup-subdirectory"
+                  value={automatedSettings.subdirectory ?? ""}
+                  disabled={!automatedSettings.base_directory}
+                  onChange={(event) => {
+                    setAutomatedSubdirectoryError(null);
+                    setAutomatedSettings({
+                      ...automatedSettings,
+                      subdirectory: event.target.value || null,
+                    });
+                  }}
+                  placeholder="e.g. team-a - leave blank to use the mounted volume's root"
+                  aria-invalid={automatedSubdirectoryError ? true : undefined}
+                  aria-describedby="automated-backup-subdirectory-hint"
+                />
+                <p
+                  id="automated-backup-subdirectory-hint"
+                  className="text-muted-foreground text-[11px]"
+                >
+                  Relative to the mounted volume above. Create the folder
+                  there first - this is not offered to create it for you.
+                </p>
+                {automatedSubdirectoryError ? (
+                  <p className="text-danger text-xs">
+                    {automatedSubdirectoryError}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Schedule - Enabled moved up to the header, so this is exactly
+                the five fields it takes to describe "how often, starting
+                when, in what timezone, keeping how many" - no more orphan
+                sixth field wrapping onto a row by itself. */}
+            <div className="space-y-1.5">
+              <p className="text-muted-foreground text-[10px] font-semibold tracking-[0.08em] uppercase">
+                Schedule
+              </p>
+              <div className="grid gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+                <div className="space-y-1">
+                  <label
+                    htmlFor="automated-backup-interval"
+                    className="text-muted-foreground text-xs font-medium"
+                  >
+                    Every
+                  </label>
+                  <Input
+                    id="automated-backup-interval"
+                    type="number"
+                    min="1"
+                    max="720"
+                    value={automatedSettings.interval_value}
+                    onChange={(event) =>
+                      setAutomatedSettings({
+                        ...automatedSettings,
+                        interval_value: Number(event.target.value) || 1,
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span
+                    id="automated-backup-unit-label"
+                    className="text-muted-foreground text-xs font-medium"
+                  >
+                    Unit
+                  </span>
+                  <Select
+                    value={automatedSettings.interval_unit}
+                    onValueChange={(value) =>
+                      setAutomatedSettings({
+                        ...automatedSettings,
+                        interval_unit: value as "hours" | "days",
+                      })
+                    }
+                  >
+                    <SelectTrigger aria-labelledby="automated-backup-unit-label">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hours">Hours</SelectItem>
+                      <SelectItem value="days">Days</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="automated-backup-time"
+                    className="text-muted-foreground text-xs font-medium"
+                  >
+                    Start time
+                  </label>
+                  <Input
+                    id="automated-backup-time"
+                    type="time"
+                    value={automatedSettings.time_of_day}
+                    onChange={(event) =>
+                      setAutomatedSettings({
+                        ...automatedSettings,
+                        time_of_day: event.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="automated-backup-timezone"
+                    className="text-muted-foreground text-xs font-medium"
+                  >
+                    Timezone
+                  </label>
+                  <Input
+                    id="automated-backup-timezone"
+                    value={automatedSettings.timezone}
+                    onChange={(event) =>
+                      setAutomatedSettings({
+                        ...automatedSettings,
+                        timezone: event.target.value,
+                      })
+                    }
+                    placeholder="Asia/Ho_Chi_Minh"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="automated-backup-retention"
+                    className="text-muted-foreground text-xs font-medium"
+                  >
+                    Keep successful backups
+                  </label>
+                  <Input
+                    id="automated-backup-retention"
+                    type="number"
+                    min="1"
+                    max="1000"
+                    value={automatedSettings.retention_count}
+                    onChange={(event) =>
+                      setAutomatedSettings({
+                        ...automatedSettings,
+                        retention_count: Number(event.target.value) || 1,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-border flex flex-wrap items-end justify-between gap-3 border-t pt-3">
+              <div className="flex flex-wrap gap-4 text-xs">
+                <div>
+                  <p className="text-muted-foreground">Last run</p>
+                  <p className="text-foreground mt-0.5 flex items-center gap-1.5 font-medium">
+                    {automatedSettings.last_run_at
+                      ? new Date(automatedSettings.last_run_at).toLocaleString()
+                      : "Never"}
+                    {automatedSettings.last_status ? (
+                      <Badge
+                        variant={
+                          automatedSettings.last_status === "complete"
+                            ? "success"
+                            : automatedSettings.last_status === "failed"
+                              ? "danger"
+                              : "info"
+                        }
+                      >
+                        {automatedSettings.last_status}
+                      </Badge>
+                    ) : null}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Next run</p>
+                  <p className="text-foreground mt-0.5 font-medium">
+                    {automatedSettings.next_run_at
+                      ? new Date(automatedSettings.next_run_at).toLocaleString()
+                      : "Calculated after saving"}
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="primary"
+                disabled={automatedPending}
+                aria-busy={automatedPending}
+                onClick={() => void saveAutomatedBackups()}
+              >
+                {automatedPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                Save schedule
+              </Button>
+            </div>
+            {automatedSettings.last_error ? (
+              <p className="text-danger text-xs">
+                Last error: {automatedSettings.last_error}
+              </p>
+            ) : null}
+            {automatedError ? (
+              <p className="text-warning text-xs">{automatedError}</p>
+            ) : null}
+
+            {/* Recent backups */}
+            <div className="space-y-1.5">
+              <p className="text-muted-foreground text-[10px] font-semibold tracking-[0.08em] uppercase">
+                History
+              </p>
+              <div className="border-border overflow-hidden rounded-lg border">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-surface-sunken text-muted-foreground">
+                    <tr>
+                      <th className="p-1.5 font-medium">Backup</th>
+                      <th className="p-1.5 font-medium">Status</th>
+                      <th className="p-1.5 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {automatedJobs.length ? (
+                      automatedJobs.slice(0, 5).map((job) => (
+                        <tr key={job.id} className="border-border border-t">
+                          <td className="p-1.5">
+                            {job.output_filename ??
+                              new Date(job.created_at).toLocaleString()}
+                          </td>
+                          <td className="p-1.5">
+                            <Badge
+                              variant={
+                                job.status === "complete"
+                                  ? "success"
+                                  : job.status === "failed"
+                                    ? "danger"
+                                    : "info"
+                              }
+                            >
+                              {job.status}
+                            </Badge>
+                          </td>
+                          <td className="p-1.5">
+                            <div className="flex items-center gap-3">
+                              {job.download_url ? (
+                                <a
+                                  className="text-primary hover:text-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  href={job.download_url}
+                                >
+                                  Download
+                                </a>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="text-danger hover:text-danger/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                onClick={() => setDeleteAutomatedJobId(job.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={3}
+                          className="text-muted-foreground p-2 text-center"
+                        >
+                          No scheduled backups have run yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3.5 flex flex-wrap items-center gap-3 text-sm" role="status">
+            <p className="text-muted-foreground">
+              {automatedError ?? "Loading automatic backup settings…"}
+            </p>
+            {automatedError ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => void refreshAutomatedBackups()}
+              >
+                <RotateCcw /> Retry
+              </Button>
+            ) : null}
+          </div>
+        )}
       </section>
 
       {/* -- Confluence import + WikiHub restore (unified) ----------------- */}
@@ -4086,114 +4870,83 @@ export function BackupPanel() {
           </div>
         ) : null}
 
-        {/* Confluence: job progress */}
-        {confluenceJob ? (
-          <div className="border-border bg-surface-raised mt-4 rounded-lg border p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <p className="text-base font-semibold">{jobTitle}</p>
-              <p className="hidden">
-                Import {confluenceJob.status} · {confluenceJob.phase}
-              </p>
-              <Badge
-                variant={
-                  confluenceJob.status === "completed"
-                    ? "success"
-                    : confluenceJob.status === "failed"
-                      ? "danger"
-                      : "info"
-                }
-              >
-                {confluenceJob.status}
-              </Badge>
-            </div>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {Math.round(jobProgressPercent)}% complete · {jobSpacesCompleted}/
-              {jobSpacesTotal} spaces · {jobPagesSummary}
-              {jobAttachmentsTotal > 0
-                ? ` · ${jobAttachmentsProcessed}/${jobAttachmentsTotal} attachments`
-                : ""}
-            </p>
-            <div
-              className="bg-surface-sunken mt-3 h-2 overflow-hidden rounded-full"
-              aria-label={`${Math.round(jobProgressPercent)}% of import complete`}
-              aria-valuemax={100}
-              aria-valuemin={0}
-              aria-valuenow={Math.round(jobProgressPercent)}
-              role="progressbar"
-            >
-              <div
-                className="bg-primary h-full transition-[width] duration-300"
-                style={{ width: `${jobProgressPercent}%` }}
-              />
-            </div>
-            {confluenceJob.phase === "downloading" ? (
-              <p className="text-muted-foreground mt-2 text-xs">
-                Downloading archive:{" "}
-                {formatBytes(confluenceJob.counters.downloaded_bytes ?? 0)} /{" "}
-                {formatBytes(confluenceJob.counters.download_total_bytes ?? 0)}{" "}
-                ({displayedDownloadPercent}%)
-              </p>
-            ) : null}
-            {!["completed", "failed", "cancelled"].includes(confluenceJob.status) ? (
-              <Button
-                className="mt-3"
-                variant="danger"
-                size="sm"
-                disabled={confluenceCancelPending}
-                onClick={async () => {
-                  setConfluenceCancelPending(true);
-                  try {
-                    const cancelled = await apiFetch<ConfluenceImportJob>(
-                      `/api/v1/confluence-imports/jobs/${confluenceJob.id}/cancel`,
-                      { method: "POST" },
-                    );
-                    setConfluenceJob(cancelled);
-                    toast.success(
-                      cancelled.status === "cancelled"
-                        ? "Import cancelled."
-                        : "Cancellation requested.",
-                    );
-                  } catch (cancelError) {
-                    // setError would land in the Restore WikiHub Backup
-                    // card's own error slot, nowhere near this button - a
-                    // failure here needs to surface right where it happened.
-                    toast.error(
-                      cancelError instanceof ApiError
-                        ? cancelError.message
-                        : "Could not cancel the import.",
-                    );
-                  } finally {
-                    setConfluenceCancelPending(false);
+        {/* Confluence: job progress - same `renderJobActivityCard` the
+            WikiHub export/restore cards use below, so the two import flows
+            read identically instead of each keeping their own card. */}
+        {confluenceJob
+          ? renderJobActivityCard({
+              title: jobTitle,
+              badgeLabel: confluenceJob.status,
+              badgeVariant:
+                confluenceJob.status === "completed"
+                  ? "success"
+                  : confluenceJob.status === "failed"
+                    ? "danger"
+                    : "info",
+              subtitle: (
+                <>
+                  {Math.round(jobProgressPercent)}% complete ·{" "}
+                  {jobSpacesCompleted}/{jobSpacesTotal} spaces ·{" "}
+                  {jobPagesSummary}
+                  {jobAttachmentsTotal > 0
+                    ? ` · ${jobAttachmentsProcessed}/${jobAttachmentsTotal} attachments`
+                    : ""}
+                </>
+              ),
+              extraLine:
+                confluenceJob.phase === "downloading" ? (
+                  <>
+                    Downloading archive:{" "}
+                    {formatBytes(confluenceJob.counters.downloaded_bytes ?? 0)}{" "}
+                    /{" "}
+                    {formatBytes(
+                      confluenceJob.counters.download_total_bytes ?? 0,
+                    )}{" "}
+                    ({displayedDownloadPercent}%)
+                  </>
+                ) : null,
+              percent: jobProgressPercent,
+              cancel: !["completed", "failed", "cancelled"].includes(
+                confluenceJob.status,
+              )
+                ? {
+                    label: confluenceCancelPending ? "Cancelling..." : "Cancel",
+                    disabled: confluenceCancelPending,
+                    onClick: async () => {
+                      setConfluenceCancelPending(true);
+                      try {
+                        const cancelled = await apiFetch<ConfluenceImportJob>(
+                          `/api/v1/confluence-imports/jobs/${confluenceJob.id}/cancel`,
+                          { method: "POST" },
+                        );
+                        setConfluenceJob(cancelled);
+                        toast.success(
+                          cancelled.status === "cancelled"
+                            ? "Import cancelled."
+                            : "Cancellation requested.",
+                        );
+                      } catch (cancelError) {
+                        // setError would land in the Restore WikiHub Backup
+                        // card's own error slot, nowhere near this button - a
+                        // failure here needs to surface right where it happened.
+                        toast.error(
+                          cancelError instanceof ApiError
+                            ? cancelError.message
+                            : "Could not cancel the import.",
+                        );
+                      } finally {
+                        setConfluenceCancelPending(false);
+                      }
+                    },
                   }
-                }}
-              >
-                {confluenceCancelPending ? "Cancelling..." : "Cancel"}
-              </Button>
-            ) : null}
-            {displayConfluenceLogs.length ? (
-              <details className="border-border bg-surface mt-4 rounded-md border" open>
-                <summary className="hover:bg-surface-hover cursor-pointer px-3 py-2 text-sm font-medium transition-colors duration-150">
-                  Import activity ({displayConfluenceLogs.length})
-                </summary>
-                <ul
-                  ref={logsListRef}
-                  className="border-border max-h-44 divide-y overflow-y-auto border-t text-xs"
-                >
-                  {displayConfluenceLogs.map((log) => (
-                    <li key={log.id} className="px-3 py-2">
-                      <span className="font-medium">{log.level}</span> ·{" "}
-                      {log.entity_label ? `${log.entity_label}: ` : ""}
-                      {log.message}
-                      {log.phase === "downloading" && !log.message.includes("%")
-                        ? ` (${displayedDownloadPercent}%)`
-                        : null}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            ) : null}
-          </div>
-        ) : null}
+                : null,
+              logs: confluenceActivityLogs,
+              logsTitle: "Import activity",
+              logsExpanded: confluenceLogsExpanded,
+              onLogsExpandedChange: setConfluenceLogsExpanded,
+              logsListRef,
+            })
+          : null}
 
         {/* WikiHub restore, .zip: "Upload and scan" fingerprint progress. */}
         {activeSection === "import" &&
@@ -4329,52 +5082,21 @@ export function BackupPanel() {
 
         {/* WikiHub restore, .zip: the durable `full_import` job's own
             progress - percent/ETA/cancel, same shared card the export jobs
-            use (`renderPortableJobCard`). */}
+            and the Confluence import use (`renderPortableJobCard`). Its log
+            is embedded inside it (queued/running/failed/cancelled alike),
+            same as Confluence's card - only "complete" hides the card
+            entirely (see the early return inside it). */}
         {activeSection === "import" ? renderPortableJobCard("restore") : null}
 
-        {/* WikiHub restore: one account of the whole thing, kept directly
-            under whichever progress bar is showing.
-
-            Two sources, one card: this browser narrates the upload half
-            (fingerprint, resume decision, parts, scan) because no job row
-            exists yet to record it, and the worker narrates the restore
-            itself. Splitting them across two cards made the reader stitch
-            the order back together, and the second card only appeared
-            halfway through.
-
-            Oldest first, newest last, scrolled to the bottom - a log that
-            grows upward makes you re-find your place on every new line. */}
-        {activeSection === "import" && restoreLogEntries.length > 0 ? (
-          <LogDisclosure
-            title="Restore logs"
-            count={restoreLogEntries.length}
-            expanded={restoreLogsExpanded}
-            onExpandedChange={setRestoreLogsExpanded}
-            listRef={restoreLogsListRef}
-          >
-            {restoreLogEntries.map((entry) => (
-              <li key={entry.id} className="flex gap-2 px-3 py-2">
-                <span className="text-muted-foreground shrink-0 tabular-nums">
-                  {entry.time}
-                </span>
-                <span className="min-w-0">
-                  {entry.level !== "info" ? (
-                    <span
-                      className={cn(
-                        "font-medium",
-                        entry.level === "error" ? "text-danger" : "text-warning",
-                      )}
-                    >
-                      {entry.level}{" "}
-                    </span>
-                  ) : null}
-                  {entry.label ? `${entry.label}: ` : ""}
-                  {entry.message}
-                </span>
-              </li>
-            ))}
-          </LogDisclosure>
-        ) : null}
+        {/* Whenever the card above is not showing (no job yet - only this
+            browser's own upload/scan narration exists - or the restore just
+            completed and the card hid itself for the completion dialog
+            instead), the log needs its own box; the rest of the time it
+            already lives inside that card, and repeating it here would be a
+            second, redundant copy of the same list. */}
+        {activeSection === "import" && !restoreJobCardVisible
+          ? renderRestoreLogPanel()
+          : null}
 
         {/* WikiHub restore: report */}
         {report && activeSection === "import" ? (
@@ -4785,10 +5507,7 @@ export function BackupPanel() {
                     importSelectedSpaceKeys.length === 0
                   }
                   aria-busy={pending === "apply"}
-                  onClick={() => {
-                    setIsImportSpacePickerOpen(false);
-                    void submitImport();
-                  }}
+                  onClick={requestImportRestore}
                 >
                   {pending === "apply" ? (
                     <Loader2 className="size-4 animate-spin" />
@@ -5139,11 +5858,19 @@ export function BackupPanel() {
         open={confirmOverwriteImportSpaces}
         onOpenChange={setConfirmOverwriteImportSpaces}
         title="Replace existing spaces?"
-        description={`${conflictingImportSpaceKeys.length} existing ${conflictingImportSpaceKeys.length === 1 ? "space" : "spaces"} in this archive already existed and ${conflictingImportSpaceKeys.length === 1 ? "was" : "were"} skipped: ${conflictingImportSpaceKeys.join(", ")}. Replace their current pages and attachments with the archive's version? Space membership and permissions are kept either way.`}
+        description={`This will permanently replace ${conflictingImportSpaceKeys.length} existing ${conflictingImportSpaceKeys.length === 1 ? "space" : "spaces"}: ${overwriteImportSpaceKeysSummary}. Their current pages and attachments will be deleted before the archive version is restored. Space membership and permissions are kept either way.`}
         confirmLabel="Replace and restore"
         destructive
         pending={pending === "apply"}
-        onConfirm={() => void submitImport(conflictingImportSpaceKeys)}
+        onConfirm={() => {
+          // A no-op when this was reached from the post-restore notice - the
+          // picker is already closed by then. Reached from the pre-flight
+          // gate (`requestImportRestore`), the picker is still open behind
+          // this dialog and has to be dismissed before the job card takes
+          // its place.
+          setIsImportSpacePickerOpen(false);
+          void submitImport(conflictingImportSpaceKeys);
+        }}
       />
       <ConfirmDialog
         open={confirmDiscardArchive}
@@ -5207,6 +5934,16 @@ export function BackupPanel() {
           setExportLeaveTarget(null);
           if (target) router.push(target);
         }}
+      />
+      <ConfirmDialog
+        open={deleteAutomatedJobId !== null}
+        onOpenChange={(open) => { if (!open) setDeleteAutomatedJobId(null); }}
+        title="Delete automatic backup?"
+        description="This permanently removes the backup ZIP from the configured server partition."
+        confirmLabel="Delete backup"
+        destructive
+        pending={automatedPending}
+        onConfirm={() => void deleteAutomatedBackup()}
       />
       </div>
     </div>

@@ -16,6 +16,7 @@ import pytest
 
 from app.api.v1.document_imports import (
     _check_magic_bytes,
+    _document_title_variants,
     _enqueue,
     _read_upload,
     cancel_document_import,
@@ -31,6 +32,7 @@ from app.core.exceptions import (
     ServiceUnavailableError,
     UnsupportedMediaTypeError,
 )
+from app.modules.document_import.service import StagedDocument
 from app.schemas.document_import import MAX_DOCUMENT_IMPORT_FILES
 
 MODULE = "app.api.v1.document_imports"
@@ -182,10 +184,51 @@ class TestCreateEndpoint:
     async def test_a_valid_batch_is_accepted(self, monkeypatch):
         _stub_services(monkeypatch)
         session = AsyncMock()
+        # The default "ask" conflict_mode now runs a real query
+        # (`_find_filename_conflicts`) before queueing; a bare `AsyncMock()`
+        # would make `.scalars()` on its result look like an unawaited
+        # coroutine instead of an empty page list.
+        session.execute.return_value = Mock(scalars=Mock(return_value=Mock(all=Mock(return_value=[]))))
         result = await create_document_import(
             "ENG", Mock(), session, [_upload("a.docx", _zip_bytes())], None
         )
         assert "id" in result
+
+    @pytest.mark.asyncio
+    async def test_ask_mode_refuses_to_queue_when_server_finds_a_filename_conflict(
+        self, monkeypatch
+    ):
+        _stub_services(monkeypatch)
+        monkeypatch.setattr(
+            f"{MODULE}._find_filename_conflicts",
+            AsyncMock(return_value=[{"filename": "a.docx", "title": "a"}]),
+        )
+        with pytest.raises(ConflictError, match="Replace or Keep both"):
+            await create_document_import(
+                "ENG",
+                Mock(),
+                AsyncMock(),
+                [_upload("a.docx", _zip_bytes())],
+                None,
+                conflict_mode="ask",
+            )
+
+    def test_html_conflicts_use_the_leading_heading_title(self):
+        document = StagedDocument(
+            filename="report-netshot-netshot-yaml.html",
+            content_type="text/html",
+            data=(
+                b"<html><head><title>ignored metadata</title></head>"
+                b"<body><h1>NetShot security report</h1><table><tr><td>data</td></tr></table>"
+                b"</body></html>"
+            ),
+            source_format="html",
+        )
+
+        assert _document_title_variants(document)[:2] == [
+            "NetShot security report",
+            "report-netshot-netshot-yaml",
+        ]
 
     @pytest.mark.asyncio
     async def test_no_files_is_a_bad_request(self, monkeypatch):

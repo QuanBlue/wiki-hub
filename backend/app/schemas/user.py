@@ -97,6 +97,16 @@ class UserPinnedPageItem(BaseModel):
     pinned_at: datetime
 
 
+class UserPageLabelItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    page_id: uuid.UUID
+    title: str
+    slug: str
+    space_key: str
+    space_name: str
+
+
 class UserTagRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

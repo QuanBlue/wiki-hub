@@ -34,7 +34,15 @@ def job_progress(job: ProgressReportingJob) -> tuple[int | None, int | None]:
         return None, None
     total = job.counters.get("items_total") or 0
     processed = job.counters.get("items_processed") or 0
-    if total <= 0:
+    # A restore's `items_total` (the eventual attachment count) is known
+    # before its long page/permission-restore phase even starts - that phase
+    # reports no progress at all (see `restore_full_package`'s savepoint
+    # comment), so `processed` sits at 0 for minutes while `total` is already
+    # a real, nonzero number. Without this check that produced a literal "0%
+    # complete" the whole time - indistinguishable from a genuinely stalled
+    # job - instead of the honest "nothing reported yet" this function's own
+    # docstring promises.
+    if total <= 0 or processed <= 0:
         return None, None
     # Capped at 99: the last percent belongs to "actually finished", so a
     # progress bar never sits at 100 while work is still going on.

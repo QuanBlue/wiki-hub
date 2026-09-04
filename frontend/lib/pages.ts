@@ -14,7 +14,9 @@ import type {
   UserPinnedPageItem,
   UserProfileStats,
   UserTag,
+  UserPageLabelItem,
   WikiPage,
+  Space,
 } from "@/types/api";
 
 async function authHeaders(): Promise<Record<string, string>> {
@@ -64,6 +66,18 @@ export function listUserDrafts(username: string): Promise<UserDraftItem[]> {
 
 export function listOwnPinnedPages(): Promise<UserPinnedPageItem[]> {
   return get<UserPinnedPageItem[]>("/api/v1/users/me/pins");
+}
+
+export function listOwnLikedPages(): Promise<UserPinnedPageItem[]> {
+  return get<UserPinnedPageItem[]>("/api/v1/users/me/likes");
+}
+
+export function listOwnPageLabels(): Promise<UserPageLabelItem[]> {
+  return get<UserPageLabelItem[]>("/api/v1/users/me/page-labels");
+}
+
+export function listOwnFavoriteSpaces(): Promise<Space[]> {
+  return get<Space[]>("/api/v1/spaces/favorites");
 }
 
 export function listOwnUserTags(): Promise<UserTag[]> {

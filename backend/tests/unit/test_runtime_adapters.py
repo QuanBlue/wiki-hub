@@ -56,7 +56,11 @@ async def test_worker_entrypoints(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result["job_id"] == "job-1"
     assert "at" in result
 
-    session = object()
+    # A plain sentinel used to suffice, but `run_backup_job` now looks the
+    # job back up afterwards (to fold automated-backup bookkeeping - last
+    # status/error, retention - into the same run) via `session.get`.
+    session = Mock()
+    session.get = AsyncMock(return_value=None)
     context = AsyncMock()
     context.__aenter__.return_value = session
     context.__aexit__.return_value = False
@@ -88,6 +92,77 @@ async def test_worker_entrypoints(monkeypatch: pytest.MonkeyPatch) -> None:
     await worker_settings.shutdown({})
     dispose.assert_awaited_once()
     assert worker_settings.redis_settings is not None
+
+
+@pytest.mark.asyncio
+async def test_run_backup_job_applies_retention_for_a_completed_automated_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The non-automated path (covered above) does nothing further once the
+    export itself is done. An automated run additionally has to fold its
+    outcome into the schedule - last_status/last_error, and a retention
+    sweep once it actually completed - or a completed scheduled backup would
+    stay invisible in the settings the Automatic backups panel reads."""
+    import uuid
+
+    job_id = uuid.uuid4()
+    job = SimpleNamespace(status="complete", error=None, automated=True)
+    session = Mock()
+    session.get = AsyncMock(return_value=job)
+    session.commit = AsyncMock()
+    context = AsyncMock()
+    context.__aenter__.return_value = session
+    context.__aexit__.return_value = False
+    monkeypatch.setattr(tasks, "session_scope", lambda: context)
+    monkeypatch.setattr(tasks, "get_storage", lambda: object())
+    monkeypatch.setattr(tasks, "execute_backup_job", AsyncMock())
+
+    config = SimpleNamespace(last_status=None, last_error=None, retention_count=14)
+    get_settings = AsyncMock(return_value=config)
+    monkeypatch.setattr(tasks, "get_automated_settings", get_settings)
+    apply_retention = AsyncMock()
+    monkeypatch.setattr(tasks, "apply_retention", apply_retention)
+
+    await tasks.run_backup_job({}, str(job_id))
+
+    get_settings.assert_awaited_once_with(session)
+    assert config.last_status == "complete"
+    assert config.last_error is None
+    apply_retention.assert_awaited_once_with(session, keep=14)
+    session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_backup_job_skips_retention_for_a_failed_automated_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed run still records why (for the panel's "Last error" line),
+    but must not treat a non-existent artifact as something to retain."""
+    import uuid
+
+    job_id = uuid.uuid4()
+    job = SimpleNamespace(status="failed", error="disk full", automated=True)
+    session = Mock()
+    session.get = AsyncMock(return_value=job)
+    session.commit = AsyncMock()
+    context = AsyncMock()
+    context.__aenter__.return_value = session
+    context.__aexit__.return_value = False
+    monkeypatch.setattr(tasks, "session_scope", lambda: context)
+    monkeypatch.setattr(tasks, "get_storage", lambda: object())
+    monkeypatch.setattr(tasks, "execute_backup_job", AsyncMock())
+
+    config = SimpleNamespace(last_status=None, last_error=None, retention_count=14)
+    monkeypatch.setattr(tasks, "get_automated_settings", AsyncMock(return_value=config))
+    apply_retention = AsyncMock()
+    monkeypatch.setattr(tasks, "apply_retention", apply_retention)
+
+    await tasks.run_backup_job({}, str(job_id))
+
+    assert config.last_status == "failed"
+    assert config.last_error == "disk full"
+    apply_retention.assert_not_awaited()
+    session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

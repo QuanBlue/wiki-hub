@@ -13,7 +13,7 @@ import {
 } from "@tiptap/extension-table";
 // TaskList/TaskItem ship inside the same @tiptap/extension-list package
 // StarterKit's BulletList/OrderedList already come from - no new dependency.
-import { TaskList, TaskItem } from "@tiptap/extension-list";
+import { ListItem, TaskList, TaskItem } from "@tiptap/extension-list";
 // Pulled out of StarterKit (which is told blockquote: false below) only so
 // its input rule can be re-keyed from "> " to Notion's '" ' - everything
 // else (schema, commands, keyboard shortcuts) stays the stock extension.
@@ -68,6 +68,7 @@ import {
   Lightbulb,
   Link2,
   List,
+  ListTree,
   ListOrdered,
   ListTodo,
   Minus,
@@ -384,6 +385,55 @@ const TableCellWithBackground = TableCell.extend({
             ? { style: `background-color: ${attributes.backgroundColor}` }
             : {},
       },
+      textAlign: {
+        default: null,
+        parseHTML: (element) => element.style.textAlign || null,
+        renderHTML: (attributes) =>
+          attributes.textAlign
+            ? { style: `text-align: ${attributes.textAlign}` }
+            : {},
+      },
+      color: {
+        default: null,
+        parseHTML: (element) => element.style.color || null,
+        renderHTML: (attributes) =>
+          attributes.color ? { style: `color: ${attributes.color}` } : {},
+      },
+      fontSize: {
+        default: null,
+        parseHTML: (element) => element.style.fontSize || null,
+        renderHTML: (attributes) =>
+          attributes.fontSize
+            ? { style: `font-size: ${attributes.fontSize}` }
+            : {},
+      },
+      widthPercent: {
+        default: null,
+        parseHTML: (element) => {
+          const value = element.style.width.trim();
+          return value.endsWith("%") ? value : null;
+        },
+        renderHTML: (attributes) =>
+          attributes.widthPercent
+            ? { style: `width: ${attributes.widthPercent}` }
+            : {},
+      },
+    };
+  },
+});
+
+const StyledListItem = ListItem.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      textAlign: {
+        default: null,
+        parseHTML: (element) => element.style.textAlign || null,
+        renderHTML: (attributes) =>
+          attributes.textAlign
+            ? { style: `text-align: ${attributes.textAlign}` }
+            : {},
+      },
     };
   },
 });
@@ -406,10 +456,22 @@ const TextStyleMark = Mark.create({
             ? { style: `background-color: ${attributes.backgroundColor}` }
             : {},
       },
+      fontSize: {
+        default: null,
+        parseHTML: (element) => element.style.fontSize || null,
+        renderHTML: (attributes) =>
+          attributes.fontSize
+            ? { style: `font-size: ${attributes.fontSize}` }
+            : {},
+      },
     };
   },
   parseHTML() {
-    return [{ tag: "span[data-wikihub-text-style]" }];
+    return [
+      { tag: 'span[style*="color"]' },
+      { tag: 'span[style*="font-size"]' },
+      { tag: "span[data-wikihub-text-style]" },
+    ];
   },
   renderHTML({ HTMLAttributes }) {
     return [
@@ -440,6 +502,39 @@ const TableHeaderWithBackground = TableHeader.extend({
         renderHTML: (attributes) =>
           attributes.backgroundColor
             ? { style: `background-color: ${attributes.backgroundColor}` }
+            : {},
+      },
+      textAlign: {
+        default: null,
+        parseHTML: (element) => element.style.textAlign || null,
+        renderHTML: (attributes) =>
+          attributes.textAlign
+            ? { style: `text-align: ${attributes.textAlign}` }
+            : {},
+      },
+      color: {
+        default: null,
+        parseHTML: (element) => element.style.color || null,
+        renderHTML: (attributes) =>
+          attributes.color ? { style: `color: ${attributes.color}` } : {},
+      },
+      fontSize: {
+        default: null,
+        parseHTML: (element) => element.style.fontSize || null,
+        renderHTML: (attributes) =>
+          attributes.fontSize
+            ? { style: `font-size: ${attributes.fontSize}` }
+            : {},
+      },
+      widthPercent: {
+        default: null,
+        parseHTML: (element) => {
+          const value = element.style.width.trim();
+          return value.endsWith("%") ? value : null;
+        },
+        renderHTML: (attributes) =>
+          attributes.widthPercent
+            ? { style: `width: ${attributes.widthPercent}` }
             : {},
       },
     };
@@ -2497,6 +2592,157 @@ const CustomToggleNode = TiptapNode.create({
   },
 });
 
+type TableOfContentsHeading = {
+  level: number;
+  pos: number;
+  text: string;
+};
+
+type NumberedTableOfContentsHeading = TableOfContentsHeading & {
+  index: string;
+};
+
+function numberTableOfContentsHeadings(
+  headings: TableOfContentsHeading[],
+): NumberedTableOfContentsHeading[] {
+  const counters = Array.from({ length: 6 }, () => 0);
+
+  return headings.map((heading) => {
+    const level = Math.min(Math.max(heading.level, 1), counters.length);
+    const counterIndex = level - 1;
+
+    counters[counterIndex] += 1;
+    counters.fill(0, level);
+
+    // A document can start at a nested heading. Keep its displayed outline
+    // meaningful instead of rendering a zero-valued parent (for example 0.1).
+    for (let index = 0; index < counterIndex; index += 1) {
+      if (counters[index] === 0) counters[index] = 1;
+    }
+
+    return {
+      ...heading,
+      level,
+      index: counters.slice(0, level).join("."),
+    };
+  });
+}
+
+/**
+ * The node stores only its position. Entries are derived from the current
+ * headings, so this table of contents stays current as the document changes.
+ */
+function TableOfContentsComponent({ editor }: NodeViewProps) {
+  const headingSnapshot = useEditorState({
+    editor,
+    selector: ({ editor: currentEditor }) => {
+      if (!currentEditor) return "[]";
+      const headings: TableOfContentsHeading[] = [];
+      currentEditor.state.doc.descendants((node, pos) => {
+        if (node.type.name === "heading") {
+          headings.push({
+            level: Number(node.attrs.level) || 1,
+            pos,
+            text: node.textContent.trim() || "Untitled section",
+          });
+        }
+      });
+      return JSON.stringify(headings);
+    },
+  });
+  const headings = useMemo<TableOfContentsHeading[]>(
+    () => JSON.parse(headingSnapshot ?? "[]") as TableOfContentsHeading[],
+    [headingSnapshot],
+  );
+  const numberedHeadings = useMemo(
+    () => numberTableOfContentsHeadings(headings),
+    [headings],
+  );
+
+  const goToHeading = useCallback(
+    (position: number) => {
+      const heading = editor.view.nodeDOM(position);
+      if (heading instanceof HTMLElement) {
+        heading.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    },
+    [editor],
+  );
+
+  return (
+    <NodeViewWrapper
+      as="nav"
+      aria-label="Table of contents"
+      className="border-border bg-surface-sunken my-4 rounded-md border px-4 py-3"
+      contentEditable={false}
+    >
+      <div className="text-foreground flex items-center gap-2 text-sm font-semibold">
+        <ListTree className="text-muted-foreground size-4" aria-hidden />
+        Table of contents
+      </div>
+      {headings.length ? (
+        <ol
+          className="mt-2 list-none space-y-1 p-0"
+          style={{ listStyleType: "none" }}
+        >
+          {numberedHeadings.map((heading) => (
+            <li
+              key={heading.pos}
+              style={{
+                listStyleType: "none",
+                paddingLeft: `${(heading.level - 1) * 12}px`,
+              }}
+            >
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-primary focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 rounded-sm py-0.5 text-left text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => goToHeading(heading.pos)}
+                title={heading.text}
+              >
+                <span className="shrink-0 tabular-nums">{heading.index}.</span>
+                <span className="truncate">{heading.text}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="text-muted-foreground mt-2 text-sm">
+          Add headings to build this list automatically.
+        </p>
+      )}
+    </NodeViewWrapper>
+  );
+}
+
+const TableOfContentsNode = TiptapNode.create({
+  name: "tableOfContents",
+  group: "block",
+  atom: true,
+  selectable: true,
+
+  parseHTML() {
+    return [
+      { tag: 'div[data-type="tableOfContents"]' },
+      { tag: 'nav[data-type="table-of-contents"]' },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "nav",
+      mergeAttributes(HTMLAttributes, {
+        "data-type": "table-of-contents",
+        "aria-label": "Table of contents",
+      }),
+    ];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(TableOfContentsComponent);
+  },
+});
+
 const CustomCodeBlock = CodeBlockLowlight.extend({
   addAttributes() {
     const parentAttributes = (this.parent?.() ?? {}) as Record<
@@ -3162,6 +3408,7 @@ const editorExtensions = [
     heading: { levels: [1, 2, 3, 4] },
     codeBlock: false,
     blockquote: false,
+    listItem: false,
     // The stock drop cursor draws a rule across the whole block, which reads
     // like a horizontal divider rather than an insertion point. Styled down to
     // a caret in globals.css; the colour comes from there too.
@@ -3181,6 +3428,8 @@ const editorExtensions = [
   CustomToggleSummaryNode,
   CustomToggleContentNode,
   CustomToggleNode,
+  TableOfContentsNode,
+  StyledListItem,
   TaskList.configure({ HTMLAttributes: { class: "wikihub-task-list" } }),
   TaskItem.configure({ nested: true }),
   Link.configure({
@@ -5214,6 +5463,19 @@ function RichTextToolbar({
           </ToolbarButton>
         ) : null}
         <TablePicker editor={editor} />
+        <ToolbarButton
+          editor={editor}
+          label="Insert table of contents"
+          onClick={() =>
+            editor
+              ?.chain()
+              .focus()
+              .insertContent({ type: "tableOfContents" })
+              .run()
+          }
+        >
+          <ListTree />
+        </ToolbarButton>
       </div>
       <div className="border-border ml-auto flex shrink-0 items-center gap-1 border-l pl-1">
         <ToolbarButton

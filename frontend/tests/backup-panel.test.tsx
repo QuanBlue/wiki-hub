@@ -284,7 +284,12 @@ function importSection() {
  * varies per test. */
 function archiveUploadRoutes(
   archiveId = "archive-1",
-  spaces: { key: string; name: string }[] = [
+  spaces: {
+    key: string;
+    name: string;
+    page_count?: number;
+    conflict?: boolean;
+  }[] = [
     { key: "ENG", name: "Engineering" },
     { key: "SALES", name: "Sales" },
   ],
@@ -2600,12 +2605,16 @@ describe("BackupPanel native restore", () => {
 
     render(<BackupPanel />);
 
-    // One card, whoever wrote the lines.
+    // One card, whoever wrote the lines - literally: while the restore is
+    // still running, its log lives inside the same `role="status"` job card
+    // as the progress bar, the same layout Confluence import already uses
+    // for its own "Import activity", not a second box underneath it.
     const panel = (
       await screen.findByText(/restore logs/i, {}, { timeout: 4000 })
     ).closest("details") as HTMLElement;
     expect(screen.queryByText(/restore activity/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/preparation logs/i)).not.toBeInTheDocument();
+    expect(panel.closest('[role="status"]')).not.toBeNull();
 
     const lines = within(panel).getAllByRole("listitem");
     // Oldest first: the endpoint sorts newest-first so paging returns the
@@ -2615,12 +2624,115 @@ describe("BackupPanel native restore", () => {
     // The entity is named separately from the prose, so it can be read at a
     // glance rather than parsed out of the sentence.
     expect(lines[0]).toHaveTextContent(/backup\.zip:/);
-    // A level is only worth the space when it is not the ordinary case.
-    expect(lines[0]).not.toHaveTextContent(/info/i);
+    // Every line names its level - same convention Confluence import's own
+    // activity log already used, now the one shared row format for both.
+    expect(lines[0]).toHaveTextContent(/info/i);
     expect(lines[1]).toHaveTextContent(/warning/i);
   });
 
-  it("offers to overwrite spaces the restore reports as already existing", async () => {
+  it("asks before restoring when the scan already flags a conflict, same as Confluence import", async () => {
+    // The archive's own scan already knows which spaces exist (`conflict`
+    // per space, the "Existed" badge in the picker) - so a restore that
+    // includes one should ask before it runs, not skip it silently and only
+    // offer to fix that up afterwards. Only one job should ever be posted:
+    // the confirmed one, straight away with `overwrite_space_keys` set.
+    stubUploadXHR();
+    const jobsPosted: { space_keys: string[]; overwrite_space_keys: string[] }[] =
+      [];
+    mockFetch([
+      {
+        method: "POST",
+        match: (p) => p === "/api/v1/backup/archives/archive-1/jobs",
+        handler: (init) => {
+          const payload = JSON.parse(String(init?.body));
+          jobsPosted.push(payload);
+          return {
+            body: {
+              id: "job-1", kind: "full_import", status: "queued", phase: "queued",
+              output_filename: null, download_url: null, error: null,
+              space_keys: payload.space_keys,
+            },
+          };
+        },
+      },
+      {
+        method: "GET",
+        match: (p) => p === "/api/v1/backup/jobs/job-1",
+        handler: () => ({
+          body: {
+            id: "job-1", kind: "full_import", status: "complete", phase: "complete",
+            output_filename: null, download_url: null, error: null, space_keys: [],
+            result: {
+              dry_run: false, includes_credentials: false, created: { space: 1 },
+              skipped: {}, errors: {}, users_without_password: [],
+              entries: [], entries_truncated: false, conflicting_space_keys: [],
+            },
+          },
+        }),
+      },
+      ...archiveUploadRoutes("archive-1", [
+        { key: "ENG", name: "Engineering", page_count: 2, conflict: true },
+        { key: "SALES", name: "Sales", page_count: 1, conflict: false },
+      ]),
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    await actor.upload(
+      fileInput,
+      new File(["zip-bytes"], "backup.zip", { type: "application/zip" }),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+    await actor.click(
+      await screen.findByRole(
+        "button",
+        { name: /^select all$/i },
+        { timeout: 4000 },
+      ),
+    );
+    await actor.click(screen.getByRole("button", { name: /^start restore$/i }));
+
+    // Before any job is posted - the scan already knew. The picker is still
+    // open behind it (same as Confluence's own pre-flight prompt), so "ENG"
+    // is scoped to the confirm dialog rather than matched anywhere on screen.
+    const confirmDialog = await screen.findByRole("alertdialog", {
+      name: /replace existing spaces/i,
+    });
+    expect(within(confirmDialog).getByText(/ENG/)).toBeInTheDocument();
+    expect(jobsPosted).toHaveLength(0);
+
+    await actor.click(
+      within(confirmDialog).getByRole("button", { name: /^replace and restore$/i }),
+    );
+
+    await waitFor(() => expect(jobsPosted).toHaveLength(1));
+    expect(jobsPosted[0].overwrite_space_keys).toEqual(["ENG"]);
+    // The picker closes along with the confirm dialog - it must not be left
+    // stranded open behind the job card that replaces it.
+    expect(
+      screen.queryByRole("heading", { name: /select spaces to restore/i }),
+    ).not.toBeInTheDocument();
+
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: /restore completed successfully/i },
+        { timeout: 4000 },
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it(
+    "offers to overwrite spaces the restore reports as already existing",
+    async () => {
     stubUploadXHR();
     const jobsPosted: { space_keys: string[]; overwrite_space_keys: string[] }[] =
       [];
@@ -2778,5 +2890,198 @@ describe("BackupPanel native restore", () => {
         ).not.toBeInTheDocument(),
       { timeout: 4000 },
     );
+
+    // The retry's own completion (job-2, `conflicting_space_keys: []`) lands
+    // in the same completion dialog - but it must not still be showing the
+    // *first* job's now-stale conflict. Left unfixed, "Replace them" stays
+    // on screen forever even though there is nothing left to replace.
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: /restore completed successfully/i },
+        { timeout: 4000 },
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: /replace them with the archive/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/ENG/)).not.toBeInTheDocument();
+    },
+    // Two full jobs, each polled on the real 1500ms interval (not a mocked
+    // one, per this suite's convention), plus several `findByRole` waits in
+    // between - comfortably over vitest's 5000ms default once the page has
+    // much else mounted, so this one test gets a longer allowance rather
+    // than the whole suite trading real timers for fake ones.
+    15000,
+  );
+});
+
+describe("BackupPanel automatic backups", () => {
+  function automaticSettingsRoute(overrides: Record<string, unknown> = {}) {
+    return {
+      method: "GET",
+      match: (p: string) => p === "/api/v1/backup/automatic",
+      handler: () => ({
+        body: {
+          enabled: false,
+          interval_unit: "days",
+          interval_value: 1,
+          time_of_day: "02:00",
+          timezone: "UTC",
+          retention_count: 30,
+          subdirectory: null,
+          directory_configured: true,
+          base_directory: "/backups",
+          directory: "/backups",
+          last_run_at: null,
+          next_run_at: null,
+          last_status: null,
+          last_error: null,
+          ...overrides,
+        },
+      }),
+    };
+  }
+
+  function automaticJobsRoute() {
+    return {
+      method: "GET",
+      match: (p: string) => p === "/api/v1/backup/automatic/jobs",
+      handler: () => ({ body: [] }),
+    };
+  }
+
+  /** Scoped to the panel itself - the export cards below it use some of the
+   * same words ("Storage", directory paths), and this section is visible
+   * alongside them on the default tab. */
+  function automaticSection() {
+    return within(
+      document.getElementById("automatic-backups-section") as HTMLElement,
+    );
+  }
+
+  it("shows the mounted volume and the resolved directory it will actually write to", async () => {
+    mockFetch([
+      automaticSettingsRoute({
+        subdirectory: "team-a",
+        directory: "/backups/team-a",
+      }),
+      automaticJobsRoute(),
+      ...baseRoutes(),
+    ]);
+
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    expect(await section.findByText("/backups/team-a")).toBeInTheDocument();
+    expect(section.getByText("/backups")).toBeInTheDocument();
+    expect(section.getByDisplayValue("team-a")).toBeInTheDocument();
+  });
+
+  it("saves the typed subfolder along with the rest of the schedule", async () => {
+    const patches: Record<string, unknown>[] = [];
+    mockFetch([
+      automaticSettingsRoute(),
+      automaticJobsRoute(),
+      {
+        method: "PATCH",
+        match: (p) => p === "/api/v1/backup/automatic",
+        handler: (init) => {
+          patches.push(JSON.parse(String(init?.body)));
+          return {
+            body: {
+              enabled: false,
+              interval_unit: "days",
+              interval_value: 1,
+              time_of_day: "02:00",
+              timezone: "UTC",
+              retention_count: 30,
+              subdirectory: "team-a",
+              directory_configured: true,
+              base_directory: "/backups",
+              directory: "/backups/team-a",
+              last_run_at: null,
+              next_run_at: null,
+              last_status: null,
+              last_error: null,
+            },
+          };
+        },
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    const field = await section.findByLabelText(/subfolder/i);
+    await actor.type(field, "team-a");
+    await actor.click(
+      section.getByRole("button", { name: /^save schedule$/i }),
+    );
+
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0].subdirectory).toBe("team-a");
+    expect(await section.findByText("/backups/team-a")).toBeInTheDocument();
+  });
+
+  it("shows the server's rejection right beside the subfolder field, not just as a toast", async () => {
+    // A path that turns out wrong belongs in front of whoever typed it -
+    // not only in a toast that has faded by the time it is read twice.
+    mockFetch([
+      automaticSettingsRoute(),
+      automaticJobsRoute(),
+      {
+        method: "PATCH",
+        match: (p) => p === "/api/v1/backup/automatic",
+        handler: () => ({
+          status: 400,
+          body: {
+            error: {
+              code: "backup_subdirectory_invalid",
+              message:
+                "'nope' does not exist under the mounted backup directory, or escapes it. Create the folder there first.",
+            },
+          },
+        }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    const field = await section.findByLabelText(/subfolder/i);
+    await actor.type(field, "nope");
+    await actor.click(
+      section.getByRole("button", { name: /^save schedule$/i }),
+    );
+
+    expect(
+      await section.findByText(
+        /does not exist under the mounted backup directory/i,
+      ),
+    ).toBeInTheDocument();
+    expect(field).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("shows an empty state instead of a bare table when no scheduled backup has run yet", async () => {
+    mockFetch([
+      automaticSettingsRoute(),
+      automaticJobsRoute(),
+      ...baseRoutes(),
+    ]);
+
+    render(<BackupPanel />);
+
+    expect(
+      await automaticSection().findByText(
+        /no scheduled backups have run yet/i,
+      ),
+    ).toBeInTheDocument();
   });
 });

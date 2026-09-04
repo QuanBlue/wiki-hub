@@ -4,6 +4,7 @@ import {
   Archive,
   ArchiveRestore,
   Check,
+  CheckCircle2,
   Globe2,
   HardDrive,
   LockKeyhole,
@@ -12,6 +13,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
+  XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -30,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api, ApiError } from "@/lib/api-client";
+import { api, ApiError, describeApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type {
   Group,
@@ -58,6 +60,12 @@ type TabKey = "general" | "access" | "danger";
 // SpaceService) - kept in sync with that list, not derived from it, since
 // the frontend has no direct import path into the backend module.
 const DEFAULT_ADMIN_GROUP_NAMES = new Set(["confluence-administrators"]);
+
+//: Mirrors the backend's rule (see `_check_name_start` in
+//: `app/schemas/space.py`): a space name may not start with a digit or a
+//: symbol, though any Unicode letter (including accented ones) is fine.
+const NAME_START_PATTERN = /^\p{L}/u;
+const NAME_ERROR = "Name must start with a letter, not a digit or special character.";
 
 function isDefaultGroup(g: Group) {
   return (
@@ -126,6 +134,7 @@ function EditSpaceModalContent({
   const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [unsavedPromptOpen, setUnsavedPromptOpen] = useState(false);
+  const [existingNames, setExistingNames] = useState<Set<string>>(new Set());
 
   async function loadSpacePermissions() {
     try {
@@ -178,6 +187,50 @@ function EditSpaceModalContent({
     };
   }, []);
 
+  // Load other spaces' names to catch a duplicate before submit, rather
+  // than surfacing it as a conflict only after the request round-trips.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Space[]>("/api/v1/spaces", {
+        query: { include_archived: true, limit: 200 },
+      })
+      .then((spaces) => {
+        if (!cancelled) {
+          setExistingNames(
+            new Set(
+              spaces
+                .filter((other) => other.key !== space.key)
+                .map((other) => other.name.trim().toLowerCase()),
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        // Best-effort: if this fails, the duplicate check is simply skipped
+        // and the backend's own conflict check still catches it on submit.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [space.key]);
+
+  const trimmedName = name.trim();
+  const nameChanged = trimmedName !== initialName.trim();
+  const isDuplicateName =
+    !!trimmedName && existingNames.has(trimmedName.toLowerCase());
+  // Only validate a name the user is actively changing - some existing
+  // spaces predate this rule (e.g. imported names starting with a digit),
+  // and re-litigating them on every unrelated save (visibility, upload
+  // limit, ...) would lock those spaces out of edits entirely.
+  const nameError = !trimmedName || !nameChanged
+    ? null
+    : !NAME_START_PATTERN.test(trimmedName)
+      ? NAME_ERROR
+      : isDuplicateName
+        ? `A space named "${trimmedName}" already exists.`
+        : null;
+
   // Calculate if there are unsaved changes
   const isGeneralChanged =
     visibility !== initialVisibility ||
@@ -210,13 +263,18 @@ function EditSpaceModalContent({
   }
 
   async function handleSaveAll() {
+    if (nameError) return;
     setPending(true);
     try {
       // 1. Update space properties if changed
       if (isGeneralChanged) {
         const trimmedLimit = uploadLimit.trim();
         await api.patch(`/api/v1/spaces/${encodeURIComponent(space.key)}`, {
-          name: name.trim() || space.name,
+          // Only send a name when it actually changed - some existing
+          // spaces predate the "must start with a letter" rule, and
+          // resending their untouched name would fail that validation on
+          // an otherwise-unrelated save (visibility, upload limit, ...).
+          ...(nameChanged ? { name: trimmedName || space.name } : {}),
           visibility,
           max_upload_size_mb: trimmedLimit ? Number(trimmedLimit) : null,
         });
@@ -277,9 +335,7 @@ function EditSpaceModalContent({
       if (onSpaceUpdated) onSpaceUpdated();
       router.refresh();
     } catch (error) {
-      toast.error(
-        error instanceof ApiError ? error.message : "Could not save space permissions.",
-      );
+      toast.error(describeApiError(error, "Could not save space permissions."));
     } finally {
       setPending(false);
     }
@@ -547,14 +603,32 @@ function EditSpaceModalContent({
               <Label htmlFor="space-name" className="text-xs font-semibold">
                 Space Name
               </Label>
-              <Input
-                id="space-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={space.name}
-                className="text-sm"
-                disabled={pending}
-              />
+              <div className="relative">
+                <Input
+                  id="space-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={space.name}
+                  className="text-sm pr-9"
+                  disabled={pending}
+                  aria-invalid={nameError ? true : undefined}
+                  aria-describedby={nameError ? "space-name-error" : undefined}
+                />
+                {trimmedName && nameChanged ? (
+                  <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2">
+                    {nameError ? (
+                      <XCircle className="text-danger size-4" aria-hidden />
+                    ) : (
+                      <CheckCircle2 className="text-success size-4" aria-hidden />
+                    )}
+                  </span>
+                ) : null}
+              </div>
+              {nameError ? (
+                <p id="space-name-error" className="text-danger text-[11px]">
+                  {nameError}
+                </p>
+              ) : null}
             </div>
 
             {/* General Access Box */}
@@ -986,7 +1060,7 @@ function EditSpaceModalContent({
           <Button
             type="button"
             variant="primary"
-            disabled={!hasChanges || pending}
+            disabled={!hasChanges || pending || !!nameError}
             onClick={() => void handleSaveAll()}
           >
             {pending ? "Saving..." : "Save changes"}

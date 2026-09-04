@@ -29,7 +29,9 @@ from app.modules.document_import.jobs import (
     run_document_import,
 )
 from app.modules.document_import.service import staged_object_key
+from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
+from app.schemas.page import PageCreate
 from app.schemas.space import SpaceCreate
 from app.schemas.user import UserCreate
 
@@ -151,6 +153,88 @@ def _patch_extract(monkeypatch, by_filename: dict[str, object]) -> None:
 
 
 class TestHappyPath:
+    async def test_replace_updates_the_page_matching_the_uploaded_filename(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A document heading may differ from the filename shown in the dialog."""
+        storage = FakeStorage()
+        job, space, user = await _make_job(session, storage, ["Technical Profile.pdf"])
+        job.conflict_mode = "replace"
+        existing = await PageService(session).create(
+            space,
+            PageCreate(title="Technical Profile", content="<p>Old body.</p>"),
+            user,
+        )
+        await session.commit()
+        _patch_extract(
+            monkeypatch,
+            {
+                "Technical Profile.pdf": ExtractedDocument(
+                    html="<h1>System Technical Profile</h1><p>New body.</p>"
+                )
+            },
+        )
+
+        await run_document_import(session, storage, job.id)
+
+        pages = await _imported_pages(session, space)
+        assert [page.id for page in pages] == [existing.id]
+        assert pages[0].title == "Technical Profile"
+        assert "New body." in pages[0].content
+
+    async def test_keep_both_numbers_each_duplicate_title_in_order(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        storage = FakeStorage()
+        job, space, _ = await _make_job(session, storage, ["a.docx", "b.docx", "c.docx"])
+        job.conflict_mode = "rename"
+        _patch_extract(
+            monkeypatch,
+            {
+                filename: ExtractedDocument(html="<h1>Architecture</h1><p>Body.</p>")
+                for filename in ("a.docx", "b.docx", "c.docx")
+            },
+        )
+
+        await run_document_import(session, storage, job.id)
+
+        assert {page.title for page in await _imported_pages(session, space)} == {
+            "Architecture",
+            "Architecture (1)",
+            "Architecture (2)",
+        }
+
+    async def test_keep_both_numbers_a_duplicate_vietnamese_title(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A title with uppercase accented letters must still be recognised.
+
+        This database's cluster locale is `C`, under which Postgres's own
+        `lower()` leaves accented uppercase letters untouched
+        (``lower('TẬP')`` returns ``'tẬp'``, not ``'tập'``) - a real bug that
+        made every re-import of the same Vietnamese-titled document create an
+        exact duplicate instead of a numbered copy. An ASCII title such as
+        "Architecture" above would never have caught it.
+        """
+        storage = FakeStorage()
+        job, space, _ = await _make_job(session, storage, ["a.docx", "b.docx"])
+        job.conflict_mode = "rename"
+        title = "TẬP ĐOÀN CÔNG NGHIỆP - VIỄN THÔNG QUÂN ĐỘI"
+        _patch_extract(
+            monkeypatch,
+            {
+                filename: ExtractedDocument(html=f"<h1>{title}</h1><p>Body.</p>")
+                for filename in ("a.docx", "b.docx")
+            },
+        )
+
+        await run_document_import(session, storage, job.id)
+
+        assert {page.title for page in await _imported_pages(session, space)} == {
+            title,
+            f"{title} (1)",
+        }
+
     async def test_each_file_becomes_a_page_under_the_chosen_parent(
         self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
     ) -> None:

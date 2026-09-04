@@ -12,6 +12,7 @@ content cannot be final until after the page is created. See `_import_one`.
 
 from __future__ import annotations
 
+import re
 import tempfile
 import uuid
 from contextlib import suppress
@@ -25,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import UnsupportedMediaTypeError
 from app.core.logging import get_logger
 from app.models.document_import import DocumentImportItem, DocumentImportJob
+from app.models.page import WikiPage
 from app.models.revision import PageRevision
 from app.models.space import Space
 from app.models.user import User
@@ -197,14 +199,48 @@ async def _import_one(
         )
         warnings = [*extracted.warnings, *normalize_warnings]
 
+        # Resolve the title after conversion: a document can contain a title
+        # that differs from its filename. Rename mode keeps both pages with a
+        # readable numeric suffix; replace mode updates the existing page.
+        conflict_mode = getattr(job, "conflict_mode", None) or "rename"
+        existing_page = await _find_import_conflict(
+            session, space=space, parent_id=job.parent_id, title=title
+        )
+        # The dialog is shown before a DOCX/PDF has been converted, so its
+        # visible name can be the filename while the converted heading becomes
+        # the page title. In Replace mode, fall back to that filename stem so
+        # the user's explicit choice still updates the page they selected.
+        if existing_page is None and conflict_mode == "replace":
+            filename_title = Path(item.filename).stem.strip()
+            if filename_title and filename_title.casefold() != title.casefold():
+                existing_page = await _find_import_conflict(
+                    session,
+                    space=space,
+                    parent_id=job.parent_id,
+                    title=filename_title,
+                )
+        replacing = existing_page is not None and conflict_mode == "replace"
+        page_title = title
+        if existing_page is not None and not replacing:
+            page_title = await _next_available_title(
+                session,
+                space=space,
+                parent_id=job.parent_id,
+                title=_strip_copy_suffix(title),
+            )
+
         # The page must exist before anything can be attached to it, and
         # `content=""` sidesteps the length validator entirely - the converted
         # HTML is assigned directly below, after the images resolve.
-        page = await PageService(session).create(
-            space,
-            PageCreate(title=title, content="", parent_id=job.parent_id),
-            creator,
-        )
+        if replacing:
+            page = existing_page
+            page.updated_by_id = creator.id
+        else:
+            page = await PageService(session).create(
+                space,
+                PageCreate(title=page_title, content="", parent_id=job.parent_id),
+                creator,
+            )
 
         urls, attachment_warnings = await _attach_media(
             session, storage,
@@ -215,19 +251,24 @@ async def _import_one(
         final_html = sanitize_imported_html(replace_media_tokens(html, urls))
         page.content = final_html
 
-        # `PageService.create` already wrote revision v1 with the empty body.
-        # Back-filling it beats calling `update`, which would leave an empty v1
-        # in the history and add a v2 that nobody made.
-        revision = (
-            await session.execute(
-                select(PageRevision).where(
-                    PageRevision.page_id == page.id, PageRevision.version == 1
-                )
+        if replacing:
+            await PageService(session).snapshot_revision(
+                page, creator, f"Replaced by import from {item.filename}"
             )
-        ).scalar_one_or_none()
-        if revision is not None:
-            revision.content = final_html
-            revision.change_summary = f"Imported from {item.filename}"
+        else:
+            # `PageService.create` already wrote revision v1 with the empty
+            # body. Back-filling it beats calling `update`, which would leave
+            # an empty v1 in the history and add a v2 that nobody made.
+            revision = (
+                await session.execute(
+                    select(PageRevision).where(
+                        PageRevision.page_id == page.id, PageRevision.version == 1
+                    )
+                )
+            ).scalar_one_or_none()
+            if revision is not None:
+                revision.content = final_html
+                revision.change_summary = f"Imported from {item.filename}"
 
         item.page_id = page.id
         item.page_title = page.title
@@ -236,6 +277,82 @@ async def _import_one(
         item.warnings = warnings
         item.error = None
         await session.flush()
+
+
+async def _find_page_by_title(
+    session: AsyncSession,
+    *,
+    space: Space,
+    parent_id: uuid.UUID | None,
+    title: str,
+) -> WikiPage | None:
+    """Case-insensitive title lookup among one page's siblings.
+
+    Deliberately does not filter by title in SQL. This database's cluster
+    locale is `C` (see `POSTGRES_INITDB_ARGS` in docker-compose), under which
+    Postgres's own `lower()` leaves accented uppercase letters untouched -
+    `lower('TẬP')` returns `'tẬp'`, not `'tập'`. Comparing that against
+    Python's locale-independent `.casefold()` would never match a Vietnamese
+    title differing only in case, which is exactly how importing the same
+    document twice created two pages with the identical title instead of the
+    second one getting a numbered suffix. One title's sibling set - the pages
+    sharing its `(space, parent)` - is small enough that folding case in
+    Python instead costs nothing that matters.
+    """
+    query = select(WikiPage).where(WikiPage.space_id == space.id)
+    if parent_id is None:
+        query = query.where(WikiPage.parent_id.is_(None))
+    else:
+        query = query.where(WikiPage.parent_id == parent_id)
+    target = title.strip().casefold()
+    siblings = (await session.execute(query)).scalars().all()
+    for sibling in siblings:
+        if sibling.title.strip().casefold() == target:
+            return sibling
+    return None
+
+
+def _strip_copy_suffix(title: str) -> str:
+    return re.sub(r"\s*\(\d+\)$", "", title.strip()).strip() or title.strip()
+
+
+async def _find_import_conflict(
+    session: AsyncSession,
+    *,
+    space: Space,
+    parent_id: uuid.UUID | None,
+    title: str,
+) -> WikiPage | None:
+    exact = await _find_page_by_title(
+        session, space=space, parent_id=parent_id, title=title
+    )
+    if exact is not None:
+        return exact
+    base_title = _strip_copy_suffix(title)
+    if base_title == title.strip():
+        return None
+    return await _find_page_by_title(
+        session, space=space, parent_id=parent_id, title=base_title
+    )
+
+
+async def _next_available_title(
+    session: AsyncSession,
+    *,
+    space: Space,
+    parent_id: uuid.UUID | None,
+    title: str,
+) -> str:
+    suffix = 1
+    while True:
+        suffix_text = f" ({suffix})"
+        base = title[: 255 - len(suffix_text)].rstrip() or "Imported page"
+        candidate = f"{base}{suffix_text}"
+        if await _find_page_by_title(
+            session, space=space, parent_id=parent_id, title=candidate
+        ) is None:
+            return candidate
+        suffix += 1
 
 
 async def _attach_media(

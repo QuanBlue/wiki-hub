@@ -51,6 +51,11 @@ class DocumentImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
     phase: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    #: How a title collision should be handled once the worker derives the
+    #: document's real page title (which can differ from the filename).
+    conflict_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="rename", server_default="rename"
+    )
     #: Throttled progress signal, shaped to match what `backup.py::_job_progress`
     #: reads so percent and ETA are derived by the same code:
     #: items_total, items_processed, items_failed, pages_created,

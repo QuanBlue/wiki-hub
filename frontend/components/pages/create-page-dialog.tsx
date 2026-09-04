@@ -71,7 +71,12 @@ export function CreatePageDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant={triggerVariant} size={triggerSize}>
+        <Button
+          variant={triggerVariant}
+          size={triggerSize}
+          aria-label={triggerLabel || "New page"}
+          title={triggerLabel || "New page"}
+        >
           <FilePlus2 />
           {triggerLabel}
         </Button>

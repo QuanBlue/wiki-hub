@@ -360,6 +360,33 @@ async def test_scan_flags_spaces_whose_key_already_exists(archives, session, sto
 
 
 @pytest.mark.asyncio
+async def test_scan_flags_a_conflict_regardless_of_key_casing(archives, session, storage):
+    """Confluence personal spaces travel as lower-case (`~jdoe`); every space
+    this instance itself creates is upper-cased (`BackupService.import_document`).
+    A raw, un-normalised comparison would miss this and show no conflict for
+    a space that in fact already exists - the picker would offer no Replace,
+    and the restore would only report the collision afterwards, as something
+    it silently skipped."""
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="uploaded", created_by_id=uuid.uuid4(),
+    )
+    storage.exists = AsyncMock(return_value=True)
+    storage.open_reader = Mock(return_value=MagicMock())
+    session.execute = AsyncMock(return_value=_ScalarResult(["~ANPB7"]))
+    with _mock_effective(10**9), patch(
+        "app.modules.backup.archives.list_backup_spaces",
+        return_value=[
+            BackupSpaceSummary(key="~anpb7", name="A N", page_count=2),
+        ],
+    ):
+        result = await archives.scan(archive)
+    assert result.spaces == [
+        {"key": "~anpb7", "name": "A N", "page_count": 2, "conflict": True},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_rescan_refreshes_conflicts_it_had_cached(archives, session, storage):
     """A space that existed when the archive was scanned may have been deleted
     since. Caching the flag would warn about a collision that is no longer

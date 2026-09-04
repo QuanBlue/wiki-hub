@@ -7,10 +7,11 @@ import tempfile
 import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import BinaryIO
 
 import anyio
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attachment import PageAttachment
@@ -20,6 +21,7 @@ from app.models.space import Space
 from app.modules.backup.confluence_export import CONFLUENCE_DC_PROFILES, write_confluence_dc_export
 from app.modules.backup.service import (
     STALE_JOB_AFTER,
+    STALE_RESTORE_JOB_AFTER,
     BackupService,
     ExportCancelled,
     checkpoint_backup_job,
@@ -40,11 +42,12 @@ def _open_for_read(path: str) -> BinaryIO:
 async def create_export_job(
     session: AsyncSession,
     *,
-    actor_id: uuid.UUID,
+    actor_id: uuid.UUID | None,
     kind: str,
     include_credentials: bool = False,
     confluence_profile: str | None = None,
     space_keys: list[str] | None = None,
+    automated: bool = False,
 ) -> BackupJob:
     if kind not in {"full_export", "confluence_export"}:
         raise ValueError("Unknown backup export type.")
@@ -67,6 +70,7 @@ async def create_export_job(
         space_keys=space_keys or [],
         status="queued",
         phase="queued",
+        automated=automated,
     )
     session.add(job)
     await session.commit()
@@ -137,8 +141,13 @@ async def reap_abandoned_export_jobs(
     query = select(BackupJob).where(BackupJob.status == "running")
     if not every_running_job:
         cutoff = datetime.now(UTC) - STALE_JOB_AFTER
+        restore_cutoff = datetime.now(UTC) - STALE_RESTORE_JOB_AFTER
         query = query.where(
-            or_(BackupJob.heartbeat_at.is_(None), BackupJob.heartbeat_at < cutoff)
+            or_(
+                BackupJob.heartbeat_at.is_(None),
+                and_(BackupJob.kind != "full_import", BackupJob.heartbeat_at < cutoff),
+                and_(BackupJob.kind == "full_import", BackupJob.heartbeat_at < restore_cutoff),
+            )
         )
     abandoned = (await session.execute(query)).scalars().all()
     for job in abandoned:
@@ -259,7 +268,14 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
             job=job,
         )
         job.result = result.model_dump(mode="json")
-        job.status, job.phase = "complete", "complete"
+        # Also clears `error`: the minute-ly reaper (`reap_abandoned_export_jobs`)
+        # can mark this same row "failed" mid-run on a merely-late heartbeat
+        # (a long relink/permission pass between checkpoints, e.g.) without
+        # actually stopping the task - arq keeps running it regardless of what
+        # the row says. Left alone, that stale message would sit on an
+        # otherwise-successful restore forever: status "complete" next to an
+        # "export worker stopped" error nothing since caused.
+        job.status, job.phase, job.error = "complete", "complete", None
         created = ", ".join(
             f"{count} {kind.replace('_', ' ')}{'' if count == 1 else 's'}"
             for kind, count in sorted(result.created.items())
@@ -323,9 +339,33 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
     await session.commit()
     suffix = "full.zip" if job.kind == "full_export" else "confluence-dc.zip"
     local_path = ""
+    # A scheduled backup's final step moves the finished archive into the
+    # host-mounted directory with `os.replace` for an atomic, all-or-nothing
+    # publish - but `os.replace`/`rename(2)` only works within one
+    # filesystem. Writing the temp file to the *default* temp dir (almost
+    # never the same mount as a bind-mounted volume) made that replace raise
+    # "Invalid cross-device link" (EXDEV) on every automated run, so the
+    # temp file is written directly into the destination directory instead:
+    # the later replace then genuinely is a same-filesystem rename, and a
+    # missing/unmounted directory is caught before spending any time on the
+    # export rather than after.
+    automated_directory: Path | None = None
+    if job.automated:
+        # Deferred: `app.modules.backup.automated` imports `create_export_job`
+        # from this module, so importing it back at module scope would be
+        # circular. By the time this function actually runs, both modules
+        # have already finished loading.
+        from app.modules.backup.automated import configured_directory
+
+        automated_directory = await configured_directory(session)
+        if automated_directory is None:
+            raise ValueError("The automated backup directory is not configured or available.")
     try:
         with tempfile.NamedTemporaryFile(
-            prefix="wikihub-backup-", suffix=f"-{suffix}", delete=False
+            prefix="wikihub-backup-",
+            suffix=f"-{suffix}",
+            dir=str(automated_directory) if automated_directory else None,
+            delete=False,
         ) as temp:
             local_path = temp.name
         await checkpoint_backup_job(session, job)
@@ -338,7 +378,7 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
                 space_keys=job.space_keys,
                 job=job,
             )
-            job.counters = {
+            job_counters = {
                 str(key): int(value) for key, value in manifest.get("counts", {}).items()
             }
             filename = f"wikihub-full-backup-{job.created_at:%Y%m%d-%H%M%S}.zip"
@@ -359,7 +399,7 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
                 session=session,
                 job=job,
             )
-            job.counters = {"spaces": len(spaces)}
+            job_counters = {"spaces": len(spaces)}
             filename = (
                 f"wikihub-confluence-{job.confluence_profile}-{job.created_at:%Y%m%d-%H%M%S}.zip"
             )
@@ -368,16 +408,41 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
         # Last chance to bail out before spending time uploading an artifact
         # nobody wants any more; also refreshes the heartbeat, because reading
         # and uploading a multi-GB archive is itself a long silent stretch.
-        await checkpoint_backup_job(session, job)
-        key = f"backups/exports/{job.id}/{filename}"
-        handle = await anyio.to_thread.run_sync(_open_for_read, local_path)
-        try:
-            await storage.put(key, handle, content_type="application/zip")
-        finally:
-            await anyio.to_thread.run_sync(handle.close)
-        await checkpoint_backup_job(session, job)
-        job.output_key, job.output_filename = key, filename
-        job.status, job.phase = "complete", "complete"
+        # `job_counters` is passed in rather than assigned on `job` above:
+        # this call's own `session.refresh(job)` would otherwise discard that
+        # unflushed assignment before it is ever persisted (`autoflush` is
+        # off on this session) - the same class of bug the output-file
+        # comment below documents.
+        await checkpoint_backup_job(session, job, counters=job_counters)
+        if job.automated:
+            assert automated_directory is not None  # validated above
+            filename = f"wikihub-auto-backup-{job.created_at:%Y%m%d-%H%M%S}-{job.id}.zip"
+            destination = automated_directory / filename
+            # Same-filesystem replace makes a completed archive appear atomically.
+            os.replace(local_path, destination)
+            local_path = ""
+            job.local_filename = filename
+            job.output_filename = filename
+        else:
+            key = f"backups/exports/{job.id}/{filename}"
+            handle = await anyio.to_thread.run_sync(_open_for_read, local_path)
+            try:
+                await storage.put(key, handle, content_type="application/zip")
+            finally:
+                await anyio.to_thread.run_sync(handle.close)
+            job.output_key, job.output_filename = key, filename
+        # Not another `checkpoint_backup_job()` here: it starts with
+        # `session.refresh(job)`, which - with this session's `autoflush`
+        # off - discards the `output_key`/`output_filename` (or
+        # `local_filename`) just set above before they are ever flushed,
+        # silently leaving a "complete" job with no file to download. There
+        # is also no more long-running work left to observe a cancel during;
+        # the restore path already commits its own finishing touches
+        # (`job.result`) the same direct way for the same reason.
+        # Also clears a stale reaper "failed" error a late heartbeat could
+        # have left on this row mid-run.
+        job.status, job.phase, job.error = "complete", "complete", None
+        job.heartbeat_at = datetime.now(UTC)
         await session.commit()
     except ExportCancelled:
         await session.rollback()

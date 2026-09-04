@@ -22,10 +22,10 @@ from app.models.restriction import PageRestrictionPermission
 from app.models.space import SpaceRole, SpaceStatus, SpaceVisibility
 
 #: Only version this build can read.
-# Version 2 adds the knowledge and access-control data that make a workspace
-# backup useful in practice.  Version 1 remains accepted for restores.
-BACKUP_VERSION: Literal[2] = 2
-SUPPORTED_BACKUP_VERSIONS = frozenset({1, 2})
+# Version 3 adds private knowledge state (pins, drafts and labels/tags).
+# Versions 1 and 2 remain accepted for restores.
+BACKUP_VERSION: Literal[3] = 3
+SUPPORTED_BACKUP_VERSIONS = frozenset({1, 2, 3})
 
 
 class BackupUser(BaseModel):
@@ -196,6 +196,34 @@ class BackupAvatar(BaseModel):
     size_bytes: int
 
 
+class BackupPagePin(BaseModel):
+    page_space_key: str
+    page_slug: str
+    username: str
+
+
+class BackupPageDraft(BaseModel):
+    page_space_key: str
+    page_slug: str
+    username: str
+    content: str = ""
+    content_format: str = "html"
+    edit_mode: str = "normal"
+    base_updated_at: datetime
+
+
+class BackupUserTag(BaseModel):
+    username: str
+    name: str
+
+
+class BackupUserPageLabel(BaseModel):
+    page_space_key: str
+    page_slug: str
+    username: str
+    name: str
+
+
 class BackupSiteSettings(BaseModel):
     site_name: str | None = None
     max_upload_size_mb: int | None = None
@@ -204,7 +232,7 @@ class BackupSiteSettings(BaseModel):
 
 
 class BackupMeta(BaseModel):
-    version: Literal[1, 2] = BACKUP_VERSION
+    version: Literal[1, 2, 3] = BACKUP_VERSION
     exported_at: datetime
     app_version: str
     site_name: str
@@ -231,9 +259,15 @@ class BackupDocument(BaseModel):
     page_likes: list[BackupPageLike] = Field(default_factory=list)
     page_user_restrictions: list[BackupPageUserRestriction] = Field(default_factory=list)
     page_group_restrictions: list[BackupPageGroupRestriction] = Field(default_factory=list)
+    page_pins: list[BackupPagePin] = Field(default_factory=list)
+    page_drafts: list[BackupPageDraft] = Field(default_factory=list)
+    user_tags: list[BackupUserTag] = Field(default_factory=list)
+    user_page_labels: list[BackupUserPageLabel] = Field(default_factory=list)
     attachments: list[BackupAttachment] = Field(default_factory=list)
     avatars: list[BackupAvatar] = Field(default_factory=list)
     site_settings: BackupSiteSettings | None = None
+
+
 
 
 class ImportEntry(BaseModel):
@@ -276,6 +310,35 @@ class BackupExportCreate(BaseModel):
     include_credentials: bool = False
     confluence_profile: Literal["dc-8", "dc-9"] | None = None
     space_keys: list[str] = Field(default_factory=list, max_length=5000)
+
+
+class AutomatedBackupSettingsUpdate(BaseModel):
+    enabled: bool
+    interval_unit: Literal["hours", "days"] = "days"
+    interval_value: int = Field(default=1, ge=1, le=720)
+    time_of_day: str = Field(default="02:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    timezone: str = Field(default="UTC", min_length=1, max_length=64)
+    retention_count: int = Field(default=30, ge=1, le=1000)
+    #: A path relative to the mounted backup root, e.g. "team-a" for
+    #: `<root>/team-a`. `None`/empty writes straight into the root. Validated
+    #: server-side against the actual filesystem before it is ever saved -
+    #: see `automated.validate_subdirectory`.
+    subdirectory: str | None = Field(default=None, max_length=255)
+
+
+class AutomatedBackupSettingsRead(AutomatedBackupSettingsUpdate):
+    directory_configured: bool
+    #: The root backup volume as mounted into the container - fixed at
+    #: deploy time, shown for context, never itself editable here.
+    base_directory: str | None = None
+    #: `base_directory` narrowed by `subdirectory`, i.e. where a backup
+    #: actually lands right now. `None` whenever `directory_configured` is
+    #: false - nothing valid to show.
+    directory: str | None = None
+    last_run_at: datetime | None = None
+    next_run_at: datetime | None = None
+    last_status: str | None = None
+    last_error: str | None = None
 
 
 class BackupJobLogRead(BaseModel):

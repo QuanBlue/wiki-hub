@@ -3,26 +3,7 @@
 import { Loader2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-type OnlyOfficeEditor = { destroyEditor: () => void };
-
-type OnlyOfficeConfig = {
-  documentType: "word" | "cell" | "slide";
-  document: { key: string; title: string; fileType: string };
-  editorConfig: Record<string, unknown>;
-  token: string;
-  events?: Record<string, unknown>;
-};
-
-declare global {
-  interface Window {
-    DocsAPI?: {
-      DocEditor: new (
-        elementId: string,
-        config: OnlyOfficeConfig,
-      ) => OnlyOfficeEditor;
-    };
-  }
-}
+import type { OnlyOfficeConfig, OnlyOfficeEditor } from "@/types/onlyoffice";
 
 let documentServerScript: Promise<void> | null = null;
 

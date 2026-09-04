@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import uuid
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AuthenticationError, BadRequestError
 from app.models.attachment import PageAttachment
+from app.models.backup_job import BackupJob
 from app.models.page import PageLike, WikiPage
 from app.models.permission import (
     GlobalPermission,
@@ -35,9 +37,10 @@ from app.models.revision import PageRevision
 from app.models.space import Space, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
 from app.modules.auth.service import AuthService
-from app.modules.backup.service import BackupService
+from app.modules.backup.jobs import reap_abandoned_export_jobs, run_backup_job
+from app.modules.backup.service import STALE_JOB_AFTER, STALE_RESTORE_JOB_AFTER, BackupService
 from app.modules.spaces.service import SpaceService
-from app.schemas.backup import BackupDocument
+from app.schemas.backup import BACKUP_VERSION, BackupDocument
 from app.schemas.space import SpaceCreate
 from app.schemas.user import UserCreate
 from app.services.storage import ObjectStorage
@@ -780,7 +783,7 @@ class TestRoundTrip:
         await session.flush()
 
         document = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
-        assert document.wikihub_backup.version == 2
+        assert document.wikihub_backup.version == BACKUP_VERSION
         assert len(document.pages) >= 2
         assert document.groups[0].name == "Authors"
         await _wipe(session)
@@ -1024,3 +1027,95 @@ class TestMalformedInput:
 
         with pytest.raises(BadRequestError, match="Unsupported backup version"):
             await BackupService(session).import_document(doc, dry_run=True)
+
+
+class TestReapAbandonedExportJobs:
+    """Regression test: a real overwrite restore (43 spaces, ~3,000 pages) went
+    quiet for just over `STALE_JOB_AFTER` while inside `restore_full_package`'s
+    checkpoint-free SAVEPOINT phase, got marked "failed" by the minute-ly
+    reaper while it was still correctly running, and finished successfully a
+    few minutes later with that stale error still sitting on its row. A
+    restore gets a much longer grace window than every other job kind for
+    exactly this reason.
+    """
+
+    async def test_a_restore_past_the_export_cutoff_but_within_its_own_is_left_running(
+        self, session: AsyncSession
+    ) -> None:
+        stale_for_export = datetime.now(UTC) - STALE_JOB_AFTER - timedelta(seconds=1)
+        restore = BackupJob(
+            kind="full_import", status="running", phase="restoring",
+            heartbeat_at=stale_for_export,
+        )
+        session.add(restore)
+        await session.flush()
+
+        assert await reap_abandoned_export_jobs(session) == 0
+        await session.refresh(restore)
+        assert restore.status == "running"
+        assert restore.error is None
+
+    async def test_a_restore_past_its_own_longer_cutoff_is_reaped(
+        self, session: AsyncSession
+    ) -> None:
+        stale_for_restore = datetime.now(UTC) - STALE_RESTORE_JOB_AFTER - timedelta(seconds=1)
+        restore = BackupJob(
+            kind="full_import", status="running", phase="restoring",
+            heartbeat_at=stale_for_restore,
+        )
+        session.add(restore)
+        await session.flush()
+
+        assert await reap_abandoned_export_jobs(session) == 1
+        await session.refresh(restore)
+        assert restore.status == "failed"
+        assert restore.error == "The export worker stopped before this job finished."
+
+    async def test_an_export_still_uses_the_short_cutoff(self, session: AsyncSession) -> None:
+        """The wider grace period is specific to restores - an export never
+        enters the checkpoint-free phase, so its own stale worker should keep
+        being caught quickly rather than borrowing the restore's patience."""
+        stale_for_export = datetime.now(UTC) - STALE_JOB_AFTER - timedelta(seconds=1)
+        export = BackupJob(
+            kind="full_export", status="running", phase="exporting",
+            heartbeat_at=stale_for_export,
+        )
+        session.add(export)
+        await session.flush()
+
+        assert await reap_abandoned_export_jobs(session) == 1
+        await session.refresh(export)
+        assert export.status == "failed"
+
+
+class TestRunBackupJobPersistsOutput:
+    """Regression test: `checkpoint_backup_job()` opens with
+    `session.refresh(job)`, which - with `autoflush` off on this session -
+    discards any assignment on `job` made since the last commit before it is
+    ever flushed. Calling it again right after setting `output_key`/
+    `output_filename` silently wiped them: the job still finished "complete",
+    just with nothing a download link could ever point at. A mocked session
+    (as `test_run_backup_job_complete` in the unit suite uses) cannot catch
+    this - its `.refresh()` is a no-op - so this needs a real one.
+    """
+
+    async def test_a_completed_export_keeps_its_output_filename(
+        self, session: AsyncSession
+    ) -> None:
+        objects: dict[str, bytes] = {}
+
+        async def put(key: str, data: object, **_kwargs: object) -> None:
+            objects[key] = data.read() if hasattr(data, "read") else data
+
+        storage = cast(ObjectStorage, SimpleNamespace(put=put))
+
+        job = BackupJob(kind="full_export", status="queued", phase="queued")
+        session.add(job)
+        await session.flush()
+
+        await run_backup_job(session, storage, job.id)
+
+        await session.refresh(job)
+        assert job.status == "complete"
+        assert job.output_key and job.output_filename
+        assert job.output_key in objects

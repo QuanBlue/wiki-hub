@@ -84,7 +84,7 @@ export const DropdownMenuItem = React.forwardRef<
     <DropdownMenuPrimitive.Item
       ref={ref}
       className={cn(
-        "flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none",
+        "text-muted-foreground flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none",
         "transition-colors duration-150 select-none",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
         "[&_svg]:size-4 [&_svg]:shrink-0",
@@ -112,6 +112,7 @@ export const DropdownMenuSubContent = React.forwardRef<
         sideOffset={sideOffset}
         className={cn(
           "border-border bg-surface z-50 min-w-44 overflow-hidden rounded-lg border p-1 shadow-lg",
+          "text-muted-foreground [&_[role=menuitem]]:text-muted-foreground [&_[role=menuitem]_svg]:text-muted-foreground [&_[role=menuitem][data-highlighted]]:text-foreground [&_[role=menuitem][data-highlighted]_svg]:text-foreground",
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
           "data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",

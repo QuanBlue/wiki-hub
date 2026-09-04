@@ -47,6 +47,11 @@ class BackupJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     output_key: Mapped[str | None] = mapped_column(String(512), unique=True, nullable=True)
     output_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: Scheduled exports are stored on the configured host-mounted directory,
+    #: not in object storage. The relative filename is deliberately all we
+    #: persist: handlers always resolve it under the configured root.
+    automated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    local_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     include_credentials: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     confluence_profile: Mapped[str | None] = mapped_column(String(32), nullable=True)
     import_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -72,6 +77,30 @@ class BackupJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+
+class AutomatedBackupSettings(TimestampMixin, Base):
+    """The single instance-wide scheduled-backup policy."""
+
+    __tablename__ = "automated_backup_settings"
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    interval_unit: Mapped[str] = mapped_column(String(8), nullable=False, default="days")
+    interval_value: Mapped[int] = mapped_column(nullable=False, default=1)
+    time_of_day: Mapped[str] = mapped_column(String(5), nullable=False, default="02:00")
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    retention_count: Mapped[int] = mapped_column(nullable=False, default=30)
+    #: A path relative to the mounted `WIKIHUB_AUTOMATED_BACKUP_DIRECTORY`
+    #: root, or `None` to write straight into that root. Never an absolute
+    #: path or one containing `..` - see `automated.resolve_backup_directory`,
+    #: the one place that turns this + the root into an actual filesystem
+    #: path, which enforces that by construction rather than trusting this
+    #: column to have been validated on the way in.
+    subdirectory: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class BackupJobLog(UUIDPrimaryKeyMixin, Base):

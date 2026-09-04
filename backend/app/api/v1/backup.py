@@ -19,6 +19,7 @@ from urllib.parse import quote
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
 from sqlalchemy import desc, select
 
@@ -31,12 +32,22 @@ from app.core.exceptions import (
     PayloadTooLargeError,
     ServiceUnavailableError,
 )
-from app.models.backup_job import BackupArchive, BackupJob, BackupJobLog
+from app.models.backup_job import AutomatedBackupSettings, BackupArchive, BackupJob, BackupJobLog
+from app.modules.backup.automated import (
+    base_directory,
+    configured_directory,
+    get_settings as get_automated_settings,
+    queue_automatic_backup,
+    validate_subdirectory,
+    validate_timezone,
+)
 from app.modules.backup.archives import BackupArchiveService
 from app.modules.backup.jobs import create_export_job, create_import_job
 from app.modules.backup.service import STALE_JOB_AFTER, BackupService
 from app.schemas.backup import (
     BackupArchiveRead,
+    AutomatedBackupSettingsRead,
+    AutomatedBackupSettingsUpdate,
     BackupArchiveSpaceRead,
     BackupArchiveUploadInit,
     BackupArchiveUploadPartUrlsRead,
@@ -126,11 +137,14 @@ async def _job_read(job: BackupJob) -> BackupJobRead:
         result=job.result,
         output_filename=job.output_filename,
         download_url=(
+            f"/api/v1/backup/automatic/jobs/{job.id}/download"
+            if getattr(job, "automated", False) and job.status == "complete" and getattr(job, "local_filename", None)
+            else
             "/api/v1/storage/object?key="
             + quote(job.output_key, safe="")
             + "&download_as="
             + quote(job.output_filename, safe="")
-            if job.status == "complete" and job.output_key and job.output_filename
+            if not getattr(job, "automated", False) and job.status == "complete" and job.output_key and job.output_filename
             else None
         ),
         error=job.error,
@@ -488,6 +502,90 @@ async def create_backup_export(
         raise BadRequestError(str(exc), code="invalid_backup_export") from exc
     await _enqueue(job.id)
     return await _job_read(job)
+
+
+async def _automated_read(session: DbSession, item: AutomatedBackupSettings) -> AutomatedBackupSettingsRead:
+    root = base_directory()
+    directory = await configured_directory(session)
+    return AutomatedBackupSettingsRead(
+        enabled=item.enabled, interval_unit=item.interval_unit, interval_value=item.interval_value,
+        time_of_day=item.time_of_day, timezone=item.timezone, retention_count=item.retention_count,
+        subdirectory=item.subdirectory,
+        directory_configured=directory is not None,
+        base_directory=str(root) if root else None,
+        directory=str(directory) if directory else None,
+        last_run_at=item.last_run_at, next_run_at=item.next_run_at, last_status=item.last_status,
+        last_error=item.last_error,
+    )
+
+
+@router.get("/automatic", response_model=AutomatedBackupSettingsRead)
+async def read_automated_backup_settings(_user: CurrentSuperuser, session: DbSession) -> AutomatedBackupSettingsRead:
+    return await _automated_read(session, await get_automated_settings(session))
+
+
+@router.patch("/automatic", response_model=AutomatedBackupSettingsRead)
+async def update_automated_backup_settings(payload: AutomatedBackupSettingsUpdate, _user: CurrentSuperuser, session: DbSession) -> AutomatedBackupSettingsRead:
+    try:
+        validate_timezone(payload.timezone)
+    except ValueError as exc:
+        raise BadRequestError(str(exc), code="invalid_backup_timezone") from exc
+    try:
+        subdirectory = validate_subdirectory(payload.subdirectory)
+    except ValueError as exc:
+        raise BadRequestError(str(exc), code="backup_subdirectory_invalid") from exc
+    item = await get_automated_settings(session)
+    for field, value in payload.model_dump().items():
+        setattr(item, field, value)
+    item.subdirectory = subdirectory
+    if payload.enabled and await configured_directory(session) is None:
+        raise BadRequestError("Automated backup directory is not configured or mounted.", code="backup_directory_unavailable")
+    # Setting it to now makes the worker calculate an initial due time predictably.
+    item.next_run_at = None
+    await session.commit()
+    await session.refresh(item)
+    return await _automated_read(session, item)
+
+
+@router.post("/automatic/run", response_model=BackupJobRead, status_code=201)
+async def run_automated_backup_now(_user: CurrentSuperuser, session: DbSession) -> BackupJobRead:
+    try:
+        job = await queue_automatic_backup(session)
+    except ValueError as exc:
+        raise BadRequestError(str(exc), code="backup_directory_unavailable") from exc
+    await _enqueue(job.id)
+    return await _job_read(job)
+
+
+@router.get("/automatic/jobs", response_model=list[BackupJobRead])
+async def list_automated_backups(_user: CurrentSuperuser, session: DbSession) -> list[BackupJobRead]:
+    jobs = list((await session.execute(select(BackupJob).where(BackupJob.automated.is_(True)).order_by(BackupJob.created_at.desc()).limit(100))).scalars())
+    return [await _job_read(job) for job in jobs]
+
+
+@router.get("/automatic/jobs/{job_id}/download")
+async def download_automated_backup(job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession) -> FileResponse:
+    job = await session.get(BackupJob, job_id)
+    directory = await configured_directory(session)
+    if job is None or not job.automated or not job.local_filename or directory is None:
+        raise NotFoundError("Automated backup was not found.")
+    path = directory / job.local_filename
+    if path.parent != directory or not path.is_file():
+        raise NotFoundError("Automated backup file was not found.")
+    return FileResponse(path, media_type="application/zip", filename=job.output_filename or path.name)
+
+
+@router.delete("/automatic/jobs/{job_id}", status_code=204)
+async def delete_automated_backup(job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession) -> None:
+    job = await session.get(BackupJob, job_id)
+    directory = await configured_directory(session)
+    if job is None or not job.automated:
+        raise NotFoundError("Automated backup was not found.")
+    if directory and job.local_filename:
+        path = directory / job.local_filename
+        if path.parent == directory:
+            path.unlink(missing_ok=True)
+    await session.delete(job)
 
 
 @router.get("/jobs", response_model=list[BackupJobRead])

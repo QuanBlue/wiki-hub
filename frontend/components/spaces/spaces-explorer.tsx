@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Globe2,
@@ -9,7 +10,9 @@ import {
   Pencil,
   Search,
   Star,
+  UserRound,
   Users,
+  UsersRound,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -31,6 +34,14 @@ import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Space } from "@/types/api";
 
+function formatCreatedDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function FavoriteButton({
   space,
   favorite,
@@ -51,7 +62,10 @@ function FavoriteButton({
       aria-pressed={favorite}
       className={cn(
         "focus-visible:ring-ring cursor-pointer rounded-md p-2 transition-colors duration-150 hover:bg-surface-selected focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
-        favorite ? "text-warning" : "text-muted-foreground hover:text-foreground",
+        // Matches the favorite-star color used on space cards elsewhere
+        // (see space-card.tsx / space-workspace.tsx) - `text-warning` reads
+        // as a dull, muted amber meant for warning text, not a bright star.
+        favorite ? "text-amber-500" : "text-muted-foreground hover:text-foreground",
       )}
     >
       <Star className={cn("size-4", favorite && "fill-current")} />
@@ -89,7 +103,7 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
     <>
       <Link
         href={href}
-        className="border-border group grid min-w-0 grid-cols-[minmax(0,1fr)_7.5rem_5.5rem_auto] items-center gap-3 border-b px-4 py-3 transition-colors duration-150 last:border-b-0 hover:bg-surface-hover focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
+        className="border-border group grid min-w-0 grid-cols-[minmax(0,1fr)_8rem] items-center gap-3 border-b px-4 py-3 transition-colors duration-150 last:border-b-0 hover:bg-surface-hover focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none sm:grid-cols-[minmax(0,1fr)_7.5rem_8rem] md:grid-cols-[minmax(0,1fr)_7.5rem_5.5rem_5rem_8rem] lg:grid-cols-[minmax(0,1fr)_9rem_7.5rem_5.5rem_5rem_8rem] xl:grid-cols-[minmax(0,1fr)_9rem_8rem_7.5rem_5.5rem_5rem_8rem]"
       >
         <span className="flex min-w-0 items-center gap-3">
           <span className="bg-primary-subtle flex size-9 shrink-0 items-center justify-center rounded-md text-lg leading-none">
@@ -114,6 +128,16 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
             </span>
           </span>
         </span>
+        <span className="text-muted-foreground hidden min-w-0 items-center gap-1.5 text-xs lg:flex">
+          <UserRound className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {space.created_by_username ? "@" + space.created_by_username : "—"}
+          </span>
+        </span>
+        <span className="text-muted-foreground hidden items-center gap-1.5 text-xs xl:flex">
+          <CalendarDays className="size-3.5 shrink-0" />
+          {formatCreatedDate(space.created_at)}
+        </span>
         <span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:flex">
           {space.visibility === "open" ? (
             <Globe2 className="size-3.5 shrink-0" />
@@ -125,6 +149,10 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
         <span className="text-muted-foreground hidden items-center gap-1.5 text-xs md:flex">
           <Users className="size-3.5 shrink-0" />
           {space.member_count}
+        </span>
+        <span className="text-muted-foreground hidden items-center gap-1.5 text-xs md:flex">
+          <UsersRound className="size-3.5 shrink-0" />
+          {space.group_permission_count}
         </span>
         <span
           onClick={(event) => event.preventDefault()}
@@ -159,25 +187,6 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
         onOpenChange={setEditOpen}
       />
     </>
-  );
-}
-
-function PinnedSpace({ space }: { space: Space }) {
-  return (
-    <Link
-      href={"/spaces/" + encodeURIComponent(space.key)}
-      className="border-border bg-surface hover:border-border-strong hover:bg-surface-hover focus-visible:ring-ring flex min-w-0 items-center gap-2.5 rounded-md border px-3 py-2.5 transition-[color,background-color,border-color] duration-150 focus-visible:ring-2 focus-visible:outline-none"
-    >
-      <span className="bg-primary-subtle flex size-7 shrink-0 items-center justify-center rounded text-sm">
-        {space.icon || "📄"}
-      </span>
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-medium">{space.name}</span>
-        <span className="text-muted-foreground block truncate text-[11px]">
-          {space.key}
-        </span>
-      </span>
-    </Link>
   );
 }
 
@@ -217,107 +226,79 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
 
   return (
     <div className="space-y-7">
-      {starredSpaces.length > 0 ? (
-        <section aria-labelledby="favorite-spaces-heading">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <h2 id="favorite-spaces-heading" className="text-base font-semibold">
-                Favorite spaces
-              </h2>
-              <p className="text-muted-foreground mt-0.5 text-xs">
-                Your quick access list.
-              </p>
-            </div>
-            <Badge variant="neutral">{starredSpaces.length}</Badge>
+      <section aria-label="Space directory">
+        <div className="flex flex-col gap-3 border-border border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="border-border bg-surface-sunken flex w-fit items-center rounded-md border p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setTab("all");
+                setPage(0);
+              }}
+              className={cn(
+                "focus-visible:ring-ring flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                tab === "all"
+                  ? "bg-surface text-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+              )}
+            >
+              <Grid2X2 className="size-3.5" />
+              All ({spaces.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTab("starred");
+                setPage(0);
+              }}
+              className={cn(
+                "focus-visible:ring-ring flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                tab === "starred"
+                  ? "bg-surface text-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+              )}
+            >
+              <Star className="size-3.5" />
+              Favorite ({starredSpaces.length})
+            </button>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            {starredSpaces.slice(0, 4).map((space) => (
-              <PinnedSpace key={space.id} space={space} />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <section aria-labelledby="space-directory-heading">
-        <div className="flex flex-col gap-4 border-border border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 id="space-directory-heading" className="text-xl font-semibold tracking-tight">
-              Space directory
-            </h2>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Browse the homes for your team’s knowledge.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row-reverse sm:justify-end sm:items-center">
-            <div className="border-border bg-surface-sunken flex w-fit items-center rounded-md border p-0.5 text-xs">
+          <div className="relative w-full sm:w-72">
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setPage(0);
+              }}
+              placeholder="Search spaces"
+              className="border-border bg-surface placeholder:text-muted-foreground hover:border-border-strong focus-visible:ring-ring w-full rounded-md border py-2 pr-8 pl-9 text-sm outline-none transition-[color,background-color,border-color,box-shadow] duration-150 focus-visible:ring-2"
+            />
+            {query ? (
               <button
                 type="button"
                 onClick={() => {
-                  setTab("all");
+                  setQuery("");
                   setPage(0);
                 }}
-                className={cn(
-                  "focus-visible:ring-ring flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                  tab === "all"
-                    ? "bg-surface text-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-                )}
+                aria-label="Clear space search"
+                className="text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
               >
-                <Grid2X2 className="size-3.5" />
-                All ({spaces.length})
+                <X className="size-3.5" />
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTab("starred");
-                  setPage(0);
-                }}
-                className={cn(
-                  "focus-visible:ring-ring flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                  tab === "starred"
-                    ? "bg-surface text-foreground shadow-xs"
-                    : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-                )}
-              >
-                <Star className="size-3.5" />
-                Favorite ({starredSpaces.length})
-              </button>
-            </div>
-            <div className="relative w-full sm:w-72">
-              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-              <input
-                type="search"
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  setPage(0);
-                }}
-                placeholder="Search spaces"
-                className="border-border bg-surface placeholder:text-muted-foreground hover:border-border-strong focus-visible:ring-ring w-full rounded-md border py-2 pr-8 pl-9 text-sm outline-none transition-[color,background-color,border-color,box-shadow] duration-150 focus-visible:ring-2"
-              />
-              {query ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery("");
-                    setPage(0);
-                  }}
-                  aria-label="Clear space search"
-                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                >
-                  <X className="size-3.5" />
-                </button>
-              ) : null}
-            </div>
+            ) : null}
           </div>
         </div>
 
         {filteredSpaces.length > 0 ? (
           <div className="border-border bg-surface mt-4 overflow-hidden rounded-xl border shadow-sm">
-            <div className="border-border bg-surface-sunken grid grid-cols-[minmax(0,1fr)_7.5rem_5.5rem_2.75rem] gap-3 border-b px-4 py-2 text-xs font-medium">
+            <div className="border-border bg-surface-sunken grid grid-cols-[minmax(0,1fr)_8rem] gap-3 border-b px-4 py-2 text-xs font-medium sm:grid-cols-[minmax(0,1fr)_7.5rem_8rem] md:grid-cols-[minmax(0,1fr)_7.5rem_5.5rem_5rem_8rem] lg:grid-cols-[minmax(0,1fr)_9rem_7.5rem_5.5rem_5rem_8rem] xl:grid-cols-[minmax(0,1fr)_9rem_8rem_7.5rem_5.5rem_5rem_8rem]">
               <span>Space</span>
+              <span className="hidden lg:block">Owner</span>
+              <span className="hidden xl:block">Created</span>
               <span className="hidden sm:block">Access</span>
               <span className="hidden md:block">Members</span>
+              <span className="hidden md:block">Groups</span>
               <span className="text-right">Favorite</span>
             </div>
             {paginatedSpaces.map((space) => (

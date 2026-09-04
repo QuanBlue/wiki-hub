@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -14,6 +15,7 @@ from app.modules.document_import.convert import FORMAT_BY_EXTENSION
 #: size already takes minutes, and a larger one is almost always a mistake
 #: (someone selecting a whole folder) that is kinder to reject than to run.
 MAX_DOCUMENT_IMPORT_FILES = 20
+DocumentImportConflictMode = Literal["rename", "replace"]
 
 #: Extensions the picker offers and the endpoint accepts. Derived from the
 #: converter's own table so the two can never disagree about what is supported.
@@ -49,6 +51,7 @@ class DocumentImportJobRead(BaseModel):
     parent_id: uuid.UUID | None = None
     status: str
     phase: str
+    conflict_mode: DocumentImportConflictMode = "rename"
     counters: dict[str, int] = {}
     cancel_requested: bool = False
     error: str | None = None

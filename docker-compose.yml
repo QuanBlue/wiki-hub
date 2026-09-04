@@ -114,6 +114,22 @@ services:
       retries: 20
       start_period: 90s
 
+  # Keep schema changes coupled to every normal `docker compose up`, not only
+  # the helper script. Without this a newly deployed UI can call an endpoint
+  # whose table/columns do not exist yet and remain stuck loading forever.
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/docker/backend.Dockerfile
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    env_file: [.env]
+    environment:
+      WIKIHUB_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-wikihub}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wikihub}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   backend:
     build:
       context: .
@@ -125,6 +141,7 @@ services:
       WIKIHUB_REDIS_URL: redis://redis:6379/0
       WIKIHUB_S3_ENDPOINT_URL: http://minio:9000
       WIKIHUB_S3_PUBLIC_ENDPOINT_URL: http://localhost:${MINIO_PORT_HOST:-9000}
+      WIKIHUB_AUTOMATED_BACKUP_DIRECTORY: /backups
       # The UI uses the same-origin Next.js proxy. Keep this for external API
       # clients and local development only; public UI domains need no entry.
       WIKIHUB_CORS_ORIGINS: ${WIKIHUB_CORS_ORIGINS:-http://localhost:3000}
@@ -140,6 +157,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio:
@@ -151,6 +170,7 @@ services:
     volumes:
       # Live reload during development; remove for a production-like run.
       - ./backend:/app
+      - ${WIKIHUB_AUTOMATED_BACKUP_HOST_DIRECTORY:-./data/automated-backups}:/backups
     # Chromium (page export) needs more than Docker's default 64MB /dev/shm;
     # --disable-dev-shm-usage in app/services/browser.py covers the same risk
     # from the other side.
@@ -168,18 +188,22 @@ services:
       WIKIHUB_REDIS_URL: redis://redis:6379/0
       WIKIHUB_S3_ENDPOINT_URL: http://minio:9000
       WIKIHUB_S3_PUBLIC_ENDPOINT_URL: http://localhost:${MINIO_PORT_HOST:-9000}
+      WIKIHUB_AUTOMATED_BACKUP_DIRECTORY: /backups
       # Same reasoning as the backend service: kept in sync so moving export
       # rendering onto the worker later needs no compose change.
       WIKIHUB_FRONTEND_INTERNAL_URL: http://frontend:3000
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - ${WIKIHUB_AUTOMATED_BACKUP_HOST_DIRECTORY:-./data/automated-backups}:/backups
     shm_size: "512mb"
     healthcheck:
       # arq heartbeats into Redis; `--check` exits non-zero when that beat goes

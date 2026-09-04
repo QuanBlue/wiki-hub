@@ -80,7 +80,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         fields = [
             {
                 "field": ".".join(str(p) for p in err["loc"][1:]) or str(err["loc"][0]),
-                "message": err["msg"],
+                # Pydantic v2 prefixes messages raised from a `@field_validator`
+                # via `raise ValueError(...)` with "Value error, " - strip that
+                # so custom validation messages read cleanly to end users.
+                "message": err["msg"].removeprefix("Value error, "),
                 "type": err["type"],
             }
             for err in exc.errors()

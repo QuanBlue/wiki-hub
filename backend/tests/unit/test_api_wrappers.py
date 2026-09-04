@@ -356,6 +356,9 @@ async def test_confluence_import_route_wrappers(monkeypatch: pytest.MonkeyPatch)
         counters={},
     )
     session.get = AsyncMock(return_value=retry_item)
+    # `retry` commits (not just flushes) before handing the replacement job
+    # to the worker - see the comment on `retry` itself for why.
+    session.commit = AsyncMock()
     assert await imports_api.retry(job.id, user, session) is not None
 
 

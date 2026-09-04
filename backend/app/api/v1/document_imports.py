@@ -13,14 +13,16 @@ invisible to arq.
 
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import filetype
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, File, Form, UploadFile, status
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.config import settings
@@ -38,6 +40,7 @@ from app.models.space import Space
 from app.modules.attachments.limits import limits_for_space
 from app.modules.attachments.store import safe_attachment_filename
 from app.modules.document_import.convert import format_for_filename
+from app.modules.document_import.normalize import title_from_html
 from app.modules.document_import.service import (
     StagedDocument,
     create_document_import_job,
@@ -137,6 +140,9 @@ async def create_document_import(
     session: DbSession,
     files: Annotated[list[UploadFile], File(description="Documents to import")],
     parent_id: Annotated[str | None, Form(description="Parent page id")] = None,
+    # Every new request starts with a conflict check.  The worker only receives
+    # ``rename`` or ``replace`` after this endpoint has resolved the choice.
+    conflict_mode: Annotated[Literal["ask", "rename", "replace"], Form()] = "ask",
 ) -> DocumentImportJobRead:
     space = await SpaceService(session).get_by_key(key)
     page_service = PageService(session)
@@ -187,18 +193,98 @@ async def create_document_import(
             )
         )
 
+    if conflict_mode == "ask":
+        conflicts = await _find_filename_conflicts(
+            session,
+            space=space,
+            parent_id=parent.id if parent is not None else None,
+            documents=documents,
+        )
+        if conflicts:
+            raise ConflictError(
+                "One or more pages already exist. Choose Replace or Keep both.",
+                code="document_import_conflict",
+                details={"conflicts": conflicts},
+            )
+        conflict_mode = "rename"
+
     job = await create_document_import_job(
         session,
         get_storage(),
         space=space,
         parent_id=parent.id if parent is not None else None,
+        conflict_mode=conflict_mode,
         documents=documents,
         creator=user,
     )
-    await session.flush()
+    # A commit, not just a flush: `_enqueue` hands the job to the worker on
+    # a separate connection immediately below, and a flush alone leaves the
+    # row visible only within this transaction - the worker can (and, timed
+    # at ~4ms after enqueueing, reliably does) win that race, read the job
+    # as not-yet-existing, and silently return without ever changing its
+    # status. Confirmed the same bug in the Confluence importer's equivalent
+    # `create_job`, which only flushed too; see the commit there for the
+    # concrete evidence (a job stuck at "queued" forever, no error raised).
+    await session.commit()
     await session.refresh(job)
     await _enqueue(job.id)
     return to_job_read(job, space_key=space.key)
+
+
+def _filename_title_variants(filename: str) -> list[str]:
+    title = Path(filename).stem.strip()
+    base = re.sub(r"\s*\(\d+\)$", "", title).strip()
+    return [title, base] if base and base != title else [title]
+
+
+def _document_title_variants(document: StagedDocument) -> list[str]:
+    """Return every title the worker could use for a staged document."""
+    variants = _filename_title_variants(document.filename)
+    if document.source_format == "html":
+        try:
+            html_title = title_from_html(
+                document.data.decode("utf-8", errors="replace"),
+                filename=document.filename,
+            )
+        except (UnicodeError, ValueError):
+            html_title = ""
+        if html_title:
+            variants = [html_title, *variants]
+    return list(dict.fromkeys(variants))
+
+
+async def _find_filename_conflicts(
+    session: DbSession,
+    *,
+    space: Space,
+    parent_id: uuid.UUID | None,
+    documents: list[StagedDocument],
+) -> list[dict[str, str]]:
+    titles_by_key = {
+        title.casefold(): document.filename
+        for document in documents
+        for title in _document_title_variants(document)
+    }
+    if not titles_by_key:
+        return []
+    # Filtered by (space, parent) only, not by title: this database's cluster
+    # locale is `C`, under which Postgres's own `lower()` leaves accented
+    # uppercase letters untouched (`lower('TẬP')` -> `'tẬp'`, not `'tập'`), so
+    # a SQL-side `func.lower(...).in_(...)` would silently drop every real
+    # match with a Vietnamese (or other non-ASCII-uppercase) title. The
+    # casefold comparison below already runs entirely in Python; it just
+    # needs every sibling to compare against instead of a pre-filtered few.
+    query = select(WikiPage).where(WikiPage.space_id == space.id)
+    if parent_id is None:
+        query = query.where(WikiPage.parent_id.is_(None))
+    else:
+        query = query.where(WikiPage.parent_id == parent_id)
+    pages = (await session.execute(query)).scalars().all()
+    return [
+        {"filename": titles_by_key.get(page.title.casefold(), ""), "title": page.title}
+        for page in pages
+        if page.title.casefold() in titles_by_key
+    ]
 
 
 async def _resolve_parent(

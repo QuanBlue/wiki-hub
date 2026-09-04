@@ -11,6 +11,9 @@ import {
   listRecentPages,
   listUserActivity,
   listUserDrafts,
+  listOwnFavoriteSpaces,
+  listOwnPinnedPages,
+  listOwnLikedPages,
 } from "@/lib/pages";
 
 export const metadata: Metadata = { title: "Home" };
@@ -21,12 +24,15 @@ export default async function HomePage() {
   if (!user) redirect("/login");
 
   const isAdmin = user.is_superuser || user.global_permissions.includes("system_admin");
-  const [profile, activity, allActivity, stats, drafts] = await Promise.all([
+  const [profile, activity, allActivity, stats, drafts, favoriteSpaces, pinnedPages, likedPages] = await Promise.all([
     getPublicUser(user.username),
     listUserActivity(user.username),
     listRecentPages(50),
     getUserProfileStats(user.username),
     listUserDrafts(user.username).catch(() => []),
+    listOwnFavoriteSpaces().catch(() => []),
+    listOwnPinnedPages().catch(() => []),
+    listOwnLikedPages().catch(() => []),
   ]);
 
   return (
@@ -39,6 +45,9 @@ export default async function HomePage() {
         drafts={drafts}
         isOwner
         isAdmin={isAdmin}
+        favoriteSpaces={favoriteSpaces}
+        pinnedPages={pinnedPages}
+        likedPages={likedPages}
       />
     </AppShell>
   );

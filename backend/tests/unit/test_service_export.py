@@ -21,11 +21,14 @@ from app.models.permission import (
     SpaceGroupPermission,
     SpaceUserPermission,
 )
+from app.models.draft import PageDraft
 from app.models.restriction import PageGroupRestriction, PageUserRestriction
 from app.models.revision import PageRevision
 from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceStatus, SpaceVisibility
-from app.models.page import PageLike, WikiPage
+from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.user import User
+from app.models.user_page_label import UserPageLabel
+from app.models.user_tag import UserTag
 from app.modules.backup.service import BackupService, ExportCancelled
 from app.models.backup_job import BackupJob
 from app.modules.backup.package import MANIFEST_PATH, DOCUMENT_PATH
@@ -109,27 +112,36 @@ def _mock_site_settings(service):
 
 _EMPTY_SMALL_TABLES = (
     SpaceMember, SpaceFavorite, Group, GroupMember, GroupGlobalPermission,
-    SpaceUserPermission, SpaceGroupPermission, PageLike, PageUserRestriction,
+    SpaceUserPermission, SpaceGroupPermission, PageUserRestriction,
     PageGroupRestriction,
 )
 
 def make_export_full_package_router(
     *, users=(), spaces=(), attachments=(), page_index_rows=(), revisions_total=0,
     page_content_rows=(), revision_content_rows=(),
+    pins=(), drafts=(), user_tags=(), user_page_labels=(), likes=(),
 ):
     """Builds the `session.execute` side_effect for `export_full_package`.
 
-    Every small table (members, favorites, groups, ..., likes, restrictions)
+    Every small table (members, favorites, groups, ..., restrictions)
     defaults to empty - pass `page_index_rows`/`revisions_total` (and the
     matching content batches) only for tests that actually exercise pages or
-    revisions.
+    revisions. `pins`/`drafts`/`user_tags`/`user_page_labels`/`likes` default
+    to empty too but, unlike the tables above, can be populated per test to
+    verify they round-trip into the exported document.
     """
+    overrides = {
+        UserPagePin: pins, PageDraft: drafts, UserTag: user_tags,
+        UserPageLabel: user_page_labels, PageLike: likes,
+    }
     async def side_effect(query, *_args, **_kwargs):
         entity = _entity_of(query)
         if entity is User:
             return _scalars(users)
         if entity is Space:
             return _scalars(spaces)
+        if entity in overrides:
+            return _scalars(overrides[entity])
         if entity in _EMPTY_SMALL_TABLES:
             return _scalars([])
         if entity is PageAttachment:
@@ -184,6 +196,60 @@ async def test_export_package(service: BackupService, tmp_path):
         for entry in manifest_data["entries"]:
             if entry["path"] != DOCUMENT_PATH:
                 assert zf.read(entry["path"]) == b"testdata"
+
+
+@pytest.mark.asyncio
+async def test_export_package_includes_pins_drafts_tags_and_labels(
+    service: BackupService, tmp_path
+):
+    """A user's personal page shortcuts, unsaved edits, and tags round-trip
+    into the exported document - not just spaces/pages/attachments."""
+    mock_storage = AsyncMock()
+    mock_storage.get.return_value = b"testdata"
+
+    space_id = uuid4()
+    page_id = uuid4()
+    space = _make_space(id=space_id, key="ENG")
+    page_index_row = SimpleNamespace(id=page_id, space_id=space_id, slug="page-1-slug", parent_id=None)
+    user = _make_user(username="alice")
+
+    pin = SimpleNamespace(page_id=page_id, user_id=user.id)
+    draft = SimpleNamespace(
+        page_id=page_id, user_id=user.id, content="<p>wip</p>", content_format="html",
+        edit_mode="normal", base_updated_at=datetime.now(UTC),
+    )
+    tag = SimpleNamespace(user_id=user.id, name="reading-list")
+    label = SimpleNamespace(page_id=page_id, user_id=user.id, name="important")
+    like = SimpleNamespace(page_id=page_id, user_id=user.id)
+
+    _mock_site_settings(service)
+    service.session.execute.side_effect = make_export_full_package_router(
+        users=[user], spaces=[space], page_index_rows=[page_index_row],
+        pins=[pin], drafts=[draft], user_tags=[tag], user_page_labels=[label], likes=[like],
+    )
+
+    path = str(tmp_path / "export.zip")
+    await service.export_full_package(path, mock_storage, include_credentials=True)
+
+    with zipfile.ZipFile(path, "r") as zf:
+        document = json.loads(zf.read(DOCUMENT_PATH))
+
+    assert document["page_pins"] == [
+        {"page_space_key": "ENG", "page_slug": "page-1-slug", "username": "alice"}
+    ]
+    assert document["user_tags"] == [{"username": "alice", "name": "reading-list"}]
+    assert document["user_page_labels"] == [
+        {"page_space_key": "ENG", "page_slug": "page-1-slug", "username": "alice", "name": "important"}
+    ]
+    assert document["page_likes"] == [
+        {"page_space_key": "ENG", "page_slug": "page-1-slug", "username": "alice"}
+    ]
+    assert len(document["page_drafts"]) == 1
+    draft_entry = document["page_drafts"][0]
+    assert draft_entry["page_space_key"] == "ENG"
+    assert draft_entry["page_slug"] == "page-1-slug"
+    assert draft_entry["username"] == "alice"
+    assert draft_entry["content"] == "<p>wip</p>"
 
 
 @pytest.mark.asyncio

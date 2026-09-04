@@ -1,6 +1,9 @@
 "use client";
 
 import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
   Database,
   FolderCog,
   HardDrive,
@@ -8,6 +11,7 @@ import {
   Layers,
   LayoutGrid,
   MoreHorizontal,
+  PanelLeft,
   Pin,
   SlidersHorizontal,
   User,
@@ -20,8 +24,19 @@ import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import {
+  SIDEBAR_SHORTCUT_LIMIT,
+  useSidebarShortcuts,
+} from "@/lib/sidebar-shortcuts";
 import { cn } from "@/lib/utils";
-import type { Me, SidebarPermissions, Space, UserPinnedPageItem } from "@/types/api";
+import type {
+  Me,
+  SidebarPermissions,
+  Space,
+  UserPinnedPageItem,
+} from "@/types/api";
 
 interface NavItem {
   permission: keyof SidebarPermissions;
@@ -36,6 +51,8 @@ const OVERVIEW_NAV: NavItem[] = [
   { href: "/", label: "Home", icon: Home, permission: "home" },
   { href: "/spaces", label: "Spaces", icon: LayoutGrid, permission: "spaces" },
 ];
+
+const COLLECTION_PAGE_SIZES = [5, 10, 25, 50] as const;
 
 // All administration sections gate on the same "settings" permission - they
 // are one cluster only superusers reach (app/admin/layout.tsx enforces the
@@ -183,19 +200,23 @@ function NavSection({
   return (
     <>
       {withDivider ? <div className="border-border my-3 border-t" /> : null}
-      {!collapsed ? <SectionToggle title={title} expanded={expanded} onToggle={onToggle} /> : null}
-      {expanded ? <ul className="space-y-0.5">
-        {items.map((item) => (
-          <li key={item.href}>
-            <NavLink
-              item={item}
-              active={isNavItemActive(item, pathname)}
-              collapsed={collapsed}
-              onNavigate={onNavigate}
-            />
-          </li>
-        ))}
-      </ul> : null}
+      {!collapsed ? (
+        <SectionToggle title={title} expanded={expanded} onToggle={onToggle} />
+      ) : null}
+      {expanded ? (
+        <ul className="space-y-0.5">
+          {items.map((item) => (
+            <li key={item.href}>
+              <NavLink
+                item={item}
+                active={isNavItemActive(item, pathname)}
+                collapsed={collapsed}
+                onNavigate={onNavigate}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </>
   );
 }
@@ -227,51 +248,53 @@ function FavoriteSpacesSection({
   return (
     <>
       <div className="border-border my-3 border-t" />
-      <SectionToggle title="Favorite spaces" expanded={expanded} onToggle={onToggle} />
-      {expanded && spaces.length ? <ul className="space-y-0.5">
-        {spaces.slice(0, 5).map((space) => {
-          const href = `/spaces/${encodeURIComponent(space.key)}`;
-          const active = pathname === href || pathname.startsWith(`${href}/`);
-          const hasCustomEmoji = Boolean(space.icon && space.icon !== "📄");
-          return (
-            <li key={space.id}>
-              <Link
-                href={href}
-                aria-current={active ? "page" : undefined}
-                onClick={onNavigate}
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                  "transition-colors duration-150",
-                  "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-                  active
-                    ? "bg-surface-selected text-primary font-medium"
-                    : "text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected",
-                )}
-              >
-                {hasCustomEmoji ? (
-                  <span
-                    className="flex size-4 shrink-0 items-center justify-center text-xs leading-none"
-                    aria-hidden
-                  >
-                    {space.icon}
-                  </span>
-                ) : (
-                  <Layers className="size-4 shrink-0" aria-hidden />
-                )}
-                <span className="truncate">{space.name}</span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul> : expanded ? <p className="text-muted-foreground px-2 py-1.5 text-xs">No favorite spaces yet.</p> : null}
-      {expanded && spaces.length > 5 ? <Link
-        href="/favorites"
-        onClick={onNavigate}
-        className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring mt-0.5 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-      >
-        <MoreHorizontal className="size-4 shrink-0" aria-hidden />
-        <span>Show all favorite spaces</span>
-      </Link> : null}
+      <SectionToggle
+        title="Favorite spaces"
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {expanded && spaces.length ? (
+        <ul className="space-y-0.5">
+          {spaces.slice(0, 5).map((space) => {
+            const href = `/spaces/${encodeURIComponent(space.key)}`;
+            const active = pathname === href || pathname.startsWith(`${href}/`);
+            const hasCustomEmoji = Boolean(space.icon && space.icon !== "📄");
+            return (
+              <li key={space.id}>
+                <Link
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  onClick={onNavigate}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+                    "transition-colors duration-150",
+                    "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+                    active
+                      ? "bg-surface-selected text-primary font-medium"
+                      : "text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected",
+                  )}
+                >
+                  {hasCustomEmoji ? (
+                    <span
+                      className="flex size-4 shrink-0 items-center justify-center text-xs leading-none"
+                      aria-hidden
+                    >
+                      {space.icon}
+                    </span>
+                  ) : (
+                    <Layers className="size-4 shrink-0" aria-hidden />
+                  )}
+                  <span className="truncate">{space.name}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      ) : expanded ? (
+        <p className="text-muted-foreground px-2 py-1.5 text-xs">
+          No favorite spaces yet.
+        </p>
+      ) : null}
     </>
   );
 }
@@ -295,21 +318,41 @@ function PinnedPagesSection({
   return (
     <>
       <div className="border-border my-3 border-t" />
-      <SectionToggle title="Pinned pages" expanded={expanded} onToggle={onToggle} />
-      {expanded && pages.length ? <ul className="space-y-0.5">
-        {pages.slice(0, 5).map((page) => {
-          const href = `/spaces/${encodeURIComponent(page.space_key)}/pages/${encodeURIComponent(page.slug)}`;
-          const active = pathname === href;
-          return (
-            <li key={page.id}>
-              <Link href={href} aria-current={active ? "page" : undefined} onClick={onNavigate} className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none", active ? "bg-surface-selected text-primary font-medium" : "text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected")}>
-                <Pin className="size-4 shrink-0" aria-hidden />
-                <span className="truncate">{page.title}</span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul> : expanded ? <p className="text-muted-foreground px-2 py-1.5 text-xs">No pinned pages yet.</p> : null}
+      <SectionToggle
+        title="Pinned pages"
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {expanded && pages.length ? (
+        <ul className="space-y-0.5">
+          {pages.slice(0, 5).map((page) => {
+            const href = `/spaces/${encodeURIComponent(page.space_key)}/pages/${encodeURIComponent(page.slug)}`;
+            const active = pathname === href;
+            return (
+              <li key={page.id}>
+                <Link
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  onClick={onNavigate}
+                  className={cn(
+                    "focus-visible:ring-ring flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                    active
+                      ? "bg-surface-selected text-primary font-medium"
+                      : "text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected",
+                  )}
+                >
+                  <Pin className="size-4 shrink-0" aria-hidden />
+                  <span className="truncate">{page.title}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      ) : expanded ? (
+        <p className="text-muted-foreground px-2 py-1.5 text-xs">
+          No pinned pages yet.
+        </p>
+      ) : null}
     </>
   );
 }
@@ -335,6 +378,14 @@ export function Sidebar({
     setMobileOpen,
   } = useSidebar();
   const [dragging, setDragging] = useState(false);
+  const [collectionPanel, setCollectionPanel] = useState<
+    "favorites" | "pinned" | null
+  >(null);
+  const [collectionPage, setCollectionPage] = useState(0);
+  const [collectionPageSize, setCollectionPageSize] =
+    useState<(typeof COLLECTION_PAGE_SIZES)[number]>(10);
+  const { sidebarFavoriteIds, sidebarPinnedIds, toggleSidebarShortcut } =
+    useSidebarShortcuts(favoriteSpaces, pinnedPages);
   const [expandedSections, setExpandedSections] = useState({
     overview: true,
     favorites: true,
@@ -342,7 +393,10 @@ export function Sidebar({
     administration: true,
   });
   const toggleSection = (section: keyof typeof expandedSections) => {
-    setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
+    setExpandedSections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
   };
   const role =
     user.is_superuser || user.global_permissions.includes("system_admin")
@@ -408,6 +462,21 @@ export function Sidebar({
   // full-width panel, otherwise the overlay would show bare icons.
   const railCollapsed = collapsed && !mobileOpen;
   const onNavigate = () => setMobileOpen(false);
+  const collectionCount =
+    collectionPanel === "favorites"
+      ? favoriteSpaces.length
+      : pinnedPages.length;
+  const collectionPageCount = Math.max(
+    1,
+    Math.ceil(collectionCount / collectionPageSize),
+  );
+  const collectionStart = collectionPage * collectionPageSize;
+  const sidebarFavoriteSpaces = favoriteSpaces.filter((space) =>
+    sidebarFavoriteIds.includes(space.id),
+  );
+  const sidebarPinnedPages = pinnedPages.filter((page) =>
+    sidebarPinnedIds.includes(page.id),
+  );
 
   return (
     <>
@@ -452,7 +521,7 @@ export function Sidebar({
 
         {showFavoriteSpaces ? (
           <FavoriteSpacesSection
-            spaces={favoriteSpaces}
+            spaces={sidebarFavoriteSpaces}
             collapsed={railCollapsed}
             pathname={pathname}
             onNavigate={onNavigate}
@@ -462,7 +531,7 @@ export function Sidebar({
         ) : null}
 
         <PinnedPagesSection
-          pages={pinnedPages}
+          pages={sidebarPinnedPages}
           collapsed={railCollapsed}
           pathname={pathname}
           onNavigate={onNavigate}
@@ -479,6 +548,23 @@ export function Sidebar({
           expanded={expandedSections.administration}
           onToggle={() => toggleSection("administration")}
         />
+
+        {!railCollapsed ? (
+          <>
+            <div className="border-border my-3 border-t" />
+            <button
+              type="button"
+              onClick={() => {
+                setCollectionPage(0);
+                setCollectionPanel(showFavoriteSpaces ? "favorites" : "pinned");
+              }}
+              className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+            >
+              <MoreHorizontal className="size-4 shrink-0" aria-hidden />
+              <span>Manage sidebar</span>
+            </button>
+          </>
+        ) : null}
 
         {!railCollapsed ? (
           <button
@@ -500,6 +586,247 @@ export function Sidebar({
           </button>
         ) : null}
       </nav>
+
+      <Dialog
+        open={collectionPanel !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCollectionPanel(null);
+            setCollectionPage(0);
+          }
+        }}
+      >
+        {collectionPanel ? (
+          <DialogContent
+            title="Manage sidebar"
+            description="Choose which favourite spaces and pinned pages show as shortcuts in the sidebar."
+            className="flex h-[28rem] max-w-md flex-col overflow-hidden"
+          >
+            <div className="flex min-h-0 flex-1 flex-col">
+              {showFavoriteSpaces ? (
+                <div
+                  role="tablist"
+                  aria-label="Sidebar shortcut type"
+                  className="border-border mb-3 flex gap-1 border-b"
+                >
+                  {(["favorites", "pinned"] as const).map((panel) => {
+                    const selected = collectionPanel === panel;
+                    return (
+                      <button
+                        key={panel}
+                        type="button"
+                        role="tab"
+                        aria-selected={selected}
+                        onClick={() => {
+                          setCollectionPanel(panel);
+                          setCollectionPage(0);
+                        }}
+                        className={cn(
+                          "focus-visible:ring-ring -mb-px flex cursor-pointer items-center gap-1.5 border-b-2 px-2.5 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                          selected
+                            ? "border-primary text-primary font-medium"
+                            : "text-muted-foreground border-transparent hover:text-foreground",
+                        )}
+                      >
+                        {panel === "favorites" ? (
+                          <Layers className="size-3.5 shrink-0" aria-hidden />
+                        ) : (
+                          <Pin className="size-3.5 shrink-0" aria-hidden />
+                        )}
+                        {panel === "favorites" ? "Favorite spaces" : "Pinned pages"}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <div className="bg-primary-subtle text-primary mb-3 inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold">
+                {collectionCount}{" "}
+                {collectionPanel === "favorites" ? "spaces" : "pages"}
+              </div>
+              <p className="text-muted-foreground mb-2 text-xs">
+                Choose up to {SIDEBAR_SHORTCUT_LIMIT} shortcuts for the sidebar
+                (
+                {collectionPanel === "favorites"
+                  ? sidebarFavoriteIds.length
+                  : sidebarPinnedIds.length}
+                /{SIDEBAR_SHORTCUT_LIMIT}).
+              </p>
+              <ul className="wh-scroll -mx-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1">
+                {collectionPanel === "favorites"
+                  ? favoriteSpaces
+                      .slice(
+                        collectionStart,
+                        collectionStart + collectionPageSize,
+                      )
+                      .map((space) => (
+                        <li key={space.id} className="flex items-center gap-1">
+                          <Link
+                            href={`/spaces/${encodeURIComponent(space.key)}`}
+                            onClick={() => {
+                              setCollectionPanel(null);
+                              onNavigate();
+                            }}
+                            className="text-muted-foreground hover:bg-surface-sunken hover:text-foreground focus-visible:ring-ring flex min-h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                          >
+                            <span className="bg-primary-subtle text-primary flex size-6 shrink-0 items-center justify-center rounded-md">
+                              <Layers className="size-3.5" aria-hidden />
+                            </span>
+                            <span className="truncate">{space.name}</span>
+                          </Link>
+                          <Button
+                            type="button"
+                            variant={
+                              sidebarFavoriteIds.includes(space.id)
+                                ? "subtle"
+                                : "ghost"
+                            }
+                            size="icon"
+                            aria-label={
+                              sidebarFavoriteIds.includes(space.id)
+                                ? `Remove ${space.name} from sidebar`
+                                : `Show ${space.name} in sidebar`
+                            }
+                            title={
+                              sidebarFavoriteIds.includes(space.id)
+                                ? "Shown in sidebar"
+                                : "Show in sidebar"
+                            }
+                            disabled={
+                              !sidebarFavoriteIds.includes(space.id) &&
+                              sidebarFavoriteIds.length >=
+                                SIDEBAR_SHORTCUT_LIMIT
+                            }
+                            onClick={() =>
+                              toggleSidebarShortcut("favorites", space.id)
+                            }
+                          >
+                            {sidebarFavoriteIds.includes(space.id) ? (
+                              <Check aria-hidden />
+                            ) : (
+                              <PanelLeft aria-hidden />
+                            )}
+                          </Button>
+                        </li>
+                      ))
+                  : pinnedPages
+                      .slice(
+                        collectionStart,
+                        collectionStart + collectionPageSize,
+                      )
+                      .map((page) => (
+                        <li key={page.id} className="flex items-center gap-1">
+                          <Link
+                            href={`/spaces/${encodeURIComponent(page.space_key)}/pages/${encodeURIComponent(page.slug)}`}
+                            onClick={() => {
+                              setCollectionPanel(null);
+                              onNavigate();
+                            }}
+                            className="text-muted-foreground hover:bg-surface-sunken hover:text-foreground focus-visible:ring-ring flex min-h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                          >
+                            <span className="bg-primary-subtle text-primary flex size-6 shrink-0 items-center justify-center rounded-md">
+                              <Pin className="size-3.5" aria-hidden />
+                            </span>
+                            <span className="truncate">{page.title}</span>
+                          </Link>
+                          <Button
+                            type="button"
+                            variant={
+                              sidebarPinnedIds.includes(page.id)
+                                ? "subtle"
+                                : "ghost"
+                            }
+                            size="icon"
+                            aria-label={
+                              sidebarPinnedIds.includes(page.id)
+                                ? `Remove ${page.title} from sidebar`
+                                : `Show ${page.title} in sidebar`
+                            }
+                            title={
+                              sidebarPinnedIds.includes(page.id)
+                                ? "Shown in sidebar"
+                                : "Show in sidebar"
+                            }
+                            disabled={
+                              !sidebarPinnedIds.includes(page.id) &&
+                              sidebarPinnedIds.length >= SIDEBAR_SHORTCUT_LIMIT
+                            }
+                            onClick={() =>
+                              toggleSidebarShortcut("pinned", page.id)
+                            }
+                          >
+                            {sidebarPinnedIds.includes(page.id) ? (
+                              <Check aria-hidden />
+                            ) : (
+                              <PanelLeft aria-hidden />
+                            )}
+                          </Button>
+                        </li>
+                      ))}
+              </ul>
+              {collectionCount > 0 ? (
+                <div className="border-border mt-4 flex items-center justify-between border-t pt-3">
+                  <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                    <p>
+                      Showing {collectionStart + 1}–
+                      {Math.min(
+                        collectionStart + collectionPageSize,
+                        collectionCount,
+                      )}{" "}
+                      of {collectionCount}
+                    </p>
+                    <label className="sr-only" htmlFor="collection-page-size">
+                      Items per page
+                    </label>
+                    <select
+                      id="collection-page-size"
+                      value={collectionPageSize}
+                      onChange={(event) => {
+                        setCollectionPageSize(
+                          Number(
+                            event.target.value,
+                          ) as (typeof COLLECTION_PAGE_SIZES)[number],
+                        );
+                        setCollectionPage(0);
+                      }}
+                      className="border-border bg-surface text-foreground hover:border-border-strong focus-visible:ring-ring h-7 rounded-md border px-1.5 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      {COLLECTION_PAGE_SIZES.map((size) => (
+                        <option key={size} value={size}>
+                          {size} / page
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      aria-label="Previous page"
+                      title="Previous page"
+                      disabled={collectionPage === 0}
+                      onClick={() => setCollectionPage((page) => page - 1)}
+                    >
+                      <ChevronLeft aria-hidden />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      aria-label="Next page"
+                      title="Next page"
+                      disabled={collectionPage >= collectionPageCount - 1}
+                      onClick={() => setCollectionPage((page) => page + 1)}
+                    >
+                      <ChevronRight aria-hidden />
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </>
   );
 }

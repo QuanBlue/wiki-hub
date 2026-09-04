@@ -9,6 +9,9 @@ import { SITE_NAME } from "@/lib/env";
 import {
   getPublicUser,
   getUserProfileStats,
+  listOwnFavoriteSpaces,
+  listOwnLikedPages,
+  listOwnPinnedPages,
   listRecentPages,
   listUserActivity,
   listUserDrafts,
@@ -32,14 +35,22 @@ async function optional<T>(request: Promise<T>, fallback: T): Promise<T> {
 
 async function loadProfile(username: string, isOwner: boolean, isAdmin: boolean) {
   try {
-    const [profile, activity, allActivity, stats, drafts] = await Promise.all([
-      getPublicUser(username),
-      listUserActivity(username),
-      listRecentPages(50),
-      getUserProfileStats(username),
-      isOwner || isAdmin ? optional(listUserDrafts(username), []) : Promise.resolve([]),
-    ]);
-    return { profile, activity, allActivity, stats, drafts };
+    const [profile, activity, allActivity, stats, drafts, favoriteSpaces, pinnedPages, likedPages] =
+      await Promise.all([
+        getPublicUser(username),
+        listUserActivity(username),
+        listRecentPages(50),
+        getUserProfileStats(username),
+        isOwner || isAdmin ? optional(listUserDrafts(username), []) : Promise.resolve([]),
+        // "/me"-scoped, so only meaningful (and only fetched) on your own
+        // profile. Optional the same way pins are on the sidebar: these
+        // personal-collection features must not break the profile page
+        // during a rolling deploy that hasn't reached their migration yet.
+        isOwner ? optional(listOwnFavoriteSpaces(), []) : Promise.resolve([]),
+        isOwner ? optional(listOwnPinnedPages(), []) : Promise.resolve([]),
+        isOwner ? optional(listOwnLikedPages(), []) : Promise.resolve([]),
+      ]);
+    return { profile, activity, allActivity, stats, drafts, favoriteSpaces, pinnedPages, likedPages };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
@@ -73,6 +84,9 @@ export default async function UserProfilePage({
         drafts={data.drafts}
         isOwner={user.username.toLowerCase() === username.toLowerCase()}
         isAdmin={isAdmin}
+        favoriteSpaces={data.favoriteSpaces}
+        pinnedPages={data.pinnedPages}
+        likedPages={data.likedPages}
       />
     </AppShell>
   );

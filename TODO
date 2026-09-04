@@ -1,7 +1,13 @@
 - cho tích hợp với mail để gửi mail thông báo (đổi password, có người yêu cầu quyền truy cập vào space/page, bị disable,...)
-- tag 
-- recent spaces và tags chỉ có người dùng đó tạo và xem được
-
+- daily backup -> luu o phan vung nào
+- cho chon noi luu du lieu ung dung
 Doing
+- export luu ca pinned, save for later, like, label, favorite space
+- import 
+   - html
+   - word (ok)
+   - pdf 
+- tag, pinned, save for later page, like
 - revision history hien thi khong dung (edit lan dau)
 - test export full (co pass, k pass, cancel) + export confluence
+  - owner, created_at/created_by_username, member

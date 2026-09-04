@@ -28,7 +28,8 @@ from app.core.exceptions import (
     UnsupportedMediaTypeError,
 )
 from app.models.draft import PageDraft
-from app.models.page import UserPagePin, WikiPage
+from app.models.page import PageLike, UserPagePin, WikiPage
+from app.models.user_page_label import UserPageLabel
 from app.models.permission import GlobalPermission, Group, GroupMember
 from app.models.space import Space, SpaceStatus
 from app.models.user import User
@@ -47,6 +48,7 @@ from app.schemas.user import (
     UserCreate,
     UserDraftItem,
     UserPinnedPageItem,
+    UserPageLabelItem,
     UserProfileStats,
     UserRead,
     UserTagCreate,
@@ -284,6 +286,44 @@ async def list_own_pins(user: CurrentUser, session: DbSession) -> list[UserPinne
                 )
             )
     return items
+
+
+@router.get("/me/likes", response_model=list[UserPinnedPageItem], summary="List pages you liked")
+async def list_own_likes(user: CurrentUser, session: DbSession) -> list[UserPinnedPageItem]:
+    rows = await session.execute(
+        select(PageLike, WikiPage, Space)
+        .join(WikiPage, WikiPage.id == PageLike.page_id)
+        .join(Space, Space.id == WikiPage.space_id)
+        .where(PageLike.user_id == user.id, Space.status == SpaceStatus.active)
+        .order_by(WikiPage.updated_at.desc())
+    )
+    permissions = PermissionService(session)
+    return [
+        UserPinnedPageItem(id=page.id, title=page.title, slug=page.slug,
+                           space_key=space.key, space_name=space.name,
+                           pinned_at=page.updated_at)
+        for _like, page, space in rows
+        if await permissions.can_view_page(page, user)
+    ]
+
+
+@router.get("/me/page-labels", response_model=list[UserPageLabelItem], summary="List your private page labels")
+async def list_own_page_labels(user: CurrentUser, session: DbSession) -> list[UserPageLabelItem]:
+    rows = await session.execute(
+        select(UserPageLabel, WikiPage, Space)
+        .join(WikiPage, WikiPage.id == UserPageLabel.page_id)
+        .join(Space, Space.id == WikiPage.space_id)
+        .where(UserPageLabel.user_id == user.id, Space.status == SpaceStatus.active)
+        .order_by(UserPageLabel.name, WikiPage.title)
+    )
+    permissions = PermissionService(session)
+    return [
+        UserPageLabelItem(id=label.id, name=label.name, page_id=page.id,
+                          title=page.title, slug=page.slug,
+                          space_key=space.key, space_name=space.name)
+        for label, page, space in rows
+        if await permissions.can_view_page(page, user)
+    ]
 
 
 @router.post("/me/pins/{page_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Pin a page")

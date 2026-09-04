@@ -18,6 +18,23 @@ _TICKET_TYPE = "onlyoffice_attachment"
 _VALID_EXTENSIONS = {"docx", "xlsx", "pptx"}
 _DOCUMENT_TYPES = {"docx": "word", "xlsx": "cell", "pptx": "slide"}
 
+#: Read-only preview, keyed by an arbitrary storage object rather than a
+#: `PageAttachment` row - the admin Object Storage browser can list
+#: avatars, import archives and other objects with nothing in the database
+#: to check an editor permission against, so this path never offers editing
+#: and never registers a callback to save anything back.
+_PREVIEW_TICKET_TYPE = "onlyoffice_storage_preview"  # noqa: S105 - a JWT claim value, not a credential
+#: `csv` is deliberately absent - the existing plain-text preview already
+#: handles it, and routing it through ONLYOFFICE instead here without also
+#: changing the frontend's classification would leave the two disagreeing
+#: about what kind of preview a `.csv` gets.
+_PREVIEW_DOCUMENT_TYPES = {
+    "docx": "word", "doc": "word", "odt": "word", "rtf": "word",
+    "xlsx": "cell", "xls": "cell", "ods": "cell",
+    "pptx": "slide", "ppt": "slide", "odp": "slide",
+    "pdf": "pdf",
+}
+
 
 def is_enabled() -> bool:
     return settings.onlyoffice_enabled
@@ -173,3 +190,100 @@ def internal_download_url(url: str) -> str | None:
     if not internal.scheme or not internal.netloc:
         return None
     return urlunsplit((internal.scheme, internal.netloc, received.path, received.query, ""))
+
+
+def preview_extension(filename: str) -> str | None:
+    """The file's extension if the read-only previewer supports it, else `None`."""
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    return extension if extension in _PREVIEW_DOCUMENT_TYPES else None
+
+
+def _preview_ticket(key: str) -> str:
+    now = datetime.now(UTC)
+    payload = {
+        "typ": _PREVIEW_TICKET_TYPE,
+        "key": key,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(seconds=settings.onlyoffice_token_ttl_seconds)).timestamp()),
+        "jti": str(uuid.uuid4()),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+
+def verify_preview_ticket(token: str, *, key: str) -> None:
+    try:
+        payload = jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"require": ["exp", "key", "jti"]},
+        )
+    except jwt.InvalidTokenError as exc:
+        raise AuthenticationError("The preview link is invalid or has expired.") from exc
+    if payload.get("typ") != _PREVIEW_TICKET_TYPE or payload.get("key") != key:
+        raise AuthenticationError("The preview link is invalid.")
+
+
+def preview_editor_config(*, key: str, filename: str, user: User) -> dict[str, Any]:
+    """A view-only ONLYOFFICE configuration for an arbitrary storage object.
+
+    Deliberately narrower than `editor_config`: no `callbackUrl` (there is
+    nowhere for an edit to be saved back to - the object may not even be a
+    tracked attachment), `edit`/`comment`/`review`/`fillForms` all false, and
+    `editorConfig.mode` is "view" rather than "edit". This is what keeps the
+    admin Object Storage browser's preview read-only without duplicating
+    ONLYOFFICE's own permission plumbing.
+    """
+    require_enabled()
+    extension = preview_extension(filename)
+    if extension is None:
+        raise ServiceUnavailableError("This file type cannot be previewed in the document viewer.")
+    base_url = settings.onlyoffice_backend_url
+    content_query = urlencode({"key": key, "token": _preview_ticket(key)})
+    content_url = f"{base_url}/api/v1/storage/office-preview/content?{content_query}"
+    config: dict[str, Any] = {
+        "documentType": _PREVIEW_DOCUMENT_TYPES[extension],
+        # Not "desktop": this Document Server build (9.4.0.1) has no
+        # `apps/<editor>/main/index_loader.html` on disk - only `embed/` and
+        # `mobile/` variants do - and DocsAPI's "desktop" bootstrap requests
+        # that missing loader page under this hosting context, 404s, and
+        # then simply never proceeds (no `onError`, no editor, stuck on
+        # whatever loading state the caller shows forever). "embedded" routes
+        # to `apps/<editor>/embed/index.html`, which exists and is also the
+        # more honest fit for a view-only preview than the full desktop
+        # editor chrome would be.
+        "type": "embedded",
+        "width": "100%",
+        "height": "100%",
+        "document": {
+            "fileType": extension,
+            # A fresh, random key every time rather than one derived from
+            # `key`: ONLYOFFICE caches a document server-side by this value,
+            # and an object key can be overwritten with different bytes
+            # (an avatar replaced, say) without this preview ever being told.
+            # Always-fresh trades away that caching for never showing stale
+            # content in what is a low-traffic admin tool.
+            "key": f"preview_{uuid.uuid4().hex}",
+            "title": filename,
+            "url": content_url,
+            "permissions": {
+                "edit": False,
+                "download": True,
+                "print": True,
+                "comment": False,
+                "review": False,
+                "fillForms": False,
+            },
+        },
+        "editorConfig": {
+            "mode": "view",
+            "lang": "en",
+            "user": {"id": str(user.id), "name": user.full_name or user.username},
+            "customization": {
+                "forcesave": False,
+                "feedback": {"visible": False},
+            },
+        },
+    }
+    config["token"] = jwt.encode(config, settings.onlyoffice_jwt_secret, algorithm="HS256")
+    return config

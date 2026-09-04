@@ -27,6 +27,7 @@ import {
   Lightbulb,
   Link2,
   List,
+  ListTree,
   ListOrdered,
   ListTodo,
   Minus,
@@ -75,6 +76,7 @@ export type SlashPreviewKind =
   | "divider"
   | "codeBlock"
   | "table"
+  | "tableOfContents"
   | "callout"
   | "image"
   | "attachment"
@@ -364,6 +366,17 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
         .run(),
   },
   {
+    id: "table-of-contents",
+    label: "Table of contents",
+    description: "An automatically updated list of headings",
+    keywords: ["toc", "contents", "outline", "headings"],
+    icon: ListTree,
+    group: "Layout",
+    preview: "tableOfContents",
+    run: (editor) =>
+      editor.chain().focus().insertContent({ type: "tableOfContents" }).run(),
+  },
+  {
     id: "callout-info",
     label: "Callout: Info",
     description: "Highlight information",
@@ -581,6 +594,20 @@ function PreviewMockup({
               {cell}
             </div>
           ))}
+        </div>
+      );
+    case "tableOfContents":
+      return (
+        <div className="rounded border border-neutral-700 bg-neutral-800 p-2 text-xs">
+          <div className="mb-1.5 flex items-center gap-1.5 font-medium text-neutral-100">
+            <ListTree className="size-3.5 text-neutral-400" aria-hidden />
+            Table of contents
+          </div>
+          <div className="space-y-1 text-neutral-400">
+            <div>Introduction</div>
+            <div className="pl-3">Getting started</div>
+            <div>Next steps</div>
+          </div>
         </div>
       );
     case "callout": {

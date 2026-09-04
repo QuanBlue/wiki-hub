@@ -14,6 +14,15 @@ from app.models.space import SpaceRole, SpaceStatus, SpaceVisibility
 #: conservative character set and normalised to upper case.
 KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{1,31}$")
 
+_NAME_ERROR = "Name must start with a letter, not a digit or special character."
+
+
+def _check_name_start(value: str) -> str:
+    trimmed = value.strip()
+    if trimmed and not trimmed[0].isalpha():
+        raise ValueError(_NAME_ERROR)
+    return value
+
 
 class SpaceMemberRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -74,6 +83,11 @@ class SpaceCreate(BaseModel):
             )
         return key
 
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        return _check_name_start(value)
+
 
 class SpaceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -83,6 +97,11 @@ class SpaceUpdate(BaseModel):
     max_upload_size_mb: int | None = Field(default=None, ge=1, le=10_240)
     status: SpaceStatus | None = None
     visibility: SpaceVisibility | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str | None) -> str | None:
+        return _check_name_start(value) if value is not None else value
 
 
 class SpaceMemberUpsert(BaseModel):

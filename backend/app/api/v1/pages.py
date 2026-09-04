@@ -9,10 +9,12 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.exceptions import ConflictError
 from app.api.v1.groups import group_read
 from app.models.permission import Group, Permission
 from app.models.restriction import PageRestrictionPermission
 from app.models.user import User
+from app.models.user_page_label import UserPageLabel
 from app.modules.pages.export_service import ExportFormat, ExportService
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
@@ -27,6 +29,7 @@ from app.schemas.page import (
 )
 from app.schemas.permission import GroupRead, PageRestrictionRead
 from app.schemas.user import UserRead
+from app.schemas.page_label import PageLabelCreate, PageLabelRead
 
 router = APIRouter(prefix="/spaces/{key}/pages", tags=["pages"])
 standalone_router = APIRouter(prefix="/pages", tags=["pages"])
@@ -47,6 +50,39 @@ def get_export_service() -> ExportService:
 PageServiceDep = Annotated[PageService, Depends(get_page_service)]
 SpaceServiceDep = Annotated[SpaceService, Depends(get_space_service)]
 ExportServiceDep = Annotated[ExportService, Depends(get_export_service)]
+
+
+@router.get("/{slug}/labels", response_model=list[PageLabelRead], summary="List your private page labels")
+async def list_page_labels(key: str, slug: str, user: CurrentUser, page_service: PageServiceDep, space_service: SpaceServiceDep, session: DbSession) -> list[PageLabelRead]:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, user)
+    return list(await session.scalars(select(UserPageLabel).where(UserPageLabel.user_id == user.id, UserPageLabel.page_id == page.id).order_by(UserPageLabel.created_at)))
+
+
+@router.post("/{slug}/labels", response_model=PageLabelRead, status_code=status.HTTP_201_CREATED, summary="Add a private page label")
+async def add_page_label(key: str, slug: str, payload: PageLabelCreate, user: CurrentUser, page_service: PageServiceDep, space_service: SpaceServiceDep, session: DbSession) -> UserPageLabel:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, user)
+    name = payload.name.strip()
+    existing = await session.scalar(select(UserPageLabel).where(UserPageLabel.user_id == user.id, UserPageLabel.page_id == page.id, UserPageLabel.name.ilike(name)))
+    if existing is not None:
+        raise ConflictError("You already added this label to the page.", code="page_label_exists")
+    label = UserPageLabel(user_id=user.id, page_id=page.id, name=name)
+    session.add(label)
+    await session.flush()
+    return label
+
+
+@router.delete("/{slug}/labels/{label_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Remove a private page label")
+async def remove_page_label(key: str, slug: str, label_id: uuid.UUID, user: CurrentUser, page_service: PageServiceDep, space_service: SpaceServiceDep, session: DbSession) -> None:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, user)
+    label = await session.scalar(select(UserPageLabel).where(UserPageLabel.id == label_id, UserPageLabel.user_id == user.id, UserPageLabel.page_id == page.id))
+    if label is not None:
+        await session.delete(label)
 
 
 @router.get("", response_model=list[PageRead], summary="List pages in a space")

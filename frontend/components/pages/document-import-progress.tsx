@@ -123,8 +123,8 @@ export function DocumentImportProgress({
     if (settledRef.current === job.id) return;
     settledRef.current = job.id;
 
-    const created = job.counters.pages_created ?? 0;
-    const failed = job.counters.items_failed ?? 0;
+    const created = job.counters?.pages_created ?? 0;
+    const failed = job.counters?.items_failed ?? 0;
     if (job.status === "cancelled") {
       toast(`Import cancelled. ${created} page${created === 1 ? "" : "s"} were kept.`);
     } else if (job.status === "failed") {
@@ -156,16 +156,19 @@ export function DocumentImportProgress({
     }
   }
 
-  const total = job.counters.items_total ?? job.items.length;
-  const processed = job.counters.items_processed ?? 0;
-  const createdPages = job.items.filter(
+  const items = job.items ?? [];
+  const counters = job.counters ?? {};
+  const total = counters.items_total ?? items.length;
+  const processed = counters.items_processed ?? 0;
+  const percent = job.percent === undefined ? 0 : job.percent;
+  const createdPages = items.filter(
     (item) => item.status === "complete" && item.page_slug,
   );
-  const failedItems = job.items.filter((item) => item.status === "failed");
+  const failedItems = items.filter((item) => item.status === "failed");
 
   return (
     <>
-      <div className="mb-4">
+      <div>
         <JobProgress
           title={
             finished ? (
@@ -180,7 +183,7 @@ export function DocumentImportProgress({
               </span>
             )
           }
-          percent={finished ? 100 : job.percent}
+          percent={finished ? 100 : percent}
           etaSeconds={finished ? 0 : job.eta_seconds}
           detail={
             <>
@@ -192,11 +195,11 @@ export function DocumentImportProgress({
 
         <LogDisclosure
           title="Files"
-          count={job.items.length}
+          count={items.length}
           expanded={logExpanded}
           onExpandedChange={setLogExpanded}
         >
-          {job.items.map((item) => (
+          {items.map((item) => (
             <ItemRow key={item.id} item={item} spaceKey={spaceKey} />
           ))}
         </LogDisclosure>

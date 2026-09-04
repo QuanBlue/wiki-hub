@@ -23,6 +23,13 @@
 # =============================================================================
 
 services:
+  # The backend and worker use the live source bind mount below. The migration
+  # service must see that same source too; otherwise a new API route can start
+  # against an image that does not yet contain its Alembic revision.
+  migrate:
+    volumes:
+      - ./backend:/app
+
   backend:
     # --reload-dir keeps the watcher on application code only, so a stray file
     # in the mounted tree does not restart the API in a loop.
@@ -68,19 +75,16 @@ services:
     # healthcheck times out. Nothing can legitimately hold the lock at the
     # moment this container starts.
     #
-    # .next is dropped whenever npm ci runs, and only then. The two live in
-    # different places - node_modules in an anonymous volume, .next on the host
-    # bind mount - so rebuilding the image discards the first and keeps the
-    # second, leaving a build cache compiled against dependencies that are no
-    # longer installed. Next does not detect that: it boots, serves 200s, and
-    # the browser sits in a reload loop printing "missing required error
-    # components, refreshing...". Nothing in .next is worth keeping once its
-    # node_modules is gone, so clearing it here costs only the first compile.
+    # .next lives on the host bind mount and can outlive a container or retain
+    # a route/style manifest from an earlier source state. It is cleared on
+    # every dev start below, so the browser cannot be served a stale bundle;
+    # this costs only the first compile after starting the stack.
     command:
       - sh
       - -c
       - >-
         rm -f /app/.next/dev/lock;
+        rm -rf /app/.next;
         lock_hash=$$(sha256sum package-lock.json | awk '{print $$1}');
         stamp=/app/node_modules/.wikihub-package-lock;
         if [ ! -f "$$stamp" ] || [ "$$(cat "$$stamp")" != "$$lock_hash" ] || [ ! -f /app/node_modules/@lamberl-lee/file-preview/package.json ]; then

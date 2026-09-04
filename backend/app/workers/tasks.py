@@ -13,6 +13,12 @@ from app.core.logging import get_logger
 from app.db.session import session_scope
 from app.modules.backup.jobs import reap_abandoned_export_jobs
 from app.modules.backup.jobs import run_backup_job as execute_backup_job
+from app.modules.backup.automated import (
+    apply_retention,
+    get_settings as get_automated_settings,
+    schedule_due_backup,
+)
+from app.models.backup_job import BackupJob
 from app.modules.document_import.jobs import reap_abandoned_document_imports
 from app.modules.document_import.jobs import run_document_import as execute_document_import
 from app.modules.import_export.service import reap_abandoned_confluence_imports, run_import
@@ -47,6 +53,21 @@ async def run_backup_job(ctx: dict[str, Any], job_id: str) -> None:
 
     async with session_scope() as session:
         await execute_backup_job(session, get_storage(), uuid.UUID(job_id))
+        job = await session.get(BackupJob, uuid.UUID(job_id))
+        if job and job.automated:
+            config = await get_automated_settings(session)
+            config.last_status, config.last_error = job.status, job.error
+            if job.status == "complete":
+                await apply_retention(session, keep=config.retention_count)
+            await session.commit()
+
+
+async def schedule_automated_backup(ctx: dict[str, Any]) -> None:
+    """Minute tick: queue at most one due instance backup."""
+    async with session_scope() as session:
+        job = await schedule_due_backup(session)
+    if job is not None:
+        await ctx["redis"].enqueue_job("run_backup_job", str(job.id))
 
 
 async def run_document_import(ctx: dict[str, Any], job_id: str) -> None:

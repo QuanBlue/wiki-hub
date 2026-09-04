@@ -105,6 +105,12 @@ class Settings(BaseSettings):
     s3_use_path_style: bool = True
     s3_presign_ttl_seconds: int = 300
 
+    # --- scheduled backups ------------------------------------------------
+    # This is a directory *inside* the backend/worker containers. Deployments
+    # bind-mount the chosen host partition here; it is never editable from the
+    # web UI so an administrator cannot make the service write arbitrary paths.
+    automated_backup_directory: str = ""
+
     # --- page export (headless-browser render) -----------------------------
     #: Where the backend's headless browser reaches the frontend to render the
     #: chrome-less /print route. Defaults to the compose service name; a

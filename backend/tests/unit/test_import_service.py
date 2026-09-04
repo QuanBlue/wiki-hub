@@ -171,6 +171,7 @@ async def test_upload_reuse_and_job_validation() -> None:
     session = Mock()
     session.execute = AsyncMock(return_value=_ScalarResult([]))
     session.flush = AsyncMock()
+    session.commit = AsyncMock()
     storage = Mock()
     storage.exists = AsyncMock(return_value=True)
     service = ConfluenceImportService(session, storage)

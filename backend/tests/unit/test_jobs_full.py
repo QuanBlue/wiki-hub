@@ -141,6 +141,11 @@ async def test_run_backup_job_complete(monkeypatch):
     assert job.status == "complete"
     assert job.counters == {"pages": 1}
     assert captured_space_keys == [["ENG"]]
+    # Regression coverage: a `checkpoint_backup_job()` call after these were
+    # set used to discard them before they were ever flushed (`autoflush` is
+    # off on this session) - the job finished "complete" with no file a
+    # download link could ever point at.
+    assert job.output_key and job.output_filename
 
     # 4. Confluence export
     job = BackupJob(id=job_id, kind="confluence_export", status="queued", cancel_requested=False, created_at=datetime.now(UTC), confluence_profile="dc-8", space_keys=["TEST"])
