@@ -2658,6 +2658,19 @@ def _pdf_image_block(
         return None, total_bytes
     if len(data) < _MIN_PDF_IMAGE_BYTES:
         return None, total_bytes
+
+    extension = str(block.get("ext") or "png").lower()
+    mask = block.get("mask")
+    if mask:
+        # PyMuPDF reports a soft-masked image's transparency separately from
+        # its color data and never combines the two - a fully transparent
+        # pixel keeps whatever color happened to be stored underneath it,
+        # which is opaque and, in practice, usually black. Left alone, that
+        # is a solid black fill exactly where the source image had nothing.
+        combined = _apply_pdf_soft_mask(data, mask, image_decoder=image_decoder)
+        if combined is not None:
+            data, extension = combined, "png"
+
     if width <= 120 and height <= 100 and _pdf_is_decorative_card(data, image_decoder):
         return None, total_bytes
 
@@ -2675,7 +2688,6 @@ def _pdf_image_block(
     if total_bytes > settings.document_import_max_media_bytes:
         raise DocumentTooComplexError("The images in this PDF exceed what WikiHub will unpack.")
 
-    extension = str(block.get("ext") or "png").lower()
     token = new_media_token()
     media.append(
         ExtractedMedia(
@@ -2686,6 +2698,29 @@ def _pdf_image_block(
         )
     )
     return f'<p><img src="{token}" alt=""/></p>', total_bytes
+
+
+def _apply_pdf_soft_mask(data: bytes, mask: bytes, *, image_decoder: Any) -> bytes | None:
+    """Recombine a PDF image with the transparency PyMuPDF reports separately.
+
+    `page.get_text("dict")` hands back a soft-masked image's color data and
+    its mask as two same-size images and never composites them - this is
+    PyMuPDF's own documented way to do that itself: build a Pixmap from
+    each, then build a third Pixmap from the color one with the mask one as
+    its alpha channel. Returns None (falling back to the plain, opaque
+    image) if the two turn out not to actually match up - different sizes
+    or colorspaces than PyMuPDF's own soft-mask contract promises, which
+    would otherwise raise past the caller into a failed import over a
+    fidelity enhancement that was never guaranteed to apply. Caught broadly,
+    on purpose: PyMuPDF surfaces a malformed image through its own MuPDF
+    binding's exception types, not Python's built-in ones.
+    """
+    try:
+        color = image_decoder.Pixmap(data)
+        alpha = image_decoder.Pixmap(mask)
+        return image_decoder.Pixmap(color, alpha).tobytes("png")
+    except Exception:  # noqa: BLE001 - a fidelity enhancement, never fatal
+        return None
 
 
 def _pdf_is_decorative_card(data: bytes, image_decoder: Any) -> bool:

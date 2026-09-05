@@ -305,7 +305,108 @@ class TestImageExtraction:
         result = await extract_pdf(_write_pdf(tmp_path, build))
         assert result.media[0].content_type.startswith("image/")
         assert result.media[0].filename.startswith("image-1.")
-        assert result.media[0].data
+
+
+def _rgba_png(width: int, height: int, *, transparent_below: int | None = None, seed: int = 7) -> bytes:
+    """A real PNG with an alpha channel - every pixel a different color.
+
+    `transparent_below` splits the image in two: opaque, colorful "content"
+    in the rows above it, fully transparent "background" (still carrying
+    real, non-black-by-convention RGB values underneath, the way a logo
+    exported with a transparent background usually does) in the rows at and
+    below it. Omitted, every pixel is uniformly half-transparent instead.
+    """
+    random.seed(seed)
+    rows = []
+    for y in range(height):
+        alpha = 0 if transparent_below is not None and y >= transparent_below else (
+            128 if transparent_below is None else 255
+        )
+        row = b"\x00"
+        for _ in range(width):
+            row += bytes((random.randrange(256), random.randrange(256), random.randrange(256), alpha))
+        rows.append(row)
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        body = tag + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(b"".join(rows)))
+        + chunk(b"IEND", b"")
+    )
+
+
+class TestImageTransparency:
+    """PyMuPDF's own `get_text("dict")` never applies a soft-masked image's
+    transparency to its color data - inserting an RGBA source and reading it
+    straight back reports the color channels alone, with every previously
+    transparent pixel opaque and showing whatever was stored underneath it
+    (commonly black). See `_apply_pdf_soft_mask`.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_transparent_source_image_keeps_an_alpha_channel(self, tmp_path):
+        def build(document):
+            page = document.new_page()
+            page.insert_image(pymupdf.Rect(72, 100, 272, 300), stream=_rgba_png(60, 60))
+            page.insert_text((72, 340), "Body.", fontsize=10)
+
+        result = await extract_pdf(_write_pdf(tmp_path, build))
+
+        assert len(result.media) == 1
+        extracted = pymupdf.Pixmap(result.media[0].data)
+        assert extracted.alpha == 1
+
+    @pytest.mark.asyncio
+    async def test_a_transparent_region_does_not_come_back_opaque(self, tmp_path):
+        # The top half is opaque "content"; the bottom half is fully
+        # transparent "background" - exactly a logo exported with a
+        # transparent background, which is the shape that reads as a solid
+        # (commonly black) fill once the mask is dropped.
+        source = _rgba_png(60, 60, transparent_below=30)
+
+        def build(document):
+            page = document.new_page()
+            page.insert_image(pymupdf.Rect(72, 100, 272, 300), stream=source)
+            page.insert_text((72, 340), "Body.", fontsize=10)
+
+        result = await extract_pdf(_write_pdf(tmp_path, build))
+
+        extracted = pymupdf.Pixmap(result.media[0].data)
+        samples = extracted.samples
+        channels = extracted.n
+        stride = extracted.width * channels
+        # Every pixel's own alpha byte in the transparent half, not just the
+        # first one - a wrong combination could easily transpose color and
+        # alpha per pixel rather than lose alpha entirely.
+        background_alphas = samples[30 * stride + channels - 1 :: channels]
+        assert set(background_alphas) == {0}
+        # The visible half is untouched by the same fix.
+        content_alphas = samples[channels - 1 : 30 * stride : channels]
+        assert set(content_alphas) == {255}
+
+    @pytest.mark.asyncio
+    async def test_an_opaque_source_image_is_unaffected(self, tmp_path):
+        """No soft mask at all - `_apply_pdf_soft_mask` must never run, let
+        alone change what an ordinary, fully opaque image looks like."""
+
+        def build(document):
+            page = document.new_page()
+            page.insert_image(pymupdf.Rect(72, 100, 272, 300), stream=_png(60, 60))
+            page.insert_text((72, 340), "Body.", fontsize=10)
+
+        result = await extract_pdf(_write_pdf(tmp_path, build))
+
+        extracted = pymupdf.Pixmap(result.media[0].data)
+        assert extracted.alpha == 0
+
+    def test_a_malformed_mask_falls_back_to_the_plain_image_instead_of_raising(self):
+        assert convert._apply_pdf_soft_mask(
+            _png(10, 10), b"not a real mask", image_decoder=pymupdf
+        ) is None
 
 
 class TestTableExtraction:
