@@ -176,6 +176,66 @@ class TestTableOfContents:
         )
         assert "1.1. First" in html
 
+    @pytest.mark.asyncio
+    async def test_each_entry_is_a_real_link_to_its_heading(self) -> None:
+        p = page(
+            content_format="html",
+            content=(
+                '<div data-type="tableOfContents"></div>'
+                "<h1>Introduction</h1><h2>Scope</h2>"
+            ),
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert '<h1 id="introduction">Introduction</h1>' in html
+        assert '<h2 id="scope">Scope</h2>' in html
+        assert '<a href="#introduction">1. Introduction</a>' in html
+        assert '<a href="#scope">1.1. Scope</a>' in html
+
+    @pytest.mark.asyncio
+    async def test_entries_are_not_an_ol_so_nothing_numbers_them_a_second_time(
+        self,
+    ) -> None:
+        # A real <ol>/<li> gets reparsed straight back into the editor's own
+        # schema for a PDF/HTML capture, which has no attribute for
+        # `list-style`/`padding-left` and drops both - left with a bare
+        # <ol>, the browser draws its own "1. 2. 3." on top of the "1./1.1."
+        # index already in the text, and every level renders flush with no
+        # indent. Plain <p> lines have nothing left for a list to number.
+        p = page(
+            content_format="html",
+            content=(
+                '<div data-type="tableOfContents"></div>'
+                "<h1>Introduction</h1><h2>Scope</h2>"
+            ),
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert "<ol" not in html
+        assert "<li" not in html
+
+    @pytest.mark.asyncio
+    async def test_a_nested_entry_is_indented_with_real_text_not_a_style(
+        self,
+    ) -> None:
+        # A leading run of non-breaking spaces is plain text, so - unlike a
+        # `padding-left` style - it survives being reparsed by the editor or
+        # by Pandoc unchanged.
+        p = page(
+            content_format="html",
+            content=(
+                '<div data-type="tableOfContents"></div>'
+                "<h1>Introduction</h1><h2>Scope</h2>"
+            ),
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert f'<p>\xa0\xa0\xa0\xa0<a href="#scope">1.1. Scope</a></p>' in html
+        assert "style=" not in html.split("Table of contents")[1]
+
 
 class TestImageCaptions:
     """Same shape of problem as the table of contents: the caption text

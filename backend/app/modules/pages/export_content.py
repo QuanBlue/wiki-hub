@@ -162,6 +162,17 @@ def _render_table_of_contents(soup: BeautifulSoup) -> None:
     (``goToHeading``), which stops meaning anything the moment there is no
     live document - a PDF, an HTML file opened later, or a Word document all
     need a link and a matching id to actually navigate anywhere.
+
+    Entries are plain ``<p>`` lines, not an ``<ol>``/``<li>`` list: PDF and
+    HTML export reach the reader by reparsing this HTML back into the
+    interactive editor's own schema (see the module docstring), which has no
+    node for an arbitrary ``list-style``/``padding-left`` and drops both -
+    left with a bare ``<ol>``, the browser then draws its *own* "1. 2. 3."
+    counter on top of the "1.1./1.2." index already in each entry's text, and
+    every level renders flush against the last with no indent at all. A
+    leading run of non-breaking spaces is plain text, not an attribute, so it
+    is the one way left to indent an entry that survives being reparsed by
+    the editor, or by Pandoc, unchanged.
     """
     placeholders = soup.select('[data-type="tableOfContents"]')
     if not placeholders:
@@ -178,16 +189,14 @@ def _render_table_of_contents(soup: BeautifulSoup) -> None:
         title_strong.string = "Table of contents"
         title.append(title_strong)
         nav.append(title)
-        entries = soup.new_tag("ol", style="list-style:none;margin:0;padding-left:0")
         for (heading, _, _), (index, level, text) in zip(headings, numbered, strict=True):
-            item = soup.new_tag(
-                "li", style=f"list-style:none;padding-left:{(level - 1) * 16}px"
-            )
+            entry = soup.new_tag("p")
+            if level > 1:
+                entry.append(soup.new_string("\xa0" * ((level - 1) * 4)))
             link = soup.new_tag("a", href=f"#{heading['id']}")
             link.string = f"{index}. {text}"
-            item.append(link)
-            entries.append(item)
-        nav.append(entries)
+            entry.append(link)
+            nav.append(entry)
         placeholder.replace_with(nav)
 
 
