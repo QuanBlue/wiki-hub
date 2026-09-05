@@ -14,6 +14,12 @@ fit for a session-less headless browser:
   ``_render_table_of_contents`` and ``_render_image_captions``); Word export
   has no editor in its own pipeline at all to do that for it, so it has to
   already be done by the time this function returns;
+- every heading given a stable, unique id, and every table-of-contents entry
+  a real ``<a href="#...">`` pointing at one - the live table of contents
+  only ever *scrolls* to a heading via its in-memory document position
+  (``TableOfContentsComponent``'s ``goToHeading``), which means nothing once
+  there is no live document to hold that position: a static export's outline
+  needs a real, followable link instead, in the PDF/HTML/Word reader alike;
 - every attachment reference inlined as a ``data:`` URI, since the headless
   browser holds no session cookie and a plain ``/api/v1/attachments/...`` URL
   would 401.
@@ -23,9 +29,10 @@ from __future__ import annotations
 
 import base64
 import re
+import unicodedata
 import uuid
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from markdown_it import MarkdownIt
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +51,20 @@ _ATTACHMENT_CONTENT_RE = re.compile(
     r"(?P<id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
     r"/content$"
 )
+
+_SLUG_CHARS_RE = re.compile(r"[^a-z0-9]+")
+#: Unicode gives no canonical decomposition for stroke-through letters like
+#: "đ"/"Đ" - NFD leaves them untouched, so they need an explicit substitution
+#: before the generic diacritic strip below runs (same trick export_service.py's
+#: filename slug uses, kept local here to avoid an import cycle - export_service
+#: already imports from this module).
+_STROKE_LETTERS = str.maketrans({"đ": "d", "Đ": "D"})
+
+
+def _slugify_heading(text: str) -> str:
+    normalized = unicodedata.normalize("NFD", text.translate(_STROKE_LETTERS))
+    ascii_text = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return _SLUG_CHARS_RE.sub("-", ascii_text.strip().lower()).strip("-") or "section"
 
 
 def _render_content(page: WikiPage) -> str:
@@ -95,8 +116,36 @@ def _number_headings(headings: list[tuple[int, str]]) -> list[tuple[str, int, st
     return numbered
 
 
+def _assign_heading_ids(soup: BeautifulSoup) -> list[tuple[Tag, int, str]]:
+    """Give every heading a stable, unique id to link to.
+
+    A plain heading carries none - nothing in the live app ever needs to
+    jump straight to one. A static export does: a table-of-contents entry
+    and any other same-page link only work as a real ``<a href="#...">`` once
+    something in the document actually carries that id. An id already on a
+    heading (say, from imported HTML) is left alone and only recorded, so a
+    later generated slug never collides with it.
+    """
+    used: set[str] = {element["id"] for element in soup.find_all(id=True)}
+    headings: list[tuple[Tag, int, str]] = []
+    for heading in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+        text = heading.get_text(" ", strip=True) or "Untitled section"
+        heading_id = heading.get("id")
+        if not heading_id:
+            base = _slugify_heading(text)
+            heading_id = base
+            suffix = 2
+            while heading_id in used:
+                heading_id = f"{base}-{suffix}"
+                suffix += 1
+            heading["id"] = heading_id
+            used.add(heading_id)
+        headings.append((heading, int(heading.name[1]), text))
+    return headings
+
+
 def _render_table_of_contents(soup: BeautifulSoup) -> None:
-    """Give a static export a real table of contents.
+    """Give a static export a real, followable table of contents.
 
     The live editor's ``tableOfContents`` node stores no content of its own -
     it is an empty placeholder a React node view fills in by scanning the
@@ -107,14 +156,18 @@ def _render_table_of_contents(soup: BeautifulSoup) -> None:
     outline by the time it gets there. Rendering it once, here, also keeps
     all three export formats in exact agreement instead of only two of them
     working by accident.
+
+    Each entry is a real ``<a href="#...">`` rather than plain text: the live
+    widget instead jumps to a heading through its in-memory document position
+    (``goToHeading``), which stops meaning anything the moment there is no
+    live document - a PDF, an HTML file opened later, or a Word document all
+    need a link and a matching id to actually navigate anywhere.
     """
     placeholders = soup.select('[data-type="tableOfContents"]')
     if not placeholders:
         return
-    headings = [
-        (int(heading.name[1]), heading.get_text(" ", strip=True) or "Untitled section")
-        for heading in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
-    ]
+    headings = _assign_heading_ids(soup)
+    numbered = _number_headings([(level, text) for _, level, text in headings])
     for placeholder in placeholders:
         if not headings:
             placeholder.decompose()
@@ -126,11 +179,13 @@ def _render_table_of_contents(soup: BeautifulSoup) -> None:
         title.append(title_strong)
         nav.append(title)
         entries = soup.new_tag("ol", style="list-style:none;margin:0;padding-left:0")
-        for index, level, text in _number_headings(headings):
+        for (heading, _, _), (index, level, text) in zip(headings, numbered, strict=True):
             item = soup.new_tag(
                 "li", style=f"list-style:none;padding-left:{(level - 1) * 16}px"
             )
-            item.string = f"{index}. {text}"
+            link = soup.new_tag("a", href=f"#{heading['id']}")
+            link.string = f"{index}. {text}"
+            item.append(link)
             entries.append(item)
         nav.append(entries)
         placeholder.replace_with(nav)

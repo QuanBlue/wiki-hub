@@ -1,5 +1,6 @@
 "use client";
 
+import Heading from "@tiptap/extension-heading";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -3416,9 +3417,77 @@ const DiffHighlightMark = Mark.create({
  * drop to be owned rather than left to ProseMirror's external-drop path.
  */
 const DRAGGABLE_NODE_TYPES = new Set(["image", "attachment"]);
-const editorExtensions = [
+const headingLevels = [1, 2, 3, 4] as const;
+
+// A plain StarterKit heading has no `id` - fine for the live app (nothing
+// ever links to one), but a static export's table of contents and any
+// heading-anchor link need a real, stable id on the target itself, and the
+// only place both the interactive editor and the read-only exported render
+// share is this schema. Preserving an existing id (rather than only ever
+// generating one) also means a heading id assigned server-side in
+// prepare_export_html survives being parsed back into the editor for
+// PDF/HTML capture instead of being silently dropped like any other
+// attribute the schema doesn't know about.
+// Every other link opens in a new tab by design (leaving the reader's place
+// in the page intact) - but that is exactly wrong for a same-page anchor
+// like a table-of-contents entry, which needs to jump *within* the current
+// page. A new tab just shows a second copy of it, and is also what stops
+// Chromium's PDF export from turning the link into an honest in-document
+// jump rather than an external one. Link's target/rel are plain attribute
+// defaults with no parseHTML of their own (see @tiptap/extension-link), so
+// they apply to every link regardless of its href - this only strips them
+// back off again for a "#..." href, once rendering.
+const AnchorAwareLink = Link.extend({
+  renderHTML({ mark, HTMLAttributes }) {
+    const rendered = this.parent?.({ mark, HTMLAttributes }) ?? [
+      "a",
+      HTMLAttributes,
+      0,
+    ];
+    const href = HTMLAttributes.href ?? "";
+    if (
+      typeof href === "string" &&
+      href.startsWith("#") &&
+      Array.isArray(rendered) &&
+      rendered[1]
+    ) {
+      const { target: _target, rel: _rel, ...attrs } = rendered[1];
+      return ["a", attrs, 0];
+    }
+    return rendered;
+  },
+});
+
+const HeadingWithId = Heading.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      id: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("id"),
+        renderHTML: (attributes) =>
+          attributes.id ? { id: attributes.id } : {},
+      },
+    };
+  },
+});
+
+/**
+ * Most of the schema is identical for the interactive editor and the
+ * read-only render (`RichTextContent`) - only the image node differs.
+ * `allowBase64` guards against a user pasting a giant inline image straight
+ * into a document while editing, but a static export deliberately inlines
+ * every attachment as a `data:` URI first (see export_content.py's
+ * `_inline_attachments` - the headless browser that captures PDF/HTML/Word
+ * exports has no session to fetch a normal attachment URL with), so the
+ * same guard there just makes every exported image parse into nothing.
+ */
+function buildEditorExtensions({
+  allowBase64 = false,
+}: { allowBase64?: boolean } = {}) {
+  return [
   StarterKit.configure({
-    heading: { levels: [1, 2, 3, 4] },
+    heading: false,
     codeBlock: false,
     blockquote: false,
     listItem: false,
@@ -3427,6 +3496,7 @@ const editorExtensions = [
     // a caret in globals.css; the colour comes from there too.
     dropcursor: { class: "wikihub-dropcursor", width: 2, color: false },
   }),
+  HeadingWithId.configure({ levels: [...headingLevels] }),
   CustomCodeBlock.configure({
     lowlight,
     // Also read by the LowlightPlugin's decoration pass as the fallback for
@@ -3445,7 +3515,7 @@ const editorExtensions = [
   StyledListItem,
   TaskList.configure({ HTMLAttributes: { class: "wikihub-task-list" } }),
   TaskItem.configure({ nested: true }),
-  Link.configure({
+  AnchorAwareLink.configure({
     openOnClick: false,
     autolink: true,
     defaultProtocol: "https",
@@ -3453,7 +3523,7 @@ const editorExtensions = [
   DiffHighlightMark,
   AttachmentNode,
   ResizableImage.configure({
-    allowBase64: false,
+    allowBase64,
   }),
   TextStyleMark,
   UnderlineMark,
@@ -3470,9 +3540,13 @@ const editorExtensions = [
   Placeholder.configure({
     placeholder: "Write your documentation here...",
   }),
-];
+  ];
+}
 
-const headingLevels = [1, 2, 3, 4] as const;
+const editorExtensions = buildEditorExtensions();
+// RichTextContent's read-only render: see buildEditorExtensions' own comment
+// for why this one alone needs to accept a `data:` URI image.
+const readOnlyEditorExtensions = buildEditorExtensions({ allowBase64: true });
 
 function escapeHtml(value: string): string {
   return value
@@ -6233,7 +6307,7 @@ export function RichTextContent({
   const editor = useEditor({
     immediatelyRender: false,
     editable: false,
-    extensions: editorExtensions,
+    extensions: readOnlyEditorExtensions,
     content: normalizedContent,
     editorProps: {
       attributes: {
