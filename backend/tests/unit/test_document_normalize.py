@@ -277,6 +277,25 @@ class TestImagesLinksAndTables:
         assert "colgroup" not in result and "<col" not in result
         assert "<td>a</td>" in result
 
+    def test_a_one_row_table_never_keeps_a_bold_header_cell(self):
+        # Word bands the first row of its default table style whether or not
+        # a table actually has one, so a single-row table used purely as a
+        # bordered box (a code sample or a diagram) still comes out of Pandoc
+        # as a header row. There is no body left for it to be a header
+        # *over*, and the editor renders `<th>` bold by default.
+        result = _html('<table><thead><tr><th>line one</th></tr></thead></table>')
+        assert "<th" not in result
+        assert "<td>line one</td>" in result
+        assert "<thead" not in result
+
+    def test_a_multi_row_table_keeps_its_real_header(self):
+        result = _html(
+            "<table><thead><tr><th>Name</th></tr></thead>"
+            "<tbody><tr><td>Alice</td></tr></tbody></table>"
+        )
+        assert "<th>Name</th>" in result
+        assert "<td>Alice</td>" in result
+
     def test_empty_paragraphs_are_collapsed(self):
         assert _html("<p>a</p><p></p><p>  </p><p>b</p>") == "<p>a</p><p>b</p>"
 

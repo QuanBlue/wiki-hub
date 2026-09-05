@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio.to_thread
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup, Tag
 from lxml import etree
 from soupsieve import SelectorSyntaxError
 
@@ -484,12 +484,28 @@ def _docx_paragraph_needs_raw_rebuild(paragraph: Any) -> bool:
     return False
 
 
+#: A generic-CSS-keyword-terminated stack, so a fixed-width font renders even
+#: where none of the named ones are installed. What makes this rebuild worth
+#: doing at all: a proportional font gives every character (and, critically,
+#: the non-breaking spaces standing in for the source's indentation) its own
+#: width, so the same column position drifts line to line and the box a
+#: diagram was drawn in no longer lines up - the mangled shape this whole
+#: function exists to avoid, just moved from Pandoc's whitespace collapsing to
+#: the browser's font rendering instead.
+#: Every name here is a single CSS token on purpose - a quoted multi-word
+#: name (`"Cascadia Code"`) would make BeautifulSoup re-quote the whole
+#: `style` attribute with single quotes to hold it, which is valid HTML but
+#: needlessly inconsistent with every other style this module writes.
+_PREFORMATTED_FONT_STACK = "ui-monospace, Consolas, Menlo, Monaco, monospace"
+
+
 def _rebuild_paragraph_from_docx_runs(html_paragraph: Tag, docx_paragraph: Any) -> None:
     """Replace Pandoc's mangled text with a faithful copy of the source runs.
 
     Every space becomes non-breaking so the columns Pandoc collapsed stay
-    put, and each run's own color becomes a `<span style="color:...">`
-    wrapping just that run - the shape the editor's text-color mark actually
+    put, every run is set in a monospace font so those columns actually line
+    up once rendered, and each run's own color rides along in the same
+    `<span style="...">` - the shape the editor's text-color mark actually
     parses (see `TextStyleMark` in the frontend), and the only way two runs
     of different colors in one line (a key in one color, its value in
     another) can survive as two colors instead of one or none.
@@ -500,13 +516,13 @@ def _rebuild_paragraph_from_docx_runs(html_paragraph: Tag, docx_paragraph: Any) 
         text = _docx_run_text(run).replace(" ", " ")
         if not text:
             continue
+        style = f"font-family: {_PREFORMATTED_FONT_STACK}"
         color = _docx_run_color(run)
         if color:
-            span = factory.new_tag("span", attrs={"style": f"color: {color}"})
-            span.string = text
-            html_paragraph.append(span)
-        else:
-            html_paragraph.append(NavigableString(text))
+            style += f"; color: {color}"
+        span = factory.new_tag("span", attrs={"style": style})
+        span.string = text
+        html_paragraph.append(span)
 
 
 def _wrap_docx_paragraph_color(paragraph: Tag, color: str) -> None:

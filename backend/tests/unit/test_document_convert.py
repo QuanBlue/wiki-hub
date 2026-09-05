@@ -220,8 +220,9 @@ class TestDocxTableFormatting:
         )
 
         assert "\xa0\xa0\xa0\xa0registry:\xa0" in result
-        assert '<span style="color: #000000">' in result
-        assert '<span style="color: #ff0000">example.registry.io</span>' in result
+        assert 'font-family:' in result
+        assert '; color: #000000">' in result
+        assert '; color: #ff0000">example.registry.io</span>' in result
         # Not pushed onto the `<p>` itself - the editor's paragraph node has
         # no color attribute, so that would be silently dropped on load.
         assert "<p>" in result and "<p style=" not in result
@@ -237,6 +238,9 @@ class TestDocxTableFormatting:
         result = self._enrich(tmp_path, document, "<table><tr><td><p>a b</p></td></tr></table>")
 
         assert "a\xa0\xa0b" in result
+        # A run needs no color at all to still need the fixed-width font a
+        # rebuilt line depends on to actually line up once rendered.
+        assert 'style="font-family:' in result
 
     def test_uniform_paragraph_color_is_wrapped_in_a_span_not_set_on_the_paragraph(
         self, tmp_path

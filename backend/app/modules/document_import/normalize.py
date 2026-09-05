@@ -437,6 +437,7 @@ def _normalize_links(soup: BeautifulSoup) -> None:
 
 def _normalize_tables(soup: BeautifulSoup) -> None:
     for table in soup.find_all("table"):
+        _demote_single_row_header(soup, table)
         for cell in table.find_all(["td", "th"]):
             for attribute in ("colspan", "rowspan"):
                 raw = cell.get(attribute)
@@ -450,6 +451,35 @@ def _normalize_tables(soup: BeautifulSoup) -> None:
                     cell.attrs.pop(attribute, None)
                 else:
                     cell[attribute] = str(span)
+
+
+def _demote_single_row_header(soup: BeautifulSoup, table: Tag) -> None:
+    """A one-row table is a styled box, not a header over a body.
+
+    Word's default "Table Grid" style bands the first row for emphasis
+    (`w:tblLook w:firstRow="1"`) whether or not the table actually has one,
+    and a docx author reaches for a single-row, single-column table as
+    nothing more than a bordered box - to frame a code sample or a diagram -
+    far more often than as a genuine one-row table of labels. Pandoc reads
+    that banding as "this is a header row" and emits `<th>`, which the
+    editor renders bold by default; a plain paragraph of code has no
+    business inheriting that.
+    """
+    rows = table.find_all("tr")
+    if len(rows) != 1:
+        return
+    for cell in rows[0].find_all("th", recursive=False):
+        cell.name = "td"
+    thead = table.find("thead", recursive=False)
+    if thead is None:
+        return
+    tbody = table.find("tbody", recursive=False)
+    if tbody is None:
+        tbody = soup.new_tag("tbody")
+        thead.insert_after(tbody)
+    for child in list(thead.contents):
+        tbody.insert(0, child.extract())
+    thead.decompose()
 
 
 def _collapse_empty_paragraphs(soup: BeautifulSoup) -> None:

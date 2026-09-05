@@ -464,12 +464,25 @@ const TextStyleMark = Mark.create({
             ? { style: `font-size: ${attributes.fontSize}` }
             : {},
       },
+      // Set by document import for a hand-aligned code sample or ASCII
+      // diagram pulled out of a Word table: a proportional font gives each
+      // character its own width, which drifts the very columns the import
+      // just went to the trouble of preserving as non-breaking spaces.
+      fontFamily: {
+        default: null,
+        parseHTML: (element) => element.style.fontFamily || null,
+        renderHTML: (attributes) =>
+          attributes.fontFamily
+            ? { style: `font-family: ${attributes.fontFamily}` }
+            : {},
+      },
     };
   },
   parseHTML() {
     return [
       { tag: 'span[style*="color"]' },
       { tag: 'span[style*="font-size"]' },
+      { tag: 'span[style*="font-family"]' },
       { tag: "span[data-wikihub-text-style]" },
     ];
   },
