@@ -228,8 +228,22 @@ def _normalize_table_of_contents(soup: BeautifulSoup) -> None:
     for paragraph in list(soup.find_all("p")):
         _split_leading_toc_title(soup, paragraph)
 
-    for heading in list(soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])):
-        if not _is_toc_title(heading.get_text()):
+    # A real Heading style is not the only way a document titles its table of
+    # contents: Word's own "Insert Table of Contents" workflow commonly sits
+    # under a plain bold paragraph instead, deliberately not a heading, so
+    # that the title itself does not turn up as an entry inside the very
+    # table it introduces. A bare paragraph is far more common than a heading
+    # in general prose, though, so - unlike a heading's title, matched loosely
+    # against a prefix - a paragraph only qualifies on an exact, whole-text
+    # match to a known label.
+    for heading in list(soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p"])):
+        title_text = heading.get_text()
+        is_title = (
+            _is_toc_title(title_text)
+            if heading.name != "p"
+            else _normalized_toc_title(title_text) in _TABLE_OF_CONTENTS_TITLES
+        )
+        if not is_title:
             continue
 
         entries: list[Tag] = []

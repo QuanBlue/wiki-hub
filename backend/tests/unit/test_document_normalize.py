@@ -205,6 +205,38 @@ class TestTableOfContents:
 
         assert _html(source, filename="doc.pdf") == source
 
+    def test_a_longer_confidential_notice_is_still_not_mistaken_for_a_toc(self):
+        # The exact-match rule below only kicks in for a paragraph reading
+        # *just* "Contents" - unlike a heading's title, which can lead a
+        # longer line. Without that distinction, this notice (which merely
+        # starts with the word, and is followed by two more paragraphs -
+        # enough to pass the "at least two entries" check) would wrongly
+        # swallow real content into an empty table of contents.
+        source = (
+            "<p>Contents of this document are confidential and must not be "
+            "shared outside the project.</p><p>Second paragraph.</p>"
+            "<p>Third paragraph.</p>"
+        )
+
+        assert _html(source, filename="doc.pdf") == source
+
+    def test_a_plain_bold_paragraph_titled_contents_becomes_a_toc(self):
+        # Word's own "Insert Table of Contents" places the field under a
+        # plain bold paragraph, not a Heading style - deliberately, so the
+        # title itself does not also turn up as an entry in its own table.
+        source = (
+            "<p><strong>MỤC LỤC</strong></p>"
+            '<p><a href="#_Toc1">1. GIỚI THIỆU</a></p>'
+            '<p><a href="#_Toc2">2. KIẾN TRÚC</a></p>'
+            "<h1>GIỚI THIỆU</h1><p>Page body</p>"
+        )
+
+        html, _, _ = normalize_document_html(source, filename="design.docx")
+
+        assert html.startswith('<div data-type="tableOfContents"></div>')
+        assert "KIẾN TRÚC" not in html
+        assert html.endswith("<p>Page body</p>")
+
     def test_a_contents_heading_without_entries_is_preserved(self):
         html, title, _ = normalize_document_html(
             "<h2>Contents</h2><p>Introduction</p>", filename="contents.html"

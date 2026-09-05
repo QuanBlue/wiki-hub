@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio.to_thread
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 from lxml import etree
 from soupsieve import SelectorSyntaxError
 
@@ -296,7 +296,18 @@ def _enrich_docx_table_formatting(html: str, source: Path) -> str:
                     _apply_docx_cell_style(html_cell, cell_properties)
 
                 html_paragraphs = html_cell.find_all("p", recursive=False)
-                docx_paragraphs = docx_cell.findall("./w:p", _DOCX_NS)
+                # Pandoc silently drops a `<w:p>` with no runs at all rather
+                # than emitting an empty `<p></p>` - keeping it here would
+                # shift every later paragraph in this cell out of step with
+                # its Pandoc counterpart, applying each line's formatting to
+                # the *next* line instead. A blank spacer line inside a code
+                # sample or diagram still has runs (even if their text is
+                # only spaces), so this only drops the ones Pandoc also drops.
+                docx_paragraphs = [
+                    p
+                    for p in docx_cell.findall("./w:p", _DOCX_NS)
+                    if p.find("./w:r", _DOCX_NS) is not None
+                ]
                 if not html_paragraphs and docx_paragraphs:
                     alignment = _docx_paragraph_alignment(docx_paragraphs[0])
                     if alignment:
@@ -312,11 +323,26 @@ def _enrich_docx_table_formatting(html: str, source: Path) -> str:
                         if len(docx_paragraphs) == 1:
                             _merge_inline_style(html_cell, "text-align", css_alignment)
                         _merge_inline_style(html_paragraph, "text-align", css_alignment)
+                    if _docx_paragraph_needs_raw_rebuild(docx_paragraph):
+                        _rebuild_paragraph_from_docx_runs(html_paragraph, docx_paragraph)
+                        continue
                     color = _docx_paragraph_color(docx_paragraph)
                     if color:
                         if len(docx_paragraphs) == 1:
+                            # A `<td>`'s own `color` attribute is part of the
+                            # editor's table-cell schema (see
+                            # `TableCellWithBackground` in the frontend), so
+                            # setting it here is enough to survive a
+                            # round-trip through the editor.
                             _merge_inline_style(html_cell, "color", color)
-                        _merge_inline_style(html_paragraph, "color", color)
+                        else:
+                            # A paragraph has no such attribute, so a color set
+                            # directly on it would be silently dropped the
+                            # moment this HTML loads into the editor. Wrapping
+                            # its content in a `<span style="color:...">`
+                            # instead is what the text-color mark actually
+                            # parses (see `TextStyleMark` in the frontend).
+                            _wrap_docx_paragraph_color(html_paragraph, color)
     return str(soup)
 
 
@@ -400,6 +426,107 @@ def _docx_paragraph_color(paragraph: Any) -> str | None:
     if len(colors) == 1 and _DOCX_HEX.fullmatch(next(iter(colors))):
         return f"#{next(iter(colors))}"
     return None
+
+
+#: Fonts that mean "this text is meant to line up in fixed-width columns" -
+#: a hand-built code sample or box-drawn diagram, never ordinary prose.
+_MONOSPACE_FONTS = frozenset(
+    {
+        "consolas", "courier new", "courier", "lucida console", "monaco",
+        "menlo", "cascadia code", "cascadia mono", "fira code",
+        "source code pro", "dejavu sans mono", "andale mono", "roboto mono",
+    }
+)
+
+
+def _docx_run_font(run: Any) -> str | None:
+    properties = run.find("./w:rPr", _DOCX_NS)
+    fonts = properties.find("./w:rFonts", _DOCX_NS) if properties is not None else None
+    if fonts is None:
+        return None
+    for attribute in ("ascii", "hAnsi"):
+        value = fonts.get(f"{{{_DOCX_NS['w']}}}{attribute}")
+        if value:
+            return value.strip().lower()
+    return None
+
+
+def _docx_run_text(run: Any) -> str:
+    return "".join(node.text or "" for node in run.findall("./w:t", _DOCX_NS))
+
+
+def _docx_run_color(run: Any) -> str | None:
+    properties = run.find("./w:rPr", _DOCX_NS)
+    color = properties.find("./w:color", _DOCX_NS) if properties is not None else None
+    value = (color.get(f"{{{_DOCX_NS['w']}}}val", "") if color is not None else "").lower()
+    if value and value != "auto" and _DOCX_HEX.fullmatch(value):
+        return f"#{value}"
+    return None
+
+
+def _docx_paragraph_needs_raw_rebuild(paragraph: Any) -> bool:
+    """True where Pandoc's own rendering of this paragraph loses its shape.
+
+    Pandoc treats every Word paragraph as prose: it collapses runs of spaces
+    down to one, and drops direct character color entirely (as opposed to a
+    named style, which it can carry over). Neither loss is visible on an
+    ordinary paragraph, but a paragraph set in a monospace font, or leaning
+    on two or more consecutive spaces to line up columns, is never prose -
+    it is a code sample or a box-drawn diagram, and either signal alone is
+    specific enough that a false match on real prose is effectively unseen.
+    """
+    for run in paragraph.findall("./w:r", _DOCX_NS):
+        font = _docx_run_font(run)
+        if font is not None and font in _MONOSPACE_FONTS:
+            return True
+        if "  " in _docx_run_text(run):
+            return True
+    return False
+
+
+def _rebuild_paragraph_from_docx_runs(html_paragraph: Tag, docx_paragraph: Any) -> None:
+    """Replace Pandoc's mangled text with a faithful copy of the source runs.
+
+    Every space becomes non-breaking so the columns Pandoc collapsed stay
+    put, and each run's own color becomes a `<span style="color:...">`
+    wrapping just that run - the shape the editor's text-color mark actually
+    parses (see `TextStyleMark` in the frontend), and the only way two runs
+    of different colors in one line (a key in one color, its value in
+    another) can survive as two colors instead of one or none.
+    """
+    html_paragraph.clear()
+    factory = BeautifulSoup("", "html.parser")
+    for run in docx_paragraph.findall("./w:r", _DOCX_NS):
+        text = _docx_run_text(run).replace(" ", " ")
+        if not text:
+            continue
+        color = _docx_run_color(run)
+        if color:
+            span = factory.new_tag("span", attrs={"style": f"color: {color}"})
+            span.string = text
+            html_paragraph.append(span)
+        else:
+            html_paragraph.append(NavigableString(text))
+
+
+def _wrap_docx_paragraph_color(paragraph: Tag, color: str) -> None:
+    """Wrap a paragraph's content in a colored span rather than the paragraph.
+
+    A `<p style="color:...">` has no home in the editor's schema - a
+    paragraph node carries no such attribute, so the color is silently
+    dropped the moment this HTML loads. Wrapping the paragraph's existing
+    content in a `<span style="color:...">` instead is what the text-color
+    mark parses, and preserves whatever Pandoc already rendered inside it
+    (bold, links, and the rest) rather than replacing it.
+    """
+    if not paragraph.contents:
+        return
+    factory = BeautifulSoup("", "html.parser")
+    wrapper = factory.new_tag("span", attrs={"style": f"color: {color}"})
+    for child in list(paragraph.contents):
+        child.extract()
+        wrapper.append(child)
+    paragraph.append(wrapper)
 
 
 def _merge_inline_style(element: Tag, property_name: str, value: str) -> None:

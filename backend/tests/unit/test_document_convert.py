@@ -167,6 +167,96 @@ class TestDocxTableFormatting:
         assert 'text-align: center' in result
         assert 'color: #e7e6e6' in result
 
+    def _enrich(self, tmp_path, document_xml: str, html: str) -> str:
+        source = tmp_path / "styled.docx"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr(
+                "word/document.xml",
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/'
+                'wordprocessingml/2006/main"><w:body>' + document_xml + "</w:body></w:document>",
+            )
+        return convert._enrich_docx_table_formatting(html, source)
+
+    def test_a_leading_run_less_paragraph_does_not_shift_later_lines(self, tmp_path):
+        # Pandoc drops a `<w:p>` with no runs at all rather than emitting an
+        # empty `<p></p>`. Zipping the raw (unfiltered) `<w:p>` list against
+        # Pandoc's `<p>` list would then pair every real line with the *next*
+        # line's formatting - a code sample's first line always losing its
+        # color was exactly this bug.
+        document = (
+            "<w:tbl><w:tblGrid><w:gridCol w:w=\"4000\"/></w:tblGrid><w:tr><w:tc><w:tcPr/>"
+            "<w:p><w:pPr/></w:p>"
+            '<w:p><w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/>'
+            '<w:color w:val="58A6FF"/></w:rPr><w:t>first</w:t></w:r></w:p>'
+            '<w:p><w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/>'
+            '<w:color w:val="58A6FF"/></w:rPr><w:t>second</w:t></w:r></w:p>'
+            "</w:tc></w:tr></w:tbl>"
+        )
+        result = self._enrich(
+            tmp_path, document, "<table><tr><td><p>first</p><p>second</p></td></tr></table>"
+        )
+
+        assert result.count("color: #58a6ff") == 2
+        assert "first" in result and "second" in result
+
+    def test_a_monospace_paragraph_keeps_its_indentation_and_per_run_color(self, tmp_path):
+        # A key in one color and its value in another, on the same line, is
+        # exactly what `_docx_paragraph_color` cannot express as one color -
+        # and Pandoc has already collapsed the leading spaces that lined it
+        # up under the line above.
+        document = (
+            "<w:tbl><w:tblGrid><w:gridCol w:w=\"4000\"/></w:tblGrid><w:tr><w:tc><w:tcPr/>"
+            "<w:p>"
+            '<w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/>'
+            '<w:color w:val="000000"/></w:rPr><w:t xml:space="preserve">    registry: </w:t></w:r>'
+            '<w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/>'
+            '<w:color w:val="FF0000"/></w:rPr><w:t>example.registry.io</w:t></w:r>'
+            "</w:p>"
+            "</w:tc></w:tr></w:tbl>"
+        )
+        result = self._enrich(
+            tmp_path, document, "<table><tr><td><p>registry: example.registry.io</p></td></tr></table>"
+        )
+
+        assert "\xa0\xa0\xa0\xa0registry:\xa0" in result
+        assert '<span style="color: #000000">' in result
+        assert '<span style="color: #ff0000">example.registry.io</span>' in result
+        # Not pushed onto the `<p>` itself - the editor's paragraph node has
+        # no color attribute, so that would be silently dropped on load.
+        assert "<p>" in result and "<p style=" not in result
+
+    def test_a_double_space_alone_is_enough_to_trigger_a_rebuild(self, tmp_path):
+        # Not every hand-aligned line uses a monospace font; two consecutive
+        # spaces used to line up a column is just as reliable a signal.
+        document = (
+            "<w:tbl><w:tblGrid><w:gridCol w:w=\"4000\"/></w:tblGrid><w:tr><w:tc><w:tcPr/>"
+            "<w:p><w:r><w:t xml:space=\"preserve\">a  b</w:t></w:r></w:p>"
+            "</w:tc></w:tr></w:tbl>"
+        )
+        result = self._enrich(tmp_path, document, "<table><tr><td><p>a b</p></td></tr></table>")
+
+        assert "a\xa0\xa0b" in result
+
+    def test_uniform_paragraph_color_is_wrapped_in_a_span_not_set_on_the_paragraph(
+        self, tmp_path
+    ):
+        # Ordinary (non-monospace) paragraphs go through `_docx_paragraph_color`
+        # instead, which used to write straight onto the `<p>` - equally
+        # invisible to the editor once loaded.
+        document = (
+            "<w:tbl><w:tblGrid><w:gridCol w:w=\"4000\"/></w:tblGrid><w:tr><w:tc><w:tcPr/>"
+            '<w:p><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>First</w:t></w:r></w:p>'
+            '<w:p><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>Second</w:t></w:r></w:p>'
+            "</w:tc></w:tr></w:tbl>"
+        )
+        result = self._enrich(
+            tmp_path, document, "<table><tr><td><p>First</p><p>Second</p></td></tr></table>"
+        )
+
+        assert "<p style=" not in result
+        assert result.count('<span style="color: #ff0000">') == 2
+
 
 class TestHtmlTableFormatting:
     @pytest.mark.asyncio
