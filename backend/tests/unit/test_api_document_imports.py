@@ -16,8 +16,8 @@ import pytest
 
 from app.api.v1.document_imports import (
     _check_magic_bytes,
-    _document_title_variants,
     _enqueue,
+    _filename_title_variants,
     _read_upload,
     cancel_document_import,
     create_document_import,
@@ -32,7 +32,6 @@ from app.core.exceptions import (
     ServiceUnavailableError,
     UnsupportedMediaTypeError,
 )
-from app.modules.document_import.service import StagedDocument
 from app.schemas.document_import import MAX_DOCUMENT_IMPORT_FILES
 
 MODULE = "app.api.v1.document_imports"
@@ -213,21 +212,12 @@ class TestCreateEndpoint:
                 conflict_mode="ask",
             )
 
-    def test_html_conflicts_use_the_leading_heading_title(self):
-        document = StagedDocument(
-            filename="report-netshot-netshot-yaml.html",
-            content_type="text/html",
-            data=(
-                b"<html><head><title>ignored metadata</title></head>"
-                b"<body><h1>NetShot security report</h1><table><tr><td>data</td></tr></table>"
-                b"</body></html>"
-            ),
-            source_format="html",
-        )
-
-        assert _document_title_variants(document)[:2] == [
-            "NetShot security report",
-            "report-netshot-netshot-yaml",
+    def test_html_conflicts_use_the_filename_title(self):
+        # Every import is titled after its filename - see `title_from_filename`
+        # - so an HTML document's own heading plays no part in the conflict
+        # check, even one with `<title>` metadata of its own.
+        assert _filename_title_variants("report-netshot-netshot-yaml.html") == [
+            "report-netshot-netshot-yaml"
         ]
 
     @pytest.mark.asyncio

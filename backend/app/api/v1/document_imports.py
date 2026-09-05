@@ -40,7 +40,6 @@ from app.models.space import Space
 from app.modules.attachments.limits import limits_for_space
 from app.modules.attachments.store import safe_attachment_filename
 from app.modules.document_import.convert import format_for_filename
-from app.modules.document_import.normalize import title_from_html
 from app.modules.document_import.service import (
     StagedDocument,
     create_document_import_job,
@@ -232,25 +231,16 @@ async def create_document_import(
 
 
 def _filename_title_variants(filename: str) -> list[str]:
+    """Every title the worker could land on for this filename.
+
+    The worker always titles a page after the filename's stem (see
+    `title_from_filename`), but a stem ending in a copy suffix like
+    `"Report (2)"` also conflicts with the bare `"Report"` it was copied
+    from, so both are checked.
+    """
     title = Path(filename).stem.strip()
     base = re.sub(r"\s*\(\d+\)$", "", title).strip()
     return [title, base] if base and base != title else [title]
-
-
-def _document_title_variants(document: StagedDocument) -> list[str]:
-    """Return every title the worker could use for a staged document."""
-    variants = _filename_title_variants(document.filename)
-    if document.source_format == "html":
-        try:
-            html_title = title_from_html(
-                document.data.decode("utf-8", errors="replace"),
-                filename=document.filename,
-            )
-        except (UnicodeError, ValueError):
-            html_title = ""
-        if html_title:
-            variants = [html_title, *variants]
-    return list(dict.fromkeys(variants))
 
 
 async def _find_filename_conflicts(
@@ -263,7 +253,7 @@ async def _find_filename_conflicts(
     titles_by_key = {
         title.casefold(): document.filename
         for document in documents
-        for title in _document_title_variants(document)
+        for title in _filename_title_variants(document.filename)
     }
     if not titles_by_key:
         return []

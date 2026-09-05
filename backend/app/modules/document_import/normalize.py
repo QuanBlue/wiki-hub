@@ -7,9 +7,10 @@ merely lose its wrapper - it loses its text. Every transform below is either
 "unwrap something the schema has no node for" or "rewrite a construct into the
 exact shape WikiHub's own editor produces".
 
-Title derivation lives here too, because it is the same walk: the first heading
-becomes the page title *and is removed from the body*, since WikiHub renders the
-title above the content and leaving it would show it twice.
+Title derivation lives here too, though it does not need the walk above: every
+imported page is titled after its source filename (extension stripped), so a
+document's own heading stays in the body as ordinary content instead of being
+promoted and removed.
 """
 
 from __future__ import annotations
@@ -48,9 +49,6 @@ _LANGUAGE_CLASS = re.compile(r"^(?:language-)?([A-Za-z0-9+#_-]{1,32})$")
 #: pandoc's own markers for a syntax-highlighted block, which we do not want.
 _SOURCE_CODE_CLASSES = frozenset({"sourceCode", "sourcecode"})
 
-#: A metadata title that is really a filename - Word writes these constantly.
-_FILENAME_TITLE = re.compile(r"^(microsoft word\s*-\s*)?\S+\.(doc|docx|pdf|rtf|odt|txt)$", re.I)
-
 TRUNCATION_NOTICE_CLASS = "import-truncation-notice"
 
 _TABLE_OF_CONTENTS_TITLES = frozenset({"mục lục", "table of contents", "contents"})
@@ -63,7 +61,6 @@ def normalize_document_html(
     html: str,
     *,
     filename: str,
-    metadata_title: str | None = None,
     max_chars: int = MAX_PAGE_CONTENT_CHARS,
 ) -> tuple[str, str, list[str]]:
     """Return `(html, title, warnings)` ready to be sanitized and stored."""
@@ -86,7 +83,7 @@ def normalize_document_html(
     _strip_attributes(soup)
     _normalize_task_lists(soup)
 
-    title = _take_title(soup, metadata_title=metadata_title, filename=filename)
+    title = title_from_filename(filename)
 
     _collapse_empty_paragraphs(soup)
     result, truncated_percent = _truncate_to_blocks(soup, max_chars=max_chars)
@@ -98,19 +95,14 @@ def normalize_document_html(
     return result, title, warnings
 
 
-def title_from_html(html: str, *, filename: str) -> str:
-    """Derive the page title from raw HTML using the import title rules.
-
-    The upload endpoint uses this before queueing an HTML import so its
-    conflict check agrees with the worker.  In particular, NetShot reports
-    use a leading ``h1`` rather than the filename as the page title.
-    """
-    soup = BeautifulSoup(html or "", "html.parser")
-    _drop_comments(soup)
-    _drop_tags(soup)
-    _normalize_table_of_contents(soup)
-    _unwrap_containers(soup)
-    return _take_title(soup, metadata_title=None, filename=filename)
+def title_from_filename(filename: str) -> str:
+    """The page title every import gets: its source filename, minus extension."""
+    stem = Path(filename).stem.strip()
+    # `Path(".docx").stem` is ".docx" - a dotfile has no suffix as far as
+    # pathlib is concerned, and that is not a title anyone wants to read.
+    if not stem or stem.startswith("."):
+        return "Imported page"
+    return stem[:255]
 
 
 # --------------------------------------------------------------------------
@@ -453,54 +445,6 @@ def _collapse_empty_paragraphs(soup: BeautifulSoup) -> None:
         if paragraph.find(["img", "br", "table", "a"]):
             continue
         paragraph.decompose()
-
-
-# --------------------------------------------------------------------------
-# title
-# --------------------------------------------------------------------------
-
-
-#: How much text may precede a heading for it to still count as the document's
-#: title. A cover line, a date or a document number is fine; a page of prose
-#: means the heading is a section heading, and consuming it would delete it.
-_TITLE_LEAD_IN_CHARS = 200
-
-
-def _take_title(soup: BeautifulSoup, *, metadata_title: str | None, filename: str) -> str:
-    """The leading heading, removed from the body, else metadata, else the filename."""
-    heading = _leading_heading(soup)
-    if heading is not None:
-        text = " ".join(heading.get_text().split())
-        heading.decompose()
-        return text
-
-    if metadata_title:
-        cleaned = " ".join(metadata_title.split())
-        if cleaned and not _FILENAME_TITLE.match(cleaned):
-            return cleaned[:255]
-
-    stem = Path(filename).stem.strip()
-    # `Path(".docx").stem` is ".docx" - a dotfile has no suffix as far as
-    # pathlib is concerned, and that is not a title anyone wants to read.
-    if not stem or stem.startswith("."):
-        return "Imported page"
-    return stem[:255]
-
-
-def _leading_heading(soup: BeautifulSoup) -> Tag | None:
-    """The first heading, provided it actually leads the document."""
-    preceding = 0
-    for element in soup.children:
-        if _is_blank(element):
-            continue
-        if isinstance(element, Tag) and element.name in {"h1", "h2", "h3"}:
-            text = " ".join(element.get_text().split())
-            return element if 1 <= len(text) <= 255 else None
-        text = element.get_text() if isinstance(element, Tag) else str(element)
-        preceding += len(text.strip())
-        if preceding > _TITLE_LEAD_IN_CHARS:
-            return None
-    return None
 
 
 # --------------------------------------------------------------------------

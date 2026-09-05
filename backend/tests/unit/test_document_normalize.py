@@ -153,7 +153,7 @@ class TestTableOfContents:
         assert html.startswith('<div data-type="tableOfContents"></div>')
         assert "1.1 Data model" not in html
         assert html.endswith("<p>Page body</p>")
-        assert title == "Architecture"
+        assert title == "design"
 
     def test_numbered_pdf_contents_becomes_a_live_contents_node(self):
         source = (
@@ -209,15 +209,8 @@ class TestTableOfContents:
         html, title, _ = normalize_document_html(
             "<h2>Contents</h2><p>Introduction</p>", filename="contents.html"
         )
-        assert html == "<p>Introduction</p>"
-        assert title == "Contents"
-
-    def test_contents_does_not_become_the_imported_page_title(self):
-        source = (
-            "<h1>MỤC LỤC</h1><p>1 Architecture</p><p>1.1 Data model</p>"
-            "<h1>Architecture</h1>"
-        )
-        assert _title(source, filename="design.pdf") == "Architecture"
+        assert html == "<h2>Contents</h2><p>Introduction</p>"
+        assert title == "contents"
 
 
 class TestImagesLinksAndTables:
@@ -260,67 +253,30 @@ class TestImagesLinksAndTables:
 
 
 class TestTitleDerivation:
-    def test_the_first_heading_becomes_the_title_and_leaves_the_body(self):
+    """Every imported page is titled after its source filename, extension
+    stripped - never after a heading or a document's own metadata. A leading
+    heading is therefore left in the body like any other content.
+    """
+
+    def test_the_title_is_the_filename_stem(self):
         html, title, _ = normalize_document_html(
             "<h1>Quarterly Report</h1><p>Body.</p>", filename="doc.docx"
         )
-        assert title == "Quarterly Report"
-        # Otherwise the page shows its title twice: once as the page title,
-        # once as the first line of content.
-        assert "Quarterly Report" not in html
-        assert html == "<p>Body.</p>"
+        assert title == "doc"
+        # Not consumed: the heading is ordinary content once it no longer
+        # doubles as the page title.
+        assert html == "<h1>Quarterly Report</h1><p>Body.</p>"
 
-    @pytest.mark.parametrize("tag", ["h1", "h2", "h3"])
-    def test_any_of_the_first_three_levels_can_be_the_title(self, tag):
-        assert _title(f"<{tag}>Doc Title</{tag}><p>x</p>") == "Doc Title"
-
-    def test_a_short_lead_in_before_the_heading_is_tolerated(self):
-        # Word documents routinely put a date, a document number or a
-        # confidentiality line above the title. That is still a title.
-        html, title, _ = normalize_document_html(
-            "<p>12 March 2026</p><h1>Quarterly Report</h1><p>Body.</p>",
-            filename="my-report.docx",
-        )
-        assert title == "Quarterly Report"
-        assert "Quarterly Report" not in html
-        assert "12 March 2026" in html
-
-    def test_a_heading_buried_after_real_prose_is_a_section_heading(self):
-        # Consuming it would delete a heading the author wrote, and title the
-        # page after section two.
-        prose = "<p>" + ("This is a long introductory paragraph. " * 12) + "</p>"
-        html, title, _ = normalize_document_html(
-            f"{prose}<h1>Later Heading</h1>", filename="my-report.docx"
-        )
-        assert title == "my-report"
-        assert "<h1>Later Heading</h1>" in html
-
-    def test_an_over_long_heading_falls_through_to_the_filename(self):
-        html, title, _ = normalize_document_html(
-            f"<h1>{'x' * 300}</h1><p>body</p>", filename="fallback-name.docx"
-        )
-        assert title == "fallback-name"
-        assert "<h1>" in html  # not consumed, so not lost
-
-    def test_the_metadata_title_is_used_when_there_is_no_heading(self):
-        assert _title("<p>body</p>", metadata_title="Annual Review") == "Annual Review"
-
-    @pytest.mark.parametrize(
-        "metadata", ["Microsoft Word - report.doc", "report.docx", "scan.pdf"]
-    )
-    def test_a_metadata_title_that_is_really_a_filename_is_rejected(self, metadata):
-        assert _title("<p>b</p>", metadata_title=metadata, filename="good-name.docx") == (
-            "good-name"
-        )
-
-    def test_the_filename_stem_is_the_last_resort(self):
-        assert _title("<p>body</p>", filename="Meeting Notes 2026.docx") == "Meeting Notes 2026"
+    def test_the_filename_stem_is_used_even_with_a_leading_heading(self):
+        assert _title(
+            "<h1>Doc Title</h1><p>x</p>", filename="Meeting Notes 2026.docx"
+        ) == "Meeting Notes 2026"
 
     def test_a_nameless_file_still_gets_a_title(self):
         assert _title("<p>body</p>", filename=".docx") == "Imported page"
 
     def test_the_title_is_truncated_to_the_column_width(self):
-        assert len(_title("<p>b</p>", metadata_title="y" * 400)) == 255
+        assert len(_title("<p>b</p>", filename=f"{'y' * 400}.docx")) == 255
 
 
 class TestTruncation:

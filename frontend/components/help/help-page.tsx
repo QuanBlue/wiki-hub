@@ -1305,6 +1305,12 @@ const sections: HelpSection[] = [
             formatting, and images carry over automatically.
           </li>
           <li>
+            The new page is named after the <strong>file name</strong>, extension
+            dropped (<Code>Runbook-v2.docx</Code> becomes a page titled{" "}
+            <Code>Runbook-v2</Code>) - not after a heading or title inside the
+            document.
+          </li>
+          <li>
             Import runs as a background job with a live per-file progress indicator
             (queued / running / complete / failed), each finished file linking straight
             to its new page, so you can keep working while a large batch converts.

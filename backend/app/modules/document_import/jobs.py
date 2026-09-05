@@ -195,30 +195,17 @@ async def _import_one(
         html, title, normalize_warnings = normalize_document_html(
             extracted.html,
             filename=item.filename,
-            metadata_title=extracted.metadata_title,
         )
         warnings = [*extracted.warnings, *normalize_warnings]
 
-        # Resolve the title after conversion: a document can contain a title
-        # that differs from its filename. Rename mode keeps both pages with a
-        # readable numeric suffix; replace mode updates the existing page.
+        # `title` is already the filename's stem (see `normalize_document_html`),
+        # the same name the pre-import dialog checked for conflicts against.
+        # Rename mode keeps both pages with a readable numeric suffix; replace
+        # mode updates the existing page.
         conflict_mode = getattr(job, "conflict_mode", None) or "rename"
         existing_page = await _find_import_conflict(
             session, space=space, parent_id=job.parent_id, title=title
         )
-        # The dialog is shown before a DOCX/PDF has been converted, so its
-        # visible name can be the filename while the converted heading becomes
-        # the page title. In Replace mode, fall back to that filename stem so
-        # the user's explicit choice still updates the page they selected.
-        if existing_page is None and conflict_mode == "replace":
-            filename_title = Path(item.filename).stem.strip()
-            if filename_title and filename_title.casefold() != title.casefold():
-                existing_page = await _find_import_conflict(
-                    session,
-                    space=space,
-                    parent_id=job.parent_id,
-                    title=filename_title,
-                )
         replacing = existing_page is not None and conflict_mode == "replace"
         page_title = title
         if existing_page is not None and not replacing:

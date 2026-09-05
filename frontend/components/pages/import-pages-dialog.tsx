@@ -231,11 +231,11 @@ export function ImportPagesDialog({
       setConflictDialogOpen(true);
       return;
     }
-    // Word and PDF titles are discovered only while their contents are
-    // converted on the server, so this filename-only preflight cannot
-    // reliably find every duplicate. Send the batch with the server free to
-    // decide ("ask"); the catch below reacts to a real conflict instead of
-    // this dialog assuming one exists for every import.
+    // `existingPages` is only what this view already has loaded, so this
+    // filename-only preflight cannot reliably find every duplicate. Send the
+    // batch with the server free to decide ("ask"); the catch below reacts to
+    // a real conflict instead of this dialog assuming one exists for every
+    // import.
     void startImport("ask");
   }
 
