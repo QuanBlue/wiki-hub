@@ -750,7 +750,7 @@ const sections: HelpSection[] = [
     category: "Writing",
     description:
       "Upload images, drag resize handles, set alignment, captions, and preview files.",
-    keywords: ["image", "attachment", "resize", "align", "caption", "preview", "modal"],
+    keywords: ["image", "attachment", "resize", "align", "caption", "preview", "modal", "zoom", "lightbox", "expand"],
     body: (
       <>
         <p>
@@ -776,6 +776,14 @@ const sections: HelpSection[] = [
           <li>
             <strong>Captions</strong>: Add descriptive captions below images; captions
             are formatted with subtle text for clean presentation.
+          </li>
+          <li>
+            <strong>Click to Zoom</strong>: On a published page (not while editing),
+            click any image to open it full-screen. Scroll or double-click to zoom in
+            and out, drag to pan around once zoomed, and use the toolbar&apos;s{" "}
+            <Code>+</Code>/<Code>-</Code> buttons or the reset icon for precise control.
+            Click anywhere outside the image, press <Code>Esc</Code>, or use the{" "}
+            <Code>X</Code> button to close it.
           </li>
         </ul>
 
@@ -1626,6 +1634,10 @@ const sections: HelpSection[] = [
       "xlsx",
       "pptx",
       "onlyoffice",
+      "video",
+      "audio",
+      "syntax highlighting",
+      "code preview",
     ],
     body: (
       <>
@@ -1666,10 +1678,13 @@ const sections: HelpSection[] = [
           <li>Filter objects by search query, file type, space, or page ID.</li>
           <li>Generate secure pre-signed download URLs.</li>
           <li>
-            Preview images and code/text files inline, plus Word, Excel,
+            Preview images, video and audio files, and code/text files
+            (syntax-coloured by the file&apos;s extension), plus Word, Excel,
             PowerPoint and PDF documents (opened read-only through the same
             document viewer pages use to edit attachments - see it, download
-            it, nothing is ever saved back from here).
+            it, nothing is ever saved back from here). Each preview scrolls
+            in one place, rather than in both the dialog and the content
+            underneath it.
           </li>
           <li>Delete orphan objects with automatic database attachment and archive hash clearance.</li>
         </ul>

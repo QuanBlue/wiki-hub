@@ -11,6 +11,7 @@ import {
   Eye,
   File,
   FileArchive,
+  FileAudio,
   FileImage,
   FileText,
   Folder,
@@ -34,6 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api-client";
+import { codeLanguageForFilename, highlightToLines } from "@/lib/code-highlight";
 import { cn } from "@/lib/utils";
 import type {
   StorageDeleteResult,
@@ -190,7 +192,7 @@ function FileIcon({ name }: { name: string }) {
   return <File className="text-muted-foreground size-4 shrink-0" />;
 }
 
-type PreviewKind = "image" | "office" | "text" | "unsupported";
+type PreviewKind = "image" | "office" | "video" | "audio" | "text" | "unsupported";
 
 //: Must match `_PREVIEW_DOCUMENT_TYPES` in
 //: `backend/app/modules/attachments/onlyoffice.py` - `.csv` is deliberately
@@ -204,6 +206,37 @@ const OFFICE_PREVIEW_EXTENSIONS = [
   "pdf",
 ];
 
+// Mirrors the video/audio extension lists the page-attachment preview uses
+// (`rich-text-editor.tsx`'s `isVideo`/`isAudio`) - kept as its own copy here
+// because this preview works off a raw storage key with no attachment record
+// (and so no `content_type`) to fall back on.
+const VIDEO_PREVIEW_EXTENSIONS = [
+  "mp4", "m4v", "mov", "webm", "ogv", "avi", "mkv", "wmv", "flv",
+];
+const AUDIO_PREVIEW_EXTENSIONS = [
+  "mp3", "wav", "flac", "ogg", "oga", "m4a", "aac", "opus",
+];
+
+// A file uploaded through a client that guessed badly (or imported from
+// Confluence) can sit in S3 with a generic `application/octet-stream`
+// Content-Type, which a browser's strict MIME sniffing then refuses to play
+// as media. `playable_media_type` on the backend recovers this for the
+// attachment-serving route; the raw presigned S3 URL this preview fetches
+// bypasses that entirely, so the `<source>` element is given an explicit
+// extension-guessed type here instead.
+const MEDIA_MIME_TYPES: Record<string, string> = {
+  mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", webm: "video/webm",
+  ogv: "video/ogg", avi: "video/x-msvideo", mkv: "video/x-matroska",
+  wmv: "video/x-ms-wmv", flv: "video/x-flv",
+  mp3: "audio/mpeg", wav: "audio/wav", flac: "audio/flac", ogg: "audio/ogg",
+  oga: "audio/ogg", m4a: "audio/mp4", aac: "audio/aac", opus: "audio/opus",
+};
+
+function guessMediaType(name: string): string | undefined {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return MEDIA_MIME_TYPES[ext];
+}
+
 function previewKind(name: string): PreviewKind {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg", "ico"].includes(ext)) {
@@ -211,6 +244,12 @@ function previewKind(name: string): PreviewKind {
   }
   if (OFFICE_PREVIEW_EXTENSIONS.includes(ext)) {
     return "office";
+  }
+  if (VIDEO_PREVIEW_EXTENSIONS.includes(ext)) {
+    return "video";
+  }
+  if (AUDIO_PREVIEW_EXTENSIONS.includes(ext)) {
+    return "audio";
   }
   if (
     [
@@ -600,12 +639,12 @@ export function StoragePanel() {
           `/api/v1/storage/presign?key=${encodeURIComponent(previewNode.path)}&inline=true`,
         );
         if (!active) return;
-        if (kind === "image") {
-          setPreviewUrl(url);
-        } else {
+        if (kind === "text") {
           const response = await fetch(url);
           if (!response.ok) throw new Error("Could not load the file content.");
           setPreviewText(await response.text());
+        } else {
+          setPreviewUrl(url);
         }
       } catch (err) {
         if (active) {
@@ -622,6 +661,23 @@ export function StoragePanel() {
       active = false;
     };
   }, [previewNode]);
+
+  const activePreviewKind = previewNode ? previewKind(previewNode.name) : null;
+
+  // Syntax colours for the text preview, keyed off the filename since a raw
+  // storage object never carries an explicit language choice. Highlighting
+  // the whole file in one pass - rather than one line at a time - is what
+  // keeps a multi-line string or block comment tokenised correctly.
+  const previewLanguage = previewNode
+    ? codeLanguageForFilename(previewNode.name)
+    : null;
+  const previewTokenLines = useMemo(
+    () =>
+      previewText !== null && previewLanguage
+        ? highlightToLines(previewText, previewLanguage)
+        : null,
+    [previewText, previewLanguage],
+  );
 
   const spaces = useMemo(
     () =>
@@ -992,54 +1048,111 @@ export function StoragePanel() {
           title={previewNode?.name ?? "File preview"}
           description={previewNode?.path}
           className={cn(
-            "max-w-4xl",
+            // A fixed height plus `flex-col overflow-hidden` here, with the
+            // single scrollable region confined to the wrapper below, is
+            // what keeps this to one scrollbar - the dialog itself no longer
+            // grows past the viewport and scrolls *around* a preview that
+            // also scrolls internally (a code file's own `overflow-auto`,
+            // previously nested inside the dialog's `overflow-y-auto`).
+            "flex max-w-4xl flex-col overflow-hidden",
+            activePreviewKind !== "unsupported" && "h-[80vh] max-h-[80vh]",
             // A document/spreadsheet/slide viewer earns the extra width a
             // text or image preview does not need.
-            previewNode && previewKind(previewNode.name) === "office" && "sm:max-w-6xl",
+            activePreviewKind === "office" && "sm:max-w-6xl",
           )}
         >
-          {previewNode && previewKind(previewNode.name) === "unsupported" ? (
-            <div className="bg-surface-sunken border-border rounded-lg border border-dashed px-6 py-12 text-center">
-              <FileArchive className="text-muted-foreground mx-auto size-8" />
-              <p className="mt-3 text-sm font-medium">Preview is not available</p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                This file type cannot be viewed in WikiHub. Download it to open it with a compatible application.
-              </p>
-            </div>
-          ) : previewNode && previewKind(previewNode.name) === "office" ? (
-            <div className="h-[75vh]">
-              <OfficePreviewViewer
-                // Remounts the viewer fresh on every different file rather
-                // than resetting its `error`/`ready` state by hand inside an
-                // effect - a stale error from the last file must never flash
-                // while the next one is still loading.
-                key={previewNode.path}
-                storageKey={previewNode.path}
-                filename={previewNode.name}
-              />
-            </div>
-          ) : previewLoading ? (
-            <div className="text-muted-foreground flex items-center justify-center gap-2 py-16 text-sm">
-              <Loader2 className="text-primary size-5 animate-spin" />
-              Loading preview…
-            </div>
-          ) : previewError ? (
-            <div className="border-danger/30 bg-danger/10 text-danger rounded-lg border px-4 py-8 text-center text-sm">
-              {previewError}
-            </div>
-          ) : previewUrl ? (
-            <div className="bg-surface-sunken flex max-h-[70vh] items-center justify-center overflow-auto rounded-lg p-4">
-              <img
-                src={previewUrl}
-                alt={previewNode?.name ?? "Object preview"}
-                className="max-h-[64vh] max-w-full object-contain"
-              />
-            </div>
-          ) : previewText !== null ? (
-            <pre className="bg-surface-sunken border-border max-h-[70vh] overflow-auto rounded-lg border p-4 font-mono text-xs leading-6 whitespace-pre-wrap">
-              {previewText}
-            </pre>
-          ) : null}
+          <div className="min-h-0 flex-1 overflow-auto">
+            {activePreviewKind === "unsupported" ? (
+              <div className="bg-surface-sunken border-border rounded-lg border border-dashed px-6 py-12 text-center">
+                <FileArchive className="text-muted-foreground mx-auto size-8" />
+                <p className="mt-3 text-sm font-medium">Preview is not available</p>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  This file type cannot be viewed in WikiHub. Download it to open it with a compatible application.
+                </p>
+              </div>
+            ) : previewNode && activePreviewKind === "office" ? (
+              <div className="h-full">
+                <OfficePreviewViewer
+                  // Remounts the viewer fresh on every different file rather
+                  // than resetting its `error`/`ready` state by hand inside an
+                  // effect - a stale error from the last file must never flash
+                  // while the next one is still loading.
+                  key={previewNode.path}
+                  storageKey={previewNode.path}
+                  filename={previewNode.name}
+                />
+              </div>
+            ) : previewLoading ? (
+              <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
+                <Loader2 className="text-primary size-5 animate-spin" />
+                Loading preview…
+              </div>
+            ) : previewError ? (
+              <div className="border-danger/30 bg-danger/10 text-danger flex h-full items-center justify-center rounded-lg border px-4 py-8 text-center text-sm">
+                {previewError}
+              </div>
+            ) : activePreviewKind === "image" && previewUrl ? (
+              <div className="bg-surface-sunken flex h-full items-center justify-center rounded-lg p-4">
+                <img
+                  src={previewUrl}
+                  alt={previewNode?.name ?? "Object preview"}
+                  className="max-h-full max-w-full object-contain"
+                />
+              </div>
+            ) : activePreviewKind === "video" && previewUrl ? (
+              <div className="flex h-full items-center justify-center overflow-hidden rounded-lg bg-black">
+                <video
+                  controls
+                  preload="metadata"
+                  className="max-h-full max-w-full"
+                  aria-label={`Preview video: ${previewNode?.name ?? ""}`}
+                >
+                  <source
+                    src={previewUrl}
+                    type={previewNode ? guessMediaType(previewNode.name) : undefined}
+                  />
+                  Your browser does not support video playback.
+                </video>
+              </div>
+            ) : activePreviewKind === "audio" && previewUrl ? (
+              <div className="bg-surface-sunken flex h-full flex-col items-center justify-center gap-4 rounded-lg p-6">
+                <span className="bg-primary-subtle text-primary flex size-12 shrink-0 items-center justify-center rounded-full">
+                  <FileAudio className="size-6" aria-hidden="true" />
+                </span>
+                <audio
+                  controls
+                  preload="metadata"
+                  className="w-full max-w-md"
+                  aria-label={`Preview audio: ${previewNode?.name ?? ""}`}
+                >
+                  <source
+                    src={previewUrl}
+                    type={previewNode ? guessMediaType(previewNode.name) : undefined}
+                  />
+                  Your browser does not support audio playback.
+                </audio>
+              </div>
+            ) : previewText !== null ? (
+              <div className="wikihub-code bg-code-bg border-code-border h-full overflow-auto rounded-lg border font-mono text-xs leading-relaxed">
+                {previewText.split(/\r?\n/).map((line, idx) => (
+                  <div key={idx} className="hover:bg-code-inset flex">
+                    <span className="text-code-muted border-code-border w-12 shrink-0 border-r pr-2.5 text-right tabular-nums select-none">
+                      {idx + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 pl-3 break-all whitespace-pre-wrap">
+                      {previewTokenLines?.[idx]
+                        ? previewTokenLines[idx].map((token, tokenIdx) => (
+                            <span key={tokenIdx} className={token.className ?? undefined}>
+                              {token.text}
+                            </span>
+                          ))
+                        : line || " "}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <DialogFooter>
             <Button
               variant="secondary"
