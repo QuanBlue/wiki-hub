@@ -12,7 +12,7 @@ import mimetypes
 from typing import Annotated
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -25,6 +25,7 @@ from app.models.import_job import ImportArchive
 from app.models.page import WikiPage
 from app.models.space import Space
 from app.models.user import User
+from app.modules.attachments.byte_ranges import UnsatisfiableRange, parse_byte_range
 from app.modules.attachments.onlyoffice import (
     preview_editor_config,
     preview_extension,
@@ -245,25 +246,55 @@ async def presign_download(
 async def read_storage_object(
     _admin: CurrentSuperuser,
     storage: StorageDep,
+    request: Request,
     key: str = Query(...),
     download_as: str | None = Query(default=None),
     inline: bool = Query(default=False),
 ) -> Response:
-    if not await storage.exists(key):
+    """Serve a storage object, honouring ranged requests.
+
+    Audio and video players seek by requesting byte ranges - the same reason
+    `attachments.read_attachment` answers them as 206, and this admin
+    preview needs the same treatment: without it, dragging the seek bar past
+    whatever the browser has already buffered silently does nothing.
+    """
+    size = await storage.stat(key)
+    if size is None:
         raise NotFoundError(f"Object '{key}' was not found in storage.")
     filename = (unquote(download_as) if download_as else key.rsplit("/", 1)[-1])
     filename = filename.replace("\r", "").replace("\n", "").replace('"', "").replace("\\", "")
     disposition = "inline" if inline else "attachment"
     media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    headers = {
+        "Content-Disposition": f'{disposition}; filename="{filename}"',
+        "Accept-Ranges": "bytes",
+    }
+    requested = parse_byte_range(request.headers.get("range"), size)
+    if isinstance(requested, UnsatisfiableRange):
+        return Response(
+            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            headers={**headers, "Content-Range": f"bytes */{size}"},
+        )
+    if requested is not None:
+        total, chunks = await storage.get_range(key, requested.start, requested.end)
+        end = min(requested.end, total - 1) if total else requested.end
+        return StreamingResponse(
+            chunks,
+            status_code=status.HTTP_206_PARTIAL_CONTENT,
+            media_type=media_type,
+            headers={
+                **headers,
+                "Content-Range": f"bytes {requested.start}-{end}/{total or size}",
+                "Content-Length": str(end - requested.start + 1),
+            },
+        )
     # Stream rather than `storage.get()`: a multi-GB export archive fully
     # materialised in RAM before the first byte reaches the client is what was
     # making the browser's download manager report "Site wasn't available" -
     # the backend held the whole response building for minutes with nothing to
     # send, so the connection looked dead and the download stalled at 0 B.
     content_length, chunks = await storage.get_stream(key)
-    headers = {"Content-Disposition": f'{disposition}; filename="{filename}"'}
-    if content_length:
-        headers["Content-Length"] = str(content_length)
+    headers["Content-Length"] = str(content_length or size)
     return StreamingResponse(chunks, media_type=media_type, headers=headers)
 
 

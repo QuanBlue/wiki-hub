@@ -92,6 +92,12 @@ async def test_storage_operations_and_presigned_urls(storage: S3ObjectStorage, t
     assert await storage.exists("a") is False
     client.head_object.side_effect = None
 
+    client.head_object.return_value = {"ContentLength": 42}
+    assert await storage.stat("a") == 42
+    client.head_object.side_effect = _client_error("NoSuchKey")
+    assert await storage.stat("a") is None
+    client.head_object.side_effect = None
+
     signing.generate_presigned_url.side_effect = ["get-url", "put-url", "part-url"]
     assert await storage.presigned_url("a", expires_in=10, download_as='bad"name\\\r') == "get-url"
     assert (

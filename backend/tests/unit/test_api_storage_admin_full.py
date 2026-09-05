@@ -109,24 +109,61 @@ async def test_presign_download(monkeypatch):
     res = await presign_download(Mock(), storage, "file.txt", False)
     assert res.url == "url"
 
+def _request(range_header: str | None = None) -> Mock:
+    return Mock(headers={"range": range_header} if range_header else {})
+
+
 @pytest.mark.asyncio
 async def test_read_storage_object():
     storage = AsyncMock()
-    storage.exists.return_value = False
+    storage.stat.return_value = None
     with pytest.raises(NotFoundError):
-        await read_storage_object(Mock(), storage, "file.txt", None, False)
-        
-    storage.exists.return_value = True
+        await read_storage_object(Mock(), storage, _request(), "file.txt", None, False)
+
+    storage.stat.return_value = 4
 
     async def _chunks():
         yield b"da"
         yield b"ta"
 
     storage.get_stream.return_value = (4, _chunks())
-    res = await read_storage_object(Mock(), storage, "file.txt", None, False)
+    res = await read_storage_object(Mock(), storage, _request(), "file.txt", None, False)
     assert res.headers["content-length"] == "4"
+    assert res.headers["accept-ranges"] == "bytes"
     body = b"".join([chunk async for chunk in res.body_iterator])
     assert body == b"data"
+
+
+@pytest.mark.asyncio
+async def test_read_storage_object_serves_a_requested_byte_range():
+    # A video/audio player seeking to a new position asks for exactly the
+    # bytes it needs - answering with anything but a matching 206 leaves the
+    # seek bar unable to move past whatever was already buffered.
+    storage = AsyncMock()
+    storage.stat.return_value = 10
+
+    async def _chunks():
+        yield b"lo"
+
+    storage.get_range.return_value = (10, _chunks())
+    res = await read_storage_object(
+        Mock(), storage, _request("bytes=3-4"), "file.txt", None, False
+    )
+    assert res.status_code == 206
+    assert res.headers["content-range"] == "bytes 3-4/10"
+    assert res.headers["content-length"] == "2"
+    storage.get_range.assert_awaited_once_with("file.txt", 3, 4)
+
+
+@pytest.mark.asyncio
+async def test_read_storage_object_rejects_a_range_past_the_end():
+    storage = AsyncMock()
+    storage.stat.return_value = 10
+    res = await read_storage_object(
+        Mock(), storage, _request("bytes=100-200"), "file.txt", None, False
+    )
+    assert res.status_code == 416
+    assert res.headers["content-range"] == "bytes */10"
 
 @pytest.mark.asyncio
 async def test_upload_storage_part():

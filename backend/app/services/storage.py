@@ -116,6 +116,16 @@ class ObjectStorage(abc.ABC):
     async def exists(self, key: str) -> bool: ...
 
     @abc.abstractmethod
+    async def stat(self, key: str) -> int | None:
+        """Return an object's size in bytes, or ``None`` if it doesn't exist.
+
+        A single `HEAD` request, for callers that need a size *before*
+        reading anything - resolving a `Range:` header against an admin
+        storage object, which (unlike a page attachment) has no database row
+        already carrying its size.
+        """
+
+    @abc.abstractmethod
     async def presigned_url(
         self, key: str, *, expires_in: int | None = None, download_as: str | None = None
     ) -> str: ...
@@ -514,6 +524,13 @@ class S3ObjectStorage(ObjectStorage):
         except NotFoundError:
             return False
         return True
+
+    async def stat(self, key: str) -> int | None:
+        try:
+            result = await self._call(self.client.head_object, Bucket=self.bucket, Key=key)
+        except NotFoundError:
+            return None
+        return int(result.get("ContentLength") or 0)
 
     async def presigned_url(
         self, key: str, *, expires_in: int | None = None, download_as: str | None = None
