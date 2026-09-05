@@ -66,3 +66,53 @@ def test_queued_is_indeterminate():
     job = _job(status="queued", started_at=None, counters={"items_total": 100})
 
     assert job_progress(job) == (None, None)
+
+
+class TestInProgressSince:
+    """Regression coverage for a real bug: the plain average-pace ETA -
+    remaining items times elapsed-over-processed - grows every second a slow
+    item is in progress, since `elapsed` keeps climbing while `processed`
+    holds still. A batch of a few files with wildly different sizes (an
+    ordinary document import) hits this constantly; passing when the current
+    item started lets the estimate hold steady instead.
+    """
+
+    def test_a_slow_current_item_does_not_grow_the_estimate_without_bound(self):
+        # 5 items in 50s (10s/item average), 2 left, and the one in progress
+        # has already run for 40s - four times the average.
+        job = _job(
+            started_at=datetime.now(UTC) - timedelta(seconds=50),
+            counters={"items_total": 7, "items_processed": 5},
+        )
+
+        _, plain_eta = job_progress(job)
+        _, anchored_eta = job_progress(
+            job, in_progress_since=datetime.now(UTC) - timedelta(seconds=40)
+        )
+
+        # The plain estimate: 2 remaining * 10s average = 20s, growing every
+        # second the current item keeps running past that average.
+        assert plain_eta == 20
+        # The anchored estimate: the current item has used up its whole
+        # average already, contributing nothing further; only the one item
+        # genuinely still waiting behind it (10s) remains.
+        assert anchored_eta == 10
+
+    def test_a_current_item_still_within_the_average_counts_down_normally(self):
+        # Same pace, but the current item has only been running 3s of its
+        # ~10s average - 7s of it should still show up in the estimate.
+        job = _job(
+            started_at=datetime.now(UTC) - timedelta(seconds=50),
+            counters={"items_total": 7, "items_processed": 5},
+        )
+
+        _, eta_seconds = job_progress(
+            job, in_progress_since=datetime.now(UTC) - timedelta(seconds=3)
+        )
+
+        assert eta_seconds == 17  # 1 waiting item (10s) + 7s left on this one
+
+    def test_no_in_progress_since_falls_back_to_the_plain_estimate(self):
+        job = _job(counters={"items_total": 100, "items_processed": 25})
+
+        assert job_progress(job) == job_progress(job, in_progress_since=None)

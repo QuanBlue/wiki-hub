@@ -170,7 +170,16 @@ async def list_active_jobs(
 
 
 def to_job_read(job: DocumentImportJob, *, space_key: str) -> DocumentImportJobRead:
-    percent, eta_seconds = job_progress(job)
+    # Unlike backup/restore, an import's "items" are a handful of files with
+    # wildly different conversion times (a one-page guide next to a
+    # multi-megabyte report) - precisely the case where the plain average-pace
+    # ETA climbs for as long as the current file takes. The row that is
+    # actually "running" turned running at the moment its own `updated_at`
+    # was last written, which is exactly the anchor `job_progress` needs.
+    running_item = next((item for item in job.items if item.status == "running"), None)
+    percent, eta_seconds = job_progress(
+        job, in_progress_since=running_item.updated_at if running_item else None
+    )
     return DocumentImportJobRead(
         id=job.id,
         space_key=space_key,
