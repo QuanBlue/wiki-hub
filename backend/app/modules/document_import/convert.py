@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio.to_thread
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 from lxml import etree
 from soupsieve import SelectorSyntaxError
 
@@ -200,7 +200,13 @@ async def extract_with_pandoc(
     source: Path, *, doc_format: str, workdir: Path
 ) -> ExtractedDocument:
     output = workdir / "converted.html"
-    args = build_pandoc_args(source, doc_format=doc_format, workdir=workdir)
+    # An HTML upload gets a cleaned-up copy fed to Pandoc instead of the
+    # original - see `_prepare_html_source_for_pandoc` for why this has to
+    # happen *before* conversion rather than after.
+    pandoc_source = (
+        _prepare_html_source_for_pandoc(source, workdir) if doc_format == "html" else source
+    )
+    args = build_pandoc_args(pandoc_source, doc_format=doc_format, workdir=workdir)
 
     try:
         process = await asyncio.create_subprocess_exec(
@@ -243,7 +249,13 @@ async def extract_with_pandoc(
     if doc_format == "docx":
         html = _enrich_docx_table_formatting(html, source)
     elif doc_format == "html":
-        html = _preserve_html_table_formatting(source, html)
+        # The cleaned copy, not the original: `_preserve_html_table_formatting`
+        # matches its own source parse against Pandoc's output element for
+        # element, in order, and Pandoc converted the cleaned copy - a list
+        # Word wrote as ten flat paragraphs is one `<ul>` with ten `<li>` in
+        # both by now, but only because both sides agree on which document
+        # they are describing.
+        html = _preserve_html_table_formatting(pandoc_source, html)
     return _collect_pandoc_media(html, workdir=workdir, doc_format=doc_format)
 
 
@@ -559,6 +571,193 @@ def _merge_inline_style(element: Tag, property_name: str, value: str) -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# Word's "Save as Web Page" export
+# --------------------------------------------------------------------------
+#
+# This export never emits `<ul>/<ol>`, and scatters empty bookmark `<span>`s
+# directly inside `<tr>`. Both are fixed here, on the raw source, before
+# Pandoc ever sees it - Pandoc's own HTML reader cannot recover from either
+# one after the fact (see each function's docstring for why).
+
+
+#: A meta-charset declaration is usually correct even when the file is not
+#: actually UTF-8 - Word's HTML export declares `windows-1252` for exactly
+#: the documents that need it. Pandoc does its own sniffing and does not
+#: read this tag, so decoding the file ourselves first, correctly, is the
+#: only way the BeautifulSoup pass below sees the real characters rather
+#: than a wall of replacement characters.
+_META_CHARSET_RE = re.compile(rb"charset=[\"']?([\w-]+)", re.I)
+
+
+def _read_html_source(source: Path) -> str:
+    raw = source.read_bytes()
+    match = _META_CHARSET_RE.search(raw[:4096])
+    encoding = match.group(1).decode("ascii", errors="ignore").strip() if match else ""
+    if encoding:
+        try:
+            "".encode(encoding)
+        except LookupError:
+            encoding = ""
+    return raw.decode(encoding or "utf-8", errors="replace")
+
+
+#: A real list reference - `l<id> level<n> lfo<id>` - as opposed to the
+#: literal value `Ignore` used on the inner fallback-bullet span below.
+_MSO_LIST_LEVEL = re.compile(r"mso-list:\s*l\d+\s+level(\d+)\s+lfo\d+", re.I)
+_MSO_LIST_IGNORE = re.compile(r"mso-list:\s*Ignore", re.I)
+#: A bare number/letter marker ("1.", "a)", "1.2.3.") reads as an ordered
+#: list; anything else (a bullet, a dash, a Wingdings glyph) reads as
+#: unordered. The dotted-decimal branch matters on its own: a multi-level
+#: numbered list ("1.1.", "2.1.2.") is exactly where getting this wrong is
+#: most visible, since every nested level would otherwise fall back to a
+#: bullet.
+_ORDERED_LIST_MARKER = re.compile(r"^(?:\d+(?:\.\d+)*\.?|[A-Za-z][.)])$")
+
+
+def _mso_list_level(paragraph: Tag) -> int | None:
+    match = _MSO_LIST_LEVEL.search(str(paragraph.get("style") or ""))
+    return int(match.group(1)) if match else None
+
+
+def _extract_mso_list_marker(paragraph: Tag) -> str:
+    """Strip Word's browser-fallback bullet/number and return its text.
+
+    Real list rendering is left to whichever browser understands `mso-list`
+    (none, in practice); every other browser - and Pandoc - is meant to fall
+    back to this plain-text marker, sitting right at the front of the
+    paragraph as ordinary content. Removing it here is what keeps it from
+    becoming a stray "1." or "*" glued onto the item's actual text.
+    """
+    marker = paragraph.find("span", style=_MSO_LIST_IGNORE)
+    if marker is None:
+        return ""
+    text = marker.get_text().strip()
+    wrapper = marker.parent
+    marker.decompose()
+    if isinstance(wrapper, Tag) and wrapper is not paragraph and not wrapper.get_text(strip=True):
+        wrapper.decompose()
+    return text
+
+
+def _reconstruct_mso_lists(soup: BeautifulSoup) -> None:
+    """Turn Word's fake, browser-fallback list paragraphs into real lists.
+
+    Word's "Save as Web Page" never writes `<ul>/<ol>`: every list item is an
+    ordinary `<p>` whose own `style` carries `mso-list:l<id> level<n> lfo<id>`,
+    with the visible bullet or number baked in as literal fallback text (see
+    `_extract_mso_list_marker`). Left alone, Pandoc has no way to know these
+    paragraphs were ever a list - each becomes its own paragraph, starting
+    with a stray bullet character.
+    """
+    candidates = [p for p in soup.find_all("p") if _mso_list_level(p) is not None]
+    index = 0
+    while index < len(candidates):
+        run = [candidates[index]]
+        while True:
+            sibling = run[-1].find_next_sibling()
+            while isinstance(sibling, NavigableString) and not str(sibling).strip():
+                sibling = sibling.find_next_sibling()
+            if index + len(run) < len(candidates) and sibling is candidates[index + len(run)]:
+                run.append(sibling)
+            else:
+                break
+        _replace_with_nested_list(soup, run)
+        index += len(run)
+
+
+def _replace_with_nested_list(soup: BeautifulSoup, run: list[Tag]) -> None:
+    """Build one properly nested `<ul>/<ol>` tree from a flat run of items.
+
+    Standard flat-items-with-levels-to-nested-lists construction: a stack of
+    the currently open lists, keyed by nesting level, opening a new nested
+    list under the last item whenever the level goes up and closing back down
+    to it when the level drops back.
+    """
+    stack: list[tuple[int, Tag]] = []
+    root: Tag | None = None
+    for paragraph in run:
+        level = _mso_list_level(paragraph) or 1
+        ordered = bool(_ORDERED_LIST_MARKER.match(_extract_mso_list_marker(paragraph)))
+        list_name = "ol" if ordered else "ul"
+
+        while stack and stack[-1][0] > level:
+            stack.pop()
+        # A level Pandoc/Word never actually reused (a level 3 item right
+        # after a level 1, with no level 2 in between) still only opens one
+        # new list, nested under whatever is currently open - reasonable
+        # even though it collapses the skipped level.
+        if not stack or stack[-1][0] < level or stack[-1][1].name != list_name:
+            if stack and stack[-1][0] == level:
+                stack.pop()
+            new_list = soup.new_tag(list_name)
+            if stack:
+                parent_items = stack[-1][1].find_all("li", recursive=False)
+                (parent_items[-1] if parent_items else stack[-1][1]).append(new_list)
+            else:
+                root = new_list
+            stack.append((level, new_list))
+
+        item = soup.new_tag("li")
+        for child in list(paragraph.contents):
+            item.append(child.extract())
+        stack[-1][1].append(item)
+
+    if root is None:
+        return
+    run[0].replace_with(root)
+    for paragraph in run[1:]:
+        paragraph.decompose()
+
+
+def _defoster_stray_table_children(soup: BeautifulSoup) -> None:
+    """Reparent (or drop, if empty) a `<tr>` child that is not a cell.
+
+    Word's export scatters empty bookmark `<span>`s as direct children of
+    `<tr>`, siblings of the `<td>`s rather than nested inside one - not
+    merely untidy, but invalid enough that Pandoc's HTML reader gives up on
+    the whole table rather than only on the stray span: the table vanishes
+    from the output entirely, replaced by a flat run of paragraphs with no
+    trace of which row or column any of them came from.
+    """
+    for row in soup.find_all("tr"):
+        cells = row.find_all(["td", "th"], recursive=False)
+        for child in list(row.contents):
+            if isinstance(child, Tag) and child.name in {"td", "th"}:
+                continue
+            text = str(child).strip() if isinstance(child, NavigableString) else child.get_text(strip=True)
+            if text and cells:
+                # Real content in the wrong place: keep it, rather than lose
+                # it outright - the nearest cell is the least-wrong home.
+                cells[-1].append(child.extract())
+            else:
+                child.extract()
+
+
+def _prepare_html_source_for_pandoc(source: Path, workdir: Path) -> Path:
+    """Give Pandoc a cleaned copy of an HTML upload rather than the original.
+
+    Both fixes above have to happen before Pandoc converts the file, not
+    after: by the time Pandoc's own HTML output exists, an mso-list paragraph
+    has already become an ordinary paragraph indistinguishable from real
+    prose, and a table Pandoc gave up on structuring has already become a
+    flat run of paragraphs with nothing left connecting them to a table at
+    all. There is nothing left, at that point, to reconstruct from.
+    """
+    try:
+        soup = BeautifulSoup(_read_html_source(source), "html.parser")
+        _defoster_stray_table_children(soup)
+        _reconstruct_mso_lists(soup)
+        cleaned = workdir / "source.msoclean.html"
+        cleaned.write_text(str(soup), encoding="utf-8")
+        return cleaned
+    except OSError:
+        # A missing optional fidelity pass must not turn into a different,
+        # more confusing import failure than the one Pandoc itself would
+        # raise trying to read the original file.
+        return source
+
+
 _HTML_FORMATTING_PROPERTIES = frozenset(
     {
         "background-color",
@@ -601,9 +800,7 @@ def _preserve_html_table_formatting(source: Path, converted_html: str) -> str:
     try:
         if source.stat().st_size > MAX_HTML_STYLE_ENRICHMENT_BYTES:
             return converted_html
-        source_soup = BeautifulSoup(
-            source.read_text(encoding="utf-8", errors="replace"), "html.parser"
-        )
+        source_soup = BeautifulSoup(_read_html_source(source), "html.parser")
     except OSError:
         return converted_html
     _apply_safe_html_styles(source_soup)

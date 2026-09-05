@@ -415,6 +415,161 @@ class TestHtmlTableFormatting:
         assert "text-align: center" in result.html
 
 
+def _mso_p(text: str, *, level: int = 1, marker: str = "") -> str:
+    """One Word "Save as Web Page" fake-list paragraph, Symbol-bullet by
+    default. `marker` is the literal fallback text Word bakes in - a bare
+    "1." or "a." for a real ordered level, anything else for a bullet."""
+    return (
+        f"<p class=MsoListParagraphCxSpMiddle style='mso-list:l1 level{level} lfo1'>"
+        f"<span style='mso-list:Ignore'>{marker}<span>  </span></span>{text}</p>"
+    )
+
+
+class TestWordHtmlExportCleanup:
+    """Word's "Save as Web Page" export, not a clean modern HTML file: every
+    list is a run of plain paragraphs with a fake, browser-fallback bullet
+    baked in as text, and every table has empty bookmark `<span>`s sitting
+    directly inside `<tr>`, outside any cell. Both defeat Pandoc's own HTML
+    reader - a list becomes an ordinary paragraph starting with a stray
+    bullet character, and a table Pandoc cannot make sense of vanishes from
+    the output entirely, replaced by a flat run of paragraphs with no trace
+    of which row or column any of them came from. `_prepare_html_source_for_
+    pandoc` cleans both up on the raw source before Pandoc ever sees it.
+    """
+
+    def _cleaned(self, html: str, tmp_path: Path) -> str:
+        source = tmp_path / "word-export.html"
+        source.write_text(html, encoding="utf-8")
+        cleaned = convert._prepare_html_source_for_pandoc(source, tmp_path)
+        return cleaned.read_text(encoding="utf-8")
+
+    def test_a_flat_bullet_run_becomes_a_real_list(self, tmp_path):
+        html = _mso_p("First") + _mso_p("Second")
+        result = self._cleaned(html, tmp_path)
+
+        soup = BeautifulSoup(result, "html.parser")
+        items = soup.find_all("li")
+        assert soup.ul is not None
+        # Exactly the item text - the fallback bullet span is gone, not
+        # merely hidden, so it cannot leak into the item's own content.
+        assert [item.get_text(strip=True) for item in items] == ["First", "Second"]
+
+    def test_a_dotted_decimal_marker_reads_as_ordered(self, tmp_path):
+        html = _mso_p("First", marker="1.") + _mso_p("Second", marker="2.")
+        result = self._cleaned(html, tmp_path)
+
+        assert BeautifulSoup(result, "html.parser").ol is not None
+
+    def test_a_multi_level_decimal_marker_still_reads_as_ordered(self, tmp_path):
+        # "1.1." is exactly the shape that a marker regex expecting a single
+        # trailing period gets wrong - and multi-level numbering is common
+        # once a numbered list has a nested sub-list of its own.
+        html = _mso_p("First", marker="1.1.")
+        result = self._cleaned(html, tmp_path)
+
+        assert BeautifulSoup(result, "html.parser").ol is not None
+
+    def test_a_letter_marker_alone_is_not_mistaken_for_ordered(self, tmp_path):
+        # A Wingdings sub-bullet often renders as a bare letter ("o") with no
+        # trailing punctuation - unlike a real "a." or "b.", it is still a
+        # bullet.
+        html = _mso_p("First", marker="o")
+        result = self._cleaned(html, tmp_path)
+
+        soup = BeautifulSoup(result, "html.parser")
+        assert soup.ol is None
+        assert soup.ul is not None
+
+    def test_nesting_goes_up_and_back_down_correctly(self, tmp_path):
+        html = (
+            _mso_p("Top", level=1)
+            + _mso_p("Nested one", level=2)
+            + _mso_p("Nested two", level=2)
+            + _mso_p("Back to top", level=1)
+        )
+        result = self._cleaned(html, tmp_path)
+
+        soup = BeautifulSoup(result, "html.parser")
+        top_items = soup.ul.find_all("li", recursive=False)
+        assert len(top_items) == 2
+        assert top_items[0].find("li", recursive=False) is None
+        nested = top_items[0].ul
+        assert [li.get_text(strip=True) for li in nested.find_all("li", recursive=False)] == [
+            "Nested one",
+            "Nested two",
+        ]
+        assert top_items[1].get_text(strip=True) == "Back to top"
+
+    def test_a_list_paragraph_style_without_mso_list_is_left_alone(self, tmp_path):
+        # Word reuses the "List Paragraph" style for indentation alone (code
+        # pasted into a table cell, say) far more often than for an actual
+        # list - the only real signal is the `mso-list` property itself.
+        html = "<p class=MsoListParagraphCxSpMiddle style='margin-left:.5in'>plain text</p>"
+        result = self._cleaned(html, tmp_path)
+
+        assert "<ul" not in result and "<li" not in result
+        assert "plain text" in result
+
+    def test_a_stray_span_between_cells_does_not_destroy_the_table(self, tmp_path):
+        html = (
+            "<table><tr>"
+            "<td>Master node</td>"
+            "<span style='mso-bookmark:_Toc1'></span>"
+            "<td>Worker node</td>"
+            "<span style='mso-bookmark:_Toc2'></span>"
+            "</tr></table>"
+        )
+        result = self._cleaned(html, tmp_path)
+
+        soup = BeautifulSoup(result, "html.parser")
+        row = soup.tr
+        assert [child.name for child in row.find_all(recursive=False)] == ["td", "td"]
+        assert [td.get_text(strip=True) for td in row.find_all("td")] == [
+            "Master node",
+            "Worker node",
+        ]
+
+    def test_real_text_in_a_stray_table_position_is_kept_not_dropped(self, tmp_path):
+        html = "<table><tr><td>First cell</td>stray text</tr></table>"
+        result = self._cleaned(html, tmp_path)
+
+        # Nowhere sensible for it to live but inside the nearest real cell -
+        # dropping it outright would be the actual data loss.
+        assert "stray text" in BeautifulSoup(result, "html.parser").td.get_text()
+
+    def test_a_windows_1252_declared_file_decodes_its_own_bytes(self, tmp_path):
+        source = tmp_path / "legacy.html"
+        source.write_bytes(
+            b"<meta http-equiv=Content-Type content=\"text/html; charset=windows-1252\">"
+            b"<p>Qu\xe1n</p>"  # 0xE1 is 'a' with acute in windows-1252
+        )
+
+        result = convert._read_html_source(source)
+
+        assert "Quán" in result
+
+    def test_an_unrecognised_declared_charset_falls_back_to_utf8(self, tmp_path):
+        source = tmp_path / "odd.html"
+        source.write_bytes(
+            b'<meta charset="not-a-real-charset">' + "Bước".encode()
+        )
+
+        assert "Bước" in convert._read_html_source(source)
+
+    @pytest.mark.asyncio
+    async def test_pandoc_is_handed_the_cleaned_copy_not_the_original(self, tmp_path):
+        source = tmp_path / "word-export.html"
+        source.write_text(_mso_p("Item"), encoding="utf-8")
+        patcher, captured = _patch_pandoc(tmp_path, html="<ul><li>Item</li></ul>")
+
+        with patcher:
+            await extract_with_pandoc(source, doc_format="html", workdir=tmp_path)
+
+        pandoc_input = Path(captured["argv"][-1])
+        assert pandoc_input != source
+        assert "<ul>" in pandoc_input.read_text(encoding="utf-8")
+
+
 class TestPandocFailureModes:
     @pytest.mark.asyncio
     async def test_a_timeout_becomes_service_unavailable(self, tmp_path):
