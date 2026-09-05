@@ -110,6 +110,115 @@ async def test_an_already_open_toggle_stays_open() -> None:
     assert 'data-open="true"' in html
 
 
+class TestTableOfContents:
+    """The live editor's `tableOfContents` node stores no content of its
+    own - a React node view fills the placeholder in by scanning the *live*
+    document's headings. A static export has no live document, so
+    `prepare_export_html` has to do that scan itself.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_placeholder_becomes_a_numbered_outline(self) -> None:
+        p = page(
+            content_format="html",
+            content=(
+                '<div data-type="tableOfContents"></div>'
+                "<h1>Introduction</h1><h2>Scope</h2><h1>Setup</h1>"
+            ),
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert 'data-type="tableOfContents"' not in html
+        assert "1. Introduction" in html
+        assert "1.1. Scope" in html
+        assert "2. Setup" in html
+        # Nesting under its parent, not flush with the top level.
+        assert html.index("1.1. Scope") > html.index("1. Introduction")
+
+    @pytest.mark.asyncio
+    async def test_a_heading_with_no_text_still_gets_an_entry(self) -> None:
+        p = page(
+            content_format="html",
+            content='<div data-type="tableOfContents"></div><h1>   </h1>',
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert "1. Untitled section" in html
+
+    @pytest.mark.asyncio
+    async def test_no_headings_removes_the_placeholder_rather_than_an_empty_list(
+        self,
+    ) -> None:
+        p = page(
+            content_format="html",
+            content='<p>Before</p><div data-type="tableOfContents"></div><p>After</p>',
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert "tableOfContents" not in html
+        assert html == "<p>Before</p><p>After</p>"
+
+    @pytest.mark.asyncio
+    async def test_a_document_starting_at_a_nested_heading_still_reads_sensibly(
+        self,
+    ) -> None:
+        # Mirrors the frontend's own numberTableOfContentsHeadings: a
+        # document that opens with an <h2> should not render "0.1".
+        p = page(
+            content_format="html",
+            content='<div data-type="tableOfContents"></div><h2>First</h2>',
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert "1.1. First" in html
+
+
+class TestImageCaptions:
+    """Same shape of problem as the table of contents: the caption text
+    lives only in a `data-caption` attribute, turned visible only by the
+    image's own React node view."""
+
+    @pytest.mark.asyncio
+    async def test_a_captioned_image_gets_a_visible_figcaption(self) -> None:
+        p = page(
+            content_format="html",
+            content='<p><img src="https://example.com/pic.png" data-caption="A diagram"/></p>',
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert "<figure>" in html
+        assert "<figcaption>A diagram</figcaption>" in html
+        assert "data-caption" not in html
+
+    @pytest.mark.asyncio
+    async def test_a_blank_caption_is_dropped_without_an_empty_figcaption(self) -> None:
+        p = page(
+            content_format="html",
+            content='<p><img src="https://example.com/pic.png" data-caption="   "/></p>',
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert "figcaption" not in html
+        assert "data-caption" not in html
+
+    @pytest.mark.asyncio
+    async def test_an_uncaptioned_image_is_left_alone(self) -> None:
+        p = page(
+            content_format="html",
+            content='<p><img src="https://example.com/pic.png"/></p>',
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert "<figure>" not in html
+
+
 class TestAttachmentInlining:
     @pytest.mark.asyncio
     async def test_a_matching_image_is_inlined_as_a_data_uri(self) -> None:
