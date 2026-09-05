@@ -96,7 +96,16 @@ export function ExportShell({ bundle }: { bundle: ExportBundle }) {
     <div
       ref={rootRef}
       data-export-root
-      className="mx-auto max-w-4xl px-10 py-10"
+      className={
+        // A PDF is a fixed physical page - a comfortable, book-like reading
+        // column is correct there. A standalone HTML file, opened in an
+        // ordinary browser window, has no such page: capped to the same
+        // narrow column, it renders as a sliver down the middle of the
+        // window rather than using the width the reader actually has.
+        bundle.fmt === "html"
+          ? "mx-auto w-full max-w-none px-10 py-10"
+          : "mx-auto max-w-4xl px-10 py-10"
+      }
       style={spaceFontStyle}
     >
       <h1 className="mb-6 text-3xl font-bold" style={{ fontFamily: "var(--font-page)" }}>

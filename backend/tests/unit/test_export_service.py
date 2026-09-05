@@ -48,9 +48,9 @@ class FakeRenderer:
         return False
 
 
-def actors():
+def actors(*, space_font: str | None = None):
     user = SimpleNamespace(id=uuid.uuid4())
-    space = SimpleNamespace(id=uuid.uuid4(), key="ENG")
+    space = SimpleNamespace(id=uuid.uuid4(), key="ENG", font_family=space_font)
     page = SimpleNamespace(id=uuid.uuid4(), slug="runbook", title="Runbook")
     session = Mock()
     return user, space, page, session
@@ -110,41 +110,73 @@ async def test_html_export_captures_the_snapshot_js_result() -> None:
     assert result.filename == "runbook.html"
 
 
+async def _run_docx_export(*, space_font: str | None):
+    """Shared plumbing for the docx tests below: fakes the browser theme
+    probe and the conversion call, returning what `html_to_docx` was
+    actually called with so each test only has to assert on `font_id`
+    (the site default is stubbed to "lora" throughout)."""
+    fake_page = FakePage()
+    fake_page.evaluate = AsyncMock(return_value={"code_fg": "#fff"})
+    renderer = FakeRenderer(fake_page)
+    service = ExportService(page_renderer=renderer)
+    user, space, page, session = actors(space_font=space_font)
+
+    prepared = AsyncMock(return_value="<p>real semantic html</p>")
+    converted = AsyncMock(return_value=b"PK\x03\x04docxbytes")
+    fake_storage = Mock()
+    effective_settings = SimpleNamespace(default_font="lora")
+    site_settings_service = Mock(get_effective=AsyncMock(return_value=effective_settings))
+    with (
+        patch("app.modules.pages.export_service.prepare_export_html", prepared),
+        patch("app.modules.pages.export_service.html_to_docx", converted),
+        patch("app.modules.pages.export_service.get_storage", return_value=fake_storage),
+        patch(
+            "app.modules.pages.export_service.SiteSettingsService",
+            return_value=site_settings_service,
+        ),
+    ):
+        result = await service.export(
+            page=page, space=space, user=user, fmt=ExportFormat.docx, session=session
+        )
+    return converted, prepared, fake_storage, session, result, page
+
+
 @pytest.mark.asyncio
 async def test_docx_export_probes_the_theme_and_converts_the_semantic_html() -> None:
     """Word's HTML *structure* comes straight from prepare_export_html (the
     same semantic markup PDF/HTML use), not from the live rendered DOM -
     several node types render on screen through a React node view whose
     visual markup does not carry the same semantic data-type attributes."""
-    fake_page = FakePage()
-    fake_page.evaluate = AsyncMock(return_value={"code_fg": "#fff"})
-    renderer = FakeRenderer(fake_page)
-    service = ExportService(page_renderer=renderer)
-    user, space, page, session = actors()
+    converted, prepared, fake_storage, session, result, page = await _run_docx_export(
+        space_font="roboto"
+    )
 
-    prepared = AsyncMock(return_value="<p>real semantic html</p>")
-    converted = AsyncMock(return_value=b"PK\x03\x04docxbytes")
-    fake_storage = Mock()
-    with (
-        patch("app.modules.pages.export_service.prepare_export_html", prepared),
-        patch("app.modules.pages.export_service.html_to_docx", converted),
-        patch("app.modules.pages.export_service.get_storage", return_value=fake_storage),
-    ):
-        result = await service.export(
-            page=page, space=space, user=user, fmt=ExportFormat.docx, session=session
-        )
-
-    fake_page.evaluate.assert_awaited_once()
-    fake_page.pdf.assert_not_called()
     prepared.assert_awaited_once_with(page, storage=fake_storage, session=session)
     converted.assert_awaited_once_with(
-        "<p>real semantic html</p>", {"code_fg": "#fff"}, title=page.title
+        "<p>real semantic html</p>", {"code_fg": "#fff"}, title=page.title, font_id="roboto"
     )
     assert result == ExportResult(
         content=b"PK\x03\x04docxbytes",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename="runbook.docx",
     )
+
+
+@pytest.mark.asyncio
+async def test_docx_export_uses_the_spaces_own_font_over_the_site_default() -> None:
+    converted, *_ = await _run_docx_export(space_font="merriweather")
+
+    assert converted.call_args.kwargs["font_id"] == "merriweather"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sentinel", [None, "inherit", "default"])
+async def test_docx_export_falls_back_to_the_site_default_font(sentinel) -> None:
+    converted, *_ = await _run_docx_export(space_font=sentinel)
+
+    # The site default stubbed in `_run_docx_export` ("lora"), not whatever
+    # sentinel the space itself carries.
+    assert converted.call_args.kwargs["font_id"] == "lora"
 
 
 @pytest.mark.asyncio

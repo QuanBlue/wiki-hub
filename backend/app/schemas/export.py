@@ -39,3 +39,11 @@ class ExportBundle(BaseModel):
     #: today regardless of the viewer's own theme preference, since a static
     #: document has no viewer-side toggle to honour.
     theme: Literal["light", "dark"] = "light"
+    #: The export token's own claim, echoed back rather than re-derived from
+    #: the URL - the chrome-less /print route uses this to pick a page width:
+    #: a PDF is a fixed physical page, comfortably narrow for reading, but a
+    #: standalone HTML file opened in an ordinary browser window should use
+    #: the whole window rather than sit in a fixed reading column. Word never
+    #: reads this: it builds its own document from server-rendered HTML,
+    #: never from anything this bundle's own width affects.
+    fmt: Literal["pdf", "html", "docx"] = "pdf"

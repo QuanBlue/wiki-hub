@@ -17,6 +17,7 @@ function bundle(overrides: Partial<ExportBundle> = {}): ExportBundle {
     space: { key: "ENG", name: "Engineering", font_family: null },
     site: { site_name: "WikiHub", theme_color: "blue", default_font: "inter" },
     theme: "light",
+    fmt: "pdf",
     ...overrides,
   };
 }
@@ -71,6 +72,26 @@ describe("ExportShell", () => {
     await screen.findByText("Runbook");
     const wrapper = container.querySelector("[data-export-root]") as HTMLElement;
     expect(wrapper.style.getPropertyValue("--wh-space-page-font")).toBe("");
+  });
+
+  it("caps a PDF export to a comfortable reading column", async () => {
+    const { container } = renderWithTheme(<ExportShell bundle={bundle({ fmt: "pdf" })} />);
+
+    await screen.findByText("Runbook");
+    const wrapper = container.querySelector("[data-export-root]") as HTMLElement;
+    expect(wrapper.className).toContain("max-w-4xl");
+  });
+
+  it("uses the full window width for an HTML export", async () => {
+    // A fixed-page PDF reads well in a narrow column; a standalone HTML
+    // file, opened in an ordinary browser window, does not - the same cap
+    // would leave most of the window blank either side of a sliver of text.
+    const { container } = renderWithTheme(<ExportShell bundle={bundle({ fmt: "html" })} />);
+
+    await screen.findByText("Runbook");
+    const wrapper = container.querySelector("[data-export-root]") as HTMLElement;
+    expect(wrapper.className).not.toContain("max-w-4xl");
+    expect(wrapper.className).toContain("max-w-none");
   });
 });
 

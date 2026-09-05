@@ -83,6 +83,27 @@ _HIGHLIGHT_TOKEN_MAP: Final[dict[str, str]] = {
 }
 _ITALIC_TOKENS: Final = {"Comment", "Documentation", "CommentVar"}
 
+#: WikiHub's own font presets (see frontend/lib/font-presets.ts) are all
+#: Google web fonts, bundled at build time for the browser - none of them
+#: ship with Word. Writing the same name into the document would just have
+#: Word silently substitute its own default the moment anyone without that
+#: exact font installed opens the file, which in practice is almost every
+#: reader. Map each preset to the one font in its category that is actually
+#: bundled with every Windows install instead - a sans-serif preset becomes
+#: Arial, a serif preset becomes Times New Roman - so the document looks
+#: intentional rather than however Word happened to fall back.
+_SERIF_FONT_PRESETS: Final = {"lora", "merriweather", "playfair-display"}
+_DOCX_BODY_FONT_SANS_SERIF: Final = "Arial"
+_DOCX_BODY_FONT_SERIF: Final = "Times New Roman"
+#: The one monospace font every Windows install has, matching the code
+#: font this same document's syntax-highlight palette is themed for.
+_DOCX_MONO_FONT: Final = "Consolas"
+
+
+def _docx_body_font(font_id: str | None) -> str:
+    normalized = (font_id or "").strip().lower()
+    return _DOCX_BODY_FONT_SERIF if normalized in _SERIF_FONT_PRESETS else _DOCX_BODY_FONT_SANS_SERIF
+
 
 def _parse_color(value: str | None) -> str | None:
     """Return a bare 6-digit hex string (no '#'), or ``None`` if unparseable.
@@ -149,6 +170,75 @@ def _set_paragraph_left_border(paragraph: Any, hex_color: str) -> None:
     paragraph._p.get_or_add_pPr().append(borders)
 
 
+def _iter_tables(container: Any) -> Any:
+    """Every table in ``container.tables``, and every table nested inside
+    one of their cells - a table (or a document) exposes the same ``.tables``
+    shape in python-docx, so this recurses through it either way."""
+    for table in container.tables:
+        yield table
+        for row in table.rows:
+            for cell in row.cells:
+                yield from _iter_tables(cell)
+
+
+def _set_table_borders(table: Any, hex_color: str) -> None:
+    """Give a table a plain visible grid, matching what a reader already
+    sees on screen.
+
+    Pandoc's own default "Table" style has no border at all - python-docx
+    has no high-level API for this either; a raw ``w:tblBorders`` on
+    ``w:tblPr`` is the OOXML Word itself writes. "Table Grid" (the built-in
+    Word style a person would normally reach for) is not a shortcut here:
+    Pandoc's own reference document never defines it, even as a latent
+    style, so assigning it by name raises rather than adding a border.
+    """
+    borders = OxmlElement("w:tblBorders")
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        element = OxmlElement(f"w:{edge}")
+        element.set(qn("w:val"), "single")
+        element.set(qn("w:sz"), "4")
+        element.set(qn("w:space"), "0")
+        element.set(qn("w:color"), hex_color)
+        borders.append(element)
+    table_properties = table._tbl.tblPr
+    # `tblBorders` has a fixed position in the schema, after `tblW`/`tblInd`
+    # and before `shd`/`tblLayout`/`tblCellMar`/`tblLook` - insert before
+    # whichever of those already exists, or at the end if none do.
+    table_properties.insert_element_before(
+        borders, "w:shd", "w:tblLayout", "w:tblCellMar", "w:tblLook"
+    )
+
+
+def _set_run_fonts(rpr: Any, font_name: str) -> None:
+    """``font.name`` on python-docx's high-level API only ever writes
+    ``w:rFonts/@w:ascii`` - Word resolves the actual glyph for anything
+    outside Basic Latin (Vietnamese included) from ``@w:eastAsia``/``@w:cs``
+    instead, which is what silently keeps rendering in a leftover fallback
+    font without this."""
+    rfonts = rpr.find(qn("w:rFonts"))
+    if rfonts is None:
+        rfonts = OxmlElement("w:rFonts")
+        rpr.append(rfonts)
+    for attribute in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+        rfonts.set(qn(attribute), font_name)
+
+
+def _set_document_font(document: Any, *, body_font: str, mono_font: str) -> None:
+    """Word-safe fonts for body and code text (see the preset map above).
+
+    "Normal" covers ordinary paragraphs; "Verbatim Char" is the one
+    character style Pandoc's docx writer uses for *all* code text, inline
+    and block alike, so setting it here covers both at once.
+    """
+    normal = document.styles["Normal"]
+    normal.font.name = body_font
+    _set_run_fonts(normal.element.get_or_add_rPr(), body_font)
+
+    verbatim = _get_or_add_style(document, "Verbatim Char")
+    verbatim.font.name = mono_font
+    _set_run_fonts(verbatim.element.get_or_add_rPr(), mono_font)
+
+
 def _get_or_add_style(document: Any, name: str) -> Any:
     """pandoc's docx writer auto-creates any ``custom-style`` it sees that
     isn't already in the document, so the style this function's caller wants
@@ -206,6 +296,14 @@ def _apply_named_styles(document: Any, theme: dict[str, str]) -> None:
             if border:
                 _set_paragraph_left_border(paragraph, border)
 
+    # Pandoc's own default "Table" style paints no border at all - every
+    # table a reader sees on screen has one, so leaving Pandoc's default in
+    # place is the one place this export reads as unfinished rather than as
+    # a faithful copy of the live page.
+    table_border = _parse_color(theme.get("border")) or "999999"
+    for table in _iter_tables(document):
+        _set_table_borders(table, table_border)
+
 
 def _append_field(paragraph: Any, instruction: str) -> None:
     """Insert a live Word field (``{ PAGE }``, ``{ NUMPAGES }``) as three
@@ -251,9 +349,20 @@ def _add_page_number_footer(document: Any) -> None:
         run.font.size = Pt(8)
 
 
-async def html_to_docx(html: str, theme: dict[str, str], *, title: str) -> bytes:
+async def html_to_docx(
+    html: str, theme: dict[str, str], *, title: str, font_id: str | None = None
+) -> bytes:
     """Convert a simplified, semantically-marked-up HTML fragment to a
-    ``.docx``, themed from ``theme`` (see ``DOCX_CAPTURE_JS``)."""
+    ``.docx``, themed from ``theme`` (see ``DOCX_CAPTURE_JS``).
+
+    ``font_id`` is the space's (or, failing that, the site's) font preset id
+    - a name from frontend/lib/font-presets.ts, the same knob the live page
+    reads. It is resolved to a Word-safe font by name rather than by reusing
+    ``theme``'s browser-probed ``font_page``: that value is a full CSS
+    fallback stack (``"Inter, -apple-system, ..."``), not a single font name
+    ``w:rFonts`` could use, and its first entry is a web font Word does not
+    have anyway. See ``_docx_body_font``.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         highlight_theme_path = tmp_path / "highlight.theme"
@@ -307,6 +416,7 @@ async def html_to_docx(html: str, theme: dict[str, str], *, title: str) -> bytes
 
         document = Document(str(output_path))
         _apply_named_styles(document, theme)
+        _set_document_font(document, body_font=_docx_body_font(font_id), mono_font=_DOCX_MONO_FONT)
         _add_page_number_footer(document)
 
         result_stream = io.BytesIO()

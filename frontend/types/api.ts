@@ -587,6 +587,7 @@ export interface ExportBundle {
     default_font: string;
   };
   theme: "light" | "dark";
+  fmt: "pdf" | "html" | "docx";
 }
 
 /** One file in a document import, and what became of it. */

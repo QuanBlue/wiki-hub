@@ -96,4 +96,5 @@ async def export_bundle(
             theme_color=site.theme_color,
             default_font=site.default_font,
         ),
+        fmt=identity.fmt,
     )

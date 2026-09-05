@@ -35,6 +35,7 @@ from app.modules.pages.export_content import prepare_export_html
 from app.modules.pages.export_docx import html_to_docx
 from app.modules.pages.export_snapshot import SNAPSHOT_JS, THEME_PROBE_JS
 from app.services.browser import render_page
+from app.services.site_settings import SiteSettingsService
 from app.services.storage import get_storage
 
 if TYPE_CHECKING:
@@ -159,7 +160,15 @@ class ExportService:
 
         if docx_theme is not None:
             html = await prepare_export_html(page, storage=get_storage(), session=session)
-            content = await html_to_docx(html, docx_theme, title=page.title)
+            # Same precedence the live page itself renders with (see
+            # export-shell.tsx's spaceFontStyle): the space's own font
+            # first, falling back to the site's default whenever the space
+            # has none of its own set.
+            font_id = space.font_family
+            if not font_id or font_id in ("inherit", "default"):
+                site_settings = await SiteSettingsService(session).get_effective()
+                font_id = site_settings.default_font
+            content = await html_to_docx(html, docx_theme, title=page.title, font_id=font_id)
 
         logger.info("export_rendered", page_id=str(page.id), fmt=fmt.value, bytes=len(content))
         return ExportResult(
