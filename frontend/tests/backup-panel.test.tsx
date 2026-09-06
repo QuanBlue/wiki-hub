@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -2962,23 +2962,13 @@ describe("BackupPanel automatic backups", () => {
     );
   }
 
-  it("shows the configured subfolder and no directory-missing banner when a volume is mounted", async () => {
-    // The mounted volume itself is a container-internal path, not something
-    // an admin set - it is deliberately not displayed (see the danger-banner
-    // test below for the one case that still is: nothing mounted at all).
-    mockFetch([
-      automaticSettingsRoute({
-        subdirectory: "team-a",
-        directory: "/backups/team-a",
-      }),
-      automaticJobsRoute(),
-      ...baseRoutes(),
-    ]);
+  it("shows no directory-missing banner when a volume is mounted", async () => {
+    mockFetch([automaticSettingsRoute(), automaticJobsRoute(), ...baseRoutes()]);
 
     render(<BackupPanel />);
 
     const section = automaticSection();
-    expect(await section.findByDisplayValue("team-a")).toBeInTheDocument();
+    await section.findByRole("button", { name: /^edit$/i });
     expect(
       section.queryByText(/no backup directory is available/i),
     ).not.toBeInTheDocument();
@@ -3001,10 +2991,26 @@ describe("BackupPanel automatic backups", () => {
     expect(
       await section.findByText(/no backup directory is available/i),
     ).toBeInTheDocument();
-    expect(section.getByLabelText(/subfolder/i)).toBeDisabled();
   });
 
-  it("saves the typed subfolder along with the rest of the schedule", async () => {
+  it("keeps the schedule read-only until Edit is pressed", async () => {
+    mockFetch([automaticSettingsRoute(), automaticJobsRoute(), ...baseRoutes()]);
+
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    await section.findByRole("button", { name: /^edit$/i });
+    expect(section.getByLabelText(/^every$/i)).toBeDisabled();
+    expect(section.getByLabelText(/keep successful backups/i)).toBeDisabled();
+    expect(
+      section.queryByRole("button", { name: /^save schedule$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("unlocks the fields on Edit, saves the change, and locks again", async () => {
+    // A scroll-wheel nudge on a number field or a stray click while skimming
+    // the schedule must not silently change a live schedule - editing takes
+    // a deliberate Edit click, and Save both persists and re-locks it.
     const patches: Record<string, unknown>[] = [];
     mockFetch([
       automaticSettingsRoute(),
@@ -3021,11 +3027,11 @@ describe("BackupPanel automatic backups", () => {
               interval_value: 1,
               time_of_day: "02:00",
               timezone: "UTC",
-              retention_count: 30,
-              subdirectory: "team-a",
+              retention_count: 45,
+              subdirectory: null,
               directory_configured: true,
               base_directory: "/backups",
-              directory: "/backups/team-a",
+              directory: "/backups",
               last_run_at: null,
               next_run_at: null,
               last_status: null,
@@ -3041,38 +3047,39 @@ describe("BackupPanel automatic backups", () => {
     render(<BackupPanel />);
 
     const section = automaticSection();
-    const field = await section.findByLabelText(/subfolder/i);
-    await actor.type(field, "team-a");
+    await actor.click(await section.findByRole("button", { name: /^edit$/i }));
+
+    const retention = section.getByLabelText(/keep successful backups/i);
+    expect(retention).toBeEnabled();
+    // A plain change event, not clear()-then-type(): real browsers refuse
+    // setSelectionRange on type="number" inputs (an InvalidStateError), so
+    // userEvent has no reliable way to select and overwrite one's text -
+    // and clear()-then-type() has its own problem here regardless, since
+    // the field's own onChange falls back to 1 on an empty value (so it can
+    // never sit at NaN mid-edit), which clear() alone would trigger.
+    fireEvent.change(retention, { target: { value: "45" } });
     await actor.click(
       section.getByRole("button", { name: /^save schedule$/i }),
     );
 
     await waitFor(() => expect(patches).toHaveLength(1));
-    expect(patches[0].subdirectory).toBe("team-a");
-    await waitFor(() =>
-      expect(section.getByDisplayValue("team-a")).toBeInTheDocument(),
-    );
+    expect(patches[0].retention_count).toBe(45);
+    await section.findByRole("button", { name: /^edit$/i });
+    expect(section.getByLabelText(/keep successful backups/i)).toBeDisabled();
   });
 
-  it("shows the server's rejection right beside the subfolder field, not just as a toast", async () => {
-    // A path that turns out wrong belongs in front of whoever typed it -
-    // not only in a toast that has faded by the time it is read twice.
+  it("Cancel discards the edit and locks the fields again without saving", async () => {
+    const patches: Record<string, unknown>[] = [];
     mockFetch([
       automaticSettingsRoute(),
       automaticJobsRoute(),
       {
         method: "PATCH",
         match: (p) => p === "/api/v1/backup/automatic",
-        handler: () => ({
-          status: 400,
-          body: {
-            error: {
-              code: "backup_subdirectory_invalid",
-              message:
-                "'nope' does not exist under the mounted backup directory, or escapes it. Create the folder there first.",
-            },
-          },
-        }),
+        handler: (init) => {
+          patches.push(JSON.parse(String(init?.body)));
+          return automaticSettingsRoute().handler();
+        },
       },
       ...baseRoutes(),
     ]);
@@ -3081,18 +3088,15 @@ describe("BackupPanel automatic backups", () => {
     render(<BackupPanel />);
 
     const section = automaticSection();
-    const field = await section.findByLabelText(/subfolder/i);
-    await actor.type(field, "nope");
-    await actor.click(
-      section.getByRole("button", { name: /^save schedule$/i }),
-    );
+    await actor.click(await section.findByRole("button", { name: /^edit$/i }));
+    const retention = section.getByLabelText(/keep successful backups/i);
+    fireEvent.change(retention, { target: { value: "99" } });
+    await actor.click(section.getByRole("button", { name: /^cancel$/i }));
 
-    expect(
-      await section.findByText(
-        /does not exist under the mounted backup directory/i,
-      ),
-    ).toBeInTheDocument();
-    expect(field).toHaveAttribute("aria-invalid", "true");
+    await section.findByRole("button", { name: /^edit$/i });
+    expect(section.getByLabelText(/keep successful backups/i)).toBeDisabled();
+    expect(section.getByLabelText(/keep successful backups/i)).toHaveValue(30);
+    expect(patches).toHaveLength(0);
   });
 
   it("shows an empty state instead of a bare table when no scheduled backup has run yet", async () => {

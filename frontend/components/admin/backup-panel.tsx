@@ -18,11 +18,13 @@ import {
   ListChecks,
   Loader2,
   Pause,
+  Pencil,
   Play,
   RotateCcw,
   Search,
   Trash2,
   Upload,
+  X,
   XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -975,12 +977,16 @@ export function BackupPanel() {
   const [automatedJobs, setAutomatedJobs] = useState<PortableBackupJob[]>([]);
   const [automatedPending, setAutomatedPending] = useState(false);
   const [automatedError, setAutomatedError] = useState<string | null>(null);
-  //: Shown right beside the subdirectory field, in addition to the toast
-  //: `saveAutomatedBackups` already raises for every other save failure -
-  //: a bad filesystem path is worth pointing at directly, not just naming
-  //: in a message that has scrolled away by the time it is read twice.
-  const [automatedSubdirectoryError, setAutomatedSubdirectoryError] =
-    useState<string | null>(null);
+  //: Fields start read-only - editing takes a deliberate "Edit" click - so a
+  //: scroll-wheel nudge on the retention number field or a stray click while
+  //: skimming the schedule can't silently change a live schedule. Saving (or
+  //: cancelling) drops back to read-only.
+  const [isEditingAutomatedSchedule, setIsEditingAutomatedSchedule] = useState(false);
+  //: What "Cancel" restores - the last value actually confirmed from the
+  //: server, never mutated in place (every edit replaces `automatedSettings`
+  //: with a new object), so this stays untouched while the fields above it
+  //: are being edited.
+  const automatedSettingsSnapshotRef = useRef<AutomatedBackupSettings | null>(null);
   const [deleteAutomatedJobId, setDeleteAutomatedJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -1874,7 +1880,15 @@ export function BackupPanel() {
       const config = await apiFetch<AutomatedBackupSettings>(
         "/api/v1/backup/automatic",
       );
-      setAutomatedSettings(config);
+      // The pristine copy "Cancel" restores always tracks the server,
+      // whether or not the fields are being edited right now; the editable
+      // copy below only follows it while they are not - a poll landing
+      // mid-edit (the schedule is due to run while someone happens to have
+      // the form open) must not silently overwrite what they just typed.
+      automatedSettingsSnapshotRef.current = config;
+      if (!isEditingAutomatedSchedule) {
+        setAutomatedSettings(config);
+      }
       setAutomatedError(null);
       try {
         setAutomatedJobs(
@@ -1889,14 +1903,16 @@ export function BackupPanel() {
         );
       }
     } catch (error) {
-      setAutomatedSettings(null);
+      if (!isEditingAutomatedSchedule) {
+        setAutomatedSettings(null);
+      }
       setAutomatedError(
         error instanceof ApiError
           ? error.message
           : "Could not load automatic backup settings.",
       );
     }
-  }, []);
+  }, [isEditingAutomatedSchedule]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load persisted server state on mount
@@ -1922,7 +1938,6 @@ export function BackupPanel() {
   async function saveAutomatedBackups() {
     if (!automatedSettings) return;
     setAutomatedPending(true);
-    setAutomatedSubdirectoryError(null);
     try {
       const saved = await apiFetch<AutomatedBackupSettings>("/api/v1/backup/automatic", {
         method: "PATCH",
@@ -1933,18 +1948,26 @@ export function BackupPanel() {
           time_of_day: automatedSettings.time_of_day,
           timezone: automatedSettings.timezone,
           retention_count: automatedSettings.retention_count,
+          // No UI sets this any more - carried through unchanged rather than
+          // dropped, so it does not silently clear a value set some other
+          // way (directly against the API, e.g.).
           subdirectory: automatedSettings.subdirectory,
         },
       });
+      automatedSettingsSnapshotRef.current = saved;
       setAutomatedSettings(saved);
+      setIsEditingAutomatedSchedule(false);
       toast.success("Automatic backup settings saved.");
     } catch (error) {
-      if (error instanceof ApiError && error.code === "backup_subdirectory_invalid") {
-        setAutomatedSubdirectoryError(error.message);
-      } else {
-        toast.error(describeApiError(error, "Could not save automatic backups."));
-      }
+      toast.error(describeApiError(error, "Could not save automatic backups."));
     } finally { setAutomatedPending(false); }
+  }
+
+  function cancelEditingAutomatedSchedule() {
+    if (automatedSettingsSnapshotRef.current) {
+      setAutomatedSettings(automatedSettingsSnapshotRef.current);
+    }
+    setIsEditingAutomatedSchedule(false);
   }
 
   async function runAutomatedBackupNow() {
@@ -3830,15 +3853,22 @@ export function BackupPanel() {
           activeSection !== "export" && "hidden",
         )}
       >
-        {/* Same sticky header-bar convention as every other settings card in
-            the admin area (Storage & File Quotas, Theme & Branding, ...): a
-            bare icon (no colour-badge container), border-b flush with the
-            card's own corners, actions on the right. The Export/Restore
-            cards above this one are a one-off two-choice chooser, not the
-            pattern a persistent-settings card like this one should follow. */}
-        <div className="border-border bg-surface/98 backdrop-blur-md sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b -mt-px -mx-px px-6 py-3.5 rounded-t-xl transition-all shadow-xs">
+        {/* Same header-bar convention as every other settings card in the
+            admin area (Storage & File Quotas, Theme & Branding, ...): a bare
+            icon (no colour-badge container), border-b flush with the card's
+            own corners, actions on the right. The Export/Restore cards above
+            this one are a one-off two-choice chooser, not the pattern a
+            persistent-settings card like this one should follow.
+            Not sticky, unlike those: this section's own `overflow-hidden`
+            (kept for the rounded corners around the history table) clips a
+            `position: sticky` child's stuck box instead of letting it float,
+            which hid the field right below it entirely. This card is short
+            enough that a sticky header bought nothing anyway. */}
+        <div className="border-border bg-surface flex flex-wrap items-center justify-between gap-3 border-b px-6 py-3.5">
           <div className="flex items-center gap-2.5">
-            <RotateCcw className="text-primary size-5 shrink-0" />
+            <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-md">
+              <RotateCcw className="size-4" />
+            </span>
             <div>
               <h3 id="automatic-backups-title" className="text-foreground text-sm font-semibold sm:text-base">
                 Automatic backups
@@ -3853,18 +3883,25 @@ export function BackupPanel() {
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             {/* A real switch rather than a field buried in the grid below -
                 whether the schedule is even on is the first thing worth
-                seeing, not something read off row four of a form. */}
+                seeing, not something read off row four of a form. Locked
+                behind "Edit" the same as every other field here, and given
+                the same hover feedback every real Button gets (see
+                buttonVariants in ui/button.tsx) - it reads as a control, so
+                it should react like one. */}
             <label
               className={cn(
                 "border-border bg-surface has-disabled:opacity-60 flex h-8 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium",
                 "has-disabled:cursor-not-allowed",
+                "has-not-disabled:hover:bg-surface-hover has-not-disabled:hover:border-border-strong",
               )}
             >
               <input
                 type="checkbox"
                 checked={automatedSettings?.enabled ?? false}
                 disabled={
-                  !automatedSettings || !automatedSettings.directory_configured
+                  !isEditingAutomatedSchedule ||
+                  !automatedSettings ||
+                  !automatedSettings.directory_configured
                 }
                 onChange={(event) =>
                   automatedSettings &&
@@ -3893,22 +3930,52 @@ export function BackupPanel() {
             >
               <Play className="size-3.5" /> Run now
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="primary"
-              className="text-xs h-8"
-              disabled={automatedPending || !automatedSettings}
-              aria-busy={automatedPending}
-              onClick={() => void saveAutomatedBackups()}
-            >
-              {automatedPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Check className="size-3.5" />
-              )}
-              Save schedule
-            </Button>
+            {/* Read-only until "Edit" is pressed, same lock/unlock toggle
+                already used for the group/user grids in edit-space-modal.tsx
+                - a scroll-wheel nudge on the retention field or a stray
+                click while skimming the schedule can't silently change a
+                live schedule. */}
+            {isEditingAutomatedSchedule ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs h-8"
+                  disabled={automatedPending}
+                  onClick={cancelEditingAutomatedSchedule}
+                >
+                  <X className="size-3.5" /> Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="primary"
+                  className="text-xs h-8"
+                  disabled={automatedPending}
+                  aria-busy={automatedPending}
+                  onClick={() => void saveAutomatedBackups()}
+                >
+                  {automatedPending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Check className="size-3.5" />
+                  )}
+                  Save schedule
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="text-xs h-8"
+                disabled={!automatedSettings}
+                onClick={() => setIsEditingAutomatedSchedule(true)}
+              >
+                <Pencil className="size-3.5" /> Edit
+              </Button>
+            )}
           </div>
         </div>
         {automatedSettings ? (
@@ -3916,60 +3983,20 @@ export function BackupPanel() {
             {/* The mounted volume itself is fixed at deploy time and not
                 shown here - it's the container-internal mount path, not the
                 host location an admin actually set, so displaying it only
-                confused what "storage location" meant. When nothing is
-                mounted at all, that still surfaces as a danger banner below;
-                otherwise the subfolder is the one thing worth showing, and
-                it is checked against the real filesystem the moment "Save
-                schedule" is pressed - a path that turns out wrong fails
-                right in front of whoever typed it, not hours later as an
-                unwatched scheduled run. */}
-            <div className="space-y-1.5">
-              {!automatedSettings.directory_configured ? (
-                <div className="border-danger/30 bg-danger/10 flex items-start gap-2 rounded-lg border p-2.5 text-xs">
-                  <FolderOpen className="text-danger mt-0.5 size-4 shrink-0" />
-                  <p className="font-medium">
-                    No backup directory is available. Set
-                    WIKIHUB_AUTOMATED_BACKUP_DIRECTORY and mount a volume
-                    there.
-                  </p>
-                </div>
-              ) : null}
-              <div className="space-y-1">
-                <label
-                  htmlFor="automated-backup-subdirectory"
-                  className="text-muted-foreground text-xs font-medium"
-                >
-                  Subfolder (optional)
-                </label>
-                <Input
-                  id="automated-backup-subdirectory"
-                  value={automatedSettings.subdirectory ?? ""}
-                  disabled={!automatedSettings.base_directory}
-                  onChange={(event) => {
-                    setAutomatedSubdirectoryError(null);
-                    setAutomatedSettings({
-                      ...automatedSettings,
-                      subdirectory: event.target.value || null,
-                    });
-                  }}
-                  placeholder="e.g. team-a - leave blank to use the backup volume's root"
-                  aria-invalid={automatedSubdirectoryError ? true : undefined}
-                  aria-describedby="automated-backup-subdirectory-hint"
-                />
-                <p
-                  id="automated-backup-subdirectory-hint"
-                  className="text-muted-foreground text-[11px]"
-                >
-                  Relative to the mounted backup volume. Create the folder
-                  there first - this is not offered to create it for you.
+                confused what "storage location" meant. Nothing mounted at
+                all is the one case still worth a banner - the schedule has
+                nowhere to write, which the toggle above being disabled
+                doesn't explain on its own. */}
+            {!automatedSettings.directory_configured ? (
+              <div className="border-danger/30 bg-danger/10 flex items-start gap-2 rounded-lg border p-2.5 text-xs">
+                <FolderOpen className="text-danger mt-0.5 size-4 shrink-0" />
+                <p className="font-medium">
+                  No backup directory is available. Set
+                  WIKIHUB_AUTOMATED_BACKUP_DIRECTORY and mount a volume
+                  there.
                 </p>
-                {automatedSubdirectoryError ? (
-                  <p className="text-danger text-xs">
-                    {automatedSubdirectoryError}
-                  </p>
-                ) : null}
               </div>
-            </div>
+            ) : null}
 
             {/* Schedule - Enabled moved up to the header, so this is exactly
                 the five fields it takes to describe "how often, starting
@@ -3993,6 +4020,7 @@ export function BackupPanel() {
                     min="1"
                     max="720"
                     value={automatedSettings.interval_value}
+                    disabled={!isEditingAutomatedSchedule}
                     onChange={(event) =>
                       setAutomatedSettings({
                         ...automatedSettings,
@@ -4010,6 +4038,7 @@ export function BackupPanel() {
                   </span>
                   <Select
                     value={automatedSettings.interval_unit}
+                    disabled={!isEditingAutomatedSchedule}
                     onValueChange={(value) =>
                       setAutomatedSettings({
                         ...automatedSettings,
@@ -4037,6 +4066,7 @@ export function BackupPanel() {
                     id="automated-backup-time"
                     type="time"
                     value={automatedSettings.time_of_day}
+                    disabled={!isEditingAutomatedSchedule}
                     onChange={(event) =>
                       setAutomatedSettings({
                         ...automatedSettings,
@@ -4055,6 +4085,7 @@ export function BackupPanel() {
                   <Input
                     id="automated-backup-timezone"
                     value={automatedSettings.timezone}
+                    disabled={!isEditingAutomatedSchedule}
                     onChange={(event) =>
                       setAutomatedSettings({
                         ...automatedSettings,
@@ -4077,6 +4108,7 @@ export function BackupPanel() {
                     min="1"
                     max="1000"
                     value={automatedSettings.retention_count}
+                    disabled={!isEditingAutomatedSchedule}
                     onChange={(event) =>
                       setAutomatedSettings({
                         ...automatedSettings,
