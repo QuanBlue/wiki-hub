@@ -22,6 +22,14 @@
 # Automated backups alone can be pointed somewhere else entirely (a second
 # disk, a mounted network share) with WIKIHUB_BACKUP_HOST_DIRECTORY - left
 # unset, they stay under WIKIHUB_DATA_HOST_DIRECTORY like every other store.
+#
+# Every WIKIHUB_*/service env var lives in .env(.example) exactly once and
+# reaches containers through `env_file:` below. A service's own `environment:`
+# block only ever adds what genuinely cannot be a static .env line (a value
+# assembled from another compose variable, or a path fixed by a volume mount)
+# - never a plain copy of something .env already sets. `environment:` wins
+# over `env_file:`, so a stray copy would silently swallow the user's own
+# .env edit instead of just being redundant.
 # =============================================================================
 
 name: wikihub
@@ -151,24 +159,21 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
-      # POSTGRES_USER/PASSWORD/DB come straight from .env via env_file above;
-      # app/core/config.py assembles the DSN from them itself.
-      WIKIHUB_REDIS_URL: redis://redis:6379/0
-      WIKIHUB_S3_ENDPOINT_URL: http://minio:9000
+      # Everything WikiHub-specific that has one fixed, correct value lives
+      # in .env(.example) only and reaches the container via env_file above -
+      # duplicating it here as a literal would silently win over whatever the
+      # user sets in .env (`environment:` takes precedence over `env_file:`),
+      # so a real override would appear to do nothing. Only what genuinely
+      # cannot live as a static line in .env stays here:
+      #  - values assembled from another compose variable (the host port
+      #    picked at `docker compose up` time, not known when .env was written)
+      #  - a container-internal path fixed by the volume mount below, not by
+      #    the host
       WIKIHUB_S3_PUBLIC_ENDPOINT_URL: http://localhost:${MINIO_PORT_HOST:-9000}
+      # Fixed to match the mount target below - this is where /backups
+      # resolves *inside* the container, not a host path, so it has no
+      # .env equivalent.
       WIKIHUB_AUTOMATED_BACKUP_DIRECTORY: /backups
-      # The UI uses the same-origin Next.js proxy. Keep this for external API
-      # clients and local development only; public UI domains need no entry.
-      WIKIHUB_CORS_ORIGINS: ${WIKIHUB_CORS_ORIGINS:-http://localhost:3000}
-      # Page export renders the real page in a headless browser; this is how
-      # the backend reaches the frontend container to do that. Intentionally
-      # NOT in depends_on below - frontend already depends on backend, and
-      # export simply returns a clean 503 if the frontend happens to be down.
-      WIKIHUB_FRONTEND_INTERNAL_URL: http://frontend:3000
-      WIKIHUB_ONLYOFFICE_ENABLED: "true"
-      WIKIHUB_ONLYOFFICE_BACKEND_URL: http://backend:8000
-      WIKIHUB_ONLYOFFICE_INTERNAL_URL: http://onlyoffice
-      WIKIHUB_ONLYOFFICE_JWT_SECRET: ${WIKIHUB_ONLYOFFICE_JWT_SECRET:-wikihub-local-onlyoffice-dev-secret-replace-before-production}
     depends_on:
       postgres:
         condition: service_healthy
@@ -199,15 +204,11 @@ services:
     command: ["arq", "app.workers.settings.WorkerSettings"]
     env_file: [.env]
     environment:
-      # POSTGRES_USER/PASSWORD/DB come straight from .env via env_file above;
-      # app/core/config.py assembles the DSN from them itself.
-      WIKIHUB_REDIS_URL: redis://redis:6379/0
-      WIKIHUB_S3_ENDPOINT_URL: http://minio:9000
+      # See the backend service above: only a compose-derived value and a
+      # container-internal path belong here, everything else lives in
+      # .env(.example) alone.
       WIKIHUB_S3_PUBLIC_ENDPOINT_URL: http://localhost:${MINIO_PORT_HOST:-9000}
       WIKIHUB_AUTOMATED_BACKUP_DIRECTORY: /backups
-      # Same reasoning as the backend service: kept in sync so moving export
-      # rendering onto the worker later needs no compose change.
-      WIKIHUB_FRONTEND_INTERNAL_URL: http://frontend:3000
     depends_on:
       postgres:
         condition: service_healthy
