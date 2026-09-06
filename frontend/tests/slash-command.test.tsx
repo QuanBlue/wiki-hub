@@ -26,11 +26,14 @@ describe("filterSlashCommandItems", () => {
 
   it("matches a label substring, case-insensitively", () => {
     const results = filterSlashCommandItems("head");
+    // Table of contents' own "headings" keyword is a substring match too,
+    // not just the four heading blocks' labels.
     expect(results.map((item) => item.id)).toEqual([
       "heading-1",
       "heading-2",
       "heading-3",
       "heading-4",
+      "table-of-contents",
     ]);
   });
 

@@ -1165,7 +1165,13 @@ describe("Attachment preview syntax highlighting", () => {
       new CustomEvent("wikihub:view-file-details", { detail: attachmentId }),
     );
 
-    await screen.findByText("app.py");
+    // Two matches once the modal loads, not one: the dialog's own title
+    // renders visibly, and DialogContent (dialog.tsx) repeats it a second
+    // time in a sr-only Description when no separate description is given,
+    // to satisfy Radix's accessibility requirement.
+    await waitFor(() => {
+      expect(screen.getAllByText("app.py").length).toBeGreaterThan(0);
+    });
     expect(
       await screen.findByText("def", { selector: ".hljs-keyword" }),
     ).toBeInTheDocument();
@@ -1187,7 +1193,10 @@ describe("Attachment preview syntax highlighting", () => {
       new CustomEvent("wikihub:view-file-details", { detail: attachmentId }),
     );
 
-    await screen.findByText("notes.txt");
+    // See the sibling test above for why this is a count, not a single match.
+    await waitFor(() => {
+      expect(screen.getAllByText("notes.txt").length).toBeGreaterThan(0);
+    });
     await waitFor(() => {
       expect(screen.getByText("def run():")).toBeInTheDocument();
     });
