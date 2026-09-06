@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowDownToLine,
   ArrowUpFromLine,
+  Check,
   CheckCircle2,
   ChevronDown,
   Clock,
@@ -3825,33 +3826,37 @@ export function BackupPanel() {
         role="region"
         aria-labelledby="automatic-backups-title"
         className={cn(
-          "border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm",
+          "border-border bg-surface overflow-hidden rounded-xl border shadow-sm",
           activeSection !== "export" && "hidden",
         )}
       >
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        {/* Same sticky header-bar convention as every other settings card in
+            the admin area (Storage & File Quotas, Theme & Branding, ...): a
+            bare icon (no colour-badge container), border-b flush with the
+            card's own corners, actions on the right. The Export/Restore
+            cards above this one are a one-off two-choice chooser, not the
+            pattern a persistent-settings card like this one should follow. */}
+        <div className="border-border bg-surface/98 backdrop-blur-md sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b -mt-px -mx-px px-6 py-3.5 rounded-t-xl transition-all shadow-xs">
           <div className="flex items-center gap-2.5">
-            <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-md">
-              <RotateCcw className="size-4" />
-            </span>
+            <RotateCcw className="text-primary size-5 shrink-0" />
             <div>
-              <h2 id="automatic-backups-title" className="text-base font-semibold">
+              <h3 id="automatic-backups-title" className="text-foreground text-sm font-semibold sm:text-base">
                 Automatic backups
-              </h2>
-              <p className="text-muted-foreground mt-1 text-sm">
+              </h3>
+              <p className="text-muted-foreground mt-0.5 hidden text-xs sm:block">
                 A full recovery package - including password hashes - is
                 written on a recurring schedule, with no confirmation step
                 the way a manual export has.
               </p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {/* A real switch rather than a field buried in the grid below -
                 whether the schedule is even on is the first thing worth
                 seeing, not something read off row four of a form. */}
             <label
               className={cn(
-                "border-border bg-surface has-disabled:opacity-60 flex h-8 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium",
+                "border-border bg-surface has-disabled:opacity-60 flex h-8 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium",
                 "has-disabled:cursor-not-allowed",
               )}
             >
@@ -3882,15 +3887,32 @@ export function BackupPanel() {
               type="button"
               size="sm"
               variant="secondary"
+              className="text-xs h-8"
               disabled={automatedPending || !automatedSettings?.directory_configured}
               onClick={() => void runAutomatedBackupNow()}
             >
-              <Play /> Run now
+              <Play className="size-3.5" /> Run now
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="primary"
+              className="text-xs h-8"
+              disabled={automatedPending || !automatedSettings}
+              aria-busy={automatedPending}
+              onClick={() => void saveAutomatedBackups()}
+            >
+              {automatedPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
+              Save schedule
             </Button>
           </div>
         </div>
         {automatedSettings ? (
-          <div className="space-y-4">
+          <div className="space-y-6 p-6">
             {/* The mounted volume itself is fixed at deploy time and not
                 shown here - it's the container-internal mount path, not the
                 host location an admin actually set, so displaying it only
@@ -4066,41 +4088,26 @@ export function BackupPanel() {
               </div>
             </div>
 
-            <div className="border-border flex flex-wrap items-end justify-between gap-3 border-t pt-3">
-              <div className="flex flex-wrap gap-4 text-xs">
-                <div>
-                  <p className="text-muted-foreground">Last run</p>
-                  <p className="text-foreground mt-0.5 flex items-center gap-1.5 font-medium">
-                    {automatedSettings.last_run_at
-                      ? new Date(automatedSettings.last_run_at).toLocaleString()
-                      : "Never"}
-                    {automatedSettings.last_status ? (
-                      <AutomatedBackupStatusBadge status={automatedSettings.last_status} />
-                    ) : null}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Next run</p>
-                  <p className="text-foreground mt-0.5 font-medium">
-                    {automatedSettings.next_run_at
-                      ? new Date(automatedSettings.next_run_at).toLocaleString()
-                      : "Calculated after saving"}
-                  </p>
-                </div>
+            <div className="border-border bg-surface-sunken/60 flex flex-wrap items-center gap-6 rounded-lg border p-3.5 text-xs">
+              <div>
+                <p className="text-muted-foreground">Last run</p>
+                <p className="text-foreground mt-0.5 flex items-center gap-1.5 font-medium">
+                  {automatedSettings.last_run_at
+                    ? new Date(automatedSettings.last_run_at).toLocaleString()
+                    : "Never"}
+                  {automatedSettings.last_status ? (
+                    <AutomatedBackupStatusBadge status={automatedSettings.last_status} />
+                  ) : null}
+                </p>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="primary"
-                disabled={automatedPending}
-                aria-busy={automatedPending}
-                onClick={() => void saveAutomatedBackups()}
-              >
-                {automatedPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : null}
-                Save schedule
-              </Button>
+              <div>
+                <p className="text-muted-foreground">Next run</p>
+                <p className="text-foreground mt-0.5 font-medium">
+                  {automatedSettings.next_run_at
+                    ? new Date(automatedSettings.next_run_at).toLocaleString()
+                    : "Calculated after saving"}
+                </p>
+              </div>
             </div>
             {automatedSettings.last_error ? (
               <p className="text-danger text-xs">
@@ -4180,7 +4187,7 @@ export function BackupPanel() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-3 text-sm" role="status">
+          <div className="flex flex-wrap items-center gap-3 p-6 text-sm" role="status">
             <p className="text-muted-foreground">
               {automatedError ?? "Loading automatic backup settings…"}
             </p>
