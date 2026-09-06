@@ -23,6 +23,18 @@
 # disk, a mounted network share) with WIKIHUB_BACKUP_HOST_DIRECTORY - left
 # unset, they stay under WIKIHUB_DATA_HOST_DIRECTORY like every other store.
 #
+# The backend/worker containers run as an unprivileged user (uid 10001,
+# "wikihub" - never root), unlike postgres/redis/minio which each manage
+# their own data directory's ownership themselves. Whatever the automated
+# backups directory resolves to (WIKIHUB_BACKUP_HOST_DIRECTORY, or
+# .../automated-backups under WIKIHUB_DATA_HOST_DIRECTORY) must already be
+# writable by uid 10001 before a scheduled backup can succeed - Docker
+# auto-creates a missing bind-mount directory owned by root, which is not
+# writable by 10001 either. A scheduled run finding it unwritable fails
+# with a permission error (surfaced as the schedule's own "failed" status,
+# not a crash), so fix it with e.g.:
+#   docker run --rm -v <the resolved host path>:/target busybox chown -R 10001:10001 /target
+#
 # Every WIKIHUB_*/service env var lives in .env(.example) exactly once and
 # reaches containers through `env_file:` below. A service's own `environment:`
 # block only ever adds what genuinely cannot be a static .env line (a value

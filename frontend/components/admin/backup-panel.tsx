@@ -4,7 +4,9 @@ import {
   AlertTriangle,
   ArrowDownToLine,
   ArrowUpFromLine,
+  CheckCircle2,
   ChevronDown,
+  Clock,
   Download,
   FileArchive,
   Archive,
@@ -18,14 +20,16 @@ import {
   Play,
   RotateCcw,
   Search,
+  Trash2,
   Upload,
+  XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { ReactNode, Ref } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
@@ -698,6 +702,60 @@ function CountList({
       </ul>
     </div>
   );
+}
+
+//: The four states an automated-backup run's own status ever reports (never
+//: "cancelled" - nothing here offers cancelling one mid-run).
+type AutomatedBackupStatus = "queued" | "running" | "complete" | "failed";
+
+const AUTOMATED_BACKUP_STATUS_ICON: Record<AutomatedBackupStatus, typeof Clock> = {
+  queued: Clock,
+  running: Loader2,
+  complete: CheckCircle2,
+  failed: XCircle,
+};
+
+function automatedBackupBadgeVariant(status: string): BadgeProps["variant"] {
+  if (status === "complete") return "success";
+  if (status === "failed") return "danger";
+  return "info"; // queued, running
+}
+
+/** Status badge shared by the "Last run" line and the history table - same
+ * icon+colour pairing everywhere a backup's status appears in this section. */
+function AutomatedBackupStatusBadge({ status }: { status: string }) {
+  const Icon =
+    AUTOMATED_BACKUP_STATUS_ICON[status as AutomatedBackupStatus] ?? Clock;
+  return (
+    <Badge variant={automatedBackupBadgeVariant(status)}>
+      <Icon className={cn("size-3", status === "running" && "animate-spin")} />
+      {status}
+    </Badge>
+  );
+}
+
+/** "2m 15s" / "1h 4m" / "45s" - elapsed wall-clock time, not a countdown. */
+function formatElapsed(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  if (seconds < 1) return "<1s";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const totalMinutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+  if (totalMinutes < 60) {
+    return remainingSeconds ? `${totalMinutes}m ${remainingSeconds}s` : `${totalMinutes}m`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+}
+
+/** How long a backup job actually ran for, or "—" when it never started. */
+function automatedJobDuration(job: PortableBackupJob): string {
+  if (!job.started_at) return "—";
+  const start = new Date(job.started_at).getTime();
+  const isTerminal = job.status === "complete" || job.status === "failed";
+  const end = isTerminal ? new Date(job.updated_at).getTime() : Date.now();
+  return formatElapsed((end - start) / 1000);
 }
 
 export function BackupPanel() {
@@ -1843,6 +1901,22 @@ export function BackupPanel() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load persisted server state on mount
     void refreshAutomatedBackups();
   }, [refreshAutomatedBackups]);
+
+  // A scheduled run starts on its own cron tick, not from a click on this
+  // page - without this, whoever has the tab open only ever sees whatever
+  // status happened to be current on the last manual refresh, which reads
+  // as the job being stuck (see the "queued" case this was fixed for: the
+  // job had already failed server-side well before anyone reloaded).
+  const automatedLastStatus = automatedSettings?.last_status ?? null;
+  useEffect(() => {
+    if (automatedLastStatus !== "queued" && automatedLastStatus !== "running") {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshAutomatedBackups();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [automatedLastStatus, refreshAutomatedBackups]);
 
   async function saveAutomatedBackups() {
     if (!automatedSettings) return;
@@ -3751,20 +3825,20 @@ export function BackupPanel() {
         role="region"
         aria-labelledby="automatic-backups-title"
         className={cn(
-          "border-border bg-surface rounded-xl border p-4 shadow-sm",
+          "border-border bg-surface overflow-hidden rounded-xl border p-5 shadow-sm",
           activeSection !== "export" && "hidden",
         )}
       >
-        <div className="flex flex-wrap items-start justify-between gap-2.5">
-          <div className="flex items-center gap-2">
-            <span className="bg-primary-subtle text-primary flex size-7 shrink-0 items-center justify-center rounded-lg">
-              <RotateCcw className="size-3.5" />
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-md">
+              <RotateCcw className="size-4" />
             </span>
             <div>
-              <h2 id="automatic-backups-title" className="text-sm font-semibold">
+              <h2 id="automatic-backups-title" className="text-base font-semibold">
                 Automatic backups
               </h2>
-              <p className="text-muted-foreground text-xs">
+              <p className="text-muted-foreground mt-1 text-sm">
                 A full recovery package - including password hashes - is
                 written on a recurring schedule, with no confirmation step
                 the way a manual export has.
@@ -3816,7 +3890,7 @@ export function BackupPanel() {
           </div>
         </div>
         {automatedSettings ? (
-          <div className="mt-3.5 space-y-3.5">
+          <div className="space-y-4">
             {/* The mounted volume itself is fixed at deploy time and not
                 shown here - it's the container-internal mount path, not the
                 host location an admin actually set, so displaying it only
@@ -4001,17 +4075,7 @@ export function BackupPanel() {
                       ? new Date(automatedSettings.last_run_at).toLocaleString()
                       : "Never"}
                     {automatedSettings.last_status ? (
-                      <Badge
-                        variant={
-                          automatedSettings.last_status === "complete"
-                            ? "success"
-                            : automatedSettings.last_status === "failed"
-                              ? "danger"
-                              : "info"
-                        }
-                      >
-                        {automatedSettings.last_status}
-                      </Badge>
+                      <AutomatedBackupStatusBadge status={automatedSettings.last_status} />
                     ) : null}
                   </p>
                 </div>
@@ -4056,48 +4120,45 @@ export function BackupPanel() {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-surface-sunken text-muted-foreground">
                     <tr>
-                      <th className="p-1.5 font-medium">Backup</th>
-                      <th className="p-1.5 font-medium">Status</th>
-                      <th className="p-1.5 font-medium">Actions</th>
+                      <th className="p-2 font-medium">Backup</th>
+                      <th className="p-2 font-medium">Status</th>
+                      <th className="p-2 font-medium">Duration</th>
+                      <th className="p-2 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {automatedJobs.length ? (
                       automatedJobs.slice(0, 5).map((job) => (
-                        <tr key={job.id} className="border-border border-t">
-                          <td className="p-1.5">
-                            {job.output_filename ??
-                              new Date(job.created_at).toLocaleString()}
+                        <tr key={job.id} className="border-border hover:bg-surface-hover border-t">
+                          <td className="p-2">
+                            <span className="flex items-center gap-1.5">
+                              <FileArchive className="text-muted-foreground size-3.5 shrink-0" />
+                              {job.output_filename ??
+                                new Date(job.created_at).toLocaleString()}
+                            </span>
                           </td>
-                          <td className="p-1.5">
-                            <Badge
-                              variant={
-                                job.status === "complete"
-                                  ? "success"
-                                  : job.status === "failed"
-                                    ? "danger"
-                                    : "info"
-                              }
-                            >
-                              {job.status}
-                            </Badge>
+                          <td className="p-2">
+                            <AutomatedBackupStatusBadge status={job.status} />
                           </td>
-                          <td className="p-1.5">
+                          <td className="text-muted-foreground p-2">
+                            {automatedJobDuration(job)}
+                          </td>
+                          <td className="p-2">
                             <div className="flex items-center gap-3">
                               {job.download_url ? (
                                 <a
-                                  className="text-primary hover:text-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  className="text-primary hover:text-primary-hover inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                   href={job.download_url}
                                 >
-                                  Download
+                                  <Download className="size-3.5" /> Download
                                 </a>
                               ) : null}
                               <button
                                 type="button"
-                                className="text-danger hover:text-danger/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="text-danger hover:text-danger/80 inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 onClick={() => setDeleteAutomatedJobId(job.id)}
                               >
-                                Delete
+                                <Trash2 className="size-3.5" /> Delete
                               </button>
                             </div>
                           </td>
@@ -4106,8 +4167,8 @@ export function BackupPanel() {
                     ) : (
                       <tr>
                         <td
-                          colSpan={3}
-                          className="text-muted-foreground p-2 text-center"
+                          colSpan={4}
+                          className="text-muted-foreground p-3 text-center"
                         >
                           No scheduled backups have run yet.
                         </td>
@@ -4119,7 +4180,7 @@ export function BackupPanel() {
             </div>
           </div>
         ) : (
-          <div className="mt-3.5 flex flex-wrap items-center gap-3 text-sm" role="status">
+          <div className="flex flex-wrap items-center gap-3 text-sm" role="status">
             <p className="text-muted-foreground">
               {automatedError ?? "Loading automatic backup settings…"}
             </p>

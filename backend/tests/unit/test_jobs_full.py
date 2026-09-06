@@ -182,6 +182,35 @@ async def test_run_backup_job_complete(monkeypatch):
         await run_backup_job(session, storage, job_id)
 
 
+@pytest.mark.asyncio
+async def test_run_backup_job_lands_on_failed_when_the_automated_directory_is_unavailable(monkeypatch):
+    """Regression: this check used to run *before* the try/except below it.
+
+    An automated job whose configured directory disappears (unmounted,
+    removed) raised straight out of `run_backup_job` uncaught - the row was
+    already committed to "running" moments earlier and nothing ever set it
+    to "failed", leaving the schedule showing a job stuck "running" forever
+    with no error to explain why.
+    """
+    session = AsyncMock()
+    storage = AsyncMock()
+    job_id = uuid.uuid4()
+    job = BackupJob(
+        id=job_id, kind="full_export", status="queued", cancel_requested=False,
+        created_at=datetime.now(UTC), automated=True,
+    )
+    session.get.return_value = job
+
+    monkeypatch.setattr(
+        "app.modules.backup.automated.configured_directory", AsyncMock(return_value=None)
+    )
+
+    with pytest.raises(ValueError, match="not configured or available"):
+        await run_backup_job(session, storage, job_id)
+    assert job.status == "failed"
+    assert job.error and "not configured or available" in job.error
+
+
 def _restore_job(**overrides):
     defaults = dict(
         id=uuid.uuid4(),

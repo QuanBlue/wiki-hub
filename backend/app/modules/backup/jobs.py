@@ -350,17 +350,22 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
     # missing/unmounted directory is caught before spending any time on the
     # export rather than after.
     automated_directory: Path | None = None
-    if job.automated:
-        # Deferred: `app.modules.backup.automated` imports `create_export_job`
-        # from this module, so importing it back at module scope would be
-        # circular. By the time this function actually runs, both modules
-        # have already finished loading.
-        from app.modules.backup.automated import configured_directory
-
-        automated_directory = await configured_directory(session)
-        if automated_directory is None:
-            raise ValueError("The automated backup directory is not configured or available.")
     try:
+        if job.automated:
+            # Deferred: `app.modules.backup.automated` imports
+            # `create_export_job` from this module, so importing it back at
+            # module scope would be circular. By the time this function
+            # actually runs, both modules have already finished loading.
+            from app.modules.backup.automated import configured_directory
+
+            automated_directory = await configured_directory(session)
+            if automated_directory is None:
+                # Inside the try, not before it: raised before the row was
+                # ever touched here (still "running" from the commit above),
+                # this used to escape uncaught and leave the job stuck
+                # "running" forever instead of landing on "failed" the same
+                # way every other export error does.
+                raise ValueError("The automated backup directory is not configured or available.")
         with tempfile.NamedTemporaryFile(
             prefix="wikihub-backup-",
             suffix=f"-{suffix}",

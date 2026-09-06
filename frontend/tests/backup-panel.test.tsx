@@ -2962,7 +2962,10 @@ describe("BackupPanel automatic backups", () => {
     );
   }
 
-  it("shows the mounted volume and the resolved directory it will actually write to", async () => {
+  it("shows the configured subfolder and no directory-missing banner when a volume is mounted", async () => {
+    // The mounted volume itself is a container-internal path, not something
+    // an admin set - it is deliberately not displayed (see the danger-banner
+    // test below for the one case that still is: nothing mounted at all).
     mockFetch([
       automaticSettingsRoute({
         subdirectory: "team-a",
@@ -2975,9 +2978,30 @@ describe("BackupPanel automatic backups", () => {
     render(<BackupPanel />);
 
     const section = automaticSection();
-    expect(await section.findByText("/backups/team-a")).toBeInTheDocument();
-    expect(section.getByText("/backups")).toBeInTheDocument();
-    expect(section.getByDisplayValue("team-a")).toBeInTheDocument();
+    expect(await section.findByDisplayValue("team-a")).toBeInTheDocument();
+    expect(
+      section.queryByText(/no backup directory is available/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the danger banner instead when no backup volume is mounted at all", async () => {
+    mockFetch([
+      automaticSettingsRoute({
+        directory_configured: false,
+        base_directory: null,
+        directory: null,
+      }),
+      automaticJobsRoute(),
+      ...baseRoutes(),
+    ]);
+
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    expect(
+      await section.findByText(/no backup directory is available/i),
+    ).toBeInTheDocument();
+    expect(section.getByLabelText(/subfolder/i)).toBeDisabled();
   });
 
   it("saves the typed subfolder along with the rest of the schedule", async () => {
@@ -3025,7 +3049,9 @@ describe("BackupPanel automatic backups", () => {
 
     await waitFor(() => expect(patches).toHaveLength(1));
     expect(patches[0].subdirectory).toBe("team-a");
-    expect(await section.findByText("/backups/team-a")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(section.getByDisplayValue("team-a")).toBeInTheDocument(),
+    );
   });
 
   it("shows the server's rejection right beside the subfolder field, not just as a toast", async () => {
@@ -3084,4 +3110,81 @@ describe("BackupPanel automatic backups", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("shows how long a finished backup took in its own history column", async () => {
+    mockFetch([
+      automaticSettingsRoute(),
+      {
+        method: "GET",
+        match: (p: string) => p === "/api/v1/backup/automatic/jobs",
+        handler: () => ({
+          body: [
+            {
+              id: "job-1",
+              status: "complete",
+              output_filename: "wikihub-auto-backup-20260906.zip",
+              download_url: "/api/v1/backup/automatic/jobs/job-1/download",
+              // 2 min 5 sec apart.
+              started_at: "2026-09-06T08:00:00Z",
+              updated_at: "2026-09-06T08:02:05Z",
+              created_at: "2026-09-06T08:00:00Z",
+            },
+          ],
+        }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    expect(
+      await section.findByText("wikihub-auto-backup-20260906.zip"),
+    ).toBeInTheDocument();
+    expect(section.getByText("2m 5s")).toBeInTheDocument();
+  });
+
+  it(
+    "keeps polling while a scheduled run is queued or running, and stops once it settles",
+    async () => {
+      // A scheduled run starts on its own cron tick, not from anything
+      // clicked on this page - without polling, whoever has the tab open
+      // would only ever see whatever status happened to be current on the
+      // last manual reload, reading as the job being stuck.
+      let settingsCalls = 0;
+      const spy = mockFetch([
+        {
+          method: "GET",
+          match: (p: string) => p === "/api/v1/backup/automatic",
+          handler: () => {
+            settingsCalls += 1;
+            return automaticSettingsRoute({
+              last_status: settingsCalls < 2 ? "running" : "complete",
+            }).handler();
+          },
+        },
+        automaticJobsRoute(),
+        ...baseRoutes(),
+      ]);
+
+      render(<BackupPanel />);
+
+      const section = automaticSection();
+      await section.findByText("running");
+      const callsWhileRunning = settingsCalls;
+
+      // Real timers, on this suite's own convention - the poll fires every
+      // 3s, so it must have ticked at least once inside a generous window.
+      await waitFor(() => expect(settingsCalls).toBeGreaterThan(callsWhileRunning), {
+        timeout: 6000,
+      });
+      await section.findByText("complete");
+
+      const callsOnceSettled = settingsCalls;
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      expect(settingsCalls).toBe(callsOnceSettled);
+      void spy;
+    },
+    10000,
+  );
 });
