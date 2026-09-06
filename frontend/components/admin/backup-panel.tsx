@@ -3817,52 +3817,27 @@ export function BackupPanel() {
         </div>
         {automatedSettings ? (
           <div className="mt-3.5 space-y-3.5">
-            {/* Storage: the mounted volume is fixed at deploy time and shown
-                for context only; the subfolder under it is the one thing an
-                admin can actually choose here, and it is checked against the
-                real filesystem the moment "Save schedule" is pressed - a
-                path that turns out wrong fails right in front of whoever
-                typed it, not hours later as an unwatched scheduled run. */}
+            {/* The mounted volume itself is fixed at deploy time and not
+                shown here - it's the container-internal mount path, not the
+                host location an admin actually set, so displaying it only
+                confused what "storage location" meant. When nothing is
+                mounted at all, that still surfaces as a danger banner below;
+                otherwise the subfolder is the one thing worth showing, and
+                it is checked against the real filesystem the moment "Save
+                schedule" is pressed - a path that turns out wrong fails
+                right in front of whoever typed it, not hours later as an
+                unwatched scheduled run. */}
             <div className="space-y-1.5">
-              <p className="text-muted-foreground text-[10px] font-semibold tracking-[0.08em] uppercase">
-                Storage location
-              </p>
-              <div
-                className={cn(
-                  "flex items-start gap-2 rounded-lg border p-2.5 text-xs",
-                  automatedSettings.directory_configured
-                    ? "border-success/30 bg-success-bg"
-                    : "border-danger/30 bg-danger/10",
-                )}
-              >
-                <FolderOpen
-                  className={cn(
-                    "mt-0.5 size-4 shrink-0",
-                    automatedSettings.directory_configured
-                      ? "text-success"
-                      : "text-danger",
-                  )}
-                />
-                <div className="min-w-0">
-                  <p className="font-medium break-all">
-                    {automatedSettings.directory_configured
-                      ? automatedSettings.directory
-                      : "No backup directory is available"}
-                  </p>
-                  <p className="text-muted-foreground mt-0.5">
-                    {automatedSettings.base_directory ? (
-                      <>
-                        Mounted volume:{" "}
-                        <code className="text-foreground bg-surface-sunken rounded px-1 py-0.5 font-mono">
-                          {automatedSettings.base_directory}
-                        </code>
-                      </>
-                    ) : (
-                      "The host backup volume is not mounted. Set WIKIHUB_AUTOMATED_BACKUP_DIRECTORY and mount a volume there."
-                    )}
+              {!automatedSettings.directory_configured ? (
+                <div className="border-danger/30 bg-danger/10 flex items-start gap-2 rounded-lg border p-2.5 text-xs">
+                  <FolderOpen className="text-danger mt-0.5 size-4 shrink-0" />
+                  <p className="font-medium">
+                    No backup directory is available. Set
+                    WIKIHUB_AUTOMATED_BACKUP_DIRECTORY and mount a volume
+                    there.
                   </p>
                 </div>
-              </div>
+              ) : null}
               <div className="space-y-1">
                 <label
                   htmlFor="automated-backup-subdirectory"
@@ -3881,7 +3856,7 @@ export function BackupPanel() {
                       subdirectory: event.target.value || null,
                     });
                   }}
-                  placeholder="e.g. team-a - leave blank to use the mounted volume's root"
+                  placeholder="e.g. team-a - leave blank to use the backup volume's root"
                   aria-invalid={automatedSubdirectoryError ? true : undefined}
                   aria-describedby="automated-backup-subdirectory-hint"
                 />
@@ -3889,7 +3864,7 @@ export function BackupPanel() {
                   id="automated-backup-subdirectory-hint"
                   className="text-muted-foreground text-[11px]"
                 >
-                  Relative to the mounted volume above. Create the folder
+                  Relative to the mounted backup volume. Create the folder
                   there first - this is not offered to create it for you.
                 </p>
                 {automatedSubdirectoryError ? (
