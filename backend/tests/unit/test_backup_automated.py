@@ -67,6 +67,31 @@ class TestSchemaTimeOfDayPattern:
         with pytest.raises(ValueError):
             AutomatedBackupSettingsUpdate(enabled=True, time_of_day="2:00")
 
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("3:00 PM", "15:00"),
+            ("03:00 PM", "15:00"),
+            ("3:00PM", "15:00"),
+            ("12:00 AM", "00:00"),
+            ("12:00 PM", "12:00"),
+            ("3:00:00 PM", "15:00"),
+            (" 3:00 PM ", "15:00"),
+        ],
+    )
+    def test_a_12_hour_time_with_am_pm_is_normalised(self, value: str, expected: str) -> None:
+        # Regression: a native <input type="time"> is specified to always
+        # report 24-hour "HH:MM", but some browsers hand back a localised
+        # 12-hour string instead - saving the schedule then failed the
+        # pattern check with an opaque "request payload is invalid".
+        assert AutomatedBackupSettingsUpdate(enabled=True, time_of_day=value).time_of_day == expected
+
+    def test_normalisation_does_not_loosen_the_24_hour_pattern(self) -> None:
+        # "9:30" (missing leading zero) must stay rejected - it must not be
+        # quietly accepted just because the AM/PM recovery path exists.
+        with pytest.raises(ValueError, match="time_of_day"):
+            AutomatedBackupSettingsUpdate(enabled=True, time_of_day="9:30")
+
 
 class TestNextRunAfter:
     def test_hourly_interval_adds_hours_from_reference(self) -> None:

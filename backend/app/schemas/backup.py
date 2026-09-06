@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from app.models.permission import GlobalPermission, Permission
 from app.models.restriction import PageRestrictionPermission
@@ -312,11 +312,35 @@ class BackupExportCreate(BaseModel):
     space_keys: list[str] = Field(default_factory=list, max_length=5000)
 
 
+def _normalize_time_of_day(value: object) -> object:
+    """Recover a 12-hour time some browsers hand back instead of "HH:MM".
+
+    A native ``<input type="time">`` is specified to always report strict
+    24-hour "HH:MM", but some browsers (Safari has shipped versions of this
+    bug) hand back a localised 12-hour string like "3:00 PM" instead. Only
+    formats carrying an explicit AM/PM designator are recognised here -
+    anything else (including a merely malformed 24-hour string, e.g. a
+    missing leading zero) is passed through unchanged for the strict pattern
+    below to reject, so this cannot loosen that check.
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    for fmt in ("%I:%M %p", "%I:%M%p", "%I:%M:%S %p"):
+        try:
+            return datetime.strptime(text, fmt).strftime("%H:%M")
+        except ValueError:
+            continue
+    return text  # let the pattern constraint below reject it with a clear message
+
+
 class AutomatedBackupSettingsUpdate(BaseModel):
     enabled: bool
     interval_unit: Literal["hours", "days"] = "days"
     interval_value: int = Field(default=1, ge=1, le=720)
-    time_of_day: str = Field(default="02:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    time_of_day: Annotated[str, BeforeValidator(_normalize_time_of_day)] = Field(
+        default="02:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$"
+    )
     timezone: str = Field(default="UTC", min_length=1, max_length=64)
     retention_count: int = Field(default=30, ge=1, le=1000)
     #: A path relative to the mounted backup root, e.g. "team-a" for

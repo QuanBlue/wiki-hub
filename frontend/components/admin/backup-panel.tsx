@@ -37,7 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ApiError, apiFetch } from "@/lib/api-client";
+import { ApiError, apiFetch, describeApiError } from "@/lib/api-client";
 import {
   detectArchiveFormat,
   type ArchiveFormat,
@@ -1867,7 +1867,7 @@ export function BackupPanel() {
       if (error instanceof ApiError && error.code === "backup_subdirectory_invalid") {
         setAutomatedSubdirectoryError(error.message);
       } else {
-        toast.error(error instanceof ApiError ? error.message : "Could not save automatic backups.");
+        toast.error(describeApiError(error, "Could not save automatic backups."));
       }
     } finally { setAutomatedPending(false); }
   }
