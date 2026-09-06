@@ -107,6 +107,10 @@ async def test_space_create_update_archive_delete_and_favourites() -> None:
     assert created.font_family == "inter"
     await service.update(created, SpaceUpdate(font_family=None), actor)
     assert created.font_family is None
+    await service.update(created, SpaceUpdate(max_upload_size_mb=50), actor)
+    assert created.max_upload_size_mb == 50
+    await service.update(created, SpaceUpdate(max_upload_size_mb=None), actor)
+    assert created.max_upload_size_mb is None
     await service.update(
         created,
         SpaceUpdate(name="New", icon="x", status="archived", visibility="restricted"),
@@ -190,6 +194,12 @@ async def test_personal_spaces_are_not_directory_listed_for_other_users() -> Non
     team = SimpleNamespace(key="ENG", visibility=SpaceVisibility.open)
     service.permissions.is_system_admin = AsyncMock(return_value=False)
     assert await service._is_listable(team, other) is True
+
+    # No view permission at all is checked before the "~" key is even
+    # looked at - a space nobody can see must not be listable regardless of
+    # whether it happens to be a personal one.
+    service.permissions.effective_permissions = AsyncMock(return_value=set())
+    assert await service._is_listable(team, other) is False
 
 
 @pytest.mark.asyncio

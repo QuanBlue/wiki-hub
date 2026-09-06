@@ -68,6 +68,36 @@ def test_production_rejects_the_default_admin_password() -> None:
         )
 
 
+def test_enabling_onlyoffice_without_its_urls_is_rejected() -> None:
+    with pytest.raises(ValueError, match="BACKEND_URL"):
+        Settings(onlyoffice_enabled=True, onlyoffice_backend_url="", onlyoffice_internal_url="")
+
+
+def test_enabling_onlyoffice_with_a_short_jwt_secret_is_rejected() -> None:
+    with pytest.raises(ValueError, match="JWT_SECRET"):
+        Settings(
+            onlyoffice_enabled=True,
+            onlyoffice_backend_url="http://onlyoffice:8080",
+            onlyoffice_internal_url="http://onlyoffice:8080",
+            onlyoffice_jwt_secret="too-short",
+        )
+
+
+def test_an_onlyoffice_url_without_a_scheme_is_rejected() -> None:
+    with pytest.raises(ValueError, match="must start with http"):
+        Settings(onlyoffice_backend_url="onlyoffice.internal:8080")
+
+
+def test_enabling_onlyoffice_with_everything_configured_is_accepted() -> None:
+    settings = Settings(
+        onlyoffice_enabled=True,
+        onlyoffice_backend_url="http://onlyoffice:8080",
+        onlyoffice_internal_url="http://onlyoffice:8080",
+        onlyoffice_jwt_secret="x" * 32,
+    )
+    assert settings.onlyoffice_enabled is True
+
+
 def test_database_url_is_assembled_from_the_discrete_postgres_settings() -> None:
     settings = Settings(
         postgres_user="u",
