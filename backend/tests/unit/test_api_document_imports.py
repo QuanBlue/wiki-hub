@@ -18,10 +18,13 @@ from app.api.v1.document_imports import (
     _check_magic_bytes,
     _enqueue,
     _filename_title_variants,
+    _find_filename_conflicts,
     _read_upload,
+    _resolve_parent,
     cancel_document_import,
     create_document_import,
     get_document_import,
+    list_active_document_imports,
 )
 from app.core.exceptions import (
     BadRequestError,
@@ -32,6 +35,7 @@ from app.core.exceptions import (
     ServiceUnavailableError,
     UnsupportedMediaTypeError,
 )
+from app.modules.document_import.service import StagedDocument
 from app.schemas.document_import import MAX_DOCUMENT_IMPORT_FILES
 
 MODULE = "app.api.v1.document_imports"
@@ -412,3 +416,134 @@ class TestReadAndCancel:
         await cancel_document_import(uuid.uuid4(), Mock(), AsyncMock())
 
         assert job.status == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_reads_a_job_the_caller_may_see(self, monkeypatch):
+        job = Mock(space_id=uuid.uuid4())
+        monkeypatch.setattr(f"{MODULE}.get_job_for_user", AsyncMock(return_value=job))
+        monkeypatch.setattr(f"{MODULE}.to_job_read", lambda j, *, space_key: {"space_key": space_key})
+        session = AsyncMock(get=AsyncMock(return_value=Mock(key="ENG")))
+
+        result = await get_document_import(uuid.uuid4(), Mock(), session)
+
+        assert result == {"space_key": "ENG"}
+
+    @pytest.mark.asyncio
+    async def test_reads_a_job_whose_space_was_since_deleted(self, monkeypatch):
+        # The job itself still exists (space_id is ON DELETE ... whatever the
+        # FK says - the job row is not deleted with the space), just nothing
+        # left to look its key up from.
+        job = Mock(space_id=uuid.uuid4())
+        monkeypatch.setattr(f"{MODULE}.get_job_for_user", AsyncMock(return_value=job))
+        monkeypatch.setattr(f"{MODULE}.to_job_read", lambda j, *, space_key: {"space_key": space_key})
+        session = AsyncMock(get=AsyncMock(return_value=None))
+
+        result = await get_document_import(uuid.uuid4(), Mock(), session)
+
+        assert result == {"space_key": ""}
+
+
+class TestListActiveDocumentImports:
+    @pytest.mark.asyncio
+    async def test_lists_this_users_unfinished_jobs_in_the_space(self, monkeypatch):
+        space = Mock(key="ENG")
+        space_service = Mock(
+            get_by_key=AsyncMock(return_value=space), require_view=AsyncMock()
+        )
+        monkeypatch.setattr(f"{MODULE}.SpaceService", lambda session: space_service)
+        jobs = [Mock(), Mock()]
+        monkeypatch.setattr(f"{MODULE}.list_active_jobs", AsyncMock(return_value=jobs))
+        monkeypatch.setattr(
+            f"{MODULE}.to_job_read", lambda job, *, space_key: {"space_key": space_key, "job": job}
+        )
+
+        result = await list_active_document_imports("ENG", Mock(), AsyncMock())
+
+        assert result == [{"space_key": "ENG", "job": job} for job in jobs]
+        space_service.require_view.assert_awaited_once()
+
+
+class TestResolveParent:
+    @pytest.mark.asyncio
+    async def test_a_blank_parent_id_resolves_to_none(self):
+        assert await _resolve_parent(AsyncMock(), space_id=uuid.uuid4(), parent_id=None) is None
+        assert await _resolve_parent(AsyncMock(), space_id=uuid.uuid4(), parent_id="   ") is None
+
+    @pytest.mark.asyncio
+    async def test_a_real_parent_in_the_space_is_returned(self):
+        space_id = uuid.uuid4()
+        parent = Mock(space_id=space_id)
+        session = AsyncMock(get=AsyncMock(return_value=parent))
+
+        result = await _resolve_parent(
+            session, space_id=space_id, parent_id=str(uuid.uuid4())
+        )
+
+        assert result is parent
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_parent_id_is_a_400_not_a_500(self):
+        with pytest.raises(BadRequestError):
+            await _resolve_parent(AsyncMock(), space_id=uuid.uuid4(), parent_id="not-a-uuid")
+
+    @pytest.mark.asyncio
+    async def test_a_parent_belonging_to_another_space_is_not_found(self):
+        parent = Mock(space_id=uuid.uuid4())
+        session = AsyncMock(get=AsyncMock(return_value=parent))
+
+        with pytest.raises(NotFoundError):
+            await _resolve_parent(
+                session, space_id=uuid.uuid4(), parent_id=str(uuid.uuid4())
+            )
+
+
+class TestFindFilenameConflicts:
+    @pytest.mark.asyncio
+    async def test_no_documents_means_no_conflicts_check_at_all(self):
+        session = AsyncMock()
+        space = Mock(id=uuid.uuid4())
+
+        result = await _find_filename_conflicts(
+            session, space=space, parent_id=None, documents=[]
+        )
+
+        assert result == []
+        session.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_sibling_sharing_a_titled_documents_name_is_reported(self):
+        space = Mock(id=uuid.uuid4())
+        parent_id = uuid.uuid4()
+        existing_page = Mock(title="Runbook")
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            return_value=Mock(scalars=Mock(return_value=Mock(all=Mock(return_value=[existing_page]))))
+        )
+        document = StagedDocument(
+            filename="Runbook.docx", content_type="x", data=b"x", source_format="docx"
+        )
+
+        result = await _find_filename_conflicts(
+            session, space=space, parent_id=parent_id, documents=[document]
+        )
+
+        assert result == [{"filename": "Runbook.docx", "title": "Runbook"}]
+
+    @pytest.mark.asyncio
+    async def test_a_page_with_no_matching_filename_is_not_reported(self):
+        space = Mock(id=uuid.uuid4())
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            return_value=Mock(
+                scalars=Mock(return_value=Mock(all=Mock(return_value=[Mock(title="Unrelated")])))
+            )
+        )
+        document = StagedDocument(
+            filename="Runbook.docx", content_type="x", data=b"x", source_format="docx"
+        )
+
+        result = await _find_filename_conflicts(
+            session, space=space, parent_id=None, documents=[document]
+        )
+
+        assert result == []

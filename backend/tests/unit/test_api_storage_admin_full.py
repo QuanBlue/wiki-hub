@@ -1,24 +1,19 @@
-import mimetypes
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import Request
 
 from app.api.v1.storage_admin import (
-    storage_kind,
-    storage_proxy_url,
+    delete_storage_object,
+    get_office_preview_config,
     list_storage_objects,
     presign_download,
     read_storage_object,
+    read_storage_object_for_office,
+    storage_kind,
+    storage_proxy_url,
     upload_storage_part,
-    delete_storage_object,
 )
-from app.core.exceptions import NotFoundError
-from app.models.attachment import PageAttachment
-from app.models.import_job import ImportArchive
-from app.models.user import User
-from app.models.page import WikiPage
-from app.models.space import Space
+from app.core.exceptions import BadRequestError, NotFoundError, ServiceUnavailableError
 
 
 def test_storage_kind():
@@ -45,7 +40,7 @@ async def test_list_storage_objects():
     session = AsyncMock()
     storage = AsyncMock()
     
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
     dt = datetime.now(UTC)
     
     m1 = Mock()
@@ -217,3 +212,115 @@ async def test_delete_storage_object_clears_backup_archive():
     assert archive.status == "cancelled"
     assert archive.sha256 is None
     assert archive.multipart_upload_id is None
+
+
+MODULE = "app.api.v1.storage_admin"
+
+
+def test_get_storage_returns_the_s3_backed_implementation() -> None:
+    from app.api.v1.storage_admin import get_storage
+    from app.services.storage import S3ObjectStorage
+
+    assert isinstance(get_storage(), S3ObjectStorage)
+
+
+@pytest.mark.asyncio
+async def test_list_storage_objects_without_a_session_skips_the_ownership_lookup() -> None:
+    # No DB session means no way to say *which* page/space owns an
+    # attachment or avatar key - every object still lists, just without
+    # that extra context.
+    storage = AsyncMock()
+    obj = Mock(key="avatars/u1/x.png", size=100, etag="abc", last_modified=None)
+    storage.list_objects.return_value = [obj]
+
+    result = await list_storage_objects(Mock(), storage, session=None)
+
+    assert len(result) == 1
+    assert result[0].kind == "avatar"
+
+
+class TestOfficePreviewConfig:
+    """The admin Object Storage browser's preview - unlike an attachment's
+    own /office/config (attachments.py), authorized by CurrentSuperuser
+    alone rather than a page-editor check, since a raw storage key has no
+    page to check permissions against."""
+
+    @pytest.mark.asyncio
+    async def test_a_missing_object_404s(self) -> None:
+        storage = AsyncMock(exists=AsyncMock(return_value=False))
+        with pytest.raises(NotFoundError):
+            await get_office_preview_config(Mock(), storage, key="avatars/x/y.docx")
+
+    @pytest.mark.asyncio
+    async def test_an_unpreviewable_extension_is_rejected(self) -> None:
+        storage = AsyncMock(exists=AsyncMock(return_value=True))
+        with pytest.raises(BadRequestError, match="cannot be previewed"):
+            await get_office_preview_config(Mock(), storage, key="backups/archive.zip")
+
+    @pytest.mark.asyncio
+    async def test_returns_a_read_only_config_for_a_previewable_object(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        storage = AsyncMock(exists=AsyncMock(return_value=True))
+        admin = Mock()
+        monkeypatch.setattr(
+            f"{MODULE}.preview_editor_config",
+            Mock(return_value={"documentType": "word"}),
+        )
+
+        result = await get_office_preview_config(
+            admin, storage, key="avatars/u1/original.docx"
+        )
+
+        assert result.config == {"documentType": "word"}
+
+
+class TestReadStorageObjectForOffice:
+    @pytest.mark.asyncio
+    async def test_disabled_raises_service_unavailable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            f"{MODULE}.require_onlyoffice_enabled",
+            Mock(side_effect=ServiceUnavailableError("not configured")),
+        )
+        with pytest.raises(ServiceUnavailableError):
+            await read_storage_object_for_office(AsyncMock(), key="x.docx", token="t")
+
+    @pytest.mark.asyncio
+    async def test_an_invalid_ticket_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(f"{MODULE}.require_onlyoffice_enabled", Mock())
+        from app.core.exceptions import AuthenticationError
+
+        monkeypatch.setattr(
+            f"{MODULE}.verify_preview_ticket",
+            Mock(side_effect=AuthenticationError("invalid")),
+        )
+        with pytest.raises(AuthenticationError):
+            await read_storage_object_for_office(AsyncMock(), key="x.docx", token="bad")
+
+    @pytest.mark.asyncio
+    async def test_a_missing_object_404s(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(f"{MODULE}.require_onlyoffice_enabled", Mock())
+        monkeypatch.setattr(f"{MODULE}.verify_preview_ticket", Mock())
+        storage = AsyncMock(exists=AsyncMock(return_value=False))
+        with pytest.raises(NotFoundError):
+            await read_storage_object_for_office(storage, key="x.docx", token="t")
+
+    @pytest.mark.asyncio
+    async def test_streams_the_object_with_a_guessed_media_type(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(f"{MODULE}.require_onlyoffice_enabled", Mock())
+        monkeypatch.setattr(f"{MODULE}.verify_preview_ticket", Mock())
+        storage = AsyncMock(
+            exists=AsyncMock(return_value=True),
+            get_stream=AsyncMock(return_value=(9, iter([b"docx bytes"]))),
+        )
+
+        response = await read_storage_object_for_office(
+            storage, key="avatars/u1/original.docx", token="t"
+        )
+
+        assert response.headers["content-length"] == "9"
+        assert 'filename="original.docx"' in response.headers["content-disposition"]
