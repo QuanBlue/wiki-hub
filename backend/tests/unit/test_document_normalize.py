@@ -11,6 +11,7 @@ import pytest
 
 from app.modules.document_import.normalize import (
     TRUNCATION_NOTICE_CLASS,
+    _language_of,
     normalize_document_html,
 )
 from app.modules.document_import.sanitize import sanitize_imported_html
@@ -66,6 +67,12 @@ class TestUnwrappingNeverLosesText:
     def test_comments_are_removed(self):
         assert _html("<p>a</p><!-- note --><p>b</p>") == "<p>a</p><p>b</p>"
 
+    def test_a_class_carrying_no_meaning_is_dropped_from_a_kept_element(self):
+        # Unlike a bare <span> (unwrapped entirely, above), a <p> is never
+        # unwrapped - so this is the only way Word's own "MsoNormal" styling
+        # class actually leaves the document.
+        assert _html('<p class="MsoNormal">text</p>') == "<p>text</p>"
+
 
 class TestFigures:
     def test_a_figure_becomes_an_image_followed_by_an_italic_caption(self):
@@ -92,6 +99,13 @@ class TestCodeBlocks:
 
     def test_an_unlabelled_block_gets_no_language_class(self):
         assert "language-" not in _html("<pre><code>plain</code></pre>")
+
+    def test_language_of_a_missing_element_is_none(self):
+        # `_language_of` never actually receives None from within the module
+        # itself (a fresh <code> is created before it is ever consulted) -
+        # its `Tag | None` signature exists for it to stay a safe, general
+        # helper regardless, which is what this checks directly.
+        assert _language_of(None) is None
 
 
 class TestTaskLists:
@@ -244,6 +258,37 @@ class TestTableOfContents:
         assert html == "<h2>Contents</h2><p>Introduction</p>"
         assert title == "contents"
 
+    def test_an_already_generated_contents_node_from_a_retried_import_is_replaced(self):
+        # An import can be retried using content that already passed through
+        # WikiHub once - the live node from that earlier pass must not
+        # survive as a second, now-stale one sitting beside the fresh scan.
+        source = (
+            '<div data-type="tableOfContents"></div>'
+            "<h1>Mục lục</h1><p>1 Architecture 4</p><p>1.1 Data model 5</p>"
+            "<h1>Architecture</h1><p>Page body</p>"
+        )
+
+        html, _, _ = normalize_document_html(source, filename="design.pdf")
+
+        assert html.count('<div data-type="tableOfContents"></div>') == 1
+
+    def test_a_toc_title_split_from_its_first_entry_mid_tag_still_recovers_both(self):
+        # The split point (right after "Mục lục ") falls in the *middle* of
+        # the <strong> tag's own text here, forcing the recursive tag-split
+        # path rather than the plain-sibling-boundary case the merged-title
+        # test above exercises.
+        source = (
+            "<p><strong>Mục lục Ove</strong>rview .............. 4</p>"
+            "<p>Data model .............. 5</p>"
+            "<h2>Overview</h2><p>Page body</p>"
+        )
+
+        html, _, _ = normalize_document_html(source, filename="design.pdf")
+
+        assert html.startswith('<div data-type="tableOfContents"></div>')
+        assert "Data model .............. 5" not in html
+        assert html.endswith("<p>Page body</p>")
+
 
 class TestImagesLinksAndTables:
     def test_a_loose_image_is_wrapped_in_its_own_paragraph(self):
@@ -271,6 +316,12 @@ class TestImagesLinksAndTables:
         result = _html('<table><tr><td colspan="1">a</td><td colspan="3">b</td></tr></table>')
         assert 'colspan="1"' not in result
         assert 'colspan="3"' in result
+
+    def test_a_non_numeric_span_is_treated_as_no_span_at_all(self):
+        # A malformed converter output ("colspan=auto" or similar), rather
+        # than a real value this pass would otherwise preserve or drop.
+        result = _html('<table><tr><td colspan="auto">a</td></tr></table>')
+        assert "colspan" not in result
 
     def test_colgroup_is_removed(self):
         result = _html("<table><colgroup><col/></colgroup><tr><td>a</td></tr></table>")

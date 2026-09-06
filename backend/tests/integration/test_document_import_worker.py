@@ -11,6 +11,7 @@ bookkeeping (isolation, counters, revision back-fill, cleanup), not pandoc.
 from __future__ import annotations
 
 import uuid
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
@@ -523,6 +524,184 @@ class TestPerFileIsolation:
 
         assert job.status == "failed"
         assert job.error == "No document could be imported."
+
+    async def test_a_deleted_creator_fails_the_whole_job_up_front(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # created_by_id is ON DELETE SET NULL (see the job model) - the
+        # creator can vanish (account deleted) between staging the upload and
+        # the worker actually picking the job up.
+        storage = FakeStorage()
+        job, _space, user = await _make_job(session, storage, ["a.docx"])
+        _patch_extract(monkeypatch, {"a.docx": ExtractedDocument(html="<p>x</p>")})
+        await session.delete(user)
+        await session.commit()
+
+        await run_document_import(session, storage, job.id)
+        await session.refresh(job)
+
+        assert job.status == "failed"
+        assert "no longer exists" in (job.error or "")
+
+    async def test_a_failure_to_list_staged_uploads_for_cleanup_does_not_fail_the_job(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Cleanup is strictly best-effort - see `_delete_staged_uploads`'s
+        own docstring - a completed import must stay completed even if the
+        storage backend cannot even be asked what to delete."""
+        storage = FakeStorage()
+        job, _, _ = await _make_job(session, storage, ["a.docx"])
+        _patch_extract(monkeypatch, {"a.docx": ExtractedDocument(html="<p>x</p>")})
+
+        async def broken_list_objects(prefix: str = ""):
+            raise ConnectionError("object storage is unreachable")
+
+        monkeypatch.setattr(storage, "list_objects", broken_list_objects)
+
+        await run_document_import(session, storage, job.id)
+        await session.refresh(job)
+
+        assert job.status == "complete"
+
+    async def test_an_exception_outside_any_single_file_still_fails_the_job_not_leaves_it_running(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """checkpoint_job() runs between files, outside `_run_one_item`'s own
+        per-file SAVEPOINT - an error there hits run_document_import's own
+        outer `except Exception`, which re-fetches the job before writing
+        "failed" (see _finalize_failed's docstring on why: the just-rolled-
+        back session has expired every attribute `job` had)."""
+        storage = FakeStorage()
+        job, _, _ = await _make_job(session, storage, ["a.docx"])
+        _patch_extract(monkeypatch, {"a.docx": ExtractedDocument(html="<p>x</p>")})
+        monkeypatch.setattr(
+            jobs_module,
+            "checkpoint_job",
+            AsyncMock(side_effect=RuntimeError("heartbeat write failed")),
+        )
+
+        with pytest.raises(RuntimeError, match="heartbeat write failed"):
+            await run_document_import(session, storage, job.id)
+        await session.refresh(job)
+
+        assert job.status == "failed"
+        assert "heartbeat write failed" in (job.error or "")
+
+
+class TestConflictResolution:
+    """`_find_import_conflict`/`_next_available_title`: the two paths a
+    re-imported file can take when something with the same title already
+    exists - numbered alongside it (rename mode) or written over it (replace
+    mode) - covered so far only for a top-level, exact-title collision."""
+
+    async def test_a_rename_collision_under_a_parent_page_is_scoped_to_its_siblings(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        storage = FakeStorage()
+        job, space, user = await _make_job(session, storage, ["Notes.docx"])
+        job.conflict_mode = "rename"
+        parent = await PageService(session).create(
+            space, PageCreate(title="Parent", content=""), user
+        )
+        await session.commit()
+        job.parent_id = parent.id
+        await session.commit()
+        # A same-titled page already exists, but as a *sibling of the
+        # parent*, not under it - it must not count as a collision.
+        await PageService(session).create(space, PageCreate(title="Notes", content=""), user)
+        await session.commit()
+        _patch_extract(monkeypatch, {"Notes.docx": ExtractedDocument(html="<p>x</p>")})
+
+        await run_document_import(session, storage, job.id)
+
+        pages = await _imported_pages(session, space)
+        under_parent = [page for page in pages if page.parent_id == parent.id]
+        assert [page.title for page in under_parent] == ["Notes"]
+
+    async def test_replace_mode_finds_the_original_even_from_a_numbered_filename(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Filed under a name that already looks like a numbered copy (someone
+        # re-downloaded the same report, say) - replace mode must still land
+        # on the *original* "Report", not create or match a "Report (2)".
+        storage = FakeStorage()
+        job, space, user = await _make_job(session, storage, ["Report (2).docx"])
+        job.conflict_mode = "replace"
+        original = await PageService(session).create(
+            space, PageCreate(title="Report", content="<p>old</p>"), user
+        )
+        await session.commit()
+        _patch_extract(
+            monkeypatch, {"Report (2).docx": ExtractedDocument(html="<p>new</p>")}
+        )
+
+        await run_document_import(session, storage, job.id)
+
+        pages = await _imported_pages(session, space)
+        assert [page.id for page in pages] == [original.id]
+        assert "new" in pages[0].content
+
+
+class TestEmbeddedImagePolicy:
+    async def test_an_image_type_the_workspace_no_longer_allows_is_dropped_with_a_warning(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        storage = FakeStorage()
+        job, _space, _ = await _make_job(session, storage, ["mixed.docx"])
+        # The default workspace allowlist is "*" (nothing restricted) - narrow
+        # it here so ".exe" actually has something to be rejected by.
+        real_limits_for_space = jobs_module.limits_for_space
+
+        def restricted_limits_for_space(effective, space):
+            return real_limits_for_space(effective, space).model_copy(
+                update={"allowed_attachment_types": ["png"]}
+            )
+
+        monkeypatch.setattr(
+            jobs_module, "limits_for_space", restricted_limits_for_space
+        )
+        allowed_token = new_media_token()
+        rejected_token = new_media_token()
+        _patch_extract(
+            monkeypatch,
+            {
+                "mixed.docx": ExtractedDocument(
+                    html=(
+                        f'<p><img src="{allowed_token}"/></p>'
+                        f'<p><img src="{rejected_token}"/></p>'
+                    ),
+                    media=[
+                        ExtractedMedia(
+                            token=allowed_token,
+                            filename="ok.png",
+                            data=b"\x89PNG" + b"a" * 900,
+                            content_type="image/png",
+                        ),
+                        ExtractedMedia(
+                            token=rejected_token,
+                            filename="ok.exe",
+                            data=b"MZ" + b"b" * 900,
+                            content_type="application/x-msdownload",
+                        ),
+                    ],
+                )
+            },
+        )
+
+        await run_document_import(session, storage, job.id)
+        await session.refresh(job)
+
+        page = (
+            await session.execute(select(WikiPage).where(WikiPage.title == "mixed"))
+        ).scalar_one()
+        attachments = (
+            (await session.execute(select(PageAttachment).where(PageAttachment.page_id == page.id)))
+            .scalars()
+            .all()
+        )
+        assert len(attachments) == 1
+        assert attachments[0].filename == "ok.png"
+        assert job.items[0].warnings and "was not attached" in job.items[0].warnings[0]
 
 
 class TestCancellation:

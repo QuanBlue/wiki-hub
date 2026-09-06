@@ -352,17 +352,6 @@ def _split_inline_nodes(
     return head, tail
 
 
-def _is_toc_entry(element: Tag) -> bool:
-    if element.name in {"h1", "h2", "h3", "h4", "h5", "h6", "nav"}:
-        return False
-    text = " ".join(element.get_text(" ", strip=True).split())
-    return bool(
-        element.find("a")
-        or _TOC_ENTRY_NUMBER.match(text)
-        or _TOC_ENTRY_DOTS.search(text)
-    )
-
-
 def _is_blank(node: object) -> bool:
     """Whitespace between tags, which pandoc emits freely."""
     return isinstance(node, NavigableString) and not str(node).strip()
