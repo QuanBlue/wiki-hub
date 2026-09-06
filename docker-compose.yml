@@ -11,13 +11,13 @@
 # Every credential comes from .env - nothing sensitive is committed here.
 #
 # All persistent data (Postgres, Redis, MinIO, automated backups) is bind-
-# mounted from a host directory rather than a Docker-managed named volume, so
-# it lives somewhere findable and backup-able on the host rather than buried
-# under /var/lib/docker - each defaults to a project-relative ./data/* folder,
-# but a real deployment should point WIKIHUB_POSTGRES_HOST_DIRECTORY /
-# WIKIHUB_REDIS_HOST_DIRECTORY / WIKIHUB_MINIO_HOST_DIRECTORY /
-# WIKIHUB_AUTOMATED_BACKUP_HOST_DIRECTORY in .env at whichever partition the
-# server actually reserves for it (see .env.example).
+# mounted from a single host directory rather than scattered across
+# Docker-managed named volumes, so it lives somewhere findable and
+# backup-able on the host - one knob, WIKIHUB_DATA_HOST_DIRECTORY in .env,
+# picks where; a real deployment points it at whatever partition the server
+# actually reserves, and each store gets its own subdirectory underneath,
+# created automatically on first `docker compose up`. Left unset, it
+# defaults to a project-relative ./data folder (see .env.example).
 # =============================================================================
 
 name: wikihub
@@ -33,7 +33,7 @@ services:
       # Deterministic collation keeps index ordering stable across host locales.
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     volumes:
-      - ${WIKIHUB_POSTGRES_HOST_DIRECTORY:-./data/postgres}:/var/lib/postgresql/data
+      - ${WIKIHUB_DATA_HOST_DIRECTORY:-./data}/postgres:/var/lib/postgresql/data
     ports:
       - "${POSTGRES_PORT_HOST:-5432}:5432"
     healthcheck:
@@ -48,7 +48,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     volumes:
-      - ${WIKIHUB_REDIS_HOST_DIRECTORY:-./data/redis}:/data
+      - ${WIKIHUB_DATA_HOST_DIRECTORY:-./data}/redis:/data
     ports:
       - "${REDIS_PORT_HOST:-6379}:6379"
     healthcheck:
@@ -70,7 +70,7 @@ services:
       # Unset, MinIO would answer every preflight with Allow-Origin: *.
       MINIO_API_CORS_ALLOW_ORIGIN: ${WIKIHUB_CORS_ORIGINS:-http://localhost:3000}
     volumes:
-      - ${WIKIHUB_MINIO_HOST_DIRECTORY:-./data/minio}:/data
+      - ${WIKIHUB_DATA_HOST_DIRECTORY:-./data}/minio:/data
     ports:
       - "${MINIO_PORT_HOST:-9000}:9000"
       - "${MINIO_CONSOLE_PORT_HOST:-9001}:9001"
@@ -179,7 +179,7 @@ services:
     volumes:
       # Live reload during development; remove for a production-like run.
       - ./backend:/app
-      - ${WIKIHUB_AUTOMATED_BACKUP_HOST_DIRECTORY:-./data/automated-backups}:/backups
+      - ${WIKIHUB_DATA_HOST_DIRECTORY:-./data}/automated-backups:/backups
     # Chromium (page export) needs more than Docker's default 64MB /dev/shm;
     # --disable-dev-shm-usage in app/services/browser.py covers the same risk
     # from the other side.
@@ -212,7 +212,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-      - ${WIKIHUB_AUTOMATED_BACKUP_HOST_DIRECTORY:-./data/automated-backups}:/backups
+      - ${WIKIHUB_DATA_HOST_DIRECTORY:-./data}/automated-backups:/backups
     shm_size: "512mb"
     healthcheck:
       # arq heartbeats into Redis; `--check` exits non-zero when that beat goes
