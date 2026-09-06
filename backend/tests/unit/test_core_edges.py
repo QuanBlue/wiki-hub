@@ -32,11 +32,9 @@ def test_config_parsers_validators_and_production_hardening(
     with pytest.raises(ValueError):
         config._split_csv("[not-a-list]")
 
-    parsed = Settings(database_url="postgresql://u:p@localhost/db")
-    assert parsed.database_url.startswith("postgresql+asyncpg://")
+    parsed = Settings(postgres_user="u", postgres_password="p", postgres_host="localhost", postgres_db="db")
+    assert parsed.database_url == "postgresql+asyncpg://u:p@localhost:5432/db"
     assert parsed.sync_database_url.startswith("postgresql://")
-    with pytest.raises(ValidationError):
-        Settings(database_url="sqlite:///tmp.db")
     with pytest.raises(ValidationError):
         Settings(redis_url="http://localhost")
     with pytest.raises(ValidationError):

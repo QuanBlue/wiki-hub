@@ -68,8 +68,24 @@ def test_production_rejects_the_default_admin_password() -> None:
         )
 
 
+def test_database_url_is_assembled_from_the_discrete_postgres_settings() -> None:
+    settings = Settings(
+        postgres_user="u",
+        postgres_password="p",
+        postgres_host="h",
+        postgres_port=5433,
+        postgres_db="d",
+    )
+    assert settings.database_url == "postgresql+asyncpg://u:p@h:5433/d"
+
+
+def test_database_url_percent_encodes_special_characters_in_credentials() -> None:
+    settings = Settings(postgres_user="u@1", postgres_password="p@ss:w/ord")
+    assert settings.database_url.startswith("postgresql+asyncpg://u%401:p%40ss%3Aw%2Ford@")
+
+
 def test_sync_database_url_drops_the_async_driver() -> None:
-    settings = Settings(database_url="postgresql+asyncpg://u:p@h:5432/d")  # type: ignore[arg-type]
+    settings = Settings(postgres_user="u", postgres_password="p", postgres_host="h", postgres_db="d")
     assert settings.sync_database_url.startswith("postgresql://")
 
 

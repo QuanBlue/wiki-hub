@@ -12,6 +12,7 @@ import secrets
 from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from pydantic import AnyHttpUrl, BeforeValidator, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -85,9 +86,20 @@ class Settings(BaseSettings):
     auth_provider: Literal["local", "oidc"] = "local"
 
     # --- database ---------------------------------------------------------
-    # Kept as plain strings: SQLAlchemy and arq both want the raw DSN, and the
-    # validators below give a clearer failure than a coerced URL object would.
-    database_url: str = "postgresql+asyncpg://wikihub:wikihub@localhost:5432/wikihub"
+    # The same three credentials the Postgres container itself reads at
+    # initdb time (bare names, no WIKIHUB_ prefix - see docker-compose.yml),
+    # so there is exactly one place to set them rather than two
+    # representations (a DSN plus discrete values) that can drift apart. The
+    # DSN itself is assembled from these in `database_url` below, never set
+    # directly.
+    postgres_user: str = Field(default="wikihub", validation_alias="POSTGRES_USER")
+    postgres_password: str = Field(default="wikihub", validation_alias="POSTGRES_PASSWORD")
+    postgres_db: str = Field(default="wikihub", validation_alias="POSTGRES_DB")
+    # Only meaningful outside the default docker compose network, where
+    # Postgres is always reachable as the "postgres" service on its
+    # standard port.
+    postgres_host: str = Field(default="postgres", validation_alias="POSTGRES_HOST")
+    postgres_port: int = Field(default=5432, validation_alias="POSTGRES_PORT")
     db_pool_size: int = 10
     db_max_overflow: int = 20
     db_echo: bool = False
@@ -190,23 +202,21 @@ class Settings(BaseSettings):
         return self.max_import_size_mb * 1024 * 1024
 
     @property
+    def database_url(self) -> str:
+        """Assembled from postgres_user/password/host/port/db above.
+
+        User, password, and db are percent-encoded so a password containing
+        `@`, `:`, or `/` still produces a valid DSN.
+        """
+        user = quote(self.postgres_user, safe="")
+        password = quote(self.postgres_password, safe="")
+        db = quote(self.postgres_db, safe="")
+        return f"postgresql+asyncpg://{user}:{password}@{self.postgres_host}:{self.postgres_port}/{db}"
+
+    @property
     def sync_database_url(self) -> str:
         """psycopg-style URL, used by Alembic's synchronous tooling if needed."""
         return self.database_url.replace("+asyncpg", "")
-
-    @field_validator("database_url")
-    @classmethod
-    def _validate_database_url(cls, value: str) -> str:
-        if not value.startswith(("postgresql://", "postgresql+asyncpg://")):
-            raise ValueError(
-                "WIKIHUB_DATABASE_URL must be a PostgreSQL DSN "
-                "(postgresql+asyncpg://user:pass@host:port/db)"
-            )
-        # The application is async end to end; normalise the driver so a plain
-        # `postgresql://` DSN from a Helm chart or CI secret still works.
-        if value.startswith("postgresql://"):
-            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
-        return value
 
     @field_validator("redis_url")
     @classmethod
