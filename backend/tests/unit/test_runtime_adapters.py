@@ -166,6 +166,111 @@ async def test_run_backup_job_skips_retention_for_a_failed_automated_run(
 
 
 @pytest.mark.asyncio
+async def test_schedule_automated_backup_enqueues_only_when_a_job_is_due(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The minute-ly cron tick itself - `schedule_due_backup` (tested on its
+    own in test_backup_automated.py) decides *whether* one is due; this is
+    only responsible for handing a due job to the queue, and for not doing
+    anything at all when there isn't one."""
+    session = Mock()
+    context = AsyncMock()
+    context.__aenter__.return_value = session
+    context.__aexit__.return_value = False
+    monkeypatch.setattr(tasks, "session_scope", lambda: context)
+
+    due = AsyncMock(return_value=None)
+    monkeypatch.setattr(tasks, "schedule_due_backup", due)
+    redis = AsyncMock()
+    await tasks.schedule_automated_backup({"redis": redis})
+    redis.enqueue_job.assert_not_awaited()
+
+    job = SimpleNamespace(id="due-job")
+    due.return_value = job
+    redis = AsyncMock()
+    await tasks.schedule_automated_backup({"redis": redis})
+    redis.enqueue_job.assert_awaited_once_with("run_backup_job", "due-job")
+
+
+@pytest.mark.asyncio
+async def test_run_document_import_delegates_to_the_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import uuid
+
+    session = Mock()
+    context = AsyncMock()
+    context.__aenter__.return_value = session
+    context.__aexit__.return_value = False
+    monkeypatch.setattr(tasks, "session_scope", lambda: context)
+    storage = object()
+    monkeypatch.setattr(tasks, "get_storage", lambda: storage)
+    run = AsyncMock()
+    monkeypatch.setattr(tasks, "execute_document_import", run)
+
+    job_id = uuid.uuid4()
+    await tasks.run_document_import({}, str(job_id))
+
+    run.assert_awaited_once_with(session, storage, job_id)
+
+
+@pytest.mark.asyncio
+async def test_reap_backup_jobs_logs_each_family_that_reaped_something(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One minute-ly sweep covers all three job families (see the function's
+    own docstring on why) - each logs independently of the others, so a
+    quiet family must not suppress a noisy one's line."""
+    session = Mock()
+    context = AsyncMock()
+    context.__aenter__.return_value = session
+    context.__aexit__.return_value = False
+    monkeypatch.setattr(tasks, "session_scope", lambda: context)
+    monkeypatch.setattr(tasks, "reap_abandoned_export_jobs", AsyncMock(return_value=2))
+    monkeypatch.setattr(
+        tasks, "reap_abandoned_document_imports", AsyncMock(return_value=1)
+    )
+    monkeypatch.setattr(
+        tasks, "reap_abandoned_confluence_imports", AsyncMock(return_value=3)
+    )
+    log = Mock()
+    monkeypatch.setattr(tasks, "logger", log)
+
+    await tasks.reap_backup_jobs({}, every_running_job=True)
+
+    logged_events = {call.args[0] for call in log.info.call_args_list}
+    assert logged_events == {
+        "backup_jobs_reaped",
+        "document_imports_reaped",
+        "confluence_imports_reaped",
+    }
+
+
+@pytest.mark.asyncio
+async def test_reap_backup_jobs_logs_nothing_when_every_family_is_quiet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Mock()
+    context = AsyncMock()
+    context.__aenter__.return_value = session
+    context.__aexit__.return_value = False
+    monkeypatch.setattr(tasks, "session_scope", lambda: context)
+    monkeypatch.setattr(tasks, "reap_abandoned_export_jobs", AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        tasks, "reap_abandoned_document_imports", AsyncMock(return_value=0)
+    )
+    monkeypatch.setattr(
+        tasks, "reap_abandoned_confluence_imports", AsyncMock(return_value=0)
+    )
+    log = Mock()
+    monkeypatch.setattr(tasks, "logger", log)
+
+    await tasks.reap_backup_jobs({})
+
+    log.info.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_redis_close_resets_client(monkeypatch: pytest.MonkeyPatch) -> None:
     client = Mock()
     client.aclose = AsyncMock()

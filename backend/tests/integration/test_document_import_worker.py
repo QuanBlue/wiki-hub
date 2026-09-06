@@ -185,15 +185,18 @@ class TestHappyPath:
     async def test_keep_both_numbers_each_duplicate_title_in_order(
         self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # The title comes from the *filename*, not the document's own
+        # heading (see normalize.py's module docstring) - three files
+        # sharing one name is what has to collide here, not three files
+        # that happen to share an <h1>.
         storage = FakeStorage()
-        job, space, _ = await _make_job(session, storage, ["a.docx", "b.docx", "c.docx"])
+        job, space, _ = await _make_job(
+            session, storage, ["Architecture.docx", "Architecture.docx", "Architecture.docx"]
+        )
         job.conflict_mode = "rename"
         _patch_extract(
             monkeypatch,
-            {
-                filename: ExtractedDocument(html="<h1>Architecture</h1><p>Body.</p>")
-                for filename in ("a.docx", "b.docx", "c.docx")
-            },
+            {"Architecture.docx": ExtractedDocument(html="<h1>Body</h1><p>Body.</p>")},
         )
 
         await run_document_import(session, storage, job.id)
@@ -217,15 +220,13 @@ class TestHappyPath:
         "Architecture" above would never have caught it.
         """
         storage = FakeStorage()
-        job, space, _ = await _make_job(session, storage, ["a.docx", "b.docx"])
-        job.conflict_mode = "rename"
         title = "TẬP ĐOÀN CÔNG NGHIỆP - VIỄN THÔNG QUÂN ĐỘI"
+        filename = f"{title}.docx"
+        job, space, _ = await _make_job(session, storage, [filename, filename])
+        job.conflict_mode = "rename"
         _patch_extract(
             monkeypatch,
-            {
-                filename: ExtractedDocument(html=f"<h1>{title}</h1><p>Body.</p>")
-                for filename in ("a.docx", "b.docx")
-            },
+            {filename: ExtractedDocument(html="<h1>Body</h1><p>Body.</p>")},
         )
 
         await run_document_import(session, storage, job.id)
@@ -256,14 +257,22 @@ class TestHappyPath:
         assert job.counters["items_failed"] == 0
 
         pages = await _imported_pages(session, space)
-        assert {page.title for page in pages} == {"First", "Second"}
+        # Title comes from the filename, not either document's <h1> - see
+        # normalize.py's module docstring.
+        assert {page.title for page in pages} == {"one", "two"}
         for page in pages:
             assert page.created_by_id == user.id
             assert page.parent_id == job.parent_id
 
-    async def test_the_title_heading_is_not_repeated_in_the_body(
+    async def test_the_title_comes_from_the_filename_not_the_document_heading(
         self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Every imported page is titled after its source filename - a
+        document's own heading is deliberately left in the body as ordinary
+        content rather than promoted into the title and stripped out (see
+        normalize.py's module docstring). This used to be the opposite:
+        the heading became the title and was removed from the body, so this
+        guards against sliding back to that."""
         storage = FakeStorage()
         job, _space, _ = await _make_job(session, storage, ["one.docx"])
         _patch_extract(
@@ -272,9 +281,9 @@ class TestHappyPath:
         await run_document_import(session, storage, job.id)
 
         page = (
-            await session.execute(select(WikiPage).where(WikiPage.title == "Report"))
+            await session.execute(select(WikiPage).where(WikiPage.title == "one"))
         ).scalar_one()
-        assert "Report" not in page.content
+        assert "Report" in page.content
         assert "Body." in page.content
 
     async def test_revision_one_carries_the_imported_content_and_there_is_no_v2(
@@ -289,7 +298,9 @@ class TestHappyPath:
         )
         await run_document_import(session, storage, job.id)
 
-        page = (await session.execute(select(WikiPage).where(WikiPage.title == "T"))).scalar_one()
+        page = (
+            await session.execute(select(WikiPage).where(WikiPage.title == "one"))
+        ).scalar_one()
         revisions = (
             (
                 await session.execute(
@@ -320,7 +331,7 @@ class TestHappyPath:
         item = job.items[0]
         assert item.status == "complete"
         assert item.page_id is not None
-        assert item.page_title == "Notes"
+        assert item.page_title == "notes"
         assert item.page_slug
         assert item.error is None
 
@@ -353,7 +364,7 @@ class TestEmbeddedImages:
         await session.refresh(job)
 
         page = (
-            await session.execute(select(WikiPage).where(WikiPage.title == "Doc"))
+            await session.execute(select(WikiPage).where(WikiPage.title == "with-image"))
         ).scalar_one()
         attachment = (
             await session.execute(
@@ -385,7 +396,7 @@ class TestEmbeddedImages:
         await run_document_import(session, storage, job.id)
 
         page = (
-            await session.execute(select(WikiPage).where(WikiPage.title == "Ghost"))
+            await session.execute(select(WikiPage).where(WikiPage.title == "ghost"))
         ).scalar_one()
         assert "<img" not in page.content
         assert "text" in page.content
@@ -553,7 +564,7 @@ class TestCancellation:
         assert "running" not in by_name.values()
 
         pages = await _imported_pages(session, space)
-        assert [page.title for page in pages] == ["a.docx"]
+        assert [page.title for page in pages] == ["a"]
 
 
 class TestIdempotenceAndCleanup:
