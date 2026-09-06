@@ -18,6 +18,10 @@
 # actually reserves, and each store gets its own subdirectory underneath,
 # created automatically on first `docker compose up`. Left unset, it
 # defaults to a project-relative ./data folder (see .env.example).
+#
+# Automated backups alone can be pointed somewhere else entirely (a second
+# disk, a mounted network share) with WIKIHUB_BACKUP_HOST_DIRECTORY - left
+# unset, they stay under WIKIHUB_DATA_HOST_DIRECTORY like every other store.
 # =============================================================================
 
 name: wikihub
@@ -181,7 +185,7 @@ services:
     volumes:
       # Live reload during development; remove for a production-like run.
       - ./backend:/app
-      - ${WIKIHUB_DATA_HOST_DIRECTORY:-./data}/automated-backups:/backups
+      - ${WIKIHUB_BACKUP_HOST_DIRECTORY:-${WIKIHUB_DATA_HOST_DIRECTORY:-./data}/automated-backups}:/backups
     # Chromium (page export) needs more than Docker's default 64MB /dev/shm;
     # --disable-dev-shm-usage in app/services/browser.py covers the same risk
     # from the other side.
@@ -215,7 +219,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-      - ${WIKIHUB_DATA_HOST_DIRECTORY:-./data}/automated-backups:/backups
+      - ${WIKIHUB_BACKUP_HOST_DIRECTORY:-${WIKIHUB_DATA_HOST_DIRECTORY:-./data}/automated-backups}:/backups
     shm_size: "512mb"
     healthcheck:
       # arq heartbeats into Redis; `--check` exits non-zero when that beat goes
