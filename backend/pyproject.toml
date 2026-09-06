@@ -153,3 +153,19 @@ markers = [
 [tool.coverage.run]
 source = ["app"]
 omit = ["app/alembic/*"]
+# Without "greenlet", coverage silently under-reports any statement that
+# runs on the far side of a greenlet switch - which is how SQLAlchemy's async
+# engine actually calls asyncpg (see `greenlet_spawn`/`await_only` in
+# sqlalchemy.util._concurrency_py3k). A test built on a real database
+# connection (tests/api, tests/integration) then shows lines as "missing"
+# that it plainly executed - a mocked-session unit test never crosses that
+# boundary, so this went unnoticed as long as some unit test happened to
+# cover the same lines by a different path.
+#
+# "thread" has to be listed too, not assumed: naming `concurrency` at all
+# swaps in specialised tracers for only the mechanisms listed, dropping
+# coverage's normal (implicit, always-on) thread propagation - which is what
+# document_import/convert.py's real `anyio.to_thread.run_sync` calls (pandoc/
+# PDF extraction, both genuinely CPU-bound) need. Adding "greenlet" alone
+# looked like a regression there (90% -> 55%) for exactly that reason.
+concurrency = ["greenlet", "thread"]

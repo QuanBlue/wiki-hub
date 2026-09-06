@@ -10,6 +10,7 @@ exactly how one of the two ends up weaker than the other.
 
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 
@@ -29,11 +30,17 @@ from app.services.storage import ObjectStorage
 def safe_attachment_filename(filename: str | None) -> str:
     """The basename only, never a path.
 
-    ``Path(...).name`` is what stops ``../../etc/passwd`` from reaching an
-    object key: the key is built by interpolation, so a separator surviving
-    this function would let an attachment be written outside its page prefix.
+    Splitting on both ``/`` and ``\\`` explicitly is what stops
+    ``../../etc/passwd`` from reaching an object key - the key is built by
+    interpolation, so a separator surviving this function would let an
+    attachment be written outside its page prefix. ``Path(...).name`` alone
+    is not enough for that: it only recognises the *host* OS's own
+    separator, and this always runs as ``PosixPath`` in production (a Linux
+    container), under which a backslash is an ordinary filename character,
+    not a separator - a Windows-style path survived here untouched.
     """
-    name = Path(filename or "").name.strip()
+    raw = (filename or "").strip()
+    name = re.split(r"[\\/]+", raw)[-1].strip()
     if not name or name in {".", ".."}:
         raise BadRequestError("The attachment must have a filename.")
     return name[:255]

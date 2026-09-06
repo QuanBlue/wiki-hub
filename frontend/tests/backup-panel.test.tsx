@@ -1456,8 +1456,14 @@ describe("BackupPanel native restore", () => {
       name: /^cancel upload$/i,
     });
     expect(cancel).toBeEnabled();
+    // "Pause upload" only exists once real bytes are in flight
+    // (isUploadingBackupArchive) - fingerprinting the file first
+    // (isHashingBackupArchive) already locks the Confluence card above, so
+    // there is a real, if usually brief, window where only Cancel exists
+    // yet. findByRole (not getByRole) is what makes this assertion honest
+    // under real timing rather than assuming hashing a few bytes is instant.
     expect(
-      importSection().getByRole("button", { name: /^pause upload$/i }),
+      await importSection().findByRole("button", { name: /^pause upload$/i }),
     ).toBeEnabled();
 
     await actor.click(cancel);
@@ -2239,7 +2245,17 @@ describe("BackupPanel native restore", () => {
       await importSection().findByRole("button", { name: /^resume upload$/i }),
     ).toBeInTheDocument();
     expect(screen.getByText(/upload paused/i)).toBeInTheDocument();
+
+    // Pausing does not - cannot - abort the upload-parts request already in
+    // flight when the click happened; it only makes the code ignore that
+    // request's result once it does resolve (stillCurrent() below). Letting
+    // it resolve and settle before the test ends (rather than leaving it to
+    // resolve during, or after, the *next* test's run) is what this
+    // release-then-flush does; skipping it is what let a late `setState`
+    // reach a torn-down environment and fail an unrelated test instead of
+    // this one.
     releaseParts?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   it("requires confirmation before cancelling an in-progress archive upload", async () => {

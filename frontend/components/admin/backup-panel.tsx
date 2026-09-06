@@ -1449,6 +1449,25 @@ export function BackupPanel() {
     storedConfluenceUploadRef.current = storedConfluenceUpload;
   }, [storedConfluenceUpload]);
 
+  // Pausing/cancelling a restore or Confluence upload is what normally bumps
+  // uploadBackupRun/uploadRestoreRun, which is what every in-flight
+  // uploadAndScanBackupArchive/its Confluence counterpart checks via
+  // stillCurrent() before ever touching state again - but that only covers
+  // the user explicitly stopping it. Unmounting for any other reason (a
+  // route change the in-app link guard above does not catch, this panel
+  // simply leaving the page) left nothing to invalidate an operation still
+  // running in the background, so it kept going and eventually called
+  // setState against a component - in a test, a whole *environment - already
+  // gone. Bumping both run counters one last time on unmount is what makes
+  // "no longer current" true unconditionally, not just on the two buttons
+  // that already knew to say so.
+  useEffect(() => {
+    return () => {
+      uploadBackupRun.current += 1;
+      uploadRestoreRun.current += 1;
+    };
+  }, []);
+
   // Next.js navigation does not trigger the browser's unload prompt. Catch
   // normal in-app link clicks before the router handles them, then pause the
   // current multipart request only after the user confirms.
