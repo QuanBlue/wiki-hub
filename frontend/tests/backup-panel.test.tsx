@@ -3068,6 +3068,67 @@ describe("BackupPanel automatic backups", () => {
     expect(section.getByLabelText(/keep successful backups/i)).toBeDisabled();
   });
 
+  it("picks a timezone from the searchable list and saves it", async () => {
+    // 400+ IANA zones is too many for a plain <Select> to browse
+    // meaningfully - this is a combobox: a trigger button that opens a
+    // search box over the filtered list, not a native <select>.
+    const patches: Record<string, unknown>[] = [];
+    mockFetch([
+      automaticSettingsRoute({ timezone: "UTC" }),
+      automaticJobsRoute(),
+      {
+        method: "PATCH",
+        match: (p) => p === "/api/v1/backup/automatic",
+        handler: (init) => {
+          patches.push(JSON.parse(String(init?.body)));
+          return automaticSettingsRoute({ timezone: "Asia/Bangkok" }).handler();
+        },
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    await actor.click(await section.findByRole("button", { name: /^edit$/i }));
+
+    const timezoneTrigger = section.getByLabelText(/^timezone$/i);
+    expect(timezoneTrigger).toHaveTextContent("UTC");
+    await actor.click(timezoneTrigger);
+
+    const search = await screen.findByRole("searchbox", { name: /search time zones/i });
+    await actor.type(search, "bangkok");
+    await actor.click(await screen.findByText("Asia/Bangkok"));
+
+    expect(timezoneTrigger).toHaveTextContent("Asia/Bangkok");
+    await actor.click(
+      section.getByRole("button", { name: /^save schedule$/i }),
+    );
+
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0].timezone).toBe("Asia/Bangkok");
+  });
+
+  it("keeps a saved legacy timezone alias selectable even though it is not canonical", async () => {
+    // Intl.supportedValuesOf("timeZone") returns only canonical zone ids -
+    // "Asia/Ho_Chi_Minh" resolves to the same zone as the canonical
+    // "Asia/Saigon" but is not itself in that list. A schedule already
+    // saved under that name must not appear to have lost its timezone the
+    // moment this combobox renders it.
+    mockFetch([
+      automaticSettingsRoute({ timezone: "Asia/Ho_Chi_Minh" }),
+      automaticJobsRoute(),
+      ...baseRoutes(),
+    ]);
+
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    const timezoneTrigger = await section.findByLabelText(/^timezone$/i);
+    expect(timezoneTrigger).toHaveTextContent("Asia/Ho Chi Minh (UTC+7)");
+  });
+
   it("Cancel discards the edit and locks the fields again without saving", async () => {
     const patches: Record<string, unknown>[] = [];
     mockFetch([

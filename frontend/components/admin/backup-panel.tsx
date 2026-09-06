@@ -44,6 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TimezoneCombobox } from "@/components/ui/timezone-combobox";
 import { ApiError, apiFetch, describeApiError } from "@/lib/api-client";
 import {
   detectArchiveFormat,
@@ -4082,17 +4083,16 @@ export function BackupPanel() {
                   >
                     Timezone
                   </label>
-                  <Input
+                  <TimezoneCombobox
                     id="automated-backup-timezone"
                     value={automatedSettings.timezone}
                     disabled={!isEditingAutomatedSchedule}
-                    onChange={(event) =>
+                    onValueChange={(timezone) =>
                       setAutomatedSettings({
                         ...automatedSettings,
-                        timezone: event.target.value,
+                        timezone,
                       })
                     }
-                    placeholder="Asia/Ho_Chi_Minh"
                   />
                 </div>
                 <div className="space-y-1">
@@ -4183,10 +4183,10 @@ export function BackupPanel() {
                             {automatedJobDuration(job)}
                           </td>
                           <td className="p-2">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1.5">
                               {job.download_url ? (
                                 <a
-                                  className="text-primary hover:text-primary-hover inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  className="text-primary hover:bg-primary/10 inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                   href={job.download_url}
                                 >
                                   <Download className="size-3.5" /> Download
@@ -4194,7 +4194,7 @@ export function BackupPanel() {
                               ) : null}
                               <button
                                 type="button"
-                                className="text-danger hover:text-danger/80 inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="text-danger hover:bg-danger-bg inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 onClick={() => setDeleteAutomatedJobId(job.id)}
                               >
                                 <Trash2 className="size-3.5" /> Delete
