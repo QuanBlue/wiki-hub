@@ -1,6 +1,6 @@
 import json
 import uuid
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -8,11 +8,20 @@ from app.api.v1.backup import (
     _enqueue,
     cancel_backup_job,
     create_backup_export,
+    export_backup,
+    get_backup_archive_service,
     get_backup_job,
+    get_backup_service,
+    import_backup,
     import_full_backup_zip,
     list_backup_jobs,
 )
-from app.core.exceptions import BadRequestError, ConflictError, PayloadTooLargeError, ServiceUnavailableError
+from app.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    PayloadTooLargeError,
+    ServiceUnavailableError,
+)
 from app.models.backup_job import BackupJob
 from app.schemas.backup import BackupExportCreate
 
@@ -136,7 +145,7 @@ async def test_create_backup_export(monkeypatch):
         m.result = None
         m.output_filename = None
         m.error = None
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         m.created_at = datetime.now(UTC)
         m.updated_at = datetime.now(UTC)
         m.actor_id = uuid.uuid4()
@@ -189,7 +198,7 @@ async def test_get_backup_job():
     m.result = None
     m.output_filename = None
     m.error = None
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
     m.created_at = datetime.now(UTC)
     m.updated_at = datetime.now(UTC)
     session.get.return_value = m
@@ -202,7 +211,7 @@ async def test_get_backup_job():
 async def test_list_backup_jobs():
     session = AsyncMock()
     user = Mock()
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
 
     def make_job(**overrides):
         defaults = dict(
@@ -246,7 +255,7 @@ async def test_cancel_backup_job_already_finished():
 async def test_cancel_backup_job_queued_finalizes_immediately():
     session = AsyncMock()
     user = Mock()
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
 
     job = BackupJob(
         id=uuid.uuid4(), kind="full_export", status="queued", phase="queued",
@@ -267,7 +276,7 @@ async def test_cancel_backup_job_running_with_live_worker_only_sets_flag():
     so the endpoint must not declare the job finished on its behalf."""
     session = AsyncMock()
     user = Mock()
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
 
     job = BackupJob(
         id=uuid.uuid4(), kind="full_export", status="running", phase="exporting",
@@ -293,7 +302,7 @@ async def test_cancel_backup_job_finalizes_a_job_whose_worker_died():
     state again. A stale heartbeat now identifies that case so Cancel resolves
     it on the spot.
     """
-    from datetime import datetime, timedelta, UTC
+    from datetime import UTC, datetime, timedelta
 
     from app.modules.backup.service import STALE_JOB_AFTER
 
@@ -312,3 +321,90 @@ async def test_cancel_backup_job_finalizes_a_job_whose_worker_died():
         assert res.status == "cancelled", f"heartbeat={heartbeat!r}"
         assert res.phase == "cancelled"
         assert res.cancel_requested is True
+
+
+@pytest.mark.asyncio
+async def test_backup_service_dependency_factories():
+    session = Mock()
+    service = get_backup_service(session, Mock(), Mock(), None)
+    assert service.session is session
+
+    archive_service = get_backup_archive_service(session)
+    assert archive_service.session is session
+
+
+@pytest.mark.asyncio
+async def test_export_backup_returns_a_downloadable_json_document():
+    from datetime import UTC, datetime
+
+    from app.schemas.backup import BackupDocument, BackupMeta
+
+    document = BackupDocument(
+        wikihub_backup=BackupMeta(
+            exported_at=datetime.now(UTC),
+            app_version="test",
+            site_name="WikiHub",
+            includes_credentials=False,
+        )
+    )
+    service = Mock(export_document=AsyncMock(return_value=document))
+
+    response = await export_backup(service, include_credentials=False)
+
+    assert response.media_type == "application/json"
+    assert "wikihub-backup-" in response.headers["content-disposition"]
+    service.export_document.assert_awaited_once_with(include_credentials=False)
+
+
+@pytest.mark.asyncio
+async def test_import_backup_rejects_a_non_json_filename():
+    file = Mock(filename="backup.zip")
+    with pytest.raises(BadRequestError, match=r"Choose a \.json"):
+        await import_backup(Mock(), file, dry_run=True)
+
+
+@pytest.mark.asyncio
+async def test_import_backup_rejects_an_oversized_upload(monkeypatch):
+    from app.api.v1 import backup as backup_module
+
+    monkeypatch.setattr(backup_module, "MAX_BACKUP_UPLOAD_BYTES", 4)
+    file = Mock(filename="backup.json", read=AsyncMock(return_value=b"way too big"))
+    with pytest.raises(PayloadTooLargeError):
+        await import_backup(Mock(), file, dry_run=True)
+
+
+@pytest.mark.asyncio
+async def test_import_backup_rejects_malformed_json():
+    file = Mock(filename="backup.json", read=AsyncMock(return_value=b"not json"))
+    with pytest.raises(BadRequestError, match="not valid JSON"):
+        await import_backup(Mock(), file, dry_run=True)
+
+
+@pytest.mark.asyncio
+async def test_import_backup_rejects_json_that_is_not_a_backup_document():
+    file = Mock(filename="backup.json", read=AsyncMock(return_value=b'{"not": "a backup"}'))
+    with pytest.raises(BadRequestError, match="not a WikiHub backup document"):
+        await import_backup(Mock(), file, dry_run=True)
+
+
+@pytest.mark.asyncio
+async def test_import_backup_applies_a_well_formed_document():
+    from datetime import UTC, datetime
+
+    payload = {
+        "wikihub_backup": {
+            "version": 1,
+            "exported_at": datetime.now(UTC).isoformat(),
+            "app_version": "test",
+            "site_name": "WikiHub",
+            "includes_credentials": False,
+        }
+    }
+    file = Mock(filename="backup.json", read=AsyncMock(return_value=json.dumps(payload).encode()))
+    service = Mock(import_document=AsyncMock(return_value="report"))
+
+    result = await import_backup(service, file, dry_run=False)
+
+    assert result == "report"
+    service.import_document.assert_awaited_once()
+    assert service.import_document.call_args.kwargs["dry_run"] is False
