@@ -12,9 +12,12 @@ from app.core.config import settings
 from app.core.exceptions import AuthenticationError, ServiceUnavailableError
 from app.modules.attachments.onlyoffice import (
     editor_config,
+    file_extension,
     internal_download_url,
+    is_enabled,
     preview_editor_config,
     preview_extension,
+    require_enabled,
     verify_callback_token,
     verify_preview_ticket,
     verify_ticket,
@@ -43,6 +46,30 @@ def _user() -> SimpleNamespace:
         full_name="WikiHub Editor",
         username="editor",
     )
+
+
+def test_is_enabled_and_require_enabled_reflect_the_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert is_enabled() is True
+    require_enabled()  # does not raise
+
+    monkeypatch.setattr(settings, "onlyoffice_enabled", False)
+    assert is_enabled() is False
+    with pytest.raises(ServiceUnavailableError, match="not configured"):
+        require_enabled()
+
+
+@pytest.mark.parametrize("filename", ["report.pdf", "notes.txt", "archive.zip", "no-extension"])
+def test_file_extension_rejects_anything_not_editable(filename: str) -> None:
+    # Only docx/xlsx/pptx can actually be opened in the editor - everything
+    # else, PDF included, is read-only elsewhere in the app.
+    with pytest.raises(ServiceUnavailableError, match="cannot be edited"):
+        file_extension(filename)
+
+
+def test_file_extension_accepts_the_editable_office_formats() -> None:
+    assert file_extension("report.DOCX") == "docx"
 
 
 def test_editor_config_is_signed_and_uses_internal_capability_urls() -> None:
@@ -97,6 +124,13 @@ def test_ticket_is_scoped_to_attachment_and_purpose() -> None:
     verify_ticket(token, attachment_id=attachment.id, purpose="content")
     with pytest.raises(AuthenticationError):
         verify_ticket(token, attachment_id=attachment.id, purpose="callback")
+    with pytest.raises(AuthenticationError):
+        verify_ticket(token, attachment_id=uuid.uuid4(), purpose="content")
+
+
+def test_a_garbage_ticket_is_rejected_rather_than_raising_a_raw_jwt_error() -> None:
+    with pytest.raises(AuthenticationError, match="invalid or has expired"):
+        verify_ticket("not-a-real-token", attachment_id=uuid.uuid4(), purpose="content")
 
 
 def test_callback_signature_rejects_a_substituted_download_url() -> None:
@@ -116,6 +150,40 @@ def test_callback_signature_rejects_a_substituted_download_url() -> None:
         verify_callback_token(callback)
 
 
+def test_callback_signature_rejects_a_substituted_status() -> None:
+    callback = {
+        "key": "wkh_v2_11111111222233334444555555555555_7",
+        "status": 6,
+        "url": "http://onlyoffice/cache/edited.docx",
+    }
+    callback["token"] = jwt.encode(callback, settings.onlyoffice_jwt_secret, algorithm="HS256")
+    callback["status"] = 2
+
+    with pytest.raises(AuthenticationError):
+        verify_callback_token(callback)
+
+
+def test_a_callback_body_missing_a_key_entirely_is_rejected() -> None:
+    # The per-field loop only checks a field that is *present* in the body -
+    # this is what still catches "key" missing outright, since the signed
+    # token's own "key" claim would then be compared against None.
+    signed = {"key": "wkh_v2_x_1", "status": 6, "url": "http://onlyoffice/x"}
+    token = jwt.encode(signed, settings.onlyoffice_jwt_secret, algorithm="HS256")
+
+    with pytest.raises(AuthenticationError):
+        verify_callback_token({"status": 6, "url": "http://onlyoffice/x", "token": token})
+
+
+def test_a_callback_with_an_unparseable_token_is_rejected() -> None:
+    with pytest.raises(AuthenticationError, match="signature is invalid"):
+        verify_callback_token({"key": "k", "token": "not-a-real-jwt"})
+
+
+def test_a_callback_with_no_token_at_all_is_rejected() -> None:
+    with pytest.raises(AuthenticationError, match="missing its signature"):
+        verify_callback_token({"key": "k", "status": 2})
+
+
 def test_download_url_is_repinned_to_the_internal_document_server() -> None:
     # The Document Server advertises the address the browser uses to reach it,
     # which is unreachable from the backend. Only the path and query survive.
@@ -133,6 +201,13 @@ def test_download_url_is_repinned_to_the_internal_document_server() -> None:
     assert internal_download_url("file:///etc/passwd") is None
     assert internal_download_url("http://onlyoffice") is None
     assert internal_download_url("not a url") is None
+
+
+def test_a_misconfigured_internal_url_never_produces_a_download_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "onlyoffice_internal_url", "")
+    assert internal_download_url("http://localhost:8080/cache/x/output.docx") is None
 
 
 class TestPreviewExtension:
