@@ -198,7 +198,12 @@ export function generatePaletteFromHex(hex: string): ThemeColorPreset["palette"]
     200: mix(255, 255, 255, 0.35),
     300: mix(255, 255, 255, 0.55),
     400: mix(255, 255, 255, 0.75),
-    500: `#${cleanHex.padStart(6, "0")}`,
+    // The exact input color, reconstructed from the already-expanded r/g/b
+    // above rather than re-padding `cleanHex` itself - that padded a
+    // 3-digit shorthand ("f00") on the wrong side into total nonsense
+    // ("000f00") instead of the shorthand-expanded color every other shade
+    // here already mixes from.
+    500: mix(0, 0, 0, 1),
     600: mix(0, 0, 0, 0.85),
     700: mix(0, 0, 0, 0.7),
     800: mix(0, 0, 0, 0.5),
