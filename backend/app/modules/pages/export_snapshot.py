@@ -140,6 +140,7 @@ THEME_PROBE_JS = r"""
     foreground: readRootVar('--foreground'),
     primary: readRootVar('--primary'),
     border: readRootVar('--border'),
+    table_header_bg: readRootVar('--surface-sunken'),
     code_bg: readRootVar('--wh-code-bg'),
     code_fg: readRootVar('--wh-code-fg'),
     code_comment: readRootVar('--wh-code-comment'),

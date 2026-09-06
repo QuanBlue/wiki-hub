@@ -110,6 +110,52 @@ async def test_an_already_open_toggle_stays_open() -> None:
     assert 'data-open="true"' in html
 
 
+class TestBareHeaderRows:
+    """A page's own table never wraps its header row in a <thead> - it is
+    just an ordinary <tr> of <th> cells (see rich-text-editor.tsx's
+    TableHeaderWithBackground). Pandoc's HTML reader only recognises a
+    header row inside a real <thead>, so without this, Word export's own
+    header-row styling never has anything to paint."""
+
+    @pytest.mark.asyncio
+    async def test_a_bare_th_row_gets_wrapped_in_a_thead(self) -> None:
+        p = page(
+            content_format="html",
+            content="<table><tbody><tr><th>A</th><th>B</th></tr>"
+            "<tr><td>1</td><td>2</td></tr></tbody></table>",
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert html == (
+            "<table><thead><tr><th>A</th><th>B</th></tr></thead>"
+            "<tbody><tr><td>1</td><td>2</td></tr></tbody></table>"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_table_already_wrapped_is_left_alone(self) -> None:
+        p = page(
+            content_format="html",
+            content="<table><thead><tr><th>A</th></tr></thead>"
+            "<tbody><tr><td>1</td></tr></tbody></table>",
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert html.count("<thead>") == 1
+
+    @pytest.mark.asyncio
+    async def test_a_table_with_no_header_cells_is_left_alone(self) -> None:
+        p = page(
+            content_format="html",
+            content="<table><tbody><tr><td>1</td><td>2</td></tr></tbody></table>",
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert "<thead>" not in html
+
+
 class TestTableOfContents:
     """The live editor's `tableOfContents` node stores no content of its
     own - a React node view fills the placeholder in by scanning the *live*
@@ -235,6 +281,56 @@ class TestTableOfContents:
         )
         assert f'<p>\xa0\xa0\xa0\xa0<a href="#scope">1.1. Scope</a></p>' in html
         assert "style=" not in html.split("Table of contents")[1]
+
+
+class TestNativeWordTableOfContents:
+    """Word has its own real, updatable Table of Contents field - unlike
+    PDF/HTML, which have no such mechanism and so get the custom-rendered
+    outline above instead. `native_word_toc=True` (export_service.py's
+    Word branch only) must leave a marker for export_docx.py to turn into
+    that real field, not the PDF/HTML outline.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_placeholder_becomes_a_marker_paragraph(self) -> None:
+        p = page(
+            content_format="html",
+            content='<div data-type="tableOfContents"></div><h1>Introduction</h1>',
+        )
+        html = await export_content.prepare_export_html(
+            p,
+            storage=storage(),
+            session=session_returning({}),
+            native_word_toc=True,
+        )
+        assert 'data-type="tableOfContents"' not in html
+        assert f"<p>{export_content.WORD_TOC_FIELD_MARKER}</p>" in html
+        # None of the PDF/HTML outline's own rendering - no numbered entry,
+        # no link, no heading id needlessly assigned for a feature Word
+        # doesn't use this way.
+        assert "1. Introduction" not in html
+        assert "<a href" not in html
+        assert "<h1 id=" not in html
+
+    @pytest.mark.asyncio
+    async def test_no_headings_still_gets_the_marker_not_a_removed_placeholder(
+        self,
+    ) -> None:
+        # Unlike the PDF/HTML outline (which removes an empty placeholder
+        # rather than render an empty list), Word's native field builds its
+        # own outline whenever the document *later* gains headings - always
+        # leave the field for Word to manage, never decide on its behalf.
+        p = page(
+            content_format="html",
+            content='<div data-type="tableOfContents"></div>',
+        )
+        html = await export_content.prepare_export_html(
+            p,
+            storage=storage(),
+            session=session_returning({}),
+            native_word_toc=True,
+        )
+        assert f"<p>{export_content.WORD_TOC_FIELD_MARKER}</p>" in html
 
 
 class TestImageCaptions:

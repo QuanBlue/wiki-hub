@@ -151,7 +151,9 @@ async def test_docx_export_probes_the_theme_and_converts_the_semantic_html() -> 
         space_font="roboto"
     )
 
-    prepared.assert_awaited_once_with(page, storage=fake_storage, session=session)
+    prepared.assert_awaited_once_with(
+        page, storage=fake_storage, session=session, native_word_toc=True
+    )
     converted.assert_awaited_once_with(
         "<p>real semantic html</p>", {"code_fg": "#fff"}, title=page.title, font_id="roboto"
     )

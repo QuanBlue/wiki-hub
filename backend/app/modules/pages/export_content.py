@@ -20,6 +20,11 @@ fit for a session-less headless browser:
   (``TableOfContentsComponent``'s ``goToHeading``), which means nothing once
   there is no live document to hold that position: a static export's outline
   needs a real, followable link instead, in the PDF/HTML/Word reader alike;
+- a bare header row (``<tr><th>...`` with no enclosing ``<thead>`` - exactly
+  what a page's own table produces) wrapped in one, since Word export's
+  table-header formatting can only paint what Pandoc's own HTML reader
+  recognised as a header row in the first place, and Pandoc does not
+  consider a ``<th>`` a header at all unless it sits inside a ``<thead>``;
 - every attachment reference inlined as a ``data:`` URI, since the headless
   browser holds no session cookie and a plain ``/api/v1/attachments/...`` URL
   would 401.
@@ -31,6 +36,7 @@ import base64
 import re
 import unicodedata
 import uuid
+from typing import Final
 
 from bs4 import BeautifulSoup, Tag
 from markdown_it import MarkdownIt
@@ -94,6 +100,31 @@ def _force_toggles_open(soup: BeautifulSoup) -> None:
         element["data-open"] = "true"
 
 
+def _wrap_bare_header_rows(soup: BeautifulSoup) -> None:
+    """Give Pandoc a real ``<thead>`` to work with.
+
+    A page's own table (see rich-text-editor.tsx's
+    ``TableHeaderWithBackground``/``TableRowWithHeight``) never wraps its
+    header row in a ``<thead>`` - it is just an ordinary ``<tr>`` whose cells
+    happen to be ``<th>``. A browser, and this app's own read-only render,
+    render that identically to a ``<thead>``-wrapped one, but Pandoc's HTML
+    reader does not: without a ``<thead>``, it reads a ``<th>`` as an
+    ordinary cell and marks no header row at all, which is what silently
+    stopped Word export's own header-row styling (see
+    ``export_docx._apply_table_header_formatting``) from ever having
+    anything to paint.
+    """
+    for table in soup.find_all("table"):
+        if table.find("thead"):
+            continue
+        first_row = table.find("tr")
+        if first_row is None or not first_row.find("th", recursive=False):
+            continue
+        thead = soup.new_tag("thead")
+        thead.append(first_row.extract())
+        table.insert(0, thead)
+
+
 def _number_headings(headings: list[tuple[int, str]]) -> list[tuple[str, int, str]]:
     """Port of the frontend's ``numberTableOfContentsHeadings`` - same
     counters-per-level algorithm, so a static export's outline numbering
@@ -142,6 +173,33 @@ def _assign_heading_ids(soup: BeautifulSoup) -> list[tuple[Tag, int, str]]:
             used.add(heading_id)
         headings.append((heading, int(heading.name[1]), text))
     return headings
+
+
+#: Recognized verbatim by export_docx.py's ``_insert_native_toc_fields``,
+#: which replaces the paragraph carrying it with a real Word TOC field - see
+#: ``_mark_table_of_contents_for_word``.
+WORD_TOC_FIELD_MARKER: Final = "WIKIHUB_INTERNAL_TABLE_OF_CONTENTS_FIELD_MARKER"
+
+
+def _mark_table_of_contents_for_word(soup: BeautifulSoup) -> None:
+    """Leave a plain-text marker where Word's *native* Table of Contents
+    field belongs, instead of rendering the custom outline
+    ``_render_table_of_contents`` builds for PDF/HTML.
+
+    Word has its own real, updatable Table of Contents mechanism - the same
+    field Word itself inserts via References > Table of Contents, that a
+    reader can right-click and "Update Field" on, and that shows up in
+    Word's navigation pane. PDF and HTML have no such mechanism to defer to,
+    which is the *only* reason they get a custom-rendered outline instead;
+    Word export should use the real thing, not reinvent it. Pandoc has no
+    concept of a Word field from HTML input, so this only leaves a marker
+    paragraph for ``export_docx.py`` to replace once Pandoc has produced the
+    heading styles the field itself relies on.
+    """
+    for placeholder in soup.select('[data-type="tableOfContents"]'):
+        marker = soup.new_tag("p")
+        marker.string = WORD_TOC_FIELD_MARKER
+        placeholder.replace_with(marker)
 
 
 def _render_table_of_contents(soup: BeautifulSoup) -> None:
@@ -285,14 +343,28 @@ async def _inline_attachments(
 
 
 async def prepare_export_html(
-    page: WikiPage, *, storage: ObjectStorage, session: AsyncSession
+    page: WikiPage,
+    *,
+    storage: ObjectStorage,
+    session: AsyncSession,
+    native_word_toc: bool = False,
 ) -> str:
     """Return a self-contained HTML fragment ready for a session-less
-    headless-browser render or a direct PDF conversion."""
+    headless-browser render or a direct PDF/Word conversion.
+
+    ``native_word_toc`` is set only by the Word export branch of
+    export_service.py: Word gets a real, native TOC field instead of the
+    custom-rendered outline PDF/HTML fall back to (see
+    ``_mark_table_of_contents_for_word`` vs. ``_render_table_of_contents``).
+    """
     soup = BeautifulSoup(_render_content(page), "html.parser")
     _sanitize(soup)
     _force_toggles_open(soup)
-    _render_table_of_contents(soup)
+    _wrap_bare_header_rows(soup)
+    if native_word_toc:
+        _mark_table_of_contents_for_word(soup)
+    else:
+        _render_table_of_contents(soup)
     _render_image_captions(soup)
     await _inline_attachments(soup, page=page, storage=storage, session=session)
     return str(soup)

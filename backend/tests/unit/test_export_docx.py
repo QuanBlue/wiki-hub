@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
+from docx.oxml.ns import qn
+from docx.oxml.parser import OxmlElement
 
 from app.core.exceptions import ServiceUnavailableError
 from app.modules.pages import export_docx
@@ -43,9 +45,19 @@ def theme(**overrides: str) -> dict[str, str]:
         "callout_note_border": "rgb(40, 170, 100)",
         "callout_panel_bg": "rgb(245, 245, 245)",
         "callout_panel_border": "rgb(207, 215, 227)",
+        "table_header_bg": "rgb(240, 240, 240)",
     }
     defaults.update(overrides)
     return defaults
+
+
+def mark_as_header_row(row: object) -> None:
+    """Flag a row the same way pandoc's own docx writer flags a header row
+    it produced from `<th>`/`<thead>` - `w:tblHeader` on `w:trPr`."""
+    tr_pr = row._tr.get_or_add_trPr()  # type: ignore[attr-defined]
+    header = OxmlElement("w:tblHeader")
+    header.set(qn("w:val"), "on")
+    tr_pr.append(header)
 
 
 def fixture_docx_bytes(*, with_callout_style: bool = True) -> bytes:
@@ -117,6 +129,167 @@ class TestBuildHighlightTheme:
         assert result["text-color"] == "#eaf2f1"
         assert result["background-color"] == "#282a3a"
         assert result["text-styles"]["Keyword"]["text-color"] is None
+
+
+class TestTableHeaderFormatting:
+    """Pandoc marks a header row it produced from `<th>`/`<thead>` with
+    `w:tblHeader` (so Word can repeat it on every printed page), but its own
+    default "Table" style paints it exactly like every other row - a reader
+    who just saw a bold, shaded header on screen gets a plain one in Word.
+    """
+
+    def _table_with_header(self) -> tuple[object, object]:
+        document = Document()
+        table = document.add_table(rows=2, cols=2)
+        mark_as_header_row(table.rows[0])
+        table.rows[0].cells[0].paragraphs[0].add_run("Name")
+        table.rows[0].cells[1].paragraphs[0].add_run("Value")
+        table.rows[1].cells[0].paragraphs[0].add_run("a")
+        table.rows[1].cells[1].paragraphs[0].add_run("1")
+        return document, table
+
+    def test_bolds_and_shades_only_the_header_row(self) -> None:
+        document, table = self._table_with_header()
+
+        export_docx._apply_table_header_formatting(
+            document, theme(table_header_bg="#eeeeee")
+        )
+
+        for cell in table.rows[0].cells:
+            assert cell.paragraphs[0].runs[0].font.bold is True
+            shd = cell._tc.tcPr.find(qn("w:shd"))
+            assert shd is not None
+            assert shd.get(qn("w:fill")) == "eeeeee"
+
+        for cell in table.rows[1].cells:
+            assert cell.paragraphs[0].runs[0].font.bold is not True
+            assert cell._tc.tcPr is None or cell._tc.tcPr.find(qn("w:shd")) is None
+
+    def test_falls_back_to_a_neutral_shade_with_no_theme_color(self) -> None:
+        document, table = self._table_with_header()
+
+        export_docx._apply_table_header_formatting(document, theme(table_header_bg=""))
+
+        shd = table.rows[0].cells[0]._tc.tcPr.find(qn("w:shd"))
+        assert shd.get(qn("w:fill")) == "f0f0f0"
+
+    def test_a_table_with_no_header_row_is_left_untouched(self) -> None:
+        document = Document()
+        table = document.add_table(rows=1, cols=1)
+        table.rows[0].cells[0].paragraphs[0].add_run("Plain")
+
+        export_docx._apply_table_header_formatting(document, theme())
+
+        cell = table.rows[0].cells[0]
+        assert cell.paragraphs[0].runs[0].font.bold is not True
+        assert cell._tc.tcPr is None or cell._tc.tcPr.find(qn("w:shd")) is None
+
+    @pytest.mark.asyncio
+    async def test_html_to_docx_shades_a_header_row_pandoc_marked(self) -> None:
+        document, table = self._table_with_header()
+        stream = io.BytesIO()
+        document.save(stream)
+
+        with patch_pandoc(output_bytes=stream.getvalue()):
+            result = await html_to_docx(
+                "<table><thead><tr><th>Name</th><th>Value</th></tr></thead>"
+                "<tbody><tr><td>a</td><td>1</td></tr></tbody></table>",
+                theme(table_header_bg="#dddddd"),
+                title="T",
+            )
+
+        saved = Document(io.BytesIO(result))
+        header_cell = saved.tables[0].rows[0].cells[0]
+        assert header_cell.paragraphs[0].runs[0].font.bold is True
+        shd = header_cell._tc.tcPr.find(qn("w:shd"))
+        assert shd.get(qn("w:fill")) == "dddddd"
+
+
+class TestNativeTocField:
+    """Word has its own real, updatable Table of Contents field - the same
+    one Word itself inserts via References > Table of Contents. Pandoc has
+    no way to produce one from HTML input, so export_content.py leaves a
+    plain-text marker paragraph instead, for this module to replace once
+    Pandoc has produced the docx.
+    """
+
+    def test_replaces_the_marker_paragraph_with_a_toc_field(self) -> None:
+        document = Document()
+        document.add_paragraph(export_docx.WORD_TOC_FIELD_MARKER)
+
+        export_docx._insert_native_toc_fields(document)
+
+        paragraph = document.paragraphs[0]
+        field_chars = [
+            run._r.find(qn("w:fldChar"))
+            for run in paragraph.runs
+            if run._r.find(qn("w:fldChar")) is not None
+        ]
+        assert [fc.get(qn("w:fldCharType")) for fc in field_chars] == [
+            "begin",
+            "separate",
+            "end",
+        ]
+        instr = paragraph._p.find(f".//{qn('w:instrText')}")
+        assert instr is not None
+        assert "TOC" in instr.text
+        assert paragraph.text != export_docx.WORD_TOC_FIELD_MARKER
+
+    def test_a_paragraph_that_only_contains_the_marker_as_part_of_more_text_is_left_alone(
+        self,
+    ) -> None:
+        document = Document()
+        document.add_paragraph(f"Not quite: {export_docx.WORD_TOC_FIELD_MARKER}")
+
+        export_docx._insert_native_toc_fields(document)
+
+        assert document.paragraphs[0].text == f"Not quite: {export_docx.WORD_TOC_FIELD_MARKER}"
+
+    def test_a_document_with_no_marker_is_left_alone(self) -> None:
+        document = Document()
+        document.add_paragraph("Ordinary text.")
+
+        export_docx._insert_native_toc_fields(document)
+
+        assert document.paragraphs[0].text == "Ordinary text."
+
+    @pytest.mark.asyncio
+    async def test_html_to_docx_turns_the_marker_into_a_real_field(self) -> None:
+        fixture = Document()
+        fixture.add_heading("Introduction", level=1)
+        fixture.add_paragraph(export_docx.WORD_TOC_FIELD_MARKER)
+        stream = io.BytesIO()
+        fixture.save(stream)
+
+        with patch_pandoc(output_bytes=stream.getvalue()):
+            result = await html_to_docx(
+                f"<h1>Introduction</h1><p>{export_docx.WORD_TOC_FIELD_MARKER}</p>",
+                theme(),
+                title="T",
+            )
+
+        saved = Document(io.BytesIO(result))
+        toc_paragraph = next(
+            p for p in saved.paragraphs if p._p.find(f".//{qn('w:fldChar')}") is not None
+        )
+        assert toc_paragraph.text != export_docx.WORD_TOC_FIELD_MARKER
+
+    def test_sets_update_fields_on_open(self) -> None:
+        document = Document()
+
+        export_docx._auto_update_fields_on_open(document)
+
+        update_fields = document.settings.element.find(qn("w:updateFields"))
+        assert update_fields is not None
+        assert update_fields.get(qn("w:val")) == "true"
+
+    def test_is_idempotent(self) -> None:
+        document = Document()
+
+        export_docx._auto_update_fields_on_open(document)
+        export_docx._auto_update_fields_on_open(document)
+
+        assert len(document.settings.element.findall(qn("w:updateFields"))) == 1
 
 
 @pytest.mark.asyncio

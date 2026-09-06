@@ -8,7 +8,12 @@ toggle sections) onto named Word styles; this module's ``python-docx``
 post-pass then paints those named styles with the page's real,
 currently-rendered colors, probed moments earlier by
 ``export_snapshot.DOCX_CAPTURE_JS``. Nothing here is hand-picked, and nothing
-can silently drift from the live theme the way a static template would.
+can silently drift from the live theme the way a static template would. The
+same post-pass also turns export_content.py's plain-text TOC marker into a
+real, native Word "Table of Contents" field (see
+``_insert_native_toc_fields``) - unlike PDF/HTML, Word has its own
+updatable mechanism for one, so it gets that instead of a hand-rolled list
+of hyperlinks.
 
 **A real ceiling, not a shortfall of this pipeline**: OOXML has no CSS
 gradient, box-shadow, border-radius, flexbox, or grid. A callout that has a
@@ -38,6 +43,7 @@ from docx.shared import Pt, RGBColor
 from app.core.config import settings
 from app.core.exceptions import ServiceUnavailableError
 from app.core.logging import get_logger
+from app.modules.pages.export_content import WORD_TOC_FIELD_MARKER
 
 logger = get_logger(__name__)
 
@@ -209,6 +215,47 @@ def _set_table_borders(table: Any, hex_color: str) -> None:
     )
 
 
+def _set_cell_shading(cell: Any, hex_color: str) -> None:
+    """python-docx has no high-level API for cell shading either; ``w:shd``
+    on ``w:tcPr`` is the raw OOXML element Word itself uses for it (the same
+    element ``_set_paragraph_shading`` above writes onto ``w:pPr`` instead,
+    for a callout)."""
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), hex_color)
+    cell._tc.get_or_add_tcPr().append(shd)
+
+
+def _is_header_row(row: Any) -> bool:
+    """Pandoc marks a header row it produced from ``<th>``/``<thead>`` with
+    ``w:tblHeader`` on ``w:trPr`` (so Word can repeat it on every printed
+    page) - the one place that survives the HTML-to-docx conversion telling
+    a header row apart from an ordinary one."""
+    tr_pr = row._tr.trPr
+    return tr_pr is not None and tr_pr.find(qn("w:tblHeader")) is not None
+
+
+def _apply_table_header_formatting(document: Any, theme: dict[str, str]) -> None:
+    """Bold and shade a table's header row to match how a reader already
+    sees it on screen (``readerClassName``'s
+    ``[&_th]:bg-surface-sunken [&_th]:font-semibold`` in
+    rich-text-editor.tsx). Pandoc's own default "Table" style paints a
+    header row exactly like every other row - the row is marked
+    (see ``_is_header_row``), just never painted.
+    """
+    header_bg = _parse_color(theme.get("table_header_bg")) or "f0f0f0"
+    for table in _iter_tables(document):
+        for row in table.rows:
+            if not _is_header_row(row):
+                continue
+            for cell in row.cells:
+                _set_cell_shading(cell, header_bg)
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.bold = True
+
+
 def _set_run_fonts(rpr: Any, font_name: str) -> None:
     """``font.name`` on python-docx's high-level API only ever writes
     ``w:rFonts/@w:ascii`` - Word resolves the actual glyph for anything
@@ -303,6 +350,18 @@ def _apply_named_styles(document: Any, theme: dict[str, str]) -> None:
     table_border = _parse_color(theme.get("border")) or "999999"
     for table in _iter_tables(document):
         _set_table_borders(table, table_border)
+    _apply_table_header_formatting(document, theme)
+
+
+def _field_char(kind: str, *, dirty: bool = False) -> Any:
+    element = OxmlElement("w:fldChar")
+    element.set(qn("w:fldCharType"), kind)
+    if dirty:
+        # Tells Word the cached result below is not to be trusted - matches
+        # what Word itself marks a field the moment it is inserted, before
+        # its first recalculation.
+        element.set(qn("w:dirty"), "true")
+    return element
 
 
 def _append_field(paragraph: Any, instruction: str) -> None:
@@ -314,9 +373,7 @@ def _append_field(paragraph: Any, instruction: str) -> None:
     paginated, or printed - nothing here is a fixed value that could drift.
     """
     begin = paragraph.add_run()
-    fld_begin = OxmlElement("w:fldChar")
-    fld_begin.set(qn("w:fldCharType"), "begin")
-    begin._r.append(fld_begin)
+    begin._r.append(_field_char("begin"))
 
     instr_run = paragraph.add_run()
     instr = OxmlElement("w:instrText")
@@ -325,9 +382,78 @@ def _append_field(paragraph: Any, instruction: str) -> None:
     instr_run._r.append(instr)
 
     end = paragraph.add_run()
-    fld_end = OxmlElement("w:fldChar")
-    fld_end.set(qn("w:fldCharType"), "end")
-    end._r.append(fld_end)
+    end._r.append(_field_char("end"))
+
+
+def _clear_paragraph(paragraph: Any) -> None:
+    for run in list(paragraph.runs):
+        run._r.getparent().remove(run._r)
+
+
+def _insert_toc_field(paragraph: Any) -> None:
+    """Turn this (otherwise-empty) paragraph into a real Word "Table of
+    Contents" field - the same complex field Word itself inserts via
+    References > Table of Contents, not a hand-rolled list of hyperlinks: an
+    actual field a reader can right-click and "Update Field" on, that shows
+    up in Word's own navigation pane, and that is built from the heading
+    paragraph styles (Heading 1, Heading 2, ...) Pandoc already assigned
+    rather than anything this export invents. ``\\o "1-4"`` matches the
+    frontend's own heading levels (``StarterKit.configure({ heading: {
+    levels: [1, 2, 3, 4] } })`` in rich-text-editor.tsx); ``\\h`` makes every
+    entry a real jump-to link, ``\\z`` hides the tab leader in web layout,
+    ``\\u`` falls back to a paragraph's outline level if it has no heading
+    style at all.
+    """
+    _clear_paragraph(paragraph)
+    begin = paragraph.add_run()
+    begin._r.append(_field_char("begin", dirty=True))
+
+    instr_run = paragraph.add_run()
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = ' TOC \\o "1-4" \\h \\z \\u '
+    instr_run._r.append(instr)
+
+    separate = paragraph.add_run()
+    separate._r.append(_field_char("separate"))
+
+    # Word replaces this with the real outline the first time the field is
+    # updated - shown only until then, or if a reader opens the file
+    # somewhere fields never auto-update.
+    placeholder = paragraph.add_run(
+        'Right-click here and choose "Update Field" to build the table of'
+        " contents."
+    )
+    placeholder.italic = True
+
+    end = paragraph.add_run()
+    end._r.append(_field_char("end"))
+
+
+def _insert_native_toc_fields(document: Any) -> None:
+    """Replace every paragraph carrying export_content.py's
+    ``WORD_TOC_FIELD_MARKER`` with a real TOC field - see
+    ``_mark_table_of_contents_for_word`` for why Word gets the native
+    mechanism instead of the custom-rendered outline PDF/HTML use.
+    """
+    for paragraph in document.paragraphs:
+        if paragraph.text == WORD_TOC_FIELD_MARKER:
+            _insert_toc_field(paragraph)
+
+
+def _auto_update_fields_on_open(document: Any) -> None:
+    """Word does not recompute a field's cached result just because the
+    document was opened - without this, the TOC field above (and the
+    page-number footer below) would show only their placeholder/stale text
+    until a reader manually right-clicks "Update Field". Ticking this is
+    exactly what happens when a person inserts a TOC through Word's own UI.
+    """
+    settings_element = document.settings.element
+    if settings_element.find(qn("w:updateFields")) is not None:
+        return
+    update_fields = OxmlElement("w:updateFields")
+    update_fields.set(qn("w:val"), "true")
+    settings_element.append(update_fields)
 
 
 def _add_page_number_footer(document: Any) -> None:
@@ -417,7 +543,9 @@ async def html_to_docx(
         document = Document(str(output_path))
         _apply_named_styles(document, theme)
         _set_document_font(document, body_font=_docx_body_font(font_id), mono_font=_DOCX_MONO_FONT)
+        _insert_native_toc_fields(document)
         _add_page_number_footer(document)
+        _auto_update_fields_on_open(document)
 
         result_stream = io.BytesIO()
         document.save(result_stream)

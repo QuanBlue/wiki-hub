@@ -159,7 +159,9 @@ class ExportService:
             ) from exc
 
         if docx_theme is not None:
-            html = await prepare_export_html(page, storage=get_storage(), session=session)
+            html = await prepare_export_html(
+                page, storage=get_storage(), session=session, native_word_toc=True
+            )
             # Same precedence the live page itself renders with (see
             # export-shell.tsx's spaceFontStyle): the space's own font
             # first, falling back to the site's default whenever the space
