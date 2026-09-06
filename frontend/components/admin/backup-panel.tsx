@@ -989,6 +989,11 @@ export function BackupPanel() {
   //: are being edited.
   const automatedSettingsSnapshotRef = useRef<AutomatedBackupSettings | null>(null);
   const [deleteAutomatedJobId, setDeleteAutomatedJobId] = useState<string | null>(null);
+  //: The history table only shows the 5 most recent rows until this is
+  //: toggled on - `automatedJobs` already holds the full list the server
+  //: returned, so "View all" just lifts the client-side cap rather than
+  //: needing a page of its own.
+  const [showAllAutomatedJobs, setShowAllAutomatedJobs] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [isSpaceModalOpen, setIsSpaceModalOpen] = useState(false);
@@ -4000,21 +4005,24 @@ export function BackupPanel() {
             ) : null}
 
             {/* Schedule - Enabled moved up to the header, so this is exactly
-                the five fields it takes to describe "how often, starting
-                when, in what timezone, keeping how many" - no more orphan
-                sixth field wrapping onto a row by itself. */}
-            <div className="space-y-1.5">
-              <p className="text-muted-foreground text-[10px] font-semibold tracking-[0.08em] uppercase">
-                Schedule
-              </p>
-              <div className="grid gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
-                <div className="space-y-1">
-                  <label
-                    htmlFor="automated-backup-interval"
-                    className="text-muted-foreground text-xs font-medium"
-                  >
-                    Every
-                  </label>
+                the four groups it takes to describe "how often, starting
+                when, in what timezone, keeping how many". "Every" and its
+                unit share one label/one group (nobody reads "every" and
+                "hour" as two separate questions), and a vertical divider
+                between groups stands in for the "Schedule" caption this used
+                to need to read as one related row. */}
+            <div
+              className="grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-border"
+              aria-label="Schedule"
+            >
+              <div className="space-y-1 sm:pr-4">
+                <label
+                  htmlFor="automated-backup-interval"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  Every
+                </label>
+                <div className="flex items-center gap-2">
                   <Input
                     id="automated-backup-interval"
                     type="number"
@@ -4022,6 +4030,7 @@ export function BackupPanel() {
                     max="720"
                     value={automatedSettings.interval_value}
                     disabled={!isEditingAutomatedSchedule}
+                    className="w-16 shrink-0"
                     onChange={(event) =>
                       setAutomatedSettings({
                         ...automatedSettings,
@@ -4029,14 +4038,6 @@ export function BackupPanel() {
                       })
                     }
                   />
-                </div>
-                <div className="space-y-1">
-                  <span
-                    id="automated-backup-unit-label"
-                    className="text-muted-foreground text-xs font-medium"
-                  >
-                    Unit
-                  </span>
                   <Select
                     value={automatedSettings.interval_unit}
                     disabled={!isEditingAutomatedSchedule}
@@ -4047,98 +4048,104 @@ export function BackupPanel() {
                       })
                     }
                   >
-                    <SelectTrigger aria-labelledby="automated-backup-unit-label">
+                    <SelectTrigger aria-label="Interval unit">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="hours">Hours</SelectItem>
-                      <SelectItem value="days">Days</SelectItem>
+                      <SelectItem value="hours">Hour</SelectItem>
+                      <SelectItem value="days">Day</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1">
-                  <label
-                    htmlFor="automated-backup-time"
-                    className="text-muted-foreground text-xs font-medium"
-                  >
-                    Start time
-                  </label>
-                  <Input
-                    id="automated-backup-time"
-                    type="time"
-                    value={automatedSettings.time_of_day}
-                    disabled={!isEditingAutomatedSchedule}
-                    onChange={(event) =>
-                      setAutomatedSettings({
-                        ...automatedSettings,
-                        time_of_day: event.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label
-                    htmlFor="automated-backup-timezone"
-                    className="text-muted-foreground text-xs font-medium"
-                  >
-                    Timezone
-                  </label>
-                  <TimezoneCombobox
-                    id="automated-backup-timezone"
-                    value={automatedSettings.timezone}
-                    disabled={!isEditingAutomatedSchedule}
-                    onValueChange={(timezone) =>
-                      setAutomatedSettings({
-                        ...automatedSettings,
-                        timezone,
-                      })
-                    }
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label
-                    htmlFor="automated-backup-retention"
-                    className="text-muted-foreground text-xs font-medium"
-                  >
-                    Keep successful backups
-                  </label>
-                  <Input
-                    id="automated-backup-retention"
-                    type="number"
-                    min="1"
-                    max="1000"
-                    value={automatedSettings.retention_count}
-                    disabled={!isEditingAutomatedSchedule}
-                    onChange={(event) =>
-                      setAutomatedSettings({
-                        ...automatedSettings,
-                        retention_count: Number(event.target.value) || 1,
-                      })
-                    }
-                  />
-                </div>
+              </div>
+              <div className="space-y-1 sm:px-4">
+                <label
+                  htmlFor="automated-backup-time"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  Start time
+                </label>
+                <Input
+                  id="automated-backup-time"
+                  type="time"
+                  value={automatedSettings.time_of_day}
+                  disabled={!isEditingAutomatedSchedule}
+                  onChange={(event) =>
+                    setAutomatedSettings({
+                      ...automatedSettings,
+                      time_of_day: event.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-1 sm:px-4">
+                <label
+                  htmlFor="automated-backup-timezone"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  Timezone
+                </label>
+                <TimezoneCombobox
+                  id="automated-backup-timezone"
+                  value={automatedSettings.timezone}
+                  disabled={!isEditingAutomatedSchedule}
+                  onValueChange={(timezone) =>
+                    setAutomatedSettings({
+                      ...automatedSettings,
+                      timezone,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-1 sm:pl-4">
+                <label
+                  htmlFor="automated-backup-retention"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  Keep backups
+                </label>
+                <Input
+                  id="automated-backup-retention"
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={automatedSettings.retention_count}
+                  disabled={!isEditingAutomatedSchedule}
+                  onChange={(event) =>
+                    setAutomatedSettings({
+                      ...automatedSettings,
+                      retention_count: Number(event.target.value) || 1,
+                    })
+                  }
+                />
               </div>
             </div>
 
             <div className="border-border bg-surface-sunken/60 flex flex-wrap items-center gap-6 rounded-lg border p-3.5 text-xs">
-              <div>
-                <p className="text-muted-foreground">Last run</p>
-                <p className="text-foreground mt-0.5 flex items-center gap-1.5 font-medium">
-                  {automatedSettings.last_run_at
-                    ? new Date(automatedSettings.last_run_at).toLocaleString()
-                    : "Never"}
-                  {automatedSettings.last_status ? (
-                    <AutomatedBackupStatusBadge status={automatedSettings.last_status} />
-                  ) : null}
-                </p>
+              <div className="flex items-center gap-2.5">
+                <Clock className="text-muted-foreground size-4 shrink-0" />
+                <div>
+                  <p className="text-muted-foreground">Last run</p>
+                  <p className="text-foreground mt-0.5 flex items-center gap-1.5 font-medium">
+                    {automatedSettings.last_run_at
+                      ? new Date(automatedSettings.last_run_at).toLocaleString()
+                      : "Never"}
+                    {automatedSettings.last_status ? (
+                      <AutomatedBackupStatusBadge status={automatedSettings.last_status} />
+                    ) : null}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-muted-foreground">Next run</p>
-                <p className="text-foreground mt-0.5 font-medium">
-                  {automatedSettings.next_run_at
-                    ? new Date(automatedSettings.next_run_at).toLocaleString()
-                    : "Calculated after saving"}
-                </p>
+              <div className="flex items-center gap-2.5">
+                <Clock className="text-muted-foreground size-4 shrink-0" />
+                <div>
+                  <p className="text-muted-foreground">Next run</p>
+                  <p className="text-foreground mt-0.5 font-medium">
+                    {automatedSettings.next_run_at
+                      ? new Date(automatedSettings.next_run_at).toLocaleString()
+                      : "Calculated after saving"}
+                  </p>
+                </div>
               </div>
             </div>
             {automatedSettings.last_error ? (
@@ -4152,9 +4159,7 @@ export function BackupPanel() {
 
             {/* Recent backups */}
             <div className="space-y-1.5">
-              <p className="text-muted-foreground text-[10px] font-semibold tracking-[0.08em] uppercase">
-                History
-              </p>
+              <h4 className="sr-only">Backup history</h4>
               <div className="border-border overflow-hidden rounded-lg border">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-surface-sunken text-muted-foreground">
@@ -4167,7 +4172,10 @@ export function BackupPanel() {
                   </thead>
                   <tbody>
                     {automatedJobs.length ? (
-                      automatedJobs.slice(0, 5).map((job) => (
+                      (showAllAutomatedJobs
+                        ? automatedJobs
+                        : automatedJobs.slice(0, 5)
+                      ).map((job) => (
                         <tr key={job.id} className="border-border hover:bg-surface-hover border-t">
                           <td className="p-2">
                             <span className="flex items-center gap-1.5">
@@ -4194,7 +4202,7 @@ export function BackupPanel() {
                               ) : null}
                               <button
                                 type="button"
-                                className="text-danger hover:bg-danger-bg inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="text-danger hover:bg-danger-bg inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 onClick={() => setDeleteAutomatedJobId(job.id)}
                               >
                                 <Trash2 className="size-3.5" /> Delete
@@ -4216,6 +4224,21 @@ export function BackupPanel() {
                   </tbody>
                 </table>
               </div>
+              {automatedJobs.length > 5 ? (
+                <div className="flex items-center justify-between px-0.5 text-xs">
+                  <p className="text-muted-foreground">
+                    Showing {showAllAutomatedJobs ? automatedJobs.length : 5} of{" "}
+                    {automatedJobs.length} backups
+                  </p>
+                  <button
+                    type="button"
+                    className="text-primary hover:bg-primary/10 inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => setShowAllAutomatedJobs((current) => !current)}
+                  >
+                    {showAllAutomatedJobs ? "Show less" : "View all backups"}
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : (

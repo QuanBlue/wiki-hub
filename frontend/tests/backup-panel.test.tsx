@@ -3001,7 +3001,7 @@ describe("BackupPanel automatic backups", () => {
     const section = automaticSection();
     await section.findByRole("button", { name: /^edit$/i });
     expect(section.getByLabelText(/^every$/i)).toBeDisabled();
-    expect(section.getByLabelText(/keep successful backups/i)).toBeDisabled();
+    expect(section.getByLabelText(/keep backups/i)).toBeDisabled();
     expect(
       section.queryByRole("button", { name: /^save schedule$/i }),
     ).not.toBeInTheDocument();
@@ -3049,7 +3049,7 @@ describe("BackupPanel automatic backups", () => {
     const section = automaticSection();
     await actor.click(await section.findByRole("button", { name: /^edit$/i }));
 
-    const retention = section.getByLabelText(/keep successful backups/i);
+    const retention = section.getByLabelText(/keep backups/i);
     expect(retention).toBeEnabled();
     // A plain change event, not clear()-then-type(): real browsers refuse
     // setSelectionRange on type="number" inputs (an InvalidStateError), so
@@ -3065,7 +3065,7 @@ describe("BackupPanel automatic backups", () => {
     await waitFor(() => expect(patches).toHaveLength(1));
     expect(patches[0].retention_count).toBe(45);
     await section.findByRole("button", { name: /^edit$/i });
-    expect(section.getByLabelText(/keep successful backups/i)).toBeDisabled();
+    expect(section.getByLabelText(/keep backups/i)).toBeDisabled();
   });
 
   it("picks a timezone from the searchable list and saves it", async () => {
@@ -3150,13 +3150,13 @@ describe("BackupPanel automatic backups", () => {
 
     const section = automaticSection();
     await actor.click(await section.findByRole("button", { name: /^edit$/i }));
-    const retention = section.getByLabelText(/keep successful backups/i);
+    const retention = section.getByLabelText(/keep backups/i);
     fireEvent.change(retention, { target: { value: "99" } });
     await actor.click(section.getByRole("button", { name: /^cancel$/i }));
 
     await section.findByRole("button", { name: /^edit$/i });
-    expect(section.getByLabelText(/keep successful backups/i)).toBeDisabled();
-    expect(section.getByLabelText(/keep successful backups/i)).toHaveValue(30);
+    expect(section.getByLabelText(/keep backups/i)).toBeDisabled();
+    expect(section.getByLabelText(/keep backups/i)).toHaveValue(30);
     expect(patches).toHaveLength(0);
   });
 
