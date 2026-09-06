@@ -23,7 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AuthenticationError, BadRequestError
 from app.models.attachment import PageAttachment
 from app.models.backup_job import BackupJob
-from app.models.page import PageLike, WikiPage
+from app.models.draft import PageDraft
+from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.permission import (
     GlobalPermission,
     Group,
@@ -36,6 +37,8 @@ from app.models.restriction import PageGroupRestriction, PageRestrictionPermissi
 from app.models.revision import PageRevision
 from app.models.space import Space, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
+from app.models.user_page_label import UserPageLabel
+from app.models.user_tag import UserTag
 from app.modules.auth.service import AuthService
 from app.modules.backup.jobs import reap_abandoned_export_jobs, run_backup_job
 from app.modules.backup.service import STALE_JOB_AFTER, STALE_RESTORE_JOB_AFTER, BackupService
@@ -839,6 +842,96 @@ class TestRoundTrip:
         assert restored_space.id == original_space_id
         # Membership survived, resolved through natural keys.
         assert await spaces.role_of(restored_space, restored_alice) is SpaceRole.admin
+
+    async def test_restores_pins_drafts_tags_and_page_labels(
+        self, session: AsyncSession
+    ) -> None:
+        """The per-user data _apply applies but nothing else exercises against a
+        real database - every other case in this file covers it only with a
+        mocked session (test_service_apply.py) or checks it made it into the
+        *exported* document (test_service_export.py), never that a wipe-and-
+        restore round trip actually lands it back in Postgres."""
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        bob: User = seeded["bob"]  # type: ignore[assignment]
+        space: Space = seeded["space"]  # type: ignore[assignment]
+
+        page = WikiPage(
+            space_id=space.id,
+            title="Runbook",
+            slug="runbook",
+            content="<p>steps</p>",
+            created_by_id=alice.id,
+            updated_by_id=alice.id,
+        )
+        session.add(page)
+        await session.flush()
+        session.add_all(
+            [
+                UserPagePin(page_id=page.id, user_id=alice.id),
+                PageDraft(
+                    page_id=page.id,
+                    user_id=bob.id,
+                    content="<p>in progress</p>",
+                    content_format="html",
+                    edit_mode="normal",
+                    base_updated_at=page.updated_at,
+                ),
+                UserTag(user_id=alice.id, name="on-call"),
+                UserPageLabel(page_id=page.id, user_id=bob.id, name="needs-review"),
+            ]
+        )
+        await session.flush()
+
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        assert doc.wikihub_backup.counts["page_pins"] == 1
+        assert doc.wikihub_backup.counts["page_drafts"] == 1
+        assert doc.wikihub_backup.counts["user_tags"] == 1
+        assert doc.wikihub_backup.counts["user_page_labels"] == 1
+
+        await _wipe(session)
+
+        report = await BackupService(session).import_document(doc, dry_run=False)
+
+        assert report.created["page_pin"] == 1
+        assert report.created["page_draft"] == 1
+        assert report.created["user_tag"] == 1
+        assert report.created["user_page_label"] == 1
+
+        restored_alice = await AuthService(session).users.get_by_username("alice")
+        restored_bob = await AuthService(session).users.get_by_username("bob")
+        restored_page = (
+            await session.execute(select(WikiPage).where(WikiPage.slug == "runbook"))
+        ).scalar_one()
+
+        pin = await session.get(
+            UserPagePin, {"page_id": restored_page.id, "user_id": restored_alice.id}
+        )
+        assert pin is not None
+
+        draft = (
+            await session.execute(
+                select(PageDraft).where(
+                    PageDraft.page_id == restored_page.id, PageDraft.user_id == restored_bob.id
+                )
+            )
+        ).scalar_one()
+        assert draft.content == "<p>in progress</p>"
+
+        tag = (
+            await session.execute(
+                select(UserTag).where(UserTag.user_id == restored_alice.id)
+            )
+        ).scalar_one()
+        assert tag.name == "on-call"
+
+        page_label = (
+            await session.execute(
+                select(UserPageLabel).where(UserPageLabel.page_id == restored_page.id)
+            )
+        ).scalar_one()
+        assert page_label.name == "needs-review"
+        assert page_label.user_id == restored_bob.id
 
     async def test_credentials_survive_when_exported(self, session: AsyncSession) -> None:
         seeded = await _seed_instance(session)
