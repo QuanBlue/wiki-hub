@@ -387,6 +387,15 @@ async def test_user_administration_endpoint_wrappers(monkeypatch: pytest.MonkeyP
     await users.delete_user(target.id, actor, session, service)
 
 
+def test_users_get_storage_returns_the_s3_backed_implementation() -> None:
+    # The DI wiring itself - every real request builds its own instance via
+    # `Depends(get_storage)` rather than sharing one, so this is the only
+    # place that ever calls the factory directly.
+    from app.services.storage import S3ObjectStorage
+
+    assert isinstance(users.get_storage(), S3ObjectStorage)
+
+
 @pytest.mark.asyncio
 async def test_avatar_endpoints_validate_replace_and_remove_avatar() -> None:
     user = _user()
@@ -432,11 +441,26 @@ async def test_avatar_endpoints_validate_replace_and_remove_avatar() -> None:
     with pytest.raises(PayloadTooLargeError):
         await users.upload_own_avatar(request, oversized, user, session, storage)
 
+    empty = UploadFile(
+        file=io.BytesIO(b""),
+        filename="empty.png",
+        headers=Headers({"content-type": "image/png"}),
+    )
+    with pytest.raises(BadRequestError, match="empty"):
+        await users.upload_own_avatar(request, empty, user, session, storage)
+
     response = await users.read_avatar(user.id, user, session, storage)
     assert response.status_code == 200 and response.body == b"avatar"
     removed = await users.delete_own_avatar(user, session, storage)
     assert removed.avatar_url is None
     assert user.avatar_object_key is None and user.avatar_content_type is None
+
+    # No avatar to serve any more (just removed above) - and a user id that
+    # does not exist at all takes the same 404, not a 500.
+    session.get = AsyncMock(return_value=user)
+    assert (await users.read_avatar(user.id, user, session, storage)).status_code == 404
+    session.get = AsyncMock(return_value=None)
+    assert (await users.read_avatar(uuid.uuid4(), user, session, storage)).status_code == 404
 
 
 @pytest.mark.asyncio
