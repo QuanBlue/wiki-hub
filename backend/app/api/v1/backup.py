@@ -21,7 +21,7 @@ from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 
 from app.api.deps import ClientInfoDep, CurrentSuperuser, DbSession, Impersonator
 from app.core.config import settings
@@ -46,6 +46,8 @@ from app.modules.backup.jobs import create_export_job, create_import_job
 from app.modules.backup.service import STALE_JOB_AFTER, BackupService
 from app.schemas.backup import (
     BackupArchiveRead,
+    AutomatedBackupBulkDelete,
+    AutomatedBackupJobPage,
     AutomatedBackupSettingsRead,
     AutomatedBackupSettingsUpdate,
     BackupArchiveSpaceRead,
@@ -152,6 +154,7 @@ async def _job_read(job: BackupJob) -> BackupJobRead:
         heartbeat_at=job.heartbeat_at,
         percent=percent,
         eta_seconds=eta_seconds,
+        automated=bool(getattr(job, "automated", False)),
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
@@ -557,10 +560,35 @@ async def run_automated_backup_now(_user: CurrentSuperuser, session: DbSession) 
     return await _job_read(job)
 
 
-@router.get("/automatic/jobs", response_model=list[BackupJobRead])
-async def list_automated_backups(_user: CurrentSuperuser, session: DbSession) -> list[BackupJobRead]:
-    jobs = list((await session.execute(select(BackupJob).where(BackupJob.automated.is_(True)).order_by(BackupJob.created_at.desc()).limit(100))).scalars())
-    return [await _job_read(job) for job in jobs]
+@router.get("/automatic/jobs", response_model=AutomatedBackupJobPage)
+async def list_automated_backups(
+    _user: CurrentSuperuser,
+    session: DbSession,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+) -> AutomatedBackupJobPage:
+    """Page through the automated-backup history table, newest first."""
+    total = (
+        await session.execute(
+            select(func.count())
+            .select_from(BackupJob)
+            .where(BackupJob.automated.is_(True))
+        )
+    ).scalar_one()
+    jobs = list(
+        (
+            await session.execute(
+                select(BackupJob)
+                .where(BackupJob.automated.is_(True))
+                .order_by(BackupJob.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+        ).scalars()
+    )
+    return AutomatedBackupJobPage(
+        items=[await _job_read(job) for job in jobs], total=total
+    )
 
 
 @router.get("/automatic/jobs/{job_id}/download")
@@ -586,6 +614,35 @@ async def delete_automated_backup(job_id: uuid.UUID, _user: CurrentSuperuser, se
         if path.parent == directory:
             path.unlink(missing_ok=True)
     await session.delete(job)
+
+
+@router.post("/automatic/jobs/bulk-delete", status_code=204)
+async def bulk_delete_automated_backups(
+    payload: AutomatedBackupBulkDelete, _user: CurrentSuperuser, session: DbSession
+) -> None:
+    """Delete several automated-backup rows (and their files) at once.
+
+    The history table's Actions column offers only Download per row now -
+    deleting is a bulk action ("tick the rows you want gone, then Delete").
+    Ids that are not found, or belong to a non-automated job, are skipped
+    rather than failing the whole batch: the selection driving this can go
+    stale between the checkbox and the click (another tab, the retention
+    sweep), and a row already gone is not a reason to keep the rest of it.
+    """
+    directory = await configured_directory(session)
+    jobs = (
+        await session.execute(
+            select(BackupJob).where(
+                BackupJob.id.in_(payload.job_ids), BackupJob.automated.is_(True)
+            )
+        )
+    ).scalars()
+    for job in jobs:
+        if directory and job.local_filename:
+            path = directory / job.local_filename
+            if path.parent == directory:
+                path.unlink(missing_ok=True)
+        await session.delete(job)
 
 
 @router.get("/jobs", response_model=list[BackupJobRead])

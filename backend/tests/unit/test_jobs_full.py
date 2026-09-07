@@ -36,6 +36,61 @@ async def test_create_export_job():
 
 
 @pytest.mark.asyncio
+async def test_create_export_job_names_an_automated_export_immediately():
+    # The history table used to have nothing to show for a scheduled backup
+    # until it finished - or, for one cancelled mid-run, ever - and fell back
+    # to a bare timestamp instead. The name is a pure function of
+    # `created_at`, so this is set right away rather than waiting for the
+    # export to actually produce a file.
+    session = AsyncMock()
+    created = datetime(2026, 9, 7, 14, 30, 5, tzinfo=UTC)
+
+    async def fake_refresh(obj: object) -> None:
+        if getattr(obj, "created_at", None) is None:
+            obj.created_at = created  # type: ignore[attr-defined]
+
+    session.refresh = AsyncMock(side_effect=fake_refresh)
+
+    job = await create_export_job(
+        session, actor_id=None, kind="full_export", automated=True
+    )
+
+    assert job.output_filename == "wikihub-auto-backup-07092026-143005.zip"
+    # Distinct from `local_filename`, which means "a file exists on disk
+    # under this name" and must stay unset until the export actually writes
+    # one - `run_backup_job` is what sets that, once it's actually true.
+    assert job.local_filename is None
+
+
+@pytest.mark.asyncio
+async def test_create_export_job_leaves_a_manual_export_unnamed() -> None:
+    session = AsyncMock()
+    session.refresh = AsyncMock(
+        side_effect=lambda obj: setattr(obj, "created_at", datetime(2026, 9, 7, tzinfo=UTC))
+    )
+
+    job = await create_export_job(session, actor_id=None, kind="full_export")
+
+    assert job.output_filename is None
+
+
+@pytest.mark.asyncio
+async def test_create_export_job_skips_naming_when_created_at_is_unknown() -> None:
+    # A session mocked out entirely (as every other test in this file uses)
+    # never actually populates `created_at` - it is a bare `server_default`,
+    # nothing Python-side sets it - so `refresh()` here is a no-op and it
+    # stays `None`. The naming guard must not blow up trying to format that;
+    # a real request always has a real timestamp by this point.
+    session = AsyncMock()
+
+    job = await create_export_job(
+        session, actor_id=None, kind="full_export", automated=True
+    )
+
+    assert job.output_filename is None
+
+
+@pytest.mark.asyncio
 async def test_create_import_job():
     session = AsyncMock()
     user_id = uuid.uuid4()

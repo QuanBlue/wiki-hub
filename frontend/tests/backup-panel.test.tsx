@@ -3016,7 +3016,7 @@ describe("BackupPanel automatic backups", () => {
     return {
       method: "GET",
       match: (p: string) => p === "/api/v1/backup/automatic/jobs",
-      handler: () => ({ body: [] }),
+      handler: () => ({ body: { items: [], total: 0 } }),
     };
   }
 
@@ -3250,18 +3250,21 @@ describe("BackupPanel automatic backups", () => {
         method: "GET",
         match: (p: string) => p === "/api/v1/backup/automatic/jobs",
         handler: () => ({
-          body: [
-            {
-              id: "job-1",
-              status: "complete",
-              output_filename: "wikihub-auto-backup-20260906.zip",
-              download_url: "/api/v1/backup/automatic/jobs/job-1/download",
-              // 2 min 5 sec apart.
-              started_at: "2026-09-06T08:00:00Z",
-              updated_at: "2026-09-06T08:02:05Z",
-              created_at: "2026-09-06T08:00:00Z",
-            },
-          ],
+          body: {
+            items: [
+              {
+                id: "job-1",
+                status: "complete",
+                output_filename: "wikihub-auto-backup-20260906.zip",
+                download_url: "/api/v1/backup/automatic/jobs/job-1/download",
+                // 2 min 5 sec apart.
+                started_at: "2026-09-06T08:00:00Z",
+                updated_at: "2026-09-06T08:02:05Z",
+                created_at: "2026-09-06T08:00:00Z",
+              },
+            ],
+            total: 1,
+          },
         }),
       },
       ...baseRoutes(),
@@ -3274,6 +3277,428 @@ describe("BackupPanel automatic backups", () => {
       await section.findByText("wikihub-auto-backup-20260906.zip"),
     ).toBeInTheDocument();
     expect(section.getByText("2m 5s")).toBeInTheDocument();
+  });
+
+  it("pages through the automated-backup history with Previous/Next", async () => {
+    // 11 rows total against the default 10-row page: exactly one row
+    // overflows onto a second page, the minimal case that actually exercises
+    // the pager instead of just leaving it hidden.
+    const pageOneJobs = Array.from({ length: 10 }, (_, index) => ({
+      id: `job-page1-${index + 1}`,
+      status: "complete",
+      output_filename: `wikihub-auto-backup-page1-${index + 1}.zip`,
+      download_url: null,
+      started_at: null,
+      updated_at: "2026-09-06T08:00:00Z",
+      created_at: "2026-09-06T08:00:00Z",
+    }));
+    const pageTwoJobs = [
+      {
+        id: "job-page2-1",
+        status: "complete",
+        output_filename: "wikihub-auto-backup-page2-1.zip",
+        download_url: null,
+        started_at: null,
+        updated_at: "2026-09-05T08:00:00Z",
+        created_at: "2026-09-05T08:00:00Z",
+      },
+    ];
+
+    // The shared `mockFetch` matcher only sees the pathname - every route
+    // ignores the query string - but this test needs page 1 told apart from
+    // page 2, so the jobs endpoint is handled by hand here instead.
+    const otherRoutes: Array<{
+      method: string;
+      match: (pathname: string) => boolean;
+      handler: RouteHandler;
+    }> = [automaticSettingsRoute(), ...baseRoutes()];
+    const spy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const { pathname, searchParams } = new URL(url, "http://localhost");
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "GET" && pathname === "/api/v1/backup/automatic/jobs") {
+        const offset = Number(searchParams.get("offset") ?? "0");
+        const body =
+          offset === 0
+            ? { items: pageOneJobs, total: 11 }
+            : { items: pageTwoJobs, total: 11 };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const route = otherRoutes.find((r) => r.method === method && r.match(pathname));
+      if (!route) {
+        return new Response(
+          JSON.stringify({
+            error: { code: "not_found", message: `Unhandled ${method} ${pathname}` },
+          }),
+          { status: 404, headers: { "content-type": "application/json" } },
+        );
+      }
+      const { status = 200, body } = await route.handler(init);
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", spy);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    expect(
+      await section.findByText("wikihub-auto-backup-page1-1.zip"),
+    ).toBeInTheDocument();
+    expect(section.getByText(/showing 1–10 of 11/i)).toBeInTheDocument();
+    expect(section.getByText(/page 1 of 2/i)).toBeInTheDocument();
+    expect(
+      section.getByRole("button", { name: /previous page/i }),
+    ).toBeDisabled();
+    expect(section.getByRole("button", { name: /next page/i })).toBeEnabled();
+
+    await actor.click(section.getByRole("button", { name: /next page/i }));
+
+    expect(
+      await section.findByText("wikihub-auto-backup-page2-1.zip"),
+    ).toBeInTheDocument();
+    expect(
+      section.queryByText("wikihub-auto-backup-page1-1.zip"),
+    ).not.toBeInTheDocument();
+    expect(section.getByText(/showing 11–11 of 11/i)).toBeInTheDocument();
+    expect(section.getByText(/page 2 of 2/i)).toBeInTheDocument();
+    expect(section.getByRole("button", { name: /next page/i })).toBeDisabled();
+
+    await actor.click(section.getByRole("button", { name: /previous page/i }));
+
+    expect(
+      await section.findByText("wikihub-auto-backup-page1-1.zip"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows when a backup finished, in its own column", async () => {
+    mockFetch([
+      automaticSettingsRoute(),
+      {
+        method: "GET",
+        match: (p: string) => p === "/api/v1/backup/automatic/jobs",
+        handler: () => ({
+          body: {
+            items: [
+              {
+                id: "job-1",
+                status: "complete",
+                output_filename: "wikihub-auto-backup-a.zip",
+                download_url: "/api/v1/backup/automatic/jobs/job-1/download",
+                started_at: "2026-09-06T08:00:00Z",
+                updated_at: "2026-09-06T08:02:05Z",
+                created_at: "2026-09-06T08:00:00Z",
+              },
+              {
+                id: "job-2",
+                status: "running",
+                output_filename: null,
+                download_url: null,
+                started_at: "2026-09-06T09:00:00Z",
+                updated_at: "2026-09-06T09:00:30Z",
+                created_at: "2026-09-06T09:00:00Z",
+              },
+            ],
+            total: 2,
+          },
+        }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    await section.findByText("wikihub-auto-backup-a.zip");
+    // Completed job shows its finish time, zero-padded (dd/mm/yyyy, 24h) so
+    // the column stays a fixed width; a still-running one has none yet.
+    expect(
+      section.getByText(
+        new Intl.DateTimeFormat("en-GB", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        }).format(new Date("2026-09-06T08:02:05Z")),
+      ),
+    ).toBeInTheDocument();
+    const rows = section.getAllByRole("row");
+    const cells = within(rows[2]).getAllByRole("cell");
+    // checkbox, backup, status, completed at, duration, actions. A running
+    // row has no completion time yet - its "Completed at" cell shows its
+    // progress instead (percent unknown here, so "Starting…").
+    expect(cells[3]).toHaveTextContent("Starting…");
+  });
+
+  it("keeps a running scheduled backup's progress in its own card, not the manual Export card", async () => {
+    const runningAutomatedJob = {
+      id: "job-auto-1",
+      kind: "full_export",
+      status: "running",
+      output_filename: null,
+      download_url: null,
+      started_at: "2026-09-06T08:00:00Z",
+      updated_at: "2026-09-06T08:03:00Z",
+      created_at: "2026-09-06T08:00:00Z",
+      percent: 53,
+      eta_seconds: 326,
+      automated: true,
+    };
+    mockFetch([
+      automaticSettingsRoute(),
+      // Overrides `baseRoutes()`'s own `/api/v1/backup/jobs` (which returns
+      // `[]`) - this is the general list every export/restore card
+      // reattaches from on mount, and it includes automated runs too.
+      {
+        method: "GET",
+        match: (p: string) => p === "/api/v1/backup/jobs",
+        handler: () => ({ body: [runningAutomatedJob] }),
+      },
+      {
+        method: "GET",
+        match: (p: string) => p === "/api/v1/backup/automatic/jobs",
+        handler: () => ({ body: { items: [runningAutomatedJob], total: 1 } }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    // Its progress shows inside the Automatic backups history table...
+    expect(await section.findByText("53% · 5 min 26 sec remaining")).toBeInTheDocument();
+    // ...never as the manual card's own "Exporting backup..." progress bar,
+    // which would also have wrongly switched the panel onto the Export tab.
+    expect(screen.queryByText(/exporting backup/i)).not.toBeInTheDocument();
+  });
+
+  it("cancels a queued/running scheduled backup straight from its row", async () => {
+    let jobsResponse = {
+      items: [
+        {
+          id: "job-auto-1",
+          status: "running",
+          output_filename: null,
+          download_url: null,
+          started_at: "2026-09-06T08:00:00Z",
+          updated_at: "2026-09-06T08:03:00Z",
+          created_at: "2026-09-06T08:00:00Z",
+          percent: 53,
+          eta_seconds: 326,
+        },
+      ],
+      total: 1,
+    };
+    let cancelledJobId: string | null = null;
+
+    mockFetch([
+      automaticSettingsRoute(),
+      {
+        method: "GET",
+        match: (p: string) => p === "/api/v1/backup/automatic/jobs",
+        handler: () => ({ body: jobsResponse }),
+      },
+      {
+        method: "POST",
+        match: (p: string) => p === "/api/v1/backup/jobs/job-auto-1/cancel",
+        handler: () => {
+          cancelledJobId = "job-auto-1";
+          jobsResponse = {
+            items: [{ ...jobsResponse.items[0], status: "cancelled" }],
+            total: 1,
+          };
+          return { body: jobsResponse.items[0] };
+        },
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    // No Download for a running row - Cancel takes that slot instead.
+    await section.findByRole("button", { name: /^cancel$/i });
+    expect(
+      section.queryByRole("link", { name: /download/i }),
+    ).not.toBeInTheDocument();
+
+    await actor.click(section.getByRole("button", { name: /^cancel$/i }));
+    await actor.click(
+      await screen.findByRole("button", { name: /^cancel backup$/i }),
+    );
+
+    await waitFor(() => expect(cancelledJobId).toBe("job-auto-1"));
+    expect(await section.findByText("cancelled")).toBeInTheDocument();
+  });
+
+  it("sorts the history table by column, then back to the server's own order", async () => {
+    const jobs = [
+      {
+        id: "job-b",
+        status: "failed",
+        output_filename: "wikihub-auto-backup-b.zip",
+        download_url: null,
+        started_at: "2026-09-06T08:00:00Z",
+        updated_at: "2026-09-06T08:00:05Z",
+        created_at: "2026-09-06T09:00:00Z",
+      },
+      {
+        id: "job-a",
+        status: "complete",
+        output_filename: "wikihub-auto-backup-a.zip",
+        download_url: "/api/v1/backup/automatic/jobs/job-a/download",
+        started_at: "2026-09-06T07:00:00Z",
+        updated_at: "2026-09-06T07:00:10Z",
+        created_at: "2026-09-06T08:00:00Z",
+      },
+    ];
+    mockFetch([
+      automaticSettingsRoute(),
+      {
+        method: "GET",
+        match: (p: string) => p === "/api/v1/backup/automatic/jobs",
+        handler: () => ({ body: { items: jobs, total: 2 } }),
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    await section.findByText("wikihub-auto-backup-b.zip");
+    // Server order (newest `created_at` first): b, then a.
+    let backupCells = section
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[1].textContent);
+    expect(backupCells).toEqual([
+      "wikihub-auto-backup-b.zip",
+      "wikihub-auto-backup-a.zip",
+    ]);
+
+    await actor.click(section.getByRole("button", { name: /^backup/i }));
+    backupCells = section
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[1].textContent);
+    expect(backupCells).toEqual([
+      "wikihub-auto-backup-a.zip",
+      "wikihub-auto-backup-b.zip",
+    ]);
+
+    // A second click reverses it; a third drops back to server order.
+    await actor.click(section.getByRole("button", { name: /^backup/i }));
+    backupCells = section
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[1].textContent);
+    expect(backupCells).toEqual([
+      "wikihub-auto-backup-b.zip",
+      "wikihub-auto-backup-a.zip",
+    ]);
+
+    await actor.click(section.getByRole("button", { name: /^backup/i }));
+    backupCells = section
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[1].textContent);
+    expect(backupCells).toEqual([
+      "wikihub-auto-backup-b.zip",
+      "wikihub-auto-backup-a.zip",
+    ]);
+  });
+
+  it("lets you tick backups and delete them together, instead of one at a time", async () => {
+    let jobsResponse = {
+      items: [
+        {
+          id: "job-1",
+          status: "complete",
+          output_filename: "wikihub-auto-backup-a.zip",
+          download_url: "/api/v1/backup/automatic/jobs/job-1/download",
+          started_at: "2026-09-06T08:00:00Z",
+          updated_at: "2026-09-06T08:02:00Z",
+          created_at: "2026-09-06T08:00:00Z",
+        },
+        {
+          id: "job-2",
+          status: "complete",
+          output_filename: "wikihub-auto-backup-b.zip",
+          download_url: "/api/v1/backup/automatic/jobs/job-2/download",
+          started_at: "2026-09-05T08:00:00Z",
+          updated_at: "2026-09-05T08:02:00Z",
+          created_at: "2026-09-05T08:00:00Z",
+        },
+      ],
+      total: 2,
+    };
+    let bulkDeleteBody: unknown = null;
+
+    mockFetch([
+      automaticSettingsRoute(),
+      {
+        method: "GET",
+        match: (p: string) => p === "/api/v1/backup/automatic/jobs",
+        handler: () => ({ body: jobsResponse }),
+      },
+      {
+        method: "POST",
+        match: (p: string) => p === "/api/v1/backup/automatic/jobs/bulk-delete",
+        handler: (init) => {
+          bulkDeleteBody = JSON.parse(String(init?.body));
+          jobsResponse = { items: [], total: 0 };
+          // The real endpoint returns 204 with no body, but the shared
+          // `mockFetch` always JSON-stringifies `body` - pairing that with
+          // a 204 status makes `Response` itself throw (a 204 must have a
+          // null body), so this returns 200 instead; `apiFetch` never reads
+          // this response's payload either way.
+          return { status: 200, body: {} };
+        },
+      },
+      ...baseRoutes(),
+    ]);
+
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    const section = automaticSection();
+    await section.findByText("wikihub-auto-backup-a.zip");
+    // No per-row Delete any more - Actions only ever offers Download.
+    expect(
+      section.queryByRole("button", { name: /^delete$/i }),
+    ).not.toBeInTheDocument();
+    // The bulk toolbar stays out of the way until something is selected.
+    expect(
+      section.queryByRole("button", { name: /delete selected/i }),
+    ).not.toBeInTheDocument();
+
+    await actor.click(
+      section.getByRole("checkbox", { name: /select all backups on this page/i }),
+    );
+    expect(section.getByText("2 selected")).toBeInTheDocument();
+
+    await actor.click(section.getByRole("button", { name: /delete selected/i }));
+    await actor.click(
+      await screen.findByRole("button", { name: /^delete backups$/i }),
+    );
+
+    await waitFor(() =>
+      expect(bulkDeleteBody).toEqual({ job_ids: ["job-1", "job-2"] }),
+    );
+    expect(
+      await section.findByText(/no scheduled backups have run yet/i),
+    ).toBeInTheDocument();
   });
 
   it(

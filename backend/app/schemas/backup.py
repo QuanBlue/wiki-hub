@@ -420,8 +420,35 @@ class BackupJobRead(BaseModel):
     #: falls back to an indeterminate spinner in that case.
     percent: int | None = None
     eta_seconds: int | None = None
+    #: True for a scheduled/automated run - lets the admin panel keep an
+    #: automated export's progress inside the "Automatic backups" card (its
+    #: own history table) rather than surfacing it in the manual Export &
+    #: Backup Workspace Data card too, which otherwise reattaches to *any*
+    #: in-flight job on reload regardless of who queued it.
+    automated: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class AutomatedBackupJobPage(BaseModel):
+    """A page of the automated-backup history table.
+
+    Carries `total` (not just a `next_offset` cursor, unlike
+    `BackupJobLogPage`) so the admin panel can render "Page X of Y" and a
+    Previous/Next pager rather than just an open-ended "load more" - the
+    history list is short and bounded by retention, so counting it exactly is
+    cheap.
+    """
+
+    items: list[BackupJobRead]
+    total: int
+
+
+class AutomatedBackupBulkDelete(BaseModel):
+    """Request to delete several automated-backup jobs (and their files) at
+    once - the history table's bulk "tick rows, then Delete" action."""
+
+    job_ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
 
 
 class BackupArchiveUploadInit(BaseModel):

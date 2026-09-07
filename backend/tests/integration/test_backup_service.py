@@ -41,7 +41,7 @@ from app.models.user import User
 from app.models.user_page_label import UserPageLabel
 from app.models.user_tag import UserTag
 from app.modules.auth.service import AuthService
-from app.modules.backup.jobs import reap_abandoned_export_jobs, run_backup_job
+from app.modules.backup.jobs import create_export_job, reap_abandoned_export_jobs, run_backup_job
 from app.modules.backup.service import STALE_JOB_AFTER, STALE_RESTORE_JOB_AFTER, BackupService
 from app.modules.spaces.service import SpaceService
 from app.schemas.backup import BACKUP_VERSION, BackupDocument
@@ -1288,6 +1288,29 @@ class TestRunBackupJobPersistsOutput:
         assert (tmp_path / job.local_filename).is_file()
         # Nothing left behind under its original temp name.
         assert list(tmp_path.iterdir()) == [tmp_path / job.local_filename]
+
+    async def test_an_automated_job_is_named_from_the_moment_it_is_created(
+        self, session: AsyncSession
+    ) -> None:
+        """The history table used to have nothing to show for a scheduled
+        backup until it finished - or, for one cancelled mid-run, ever - and
+        fell back to a bare timestamp instead. The name is a pure function of
+        `created_at`, so `create_export_job` sets it immediately rather than
+        waiting for the export to actually produce a file."""
+        job = await create_export_job(
+            session, actor_id=None, kind="full_export", automated=True
+        )
+
+        assert job.output_filename == f"wikihub-auto-backup-{job.created_at:%d%m%Y-%H%M%S}.zip"
+        # Distinct from `local_filename`, which means "a file exists on disk
+        # under this name" and must stay unset until the export actually
+        # writes one.
+        assert job.local_filename is None
+
+    async def test_a_manual_job_is_not_pre_named(self, session: AsyncSession) -> None:
+        job = await create_export_job(session, actor_id=None, kind="full_export")
+
+        assert job.output_filename is None
 
     async def test_export_checkpoints_progress_while_streaming_revisions(
         self, session: AsyncSession

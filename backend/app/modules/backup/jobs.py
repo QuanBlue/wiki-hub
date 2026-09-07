@@ -75,6 +75,25 @@ async def create_export_job(
     session.add(job)
     await session.commit()
     await session.refresh(job)
+    # `created_at` is only populated by `refresh()` against a real database
+    # (it is a bare `server_default`, no Python-side default) - the `None`
+    # guard is for a session mocked out entirely in a unit test, which never
+    # actually round-trips one. A real request always has it by here.
+    if automated and job.created_at is not None:
+        # Named from the moment the row exists, not only once the export
+        # actually finishes: the pattern is a pure function of `created_at`
+        # (no id/hash suffix, see `run_backup_job`'s own identical
+        # computation right before it writes the file), so there is nothing
+        # to wait on. Without this, the admin history table had no filename
+        # to show for a job still queued/running - or, worse, one that got
+        # cancelled before ever reaching that point and so never received
+        # one at all - and fell back to a bare timestamp instead. Only
+        # `output_filename` (display/download-name) is set here, never
+        # `local_filename` - that one means "a file exists on disk at this
+        # name" and must stay unset until the export actually produces it.
+        job.output_filename = f"wikihub-auto-backup-{job.created_at:%d%m%Y-%H%M%S}.zip"
+        await session.commit()
+        await session.refresh(job)
     return job
 
 
@@ -421,7 +440,7 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
         await checkpoint_backup_job(session, job, counters=job_counters)
         if job.automated:
             assert automated_directory is not None  # validated above
-            filename = f"wikihub-auto-backup-{job.created_at:%Y%m%d-%H%M%S}-{job.id}.zip"
+            filename = f"wikihub-auto-backup-{job.created_at:%d%m%Y-%H%M%S}.zip"
             destination = automated_directory / filename
             # Same-filesystem replace makes a completed archive appear atomically.
             os.replace(local_path, destination)

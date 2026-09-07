@@ -13,11 +13,12 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
 from app.api.v1.backup import (
+    bulk_delete_automated_backups,
     delete_automated_backup,
     download_automated_backup,
     list_automated_backups,
@@ -27,7 +28,7 @@ from app.api.v1.backup import (
 )
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.models.backup_job import BackupJob
-from app.schemas.backup import AutomatedBackupSettingsUpdate
+from app.schemas.backup import AutomatedBackupBulkDelete, AutomatedBackupSettingsUpdate
 
 
 def _settings(**overrides: object) -> SimpleNamespace:
@@ -219,11 +220,20 @@ class TestListAutomatedBackups:
     async def test_returns_only_automated_jobs_newest_first(self) -> None:
         jobs = [_job(status="complete"), _job(status="failed")]
         session = AsyncMock()
-        session.execute = AsyncMock(return_value=Mock(scalars=Mock(return_value=jobs)))
+        # First execute() is the `count()` query, the second fetches the page
+        # of rows - same two-query shape `get_backup_job_logs` doesn't need
+        # (it pages by cursor) but this list does, to report an exact `total`.
+        session.execute = AsyncMock(
+            side_effect=[
+                Mock(scalar_one=Mock(return_value=len(jobs))),
+                Mock(scalars=Mock(return_value=jobs)),
+            ]
+        )
 
-        result = await list_automated_backups(Mock(), session)
+        result = await list_automated_backups(Mock(), session, offset=0, limit=5)
 
-        assert [item.id for item in result] == [job.id for job in jobs]
+        assert [item.id for item in result.items] == [job.id for job in jobs]
+        assert result.total == len(jobs)
 
 
 class TestDownloadAutomatedBackup:
@@ -352,6 +362,71 @@ class TestDeleteAutomatedBackup:
         )
 
         await delete_automated_backup(job.id, Mock(), session)
+
+        assert outside.exists()
+        session.delete.assert_awaited_once_with(job)
+
+
+class TestBulkDeleteAutomatedBackups:
+    async def test_deletes_matching_rows_and_their_files(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        stored_a = tmp_path / "a.zip"
+        stored_a.write_bytes(b"a")
+        stored_b = tmp_path / "b.zip"
+        stored_b.write_bytes(b"b")
+        job_a = _job(local_filename="a.zip")
+        job_b = _job(local_filename="b.zip")
+        session = AsyncMock(delete=AsyncMock())
+        session.execute = AsyncMock(
+            return_value=Mock(scalars=Mock(return_value=[job_a, job_b]))
+        )
+        monkeypatch.setattr(
+            "app.api.v1.backup.configured_directory", AsyncMock(return_value=tmp_path)
+        )
+
+        await bulk_delete_automated_backups(
+            AutomatedBackupBulkDelete(job_ids=[job_a.id, job_b.id]), Mock(), session
+        )
+
+        assert not stored_a.exists()
+        assert not stored_b.exists()
+        assert session.delete.await_args_list == [call(job_a), call(job_b)]
+
+    async def test_ids_that_do_not_match_are_simply_absent_from_the_result(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The query itself already filters to automated jobs among the
+        # requested ids - a non-automated or unknown id just never shows up
+        # in what `session.execute` returns, so there is nothing more for the
+        # route to skip explicitly.
+        session = AsyncMock(delete=AsyncMock())
+        session.execute = AsyncMock(return_value=Mock(scalars=Mock(return_value=[])))
+        monkeypatch.setattr(
+            "app.api.v1.backup.configured_directory", AsyncMock(return_value=None)
+        )
+
+        await bulk_delete_automated_backups(
+            AutomatedBackupBulkDelete(job_ids=[uuid.uuid4()]), Mock(), session
+        )
+
+        session.delete.assert_not_awaited()
+
+    async def test_never_deletes_a_file_outside_the_configured_directory(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        outside = tmp_path.parent / "escaped.zip"
+        outside.write_bytes(b"x")
+        job = _job(local_filename="../escaped.zip")
+        session = AsyncMock(delete=AsyncMock())
+        session.execute = AsyncMock(return_value=Mock(scalars=Mock(return_value=[job])))
+        monkeypatch.setattr(
+            "app.api.v1.backup.configured_directory", AsyncMock(return_value=tmp_path)
+        )
+
+        await bulk_delete_automated_backups(
+            AutomatedBackupBulkDelete(job_ids=[job.id]), Mock(), session
+        )
 
         assert outside.exists()
         session.delete.assert_awaited_once_with(job)

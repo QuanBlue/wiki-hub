@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, HardDrive, Loader2, RotateCcw } from "lucide-react";
+import { Check, HardDrive, Loader2, Pencil, RotateCcw, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -30,6 +30,11 @@ export function StorageQuotasCard({ settings }: { settings: SiteSettings }) {
   const [maxBackupImport, setMaxBackupImport] = useState(initialMaxBackup);
   const [types, setTypes] = useState(initialTypes);
   const [pending, setPending] = useState(false);
+  //: Read-only until "Edit" is pressed - a scroll-wheel nudge on a number
+  //: field or a stray click while skimming these quotas must not silently
+  //: change a live storage limit. Mirrors the same lock/unlock toggle the
+  //: automatic-backup schedule card uses (`backup-panel.tsx`).
+  const [isEditing, setIsEditing] = useState(false);
 
   const isChanged =
     maxUpload.trim() !== initialMaxUpload.trim() ||
@@ -60,6 +65,7 @@ export function StorageQuotasCard({ settings }: { settings: SiteSettings }) {
           : null,
       });
       toast.success("Storage settings saved successfully.");
+      setIsEditing(false);
       router.refresh();
     } catch (err) {
       toast.error(
@@ -68,6 +74,13 @@ export function StorageQuotasCard({ settings }: { settings: SiteSettings }) {
     } finally {
       setPending(false);
     }
+  }
+
+  function cancelEditing() {
+    setMaxUpload(initialMaxUpload);
+    setMaxBackupImport(initialMaxBackup);
+    setTypes(initialTypes);
+    setIsEditing(false);
   }
 
   return (
@@ -93,40 +106,68 @@ export function StorageQuotasCard({ settings }: { settings: SiteSettings }) {
               Unsaved changes
             </span>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-xs h-8"
-            disabled={pending || (!isChanged && !maxUpload && !maxBackupImport && !types)}
-            onClick={() => {
-              setMaxUpload("");
-              setMaxBackupImport("");
-              setTypes("");
-            }}
-          >
-            <RotateCcw className="size-3.5" />
-            Reset Storage
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            size="sm"
-            className="text-xs h-8 font-semibold shadow-xs gap-1.5"
-            disabled={pending || !isChanged}
-          >
-            {pending ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Check className="size-3.5" />
-                Save Storage
-              </>
-            )}
-          </Button>
+          {isEditing ? (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-xs h-8"
+                disabled={pending || (!isChanged && !maxUpload && !maxBackupImport && !types)}
+                onClick={() => {
+                  setMaxUpload("");
+                  setMaxBackupImport("");
+                  setTypes("");
+                }}
+              >
+                <RotateCcw className="size-3.5" />
+                Reset Storage
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-xs h-8"
+                disabled={pending}
+                onClick={cancelEditing}
+              >
+                <X className="size-3.5" />
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                className="text-xs h-8 font-semibold shadow-xs gap-1.5"
+                disabled={pending || !isChanged}
+              >
+                {pending ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check className="size-3.5" />
+                    Save Storage
+                  </>
+                )}
+              </Button>
+            </>
+          ) : (
+            // Read-only until this is pressed - a stray click or scroll-wheel
+            // nudge on a quota field must not silently change a live limit.
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="text-xs h-8"
+              onClick={() => setIsEditing(true)}
+            >
+              <Pencil className="size-3.5" />
+              Edit
+            </Button>
+          )}
         </div>
       </div>
 
@@ -148,7 +189,7 @@ export function StorageQuotasCard({ settings }: { settings: SiteSettings }) {
               value={maxBackupImport}
               onChange={(e) => setMaxBackupImport(e.target.value)}
               placeholder={String(settings.effective.max_backup_import_size_mb)}
-              disabled={pending}
+              disabled={pending || !isEditing}
               className="text-sm"
             />
             <p className="text-muted-foreground text-[11px]">
@@ -173,7 +214,7 @@ export function StorageQuotasCard({ settings }: { settings: SiteSettings }) {
               value={maxUpload}
               onChange={(e) => setMaxUpload(e.target.value)}
               placeholder={String(settings.effective.max_upload_size_mb)}
-              disabled={pending}
+              disabled={pending || !isEditing}
               className="text-sm"
             />
             <p className="text-muted-foreground text-[11px]">
@@ -194,7 +235,7 @@ export function StorageQuotasCard({ settings }: { settings: SiteSettings }) {
               value={types}
               onChange={(e) => setTypes(e.target.value)}
               placeholder={settings.effective.allowed_attachment_types.join(", ")}
-              disabled={pending}
+              disabled={pending || !isEditing}
               className="text-sm font-mono"
             />
             <p className="text-muted-foreground text-[11px]">

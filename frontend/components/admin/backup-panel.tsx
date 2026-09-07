@@ -2,11 +2,16 @@
 
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowDownToLine,
+  ArrowUp,
+  ArrowUpDown,
   ArrowUpFromLine,
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Download,
   FileArchive,
@@ -100,6 +105,10 @@ type PortableBackupJob = {
   heartbeat_at: string | null;
   percent: number | null;
   eta_seconds: number | null;
+  //: True for a scheduled/automated run - its progress belongs on the
+  //: "Automatic backups" card's own history table, not the manual Export &
+  //: Backup Workspace Data card above (see `restorePortableBackupJob`).
+  automated: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -708,6 +717,12 @@ function CountList({
   );
 }
 
+//: Rows-per-page choices for the automated-backup history table, styled to
+//: match the "Rows per page" control on the admin People directory - the
+//: first entry is the initial page size, matching the server's own default
+//: `limit` for `GET /backup/automatic/jobs`.
+const AUTOMATED_JOBS_PAGE_SIZES = [10, 25, 50] as const;
+
 //: The four states an automated-backup run's own status ever reports (never
 //: "cancelled" - nothing here offers cancelling one mid-run).
 type AutomatedBackupStatus = "queued" | "running" | "complete" | "failed";
@@ -719,10 +734,15 @@ const AUTOMATED_BACKUP_STATUS_ICON: Record<AutomatedBackupStatus, typeof Clock> 
   failed: XCircle,
 };
 
+//: One colour per status, not "green for done, blue for everything else" -
+//: "running" and "cancelled" used to share the same blue and were only told
+//: apart by reading the word itself.
 function automatedBackupBadgeVariant(status: string): BadgeProps["variant"] {
   if (status === "complete") return "success";
   if (status === "failed") return "danger";
-  return "info"; // queued, running
+  if (status === "cancelled") return "warning";
+  if (status === "running") return "info";
+  return "neutral"; // queued
 }
 
 /** Status badge shared by the "Last run" line and the history table - same
@@ -735,6 +755,55 @@ function AutomatedBackupStatusBadge({ status }: { status: string }) {
       <Icon className={cn("size-3", status === "running" && "animate-spin")} />
       {status}
     </Badge>
+  );
+}
+
+//: Columns the history table's client-side sort can order by - "Backup" and
+//: "Actions" carry no sortable timestamp of their own worth exposing, so
+//: they are left out.
+type AutomatedJobsSortKey = "backup" | "status" | "completed_at" | "duration";
+type AutomatedJobsSort = {
+  key: AutomatedJobsSortKey;
+  direction: "asc" | "desc";
+} | null;
+
+/** One clickable, sort-indicating `<th>` for the automated-backup history
+ * table - the small up/down/both-ways arrow next to the label always shows
+ * which state a click will move to, not just which column is active. */
+function SortableAutomatedJobsHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  label: string;
+  sortKey: AutomatedJobsSortKey;
+  sort: AutomatedJobsSort;
+  onSort: (key: AutomatedJobsSortKey) => void;
+}) {
+  const active = sort?.key === sortKey;
+  return (
+    <th
+      className="p-2 font-medium"
+      aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}
+    >
+      <button
+        type="button"
+        className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1 font-medium transition-colors duration-150"
+        onClick={() => onSort(sortKey)}
+      >
+        {label}
+        {active ? (
+          sort.direction === "asc" ? (
+            <ArrowUp className="size-3" />
+          ) : (
+            <ArrowDown className="size-3" />
+          )
+        ) : (
+          <ArrowUpDown className="size-3 opacity-40" />
+        )}
+      </button>
+    </th>
   );
 }
 
@@ -760,6 +829,21 @@ function automatedJobDuration(job: PortableBackupJob): string {
   const isTerminal = job.status === "complete" || job.status === "failed";
   const end = isTerminal ? new Date(job.updated_at).getTime() : Date.now();
   return formatElapsed((end - start) / 1000);
+}
+
+/** "07/09/2026, 14:30:05" - every field zero-padded to 2 digits, so the
+ * history table's "Completed at" column stays a fixed width instead of the
+ * single-digit day/month/hour a plain `toLocaleString()` can hand back. */
+function formatCompletedAt(value: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
 }
 
 export function BackupPanel() {
@@ -988,12 +1072,41 @@ export function BackupPanel() {
   //: with a new object), so this stays untouched while the fields above it
   //: are being edited.
   const automatedSettingsSnapshotRef = useRef<AutomatedBackupSettings | null>(null);
-  const [deleteAutomatedJobId, setDeleteAutomatedJobId] = useState<string | null>(null);
-  //: The history table only shows the 5 most recent rows until this is
-  //: toggled on - `automatedJobs` already holds the full list the server
-  //: returned, so "View all" just lifts the client-side cap rather than
-  //: needing a page of its own.
-  const [showAllAutomatedJobs, setShowAllAutomatedJobs] = useState(false);
+  //: Row selection for the history table's Actions column, which now offers
+  //: only Download per row - deleting is a bulk action ("tick the rows you
+  //: want gone, then Delete") rather than a button on every row. Scoped to
+  //: the *current page* only - it is cleared whenever the page changes below,
+  //: rather than tracked across pages, since carrying a cross-page selection
+  //: correctly (through page-size changes, rows leaving the page they were
+  //: selected on) is a lot of bookkeeping for a table this short.
+  const [selectedAutomatedJobIds, setSelectedAutomatedJobIds] = useState<
+    string[]
+  >([]);
+  const [confirmBulkDeleteAutomatedJobs, setConfirmBulkDeleteAutomatedJobs] =
+    useState(false);
+  //: The queued/running automated job a "Cancel" click in the history table
+  //: is confirming against - `null` when no confirmation is open. Separate
+  //: from `confirmCancelExport` (the manual Export & Backup Workspace Data
+  //: card's own cancel), which only ever targets `portableBackupJob` and
+  //: never sees an automated job any more (see `restorePortableBackupJob`).
+  const [cancelAutomatedJobId, setCancelAutomatedJobId] = useState<
+    string | null
+  >(null);
+  const [cancelAutomatedJobPending, setCancelAutomatedJobPending] =
+    useState(false);
+  //: Client-side sort over the current page only (the server already orders
+  //: pages newest-first) - `null` means that untouched server order.
+  const [automatedJobsSort, setAutomatedJobsSort] =
+    useState<AutomatedJobsSort>(null);
+  //: Server-side pagination over the automated-backup history table -
+  //: `automatedJobs` holds only the current page, and `automatedJobsTotal` is
+  //: the full row count the server counted, driving the pager below (styled
+  //: to match the admin "People directory" table's own footer).
+  const [automatedJobsOffset, setAutomatedJobsOffset] = useState(0);
+  const [automatedJobsLimit, setAutomatedJobsLimit] = useState<number>(
+    AUTOMATED_JOBS_PAGE_SIZES[0],
+  );
+  const [automatedJobsTotal, setAutomatedJobsTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const [isSpaceModalOpen, setIsSpaceModalOpen] = useState(false);
@@ -1807,8 +1920,13 @@ export function BackupPanel() {
   const restorePortableBackupJob = useCallback(async () => {
     try {
       const jobs = await apiFetch<PortableBackupJob[]>("/api/v1/backup/jobs");
+      // Excludes automated runs on purpose - a scheduled backup's progress
+      // belongs on the "Automatic backups" card's own history table, not
+      // this card, which would otherwise reattach to *any* in-flight job on
+      // reload/focus regardless of who queued it and jump the admin onto
+      // the Export tab for a run they never started here.
       const activeJob = jobs.find(
-        (job) => job.status === "queued" || job.status === "running",
+        (job) => (job.status === "queued" || job.status === "running") && !job.automated,
       );
       setPortableBackupJob((current) => {
         if (!activeJob) {
@@ -1916,11 +2034,17 @@ export function BackupPanel() {
       }
       setAutomatedError(null);
       try {
-        setAutomatedJobs(
-          await apiFetch<PortableBackupJob[]>("/api/v1/backup/automatic/jobs"),
+        const page = await apiFetch<{
+          items: PortableBackupJob[];
+          total: number;
+        }>(
+          `/api/v1/backup/automatic/jobs?offset=${automatedJobsOffset}&limit=${automatedJobsLimit}`,
         );
+        setAutomatedJobs(page.items);
+        setAutomatedJobsTotal(page.total);
       } catch (error) {
         setAutomatedJobs([]);
+        setAutomatedJobsTotal(0);
         setAutomatedError(
           error instanceof ApiError
             ? `Schedule loaded, but backup history could not load: ${error.message}`
@@ -1937,12 +2061,19 @@ export function BackupPanel() {
           : "Could not load automatic backup settings.",
       );
     }
-  }, [isEditingAutomatedSchedule]);
+  }, [isEditingAutomatedSchedule, automatedJobsOffset, automatedJobsLimit]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load persisted server state on mount
     void refreshAutomatedBackups();
   }, [refreshAutomatedBackups]);
+
+  // Selection is scoped to the page on screen - a row ticked on page 1 is not
+  // still ticked (or still counted in "N selected") after moving to page 2.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- selection does not survive a page change
+    setSelectedAutomatedJobIds([]);
+  }, [automatedJobsOffset, automatedJobsLimit]);
 
   // A scheduled run starts on its own cron tick, not from a click on this
   // page - without this, whoever has the tab open only ever sees whatever
@@ -2006,16 +2137,129 @@ export function BackupPanel() {
     } finally { setAutomatedPending(false); }
   }
 
-  async function deleteAutomatedBackup() {
-    if (!deleteAutomatedJobId) return;
+  function toggleSelectAutomatedJob(id: string) {
+    setSelectedAutomatedJobIds((current) =>
+      current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id],
+    );
+  }
+
+  function toggleSelectAllAutomatedJobsOnPage() {
+    const idsOnPage = automatedJobs.map((job) => job.id);
+    const allSelected =
+      idsOnPage.length > 0 && idsOnPage.every((id) => selectedAutomatedJobIds.includes(id));
+    setSelectedAutomatedJobIds(allSelected ? [] : idsOnPage);
+  }
+
+  //: Clicking an unsorted (or the other) column starts it ascending;
+  //: clicking the already-ascending column flips to descending; clicking a
+  //: descending column drops back to the server's own newest-first order -
+  //: the usual three-state header toggle.
+  function toggleAutomatedJobsSort(key: AutomatedJobsSortKey) {
+    setAutomatedJobsSort((current) => {
+      if (current?.key !== key) return { key, direction: "asc" };
+      if (current.direction === "asc") return { key, direction: "desc" };
+      return null;
+    });
+  }
+
+  //: The current page's rows, reordered for display - sorting never crosses
+  //: a page boundary, since each page is its own server-fetched slice.
+  //: Missing values (a queued/running row has no completion time or, before
+  //: it starts, no duration) always sort last regardless of direction,
+  //: rather than clustering at the top on a descending sort.
+  const sortedAutomatedJobs = useMemo(() => {
+    if (!automatedJobsSort) return automatedJobs;
+    const { key, direction } = automatedJobsSort;
+    const factor = direction === "asc" ? 1 : -1;
+    const valueOf = (job: PortableBackupJob): number | string | null => {
+      switch (key) {
+        case "backup":
+          return (job.output_filename ?? job.created_at).toLocaleLowerCase();
+        case "status":
+          return job.status;
+        case "completed_at":
+          return job.status === "complete"
+            ? new Date(job.updated_at).getTime()
+            : null;
+        case "duration": {
+          if (!job.started_at) return null;
+          const start = new Date(job.started_at).getTime();
+          const isTerminal = job.status === "complete" || job.status === "failed";
+          const end = isTerminal ? new Date(job.updated_at).getTime() : Date.now();
+          return end - start;
+        }
+        default:
+          return null;
+      }
+    };
+    return [...automatedJobs].sort((a, b) => {
+      const va = valueOf(a);
+      const vb = valueOf(b);
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      if (va < vb) return -1 * factor;
+      if (va > vb) return 1 * factor;
+      return 0;
+    });
+  }, [automatedJobs, automatedJobsSort]);
+
+  async function bulkDeleteAutomatedBackups() {
+    const ids = selectedAutomatedJobIds;
+    if (ids.length === 0) return;
     setAutomatedPending(true);
     try {
-      await apiFetch(`/api/v1/backup/automatic/jobs/${deleteAutomatedJobId}`, { method: "DELETE" });
-      toast.success("Automatic backup deleted.");
+      await apiFetch("/api/v1/backup/automatic/jobs/bulk-delete", {
+        method: "POST",
+        body: { job_ids: ids },
+      });
+      toast.success(
+        `${ids.length} automatic backup${ids.length === 1 ? "" : "s"} deleted.`,
+      );
+      setSelectedAutomatedJobIds([]);
+      // Deleting every row on a page beyond the first would otherwise leave
+      // that page empty - step back one page instead of refetching in place;
+      // the offset change alone re-triggers `refreshAutomatedBackups` (it
+      // depends on it), so there is nothing else to do in that branch.
+      if (ids.length >= automatedJobs.length && automatedJobsOffset > 0) {
+        setAutomatedJobsOffset((current) =>
+          Math.max(0, current - automatedJobsLimit),
+        );
+      } else {
+        await refreshAutomatedBackups();
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof ApiError ? error.message : "Could not delete the selected backups.",
+      );
+    } finally {
+      setAutomatedPending(false);
+      setConfirmBulkDeleteAutomatedJobs(false);
+    }
+  }
+
+  async function cancelAutomatedJob() {
+    if (!cancelAutomatedJobId) return;
+    setCancelAutomatedJobPending(true);
+    try {
+      // The general job-cancel endpoint, not an `/automatic/...` one - it
+      // operates on any `BackupJob` by id regardless of who queued it, the
+      // same endpoint the manual Export card's own Cancel uses.
+      await apiFetch(`/api/v1/backup/jobs/${cancelAutomatedJobId}/cancel`, {
+        method: "POST",
+      });
+      toast.success("Cancellation requested.");
       await refreshAutomatedBackups();
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Could not delete automatic backup.");
-    } finally { setAutomatedPending(false); setDeleteAutomatedJobId(null); }
+      toast.error(
+        error instanceof ApiError ? error.message : "Could not cancel the backup.",
+      );
+    } finally {
+      setCancelAutomatedJobPending(false);
+      setCancelAutomatedJobId(null);
+    }
   }
 
   const restoreStoredConfluenceUpload = useCallback(async () => {
@@ -3890,11 +4134,22 @@ export function BackupPanel() {
             which hid the field right below it entirely. This card is short
             enough that a sticky header bought nothing anyway. */}
         <div className="border-border bg-surface flex flex-wrap items-center justify-between gap-3 border-b px-6 py-3.5">
-          <div className="flex items-center gap-2.5">
+          {/* `min-w-0` + a hard `max-w` cap here, unlike the plain `<div>`s
+              this had before - `min-w-0` alone lets the description shrink
+              but does not make it *give up* room it doesn't need; a flex row
+              still hands it space up to its full sentence width before the
+              actions group, so the five-button-wide edit state (Run
+              history/Enabled/Run now/Cancel/Save schedule) still got pushed
+              onto its own row. Capping this side's width outright instead
+              guarantees the actions row always has the space it needs, at
+              any width the actions group happens to be - the description
+              just wraps onto another line within that cap rather than
+              losing words to an ellipsis. */}
+          <div className="flex min-w-0 items-center gap-2.5">
             <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-md">
               <RotateCcw className="size-4" />
             </span>
-            <div>
+            <div className="min-w-0 sm:max-w-55 lg:max-w-xs">
               <h3 id="automatic-backups-title" className="text-foreground text-sm font-semibold sm:text-base">
                 Automatic backups
               </h3>
@@ -3906,6 +4161,56 @@ export function BackupPanel() {
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {/* Grouped with the other header controls rather than left to
+                float alone above the table - it was easy to miss down
+                there, disconnected from everything else about this
+                schedule. Collapsed behind an info icon rather than a
+                permanent bordered box: last/next run is useful to check but
+                not worth two lines of the card at all times, and whether a
+                run is even due is already visible from "Next run" alone
+                being one hover away. `group-focus-within` keeps the panel
+                reachable by keyboard, not just a mouse hover. */}
+            <div className="group/schedule-info relative inline-flex">
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground hover:bg-surface-hover focus-visible:ring-ring border-border inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                aria-describedby="automated-backup-run-history"
+              >
+                <Info className="size-3.5" />
+                Run history
+              </button>
+              <div
+                id="automated-backup-run-history"
+                role="tooltip"
+                className="border-border bg-surface invisible absolute top-full right-0 z-10 mt-1.5 w-72 space-y-3 rounded-lg border p-3 text-xs opacity-0 shadow-lg transition-opacity duration-150 group-hover/schedule-info:visible group-hover/schedule-info:opacity-100 group-focus-within/schedule-info:visible group-focus-within/schedule-info:opacity-100"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Clock className="text-muted-foreground size-4 shrink-0" />
+                  <div>
+                    <p className="text-muted-foreground">Last run</p>
+                    <p className="text-foreground mt-0.5 flex items-center gap-1.5 font-medium">
+                      {automatedSettings?.last_run_at
+                        ? new Date(automatedSettings.last_run_at).toLocaleString()
+                        : "Never"}
+                      {automatedSettings?.last_status ? (
+                        <AutomatedBackupStatusBadge status={automatedSettings.last_status} />
+                      ) : null}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Clock className="text-muted-foreground size-4 shrink-0" />
+                  <div>
+                    <p className="text-muted-foreground">Next run</p>
+                    <p className="text-foreground mt-0.5 font-medium">
+                      {automatedSettings?.next_run_at
+                        ? new Date(automatedSettings.next_run_at).toLocaleString()
+                        : "Calculated after saving"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
             {/* A real switch rather than a field buried in the grid below -
                 whether the schedule is even on is the first thing worth
                 seeing, not something read off row four of a form. Locked
@@ -3945,10 +4250,14 @@ export function BackupPanel() {
               </span>
               {automatedSettings?.enabled ? "Enabled" : "Disabled"}
             </label>
+            {/* Primary, not secondary like Edit/Run history - this is the
+                one button here that actually does something right away
+                (kicks off a real backup), and it read as just another gray
+                control next to two that don't. */}
             <Button
               type="button"
               size="sm"
-              variant="secondary"
+              variant="primary"
               className="text-xs h-8"
               disabled={automatedPending || !automatedSettings?.directory_configured}
               onClick={() => void runAutomatedBackupNow()}
@@ -4140,33 +4449,6 @@ export function BackupPanel() {
               </div>
             </div>
 
-            <div className="border-border bg-surface-sunken/60 flex flex-wrap items-center gap-6 rounded-lg border p-3.5 text-xs">
-              <div className="flex items-center gap-2.5">
-                <Clock className="text-muted-foreground size-4 shrink-0" />
-                <div>
-                  <p className="text-muted-foreground">Last run</p>
-                  <p className="text-foreground mt-0.5 flex items-center gap-1.5 font-medium">
-                    {automatedSettings.last_run_at
-                      ? new Date(automatedSettings.last_run_at).toLocaleString()
-                      : "Never"}
-                    {automatedSettings.last_status ? (
-                      <AutomatedBackupStatusBadge status={automatedSettings.last_status} />
-                    ) : null}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Clock className="text-muted-foreground size-4 shrink-0" />
-                <div>
-                  <p className="text-muted-foreground">Next run</p>
-                  <p className="text-foreground mt-0.5 font-medium">
-                    {automatedSettings.next_run_at
-                      ? new Date(automatedSettings.next_run_at).toLocaleString()
-                      : "Calculated after saving"}
-                  </p>
-                </div>
-              </div>
-            </div>
             {automatedSettings.last_error ? (
               <p className="text-danger text-xs">
                 Last error: {automatedSettings.last_error}
@@ -4178,24 +4460,86 @@ export function BackupPanel() {
 
             {/* Recent backups */}
             <div className="space-y-1.5">
-              <h4 className="sr-only">Backup history</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="sr-only">Backup history</h4>
+                {/* Deleting is a bulk action now - tick the rows you want
+                    gone, then Delete - so this bar only takes up space once
+                    something is actually selected; each row's own Actions
+                    column offers just Download. */}
+                {selectedAutomatedJobIds.length > 0 ? (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">
+                      {selectedAutomatedJobIds.length} selected
+                    </span>
+                    <button
+                      type="button"
+                      className="text-danger hover:bg-danger-bg inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => setConfirmBulkDeleteAutomatedJobs(true)}
+                    >
+                      <Trash2 className="size-3.5" /> Delete selected
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <div className="border-border overflow-hidden rounded-lg border">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-surface-sunken text-muted-foreground">
                     <tr>
-                      <th className="p-2 font-medium">Backup</th>
-                      <th className="p-2 font-medium">Status</th>
-                      <th className="p-2 font-medium">Duration</th>
+                      <th className="w-8 p-2">
+                        <input
+                          type="checkbox"
+                          className="cursor-pointer disabled:cursor-not-allowed"
+                          checked={
+                            automatedJobs.length > 0 &&
+                            automatedJobs.every((job) =>
+                              selectedAutomatedJobIds.includes(job.id),
+                            )
+                          }
+                          onChange={toggleSelectAllAutomatedJobsOnPage}
+                          disabled={automatedJobs.length === 0}
+                          aria-label="Select all backups on this page"
+                        />
+                      </th>
+                      <SortableAutomatedJobsHeader
+                        label="Backup"
+                        sortKey="backup"
+                        sort={automatedJobsSort}
+                        onSort={toggleAutomatedJobsSort}
+                      />
+                      <SortableAutomatedJobsHeader
+                        label="Status"
+                        sortKey="status"
+                        sort={automatedJobsSort}
+                        onSort={toggleAutomatedJobsSort}
+                      />
+                      <SortableAutomatedJobsHeader
+                        label="Completed at"
+                        sortKey="completed_at"
+                        sort={automatedJobsSort}
+                        onSort={toggleAutomatedJobsSort}
+                      />
+                      <SortableAutomatedJobsHeader
+                        label="Duration"
+                        sortKey="duration"
+                        sort={automatedJobsSort}
+                        onSort={toggleAutomatedJobsSort}
+                      />
                       <th className="p-2 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {automatedJobs.length ? (
-                      (showAllAutomatedJobs
-                        ? automatedJobs
-                        : automatedJobs.slice(0, 5)
-                      ).map((job) => (
+                    {sortedAutomatedJobs.length ? (
+                      sortedAutomatedJobs.map((job) => (
                         <tr key={job.id} className="border-border hover:bg-surface-hover border-t">
+                          <td className="p-2">
+                            <input
+                              type="checkbox"
+                              className="cursor-pointer"
+                              checked={selectedAutomatedJobIds.includes(job.id)}
+                              onChange={() => toggleSelectAutomatedJob(job.id)}
+                              aria-label={`Select ${job.output_filename ?? "this backup"}`}
+                            />
+                          </td>
                           <td className="p-2">
                             <span className="flex items-center gap-1.5">
                               <FileArchive className="text-muted-foreground size-3.5 shrink-0" />
@@ -4207,33 +4551,67 @@ export function BackupPanel() {
                             <AutomatedBackupStatusBadge status={job.status} />
                           </td>
                           <td className="text-muted-foreground p-2">
+                            {job.status === "complete" ? (
+                              formatCompletedAt(job.updated_at)
+                            ) : job.status === "running" ? (
+                              // Lives here rather than under the Status badge
+                              // above - a column that is otherwise always a
+                              // single line ("—" for every other status)
+                              // growing taller only for the one running row
+                              // shifted every row below it down each time
+                              // this refreshed. "Completed at" has nothing
+                              // to show yet anyway, so it absorbs the extra
+                              // height without moving anything else.
+                              <div className="w-28">
+                                <div className="bg-surface-sunken h-1 overflow-hidden rounded-full">
+                                  <div
+                                    className="bg-primary h-full rounded-full transition-all duration-300"
+                                    style={{
+                                      width: `${job.percent ?? 0}%`,
+                                    }}
+                                  />
+                                </div>
+                                <p className="text-muted-foreground mt-0.5 text-[10px] whitespace-nowrap">
+                                  {job.percent != null
+                                    ? `${job.percent}% · ${formatDuration(job.eta_seconds)}`
+                                    : "Starting…"}
+                                </p>
+                              </div>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="text-muted-foreground p-2">
                             {automatedJobDuration(job)}
                           </td>
                           <td className="p-2">
-                            <div className="flex items-center gap-1.5">
-                              {job.download_url ? (
-                                <a
-                                  className="text-primary hover:bg-primary/10 inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                  href={job.download_url}
-                                >
-                                  <Download className="size-3.5" /> Download
-                                </a>
-                              ) : null}
+                            {job.status === "queued" || job.status === "running" ? (
                               <button
                                 type="button"
-                                className="text-danger hover:bg-danger-bg inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                onClick={() => setDeleteAutomatedJobId(job.id)}
+                                className="text-danger hover:bg-danger-bg disabled:text-muted-foreground disabled:pointer-events-none inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                disabled={job.cancel_requested}
+                                onClick={() => setCancelAutomatedJobId(job.id)}
                               >
-                                <Trash2 className="size-3.5" /> Delete
+                                <X className="size-3.5" />{" "}
+                                {job.cancel_requested ? "Cancelling…" : "Cancel"}
                               </button>
-                            </div>
+                            ) : job.download_url ? (
+                              <a
+                                className="text-primary hover:bg-primary/10 inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                href={job.download_url}
+                              >
+                                <Download className="size-3.5" /> Download
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
                         <td
-                          colSpan={4}
+                          colSpan={6}
                           className="text-muted-foreground p-3 text-center"
                         >
                           No scheduled backups have run yet.
@@ -4243,21 +4621,97 @@ export function BackupPanel() {
                   </tbody>
                 </table>
               </div>
-              {automatedJobs.length > 5 ? (
-                <div className="flex items-center justify-between px-0.5 text-xs">
-                  <p className="text-muted-foreground">
-                    Showing {showAllAutomatedJobs ? automatedJobs.length : 5} of{" "}
-                    {automatedJobs.length} backups
-                  </p>
-                  <button
-                    type="button"
-                    className="text-primary hover:bg-primary/10 inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => setShowAllAutomatedJobs((current) => !current)}
+              {/* Styled to match the admin People directory's own pager
+                  (`PaginationControls`, list-controls.tsx) - "Showing X-Y of
+                  Z" on the left, rows-per-page / page count / prev-next on
+                  the right - rather than the URL-driven version that
+                  component uses, since this panel fetches its own state
+                  instead of reading server-component search params. */}
+              <div className="flex flex-wrap items-center justify-between gap-3 px-0.5 text-xs">
+                <p className="text-muted-foreground" aria-live="polite">
+                  {automatedJobsTotal === 0
+                    ? "No results"
+                    : `Showing ${automatedJobsOffset + 1}–${Math.min(
+                        automatedJobsOffset + automatedJobsLimit,
+                        automatedJobsTotal,
+                      )} of ${automatedJobsTotal}`}
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="automated-jobs-page-size"
+                      className="text-muted-foreground"
+                    >
+                      Rows per page
+                    </label>
+                    <Select
+                      value={String(automatedJobsLimit)}
+                      onValueChange={(value) => {
+                        setAutomatedJobsLimit(Number(value));
+                        setAutomatedJobsOffset(0);
+                      }}
+                    >
+                      <SelectTrigger
+                        id="automated-jobs-page-size"
+                        className="h-8 w-20"
+                        aria-label="Rows per page"
+                      >
+                        <SelectValue>{automatedJobsLimit}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AUTOMATED_JOBS_PAGE_SIZES.map((size) => (
+                          <SelectItem key={size} value={String(size)}>
+                            {size}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <span className="text-muted-foreground hidden sm:inline">
+                    Page{" "}
+                    {automatedJobsTotal === 0
+                      ? 0
+                      : Math.floor(automatedJobsOffset / automatedJobsLimit) + 1}{" "}
+                    of{" "}
+                    {Math.max(
+                      1,
+                      Math.ceil(automatedJobsTotal / automatedJobsLimit),
+                    )}
+                  </span>
+                  <span className="border-border h-5 border-l" aria-hidden />
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    disabled={automatedJobsOffset === 0}
+                    onClick={() =>
+                      setAutomatedJobsOffset((current) =>
+                        Math.max(0, current - automatedJobsLimit),
+                      )
+                    }
+                    aria-label="Previous page"
+                    title="Previous page"
                   >
-                    {showAllAutomatedJobs ? "Show less" : "View all backups"}
-                  </button>
+                    <ChevronLeft />
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    disabled={
+                      automatedJobsOffset + automatedJobsLimit >=
+                      automatedJobsTotal
+                    }
+                    onClick={() =>
+                      setAutomatedJobsOffset(
+                        (current) => current + automatedJobsLimit,
+                      )
+                    }
+                    aria-label="Next page"
+                    title="Next page"
+                  >
+                    <ChevronRight />
+                  </Button>
                 </div>
-              ) : null}
+              </div>
             </div>
           </div>
         ) : (
@@ -6053,14 +6507,24 @@ export function BackupPanel() {
         }}
       />
       <ConfirmDialog
-        open={deleteAutomatedJobId !== null}
-        onOpenChange={(open) => { if (!open) setDeleteAutomatedJobId(null); }}
-        title="Delete automatic backup?"
-        description="This permanently removes the backup ZIP from the configured server partition."
-        confirmLabel="Delete backup"
+        open={confirmBulkDeleteAutomatedJobs}
+        onOpenChange={(open) => { if (!open) setConfirmBulkDeleteAutomatedJobs(false); }}
+        title={`Delete ${selectedAutomatedJobIds.length} automatic backup${selectedAutomatedJobIds.length === 1 ? "" : "s"}?`}
+        description="This permanently removes the backup ZIP(s) from the configured server partition."
+        confirmLabel="Delete backups"
         destructive
         pending={automatedPending}
-        onConfirm={() => void deleteAutomatedBackup()}
+        onConfirm={() => void bulkDeleteAutomatedBackups()}
+      />
+      <ConfirmDialog
+        open={cancelAutomatedJobId !== null}
+        onOpenChange={(open) => { if (!open) setCancelAutomatedJobId(null); }}
+        title="Cancel this backup?"
+        description="The scheduled backup in progress will stop at its next checkpoint and its partial file will be discarded."
+        confirmLabel="Cancel backup"
+        destructive
+        pending={cancelAutomatedJobPending}
+        onConfirm={() => void cancelAutomatedJob()}
       />
       </div>
     </div>
