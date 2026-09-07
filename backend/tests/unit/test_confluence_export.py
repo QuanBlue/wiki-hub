@@ -1,15 +1,17 @@
 import uuid
-import pytest
-from unittest.mock import AsyncMock, Mock
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 from xml.etree.ElementTree import Element
 
+import pytest
+
+from app.models.attachment import PageAttachment
+from app.models.backup_job import BackupJob
+from app.models.page import WikiPage
+from app.models.space import Space
 from app.modules.backup.confluence_export import _property, write_confluence_dc_export
 from app.modules.backup.service import ExportCancelled
-from app.models.backup_job import BackupJob
-from app.models.space import Space
-from app.models.page import WikiPage
-from app.models.attachment import PageAttachment
-from datetime import datetime, UTC
+
 
 def test_property():
     e = Element("root")
@@ -47,6 +49,38 @@ async def test_write_confluence_dc_export(tmp_path):
         # Attachment should be in there
         atts = [info for info in zf.infolist() if "attachments/" in info.filename]
         assert len(atts) == 1
+
+
+@pytest.mark.asyncio
+async def test_write_confluence_dc_export_checkpoints_during_page_serialisation(tmp_path):
+    """25 pages (the checkpoint cadence) with no job/session tracking - the
+    page loop's own periodic `_checkpoint()` call (distinct from the
+    attachment loop's) still has to run and no-op cleanly rather than error.
+    """
+    storage = AsyncMock()
+    path = str(tmp_path / "export.zip")
+
+    s = Space(id=uuid.uuid4(), key="TEST", name="Test", description="test desc")
+    pages = [
+        WikiPage(
+            id=uuid.uuid4(),
+            space_id=s.id,
+            title=f"P{i}",
+            slug=f"p{i}",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        for i in range(25)
+    ]
+
+    await write_confluence_dc_export(
+        path, storage, profile="dc-8", spaces=[s], pages=pages, attachments=[]
+    )
+
+    import zipfile
+    with zipfile.ZipFile(path, "r") as zf:
+        xml = zf.read("entities.xml").decode()
+        assert "P24" in xml
 
 
 @pytest.mark.asyncio

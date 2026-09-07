@@ -51,6 +51,7 @@ def test_a_range_past_the_end_is_unsatisfiable(header: str) -> None:
         "items=0-99",
         "bytes=abc-99",
         "bytes=0-abc",
+        "bytes=-abc",
         "bytes=100",
         # Multipart ranges are not served, so the full body is the answer.
         "bytes=0-99,200-299",

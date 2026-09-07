@@ -240,6 +240,28 @@ class TestTableOfContents:
         assert '<a href="#scope">1.1. Scope</a>' in html
 
     @pytest.mark.asyncio
+    async def test_headings_with_the_same_text_get_distinct_ids(self) -> None:
+        # Two sections both titled "Scope" would otherwise slugify to the
+        # same id, leaving the second heading's link (and any other same-page
+        # link to it) landing on the first one instead.
+        p = page(
+            content_format="html",
+            content=(
+                '<div data-type="tableOfContents"></div>'
+                "<h1>Scope</h1><h1>Scope</h1><h1>Scope</h1>"
+            ),
+        )
+        html = await export_content.prepare_export_html(
+            p, storage=storage(), session=session_returning({})
+        )
+        assert '<h1 id="scope">Scope</h1>' in html
+        assert '<h1 id="scope-2">Scope</h1>' in html
+        assert '<h1 id="scope-3">Scope</h1>' in html
+        assert '<a href="#scope">1. Scope</a>' in html
+        assert '<a href="#scope-2">2. Scope</a>' in html
+        assert '<a href="#scope-3">3. Scope</a>' in html
+
+    @pytest.mark.asyncio
     async def test_entries_are_not_an_ol_so_nothing_numbers_them_a_second_time(
         self,
     ) -> None:
@@ -279,7 +301,7 @@ class TestTableOfContents:
         html = await export_content.prepare_export_html(
             p, storage=storage(), session=session_returning({})
         )
-        assert f'<p>\xa0\xa0\xa0\xa0<a href="#scope">1.1. Scope</a></p>' in html
+        assert '<p>\xa0\xa0\xa0\xa0<a href="#scope">1.1. Scope</a></p>' in html
         assert "style=" not in html.split("Table of contents")[1]
 
 

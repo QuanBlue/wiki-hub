@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -70,6 +71,23 @@ async def test_page_and_revision_repositories_cover_reads_and_writes() -> None:
     assert await revisions.get_by_version(page_id, 1) == "one"
     assert await revisions.get_max_version(page_id) == 2
     assert revisions.add(page) is page
+
+
+@pytest.mark.asyncio
+async def test_page_repository_list_updated_by_paginates_with_a_cursor() -> None:
+    session = Mock()
+    session.execute = AsyncMock(return_value=_scalars(["page"]))
+    pages = PageRepository(session)
+
+    # Both bounds present is what adds the keyset `where(...)` clause (line
+    # 118) - a bare `list_updated_by(...)` with neither never touches it.
+    result = await pages.list_updated_by(
+        uuid.uuid4(),
+        limit=5,
+        before_updated_at=datetime(2026, 8, 30, 12, 0, tzinfo=UTC),
+        before_id=uuid.uuid4(),
+    )
+    assert list(result) == ["page"]
 
 
 @pytest.mark.asyncio

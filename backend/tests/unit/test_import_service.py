@@ -13,7 +13,11 @@ import pytest
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, PayloadTooLargeError
 from app.models.import_job import ImportArchive
 from app.models.permission import Group, GroupMember, Permission, SpaceGroupPermission
-from app.models.restriction import PageGroupRestriction, PageRestrictionPermission, PageUserRestriction
+from app.models.restriction import (
+    PageGroupRestriction,
+    PageRestrictionPermission,
+    PageUserRestriction,
+)
 from app.models.space import Space, SpaceVisibility
 from app.modules.import_export import service as import_module
 from app.modules.import_export.confluence import (
@@ -626,6 +630,62 @@ async def test_run_import_skips_existing_space_without_overwrite(
     job.space_keys = []
     session.get = AsyncMock(side_effect=[job, archive])
     await import_module.run_import(session, storage, job.id)
+
+
+@pytest.mark.asyncio
+async def test_run_import_carries_over_the_source_spaces_creation_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A full site export usually writes the Space object's own creator/
+    # creationDate (unlike a single-space content export, which never does) -
+    # when it's present the new space should keep it, not silently default
+    # to "now" the way a freshly created space normally would.
+    session = Mock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.refresh = AsyncMock()
+    session.add = Mock()
+    added: list[object] = []
+    session.add.side_effect = added.append
+
+    async def flush() -> None:
+        for item in added:
+            if getattr(item, "id", None) is None:
+                item.id = uuid.uuid4()
+
+    session.flush = AsyncMock(side_effect=flush)
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        import_all=True,
+        space_keys=[],
+        overwrite_existing=False,
+        created_by_id=uuid.uuid4(),
+        cancel_requested=False,
+        counters={"download_percent": 0, "spaces_completed": 0},
+    )
+    archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
+    session.get = AsyncMock(side_effect=[job, archive])
+    session.execute = AsyncMock(return_value=_EntityResult(None))
+    source_created_at = datetime(2019, 6, 15, tzinfo=UTC)
+    source_space = ConfluenceSpace(
+        "space-1", "ENG", "Engineering", [], created_at=source_created_at
+    )
+
+    async def download(_key, target, **_kwargs):
+        with zipfile.ZipFile(target, "w"):
+            pass
+
+    storage = Mock(download_to_file=AsyncMock(side_effect=download))
+    monkeypatch.setattr(import_module, "scan_archive", lambda _path: [source_space])
+    monkeypatch.setattr(import_module, "iter_page_bodies", lambda _path: [])
+    monkeypatch.setattr(import_module, "iter_attachments", lambda _path: [])
+    await import_module.run_import(session, storage, job.id)
+
+    space = next(item for item in added if getattr(item, "key", None) == "ENG")
+    assert space.created_at == source_created_at
 
 
 @pytest.mark.asyncio

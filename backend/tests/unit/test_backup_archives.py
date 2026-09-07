@@ -67,9 +67,8 @@ async def test_start_upload_rejects_non_zip(archives):
 
 @pytest.mark.asyncio
 async def test_start_upload_rejects_oversized_archive(archives):
-    with _mock_effective(1000):
-        with pytest.raises(PayloadTooLargeError):
-            await archives.start_upload(filename="backup.zip", size_bytes=2000, actor_id=uuid.uuid4())
+    with _mock_effective(1000), pytest.raises(PayloadTooLargeError):
+        await archives.start_upload(filename="backup.zip", size_bytes=2000, actor_id=uuid.uuid4())
 
 
 @pytest.mark.asyncio
@@ -106,6 +105,71 @@ async def test_get_archive_not_found(archives, session):
 
 
 @pytest.mark.asyncio
+async def test_get_archive_returns_the_found_row(archives, session):
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="uploaded", created_by_id=uuid.uuid4(),
+    )
+    session.get.return_value = archive
+
+    assert await archives.get_archive(archive.id) is archive
+
+
+@pytest.mark.asyncio
+async def test_spaces_for_display_recomputes_conflicts(archives):
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="scanned", created_by_id=uuid.uuid4(),
+        spaces=[{"key": "ENG", "name": "Engineering", "page_count": 1,
+                 "attachment_count": 0, "conflict": False}],
+    )
+    archives._with_conflicts = AsyncMock(return_value=["recomputed"])
+
+    result = await archives.spaces_for_display(archive)
+
+    assert result == ["recomputed"]
+    archives._with_conflicts.assert_awaited_once_with(archive.spaces)
+
+
+@pytest.mark.asyncio
+async def test_spaces_for_display_handles_a_never_scanned_archive(archives):
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="uploaded", created_by_id=uuid.uuid4(), spaces=None,
+    )
+    archives._with_conflicts = AsyncMock(return_value=[])
+
+    await archives.spaces_for_display(archive)
+
+    archives._with_conflicts.assert_awaited_once_with([])
+
+
+@pytest.mark.asyncio
+async def test_uploaded_part_numbers_with_no_multipart_upload_yet(archives):
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="uploaded", multipart_upload_id=None, created_by_id=uuid.uuid4(),
+    )
+
+    assert await archives.uploaded_part_numbers(archive) == []
+
+
+@pytest.mark.asyncio
+async def test_uploaded_part_numbers_lists_what_storage_already_has(archives, storage):
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="uploading", multipart_upload_id="up-1", created_by_id=uuid.uuid4(),
+    )
+    storage.list_multipart_parts = AsyncMock(
+        return_value=[(1, "etag1"), (2, "etag2")]
+    )
+
+    result = await archives.uploaded_part_numbers(archive)
+
+    assert result == [1, 2]
+
+
+@pytest.mark.asyncio
 async def test_upload_part_urls_rejects_when_not_uploading(archives):
     archive = BackupArchive(
         id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
@@ -124,6 +188,17 @@ async def test_upload_part_urls_returns_presigned_urls(archives, storage):
     storage.presigned_upload_part_url = AsyncMock(return_value="https://example/part")
     urls = await archives.upload_part_urls(archive, [2, 1, 2])
     assert urls == {1: "https://example/part", 2: "https://example/part"}
+
+
+@pytest.mark.asyncio
+async def test_complete_upload_rejects_an_already_completed_archive(archives, storage):
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="uploaded", multipart_upload_id=None, created_by_id=uuid.uuid4(),
+    )
+    with pytest.raises(ConflictError, match="already completed"):
+        await archives.complete_upload(archive)
+    storage.list_multipart_parts.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -230,10 +305,32 @@ async def test_scan_wraps_unexpected_errors(archives, storage):
     with _mock_effective(10**9), patch(
         "app.modules.backup.archives.list_backup_spaces",
         side_effect=RuntimeError("disk exploded"),
-    ):
-        with pytest.raises(BadRequestError, match="Could not scan backup archive"):
-            await archives.scan(archive)
+    ), pytest.raises(BadRequestError, match="Could not scan backup archive"):
+        await archives.scan(archive)
     assert archive.error == "disk exploded"
+
+
+@pytest.mark.asyncio
+async def test_scan_records_and_reraises_a_verdict_on_the_archive_itself(
+    archives, session, storage
+):
+    # Distinct from test_scan_wraps_unexpected_errors above: list_backup_spaces
+    # raising BadRequestError/PayloadTooLargeError is itself the verdict (a
+    # malformed or too-large archive), not an unexpected failure to wrap - so
+    # it is recorded and re-raised as-is, not replaced with a generic message.
+    archive = BackupArchive(
+        id=uuid.uuid4(), object_key="k", filename="f.zip", size_bytes=10,
+        status="uploaded", created_by_id=uuid.uuid4(),
+    )
+    storage.exists = AsyncMock(return_value=True)
+    storage.open_reader = Mock(return_value=MagicMock())
+    with _mock_effective(10**9), patch(
+        "app.modules.backup.archives.list_backup_spaces",
+        side_effect=BadRequestError("This is not a WikiHub backup archive."),
+    ), pytest.raises(BadRequestError, match="not a WikiHub backup archive"):
+        await archives.scan(archive)
+    assert archive.error == "This is not a WikiHub backup archive."
+    session.flush.assert_awaited()
 
 
 @pytest.mark.asyncio

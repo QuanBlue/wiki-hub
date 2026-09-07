@@ -7,6 +7,29 @@ import pytest
 from app.core.exceptions import BadRequestError
 from app.modules.import_export.confluence import iter_attachments, iter_page_bodies, scan_archive
 
+XML_USER_CONTACT_INFO = """<root>
+<object class="ConfluenceUserImpl">
+  <id>u1</id>
+  <property name="name">alice</property>
+  <property name="emailAddress">alice@example.com</property>
+  <property name="displayName">Alice Anderson</property>
+</object>
+<object class="Space"><id>s1</id><property name="key">ENG</property><property name="name">Engineering</property></object>
+</root>"""
+
+
+def test_scan_confluence_carries_user_contact_info(tmp_path):
+    path = tmp_path / "export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", XML_USER_CONTACT_INFO)
+
+    spaces = scan_archive(path)
+
+    assert len(spaces.users) == 1
+    assert spaces.users[0].username == "alice"
+    assert spaces.users[0].email == "alice@example.com"
+    assert spaces.users[0].display_name == "Alice Anderson"
+
 XML = """<root>
 <object class="ConfluenceUserImpl"><id>u1</id><property name="name">alice</property></object>
 <object class="Space"><id>s1</id><property name="key">ENG</property><property name="name">Engineering</property></object>

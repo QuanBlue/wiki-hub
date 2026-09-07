@@ -97,6 +97,14 @@ class TestSchemaTimeOfDayPattern:
         with pytest.raises(ValueError, match="time_of_day"):
             AutomatedBackupSettingsUpdate(enabled=True, time_of_day="9:30")
 
+    def test_a_non_string_value_passes_through_untouched(self) -> None:
+        # The BeforeValidator runs ahead of pydantic's own str coercion, so a
+        # non-string payload (None here) must fall straight through rather
+        # than being fed to str.strip()/strptime - leaving pydantic's normal
+        # type error, not a validator crash, as the reported failure.
+        with pytest.raises(ValueError, match="time_of_day"):
+            AutomatedBackupSettingsUpdate(enabled=True, time_of_day=None)
+
 
 class TestNextRunAfter:
     def test_hourly_interval_adds_hours_from_reference(self) -> None:

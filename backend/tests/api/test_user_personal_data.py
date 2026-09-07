@@ -181,6 +181,44 @@ async def test_add_list_and_remove_a_page_label(
     )
     assert removed.status_code == 204
 
+
+async def test_lists_a_pages_own_labels_directly(
+    client: AsyncClient, api_user: User, api_access_token: str
+) -> None:
+    # Distinct from GET /users/me/page-labels above - this is the page's own
+    # view of its labels (the editor's label picker), not the cross-space
+    # "everything I've labelled" list.
+    headers = _bearer(api_access_token)
+    key, slug = await _create_space_and_page(client, headers)
+    await client.post(
+        f"/api/v1/spaces/{key}/pages/{slug}/labels", headers=headers, json={"name": "needs-review"}
+    )
+
+    listed = await client.get(f"/api/v1/spaces/{key}/pages/{slug}/labels", headers=headers)
+
+    assert listed.status_code == 200
+    assert [item["name"] for item in listed.json()] == ["needs-review"]
+
+
+async def test_adding_the_same_label_twice_is_a_conflict(
+    client: AsyncClient, api_user: User, api_access_token: str
+) -> None:
+    headers = _bearer(api_access_token)
+    key, slug = await _create_space_and_page(client, headers)
+    first = await client.post(
+        f"/api/v1/spaces/{key}/pages/{slug}/labels", headers=headers, json={"name": "needs-review"}
+    )
+    assert first.status_code == 201
+
+    # Case-insensitive: the ilike() comparison treats these as the same label.
+    duplicate = await client.post(
+        f"/api/v1/spaces/{key}/pages/{slug}/labels",
+        headers=headers,
+        json={"name": "NEEDS-REVIEW"},
+    )
+
+    assert duplicate.status_code == 409
+
     listed_after = await client.get("/api/v1/users/me/page-labels", headers=headers)
     assert listed_after.json() == []
 

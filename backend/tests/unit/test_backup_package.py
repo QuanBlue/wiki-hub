@@ -34,7 +34,13 @@ def _document() -> bytes:
     ).encode()
 
 
-def _write(path: str, *, extra_path: str | None = None, checksum: str | None = None) -> None:
+def _write(
+    path: str,
+    *,
+    extra_path: str | None = None,
+    checksum: str | None = None,
+    declared_size: int | None = None,
+) -> None:
     data = _document()
     manifest = {
         "format": FULL_BACKUP_FORMAT,
@@ -43,7 +49,7 @@ def _write(path: str, *, extra_path: str | None = None, checksum: str | None = N
             {
                 "path": DOCUMENT_PATH,
                 "sha256": checksum or hashlib.sha256(data).hexdigest(),
-                "size_bytes": len(data),
+                "size_bytes": len(data) if declared_size is None else declared_size,
             }
         ],
     }
@@ -72,6 +78,15 @@ def test_scan_rejects_zip_slip(tmp_path: Path) -> None:
 def test_scan_rejects_bad_checksum(tmp_path: Path) -> None:
     path = str(tmp_path / "bad.zip")
     _write(path, checksum="0" * 64)
+    with pytest.raises(BadRequestError, match="checksum"):
+        scan_full_backup(path)
+
+
+def test_scan_rejects_a_size_the_manifest_lied_about(tmp_path: Path) -> None:
+    # Caught before a single byte of the entry is even read - the size
+    # mismatch alone is enough to know the manifest cannot be trusted.
+    path = str(tmp_path / "wrong-size.zip")
+    _write(path, declared_size=len(_document()) + 1)
     with pytest.raises(BadRequestError, match="checksum"):
         scan_full_backup(path)
 
@@ -198,6 +213,57 @@ def test_list_backup_spaces_only_reads_the_bytes_it_needs(tmp_path: Path) -> Non
     assert [s.key for s in spaces] == ["ENG"]
     # The 8 MB blob dominates the archive; the preview must not have read it.
     assert raw.read_bytes < len(blob) // 2
+
+
+def test_list_backup_spaces_rejects_a_file_that_is_not_a_zip_at_all(tmp_path: Path) -> None:
+    path = tmp_path / "not-a-zip.zip"
+    path.write_bytes(b"this is plainly not a zip archive")
+    with pytest.raises(BadRequestError, match="not a valid ZIP archive"):
+        list_backup_spaces(str(path))
+
+
+def test_list_backup_spaces_rejects_invalid_workspace_json(tmp_path: Path) -> None:
+    path = str(tmp_path / "bad-json.zip")
+    manifest = {
+        "format": FULL_BACKUP_FORMAT,
+        "version": FULL_BACKUP_VERSION,
+        "entries": [
+            {"path": DOCUMENT_PATH, "sha256": "0" * 64, "size_bytes": 9},
+        ],
+    }
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(DOCUMENT_PATH, b"not json!")
+        archive.writestr(MANIFEST_PATH, json.dumps(manifest))
+    with pytest.raises(BadRequestError, match="workspace data is invalid"):
+        list_backup_spaces(path)
+
+
+def test_list_backup_spaces_rejects_a_non_list_spaces_field(tmp_path: Path) -> None:
+    path = str(tmp_path / "spaces-not-a-list.zip")
+    data = json.dumps(
+        {
+            "wikihub_backup": {
+                "version": 2,
+                "exported_at": datetime.now(UTC).isoformat(),
+                "app_version": "test",
+                "site_name": "Test",
+                "includes_credentials": False,
+            },
+            "spaces": "not-a-list",
+        }
+    ).encode()
+    manifest = {
+        "format": FULL_BACKUP_FORMAT,
+        "version": FULL_BACKUP_VERSION,
+        "entries": [
+            {"path": DOCUMENT_PATH, "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)},
+        ],
+    }
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(DOCUMENT_PATH, data)
+        archive.writestr(MANIFEST_PATH, json.dumps(manifest))
+    with pytest.raises(BadRequestError, match="workspace data is invalid"):
+        list_backup_spaces(path)
 
 
 def test_list_backup_spaces_rejects_a_non_wikihub_zip(tmp_path: Path) -> None:

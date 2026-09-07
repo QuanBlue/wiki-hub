@@ -1,10 +1,12 @@
 import uuid
-import pytest
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
-from datetime import datetime, timedelta, UTC
 
+import pytest
 from sqlalchemy.exc import MissingGreenlet
 
+from app.models.backup_job import BackupJob, BackupJobLog
+from app.modules.backup import jobs as jobs_module
 from app.modules.backup.jobs import (
     create_export_job,
     create_import_job,
@@ -12,11 +14,8 @@ from app.modules.backup.jobs import (
     run_backup_job,
 )
 from app.modules.backup.service import STALE_JOB_AFTER, ExportCancelled
-from app.models.backup_job import BackupArchive, BackupJob, BackupJobLog
-from app.models.page import WikiPage
-from app.models.space import Space
-from app.models.attachment import PageAttachment
 from app.schemas.backup import ImportReport
+
 
 @pytest.mark.asyncio
 async def test_create_export_job():
@@ -279,6 +278,62 @@ async def test_run_backup_job_full_import_downloads_then_restores(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_backup_job_full_import_narrates_download_progress(monkeypatch):
+    """The one log line for the whole download is rewritten in place at each
+    tenth - not appended every chunk, which would bury every later phase
+    under a hundred near-identical lines on a large archive."""
+    session = AsyncMock()
+    storage = AsyncMock()
+    job = _restore_job()
+    archive = Mock(object_key="backups/imports/x/file.zip", size_bytes=1000)
+
+    def get_side_effect(model, _pk):
+        return job if model is BackupJob else archive
+
+    session.get.side_effect = get_side_effect
+
+    checkpoint_calls = []
+    real_checkpoint = jobs_module.checkpoint_backup_job
+
+    async def counting_checkpoint(sess, j, **kwargs):
+        checkpoint_calls.append(kwargs)
+        await real_checkpoint(sess, j, **kwargs)
+
+    monkeypatch.setattr(jobs_module, "checkpoint_backup_job", counting_checkpoint)
+
+    async def fake_download(_key, _path, *, on_progress):
+        # Below the 25-chunk logging interval and short of the full size -
+        # skipped entirely, neither logged nor checkpointed.
+        for chunk in range(1, 25):
+            await on_progress(chunk * 10)
+        # The 25th chunk crosses the interval - this one narrates and
+        # checkpoints. Landing exactly on the full size also crosses a
+        # whole 10%-tenth boundary on its own, independent of the chunk
+        # count, which is what the final call below re-exercises alone.
+        await on_progress(1000)
+
+    storage.download_to_file = fake_download
+
+    async def mock_restore(self, path, storage, *, dry_run, overwrite_space_keys, space_keys, job):
+        return ImportReport(dry_run=False, version=2, includes_credentials=False, created={})
+
+    monkeypatch.setattr(
+        "app.modules.backup.jobs.BackupService.restore_full_package", mock_restore
+    )
+
+    await run_backup_job(session, storage, job.id)
+
+    assert job.status == "complete"
+    # Only the 25th (final) chunk actually checkpointed the download phase -
+    # the first 24 were both under the interval and short of the full size.
+    download_checkpoints = [
+        c["counters"] for c in checkpoint_calls if "items_processed" in c.get("counters", {})
+    ]
+    assert len(download_checkpoints) == 1
+    assert download_checkpoints[0] == {"items_processed": 1000, "items_total": 1000}
+
+
+@pytest.mark.asyncio
 async def test_run_backup_job_full_import_cancelled(monkeypatch):
     session = AsyncMock()
     storage = AsyncMock()
@@ -313,6 +368,26 @@ async def test_run_backup_job_full_import_missing_archive_fails():
     session.get.return_value = job
 
     with pytest.raises(ValueError, match="no uploaded archive"):
+        await run_backup_job(session, storage, job.id)
+    assert job.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_run_backup_job_full_import_deleted_archive_fails():
+    """`archive_id` is set but the row behind it is gone - the same
+    SET NULL race as the "missing archive_id" case above, just caught one
+    step later (after the FK itself was already nulled out elsewhere, or
+    the row deleted outright)."""
+    session = AsyncMock()
+    storage = AsyncMock()
+    job = _restore_job()
+
+    def get_side_effect(model, _pk):
+        return job if model is BackupJob else None
+
+    session.get.side_effect = get_side_effect
+
+    with pytest.raises(ValueError, match="archive was not found"):
         await run_backup_job(session, storage, job.id)
     assert job.status == "failed"
 

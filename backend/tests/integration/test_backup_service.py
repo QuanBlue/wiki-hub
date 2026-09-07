@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import delete, select, text
@@ -1212,3 +1213,29 @@ class TestRunBackupJobPersistsOutput:
         assert job.status == "complete"
         assert job.output_key and job.output_filename
         assert job.output_key in objects
+
+    async def test_a_completed_automated_export_lands_in_the_mounted_directory(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The automated path never calls storage.put() at all - os.replace()
+        # moves the file straight into the host-mounted directory instead
+        # (see run_backup_job's own comment on why: object storage would
+        # make the automated-backups panel's download/delete routes, which
+        # read straight off that directory, unable to find it).
+        monkeypatch.setattr(
+            "app.modules.backup.automated.configured_directory",
+            AsyncMock(return_value=tmp_path),
+        )
+        storage = cast(ObjectStorage, SimpleNamespace(put=AsyncMock()))
+        job = BackupJob(kind="full_export", status="queued", phase="queued", automated=True)
+        session.add(job)
+        await session.flush()
+
+        await run_backup_job(session, storage, job.id)
+
+        await session.refresh(job)
+        assert job.status == "complete"
+        assert job.local_filename and job.output_filename == job.local_filename
+        assert (tmp_path / job.local_filename).is_file()
+        # Nothing left behind under its original temp name.
+        assert list(tmp_path.iterdir()) == [tmp_path / job.local_filename]

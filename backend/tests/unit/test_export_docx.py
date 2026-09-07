@@ -205,6 +205,34 @@ class TestTableHeaderFormatting:
         assert shd.get(qn("w:fill")) == "dddddd"
 
 
+class TestSetRunFonts:
+    """``font.name`` on python-docx's high-level API only ever writes
+    ``w:rFonts/@w:ascii`` - anything outside Basic Latin resolves from
+    ``@w:eastAsia``/``@w:cs`` instead, which is what `_set_run_fonts` fixes up.
+    """
+
+    def test_creates_the_rfonts_element_when_the_run_has_none_yet(self) -> None:
+        rpr = OxmlElement("w:rPr")
+        assert rpr.find(qn("w:rFonts")) is None
+
+        export_docx._set_run_fonts(rpr, "Inter")
+
+        rfonts = rpr.find(qn("w:rFonts"))
+        assert rfonts is not None
+        for attribute in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+            assert rfonts.get(qn(attribute)) == "Inter"
+
+    def test_reuses_an_existing_rfonts_element(self) -> None:
+        rpr = OxmlElement("w:rPr")
+        rfonts = OxmlElement("w:rFonts")
+        rpr.append(rfonts)
+
+        export_docx._set_run_fonts(rpr, "Roboto Mono")
+
+        assert len(rpr.findall(qn("w:rFonts"))) == 1
+        assert rfonts.get(qn("w:ascii")) == "Roboto Mono"
+
+
 class TestNativeTocField:
     """Word has its own real, updatable Table of Contents field - the same
     one Word itself inserts via References > Table of Contents. Pandoc has

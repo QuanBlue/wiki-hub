@@ -87,6 +87,15 @@ async def test_worker_entrypoints(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(worker_settings, "reap_backup_jobs", reap)
     await worker_settings.startup({})
     reap.assert_awaited_once()
+
+    # Housekeeping failing at boot (the database not reachable yet, say) must
+    # never cost the worker its job consumer - the exception is swallowed and
+    # only logged.
+    monkeypatch.setattr(
+        worker_settings, "reap_backup_jobs", AsyncMock(side_effect=RuntimeError("db not ready"))
+    )
+    await worker_settings.startup({})
+
     dispose = AsyncMock()
     monkeypatch.setattr(worker_settings, "dispose_engine", dispose)
     await worker_settings.shutdown({})
