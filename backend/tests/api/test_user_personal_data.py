@@ -219,8 +219,10 @@ async def test_adding_the_same_label_twice_is_a_conflict(
 
     assert duplicate.status_code == 409
 
+    # The rejected duplicate must not have been added alongside the original -
+    # exactly one label survives, still under its original casing.
     listed_after = await client.get("/api/v1/users/me/page-labels", headers=headers)
-    assert listed_after.json() == []
+    assert [item["name"] for item in listed_after.json()] == ["needs-review"]
 
 
 async def test_create_list_and_delete_a_profile_tag(
