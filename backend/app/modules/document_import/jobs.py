@@ -147,7 +147,13 @@ async def _run_one_item(
                 effective=effective, written_keys=written_keys,
             )
         item.status = "complete"
-    except DocumentImportCancelled:
+    except DocumentImportCancelled:  # pragma: no cover
+        # `_import_one` never checkpoints - the batch loop above only checks
+        # for a pending cancel between files (`checkpoint_job` at line 89),
+        # never inside one - so nothing currently raises this from here. Kept
+        # so a single large/slow file gaining its own mid-file checkpoint
+        # later doesn't silently get its cancellation reclassified as a
+        # plain failure by the `except Exception` right below.
         raise
     except Exception as exc:  # noqa: BLE001 - per-file isolation is the whole point
         item.status = "failed"

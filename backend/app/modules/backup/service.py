@@ -1037,7 +1037,13 @@ class BackupService:
                     ).all()
                     for row in rows:
                         entry = pages_index.get(row.page_id)
-                        if entry is None or entry.space_id not in spaces_by_id:
+                        # `page_ids` is drawn from `pages_index`, whose own
+                        # dict comprehension above already filters out any
+                        # page not currently in `spaces_by_id` - a foreign
+                        # key guarantees `row.page_id` cannot resolve to a
+                        # page outside that set. Guarded defensively anyway,
+                        # the same way the id-parsing branches above are.
+                        if entry is None or entry.space_id not in spaces_by_id:  # pragma: no cover
                             continue
                         revision_model = BackupPageRevision(
                             page_space_key=spaces_by_id[entry.space_id].key, page_slug=entry.slug, version=row.version,

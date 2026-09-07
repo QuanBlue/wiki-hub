@@ -303,6 +303,55 @@ class TestRoundTrip:
         assert report.created["relinked_page"] == 1
         assert objects[restored_attachment.object_key] == b"pdf bytes"
 
+    async def test_overwrite_restore_observes_cancellation_without_committing(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """The file-copy phase of an overwrite restore runs inside a still-open
+        SAVEPOINT (see `restore_savepoint` above `_report_progress`), so it
+        cannot checkpoint the normal way - a commit there would release the
+        savepoint early. It still has to notice a cancel request, just via a
+        plain read instead. This exercises that read succeeding (not
+        cancelled) with a job tracking the restore, which only happens once
+        there is at least one attachment/avatar to copy.
+        """
+        seeded = await _seed_instance(session)
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        page = WikiPage(space_id=space.id, title="Files", slug="files", content="<p>files</p>")
+        session.add(page)
+        await session.flush()
+        session.add(
+            PageAttachment(
+                page_id=page.id,
+                filename="guide.pdf",
+                content_type="application/pdf",
+                object_key="attachments/source-guide.pdf",
+            )
+        )
+        objects = {"attachments/source-guide.pdf": b"pdf bytes"}
+
+        async def get(key: str) -> bytes:
+            return objects[key]
+
+        async def put(key: str, data: bytes, **_kwargs: object) -> None:
+            objects[key] = data.read() if hasattr(data, "read") else data
+
+        async def delete_object(key: str) -> None:
+            objects.pop(key, None)
+
+        storage = cast(ObjectStorage, SimpleNamespace(get=get, put=put, delete=delete_object))
+        archive = str(tmp_path / "overwrite-with-job.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
+
+        job = BackupJob(kind="full_import", status="running", phase="restoring", cancel_requested=False)
+        session.add(job)
+        await session.flush()
+
+        report = await BackupService(session).restore_full_package(
+            archive, storage, dry_run=False, overwrite_space_keys={"ENG"}, job=job
+        )
+
+        assert report.created["attachment"] == 1
+
     async def test_full_zip_restore_leaves_already_valid_attachment_links_untouched(
         self, session: AsyncSession, tmp_path: Path
     ) -> None:
@@ -1239,3 +1288,51 @@ class TestRunBackupJobPersistsOutput:
         assert (tmp_path / job.local_filename).is_file()
         # Nothing left behind under its original temp name.
         assert list(tmp_path.iterdir()) == [tmp_path / job.local_filename]
+
+    async def test_export_checkpoints_progress_while_streaming_revisions(
+        self, session: AsyncSession
+    ) -> None:
+        # Distinct from the two tests above: those run against an empty
+        # instance, so the revision-streaming loop's own per-batch
+        # `checkpoint_backup_job()` call never actually runs. A page needs at
+        # least one revision for that loop to have anything to iterate.
+        seeded = await _seed_instance(session)
+        space = cast(Space, seeded["space"])
+        alice = cast(User, seeded["alice"])
+        page = WikiPage(
+            space_id=space.id,
+            title="Doc",
+            slug="doc",
+            content="Body",
+            created_by_id=alice.id,
+            updated_by_id=alice.id,
+        )
+        session.add(page)
+        await session.flush()
+        session.add(
+            PageRevision(
+                page_id=page.id,
+                version=1,
+                title="Doc",
+                content="Body",
+                created_by_id=alice.id,
+                change_summary="Initial version",
+            )
+        )
+        await session.flush()
+
+        objects: dict[str, bytes] = {}
+
+        async def put(key: str, data: object, **_kwargs: object) -> None:
+            objects[key] = data.read() if hasattr(data, "read") else data
+
+        storage = cast(ObjectStorage, SimpleNamespace(put=put))
+        job = BackupJob(kind="full_export", status="queued", phase="queued")
+        session.add(job)
+        await session.flush()
+
+        await run_backup_job(session, storage, job.id)
+
+        await session.refresh(job)
+        assert job.status == "complete"
+        assert job.heartbeat_at is not None

@@ -823,3 +823,31 @@ class TestReaper:
 
         assert reaped == 0
         assert job.status == "running"
+
+
+class TestFinalizeRaces:
+    """Both finalisers re-fetch the job row rather than trusting the
+    in-memory instance - a rollback just before them (the cancelled path) or
+    an explicit `refetch_id` (the failed path, see its docstring) expires or
+    bypasses it. Neither has any business assuming the row is still there by
+    the time it runs; something else - an admin deleting the space, say -
+    could have removed it in between.
+    """
+
+    async def test_finalize_cancelled_is_a_no_op_for_a_job_that_no_longer_exists(
+        self, session: AsyncSession
+    ) -> None:
+        # Must not raise even though nothing was ever inserted for this id.
+        await jobs_module._finalize_cancelled(session, uuid.uuid4())
+
+    async def test_finalize_failed_is_a_no_op_when_the_refetched_job_is_gone(
+        self, session: AsyncSession
+    ) -> None:
+        storage = FakeStorage()
+        job, _, _ = await _make_job(session, storage, ["a.docx"])
+
+        # Must not raise, and must not fall back to writing through the
+        # stale in-memory `job` it was given.
+        await jobs_module._finalize_failed(
+            session, job, "irrelevant", refetch_id=uuid.uuid4()
+        )

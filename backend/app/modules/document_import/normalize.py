@@ -294,7 +294,14 @@ def _split_leading_toc_title(soup: BeautifulSoup, paragraph: Tag) -> None:
 
     original = list(paragraph.contents)
     head_nodes, tail_nodes = _split_inline_nodes(soup, original, match.end())
-    if not head_nodes or not tail_nodes:
+    if not head_nodes or not tail_nodes:  # pragma: no cover
+        # `remainder` (checked above) is always non-empty text following the
+        # matched prefix, and it is exactly what ends up as the tail of
+        # whichever node the split point falls in - `head_nodes`/`tail_nodes`
+        # cannot come back empty while that invariant holds. Guarded anyway:
+        # this only produces two malformed fragments, never wrong content, so
+        # bailing out is cheap insurance against a future change to
+        # `_split_inline_nodes` breaking that invariant silently.
         return
 
     for node in original:
@@ -368,7 +375,9 @@ def _leading_checkbox(item: Tag) -> Tag | None:
             return None
         if node is checkbox:
             return checkbox
-    return None
+    return None  # pragma: no cover - checkbox is itself one of item's descendants,
+    # found via item.find() above, so the loop always returns at one of the
+    # two branches before running out of descendants to visit.
 
 
 def _normalize_code_blocks(soup: BeautifulSoup) -> None:

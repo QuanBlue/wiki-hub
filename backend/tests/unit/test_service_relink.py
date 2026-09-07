@@ -125,6 +125,16 @@ def test_empty_content_and_empty_map_are_no_ops():
     assert _relink_attachment_references("<p>hi</p>", {}, set()) == "<p>hi</p>"
 
 
+def test_leaves_a_reference_with_no_name_marker_at_all_alone():
+    """None of data-attachment/download/alt present - nothing to look up by."""
+    stale = uuid4()
+    content = f'<a href="/api/v1/attachments/{stale}/content">plain link</a>'
+
+    result = _relink_attachment_references(content, {"guide.pdf": uuid4()}, {uuid4()})
+
+    assert result == content
+
+
 def test_leaves_unrelated_markup_untouched():
     new_id = uuid4()
     content = (

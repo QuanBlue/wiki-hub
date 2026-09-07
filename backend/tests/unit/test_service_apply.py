@@ -27,7 +27,12 @@ from app.schemas.backup import (
     BackupPageLike,
     BackupPageUserRestriction,
     BackupPageGroupRestriction,
+    BackupPagePin,
+    BackupPageDraft,
+    BackupUserTag,
+    BackupUserPageLabel,
 )
+from app.models.page import UserPagePin
 from app.models.space import SpaceStatus, SpaceVisibility
 from app.models.permission import Permission, GlobalPermission
 
@@ -140,4 +145,118 @@ async def test_apply(service: BackupService):
     no_password = []
 
     await service._apply(doc, report, no_password)
+
+
+@pytest.mark.asyncio
+async def test_apply_page_pins_drafts_tags_and_labels_skip_and_dedupe(
+    service: BackupService,
+) -> None:
+    """Each of the four per-user-data loops has its own "missing_reference"
+    (page or user does not resolve) and "already_exists" (the row is already
+    there) skip branch, distinct from the "created" path the round-trip
+    integration test already covers.
+    """
+    space = Mock(id="space-S")
+
+    async def spaces_get_by_key(key):
+        return space if key == "S" else None
+
+    service.spaces = Mock()
+    service.spaces.get_by_key = AsyncMock(side_effect=spaces_get_by_key)
+
+    users_by_name = {"u1": Mock(id="user-u1")}
+
+    async def users_get_by_username(username):
+        return users_by_name.get(username)
+
+    service.users = Mock()
+    service.users.get_protected = AsyncMock(return_value=None)
+    service.users.get_by_username = AsyncMock(side_effect=users_get_by_username)
+
+    page = Mock(id="page-1")
+    calls = {"drafts": 0, "tags": 0, "labels": 0}
+
+    def make_result(items):
+        res = Mock()
+        res.scalar_one_or_none.return_value = items[0] if items else None
+        return res
+
+    async def execute_side_effect(stmt):
+        query = str(stmt).lower()
+        if "from pages" in query:
+            return make_result([page])
+        for key in ("page_drafts", "user_tags", "user_page_labels"):
+            if key in query:
+                short = key.split("_")[-1] if key != "user_page_labels" else "labels"
+                calls[short] = calls.get(short, 0) + 1
+                # First occurrence is "not yet created"; the second (the
+                # identical entry repeated below) is "already exists".
+                return make_result([Mock()] if calls[short] > 1 else [])
+        return make_result([])
+
+    service.session.execute = AsyncMock(side_effect=execute_side_effect)
+    service.session.flush = AsyncMock()
+    service.session.refresh = AsyncMock()
+
+    pin_calls = {"count": 0}
+
+    async def get_side_effect(model, _ident):
+        if model is UserPagePin:
+            pin_calls["count"] += 1
+            return Mock() if pin_calls["count"] > 1 else None
+        return None
+
+    service.session.get = AsyncMock(side_effect=get_side_effect)
+
+    now = datetime.now(UTC)
+    doc = BackupDocument(
+        wikihub_backup=BackupMeta(
+            version=1, exported_at=now, app_version="1.0.0", site_name="Test", includes_credentials=False, counts={}
+        ),
+        users=[BackupUser(id=str(uuid4()), username="u1", email="a@b.com", full_name="U1")],
+        spaces=[
+            BackupSpace(
+                id=str(uuid4()), key="S", name="Space", status=SpaceStatus.active,
+                visibility=SpaceVisibility.open, created_at=now, updated_at=now,
+            )
+        ],
+        page_pins=[
+            BackupPagePin(page_space_key="missing", page_slug="p", username="u1"),
+            BackupPagePin(page_space_key="S", page_slug="p", username="u1"),
+            BackupPagePin(page_space_key="S", page_slug="p", username="u1"),
+        ],
+        page_drafts=[
+            BackupPageDraft(page_space_key="missing", page_slug="p", username="u1", base_updated_at=now),
+            BackupPageDraft(page_space_key="S", page_slug="p", username="u1", base_updated_at=now),
+            BackupPageDraft(page_space_key="S", page_slug="p", username="u1", base_updated_at=now),
+        ],
+        user_tags=[
+            BackupUserTag(username="missing", name="on-call"),
+            BackupUserTag(username="u1", name="on-call"),
+            BackupUserTag(username="u1", name="on-call"),
+        ],
+        user_page_labels=[
+            BackupUserPageLabel(page_space_key="missing", page_slug="p", username="u1", name="needs-review"),
+            BackupUserPageLabel(page_space_key="S", page_slug="p", username="u1", name="needs-review"),
+            BackupUserPageLabel(page_space_key="S", page_slug="p", username="u1", name="needs-review"),
+        ],
+        site_settings=BackupSiteSettings(site_name="Test"),
+    )
+
+    report = _ReportBuilder()
+    await service._apply(doc, report, [])
+
+    entries = {(entry.kind, entry.outcome, entry.reason) for entry in report.entries}
+    assert ("page_pin", "skipped", "missing_reference") in entries
+    assert ("page_pin", "created", "") in entries
+    assert ("page_pin", "skipped", "already_pinned") in entries
+    assert ("page_draft", "skipped", "missing_reference") in entries
+    assert ("page_draft", "created", "") in entries
+    assert ("page_draft", "skipped", "already_exists") in entries
+    assert ("user_tag", "skipped", "missing_user") in entries
+    assert ("user_tag", "created", "") in entries
+    assert ("user_tag", "skipped", "already_exists") in entries
+    assert ("user_page_label", "skipped", "missing_reference") in entries
+    assert ("user_page_label", "created", "") in entries
+    assert ("user_page_label", "skipped", "already_exists") in entries
 

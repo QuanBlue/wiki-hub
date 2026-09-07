@@ -98,6 +98,12 @@ async def test_storage_operations_and_presigned_urls(storage: S3ObjectStorage, t
     assert await storage.stat("a") is None
     client.head_object.side_effect = None
 
+    client.generate_presigned_url.return_value = "internal-url"
+    assert await storage.presigned_internal_url("a", expires_in=9) == "internal-url"
+    client.generate_presigned_url.assert_called_once_with(
+        "get_object", Params={"Bucket": "test-bucket", "Key": "a"}, ExpiresIn=9
+    )
+
     signing.generate_presigned_url.side_effect = ["get-url", "put-url", "part-url"]
     assert await storage.presigned_url("a", expires_in=10, download_as='bad"name\\\r') == "get-url"
     assert (
@@ -262,6 +268,55 @@ async def test_download_to_file_resumes_after_a_broken_stream(
 
 
 @pytest.mark.asyncio
+async def test_get_range_streams_a_ranged_get_and_reports_the_true_total(
+    storage: S3ObjectStorage,
+) -> None:
+    """The total object size (for a `Content-Range` response header) is only
+    ever findable after the slash - `ContentLength` on a ranged GET is the
+    size of the *slice* returned, not the whole object.
+    """
+    client = Mock()
+    storage._client = client
+    chunks = iter([b"mid", b""])
+    body = Mock()
+    body.read.side_effect = lambda _size: next(chunks)
+    body.close.return_value = None
+    client.get_object.return_value = {
+        "Body": body,
+        "ContentRange": "bytes 10-12/12345",
+        "ContentLength": 3,
+    }
+
+    total, chunk_iter = await storage.get_range("a", 10, 12)
+
+    assert total == 12345
+    assert [chunk async for chunk in chunk_iter] == [b"mid"]
+    body.close.assert_called_once()
+    client.get_object.assert_called_once_with(Bucket="test-bucket", Key="a", Range="bytes=10-12")
+
+
+@pytest.mark.asyncio
+async def test_get_range_falls_back_to_content_length_without_a_content_range(
+    storage: S3ObjectStorage,
+) -> None:
+    """A backend that omits `Content-Range` on a ranged GET (seen from some
+    S3-compatible stores) leaves `ContentLength` - the size of the slice
+    itself - as the only size available at all."""
+    client = Mock()
+    storage._client = client
+    chunks = iter([b"data", b""])
+    body = Mock()
+    body.read.side_effect = lambda _size: next(chunks)
+    body.close.return_value = None
+    client.get_object.return_value = {"Body": body, "ContentLength": 4}
+
+    total, chunk_iter = await storage.get_range("a", 0, 3)
+
+    assert total == 4
+    assert [chunk async for chunk in chunk_iter] == [b"data"]
+
+
+@pytest.mark.asyncio
 async def test_download_to_file_gives_up_after_repeated_failures(
     storage: S3ObjectStorage, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -355,7 +410,47 @@ def test_open_reader_maps_transport_failure_to_unavailable(storage: S3ObjectStor
         storage.open_reader("k")
 
 
+def test_open_reader_maps_an_unrecognised_client_error_to_unavailable(
+    storage: S3ObjectStorage,
+) -> None:
+    """Distinct from the NoSuchKey case above: any other S3 error code (a
+    permissions problem, say) is not a "not found" and must not be reported
+    as one."""
+    storage._client = Mock()
+    storage._client.head_object.side_effect = _client_error("AccessDenied")
+    with pytest.raises(ServiceUnavailableError):
+        storage.open_reader("k")
+
+
 def test_open_reader_rejects_a_seek_before_the_start(storage: S3ObjectStorage) -> None:
     storage._client = _range_backed_client(b"payload")
     with storage.open_reader("k") as reader, pytest.raises(OSError):
         reader.seek(-1)
+
+
+def test_range_reader_raw_methods_used_directly(storage: S3ObjectStorage) -> None:
+    """`open_reader` wraps the raw reader in a `BufferedReader` for
+    `zipfile`'s benefit, which is why the whole-file/relative-seek/no-size-
+    read branches below never fire through the public `reader` object in the
+    tests above - `BufferedReader.read()` always asks its raw stream for a
+    fixed size, never -1 or none, and `zipfile` itself only ever seeks
+    absolute or from-the-end. Calling `.raw` bypasses the buffering to
+    exercise those branches directly.
+    """
+    payload = bytes(range(256))
+    storage._client = _range_backed_client(payload)
+
+    with storage.open_reader("k") as reader:
+        raw = reader.raw  # type: ignore[attr-defined]
+        assert raw.writable() is False
+
+        raw.seek(10)
+        raw.seek(5, 1)  # relative to the current position
+        assert raw.tell() == 15
+
+        with pytest.raises(ValueError, match="Unsupported whence"):
+            raw.seek(0, 3)
+
+        # No size at all - reads everything remaining, the branch a
+        # BufferedReader never triggers (it always requests a fixed size).
+        assert raw.read() == payload[15:]
