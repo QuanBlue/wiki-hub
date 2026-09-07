@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   RichTextContent,
   RichTextEditor,
+  linkifyPlainTextUrls,
   normalizeConfluenceCodeMacros,
 } from "@/components/pages/rich-text-editor";
 
@@ -1405,6 +1406,127 @@ describe("Confluence macro normalization and attachment display modes", () => {
     expect(normalized).toContain('data-attachment="MyDoc.docx"');
   });
 
+  it("converts a code macro's CDATA plain-text body into a language-tagged pre/code block", () => {
+    const raw =
+      '<ac:structured-macro ac:name="code">' +
+      '<ac:parameter ac:name="language">python</ac:parameter>' +
+      '<ac:plain-text-body><![CDATA[\nprint("hi & bye")\n]]></ac:plain-text-body>' +
+      "</ac:structured-macro>";
+    const normalized = normalizeConfluenceCodeMacros(raw);
+    expect(normalized).toBe(
+      '<pre><code class="language-python">print(&quot;hi &amp; bye&quot;)</code></pre>',
+    );
+  });
+
+  it("emits a plain pre/code block for a code macro with no language parameter", () => {
+    const raw =
+      '<ac:structured-macro ac:name="code">' +
+      "<ac:plain-text-body>plain</ac:plain-text-body>" +
+      "</ac:structured-macro>";
+    expect(normalizeConfluenceCodeMacros(raw)).toBe(
+      "<pre><code>plain</code></pre>",
+    );
+  });
+
+  it("leaves a code macro untouched when it has no plain-text body at all", () => {
+    const raw = '<ac:structured-macro ac:name="code"></ac:structured-macro>';
+    expect(normalizeConfluenceCodeMacros(raw)).toBe(raw);
+  });
+
+  it.each(["info", "warning", "note", "tip", "panel"])(
+    "converts a %s macro into a titled callout div",
+    (name) => {
+      const raw =
+        `<ac:structured-macro ac:name="${name}">` +
+        '<ac:parameter ac:name="title">Heads up</ac:parameter>' +
+        "<ac:rich-text-body><p>Body text</p></ac:rich-text-body>" +
+        "</ac:structured-macro>";
+      const normalized = normalizeConfluenceCodeMacros(raw);
+      expect(normalized).toBe(
+        `<div data-type="callout" data-callout-type="${name}" class="callout callout-${name}">` +
+          "<p><strong>Heads up</strong></p><p>Body text</p></div>",
+      );
+    },
+  );
+
+  it("maps an expand macro to a panel-styled callout, and tolerates a missing title", () => {
+    const raw =
+      '<ac:structured-macro ac:name="expand">' +
+      "<ac:rich-text-body><p>Details</p></ac:rich-text-body>" +
+      "</ac:structured-macro>";
+    expect(normalizeConfluenceCodeMacros(raw)).toBe(
+      '<div data-type="callout" data-callout-type="panel" class="callout callout-panel"><p>Details</p></div>',
+    );
+  });
+
+  it("converts an ac:link macro pointing at an attachment into a link-mode anchor", () => {
+    const raw =
+      '<ac:link><ri:attachment ri:filename="guide.pdf" />' +
+      "<ac:plain-text-link-body>Read the guide</ac:plain-text-link-body></ac:link>";
+    const normalized = normalizeConfluenceCodeMacros(raw);
+    expect(normalized).toBe(
+      '<a href="#attachment-guide.pdf" data-attachment="guide.pdf" data-display-mode="link" class="attachment-link" title="Read the guide">Read the guide</a>',
+    );
+  });
+
+  it("falls back to the filename as link text when an ac:link macro has no body", () => {
+    const raw = '<ac:link><ri:attachment ri:filename="guide.pdf" /></ac:link>';
+    const normalized = normalizeConfluenceCodeMacros(raw);
+    expect(normalized).toContain(">guide.pdf</a>");
+  });
+
+  it("leaves an ac:link macro untouched when it names no attachment", () => {
+    const raw = '<ac:link><ri:page ri:content-title="Other Page" /></ac:link>';
+    expect(normalizeConfluenceCodeMacros(raw)).toBe(raw);
+  });
+
+  it("strips leading and trailing blank lines from a pre-existing pre/code block", () => {
+    const raw = "<pre><code>\n\n  line one\nline two\n\n</code></pre>";
+    expect(normalizeConfluenceCodeMacros(raw)).toBe(
+      "<pre><code>  line one\nline two</code></pre>",
+    );
+  });
+});
+
+describe("linkifyPlainTextUrls", () => {
+  it("wraps a bare URL in running text with a real anchor", () => {
+    const result = linkifyPlainTextUrls(
+      "<p>See https://example.com/docs for details.</p>",
+    );
+    expect(result).toBe(
+      '<p>See <a href="https://example.com/docs">https://example.com/docs</a> for details.</p>',
+    );
+  });
+
+  it("leaves text with no URL at all untouched", () => {
+    expect(linkifyPlainTextUrls("<p>Nothing to link here.</p>")).toBe(
+      "<p>Nothing to link here.</p>",
+    );
+  });
+
+  it("does not touch a URL already inside an anchor, code, or pre element", () => {
+    const html =
+      "<p><a href=\"https://example.com\">https://example.com</a></p>" +
+      "<code>https://example.com/in-code</code>" +
+      "<pre>https://example.com/in-pre</pre>";
+    expect(linkifyPlainTextUrls(html)).toBe(html);
+  });
+
+  it("linkifies more than one URL within the same text node", () => {
+    const result = linkifyPlainTextUrls(
+      "<p>https://a.example and https://b.example</p>",
+    );
+    expect(result).toBe(
+      '<p><a href="https://a.example">https://a.example</a> and <a href="https://b.example">https://b.example</a></p>',
+    );
+  });
+
+  it("passes empty content straight through", () => {
+    expect(linkifyPlainTextUrls("")).toBe("");
+  });
+});
+
+describe("Confluence attachment display modes", () => {
   it("renders attachment link with link display mode as inline link and card display mode as tile", async () => {
     render(
       <RichTextContent

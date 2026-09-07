@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -2411,6 +2413,55 @@ describe("BackupPanel native restore", () => {
       await screen.findByText(/2 spaces found\. choose which spaces/i),
     ).toBeInTheDocument();
     expect(uploadPartsCalled).toBe(false);
+  });
+
+  it("falls back to the pure-JS SHA-256 implementation when window.crypto.subtle is unavailable", async () => {
+    // Not every embedding this panel runs in guarantees Web Crypto (older
+    // WebViews, an extension sandboxing crypto.subtle) - the hand-written
+    // IncrementalSha256 fallback has to produce the exact same digest a real
+    // crypto.subtle.digest would, or fingerprint-matching a resumed/reused
+    // upload (see the test above) would silently stop working there. The
+    // 124-byte body is deliberate: one exact 64-byte block through
+    // update()'s own buffer-fill path, leaving a 60-byte remainder that
+    // pushes digest()'s own padding into its "needs a second block" branch
+    // (60 + the 0x80 marker = 61, over the 56-byte cutoff).
+    vi.stubGlobal("crypto", { ...window.crypto, subtle: undefined });
+
+    stubUploadXHR();
+    mockFetch([...archiveUploadRoutes(), ...baseRoutes()]);
+    const actor = userEvent.setup();
+    render(<BackupPanel />);
+
+    await actor.click(screen.getByRole("tab", { name: /import \/ restore/i }));
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
+    const content = "a".repeat(124);
+    await actor.upload(
+      fileInput,
+      new File([content], "backup.zip", { type: "application/zip" }),
+    );
+    await actor.click(
+      importSection().getByRole("button", { name: /^upload and scan$/i }),
+    );
+
+    await screen.findByRole("button", { name: /^select all$/i }, { timeout: 4000 });
+
+    const expectedPrefix = createHash("sha256")
+      .update(content)
+      .digest("hex")
+      .slice(0, 12);
+    const list = (await screen.findByText(/restore logs/i)).closest(
+      "details",
+    ) as HTMLElement;
+    const lines = Array.from(list.querySelectorAll("li")).map(
+      (line) => line.textContent?.toLowerCase() ?? "",
+    );
+    expect(lines).toContainEqual(
+      expect.stringContaining(
+        `archive fingerprint ready: ${expectedPrefix}`.toLowerCase(),
+      ),
+    );
   });
 
   it("shows a scope picker only for .zip uploads, sourced from the archive's own scan", async () => {
