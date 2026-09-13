@@ -96,9 +96,11 @@ If you inherited a stale volume from a previous run, destroy it once:
 ./scripts/run.sh --dev --fresh
 ```
 
-`--fresh` runs `docker compose down -v`, which removes all anonymous volumes
-including any leftover `.next` volume. Your database and MinIO data are also
-wiped, so only run it when a clean slate is acceptable.
+`--fresh` runs `docker compose down -v` (removing any leftover `.next`
+anonymous volume) and then empties the bind-mounted host data directories
+directly, since `down -v` alone does not touch a bind mount. Your database,
+MinIO and automated-backup data are wiped either way, so only run it when a
+clean slate is acceptable.
 
 ### The consequence: `.next/dev/lock` must be cleared at startup
 

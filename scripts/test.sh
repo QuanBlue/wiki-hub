@@ -217,9 +217,26 @@ if [[ $RUN_BACKEND -eq 1 && $UNIT_ONLY -eq 0 ]]; then
         fi
 
         if [[ -n "$TEST_DB" ]]; then
-            # Inside the container, connect using internal 'postgres' host rather than localhost
-            INTEGRATION_READY=1
-            ok "integration tests will run against ${TEST_DB} inside compose network"
+            # tests/integration builds its own throwaway schema with
+            # Base.metadata.create_all and never touches this one, but
+            # tests/api goes through the real app (get_session_factory(),
+            # see the POSTGRES_DB override further down) against this
+            # database's plain `public` schema, exactly like production - so
+            # unlike tests/integration, it needs the real migrated schema to
+            # already be there. Applying it here is idempotent and cheap
+            # when already at head, so it runs on every invocation rather
+            # than only right after creating the database, in case a new
+            # migration landed since a previous run created it.
+            if docker compose exec -T -e POSTGRES_DB="$TEST_DB" backend \
+                alembic upgrade head >/dev/null 2>&1; then
+                ok "schema applied to ${TEST_DB}"
+                # Inside the container, connect using internal 'postgres' host rather than localhost
+                INTEGRATION_READY=1
+                ok "integration tests will run against ${TEST_DB} inside compose network"
+            else
+                TEST_DB=""
+                warn "could not migrate ${PG_DB}_test; the integration tests will skip themselves"
+            fi
         fi
     fi
 
@@ -257,7 +274,25 @@ if [[ $RUN_BACKEND -eq 1 ]]; then
     # Set up environment args for database connection
     ENV_ARGS=()
     if [[ $INTEGRATION_READY -eq 1 ]]; then
-        ENV_ARGS+=(-e WIKIHUB_TEST_DATABASE_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@postgres:5432/${TEST_DB}")
+        if [[ -n "${TEST_DB:-}" ]]; then
+            ENV_ARGS+=(-e WIKIHUB_TEST_DATABASE_URL="postgresql+asyncpg://${PG_USER}:${PG_PASS}@postgres:5432/${TEST_DB}")
+            # tests/integration isolates itself in a throwaway schema using the
+            # URL above directly, but tests/api goes through the app's normal
+            # DB dependency (get_session_factory(), via settings.database_url)
+            # - which reads POSTGRES_DB from the backend container's own
+            # baked-in .env, not this URL. Without overriding it too, the
+            # api tests silently run against, and write into, your live
+            # development database instead of the isolated ${TEST_DB} just
+            # created above - exactly the leak this script's header promises
+            # can't happen.
+            ENV_ARGS+=(-e POSTGRES_DB="${TEST_DB}")
+        else
+            # WIKIHUB_TEST_DATABASE_URL came straight from the caller's own
+            # environment (branch 1 above) - forward it unchanged rather than
+            # rebuilding it from $PG_USER/$PG_PASS/$TEST_DB, which that branch
+            # never sets.
+            ENV_ARGS+=(-e WIKIHUB_TEST_DATABASE_URL="${WIKIHUB_TEST_DATABASE_URL}")
+        fi
     fi
 
     if docker compose exec -T "${ENV_ARGS[@]+"${ENV_ARGS[@]}"}" backend "${PYTEST[@]}"; then

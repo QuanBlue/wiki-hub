@@ -15,8 +15,9 @@
 #                    arq --watch and next dev, so a code edit applies with no
 #                    rebuild even when Docker Desktop misses host file events.
 #                    Layers docker-compose.dev.yml over docker-compose.yml.
-#   --fresh          docker compose down -v first. DESTROYS every volume:
-#                    database, Redis and uploaded attachments all go.
+#   --fresh          docker compose down -v, then empties the bind-mounted
+#                    host data directories. DESTROYS everything: database,
+#                    Redis, uploaded attachments and automated backups all go.
 #   --rebuild        Rebuild images from scratch (--no-cache). Needed after a
 #                    dependency change: pyproject.toml or package.json.
 #   --no-build       Skip building entirely and reuse existing images. Fastest
@@ -114,8 +115,9 @@ Options:
   --dev            Hot reload. Bind-mounts backend/ and frontend/ and runs
                    uvicorn --reload, arq --watch and next dev, so an edit
                    applies with no rebuild.
-  --fresh          docker compose down -v first. DESTROYS every volume:
-                   database, Redis and uploaded attachments.
+  --fresh          docker compose down -v, then empties the bind-mounted
+                   host data directories. DESTROYS everything: database,
+                   Redis, uploaded attachments and automated backups.
   --clean-frontend Destroys only the frontend container and its volumes (clears
                    node_modules and Next.js cache) without touching the database.
   --rebuild        Rebuild images from scratch. Needed after a dependency
@@ -211,7 +213,7 @@ ok "python via '$PYTHON_BIN'"
 if [[ $STOP_ONLY -eq 1 ]]; then
     step "Stopping WikiHub"
     "${COMPOSE[@]}" down
-    ok "stopped (data volumes kept - use --fresh to wipe them)"
+    ok "stopped (data kept - use --fresh to wipe it)"
     exit 0
 fi
 
@@ -337,7 +339,34 @@ ok "frontend ${FRONTEND_PORT}; API ${BACKEND_PORT}; Postgres ${POSTGRES_PORT}; R
 if [[ $FRESH -eq 1 ]]; then
     step "Removing containers and data volumes (--fresh)"
     "${COMPOSE[@]}" down -v --remove-orphans
-    ok "all volumes removed"
+
+    # `down -v` only removes Docker-managed volumes, and the only one that
+    # exists (frontend's dev-mode node_modules) holds no application data -
+    # postgres/redis/minio/automated-backups are all host bind mounts instead
+    # (see the header of docker-compose.yml), so the line above never actually
+    # touched a single byte of real data. Wipe it by emptying those host
+    # directories directly, and do it from inside a throwaway root container
+    # rather than this shell: postgres and minio each leave their bind-mounted
+    # files owned by whatever uid they run as internally, which usually is not
+    # whoever is running this script, so a host-side `rm -rf` can die partway
+    # through on a permission error while looking like it succeeded. Emptying
+    # (not deleting) the directories also matters: recreating the top-level
+    # backup directory from scratch would hand it back to Docker's
+    # auto-create-as-root default, undoing the uid-10001 chown a scheduled
+    # backup needs to write at all (see the compose file's own note on this).
+    data_dir="$(env_get WIKIHUB_DATA_HOST_DIRECTORY ./data)"
+    backup_dir="$(env_get WIKIHUB_BACKUP_HOST_DIRECTORY "$data_dir/automated-backups")"
+
+    wipe_targets=("$data_dir")
+    [[ "$backup_dir" != "$data_dir"* ]] && wipe_targets+=("$backup_dir")
+
+    for dir in "${wipe_targets[@]}"; do
+        [[ -d "$dir" ]] || continue
+        abs_dir="$(cd "$dir" && pwd)"
+        docker run --rm -v "${abs_dir}:/target" busybox \
+            sh -c 'rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null; exit 0'
+    done
+    ok "all volumes and host data directories removed"
 elif [[ ${CLEAN_FRONTEND:-0} -eq 1 ]]; then
     step "Removing frontend container and volumes (--clean-frontend)"
     "${COMPOSE[@]}" down frontend -v
