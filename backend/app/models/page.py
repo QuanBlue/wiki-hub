@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -59,6 +59,16 @@ class WikiPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     created_by_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_by_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # The page's own "General access" choice - an explicit setting, not
+    # derived from whether it happens to have any restriction rows, so
+    # switching it back and forth preserves whatever allow-list or
+    # per-principal blocks were already configured instead of discarding
+    # them (see `PermissionService.page_view_is_restricted`, which walks the
+    # ancestor chain reading this flag rather than querying for rows).
+    view_restricted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
     space: Mapped[Space] = relationship()
     parent: Mapped[WikiPage | None] = relationship(

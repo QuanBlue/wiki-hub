@@ -238,6 +238,7 @@ export type SpacePermission =
   | "delete_own"
   | "restrictions"
   | "export"
+  | "move"
   | "admin";
 export type GlobalPermission =
   "create_space" | "manage_users" | "manage_groups" | "system_admin";
@@ -257,6 +258,13 @@ export interface Space {
   created_at: string;
   updated_at: string;
   created_by_username: string | null;
+  /** This space's protected administrators - see the backend's `SpaceOwner`.
+   * Always at least one for any space created since that feature shipped;
+   * possibly empty for one migrated in before it that had no resolvable
+   * creator or admin to backfill from. */
+  owners: SpaceOwner[];
+  /** Whether the current user is one of `owners` above. */
+  is_owner: boolean;
   member_count: number;
   /** Distinct groups holding a direct permission on this space. */
   group_permission_count: number;
@@ -266,6 +274,12 @@ export interface Space {
   /** The current user's role in this space, or null if not a member. */
   my_role: SpaceRole | null;
   my_permissions?: string[];
+}
+
+export interface SpaceOwner {
+  user_id: string;
+  username: string;
+  full_name: string;
 }
 
 export interface SpaceMember {
@@ -287,6 +301,48 @@ export interface Group {
   created_at: string;
   updated_at: string;
   global_permissions: GlobalPermission[];
+}
+
+/** One row of the page-restriction picker's search - every active user/group,
+ * not just ones the space already grants access to (see `PageRestrictionsDialog`). */
+export interface PageRestrictionUserOption {
+  id: string;
+  username: string;
+  full_name: string;
+  has_space_access: boolean;
+}
+
+export interface PageRestrictionGroupOption {
+  id: string;
+  name: string;
+  has_space_access: boolean;
+}
+
+/** One row of the Open-page access roster - a space member's *current*
+ * View/Edit access to this specific page, pre-reflected rather than blank.
+ * `view_locked` is only ever true for a space Admin - `can_view_page`/
+ * `can_edit_page` bypass page restrictions for one entirely, so blocking
+ * them here would silently do nothing. `edit_locked` covers that same case
+ * plus anyone whose space role doesn't include editing outright, or who
+ * currently lacks View (nobody edits what they can't view). See
+ * `PageRestrictionsDialog` and the backend's `list_page_access_roster_users`. */
+export interface PageAccessRosterUser {
+  id: string;
+  username: string;
+  full_name: string;
+  view: boolean;
+  edit: boolean;
+  view_locked: boolean;
+  edit_locked: boolean;
+}
+
+export interface PageAccessRosterGroup {
+  id: string;
+  name: string;
+  view: boolean;
+  edit: boolean;
+  view_locked: boolean;
+  edit_locked: boolean;
 }
 
 export interface GroupMember {
@@ -324,6 +380,10 @@ export interface WikiPage {
   updated_by_username: string | null;
   can_edit?: boolean;
   can_export?: boolean;
+  /** Requires the space's own Move permission, on top of Edit access to this page. */
+  can_move?: boolean;
+  /** Delete, or Delete Own on a page this user authored. */
+  can_delete?: boolean;
   /** A view restriction on this page or an ancestor narrows who may read it. */
   is_restricted?: boolean;
 }

@@ -1,16 +1,15 @@
 "use client";
 
-import { Loader2, Lock, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState, type ReactElement } from "react";
+import { Check, Globe2, Info, Loader2, LockKeyhole, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectContent,
@@ -18,8 +17,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, ApiError } from "@/lib/api-client";
-import type { Group, SpaceMember, User, WikiPage } from "@/types/api";
+import type {
+  PageAccessRosterGroup,
+  PageAccessRosterUser,
+  PageRestrictionGroupOption,
+  PageRestrictionUserOption,
+  SpaceMember,
+  WikiPage,
+} from "@/types/api";
+
+/** Shown on a roster row's locked View/Edit checkboxes when the principal
+ * holds space Admin - `can_view_page`/`can_edit_page` bypass every
+ * page-level restriction for one, so blocking them here would silently do
+ * nothing. Locking the boxes (rather than leaving them clickable but inert)
+ * keeps the UI from implying a block took effect when it didn't. */
+const ADMIN_BYPASS_TITLE = "This person is a Space Admin - Space Admins bypass every page-level restriction.";
 
 type RestrictionPermission = "view" | "edit";
 type Restriction = {
@@ -30,68 +44,215 @@ type Restriction = {
   permission: RestrictionPermission;
 };
 
+/** One row per *principal* rather than per (principal, permission) pair -
+ * View and Edit restrictions are independent allow-lists on the backend
+ * (see `PermissionService.can_view_page`/`can_edit_page`), but showing them
+ * as two separate rows per person read as duplicate entries with no way to
+ * change one, only add another or delete one. Folding them into a single
+ * row with two checkboxes - the same table shape `EditSpaceModal` uses for
+ * its own View/Add/.../Admin columns - lets an existing grant be adjusted
+ * in place. */
+type PrincipalRow = {
+  type: "user" | "group";
+  id: string;
+  name: string;
+  view: boolean;
+  edit: boolean;
+};
+
+/** A roster row, reduced to the shape the table below actually renders -
+ * `viewLocked`/`editLocked` cover both users and groups the same way,
+ * unlike the raw API types which spell them `view_locked`/`edit_locked`
+ * and differ in their name field. */
+type RosterRow = {
+  id: string;
+  name: string;
+  view: boolean;
+  edit: boolean;
+  viewLocked: boolean;
+  editLocked: boolean;
+};
+
+function groupByPrincipal(rows: Restriction[], type: "user" | "group"): PrincipalRow[] {
+  const byKey = new Map<string, PrincipalRow>();
+  for (const row of rows) {
+    if (row.principal_type !== type) continue;
+    const entry = byKey.get(row.principal_id) ?? {
+      type,
+      id: row.principal_id,
+      name: row.principal_name,
+      view: false,
+      edit: false,
+    };
+    if (row.permission === "view") entry.view = true;
+    else entry.edit = true;
+    byKey.set(row.principal_id, entry);
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function PageRestrictionsDialog({
   spaceKey,
   page,
   members,
-  groups,
-  trigger,
+  open,
+  onOpenChange: setOpen,
 }: {
   spaceKey: string;
   page: WikiPage;
   members: SpaceMember[];
-  groups: Group[];
-  trigger?: ReactElement;
+  /** Controlled, like `MovePageDialog`/`PageHistoryModal` - the caller owns
+   * a separate trigger (its own menu item) and this state, rather than this
+   * component cloning one. A `DropdownMenuItem` that both opens this dialog
+   * *and* runs Radix's own item-select close would need `preventDefault()`
+   * on that close to dodge a focus race, but doing so left the dropdown
+   * "open" (just hidden behind this dialog's overlay) instead of actually
+   * unmounting - so its own `MenuRoot` kept listening for the browser
+   * window to blur, and alt-tabbing away and back closed that zombie menu,
+   * which returned focus to its trigger, which this dialog's own
+   * dismissable layer read as a focus-outside interaction and closed on. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const router = useRouter();
+  // The page's own General-access setting, not something derived from
+  // `rows` below - the two are meant to vary independently now, so a
+  // Restricted allow-list can sit dormant while the page is Open (and come
+  // right back when switched back) instead of being wiped every time. See
+  // the backend's `PermissionService` module docstring.
+  const [isViewRestricted, setIsViewRestricted] = useState(page.is_restricted ?? false);
   const [rows, setRows] = useState<Restriction[]>([]);
-  const [availableUsers, setAvailableUsers] = useState<User[]>([]);
-  const [availableGroups, setAvailableGroups] = useState<Group[]>(groups);
-  const [principalType, setPrincipalType] = useState<"user" | "group">("user");
-  const [principalId, setPrincipalId] = useState("");
-  const [permission, setPermission] = useState<RestrictionPermission>("view");
+  const [availableUsers, setAvailableUsers] = useState<PageRestrictionUserOption[]>([]);
+  const [availableGroups, setAvailableGroups] = useState<PageRestrictionGroupOption[]>([]);
+  const [rosterUsers, setRosterUsers] = useState<PageAccessRosterUser[]>([]);
+  const [rosterGroups, setRosterGroups] = useState<PageAccessRosterGroup[]>([]);
+  const [groupIdToAdd, setGroupIdToAdd] = useState("");
+  const [userIdToAdd, setUserIdToAdd] = useState("");
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState(false);
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  // Bumped to force the data effect below to re-run without also changing
+  // `isViewRestricted` - Reset doesn't switch modes, it just needs whatever
+  // that mode's own view currently shows re-fetched.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
-  const principals = principalType === "user"
-    ? (availableUsers.length > 0
-      ? availableUsers.map((user) => ({ id: user.id, label: user.full_name || user.username }))
-      : members.map((member) => ({ id: member.user_id, label: member.full_name || member.username })))
-    : availableGroups.map((group) => ({ id: group.id, label: group.name }));
+  // Both tables open read-only, same as `EditSpaceModal`'s own Group/User
+  // tables - a stray click can't change who has access to this page until
+  // someone deliberately opts into editing one.
+  const [groupsLocked, setGroupsLocked] = useState(true);
+  const [usersLocked, setUsersLocked] = useState(true);
+
+  const pagePath = `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(page.slug)}`;
+
+  // A principal picked from `availableUsers`/`availableGroups` - every
+  // active user/group, not just ones this space already grants access to
+  // (see `list_users_for_page_restriction_picker` on the backend) - or,
+  // before that loads, `members` (space membership, which by definition
+  // already has space access). Search must never make someone look like
+  // they don't exist just because they haven't been added to the space
+  // yet; `hasSpaceAccess` is what lets the row itself explain that instead.
+  // Only used in Restricted mode - Open mode's roster below already lists
+  // everyone eligible, with nothing to search or add.
+  type PrincipalOption = { id: string; name: string; label: string; searchText: string; hasSpaceAccess: boolean };
+  const userOptions: PrincipalOption[] = (
+    availableUsers.length > 0
+      ? availableUsers.map((user) => ({ id: user.id, name: user.full_name || user.username, username: user.username, hasSpaceAccess: user.has_space_access }))
+      : members.map((member) => ({ id: member.user_id, name: member.full_name || member.username, username: member.username, hasSpaceAccess: true }))
+  ).map(({ id, name, username, hasSpaceAccess }) => ({
+    id,
+    name,
+    label: `${name} (@${username})`,
+    searchText: `${name} ${username}`,
+    hasSpaceAccess,
+  }));
+  const groupOptions: PrincipalOption[] = availableGroups.map((group) => ({
+    id: group.id,
+    name: group.name,
+    label: group.name,
+    searchText: group.name,
+    hasSpaceAccess: group.has_space_access,
+  }));
+
+  const groupRows = useMemo(() => groupByPrincipal(rows, "group"), [rows]);
+  const userRows = useMemo(() => groupByPrincipal(rows, "user"), [rows]);
+  const assignedGroupIds = new Set(groupRows.map((row) => row.id));
+  const assignedUserIds = new Set(userRows.map((row) => row.id));
+
+  const rosterUserRows: RosterRow[] = rosterUsers
+    .map((user) => ({
+      id: user.id,
+      name: user.full_name || user.username,
+      view: user.view,
+      edit: user.edit,
+      viewLocked: user.view_locked,
+      editLocked: user.edit_locked,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const rosterGroupRows: RosterRow[] = rosterGroups
+    .map((group) => ({
+      id: group.id,
+      name: group.name,
+      view: group.view,
+      edit: group.edit,
+      viewLocked: group.view_locked,
+      editLocked: group.edit_locked,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  useEffect(() => {
+    if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset to the page's own value each time the dialog (re)opens
+    setIsViewRestricted(page.is_restricted ?? false);
+  }, [open, page.is_restricted]);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- show loading state while the dialog fetches its principals
     setLoading(true);
-    const pagePath = `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(page.slug)}`;
-    void Promise.all([
-      api.get<Restriction[]>(`${pagePath}/restrictions`),
-      api.get<User[]>(`${pagePath}/restrictions/principals/users`),
-      api.get<Group[]>(`${pagePath}/restrictions/principals/groups`),
-    ])
-      .then(([nextRows, nextUsers, nextGroups]) => {
-        if (!cancelled) {
+    setGroupsLocked(true);
+    setUsersLocked(true);
+    const request = isViewRestricted
+      ? Promise.all([
+          api.get<Restriction[]>(`${pagePath}/restrictions`),
+          api.get<PageRestrictionUserOption[]>(`${pagePath}/restrictions/principals/users`),
+          api.get<PageRestrictionGroupOption[]>(`${pagePath}/restrictions/principals/groups`),
+        ]).then(([nextRows, nextUsers, nextGroups]) => {
+          if (cancelled) return;
           setRows(nextRows);
           setAvailableUsers(nextUsers);
           setAvailableGroups(nextGroups);
-        }
-      })
+        })
+      : Promise.all([
+          api.get<PageAccessRosterUser[]>(`${pagePath}/restrictions/roster/users`),
+          api.get<PageAccessRosterGroup[]>(`${pagePath}/restrictions/roster/groups`),
+        ]).then(([nextUsers, nextGroups]) => {
+          if (cancelled) return;
+          setRosterUsers(nextUsers);
+          setRosterGroups(nextGroups);
+        });
+    request
       .catch((error) => { if (!cancelled) toast.error(error instanceof ApiError ? error.message : "Could not load page restrictions."); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, page.slug, spaceKey]);
+  }, [open, isViewRestricted, reloadNonce, pagePath]);
+
+  function pathFor(type: "user" | "group", id: string, perm: RestrictionPermission): string {
+    const kind = type === "user" ? "users" : "groups";
+    return `${pagePath}/restrictions/${kind}/${id}/${perm}`;
+  }
 
   async function setRestriction(
     type: "user" | "group",
     id: string,
     nextPermission: RestrictionPermission,
     enabled: boolean,
+    principalName?: string,
   ) {
-    const path = `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(page.slug)}/restrictions/${type === "user" ? "users" : "groups"}/${id}/${nextPermission}`;
     setPending(true);
     try {
-      if (enabled) await api.put(path); else await api.delete(path);
+      if (enabled) await api.put(pathFor(type, id, nextPermission));
+      else await api.delete(pathFor(type, id, nextPermission));
       setRows((current) => enabled
         ? [
             ...current.filter(
@@ -106,83 +267,488 @@ export function PageRestrictionsDialog({
               page_id: page.id,
               principal_id: id,
               principal_type: type,
-              principal_name: principals.find((item) => item.id === id)?.label ?? id,
+              principal_name: principalName ?? current.find((row) => row.principal_id === id && row.principal_type === type)?.principal_name ?? id,
               permission: nextPermission,
             },
           ]
         : current.filter((row) => !(row.principal_id === id && row.principal_type === type && row.permission === nextPermission)));
+      // Adding the first View grant is how a page becomes Restricted (see
+      // `set_page_restriction` on the backend) - the breadcrumb padlock/globe
+      // icon reads `currentPage.is_restricted`, a prop fetched once when the
+      // page loaded, so a refresh keeps it in sync with what just happened here.
+      if (nextPermission === "view") {
+        if (enabled) setIsViewRestricted(true);
+        router.refresh();
+      }
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "Could not update page restrictions.");
-    } finally { setPending(false); }
+    } finally {
+      setPending(false);
+    }
   }
 
-  async function addRestriction() {
-    if (!principalId) return;
-    await setRestriction(principalType, principalId, permission, true);
-    setPrincipalId("");
+  function handleAddGroup() {
+    if (!groupIdToAdd) return;
+    const name = groupOptions.find((option) => option.id === groupIdToAdd)?.name ?? groupIdToAdd;
+    void setRestriction("group", groupIdToAdd, "view", true, name);
+    setGroupIdToAdd("");
+  }
+
+  function handleAddUser() {
+    if (!userIdToAdd) return;
+    const name = userOptions.find((option) => option.id === userIdToAdd)?.name ?? userIdToAdd;
+    void setRestriction("user", userIdToAdd, "view", true, name);
+    setUserIdToAdd("");
+  }
+
+  /** Drops both View and Edit for one principal at once - the same end
+   * state as unchecking both boxes, just in one action (matches the
+   * remove button `EditSpaceModal` uses for its own rows). */
+  async function removePrincipal(row: PrincipalRow) {
+    if (row.view) await setRestriction(row.type, row.id, "view", false);
+    if (row.edit) await setRestriction(row.type, row.id, "edit", false);
+  }
+
+  /** Open mode's per-principal block toggle - the counterpart to
+   * `setRestriction` above, but for the roster table: checking a box clears
+   * any block (falling back to whatever the principal's space role already
+   * gives them), unchecking creates one. Refetches the roster afterward
+   * rather than patching state locally, since blocking View also silently
+   * drops Edit server-side (you can't edit what you can't view) and
+   * duplicating that logic here would be one more place for it to drift. */
+  async function setBlocked(type: "user" | "group", id: string, permission: RestrictionPermission, blocked: boolean) {
+    setPending(true);
+    try {
+      const path = `${pathFor(type, id, permission)}/block`;
+      if (blocked) await api.put(path);
+      else await api.delete(path);
+      setReloadNonce((value) => value + 1);
+      if (permission === "view") router.refresh();
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Could not update page access.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function setMode(restricted: boolean) {
+    setPending(true);
+    try {
+      await api.patch(`${pagePath}/restrictions/mode`, { restricted });
+      setIsViewRestricted(restricted);
+      router.refresh();
+      if (restricted) {
+        toast.info("Add a person or group below with View checked to restrict this page.");
+      }
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Could not update page access.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function resetAccess() {
+    setPending(true);
+    try {
+      await api.post(`${pagePath}/restrictions/reset`);
+      toast.success(
+        isViewRestricted
+          ? `Cleared the allow-list for "${page.title}".`
+          : `Cleared every block on "${page.title}".`,
+      );
+      setConfirmResetOpen(false);
+      setReloadNonce((value) => value + 1);
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Could not reset page access.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function renderPrincipalTable(
+    kind: "group" | "user",
+    label: string,
+    principalRows: PrincipalRow[],
+    locked: boolean,
+    setLocked: (locked: boolean) => void,
+    idToAdd: string,
+    setIdToAdd: (id: string) => void,
+    onAdd: () => void,
+    options: PrincipalOption[],
+    assignedIds: Set<string>,
+  ) {
+    return (
+      <div className="border-border bg-surface rounded-lg border shadow-xs overflow-hidden">
+        <div className="border-border bg-surface-sunken/40 flex items-center justify-between gap-2 border-b p-3">
+          {locked ? (
+            <p className="text-muted-foreground text-xs">
+              {label} permissions are read-only. Edit to make changes.
+            </p>
+          ) : (
+            <div className="flex flex-1 items-center gap-2">
+              <SearchableSelect
+                id={`add-${kind}-to-page`}
+                value={idToAdd}
+                onValueChange={setIdToAdd}
+                disabled={options.length === 0 || pending}
+                placeholder={`Add a ${kind}...`}
+                searchPlaceholder={kind === "user" ? "Search users…" : "Search groups…"}
+                emptyMessage={kind === "user" ? "No matching user." : "No matching group."}
+                triggerClassName="h-8 text-xs bg-background flex-1"
+                items={options.map((option) => {
+                  const isAdded = assignedIds.has(option.id);
+                  // A principal missing space access still shows up when
+                  // searched for - hiding them would read as "this person
+                  // doesn't exist" - but stays disabled with the reason,
+                  // since restricting the page to them would only lock
+                  // them out at the space door regardless.
+                  const badge = isAdded ? (
+                    <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
+                      Added
+                    </Badge>
+                  ) : !option.hasSpaceAccess ? (
+                    <Badge variant="warning" className="text-[10px] px-1.5 py-0 font-normal">
+                      Not added to space
+                    </Badge>
+                  ) : null;
+                  return {
+                    value: option.id,
+                    label: option.label,
+                    searchText: option.searchText,
+                    disabled: isAdded || !option.hasSpaceAccess,
+                    badge,
+                  };
+                })}
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 shrink-0 px-3 text-xs"
+                onClick={onAdd}
+                disabled={!idToAdd || pending}
+              >
+                <Plus className="size-3.5" /> Add {kind}
+              </Button>
+            </div>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="shrink-0 text-xs"
+            onClick={() => setLocked(!locked)}
+            disabled={pending}
+          >
+            {locked ? <Pencil className="size-3.5" /> : <Check className="size-3.5" />}
+            {locked ? "Edit" : "Done"}
+          </Button>
+        </div>
+
+        <div className="max-h-60 overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
+                <th className="px-3 py-2 font-medium">{label}</th>
+                <th className="px-1.5 py-2 text-center font-medium">View</th>
+                <th className="px-1.5 py-2 text-center font-medium">Edit</th>
+                <th className="px-1.5 py-2 text-center font-medium"><span className="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {principalRows.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="text-muted-foreground p-4 text-center text-xs">
+                    No {kind === "user" ? "users" : "groups"} restricted on this page yet.
+                  </td>
+                </tr>
+              ) : (
+                principalRows.map((row) => (
+                  <tr key={row.id} className="hover:bg-surface-hover transition-colors">
+                    <td className="text-foreground px-3 py-2 font-medium">{row.name}</td>
+                    <td className="px-1.5 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`${row.name}: Can view`}
+                        checked={row.view}
+                        disabled={locked || pending}
+                        onChange={(event) => void setRestriction(row.type, row.id, "view", event.target.checked, row.name)}
+                      />
+                    </td>
+                    <td className="px-1.5 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`${row.name}: Can edit`}
+                        checked={row.edit}
+                        disabled={locked || pending}
+                        onChange={(event) => void setRestriction(row.type, row.id, "edit", event.target.checked, row.name)}
+                      />
+                    </td>
+                    <td className="px-1.5 py-2 text-center">
+                      {locked ? null : (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${row.name} from this page's restrictions`}
+                          title="Remove"
+                          className="text-muted-foreground hover:text-danger hover:bg-danger-bg focus-visible:ring-ring inline-flex cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
+                          disabled={pending}
+                          onClick={() => void removePrincipal(row)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  function renderRosterTable(
+    kind: "group" | "user",
+    label: string,
+    rosterRows: RosterRow[],
+    locked: boolean,
+    setLocked: (locked: boolean) => void,
+  ) {
+    return (
+      <div className="border-border bg-surface rounded-lg border shadow-xs overflow-hidden">
+        {/* Same locked/unlocked header shape as `renderPrincipalTable` below
+            (and `EditSpaceModal`'s own tables) - checkboxes here can block
+            someone's access just as easily as the allow-list table can grant
+            it, so a stray click shouldn't be able to do that either. There's
+            no add-principal step in this mode (the roster already lists
+            everyone eligible), so unlocking only ever swaps the button. */}
+        <div className="border-border bg-surface-sunken/40 flex items-center justify-between gap-2 border-b p-3">
+          <p className="text-muted-foreground flex-1 text-xs">
+            {locked
+              ? `Every ${kind} with access to this space, and their current access to this page. Edit to make changes.`
+              : `Uncheck a box to block just that ${kind} - everyone else is unaffected.`}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="shrink-0 text-xs"
+            onClick={() => setLocked(!locked)}
+            disabled={pending}
+          >
+            {locked ? <Pencil className="size-3.5" /> : <Check className="size-3.5" />}
+            {locked ? "Edit" : "Done"}
+          </Button>
+        </div>
+        <div className="max-h-60 overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
+                <th className="px-3 py-2 font-medium">{label}</th>
+                <th className="px-1.5 py-2 text-center font-medium">View</th>
+                <th className="px-1.5 py-2 text-center font-medium">Edit</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rosterRows.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="text-muted-foreground p-4 text-center text-xs">
+                    No {kind === "user" ? "users" : "groups"} have access to this space yet.
+                  </td>
+                </tr>
+              ) : (
+                rosterRows.map((row) => (
+                  <tr key={row.id} className="hover:bg-surface-hover transition-colors">
+                    <td className="text-foreground px-3 py-2 font-medium">{row.name}</td>
+                    <td className="px-1.5 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`${row.name}: Can view`}
+                        checked={row.view}
+                        disabled={locked || pending || row.viewLocked}
+                        title={row.viewLocked ? ADMIN_BYPASS_TITLE : undefined}
+                        onChange={(event) => void setBlocked(kind, row.id, "view", !event.target.checked)}
+                      />
+                    </td>
+                    <td className="px-1.5 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`${row.name}: Can edit`}
+                        checked={row.edit}
+                        disabled={locked || pending || row.editLocked}
+                        title={
+                          row.viewLocked
+                            ? ADMIN_BYPASS_TITLE
+                            : row.editLocked
+                              ? "This person's space role doesn't include editing here."
+                              : undefined
+                        }
+                        onChange={(event) => void setBlocked(kind, row.id, "edit", !event.target.checked)}
+                      />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger ?? <Button type="button" variant="ghost" size="sm"><Lock /> Page access</Button>}
-      </DialogTrigger>
-      <DialogContent title="Page access" description={`Choose who can view or edit "${page.title}". View restrictions inherit to child pages.`} className="max-w-2xl">
-        <div className="border-border bg-surface-sunken grid gap-2 rounded-md border p-3 sm:grid-cols-[auto_1fr_auto_auto]">
+      <DialogContent
+        // The "?" tooltip trigger is the first focusable element in this
+        // dialog - Radix's default open-autofocus would land keyboard focus
+        // on it immediately, and a focused Radix Tooltip trigger shows its
+        // tooltip right away, same as hovering it. That reads as the hint
+        // "popping up on its own" instead of only on a deliberate hover.
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        title={
+          <span className="inline-flex items-center gap-1.5">
+            Page access
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex cursor-help rounded-full focus-visible:ring-2 focus-visible:outline-none"
+                    aria-label="Who can be added here"
+                  >
+                    <Info className="size-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  Can&apos;t find (or can&apos;t select) the person or group you&apos;re
+                  looking for? They need to be added to this space&apos;s own Access
+                  &amp; Permissions first.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </span>
+        }
+        description={`Choose who can view or edit "${page.title}". View restrictions inherit to child pages.`}
+        className="max-w-2xl"
+      >
+        {/* General access, same box as EditSpaceModal's own - an actual
+            Select rather than a status readout, since switching modes is a
+            real, immediate action. It no longer discards anything either
+            way: Restricted keeps whatever allow-list it last had, and Open
+            keeps whatever per-principal blocks it last had, so flipping
+            back and forth is free - Reset (below) is the deliberate,
+            confirmed way to actually clear the mode you're currently in. */}
+        <div className="border-border bg-surface flex items-center justify-between gap-3 rounded-lg border p-3.5 shadow-xs">
+          <div>
+            <h4 className="text-foreground flex items-center gap-1.5 text-xs font-semibold">
+              {isViewRestricted ? (
+                <LockKeyhole className="text-muted-foreground size-3.5" />
+              ) : (
+                <Globe2 className="text-primary size-3.5" />
+              )}
+              General access
+            </h4>
+            <p className="text-muted-foreground mt-0.5 text-[11px]">
+              Choose whether everyone who can view this space can view this page.
+            </p>
+          </div>
           <Select
-            value={principalType}
-            onValueChange={(value) => {
-              setPrincipalType(value as "user" | "group");
-              setPrincipalId("");
-            }}
-            disabled={loading || pending}
+            value={isViewRestricted ? "restricted" : "open"}
+            onValueChange={(value) => void setMode(value === "restricted")}
+            disabled={pending || loading}
           >
-            <SelectTrigger aria-label="Principal type">
-              <SelectValue>{principalType === "user" ? "User" : "Group"}</SelectValue>
+            <SelectTrigger className="h-8 w-36 bg-background text-xs">
+              <SelectValue>{isViewRestricted ? "Restricted" : "Open"}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="user">User</SelectItem>
-              <SelectItem value="group">Group</SelectItem>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="restricted">Restricted</SelectItem>
             </SelectContent>
           </Select>
-          <Select
-            value={principalId}
-            onValueChange={setPrincipalId}
-            disabled={loading || pending || principals.length === 0}
-          >
-            <SelectTrigger className="min-w-0" aria-label="Principal">
-              <SelectValue placeholder={`Choose ${principalType}`}>
-                {principals.find((item) => item.id === principalId)?.label ?? `Choose ${principalType}`}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {principals.map((item) => (
-                <SelectItem key={item.id} value={item.id}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={permission}
-            onValueChange={(value) => setPermission(value as RestrictionPermission)}
-            disabled={loading || pending}
-          >
-            <SelectTrigger aria-label="Restriction permission">
-              <SelectValue>{permission === "view" ? "Can view" : "Can edit"}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="view">Can view</SelectItem>
-              <SelectItem value="edit">Can edit</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button size="sm" onClick={() => void addRestriction()} disabled={!principalId || pending}><Plus /> Add</Button>
         </div>
-        <div className="border-border mt-4 overflow-x-auto rounded-md border">
-          {loading ? <div className="text-muted-foreground flex items-center gap-2 p-4 text-sm"><Loader2 className="animate-spin" /> Loading restrictions...</div> : <table className="w-full text-sm"><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-3 py-2 font-medium">Principal</th><th className="px-3 py-2 font-medium">Access</th><th className="px-3 py-2 text-right font-medium">Actions</th></tr></thead><tbody>{rows.map((row) => <tr key={`${row.principal_type}-${row.principal_id}-${row.permission}`} className="border-border border-b last:border-0"><td className="px-3 py-2">{row.principal_name}</td><td className="px-3 py-2">Can {row.permission}</td><td className="px-3 py-2 text-right"><Button variant="ghost" size="icon" onClick={() => void setRestriction(row.principal_type, row.principal_id, row.permission, false)} disabled={pending} aria-label={`Remove ${row.permission} restriction`}><Trash2 /></Button></td></tr>)}{rows.length === 0 ? <tr><td colSpan={3} className="text-muted-foreground px-3 py-5 text-center">No page restrictions. The page follows Space access.</td></tr> : null}</tbody></table>}
-        </div>
-        <DialogFooter><Button type="button" variant="secondary" onClick={() => setOpen(false)}>Done</Button></DialogFooter>
+
+        {loading ? (
+          <div className="text-muted-foreground mt-3 flex items-center gap-2 p-4 text-sm">
+            <Loader2 className="animate-spin" /> Loading restrictions...
+          </div>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {isViewRestricted ? (
+              <>
+                {/* Anyone the space itself hasn't granted access to still
+                    shows up in the search below, greyed out with "Not
+                    added to space" - naming them here would restrict the
+                    page to someone still locked out at the space door. The
+                    "?" next to the dialog title explains that up front; the
+                    disabled row is the in-context reminder for whoever
+                    gets there without hovering it. */}
+                {renderPrincipalTable(
+                  "group",
+                  "Group",
+                  groupRows,
+                  groupsLocked,
+                  setGroupsLocked,
+                  groupIdToAdd,
+                  setGroupIdToAdd,
+                  handleAddGroup,
+                  groupOptions,
+                  assignedGroupIds,
+                )}
+                {renderPrincipalTable(
+                  "user",
+                  "User",
+                  userRows,
+                  usersLocked,
+                  setUsersLocked,
+                  userIdToAdd,
+                  setUserIdToAdd,
+                  handleAddUser,
+                  userOptions,
+                  assignedUserIds,
+                )}
+              </>
+            ) : (
+              <>
+                {renderRosterTable("group", "Group", rosterGroupRows, groupsLocked, setGroupsLocked)}
+                {renderRosterTable("user", "User", rosterUserRows, usersLocked, setUsersLocked)}
+              </>
+            )}
+          </div>
+        )}
+        <DialogFooter className="items-center sm:justify-between">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground text-xs"
+            onClick={() => setConfirmResetOpen(true)}
+            disabled={pending || loading}
+          >
+            <RotateCcw className="size-3.5" /> Reset to default
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Done</Button>
+        </DialogFooter>
       </DialogContent>
+
+      <ConfirmDialog
+        open={confirmResetOpen}
+        onOpenChange={setConfirmResetOpen}
+        title={isViewRestricted ? "Reset this allow-list?" : "Clear every block on this page?"}
+        description={
+          isViewRestricted
+            ? `This clears every person and group listed below for "${page.title}", leaving it closed to everyone but space admins until you add people back.`
+            : `This clears every explicit block below on "${page.title}", so everyone falls back to the access their space role already gives them.`
+        }
+        confirmLabel="Reset"
+        destructive
+        pending={pending}
+        onConfirm={() => void resetAccess()}
+      />
     </Dialog>
   );
 }

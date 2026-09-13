@@ -53,6 +53,12 @@ type ActivityTab = "all" | "mine" | "drafts" | "knowledge";
 type KnowledgeSection = "favourites" | "pinned" | "liked" | "saved";
 
 const KNOWLEDGE_PAGE_SIZES = [10, 25, 50, 100] as const;
+// Mirrors SAVED_PAGE_KEYS_STORAGE / SAVED_PAGE_KEYS_EVENT in
+// components/pages/space-workspace.tsx and STORAGE_KEY / CHANGE_EVENT in
+// components/recent/saved-pages-list.tsx - duplicated for the same reason
+// those two are: keeping this large file independent of that one.
+const SAVED_PAGE_KEYS_STORAGE = "wikihub:saved-page-keys";
+const SAVED_PAGE_KEYS_EVENT = "wikihub:saved-pages-changed";
 
 function treeConnectorClass(position: "middle" | "last" | undefined) {
   if (position === "middle") {
@@ -588,7 +594,7 @@ export function UserProfile({
     const read = () => {
       try {
         const value = JSON.parse(
-          window.localStorage.getItem("wikihub:saved-page-keys") ?? "[]",
+          window.localStorage.getItem(SAVED_PAGE_KEYS_STORAGE) ?? "[]",
         );
         setSavedPageKeys(
           Array.isArray(value)
@@ -601,13 +607,36 @@ export function UserProfile({
     };
     const initial = window.setTimeout(read, 0);
     window.addEventListener("storage", read);
-    window.addEventListener("wikihub:saved-pages-changed", read);
+    window.addEventListener(SAVED_PAGE_KEYS_EVENT, read);
     return () => {
       window.clearTimeout(initial);
       window.removeEventListener("storage", read);
-      window.removeEventListener("wikihub:saved-pages-changed", read);
+      window.removeEventListener(SAVED_PAGE_KEYS_EVENT, read);
     };
   }, [isOwner]);
+
+  /** Drops a key that no longer resolves to a real page - a deleted or
+   * moved-out-from-under-it page otherwise sits in "Saved for later"
+   * forever as a dead link, since nothing else prunes this client-only
+   * list. Writes through localStorage (not just this component's state) so
+   * the sidebar's own "Saved for later" page and any other open tab drop it
+   * too. */
+  function removeSavedPageKey(key: string) {
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(SAVED_PAGE_KEYS_STORAGE) ?? "[]");
+      const current: string[] = Array.isArray(raw)
+        ? raw.filter((item): item is string => typeof item === "string")
+        : [];
+      window.localStorage.setItem(
+        SAVED_PAGE_KEYS_STORAGE,
+        JSON.stringify(current.filter((existing) => existing !== key)),
+      );
+    } catch {
+      // Best-effort: the in-memory list below still drops it for this session.
+    }
+    setSavedPageKeys((current) => current.filter((existing) => existing !== key));
+    window.dispatchEvent(new Event(SAVED_PAGE_KEYS_EVENT));
+  }
 
   useEffect(() => {
     if (!isOwner || savedPageKeys.length === 0) return;
@@ -635,8 +664,14 @@ export function UserProfile({
             `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(slug)}`,
           );
           if (!cancelled) setSavedPages((current) => ({ ...current, [key]: page }));
-        } catch {
-          if (!cancelled) setSavedPages((current) => ({ ...current, [key]: null }));
+        } catch (error) {
+          if (!cancelled) {
+            setSavedPages((current) => ({ ...current, [key]: null }));
+            // Only a definitive 404 means the page itself is gone - a
+            // transient network error or a permissions hiccup should not
+            // silently drop it from the saved list.
+            if (error instanceof ApiError && error.status === 404) removeSavedPageKey(key);
+          }
         }
       }),
       ...missingSpaceKeys.map(async (spaceKey) => {

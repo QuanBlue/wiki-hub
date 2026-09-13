@@ -17,5 +17,6 @@ def test_space_admin_preset_contains_all_space_capabilities() -> None:
         Permission.delete_own,
         Permission.restrictions,
         Permission.export,
+        Permission.move,
         Permission.admin,
     } <= ALL_SPACE_PERMISSIONS

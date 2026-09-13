@@ -4,7 +4,7 @@ import { FileText } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { api } from "@/lib/api-client";
+import { api, ApiError } from "@/lib/api-client";
 import type { WikiPage } from "@/types/api";
 
 // Mirrors SAVED_PAGE_KEYS_STORAGE / SAVED_PAGE_KEYS_EVENT in
@@ -33,6 +33,19 @@ function splitKey(key: string): { spaceKey: string; slug: string } {
   return slashIndex < 0
     ? { spaceKey: key, slug: "" }
     : { spaceKey: key.slice(0, slashIndex), slug: key.slice(slashIndex + 1) };
+}
+
+/** Drops a key that no longer resolves to a real page - a deleted or
+ * moved-out-from-under-it page otherwise sits here forever as a dead link,
+ * since nothing else ever prunes this client-only list. */
+function removeSavedKey(key: string) {
+  const next = readSavedKeys().filter((existing) => existing !== key);
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Best-effort: the in-memory list still drops it for this session.
+  }
+  window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
 export function SavedPagesList() {
@@ -65,8 +78,14 @@ export function SavedPagesList() {
             `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(slug)}`,
           );
           if (!cancelled) setPages((current) => ({ ...current, [key]: page }));
-        } catch {
-          if (!cancelled) setPages((current) => ({ ...current, [key]: null }));
+        } catch (error) {
+          if (!cancelled) {
+            setPages((current) => ({ ...current, [key]: null }));
+            // Only a definitive 404 means the page itself is gone - a
+            // transient network error or a permissions hiccup should not
+            // silently drop it from the saved list.
+            if (error instanceof ApiError && error.status === 404) removeSavedKey(key);
+          }
         }
       }),
     );

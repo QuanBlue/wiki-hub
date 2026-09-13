@@ -38,6 +38,10 @@ def _services():
     permissions.list_page_restrictions = AsyncMock(return_value=[])
     permissions.require_page_restriction_admin = AsyncMock()
     permissions.set_page_restriction = AsyncMock()
+    permissions.list_users_with_space_access = AsyncMock(return_value=[])
+    permissions.list_groups_with_space_access = AsyncMock(return_value=[])
+    permissions.list_users_for_page_restriction_picker = AsyncMock(return_value=[])
+    permissions.list_groups_for_page_restriction_picker = AsyncMock(return_value=[])
     space_service = Mock()
     space_service.get_by_key = AsyncMock(return_value=space)
     space_service.require_view = AsyncMock()
@@ -100,20 +104,12 @@ async def test_page_route_wrappers_delegate_to_services(monkeypatch: pytest.Monk
         await pages_api.list_page_restrictions("ENG", "home", user, page_service, space_service)
         == []
     )
-    session = Mock()
-    result = Mock()
-    result.scalars.return_value.all.return_value = []
-    session.execute = AsyncMock(return_value=result)
     assert (
-        await pages_api.list_page_restriction_users(
-            "ENG", "home", user, page_service, space_service, session
-        )
+        await pages_api.list_page_restriction_users("ENG", "home", user, page_service, space_service)
         == []
     )
     assert (
-        await pages_api.list_page_restriction_groups(
-            "ENG", "home", user, page_service, space_service, session
-        )
+        await pages_api.list_page_restriction_groups("ENG", "home", user, page_service, space_service)
         == []
     )
 

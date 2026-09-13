@@ -6,11 +6,15 @@
  * favourites (with the sidebar's shortcut list already under its 5-item
  * limit) never appeared in the sidebar - the stored selection was read back
  * exactly as saved, with no way for a favourite that did not exist yet at
- * the last customization to ever get in. `fillRemainingSlots` (via
- * `useTopUpOnNewIds`) is the fix: an under-the-limit selection gets topped
- * up with newly favourited/pinned items, but only in reaction to the
- * *server* list changing - never in reaction to this hook's own writes,
- * or a removal made while under the limit would be handed straight back.
+ * the last customization to ever get in. `resolveShortcutIds`'s "seen ids"
+ * baseline is the fix: an under-the-limit selection gets topped up with
+ * favourited/pinned items that are not yet in that baseline, computed fresh
+ * on every sync (mount, storage event, or the server handing over a new
+ * `favoriteSpaces`/`pinnedPages` array) rather than only in reaction to a
+ * change observed while some component happened to stay mounted - so it
+ * survives a navigation or reload, too. Ids the user deliberately removed
+ * are folded into the baseline at removal time, so a removal made while
+ * under the limit is never immediately handed back.
  */
 
 import { act, renderHook, waitFor } from "@testing-library/react";
@@ -157,5 +161,42 @@ describe("useSidebarShortcuts favourites", () => {
       expect(result.current.sidebarFavoriteIds).toHaveLength(SIDEBAR_SHORTCUT_LIMIT),
     );
     expect(result.current.sidebarFavoriteIds).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("never renders the pre-customization default even for a single frame - no flash on mount", () => {
+    // Customized down to just "b", of the 3 favourites that exist.
+    window.localStorage.setItem(FAVORITE_SIDEBAR_STORAGE_KEY, JSON.stringify(["b"]));
+    const { result } = renderHook(() =>
+      useSidebarShortcuts(["a", "b", "c"].map(space), []),
+    );
+
+    // Checked synchronously, with no `waitFor`/`act` tick in between: a
+    // regression here (e.g. reverting the sync effect to a
+    // `requestAnimationFrame`-deferred one) would still show the
+    // uncustomized default (["a", "b", "c"]) at this point, only correcting
+    // to ["b"] a frame later - the flash this hook must not produce.
+    expect(result.current.sidebarFavoriteIds).toEqual(["b"]);
+  });
+
+  it("tops up a newly favourited space across a fresh mount, not only while the same instance stays mounted", async () => {
+    // A prior session already customized the list down to "a" and recorded
+    // "a" and "b" as accounted for (nothing new to add back then).
+    window.localStorage.setItem(FAVORITE_SIDEBAR_STORAGE_KEY, JSON.stringify(["a"]));
+    window.localStorage.setItem(
+      "wikihub:sidebar-favourite-space-seen-ids",
+      JSON.stringify(["a", "b"]),
+    );
+
+    // Later - after that session ended entirely - "c" gets favourited, and
+    // the sidebar (a brand new component instance, e.g. after a navigation
+    // or a page reload) mounts straight into a world where "c" already
+    // exists. It should not need to observe "c" arrive live to show it.
+    const { result } = renderHook(() =>
+      useSidebarShortcuts(["a", "b", "c"].map(space), []),
+    );
+
+    await waitFor(() =>
+      expect(result.current.sidebarFavoriteIds).toEqual(["a", "c"]),
+    );
   });
 });

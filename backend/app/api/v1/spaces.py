@@ -25,6 +25,8 @@ from app.schemas.space import (
     SpaceCreate,
     SpaceMemberRead,
     SpaceMemberUpsert,
+    SpaceOwnerRead,
+    SpaceOwnersUpdate,
     SpaceRead,
     SpaceUpdate,
 )
@@ -198,6 +200,42 @@ async def remove_member(
 ) -> None:
     space = await service.get_by_key(key)
     await service.remove_member(space, user, user_id)
+
+
+# -- owners --------------------------------------------------------------
+# A space's protected administrators (see `SpaceOwner`) - distinct from the
+# `admin` row in `/permissions` below, which an Owner or another Admin can
+# freely revoke. Listing requires only View: knowing who to ask for access
+# is not itself sensitive. Changing the list requires being an Owner
+# already (or a system administrator) - enforced in
+# `PermissionService.set_space_owners`, not here, since "may view this
+# space" and "may reassign its ownership" are deliberately different bars.
+@router.get("/{key}/owners", response_model=list[SpaceOwnerRead], summary="List space owners")
+async def list_owners(
+    key: str, user: CurrentUser, service: SpaceServiceDep
+) -> list[SpaceOwnerRead]:
+    space = await service.get_by_key(key)
+    await service.require_view(space, user)
+    owners = await service.permissions.list_space_owners(space)
+    return [
+        SpaceOwnerRead(user_id=owner.id, username=owner.username, full_name=owner.full_name)
+        for owner in owners
+    ]
+
+
+@router.put("/{key}/owners", response_model=list[SpaceOwnerRead], summary="Replace space owners")
+async def set_owners(
+    key: str,
+    payload: SpaceOwnersUpdate,
+    user: CurrentUser,
+    service: SpaceServiceDep,
+) -> list[SpaceOwnerRead]:
+    space = await service.get_by_key(key)
+    owners = await service.permissions.set_space_owners(space, payload.owner_ids, user)
+    return [
+        SpaceOwnerRead(user_id=owner.id, username=owner.username, full_name=owner.full_name)
+        for owner in owners
+    ]
 
 
 # -- additive permission assignments ----------------------------------------

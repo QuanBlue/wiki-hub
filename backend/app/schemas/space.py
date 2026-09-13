@@ -33,6 +33,24 @@ class SpaceMemberRead(BaseModel):
     role: SpaceRole
 
 
+class SpaceOwnerRead(BaseModel):
+    """One entry in a space's protected-administrator list - see `SpaceOwner`."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    username: str
+    full_name: str
+
+
+class SpaceOwnersUpdate(BaseModel):
+    """Replace-all, like `GroupUpdate.owner_ids` - never empty (see
+    `PermissionService.set_space_owners`: a space must always keep at least
+    one Owner)."""
+
+    owner_ids: list[uuid.UUID] = Field(min_length=1)
+
+
 class SpaceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,6 +67,15 @@ class SpaceRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     created_by_username: str | None = None
+    #: Every protected Owner of this space (see `SpaceOwner`) - always at
+    #: least one once a space has gone through `set_space_owners` at least
+    #: once; possibly empty for a space migrated in before this feature that
+    #: had no resolvable creator or admin to backfill from.
+    owners: list[SpaceOwnerRead] = Field(default_factory=list)
+    #: Whether the requesting user is one of the entries in `owners` above -
+    #: powers the Spaces directory's "My Own Space" filter without it having
+    #: to know the current user's id itself.
+    is_owner: bool = False
     member_count: int = 0
     #: Distinct groups holding an additive permission on this space.
     group_permission_count: int = 0

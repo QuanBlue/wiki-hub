@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectContent,
@@ -18,9 +19,13 @@ import {
 import { api, ApiError } from "@/lib/api-client";
 import type { EffectiveSpacePermissions, Group, Space, SpacePermission, SpacePermissionAssignment, User } from "@/types/api";
 
+// `export` is omitted here even though it's still a real `SpacePermission`
+// value - it now follows View automatically (see `effective_permissions` in
+// the backend's PermissionService) instead of being its own opt-in grant, so
+// there is nothing left for a checkbox in this matrix to toggle.
 const PERMISSIONS: [SpacePermission, string][] = [
-  ["view", "View"], ["add", "Add"], ["delete", "Delete"], ["delete_own", "Delete own"],
-  ["restrictions", "Restrictions"], ["export", "Export"], ["admin", "Admin"],
+  ["view", "View"], ["add", "Add/Edit"], ["delete", "Delete"], ["delete_own", "Delete own"],
+  ["restrictions", "Restrictions"], ["move", "Move"], ["admin", "Admin"],
 ];
 
 type PrincipalType = "group" | "user";
@@ -181,6 +186,13 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
     setGroupId("");
   }
 
+  /** Unchecks every permission for one group at once - `commitGroupChanges`
+   * then diffs that empty set against what's committed and issues a DELETE
+   * per permission the group had, the same as unchecking each box by hand. */
+  function clearGroupDraft(id: string) {
+    setGroupDraft((current) => ({ ...current, [id]: new Set() }));
+  }
+
   async function applyGroupPermission(group: Group, permission: SpacePermission, enabled: boolean) {
     const path = `/api/v1/spaces/${encodeURIComponent(space.key)}/permissions/groups/${group.id}/${permission}`;
     if (enabled) await api.put(path); else await api.delete(path);
@@ -253,6 +265,13 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
     if (!userId) return;
     setUserDraftPermission(userId, "view", true);
     setUserId("");
+  }
+
+  /** Unchecks every permission for one user at once - `commitUserChanges`
+   * then diffs that empty set against what's committed and issues a DELETE
+   * per permission the user had, the same as unchecking each box by hand. */
+  function clearUserDraft(id: string) {
+    setUserDraft((current) => ({ ...current, [id]: new Set() }));
   }
 
   async function applyUserPermission(user: User, permission: SpacePermission, enabled: boolean) {
@@ -342,7 +361,17 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
       <div className="border-border flex flex-wrap items-center justify-between gap-2 border-b p-4">
         {groupEditing ? (
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Select value={groupId} onValueChange={setGroupId} disabled={groups.length === 0}><SelectTrigger className="min-w-0 flex-1" aria-label="Add a group"><SelectValue placeholder="Add a group">{groups.find((group) => group.id === groupId)?.name || "Add a group"}</SelectValue></SelectTrigger><SelectContent>{groups.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent></Select>
+            <SearchableSelect
+              id="add-group-to-space-access"
+              value={groupId}
+              onValueChange={setGroupId}
+              disabled={groups.length === 0}
+              placeholder="Add a group"
+              searchPlaceholder="Search groups…"
+              emptyMessage="No matching group."
+              triggerClassName="min-w-0 flex-1"
+              items={groups.map((group) => ({ value: group.id, label: group.name }))}
+            />
             <Button onClick={addGroupToDraft} disabled={!groupId}><Plus /> Add group</Button>
           </div>
         ) : (
@@ -362,14 +391,28 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
           )}
         </div>
       </div>
-      <table className="w-full min-w-190 text-sm"><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-4 py-3 font-medium">Group</th>{PERMISSIONS.map(([, label]) => <th key={label} className="px-2 py-3 text-center font-medium">{label}</th>)}</tr></thead><tbody>{groups.map((group) => <tr key={group.id} className="border-border hover:bg-surface-hover border-b last:border-0"><td className="px-4 py-3 font-medium">{group.name}</td>{PERMISSIONS.map(([permission, label]) => <td key={permission} className="px-2 py-3 text-center"><input className="accent-primary size-4 rounded border-border focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" type="checkbox" aria-label={`${group.name}: ${label}`} checked={groupHasPermission(group, permission)} disabled={!groupEditing} onChange={(event) => setGroupDraftPermission(group.id, permission, event.target.checked)} /></td>)}</tr>)}</tbody></table>
+      <table className="w-full min-w-190 text-sm"><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-4 py-3 font-medium">Group</th>{PERMISSIONS.map(([, label]) => <th key={label} className="px-2 py-3 text-center font-medium">{label}</th>)}<th className="px-2 py-3 text-center font-medium"><span className="sr-only">Remove</span></th></tr></thead><tbody>{groups.map((group) => <tr key={group.id} className="border-border hover:bg-surface-hover border-b last:border-0"><td className="px-4 py-3 font-medium">{group.name}</td>{PERMISSIONS.map(([permission, label]) => <td key={permission} className="px-2 py-3 text-center"><input className="accent-primary size-4 rounded border-border focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" type="checkbox" aria-label={`${group.name}: ${label}`} checked={groupHasPermission(group, permission)} disabled={!groupEditing} onChange={(event) => setGroupDraftPermission(group.id, permission, event.target.checked)} /></td>)}<td className="px-2 py-3 text-center">{groupEditing ? <button type="button" aria-label={`Remove ${group.name} from this space`} title="Remove" className="text-muted-foreground hover:text-danger hover:bg-danger-bg focus-visible:ring-ring inline-flex cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none" onClick={() => clearGroupDraft(group.id)}><Trash2 className="size-3.5" /></button> : null}</td></tr>)}</tbody></table>
     </div>
 
     <div className="border-border bg-surface overflow-x-auto rounded-xl border shadow-sm">
       <div className="border-border flex flex-wrap items-center justify-between gap-2 border-b p-4">
         {userEditing ? (
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Select value={userId} onValueChange={setUserId} disabled={users.length === 0}><SelectTrigger className="min-w-0 flex-1" aria-label="Add a user"><SelectValue placeholder="Add a user">{users.find((user) => user.id === userId)?.full_name || users.find((user) => user.id === userId)?.username || "Add a user"}</SelectValue></SelectTrigger><SelectContent>{users.map((user) => <SelectItem key={user.id} value={user.id}>{user.full_name || user.username} (@{user.username})</SelectItem>)}</SelectContent></Select>
+            <SearchableSelect
+              id="add-user-to-space-access"
+              value={userId}
+              onValueChange={setUserId}
+              disabled={users.length === 0}
+              placeholder="Add a user"
+              searchPlaceholder="Search users…"
+              emptyMessage="No matching user."
+              triggerClassName="min-w-0 flex-1"
+              items={users.map((user) => ({
+                value: user.id,
+                label: `${user.full_name || user.username} (@${user.username})`,
+                searchText: `${user.full_name ?? ""} ${user.username}`,
+              }))}
+            />
             <Button onClick={addUserToDraft} disabled={!userId}><Plus /> Add user</Button>
           </div>
         ) : (
@@ -389,7 +432,7 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
           )}
         </div>
       </div>
-      <table className="w-full min-w-190 text-sm"><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-4 py-3 font-medium">User</th>{PERMISSIONS.map(([, label]) => <th key={label} className="px-2 py-3 text-center font-medium">{label}</th>)}</tr></thead><tbody>{users.map((user) => <tr key={user.id} className="border-border hover:bg-surface-hover border-b last:border-0"><td className="px-4 py-3 font-medium">{user.full_name || user.username} <span className="text-muted-foreground">@{user.username}</span></td>{PERMISSIONS.map(([permission, label]) => <td key={permission} className="px-2 py-3 text-center"><input className="accent-primary size-4 rounded border-border focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" type="checkbox" aria-label={`${user.username}: ${label}`} checked={userHasPermission(user, permission)} disabled={!userEditing} onChange={(event) => setUserDraftPermission(user.id, permission, event.target.checked)} /></td>)}</tr>)}</tbody></table>
+      <table className="w-full min-w-190 text-sm"><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-4 py-3 font-medium">User</th>{PERMISSIONS.map(([, label]) => <th key={label} className="px-2 py-3 text-center font-medium">{label}</th>)}<th className="px-2 py-3 text-center font-medium"><span className="sr-only">Remove</span></th></tr></thead><tbody>{users.map((user) => <tr key={user.id} className="border-border hover:bg-surface-hover border-b last:border-0"><td className="px-4 py-3 font-medium">{user.full_name || user.username} <span className="text-muted-foreground">@{user.username}</span></td>{PERMISSIONS.map(([permission, label]) => <td key={permission} className="px-2 py-3 text-center"><input className="accent-primary size-4 rounded border-border focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" type="checkbox" aria-label={`${user.username}: ${label}`} checked={userHasPermission(user, permission)} disabled={!userEditing} onChange={(event) => setUserDraftPermission(user.id, permission, event.target.checked)} /></td>)}<td className="px-2 py-3 text-center">{userEditing ? <button type="button" aria-label={`Remove ${user.username} from this space`} title="Remove" className="text-muted-foreground hover:text-danger hover:bg-danger-bg focus-visible:ring-ring inline-flex cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none" onClick={() => clearUserDraft(user.id)}><Trash2 className="size-3.5" /></button> : null}</td></tr>)}</tbody></table>
     </div>
 
     <div className="border-border bg-surface rounded-xl border p-4 shadow-sm">
@@ -401,7 +444,7 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
         </Select>
       </div>
       <div className="mt-3 flex min-h-8 flex-wrap items-center gap-2">
-        {effectiveLoading ? <span className="text-muted-foreground text-sm">Loading...</span> : visibleEffectivePermissions?.permissions.map((permission) => <Badge key={permission} variant="subtle">{permission.replaceAll("_", " ")}</Badge>)}
+        {effectiveLoading ? <span className="text-muted-foreground text-sm">Loading...</span> : visibleEffectivePermissions?.permissions.map((permission) => <Badge key={permission} variant="subtle">{(PERMISSIONS.find(([key]) => key === permission)?.[1] ?? permission.replaceAll("_", " ")).toLowerCase()}</Badge>)}
         {!effectiveLoading && visibleEffectivePermissions && visibleEffectivePermissions.permissions.length === 0 ? <span className="text-muted-foreground text-sm">No effective permissions.</span> : null}
       </div>
     </div>

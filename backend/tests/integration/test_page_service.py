@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
-from app.models.space import SpaceRole
+from app.models.space import SpaceRole, SpaceVisibility
 from app.models.user import User
 from app.modules.auth.service import AuthService
 from app.modules.pages.service import PageService
@@ -76,10 +76,15 @@ class TestCreatePage:
         assert second.slug == "release-notes-2"
 
     async def test_viewer_cannot_create_page(self, session: AsyncSession) -> None:
+        # Restricted, not the SpaceCreate default of Open - Open now hands
+        # everyone Add automatically (OPEN_SPACE_PERMISSIONS), so a viewer
+        # role would not actually be blocked there.
         owner = await _make_user(session)
         viewer = await _make_user(session)
         space_service = SpaceService(session)
-        space = await space_service.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        space = await space_service.create(
+            SpaceCreate(key="ENG", name="Engineering", visibility=SpaceVisibility.restricted), owner
+        )
         await space_service.set_member(space, owner, viewer.id, SpaceRole.viewer)
 
         with pytest.raises(PermissionDeniedError):
@@ -204,10 +209,13 @@ class TestUpdatePage:
         assert service.to_read(page).content_format == "markdown"
 
     async def test_viewer_cannot_update_a_page(self, session: AsyncSession) -> None:
+        # Restricted - see test_viewer_cannot_create_page.
         owner = await _make_user(session)
         viewer = await _make_user(session)
         spaces = SpaceService(session)
-        space = await spaces.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        space = await spaces.create(
+            SpaceCreate(key="ENG", name="Engineering", visibility=SpaceVisibility.restricted), owner
+        )
         await spaces.set_member(space, owner, viewer.id, SpaceRole.viewer)
         service = PageService(session)
         page = await service.create(space, PageCreate(title="Draft"), owner)
@@ -218,10 +226,16 @@ class TestUpdatePage:
 
 class TestDeletePage:
     async def test_editor_cannot_delete_another_users_page(self, session: AsyncSession) -> None:
+        # Restricted, not the SpaceCreate default of Open - Open now hands
+        # everyone full `delete` automatically (OPEN_SPACE_PERMISSIONS), so
+        # an editor role's narrower access would not be the binding
+        # constraint there.
         owner = await _make_user(session)
         editor = await _make_user(session)
         spaces = SpaceService(session)
-        space = await spaces.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        space = await spaces.create(
+            SpaceCreate(key="ENG", name="Engineering", visibility=SpaceVisibility.restricted), owner
+        )
         await spaces.set_member(space, owner, editor.id, SpaceRole.editor)
         service = PageService(session)
         grandparent = await service.create(space, PageCreate(title="Runbooks"), owner)
@@ -239,10 +253,13 @@ class TestDeletePage:
         assert child.parent_id == parent.id
 
     async def test_viewer_cannot_delete_a_page(self, session: AsyncSession) -> None:
+        # Restricted - see test_viewer_cannot_create_page.
         owner = await _make_user(session)
         viewer = await _make_user(session)
         spaces = SpaceService(session)
-        space = await spaces.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        space = await spaces.create(
+            SpaceCreate(key="ENG", name="Engineering", visibility=SpaceVisibility.restricted), owner
+        )
         await spaces.set_member(space, owner, viewer.id, SpaceRole.viewer)
         service = PageService(session)
         page = await service.create(space, PageCreate(title="Draft"), owner)

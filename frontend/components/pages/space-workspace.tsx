@@ -851,13 +851,19 @@ export function SpaceWorkspace({
   const [deletePageOpen, setDeletePageOpen] = useState(false);
   const [deletePagePending, setDeletePagePending] = useState(false);
   const [movePageOpen, setMovePageOpen] = useState(false);
+  const [pageAccessOpen, setPageAccessOpen] = useState(false);
   const [editSpaceModalOpen, setEditSpaceModalOpen] = useState(false);
 
+  // "Edit space" (this button, and the modal it opens) is full space
+  // administration - visibility, member permissions, archiving, deletion -
+  // not to be confused with `canManageRestrictions`, which only covers
+  // per-page view/edit restrictions and is gated on the narrower
+  // "restrictions" permission alone. The backend's own effective-permission
+  // computation already gives a superuser "admin" here directly (see
+  // `PermissionService.effective_permissions`), so this needs no separate
+  // superuser bypass of its own.
   const canAdmin =
-    canManageRestrictions ||
-    space.my_role === "admin" ||
-    space.my_permissions?.includes("admin") === true ||
-    space.my_permissions?.includes("restrictions") === true;
+    space.my_role === "admin" || space.my_permissions?.includes("admin") === true;
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [reloadPending, setReloadPending] = useState(false);
   const [cancelEditPending, setCancelEditPending] = useState(false);
@@ -2204,7 +2210,7 @@ export function SpaceWorkspace({
                         align="end"
                         className="text-muted-foreground min-w-52 text-sm font-medium"
                       >
-                        {canEdit && space.status === "active" ? (
+                        {currentPage?.can_move && space.status === "active" ? (
                           <DropdownMenuItem
                             onSelect={() => setMovePageOpen(true)}
                           >
@@ -2219,18 +2225,10 @@ export function SpaceWorkspace({
                           Page history
                         </DropdownMenuItem>
                         {canManageRestrictions ? (
-                          <PageRestrictionsDialog
-                            spaceKey={space.key}
-                            page={currentPage}
-                            members={members}
-                            groups={groups}
-                            trigger={
-                              <DropdownMenuItem>
-                                <Lock />
-                                Page access
-                              </DropdownMenuItem>
-                            }
-                          />
+                          <DropdownMenuItem onSelect={() => setPageAccessOpen(true)}>
+                            <Lock />
+                            Page access
+                          </DropdownMenuItem>
                         ) : null}
                         <DropdownMenuItem onSelect={() => setLabelsDialogOpen(true)}>
                           <Tag />
@@ -2292,7 +2290,7 @@ export function SpaceWorkspace({
                             </DropdownMenuSubContent>
                           </DropdownMenuSub>
                         ) : null}
-                        {canEdit && space.status === "active" ? (
+                        {currentPage?.can_delete && space.status === "active" ? (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -2341,18 +2339,10 @@ export function SpaceWorkspace({
                         Share
                       </DropdownMenuItem>
                       {currentPage && canManageRestrictions ? (
-                        <PageRestrictionsDialog
-                          spaceKey={space.key}
-                          page={currentPage}
-                          members={members}
-                          groups={groups}
-                          trigger={
-                            <DropdownMenuItem>
-                              <Lock />
-                              Page access
-                            </DropdownMenuItem>
-                          }
-                        />
+                        <DropdownMenuItem onSelect={() => setPageAccessOpen(true)}>
+                          <Lock />
+                          Page access
+                        </DropdownMenuItem>
                       ) : null}
                       {currentPage ? (
                         <DropdownMenuItem onSelect={() => setLabelsDialogOpen(true)}>
@@ -2389,7 +2379,7 @@ export function SpaceWorkspace({
                               </DropdownMenuSubContent>
                             </DropdownMenuSub>
                           ) : null}
-                          {canEdit && space.status === "active" ? (
+                          {currentPage?.can_move && space.status === "active" ? (
                             <DropdownMenuItem
                               onSelect={() => setMovePageOpen(true)}
                             >
@@ -2409,7 +2399,7 @@ export function SpaceWorkspace({
                             <FileText />
                             Attachments
                           </DropdownMenuItem>
-                          {canEdit && space.status === "active" ? (
+                          {currentPage?.can_delete && space.status === "active" ? (
                             <DropdownMenuItem
                               className="text-danger focus:text-danger [&_svg]:text-danger"
                               onSelect={() => setDeletePageOpen(true)}
@@ -2886,6 +2876,16 @@ export function SpaceWorkspace({
               pages={pages}
               open={movePageOpen}
               onOpenChange={setMovePageOpen}
+            />
+          ) : null}
+
+          {currentPage && canManageRestrictions ? (
+            <PageRestrictionsDialog
+              spaceKey={space.key}
+              page={currentPage}
+              members={members}
+              open={pageAccessOpen}
+              onOpenChange={setPageAccessOpen}
             />
           ) : null}
 

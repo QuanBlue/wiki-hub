@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from enum import StrEnum
 
+from sqlalchemy import Boolean, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
@@ -40,6 +41,16 @@ class PageUserRestriction(Base):
     permission: Mapped[PageRestrictionPermission] = mapped_column(
         _restriction_enum(), primary_key=True
     )
+    # A row has always meant "this principal is allowed" (used once the page
+    # has any such row and is thus in allow-list "Restricted" mode). `denied`
+    # adds a second, independent meaning a row can carry: an explicit block
+    # that applies regardless of Open/Restricted mode - see
+    # `PermissionService._principal_permission_denied`. The two never mix on
+    # the same row: `denied=False` (the default) is a plain allow-list grant,
+    # `denied=True` is a block.
+    denied: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
 
 class PageGroupRestriction(Base):
@@ -53,4 +64,7 @@ class PageGroupRestriction(Base):
     )
     permission: Mapped[PageRestrictionPermission] = mapped_column(
         _restriction_enum(), primary_key=True
+    )
+    denied: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )

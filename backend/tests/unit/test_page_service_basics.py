@@ -25,6 +25,7 @@ def make_service() -> PageService:
     result.spaces.permissions.can_view_page = AsyncMock(return_value=True)
     result.spaces.permissions.effective_permissions = AsyncMock(return_value={Permission.export})
     result.spaces.permissions.page_view_is_restricted = AsyncMock(return_value=False)
+    result.spaces.permissions.require = AsyncMock()
     result.pages = Mock()
     result.revisions = Mock()
     return result

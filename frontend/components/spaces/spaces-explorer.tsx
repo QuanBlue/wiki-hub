@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Crown,
   Globe2,
   Grid2X2,
   Lock,
@@ -40,6 +41,20 @@ function formatCreatedDate(iso: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+/** "@admin" for one owner, "@admin +2" for more - the column has no room to
+ * list every name, and the first one plus a count is enough to recognise
+ * the space at a glance and know there's more to see in Edit space. Falls
+ * back to the space's creator for one migrated in before ownership was
+ * trackable and never assigned an Owner since (see the backend's
+ * `SpaceOwner` backfill). */
+function formatOwners(space: Space): string {
+  if (space.owners.length === 0) {
+    return space.created_by_username ? "@" + space.created_by_username : "—";
+  }
+  const [first, ...rest] = space.owners;
+  return "@" + first.username + (rest.length > 0 ? " +" + rest.length : "");
 }
 
 function FavoriteButton({
@@ -130,9 +145,7 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
         </span>
         <span className="text-muted-foreground hidden min-w-0 items-center gap-1.5 text-xs lg:flex">
           <UserRound className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {space.created_by_username ? "@" + space.created_by_username : "—"}
-          </span>
+          <span className="truncate">{formatOwners(space)}</span>
         </span>
         <span className="text-muted-foreground hidden items-center gap-1.5 text-xs xl:flex">
           <CalendarDays className="size-3.5 shrink-0" />
@@ -190,11 +203,17 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
   );
 }
 
+type SpacesTab = "all" | "starred" | "owned";
+
+function tabFromParam(value: string | null): SpacesTab {
+  if (value === "starred" || value === "owned") return value;
+  return "all";
+}
+
 export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") === "starred" ? "starred" : "all";
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"all" | "starred">(initialTab);
+  const [tab, setTab] = useState<SpacesTab>(tabFromParam(searchParams.get("tab")));
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
 
@@ -202,10 +221,15 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
     () => spaces.filter((space) => space.is_favorite),
     [spaces],
   );
+  const ownedSpaces = useMemo(
+    () => spaces.filter((space) => space.is_owner),
+    [spaces],
+  );
   const filteredSpaces = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return spaces.filter((space) => {
       if (tab === "starred" && !space.is_favorite) return false;
+      if (tab === "owned" && !space.is_owner) return false;
       return (
         !needle ||
         space.name.toLowerCase().includes(needle) ||
@@ -260,6 +284,22 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
             >
               <Star className="size-3.5" />
               Favorite ({starredSpaces.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTab("owned");
+                setPage(0);
+              }}
+              className={cn(
+                "focus-visible:ring-ring flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                tab === "owned"
+                  ? "bg-surface text-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+              )}
+            >
+              <Crown className="size-3.5" />
+              Own ({ownedSpaces.length})
             </button>
           </div>
           <div className="relative w-full sm:w-72">
@@ -357,12 +397,20 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
         ) : (
           <div className="border-border bg-surface mt-4 rounded-lg border border-dashed p-8 text-center">
             <p className="text-sm font-semibold">
-              {query ? "No spaces match your search" : "No spaces found"}
+              {query
+                ? "No spaces match your search"
+                : tab === "starred"
+                  ? "No favorite spaces yet"
+                  : tab === "owned"
+                    ? "You don't own any spaces yet"
+                    : "No spaces found"}
             </p>
             <p className="text-muted-foreground mt-1 text-xs">
               {query
                 ? "Try another term or clear the search."
-                : "Create a space to organise your team’s knowledge."}
+                : tab === "owned"
+                  ? "Spaces you create make you their Owner - see Edit space → General to check or change who owns one."
+                  : "Create a space to organise your team’s knowledge."}
             </p>
             {query ? (
               <Button

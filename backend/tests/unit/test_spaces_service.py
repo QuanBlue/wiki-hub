@@ -26,11 +26,15 @@ def make_service() -> SpaceService:
     result.session.add_all = Mock()
     result.permissions = Mock()
     result.permissions.require = AsyncMock()
+    result.permissions.require_owner = AsyncMock()
     result.permissions.role_of = AsyncMock(return_value=SpaceRole.admin)
     result.permissions.effective_permissions = AsyncMock(
         return_value={Permission.view, Permission.add, Permission.admin}
     )
     result.permissions._has_space_admin = AsyncMock(return_value=True)
+    result.permissions._purge_page_restrictions_for_removed_principal = AsyncMock()
+    result.permissions.list_space_owners = AsyncMock(return_value=[])
+    result.permissions._list_system_admins = AsyncMock(return_value=[])
     result.spaces = Mock()
     result.users = Mock()
     return result

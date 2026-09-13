@@ -85,3 +85,57 @@ class PageRestrictionRead(BaseModel):
 
 class PageRestrictionUpsert(BaseModel):
     permission: PageRestrictionPermission
+
+
+class PageRestrictionUserOption(BaseModel):
+    """One row of the page-restriction picker's user search. Every active
+    user is listed - not just ones the space already grants access to - so
+    typing a name never looks like the person doesn't exist; `has_space_access`
+    is what the picker uses to grey a row out and explain why, instead of
+    hiding it outright."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    username: str
+    full_name: str
+    has_space_access: bool
+
+
+class PageRestrictionGroupOption(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    has_space_access: bool
+
+
+class PageViewModeUpdate(BaseModel):
+    restricted: bool
+
+
+class PageAccessRosterUser(BaseModel):
+    """One row of the Open-page access roster: a user with space access,
+    their current View/Edit state on this specific page pre-reflected
+    (checked, not blank), and whether each box is locked (see
+    `PermissionService.list_page_access_roster_users`) - `view_locked` is
+    only ever true for a space Admin, since blocking one would have no
+    effect; `edit_locked` is also true for anyone whose space role simply
+    doesn't include editing."""
+
+    id: uuid.UUID
+    username: str
+    full_name: str
+    view: bool
+    edit: bool
+    view_locked: bool
+    edit_locked: bool
+
+
+class PageAccessRosterGroup(BaseModel):
+    id: uuid.UUID
+    name: str
+    view: bool
+    edit: bool
+    view_locked: bool
+    edit_locked: bool

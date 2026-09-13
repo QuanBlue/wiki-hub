@@ -10,10 +10,8 @@ from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.exceptions import ConflictError
-from app.api.v1.groups import group_read
-from app.models.permission import Group, Permission
+from app.models.permission import Permission
 from app.models.restriction import PageRestrictionPermission
-from app.models.user import User
 from app.models.user_page_label import UserPageLabel
 from app.modules.pages.export_service import ExportFormat, ExportService
 from app.modules.pages.service import PageService
@@ -27,8 +25,14 @@ from app.schemas.page import (
     PageRecentItem,
     PageUpdate,
 )
-from app.schemas.permission import GroupRead, PageRestrictionRead
-from app.schemas.user import UserRead
+from app.schemas.permission import (
+    PageAccessRosterGroup,
+    PageAccessRosterUser,
+    PageRestrictionGroupOption,
+    PageRestrictionRead,
+    PageRestrictionUserOption,
+    PageViewModeUpdate,
+)
 from app.schemas.page_label import PageLabelCreate, PageLabelRead
 
 router = APIRouter(prefix="/spaces/{key}/pages", tags=["pages"])
@@ -329,7 +333,7 @@ async def list_page_restrictions(
 
 @router.get(
     "/{slug}/restrictions/principals/users",
-    response_model=list[UserRead],
+    response_model=list[PageRestrictionUserOption],
     summary="List users available for page restrictions",
 )
 async def list_page_restriction_users(
@@ -338,26 +342,25 @@ async def list_page_restriction_users(
     user: CurrentUser,
     page_service: PageServiceDep,
     space_service: SpaceServiceDep,
-    session: DbSession,
-) -> list[UserRead]:
+) -> list[PageRestrictionUserOption]:
     space = await space_service.get_by_key(key)
     page = await page_service.get_by_slug(space, slug)
     await space_service.permissions.require_page_restriction_admin(page, user)
-    users = (
-        (
-            await session.execute(
-                select(User).where(User.is_active.is_(True)).order_by(User.username)
-            )
+    options = await space_service.permissions.list_users_for_page_restriction_picker(space)
+    return [
+        PageRestrictionUserOption(
+            id=item.id,
+            username=item.username,
+            full_name=item.full_name,
+            has_space_access=has_space_access,
         )
-        .scalars()
-        .all()
-    )
-    return [UserRead.model_validate(item) for item in users]
+        for item, has_space_access in options
+    ]
 
 
 @router.get(
     "/{slug}/restrictions/principals/groups",
-    response_model=list[GroupRead],
+    response_model=list[PageRestrictionGroupOption],
     summary="List groups available for page restrictions",
 )
 async def list_page_restriction_groups(
@@ -366,17 +369,15 @@ async def list_page_restriction_groups(
     user: CurrentUser,
     page_service: PageServiceDep,
     space_service: SpaceServiceDep,
-    session: DbSession,
-) -> list[GroupRead]:
+) -> list[PageRestrictionGroupOption]:
     space = await space_service.get_by_key(key)
     page = await page_service.get_by_slug(space, slug)
     await space_service.permissions.require_page_restriction_admin(page, user)
-    groups = (
-        (await session.execute(select(Group).where(Group.is_active.is_(True)).order_by(Group.name)))
-        .scalars()
-        .all()
-    )
-    return [await group_read(session, group) for group in groups]
+    options = await space_service.permissions.list_groups_for_page_restriction_picker(space)
+    return [
+        PageRestrictionGroupOption(id=item.id, name=item.name, has_space_access=has_space_access)
+        for item, has_space_access in options
+    ]
 
 
 @router.put(
@@ -457,6 +458,173 @@ async def revoke_group_page_restriction(
     await space_service.permissions.set_page_restriction(
         page, group_id, permission, actor, group=True, present=False
     )
+
+
+@router.put(
+    "/{slug}/restrictions/users/{user_id}/{permission}/block",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Block a user from a permission on this page, overriding their space access",
+)
+async def block_user_page_permission(
+    key: str,
+    slug: str,
+    user_id: uuid.UUID,
+    permission: PageRestrictionPermission,
+    actor: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    page = await page_service.get_by_slug(await space_service.get_by_key(key), slug)
+    await space_service.permissions.set_page_permission_denial(
+        page, user_id, permission, actor, group=False, denied=True
+    )
+
+
+@router.delete(
+    "/{slug}/restrictions/users/{user_id}/{permission}/block",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Clear a user's block, falling back to whatever they'd otherwise have",
+)
+async def unblock_user_page_permission(
+    key: str,
+    slug: str,
+    user_id: uuid.UUID,
+    permission: PageRestrictionPermission,
+    actor: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    page = await page_service.get_by_slug(await space_service.get_by_key(key), slug)
+    await space_service.permissions.set_page_permission_denial(
+        page, user_id, permission, actor, group=False, denied=False
+    )
+
+
+@router.put(
+    "/{slug}/restrictions/groups/{group_id}/{permission}/block",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Block a group from a permission on this page, overriding its space access",
+)
+async def block_group_page_permission(
+    key: str,
+    slug: str,
+    group_id: uuid.UUID,
+    permission: PageRestrictionPermission,
+    actor: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    page = await page_service.get_by_slug(await space_service.get_by_key(key), slug)
+    await space_service.permissions.set_page_permission_denial(
+        page, group_id, permission, actor, group=True, denied=True
+    )
+
+
+@router.delete(
+    "/{slug}/restrictions/groups/{group_id}/{permission}/block",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Clear a group's block, falling back to whatever it'd otherwise have",
+)
+async def unblock_group_page_permission(
+    key: str,
+    slug: str,
+    group_id: uuid.UUID,
+    permission: PageRestrictionPermission,
+    actor: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    page = await page_service.get_by_slug(await space_service.get_by_key(key), slug)
+    await space_service.permissions.set_page_permission_denial(
+        page, group_id, permission, actor, group=True, denied=False
+    )
+
+
+@router.get(
+    "/{slug}/restrictions/roster/users",
+    response_model=list[PageAccessRosterUser],
+    summary="List users with space access to this page, and their current View/Edit state on it",
+)
+async def list_page_access_roster_users(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> list[PageAccessRosterUser]:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    await space_service.permissions.require_page_restriction_admin(page, user)
+    roster = await space_service.permissions.list_page_access_roster_users(page, space)
+    return [
+        PageAccessRosterUser(
+            id=item.id,
+            username=item.username,
+            full_name=item.full_name,
+            view=view,
+            edit=edit,
+            view_locked=view_locked,
+            edit_locked=edit_locked,
+        )
+        for item, view, edit, view_locked, edit_locked in roster
+    ]
+
+
+@router.get(
+    "/{slug}/restrictions/roster/groups",
+    response_model=list[PageAccessRosterGroup],
+    summary="List groups with space access to this page, and their current View/Edit state on it",
+)
+async def list_page_access_roster_groups(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> list[PageAccessRosterGroup]:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    await space_service.permissions.require_page_restriction_admin(page, user)
+    roster = await space_service.permissions.list_page_access_roster_groups(page, space)
+    return [
+        PageAccessRosterGroup(
+            id=item.id, name=item.name, view=view, edit=edit, view_locked=view_locked, edit_locked=edit_locked
+        )
+        for item, view, edit, view_locked, edit_locked in roster
+    ]
+
+
+@router.patch(
+    "/{slug}/restrictions/mode",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Switch this page's General access between Open and Restricted",
+)
+async def set_page_view_mode(
+    key: str,
+    slug: str,
+    payload: PageViewModeUpdate,
+    actor: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    page = await page_service.get_by_slug(await space_service.get_by_key(key), slug)
+    await space_service.permissions.set_page_view_mode(page, actor, restricted=payload.restricted)
+
+
+@router.post(
+    "/{slug}/restrictions/reset",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Reset this page's current access mode back to its default",
+)
+async def reset_page_access(
+    key: str,
+    slug: str,
+    actor: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    page = await page_service.get_by_slug(await space_service.get_by_key(key), slug)
+    await space_service.permissions.reset_page_access(page, actor)
 
 
 @standalone_router.get(

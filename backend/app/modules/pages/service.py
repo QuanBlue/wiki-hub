@@ -69,6 +69,12 @@ class PageService:
         if not await self.spaces.permissions.can_edit_page(page, user):
             raise PermissionDeniedError("You do not have edit access to this page.")
 
+    async def require_page_move(self, space: Space, page: WikiPage, user: User) -> None:
+        """Moving is its own grant, layered on top of ordinary Edit - having
+        Add/Edit on a page no longer implies you may relocate it."""
+        await self.require_page_editor(page, user)
+        await self.spaces.permissions.require(space, user, Permission.move)
+
     async def require_page_view(self, page: WikiPage, user: User) -> None:
         if not await self.spaces.permissions.can_view_page(page, user):
             raise PermissionDeniedError("You do not have access to this page.")
@@ -94,11 +100,20 @@ class PageService:
         result = self.to_read(page)
         result.can_edit = await self.spaces.permissions.can_edit_page(page, user)
         space = await self.session.get(Space, page.space_id)
+        space_permissions = (
+            await self.spaces.permissions.effective_permissions(space, user)
+            if space is not None
+            else set()
+        )
         result.can_export = (
             await self.spaces.permissions.can_view_page(page, user)
-            and space is not None
-            and Permission.export
-            in await self.spaces.permissions.effective_permissions(space, user)
+            and Permission.export in space_permissions
+        )
+        result.can_move = result.can_edit and Permission.move in space_permissions
+        # Mirrors the gate `delete()` itself enforces below - Delete permits
+        # removing any page, Delete Own only the ones this user authored.
+        result.can_delete = Permission.delete in space_permissions or (
+            Permission.delete_own in space_permissions and page.created_by_id == user.id
         )
         result.is_restricted = await self.spaces.permissions.page_view_is_restricted(page)
         return result
@@ -157,6 +172,13 @@ class PageService:
         if payload.parent_id is not None:
             parent = await self.pages.get(payload.parent_id)
             if parent is None or parent.space_id != space.id:
+                raise NotFoundError("Parent page not found.")
+            # Space-wide Add doesn't bypass a restricted parent's own View
+            # allow-list - without this, anyone with Add could nest a page
+            # under a parent they can't see, and the new child, inheriting
+            # that same restriction, would come out invisible to its own
+            # creator.
+            if not await self.spaces.permissions.can_view_page(parent, creator):
                 raise NotFoundError("Parent page not found.")
         slug = await self.unique_slug(space, title)
         page = WikiPage(
@@ -532,7 +554,7 @@ class PageService:
         return page
 
     async def move(self, space: Space, page: WikiPage, payload: PageMove, user: User) -> WikiPage:
-        await self.require_page_editor(page, user)
+        await self.require_page_move(space, page, user)
         destination = await self.spaces.get_by_key(payload.destination_space_key)
         if destination.status is not SpaceStatus.active:
             raise BadRequestError("Pages can only be moved to an active space.")
@@ -558,6 +580,8 @@ class PageService:
         if payload.parent_id is not None:
             parent = await self.pages.get(payload.parent_id)
             if parent is None or parent.space_id != destination.id:
+                raise NotFoundError("Destination parent page not found.")
+            if not await self.spaces.permissions.can_view_page(parent, user):
                 raise NotFoundError("Destination parent page not found.")
             if parent.id in seen:
                 raise BadRequestError("A page cannot be moved into itself or one of its children.")

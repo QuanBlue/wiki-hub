@@ -26,7 +26,13 @@ export default async function WikiPageView({ params }: Params) {
   try {
     [space, pages] = await Promise.all([getSpace(key), listPages(key)]);
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) notFound();
+    // A 403 here means the space exists but this user has no View permission
+    // (e.g. it was switched to Restricted and never granted to them). Treat
+    // it the same as a 404 rather than surfacing the generic error boundary:
+    // the visitor shouldn't be able to tell "forbidden" from "doesn't exist".
+    if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
+      notFound();
+    }
     throw error;
   }
 
@@ -42,7 +48,13 @@ export default async function WikiPageView({ params }: Params) {
   try {
     page = await getPage(key, slug);
   } catch (error) {
-    if (!(error instanceof ApiError) || error.status !== 404) throw error;
+    if (!(error instanceof ApiError)) throw error;
+
+    // A per-page restriction can deny View on a page the user can otherwise
+    // see the space of. Same rule as the space-level check above: don't
+    // distinguish "forbidden" from "doesn't exist" for the visitor.
+    if (error.status === 403) notFound();
+    if (error.status !== 404) throw error;
 
     // The navigation tree already came from this space and is a valid source
     // of page data. Prefer it over showing a false 404 when imported or

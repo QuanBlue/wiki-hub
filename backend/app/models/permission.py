@@ -20,6 +20,7 @@ class Permission(StrEnum):
     delete_own = "delete_own"
     restrictions = "restrictions"
     export = "export"
+    move = "move"
     admin = "admin"
 
 

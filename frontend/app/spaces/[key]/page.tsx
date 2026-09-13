@@ -29,7 +29,13 @@ export default async function SpaceDetailPage({ params }: Params) {
       listSpaceMembers(key),
     ]);
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) notFound();
+    // A 403 here means the space exists but this user has no View permission
+    // (e.g. it was switched to Restricted and never granted to them). Treat
+    // it the same as a 404 rather than surfacing the generic error boundary:
+    // the visitor shouldn't be able to tell "forbidden" from "doesn't exist".
+    if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
+      notFound();
+    }
     throw error;
   }
 

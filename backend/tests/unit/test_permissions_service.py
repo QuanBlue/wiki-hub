@@ -10,7 +10,7 @@ from app.core.exceptions import ConflictError, NotFoundError, PermissionDeniedEr
 from app.models.permission import GlobalPermission, Permission
 from app.models.restriction import PageRestrictionPermission
 from app.models.space import SpaceRole, SpaceVisibility
-from app.modules.permissions.service import PermissionService, _safe_refresh
+from app.modules.permissions.service import OPEN_SPACE_PERMISSIONS, PermissionService, _safe_refresh
 from app.schemas.permission import GroupCreate, GroupUpdate
 
 
@@ -43,16 +43,25 @@ async def test_permission_resolution_and_guards() -> None:
     assert await service.effective_permissions(space, admin)
     assert await service.role_of(space, admin) is SpaceRole.admin
 
+    # `session.scalar` covers both `_has_group_global_permission` and the
+    # new `is_space_owner` check inside `effective_permissions` - None means
+    # "not an owner" throughout this block, same as it already meant "no
+    # global grant".
     service.session.scalar.return_value = None
     service.session.scalars.side_effect = [[], []]
     assert await service.is_system_admin(regular) is False
     permissions = await service.effective_permissions(space, regular)
-    assert permissions == {Permission.view}
+    # An Open space now hands out everything except admin/restrictions
+    # (OPEN_SPACE_PERMISSIONS), not just View - see the module docstring.
+    assert permissions == set(OPEN_SPACE_PERMISSIONS)
     service.session.scalars.side_effect = [[], []]
-    assert await service.role_of(space, regular) is SpaceRole.viewer
+    # Add is part of that Open baseline, so this reads as an editor now.
+    assert await service.role_of(space, regular) is SpaceRole.editor
     service.session.scalars.side_effect = [[], []]
     with pytest.raises(PermissionDeniedError):
-        await service.require(space, regular, Permission.delete)
+        # restrictions is one of the two permissions Open never hands out
+        # for free - unlike delete/move, which it now does.
+        await service.require(space, regular, Permission.restrictions)
     with pytest.raises(PermissionDeniedError):
         await service.require_global(regular, GlobalPermission.manage_groups)
 
@@ -138,15 +147,19 @@ async def test_page_visibility_and_restriction_helpers() -> None:
     service.session.get.return_value = space
     service.is_system_admin = AsyncMock(return_value=False)
     service.effective_permissions = AsyncMock(return_value={Permission.view, Permission.add})
+    service._principal_permission_denied = AsyncMock(return_value=False)
+    service._page_view_restricted_flag = AsyncMock(return_value=False)
     service._restriction_rows_exist = AsyncMock(return_value=False)
     service._principal_has_restriction = AsyncMock(return_value=False)
     assert await service.can_view_page(page, actor) is True
     assert await service.can_edit_page(page, actor) is True
     assert await service.page_view_is_restricted(page) is False
 
-    service._restriction_rows_exist = AsyncMock(return_value=True)
+    service._page_view_restricted_flag = AsyncMock(return_value=True)
     assert await service.page_view_is_restricted(page) is True
 
+    # can_edit_page's own fallback still checks edit rows directly - it has
+    # no separate "Restricted" flag of its own, only the page's view one.
     service._restriction_rows_exist = AsyncMock(return_value=True)
     assert await service.can_edit_page(page, actor) is False
     service._principal_has_restriction = AsyncMock(return_value=True)
@@ -260,7 +273,7 @@ async def test_space_and_page_permission_assignments() -> None:
     service = svc()
     actor = user(is_superuser=True)
     space = SimpleNamespace(id=uuid.uuid4(), visibility=SpaceVisibility.open)
-    page = SimpleNamespace(id=uuid.uuid4(), space_id=space.id)
+    page = SimpleNamespace(id=uuid.uuid4(), space_id=space.id, view_restricted=False)
     principal = SimpleNamespace(id=uuid.uuid4(), is_active=True)
     service.require = AsyncMock()
     service.session.get = AsyncMock(return_value=principal)
@@ -286,6 +299,7 @@ async def test_space_and_page_permission_assignments() -> None:
         )
 
     service.require_page_restriction_admin = AsyncMock()
+    service._has_space_access = AsyncMock(return_value=True)
     service.session.get = AsyncMock(return_value=principal)
     service.session.scalar = AsyncMock(return_value=None)
     await service.set_page_restriction(
@@ -345,23 +359,44 @@ async def test_group_lifecycle_and_space_admin_removal_checks() -> None:
         await service.update_group(group, GroupUpdate(owner_id=uuid.uuid4()), actor)
 
     space_id = uuid.uuid4()
+    # `scalars` order: owned_spaces (SpaceOwner - empty here, so the new
+    # ownership loop makes no `scalar` calls of its own), then the two
+    # legacy admin-permission-source queries. `scalar` order per space_id:
+    # owned_group, then other_direct/other_legacy/other_group.
     service.session.scalar = AsyncMock(side_effect=[None, None, None, None])
-    service.session.scalars = AsyncMock(side_effect=[{space_id}, set()])
+    service.session.scalars = AsyncMock(side_effect=[set(), {space_id}, set()])
     with pytest.raises(ConflictError):
         await service.assert_user_can_be_removed(owner)
     service.session.scalar = AsyncMock(side_effect=[None, object(), None, None])
-    service.session.scalars = AsyncMock(side_effect=[{space_id}, set()])
+    service.session.scalars = AsyncMock(side_effect=[set(), {space_id}, set()])
     await service.assert_user_can_be_removed(owner)
 
-    service.session.scalar = AsyncMock(side_effect=[object(), None])
+    # New: an Owner with no other active Owner covering the space is
+    # blocked too, even with no admin-permission row of their own to catch
+    # them in the loop above - see the method's own docstring for why that
+    # gap needs a separate check.
+    service.session.scalar = AsyncMock(side_effect=[None, None])
+    service.session.scalars = AsyncMock(side_effect=[{space_id}])
+    with pytest.raises(ConflictError):
+        await service.assert_user_can_be_removed(owner)
+    service.session.scalar = AsyncMock(side_effect=[None, object()])
+    service.session.scalars = AsyncMock(side_effect=[{space_id}, set(), set()])
+    await service.assert_user_can_be_removed(owner)
+
+    # An Owner unconditionally satisfies `_has_space_admin`, short-circuiting
+    # before either fallback query even runs.
+    service.session.scalar = AsyncMock(side_effect=[object()])
+    assert await service._has_space_admin(SimpleNamespace(id=space_id), excluding={})
+
+    service.session.scalar = AsyncMock(side_effect=[None, object(), None])
     assert await service._has_space_admin(
         SimpleNamespace(id=space_id), excluding={"user_id": owner.id}
     )
-    service.session.scalar = AsyncMock(side_effect=[None, object()])
+    service.session.scalar = AsyncMock(side_effect=[None, None, object()])
     assert await service._has_space_admin(
         SimpleNamespace(id=space_id), excluding={"group_id": uuid.uuid4()}
     )
-    service.session.scalar = AsyncMock(side_effect=[None, None])
+    service.session.scalar = AsyncMock(side_effect=[None, None, None])
     assert not await service._has_space_admin(SimpleNamespace(id=space_id), excluding={})
 
 
@@ -396,6 +431,8 @@ async def test_page_restriction_principal_and_visibility_branches() -> None:
     service.effective_permissions = AsyncMock(return_value={Permission.view, Permission.admin})
     assert await service.can_view_page(page, actor)
     service.effective_permissions = AsyncMock(return_value={Permission.view})
+    service._principal_permission_denied = AsyncMock(return_value=False)
+    service._page_view_restricted_flag = AsyncMock(return_value=False)
     service._restriction_rows_exist = AsyncMock(return_value=False)
     service._principal_has_restriction = AsyncMock(return_value=False)
     assert not await service.can_edit_page(page, actor)

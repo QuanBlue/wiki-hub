@@ -24,12 +24,12 @@ from app.core.exceptions import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.page import WikiPage
 from app.models.permission import Group, Permission, SpaceGroupPermission, SpaceUserPermission
-from app.models.space import Space, SpaceMember, SpaceRole, SpaceStatus, SpaceVisibility
+from app.models.space import Space, SpaceMember, SpaceOwner, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
 from app.modules.permissions.service import ROLE_PERMISSIONS, PermissionService
 from app.repositories.space import SpaceRepository
 from app.repositories.user import UserRepository
-from app.schemas.space import SpaceCreate, SpaceMemberRead, SpaceRead, SpaceUpdate
+from app.schemas.space import SpaceCreate, SpaceMemberRead, SpaceOwnerRead, SpaceRead, SpaceUpdate
 
 logger = get_logger(__name__)
 
@@ -109,6 +109,7 @@ class SpaceService:
         is_favorite: bool | None = None,
         group_permission_count: int | None = None,
         direct_user_permission_count: int | None = None,
+        owners: list[SpaceOwnerRead] | None = None,
     ) -> SpaceRead:
         favorite = (
             is_favorite
@@ -119,6 +120,11 @@ class SpaceService:
             group_permission_count, direct_user_permission_count = (
                 await self._permission_principal_counts(space.id)
             )
+        if owners is None:
+            owners = [
+                SpaceOwnerRead(user_id=owner.id, username=owner.username, full_name=owner.full_name)
+                for owner in await self.permissions.list_space_owners(space)
+            ]
         return SpaceRead(
             id=space.id,
             key=space.key,
@@ -132,6 +138,8 @@ class SpaceService:
             created_at=space.created_at,
             updated_at=space.updated_at,
             created_by_username=space.created_by.username if space.created_by else None,
+            owners=owners,
+            is_owner=any(owner.user_id == user.id for owner in owners),
             member_count=len(space.members),
             group_permission_count=group_permission_count,
             direct_user_permission_count=direct_user_permission_count,
@@ -144,12 +152,13 @@ class SpaceService:
         )
 
     async def to_read_many(self, spaces: Sequence[Space], user: User) -> list[SpaceRead]:
-        # Resolve favourites and permission-principal counts in one query each
-        # rather than once per space.
+        # Resolve favourites, permission-principal counts and owners in one
+        # query each rather than once per space.
         favorites = await self.spaces.favorite_ids(user.id)
         space_ids = [space.id for space in spaces]
         group_counts: dict[uuid.UUID, int] = {}
         user_counts: dict[uuid.UUID, int] = {}
+        owners_by_space: dict[uuid.UUID, list[SpaceOwnerRead]] = {}
         if space_ids:
             group_rows = await self.session.execute(
                 select(
@@ -177,6 +186,29 @@ class SpaceService:
                 .group_by(SpaceUserPermission.space_id)
             )
             user_counts = dict(user_rows.all())
+            owner_rows = await self.session.execute(
+                select(SpaceOwner.space_id, User)
+                .join(User, User.id == SpaceOwner.user_id)
+                .where(SpaceOwner.space_id.in_(space_ids))
+                .order_by(User.username)
+            )
+            for space_id, owner in owner_rows.all():
+                owners_by_space.setdefault(space_id, []).append(
+                    SpaceOwnerRead(user_id=owner.id, username=owner.username, full_name=owner.full_name)
+                )
+            # Same fallback as `PermissionService.list_space_owners`, applied
+            # once for every space with no explicit `SpaceOwner` row instead
+            # of once per space - a legacy or imported space must not look
+            # ownerless here either, since `is_space_owner` already treats
+            # every system administrator as owning it regardless.
+            without_explicit_owner = [sid for sid in space_ids if sid not in owners_by_space]
+            if without_explicit_owner:
+                admin_reads = [
+                    SpaceOwnerRead(user_id=admin.id, username=admin.username, full_name=admin.full_name)
+                    for admin in await self.permissions._list_system_admins()
+                ]
+                for space_id in without_explicit_owner:
+                    owners_by_space[space_id] = admin_reads
         return [
             await self.to_read(
                 space,
@@ -184,6 +216,7 @@ class SpaceService:
                 is_favorite=space.id in favorites,
                 group_permission_count=group_counts.get(space.id, 0),
                 direct_user_permission_count=user_counts.get(space.id, 0),
+                owners=owners_by_space.get(space.id, []),
             )
             for space in spaces
         ]
@@ -294,6 +327,11 @@ class SpaceService:
             SpaceUserPermission(space_id=space.id, user_id=creator.id, permission=permission)
             for permission in ROLE_PERMISSIONS[SpaceRole.admin]
         )
+        # The creator is also the space's first Owner - a protected admin
+        # grant nobody (including the creator's own future self, acting
+        # through the ordinary permission matrix) can revoke down to zero.
+        # See `SpaceOwner` and `PermissionService.set_space_owners`.
+        self.session.add(SpaceOwner(space_id=space.id, user_id=creator.id))
         # Every newly-created space has a stable home route: the space key is
         # also the home page slug (for example QUAN -> /pages/quan).
         self.session.add(
@@ -318,6 +356,18 @@ class SpaceService:
             await self.require_add(space, user)
         else:
             await self.require_admin(space, user)
+        # Actually *changing* the access mode is Owner-only (see
+        # `PermissionService.require_owner`) even though an ordinary Admin
+        # can reach every other branch below. Gate on a real change, not
+        # merely the field's presence - the frontend always resends the
+        # current visibility alongside an unrelated General-tab edit (name,
+        # upload limit), and an Admin editing just those must not be blocked
+        # by a field they aren't actually trying to change.
+        if (
+            data.get("visibility") is not None
+            and SpaceVisibility(data["visibility"]) != space.visibility
+        ):
+            await self.permissions.require_owner(space, user)
         if data.get("name") is not None:
             space.name = str(data["name"]).strip()
         if data.get("description") is not None:
@@ -447,6 +497,12 @@ class SpaceService:
                 SpaceUserPermission.space_id == space.id,
                 SpaceUserPermission.user_id == user_id,
             )
+        )
+        await self.session.flush()
+        # This user now has zero space access, direct or otherwise - any
+        # page-level restriction naming them in this space is dead weight.
+        await self.permissions._purge_page_restrictions_for_removed_principal(
+            space, user_id, group=False
         )
         await self.session.flush()
 

@@ -149,6 +149,39 @@ class SpaceMember(UUIDPrimaryKeyMixin, Base):
     user: Mapped[User] = relationship(lazy="joined")
 
 
+class SpaceOwner(Base):
+    """A space's protected administrators - mirrors `GroupOwner`.
+
+    A regular Admin (an `admin` row in `SpaceUserPermission`/`SpaceGroupPermission`,
+    or the legacy `SpaceMember.role`) can be revoked down to zero, same as any
+    other permission grant. An Owner cannot: `PermissionService.set_space_owners`
+    refuses to leave a space with none, so there is always at least one person
+    who can get back into a space no matter what an Admin does to the
+    permission tables - the same guarantee `Group.owner_id`/`GroupOwner` gives
+    a group. Being an Owner always implies full admin access (see
+    `PermissionService.effective_permissions`), independent of whatever rows
+    exist in the additive permission tables.
+
+    A row here is not the only way to be one, though: every system
+    administrator is always an Owner of every space by default, with no row
+    needed at all (`PermissionService.is_space_owner`). That is what still
+    covers a space that never went through `SpaceService.create` - an older
+    space from before this table existed, or one produced by an import,
+    restore, or seed script - `list_space_owners` falls back to listing every
+    such administrator for one of those, rather than reading as ownerless.
+    """
+
+    __tablename__ = "space_owners"
+    __table_args__ = (UniqueConstraint("space_id", "user_id", name="uq_space_owners_space_user"),)
+
+    space_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("spaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
 class SpaceFavorite(Base):
     """A user's starred spaces. Composite primary key - one row per pair."""
 

@@ -70,6 +70,15 @@ export function listSpaceMembers(key: string): Promise<SpaceMember[]> {
   );
 }
 
+// Returns one row per (principal, permission) *database* row - `permissions`
+// is always a single-element array - mirroring how SpaceUserPermission and
+// SpaceGroupPermission are actually stored. `SpaceAccessPanel` (this
+// function's only consumer) is built around that shape: it unions matching
+// rows to read a principal's permissions and appends/removes single-element
+// rows to edit them. `EditSpaceModal`, which instead edits one combined
+// per-principal row, groups this same endpoint's response itself - see
+// `groupPermissionAssignments` in lib/permissions.ts - rather than this
+// function pre-grouping it out from under `SpaceAccessPanel`.
 export function listSpacePermissions(key: string): Promise<SpacePermissionAssignment[]> {
   return get<SpacePermissionAssignment[]>(
     `/api/v1/spaces/${encodeURIComponent(key)}/permissions`,

@@ -333,45 +333,88 @@ const sections: HelpSection[] = [
             vector icon.
           </li>
           <li>
-            <strong>Space Visibility</strong>:
+            <strong>Space Visibility</strong> (set from{" "}
+            <strong>Edit space &gt; Access &amp; Permissions</strong>):
             <ul className="list-disc pl-5 mt-1 space-y-1">
               <li>
-                <strong className="text-success">Open</strong>: any signed-in
-                workspace member can read the space.
+                <strong className="text-success">Open</strong>: every signed-in user
+                gets full read <em>and</em> write access automatically -{" "}
+                <Code>View</Code>, <Code>Add/Edit</Code>, <Code>Delete</Code>,{" "}
+                <Code>Delete own</Code> and <Code>Move</Code> - with no need to grant
+                anyone anything individually. The two permissions that could
+                reconfigure the space itself, <Code>Admin</Code> and{" "}
+                <Code>Restrictions</Code>, are never handed out for free in either
+                mode - only a space Owner or someone explicitly promoted holds them.
               </li>
               <li>
-                <strong className="text-danger">Restricted</strong>: only the specific
-                people and groups granted access can read it.
+                <strong className="text-danger">Restricted</strong>: nobody has
+                anything by default - the permission tables below become the sole
+                source of who can view, edit, delete, or move anything.
               </li>
             </ul>
+            Switching between the two is immediate and non-destructive: a
+            Restricted space&apos;s permission tables stay exactly as configured while
+            the space is Open, so flipping back and forth never means rebuilding
+            them from scratch.
+          </li>
+          <li>
+            <strong>Space Owner</strong>: every space always has at least one Owner
+            (the creator, by default) - a protected Administrator that cannot be
+            removed down to zero, so a space can never end up with nobody able to
+            manage it no matter what happens to the permission tables below. Manage
+            the list from <strong>Edit space &gt; General</strong>; only an existing
+            Owner can add or remove another one. A space can have several Owners at
+            once, and each one bypasses every page-level restriction the same way a{" "}
+            <Code>Admin</Code> grant does.
           </li>
           <li>
             <strong>Per-user &amp; per-group permissions</strong>: instead of a fixed
             list of named roles, WikiHub grants specific capabilities directly to a
-            user or a group - <Code>View</Code>, <Code>Add</Code>, <Code>Delete</Code>,{" "}
-            <Code>Delete own</Code>, <Code>Restrictions</Code>, <Code>Export</Code>,
-            and <Code>Admin</Code> - from a space&apos;s own{" "}
+            user or a group - <Code>View</Code>, <Code>Add/Edit</Code>,{" "}
+            <Code>Delete</Code>, <Code>Delete own</Code>, <Code>Restrictions</Code>,{" "}
+            <Code>Move</Code>, and <Code>Admin</Code> - from a space&apos;s own{" "}
             <strong>Edit space &gt; Access &amp; Permissions</strong> tab, or from{" "}
             <strong>Administration &gt; Spaces</strong> (see{" "}
             <em>Space Access &amp; Effective Permissions</em> for the full picture,
-            including how to check any one person&apos;s resolved access).
+            including how to check any one person&apos;s resolved access). Exporting a
+            page follows <Code>View</Code> automatically, with no separate grant to
+            hand out. While the space is Open, the tables show <Code>All</Code>{" "}
+            instead of a checkbox for the five permissions Open already grants
+            everyone - <Code>Admin</Code> and <Code>Restrictions</Code> stay live
+            checkboxes regardless of mode, since those are the only way anyone
+            becomes an Admin or narrows who can restrict a page.
+          </li>
+          <li>
+            <strong>A direct grant overrides a group&apos;s, not adds to it</strong>:
+            groups you belong to combine with each other as usual, but the moment a
+            user has their <em>own</em> row on a space, that row alone decides
+            everything for them - group membership stops contributing anything
+            beyond it. This is how one member of an otherwise broad group (say,
+            everyone with <Code>Add/Edit</Code>) can be narrowed to{" "}
+            <Code>View</Code> only, by giving that person their own smaller row.
+            <Code>Admin</Code> is the one exception: a group&apos;s{" "}
+            <Code>Admin</Code> grant always still applies, so a space can never
+            end up locked with no administrator reachable.
           </li>
           <li>
             <strong>Editing a space</strong>: click <strong>Edit space</strong>{" "}
             (pencil icon in the space sidebar footer, admins only) for three tabs:{" "}
-            <strong>General</strong> (name, visibility, and an optional per-space
+            <strong>General</strong> (name, Space Owner, and an optional per-space
             attachment-size limit that overrides the workspace default),{" "}
-            <strong>Access &amp; Permissions</strong> (the same tables as above), and{" "}
-            <strong>Space settings &amp; Danger zone</strong> (Archive/Restore the
-            space, or permanently Delete it - permanent deletion is only available
-            from <strong>Administration &gt; Spaces</strong>, not here).
+            <strong>Access &amp; Permissions</strong> (General access plus the
+            tables above), and <strong>Space settings &amp; Danger zone</strong>{" "}
+            (Archive/Restore the space, or permanently Delete it - permanent
+            deletion is only available from <strong>Administration &gt; Spaces</strong>,
+            not here).
           </li>
           <li>
             <strong>Favouriting</strong>: Click the <Code>★ Star</Code> icon on a
             space&apos;s header to add it to your favourites. Favourited spaces show up
             under <strong>My favorite spaces</strong> on the Home page, and under the{" "}
-            <strong>Starred</strong> tab of the Spaces directory (
-            <Code>/spaces?tab=starred</Code>).
+            <strong>Favorite</strong> tab of the Spaces directory (
+            <Code>/spaces?tab=starred</Code>). The directory&apos;s own{" "}
+            <strong>Own</strong> tab is different - it lists spaces
+            <em> you own</em> (see Space Owner above), not ones you have starred.
             <br />
             The sidebar&apos;s own <strong>Most visited</strong> list is separate and
             automatic - it ranks whichever spaces you actually open most, independent of
@@ -485,18 +528,64 @@ const sections: HelpSection[] = [
           </li>
           <li>
             <strong>Page access</strong>: on a page you can manage, click{" "}
-            <Code>Page access</Code> to grant specific people or groups{" "}
-            <Code>Can view</Code> or <Code>Can edit</Code> on that one page - tighter
-            than its space&apos;s general member roles, and view restrictions inherit
-            down to child pages. With no restrictions added, a page simply follows its
-            space&apos;s access rules.
+            <Code>Page access</Code> to open its <strong>General access</strong> setting -{" "}
+            <Code>Open</Code> or <Code>Restricted</Code> - plus the table underneath it,
+            which looks different depending on which one is picked:
+            <ul className="mt-1.5 list-disc space-y-1.5 pl-5">
+              <li>
+                <strong>Open</strong> (the default) lists every person and group the
+                space already grants access to, with their current View/Edit access to
+                this page pre-checked - nothing to search for or add. Unchecking a box
+                blocks just that person or group; everyone else is unaffected. Edit is
+                greyed out for anyone whose space role does not include it, since a
+                page restriction only ever narrows who edits among people the space
+                already lets edit - it never grants editing beyond that. Both View and
+                Edit are greyed out (and pre-checked) for a space Admin, since Admins
+                bypass every page-level restriction - blocking one here would not
+                actually do anything, so the box is locked instead of offering a
+                control with no effect.
+              </li>
+              <li>
+                <strong>Restricted</strong> instead starts from an empty allow-list you
+                build up by searching and adding specific people or groups - view
+                restrictions inherit down to child pages, and anyone not added
+                cannot see the page at all, regardless of their space role.
+              </li>
+            </ul>
+            <Callout variant="tip" title="Both tables open read-only">
+              Neither table&apos;s checkboxes can be clicked until you press its own{" "}
+              <Code>Edit</Code> button - a stray click cannot change anyone&apos;s
+              access. Press <Code>Done</Code> when you are finished with that table to
+              lock it again.
+            </Callout>
+            <Callout variant="tip" title="Switching modes never discards the other one's setup">
+              Flip General access back and forth as much as you like - whatever
+              Restricted allow-list or Open blocks you had configured comes right back
+              each time, instead of being rebuilt from scratch. <Code>Reset to default</Code>{" "}
+              (with a confirmation first) is the deliberate way to actually clear
+              whichever mode is currently active: Restricted resets to an empty
+              allow-list, Open clears every block.
+            </Callout>
+            <Callout variant="important" title="Restricted's picker only offers people already in the space">
+              It only lets you search and pick people or groups the space itself has
+              already granted access to - restricting a page to someone still locked
+              out at the space door would do nothing but confuse. Anyone else you
+              search for still shows up, greyed out and marked{" "}
+              <Code>Not added to space</Code>; add them under the space&apos;s own{" "}
+              <em>Access &amp; Permissions</em> first, then come back here. If someone
+              is later removed from the space entirely, any page-level restriction or
+              block naming them is cleaned up automatically.
+            </Callout>
           </li>
         </ul>
 
         <p className="mt-3 text-sm text-muted-foreground">
-          Real-world use case: a space stays open to the whole team, but the one page
-          documenting an incident postmortem or a compensation policy gets{" "}
-          <Code>Page access</Code> restricted to just the people who need it.
+          Real-world use cases: a space stays open to the whole team, but the one page
+          documenting an incident postmortem or a compensation policy gets switched to{" "}
+          <Code>Restricted</Code> and limited to just the people who need it. Or the
+          opposite - a page stays <Code>Open</Code>, but one person should not see it
+          (a manager reviewing feedback about themselves) - so just their own View is
+          unchecked instead.
         </p>
       </>
     ),
@@ -1781,22 +1870,39 @@ const sections: HelpSection[] = [
 
         <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
-            <strong>General access</strong>: <Code>Open</Code> (any workspace member can
-            read) or <Code>Restricted</Code> (only people explicitly granted access).
+            <strong>General access</strong>: <Code>Open</Code> gives every signed-in
+            user full read/write access automatically (everything except{" "}
+            <Code>Admin</Code>/<Code>Restrictions</Code>) - a warning banner says so
+            right above the tables. <Code>Restricted</Code> withdraws that, so only
+            people explicitly granted access below can do anything.
+          </li>
+          <li>
+            <strong>Space Owner</strong> (set from the space&apos;s own{" "}
+            <strong>Edit space &gt; General</strong> tab, not here): a protected
+            Administrator a space always keeps at least one of, so it can never end
+            up unmanageable regardless of what happens to the tables below.
           </li>
           <li>
             A <strong>Groups</strong> permission table and an{" "}
             <strong>Individual users</strong> permission table, each with checkboxes for{" "}
-            <Code>View</Code>, <Code>Add</Code>, <Code>Delete</Code>,{" "}
-            <Code>Delete own</Code>, <Code>Restrictions</Code>, <Code>Export</Code>, and{" "}
-            <Code>Admin</Code>. Changes are explicit - Edit, then Save or Cancel - with
-            an unsaved-changes guard if you navigate away mid-edit.
+            <Code>View</Code>, <Code>Add/Edit</Code>, <Code>Delete</Code>,{" "}
+            <Code>Delete own</Code>, <Code>Restrictions</Code>, <Code>Move</Code>, and{" "}
+            <Code>Admin</Code>. <Code>View</Code> grants reading only - editing needs{" "}
+            <Code>Add/Edit</Code> too, and relocating a page needs{" "}
+            <Code>Move</Code> as well. Exporting follows <Code>View</Code>{" "}
+            automatically and isn&apos;t a separate checkbox. While the space is{" "}
+            <Code>Open</Code>, the first five columns show <Code>All</Code> instead -
+            Open already grants them to everyone, so a checkbox there would not
+            actually change anything; <Code>Restrictions</Code>/<Code>Admin</Code>{" "}
+            stay live regardless of mode. Changes are explicit - Edit, then Save or
+            Cancel - with an unsaved-changes guard if you navigate away mid-edit.
           </li>
           <li>
             <strong>Effective permissions</strong>: pick any user and see their fully
-            resolved permission set for that space - combining Open access, any direct
-            grant, and every group they belong to - instead of manually cross-referencing
-            three sources by hand.
+            resolved permission set for that space - Open access, any direct grant
+            (which overrides every group they belong to once they have one, Admin
+            aside), or otherwise every group they belong to combined - instead of
+            manually cross-referencing three sources by hand.
           </li>
         </ul>
 

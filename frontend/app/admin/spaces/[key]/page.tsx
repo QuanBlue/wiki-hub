@@ -29,7 +29,9 @@ export default async function AdminSpaceAccessPage({
       <div>
         <h2 className="text-lg font-semibold">Access - {space.name}</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Manage visibility and additive user/group permissions for this Space.
+          Manage visibility and per-user/group permissions for this Space. A
+          user&apos;s own grant overrides their groups&apos; once they have one
+          (Admin aside); otherwise their groups combine.
         </p>
       </div>
       <SpaceAccessPanel

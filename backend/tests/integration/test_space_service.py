@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, PermissionDeniedError
-from app.models.space import SpaceRole, SpaceStatus
+from app.models.space import SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
 from app.modules.auth.service import AuthService
 from app.modules.spaces.service import SpaceService
@@ -198,10 +198,17 @@ class TestArchiving:
 
 class TestMembership:
     async def test_add_and_change_a_member_role(self, session: AsyncSession) -> None:
+        # Restricted, not the SpaceCreate default of Open - an Open space
+        # now hands every member View *and* Add/Edit regardless of their own
+        # role (see OPEN_SPACE_PERMISSIONS), so a role change would not be
+        # observable on `role_of` there.
         service = SpaceService(session)
         owner = await _make_user(session)
         other = await _make_user(session)
-        space = await service.create(SpaceCreate(key="ENG", name="Engineering"), owner)
+        space = await service.create(
+            SpaceCreate(key="ENG", name="Engineering", visibility=SpaceVisibility.restricted),
+            owner,
+        )
 
         await service.set_member(space, owner, other.id, SpaceRole.viewer)
         assert await service.role_of(space, other) is SpaceRole.viewer
@@ -209,14 +216,22 @@ class TestMembership:
         await service.set_member(space, owner, other.id, SpaceRole.editor)
         assert await service.role_of(space, other) is SpaceRole.editor
 
-    async def test_cannot_remove_the_last_admin(self, session: AsyncSession) -> None:
-        # Otherwise the space becomes unmanageable except by a superuser.
+    async def test_removing_the_creators_membership_leaves_them_owning_the_space(
+        self, session: AsyncSession
+    ) -> None:
+        # The "last admin" protection this used to hit is superseded by the
+        # Owner guarantee: the creator is always the space's first Owner
+        # (see SpaceOwner), so stripping their admin membership/permission
+        # row is harmless - `effective_permissions` still grants them
+        # everything unconditionally, so the space is never left
+        # unmanageable even though this particular call now succeeds
+        # instead of raising.
         service = SpaceService(session)
         owner = await _make_user(session)
         space = await service.create(SpaceCreate(key="ENG", name="Engineering"), owner)
 
-        with pytest.raises(ConflictError, match="only administrator"):
-            await service.remove_member(space, owner, owner.id)
+        await service.remove_member(space, owner, owner.id)
+        assert await service.role_of(space, owner) is SpaceRole.admin
 
     async def test_can_remove_an_admin_once_another_exists(self, session: AsyncSession) -> None:
         service = SpaceService(session)
@@ -226,8 +241,9 @@ class TestMembership:
         await service.set_member(space, owner, second.id, SpaceRole.admin)
 
         await service.remove_member(space, owner, owner.id)
-        # Open Spaces grant View to every authenticated user by default.
-        assert await service.role_of(space, owner) is SpaceRole.viewer
+        # The creator keeps full access as the space's Owner even after
+        # their own membership row and admin permission grant are both gone.
+        assert await service.role_of(space, owner) is SpaceRole.admin
 
     async def test_adding_an_unknown_user_is_rejected(self, session: AsyncSession) -> None:
         service = SpaceService(session)
