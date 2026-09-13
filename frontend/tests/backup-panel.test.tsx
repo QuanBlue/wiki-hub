@@ -506,6 +506,15 @@ describe("BackupPanel native export scope", () => {
     });
     expect(trigger).toBeDisabled();
     expect(screen.getByRole("progressbar")).toBeInTheDocument();
+
+    // The Confluence card's own controls have nothing to do with this
+    // WikiHub export, but changing the target version or starting an
+    // export of its own mid-way through this one is still not something to
+    // allow - both must lock together, not just the button each triggers.
+    expect(
+      screen.getByRole("button", { name: /confluence data center target version/i }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /export dc xml/i })).toBeDisabled();
   });
 
   it("auto-downloads and re-enables the trigger once the job completes", async () => {

@@ -4069,6 +4069,14 @@ export function BackupPanel() {
                 <Select
                   value={confluenceExportProfile}
                   onValueChange={(val) => setConfluenceExportProfile(val)}
+                  // Matches the Export DC XML button's own condition just
+                  // below - the button already refused this while either
+                  // export was running, but the dropdown itself stayed
+                  // clickable, letting someone change the target version
+                  // out from under a WikiHub export that has nothing to do
+                  // with it (or, once one starts, an in-flight Confluence
+                  // export of its own).
+                  disabled={isDownloading || isPortableJobRunning}
                 >
                   <SelectTrigger
                     aria-label="Confluence Data Center target version"
