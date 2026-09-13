@@ -37,7 +37,10 @@ PROTECTED_ACCOUNT_MESSAGE = (
 
 #: Fields worth recording in the audit trail when an account changes. An
 #: explicit allowlist - `password_hash` must never appear in a diff.
+#: `username` is included for `ensure_bootstrap_admin`'s sake: it is the only
+#: write path in the app that can ever change it.
 AUDITED_USER_FIELDS = (
+    "username",
     "email",
     "full_name",
     "avatar_url",
@@ -485,18 +488,101 @@ class AuthService:
     # -- bootstrap ---------------------------------------------------------
     async def ensure_bootstrap_admin(
         self, username: str, password: str, email: str, full_name: str
-    ) -> tuple[User, bool]:
-        """Create the protected superadmin if it does not exist yet.
+    ) -> tuple[User, bool, bool, bool]:
+        """Create the protected superadmin if it does not exist yet, and keep
+        its whole identity in sync with .env on every restart.
 
-        Idempotent: returns ``(user, created)``. An existing protected account is
-        returned untouched - re-seeding must never rewrite its password.
+        Idempotent: returns ``(user, created, password_rotated, profile_changed)``.
+        An existing protected account has its username/email/full_name
+        resynced to whatever ``WIKIHUB_ADMIN_*`` is currently configured, and
+        its password re-hashed whenever it no longer matches. This is
+        deliberate: the whole point of a *protected* account - no other write
+        path in the app can rename it, change its e-mail, or touch its
+        password (see ``TestProtectedAccountIsImmutable`` /
+        ``TestBootstrapAdmin``) - is that its entire identity can still be
+        fixed by editing .env and restarting, with no DB access needed.
+        Re-seeding with unchanged values every normal restart is still a true
+        no-op: nothing is rewritten, nothing is logged.
+
+        A username or e-mail that would collide with a *different* account is
+        left untouched rather than failing the whole bootstrap; a warning is
+        logged so the clash is visible without ever blocking startup.
         """
         existing = await self.users.get_protected()
         if existing is not None:
-            return existing, False
+            before = {field: getattr(existing, field, None) for field in AUDITED_USER_FIELDS}
+
+            new_username = username.strip()
+            if new_username and new_username.lower() != existing.username.lower():
+                clash = await self.users.get_by_username(new_username)
+                if clash is not None and clash.id != existing.id:
+                    logger.warning(
+                        "bootstrap_admin_username_clash",
+                        wanted=new_username,
+                        kept=existing.username,
+                    )
+                else:
+                    existing.username = new_username
+
+            new_email = email.strip().lower()
+            if new_email and new_email != existing.email.lower():
+                clash = await self.users.get_by_email(new_email)
+                if clash is not None and clash.id != existing.id:
+                    logger.warning(
+                        "bootstrap_admin_email_clash", wanted=new_email, kept=existing.email
+                    )
+                else:
+                    existing.email = new_email
+
+            new_full_name = full_name.strip()
+            if new_full_name and new_full_name != existing.full_name:
+                existing.full_name = new_full_name
+
+            rotated = False
+            if not verify_password(password, existing.password_hash):
+                existing.password_hash = hash_password(password)
+                rotated = True
+
+            after = {field: getattr(existing, field, None) for field in AUDITED_USER_FIELDS}
+            diff = AuditService.changes(before, after, AUDITED_USER_FIELDS)
+
+            if diff or rotated:
+                await self.session.flush()
+                logger.info(
+                    "bootstrap_admin_synced",
+                    username=existing.username,
+                    changed_fields=sorted(diff),
+                    password_rotated=rotated,
+                )
+                # No HTTP actor exists at seed time - AuditService already
+                # falls back to "system" for that, which is exactly right
+                # here: this happens because a WIKIHUB_ADMIN_* value changed,
+                # not because anyone signed in and edited a profile.
+                if diff:
+                    await self.audit.record(
+                        AuditAction.user_updated,
+                        entity_type="user",
+                        entity_id=existing.id,
+                        entity_label=existing.username,
+                        details={
+                            "changes": diff,
+                            "source": "bootstrap admin synced from configuration",
+                        },
+                    )
+                if rotated:
+                    await self.audit.record(
+                        AuditAction.user_password_reset,
+                        entity_type="user",
+                        entity_id=existing.id,
+                        entity_label=existing.username,
+                        details={"reason": "bootstrap admin password rotated from configuration"},
+                    )
+            return existing, False, rotated, bool(diff)
 
         # A non-protected account may already own the username (e.g. an older
-        # install); promote it rather than failing the whole bootstrap.
+        # install); promote it rather than failing the whole bootstrap. Its
+        # password is left alone - unlike the protected-account path above,
+        # this account was not necessarily meant to be the admin credential.
         clash = await self.users.get_by_username(username)
         if clash is not None:
             clash.is_protected = True
@@ -504,7 +590,7 @@ class AuthService:
             clash.is_active = True
             await self.session.flush()
             logger.info("bootstrap_admin_promoted", username=clash.username)
-            return clash, False
+            return clash, False, False, False
 
         # Built directly rather than through UserCreate: the bootstrap address is
         # an internal one (``admin@wikihub.local``) and must not be subject to
@@ -521,4 +607,4 @@ class AuthService:
         self.users.add(user)
         await self.session.flush()
         logger.info("bootstrap_admin_created", username=user.username)
-        return user, True
+        return user, True, False, False

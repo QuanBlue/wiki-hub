@@ -38,7 +38,7 @@ TEST_DB_URL = os.environ.get("WIKIHUB_TEST_DATABASE_URL")
 
 
 async def _make_protected_admin(service: AuthService) -> object:
-    admin, created = await service.ensure_bootstrap_admin(
+    admin, created, _rotated, _changed = await service.ensure_bootstrap_admin(
         username=unique("admin"),
         password="admin123",
         email=f"{unique('admin')}@wikihub.local",
@@ -59,22 +59,123 @@ class TestBootstrapAdmin:
         # The password is stored only as a hash.
         assert admin.password_hash and "admin123" not in admin.password_hash
 
-    async def test_seeding_twice_is_idempotent(self, session: AsyncSession) -> None:
+    async def test_reseeding_with_identical_values_is_a_true_no_op(
+        self, session: AsyncSession
+    ) -> None:
         service = AuthService(session)
         admin = await _make_protected_admin(service)
         original_hash = admin.password_hash
 
-        again, created = await service.ensure_bootstrap_admin(
-            username="someone-else",
-            password="a-totally-different-password",
-            email="someone-else@wikihub.local",
-            full_name="Someone Else",
+        again, created, rotated, changed = await service.ensure_bootstrap_admin(
+            username=admin.username,
+            password="admin123",
+            email=admin.email,
+            full_name=admin.full_name,
         )
 
         assert created is False
+        assert rotated is False
+        assert changed is False
         assert again.id == admin.id
-        # Re-seeding must never rewrite the existing password.
         assert again.password_hash == original_hash
+
+    async def test_reseeding_with_a_different_password_rotates_it(
+        self, session: AsyncSession
+    ) -> None:
+        """Changing WIKIHUB_ADMIN_PASSWORD and restarting is the supported
+        way to rotate this account's credential - it has no other write path
+        (see TestProtectedAccountIsImmutable below)."""
+        service = AuthService(session)
+        admin = await _make_protected_admin(service)
+        original_hash = admin.password_hash
+
+        again, created, rotated, changed = await service.ensure_bootstrap_admin(
+            username=admin.username,
+            password="a-totally-different-password",
+            email=admin.email,
+            full_name=admin.full_name,
+        )
+
+        assert created is False
+        assert rotated is True
+        assert changed is False
+        assert again.id == admin.id
+        assert again.password_hash != original_hash
+        assert again.username == admin.username
+
+        assert (
+            await service.authenticate(admin.username, "a-totally-different-password")
+        ).id == admin.id
+        with pytest.raises(AuthenticationError):
+            await service.authenticate(admin.username, "admin123")
+
+    async def test_reseeding_with_a_different_identity_resyncs_it(
+        self, session: AsyncSession
+    ) -> None:
+        """Changing WIKIHUB_ADMIN_USERNAME/EMAIL/FULL_NAME and restarting is
+        the supported way to change this account's identity too - it has no
+        other write path (see TestProtectedAccountIsImmutable below)."""
+        service = AuthService(session)
+        admin = await _make_protected_admin(service)
+        # `admin` and the object ensure_bootstrap_admin returns are the same
+        # row, mutated in place - capture the old username before it changes.
+        original_username = admin.username
+
+        again, created, rotated, changed = await service.ensure_bootstrap_admin(
+            username="renamed-admin",
+            password="admin123",
+            email="renamed-admin@wikihub.local",
+            full_name="Renamed Admin",
+        )
+
+        assert created is False
+        assert rotated is False
+        assert changed is True
+        assert again.id == admin.id
+        assert again.username == "renamed-admin"
+        assert again.email == "renamed-admin@wikihub.local"
+        assert again.full_name == "Renamed Admin"
+
+        # Sign-in follows the new username, not the old one.
+        assert (await service.authenticate("renamed-admin", "admin123")).id == admin.id
+        with pytest.raises(AuthenticationError):
+            await service.authenticate(original_username, "admin123")
+
+    async def test_reseeding_leaves_a_colliding_username_or_email_untouched(
+        self, session: AsyncSession
+    ) -> None:
+        """A field that would collide with a *different* account must never
+        block startup, and must never steal that account's identity - it is
+        simply left as-is, with a warning logged."""
+        service = AuthService(session)
+        admin = await _make_protected_admin(service)
+        original_username, original_email = admin.username, admin.email
+
+        other = await service.create_user(
+            UserCreate(
+                username=unique("someone-else"),
+                email=f"{unique('someone-else')}@example.com",
+                full_name="Someone Else",
+                password="someone-else-pass-1",
+            )
+        )
+
+        again, created, rotated, changed = await service.ensure_bootstrap_admin(
+            username=other.username,
+            password="admin123",
+            email=other.email,
+            full_name="Attempted Rename",
+        )
+
+        assert created is False
+        assert rotated is False
+        # full_name still changed even though username/email were rejected.
+        assert changed is True
+        assert again.username == original_username
+        assert again.email == original_email
+        assert again.full_name == "Attempted Rename"
+        # The other account is completely unaffected.
+        assert other.username != original_username
 
     async def test_can_authenticate(self, session: AsyncSession) -> None:
         service = AuthService(session)
@@ -92,7 +193,16 @@ class TestBootstrapAdmin:
 
 
 class TestProtectedAccountIsImmutable:
-    """Every write path against the bootstrap admin must be refused."""
+    """Every write path against the bootstrap admin must be refused.
+
+    The one deliberate exception is `ensure_bootstrap_admin` itself resyncing
+    the username/email/full_name/password at seed time when WIKIHUB_ADMIN_*
+    no longer matches - see TestBootstrapAdmin's
+    test_reseeding_with_a_different_password_rotates_it and
+    test_reseeding_with_a_different_identity_resyncs_it. That is not
+    reachable through any API endpoint; it only runs from the seed script on
+    startup.
+    """
 
     async def test_password_cannot_be_changed(self, session: AsyncSession) -> None:
         service = AuthService(session)
@@ -277,7 +387,7 @@ class TestAdminPasswordReset:
     async def test_protected_admin_cannot_be_reset(self, session: AsyncSession) -> None:
         """The invariant the new endpoint must not break."""
         service = AuthService(session)
-        admin, _ = await service.ensure_bootstrap_admin(
+        admin, _created, _rotated, _changed = await service.ensure_bootstrap_admin(
             username=unique("admin"),
             password="admin123",
             email=f"{unique('admin')}@wikihub.local",

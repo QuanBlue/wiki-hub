@@ -71,7 +71,7 @@ class TestBeginImpersonation:
     async def test_protected_account_cannot_be_impersonated(self, session: AsyncSession) -> None:
         """Otherwise this is a way around "the built-in admin is immutable"."""
         admin = await _user(session, superuser=True)
-        protected, _ = await AuthService(session).ensure_bootstrap_admin(
+        protected, _created, _rotated, _changed = await AuthService(session).ensure_bootstrap_admin(
             username=unique("root"),
             password="admin123",
             email=f"{unique('root')}@wikihub.local",

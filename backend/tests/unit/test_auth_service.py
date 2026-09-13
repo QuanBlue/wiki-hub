@@ -192,7 +192,7 @@ async def test_create_update_profile_and_password_operations(
 
 
 @pytest.mark.asyncio
-async def test_mutation_guards_delete_and_bootstrap() -> None:
+async def test_mutation_guards_delete_and_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     protected = user(is_protected=True)
     svc = service(actor=protected)
     with pytest.raises(PermissionDeniedError):
@@ -206,20 +206,126 @@ async def test_mutation_guards_delete_and_bootstrap() -> None:
     with pytest.raises(NotFoundError):
         await svc.change_password(uuid.uuid4(), "old", "new")
 
-    existing = user(is_protected=True)
+    # An existing protected admin whose configured identity and password
+    # already match is returned completely untouched - no rehash, no rename.
+    monkeypatch.setattr(auth_module, "verify_password", lambda *_args: True)
+    existing = user(is_protected=True, username="admin", email="a@b.com", full_name="Admin")
     svc.users.get_protected = AsyncMock(return_value=existing)
-    assert await svc.ensure_bootstrap_admin("admin", "pw", "a@b.com", "Admin") == (existing, False)
+    assert await svc.ensure_bootstrap_admin("admin", "pw", "a@b.com", "Admin") == (
+        existing,
+        False,
+        False,
+        False,
+    )
 
     svc.users.get_protected = AsyncMock(return_value=None)
     clash = user(username="admin")
     svc.users.get_by_username = AsyncMock(return_value=clash)
-    promoted, created = await svc.ensure_bootstrap_admin("admin", "pw", "a@b.com", "Admin")
-    assert promoted is clash and created is False and clash.is_protected
+    promoted, created, rotated, changed = await svc.ensure_bootstrap_admin(
+        "admin", "pw", "a@b.com", "Admin"
+    )
+    assert promoted is clash and created is False and rotated is False and clash.is_protected
+    assert changed is False
 
     svc.users.get_by_username = AsyncMock(return_value=None)
     svc.users.add = Mock()
-    promoted, created = await svc.ensure_bootstrap_admin(" admin ", "pw", "A@B.com", " Admin ")
-    assert promoted.is_protected and created is True
+    promoted, created, rotated, changed = await svc.ensure_bootstrap_admin(
+        " admin ", "pw", "A@B.com", " Admin "
+    )
+    assert promoted.is_protected and created is True and rotated is False and changed is False
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_rotates_password_when_it_no_longer_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WIKIHUB_ADMIN_PASSWORD changing in .env must rotate the stored hash on
+    the next seed - that is the point of it being editable at all for a
+    protected account no other write path can change the password of."""
+    monkeypatch.setattr(auth_module, "verify_password", lambda *_args: False)
+    monkeypatch.setattr(auth_module, "hash_password", lambda value: f"hashed:{value}")
+
+    existing = user(
+        is_protected=True,
+        username="admin",
+        email="a@b.com",
+        full_name="Admin",
+        password_hash="stale-hash",
+    )
+    svc = service()
+    svc.users.get_protected = AsyncMock(return_value=existing)
+
+    admin, created, rotated, changed = await svc.ensure_bootstrap_admin(
+        "admin", "new-password", "a@b.com", "Admin"
+    )
+
+    assert admin is existing
+    assert created is False
+    assert rotated is True
+    assert changed is False
+    assert existing.password_hash == "hashed:new-password"
+    svc.audit.record.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_resyncs_identity_fields_when_they_differ(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WIKIHUB_ADMIN_USERNAME/EMAIL/FULL_NAME changing in .env must resync
+    the account the same way a changed password does."""
+    monkeypatch.setattr(auth_module, "verify_password", lambda *_args: True)
+
+    existing = user(
+        is_protected=True, username="old-name", email="old@example.com", full_name="Old Name"
+    )
+    svc = service()
+    svc.users.get_protected = AsyncMock(return_value=existing)
+    svc.users.get_by_username = AsyncMock(return_value=None)
+    svc.users.get_by_email = AsyncMock(return_value=None)
+
+    admin, created, rotated, changed = await svc.ensure_bootstrap_admin(
+        "new-name", "pw", "new@example.com", "New Name"
+    )
+
+    assert admin is existing
+    assert created is False
+    assert rotated is False
+    assert changed is True
+    assert existing.username == "new-name"
+    assert existing.email == "new@example.com"
+    assert existing.full_name == "New Name"
+    svc.audit.record.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_skips_a_colliding_username_or_email(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A field that would steal a *different* account's identity must never
+    block startup and must never be applied - it is left as-is."""
+    monkeypatch.setattr(auth_module, "verify_password", lambda *_args: True)
+
+    existing = user(
+        is_protected=True, username="old-name", email="old@example.com", full_name="Old Name"
+    )
+    other = user(username="new-name", email="new@example.com")
+    svc = service()
+    svc.users.get_protected = AsyncMock(return_value=existing)
+    svc.users.get_by_username = AsyncMock(return_value=other)
+    svc.users.get_by_email = AsyncMock(return_value=other)
+
+    admin, created, rotated, changed = await svc.ensure_bootstrap_admin(
+        "new-name", "pw", "new@example.com", "Old Name"
+    )
+
+    assert admin is existing
+    assert created is False
+    assert rotated is False
+    # Nothing collided, and full_name was identical, so nothing changed at all.
+    assert changed is False
+    assert existing.username == "old-name"
+    assert existing.email == "old@example.com"
+    svc.audit.record.assert_not_awaited()
 
 
 @pytest.mark.asyncio
