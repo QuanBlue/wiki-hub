@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import AsyncMock
 from xml.etree.ElementTree import Element
 
@@ -11,6 +12,7 @@ from app.models.page import WikiPage
 from app.models.space import Space
 from app.modules.backup.confluence_export import _property, write_confluence_dc_export
 from app.modules.backup.service import ExportCancelled
+from app.modules.import_export.confluence import iter_attachments, iter_page_bodies, scan_archive
 
 
 def test_property():
@@ -49,6 +51,67 @@ async def test_write_confluence_dc_export(tmp_path):
         # Attachment should be in there
         atts = [info for info in zf.infolist() if "attachments/" in info.filename]
         assert len(atts) == 1
+
+
+@pytest.mark.asyncio
+async def test_write_confluence_dc_export_round_trips_through_the_real_reader(tmp_path):
+    """Regression test for a real bug: object primary keys and cross-object
+    references (Page.space/parent, BodyContent.content, Attachment's
+    containerContent) used to be written as plain attribute/property text.
+    Confluence's own Hibernate-generic format - and our own reader in
+    `import_export/confluence.py`, already validated against real Confluence
+    exports - expects each to be a nested `<id>` element instead
+    (`element.findtext("id")` for an object's own key, `property_element.
+    find("id")` for a reference). With the old shape, `scan_archive` found
+    *zero* spaces at all: the Space object's own id never resolved, so
+    nothing else could either. Feeding our own export back through our own
+    reader is the strongest check available without a licensed Confluence
+    instance to import into directly.
+    """
+    storage = AsyncMock()
+    storage.get = AsyncMock(return_value=b"pngdata")
+    path = str(tmp_path / "export.zip")
+
+    space_id = uuid.uuid4()
+    parent_id = uuid.uuid4()
+    child_id = uuid.uuid4()
+
+    s = Space(id=space_id, key="ENG", name="Engineering", description="desc")
+    parent = WikiPage(
+        id=parent_id, space_id=space_id, title="Parent", slug="parent",
+        content="<p>parent body</p>", created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+    )
+    child = WikiPage(
+        id=child_id, space_id=space_id, parent_id=parent_id, title="Child", slug="child",
+        content="<p>child body</p>", created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+    )
+    att = PageAttachment(
+        id=uuid.uuid4(), page_id=child_id, filename="pic.png", content_type="image/png",
+        size_bytes=100, object_key="o/pic.png",
+    )
+
+    await write_confluence_dc_export(
+        path, storage, profile="dc-8", spaces=[s], pages=[parent, child], attachments=[att]
+    )
+
+    spaces = scan_archive(path)
+    assert len(spaces) == 1
+    eng = spaces[0]
+    assert eng.key == "ENG"
+    assert eng.attachment_count == 1
+    parent_page = next(p for p in eng.pages if p.title == "Parent")
+    child_page = next(p for p in eng.pages if p.title == "Child")
+    assert child_page.parent_id == parent_page.source_id
+
+    bodies = dict(iter_page_bodies(Path(path)))
+    assert bodies[parent_page.source_id] == "<p>parent body</p>"
+    assert bodies[child_page.source_id] == "<p>child body</p>"
+
+    resolved_attachments = list(iter_attachments(Path(path)))
+    assert len(resolved_attachments) == 1
+    resolved, entry = resolved_attachments[0]
+    assert resolved.page_id == child_page.source_id
+    assert entry.endswith("pic.png")
 
 
 @pytest.mark.asyncio

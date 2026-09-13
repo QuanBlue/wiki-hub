@@ -22,12 +22,55 @@ from app.services.storage import ObjectStorage
 
 CONFLUENCE_DC_PROFILES = {"dc-8", "dc-9"}
 
+# Confluence's own Hibernate-based export nests an object's primary key (and
+# any reference to *another* object) inside a bare `<id>` element rather than
+# writing it as plain attribute/property text - confirmed by our own reader
+# for the opposite direction (`import_export/confluence.py`'s `_reference`,
+# which is `property_element.find("id")`, and `scan_archive`'s
+# `element.findtext("id")` for an object's own key). Writing a reference as
+# plain text - which this file used to do - produces XML real Confluence (or
+# our own importer, fed its own export back) cannot resolve: every
+# Page/BodyContent/Attachment would import with no space, no parent, no body
+# and no attachments, i.e. the archive would open but come back empty.
+_PACKAGE = {
+    "Space": "com.atlassian.confluence.spaces",
+    "Page": "com.atlassian.confluence.pages",
+    "BodyContent": "com.atlassian.confluence.core",
+    "Attachment": "com.atlassian.confluence.pages",
+}
+
+
+def _object(parent: Element, cls: str, object_id: int) -> Element:
+    node = SubElement(parent, "object", {"class": cls, "package": _PACKAGE[cls]})
+    id_node = SubElement(node, "id", {"name": "id"})
+    id_node.text = str(object_id)
+    return node
+
 
 def _property(parent: Element, name: str, value: str | int | None) -> None:
+    """A plain scalar property - text, not a reference to another object.
+
+    See `_reference_property` for the id-typed case; mixing the two up is
+    exactly the bug this file used to have (see the module-level note above
+    `_PACKAGE`).
+    """
     if value is None:
         return
     node = SubElement(parent, "property", {"name": name})
     node.text = str(value)
+
+
+def _reference_property(parent: Element, name: str, cls: str, ref_id: int | None) -> None:
+    """A property whose value is another object, referenced by primary key -
+    a Page's `space`/`parent`, a BodyContent's `content`, or an Attachment's
+    `containerContent`. See the module-level note above `_PACKAGE` for why
+    this can't just be `_property` with an int value.
+    """
+    if ref_id is None:
+        return
+    node = SubElement(parent, "property", {"name": name, "class": cls, "package": _PACKAGE[cls]})
+    id_node = SubElement(node, "id", {"name": "id"})
+    id_node.text = str(ref_id)
 
 
 async def write_confluence_dc_export(
@@ -80,21 +123,21 @@ async def write_confluence_dc_export(
         ids[attachment.id] = next_id
         next_id += 1
     for space in selected_spaces:
-        space_element = SubElement(root, "object", {"class": "Space", "id": str(ids[space.id])})
+        space_element = _object(root, "Space", ids[space.id])
         _property(space_element, "key", space.key)
         _property(space_element, "name", space.name)
         _property(space_element, "description", space.description)
     for page_index, page in enumerate(selected_pages, start=1):
-        page_element = SubElement(root, "object", {"class": "Page", "id": str(ids[page.id])})
+        page_element = _object(root, "Page", ids[page.id])
         _property(page_element, "title", page.title)
-        _property(page_element, "space", ids[page.space_id])
-        _property(page_element, "parent", ids.get(page.parent_id))
+        _reference_property(page_element, "space", "Space", ids[page.space_id])
+        _reference_property(page_element, "parent", "Page", ids.get(page.parent_id))
         _property(page_element, "contentStatus", "current")
-        body = SubElement(root, "object", {"class": "BodyContent", "id": str(next_id)})
+        body = _object(root, "BodyContent", next_id)
         next_id += 1
         _property(body, "body", page.content)
         _property(body, "bodyType", "2")
-        _property(body, "content", ids[page.id])
+        _reference_property(body, "content", "Page", ids[page.id])
         # Building the XML for a large instance takes minutes and awaits
         # nothing, so without this the job would neither observe a cancel nor
         # emit a heartbeat for that entire stretch - which is exactly how an
@@ -102,12 +145,10 @@ async def write_confluence_dc_export(
         if page_index % _PROGRESS_CHECK_EVERY == 0:
             await _checkpoint()
     for attachment in selected_attachments:
-        attachment_element = SubElement(
-            root, "object", {"class": "Attachment", "id": str(ids[attachment.id])}
-        )
+        attachment_element = _object(root, "Attachment", ids[attachment.id])
         _property(attachment_element, "title", attachment.filename)
         _property(attachment_element, "contentType", attachment.content_type)
-        _property(attachment_element, "containerContent", ids[attachment.page_id])
+        _reference_property(attachment_element, "containerContent", "Page", ids[attachment.page_id])
 
     descriptor = "\n".join(
         [
