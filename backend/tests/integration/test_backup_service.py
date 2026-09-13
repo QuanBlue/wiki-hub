@@ -36,13 +36,14 @@ from app.models.permission import (
 )
 from app.models.restriction import PageGroupRestriction, PageRestrictionPermission
 from app.models.revision import PageRevision
-from app.models.space import Space, SpaceRole, SpaceStatus, SpaceVisibility
+from app.models.space import Space, SpaceOwner, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
 from app.models.user_tag import UserTag
 from app.modules.auth.service import AuthService
 from app.modules.backup.jobs import create_export_job, reap_abandoned_export_jobs, run_backup_job
 from app.modules.backup.service import STALE_JOB_AFTER, STALE_RESTORE_JOB_AFTER, BackupService
+from app.modules.permissions.service import PermissionService
 from app.modules.spaces.service import SpaceService
 from app.schemas.backup import BACKUP_VERSION, BackupDocument
 from app.schemas.space import SpaceCreate
@@ -58,7 +59,7 @@ async def _seed_instance(session: AsyncSession) -> dict[str, object]:
     auth = AuthService(session)
     spaces = SpaceService(session)
 
-    admin, _ = await auth.ensure_bootstrap_admin(
+    admin, _created, _rotated, _changed = await auth.ensure_bootstrap_admin(
         username="admin", password="admin123", email="admin@wikihub.local", full_name="Admin"
     )
     alice = await auth.create_user(
@@ -865,6 +866,73 @@ class TestRoundTrip:
         assert report.created["page_revision"] == 1
         assert report.created["page_like"] == 1
         assert report.created["page_group_restriction"] == 1
+
+    async def test_restores_space_owners(self, session: AsyncSession) -> None:
+        """`SpaceOwner` (Space Owner - independent of `SpaceMember`/legacy
+        roles and of the additive permission tables) must round-trip through
+        both the single-document export/import path and the full zip
+        export/restore path, including a space with *more than one* explicit
+        Owner - not just the one `SpaceService.create` adds automatically for
+        its creator."""
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        bob: User = seeded["bob"]  # type: ignore[assignment]
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        permissions = PermissionService(session)
+
+        # `_seed_instance` already makes alice the sole Owner (she created
+        # the space) - add bob as a second, explicit Owner.
+        await permissions.set_space_owners(space, [alice.id, bob.id], alice)
+
+        document = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        exported_usernames = {
+            entry.username for entry in document.space_owners if entry.space_key == "ENG"
+        }
+        assert exported_usernames == {"alice", "bob"}
+        await _wipe(session)
+
+        report = await BackupService(session).import_document(document, dry_run=False)
+        assert report.created["space_owner"] == 2
+
+        restored_space = await SpaceService(session).get_by_key("ENG")
+        restored_owners = await PermissionService(session).list_space_owners(restored_space)
+        assert {owner.username for owner in restored_owners} == {"alice", "bob"}
+
+        # Re-importing the same document a second time must not duplicate
+        # the (space, user) rows `SpaceOwner`'s unique constraint protects.
+        second_report = await BackupService(session).import_document(document, dry_run=False)
+        assert second_report.skipped["space_owner"] == 2
+        assert (
+            len((await session.execute(select(SpaceOwner))).scalars().all()) == 2
+        )
+
+    async def test_full_zip_restores_space_owners(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Same guarantee as `test_restores_space_owners`, through the full
+        zip export/restore path (`export_full_package`/`restore_full_package`)
+        rather than the single-document one - the two paths build the backup
+        document independently and must not drift apart."""
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        bob: User = seeded["bob"]  # type: ignore[assignment]
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        await PermissionService(session).set_space_owners(space, [alice.id, bob.id], alice)
+
+        storage = cast(
+            ObjectStorage,
+            SimpleNamespace(get=AsyncMock(), put=AsyncMock(), delete=AsyncMock()),
+        )
+        archive = str(tmp_path / "space-owners.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
+        await _wipe(session)
+
+        report = await BackupService(session).restore_full_package(archive, storage, dry_run=False)
+        assert report.created["space_owner"] == 2
+
+        restored_space = await SpaceService(session).get_by_key("ENG")
+        restored_owners = await PermissionService(session).list_space_owners(restored_space)
+        assert {owner.username for owner in restored_owners} == {"alice", "bob"}
 
     async def test_restores_into_an_empty_instance(self, session: AsyncSession) -> None:
         """The behaviour the whole feature exists for."""

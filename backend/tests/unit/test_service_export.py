@@ -24,7 +24,7 @@ from app.models.permission import (
 from app.models.draft import PageDraft
 from app.models.restriction import PageGroupRestriction, PageUserRestriction
 from app.models.revision import PageRevision
-from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceStatus, SpaceVisibility
+from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceOwner, SpaceStatus, SpaceVisibility
 from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
@@ -111,7 +111,7 @@ def _mock_site_settings(service):
     service.site_settings.get_effective.return_value = SimpleNamespace(site_name="Test")
 
 _EMPTY_SMALL_TABLES = (
-    SpaceMember, SpaceFavorite, Group, GroupMember, GroupGlobalPermission,
+    SpaceMember, SpaceOwner, SpaceFavorite, Group, GroupMember, GroupGlobalPermission,
     SpaceUserPermission, SpaceGroupPermission, PageUserRestriction,
     PageGroupRestriction,
 )
@@ -528,17 +528,20 @@ async def test_export_document(service: BackupService):
         make_result([user]),  # 1. User
         make_result([space]),  # 2. Space
         make_result([]),  # 3. SpaceMember
-        make_result([]),  # 4. SpaceFavorite
-        make_result([]),  # 5. Group
-        make_result([]),  # 6. GroupMember
-        make_result([]),  # 7. GroupGlobalPermission
-        make_result([]),  # 8. SpaceUserPermission
-        make_result([]),  # 9. SpaceGroupPermission
-        make_result([page]),  # 10. WikiPage
-        make_result([]),  # 11. PageRevision
-        make_result([]),  # 12. PageLike
-        make_result([]),  # 13. PageUserRestriction
-        make_result([]),  # 14. PageGroupRestriction
+        make_result([]),  # 4. SpaceOwner
+        make_result([]),  # 5. SpaceFavorite
+        make_result([]),  # 6. Group
+        make_result([]),  # 7. GroupMember
+        make_result([]),  # 8. GroupGlobalPermission
+        make_result([]),  # 9. SpaceUserPermission
+        make_result([]),  # 10. SpaceGroupPermission
+        make_result([page]),  # 11. WikiPage
+        make_result([]),  # 12. PageRevision
+        make_result([]),  # 13. PageLike
+        # Not modeled: UserPagePin, PageDraft, UserTag, UserPageLabel,
+        # PageUserRestriction, PageGroupRestriction - once this list is
+        # exhausted, `side_effect`'s fallback returns an empty result for
+        # each, which every one of those queries wants here anyway.
     ]
     service.session.execute.side_effect = side_effect
     

@@ -46,7 +46,7 @@ from app.models.permission import (
 from app.models.backup_job import BackupJob, BackupJobLog
 from app.models.restriction import PageGroupRestriction, PageUserRestriction
 from app.models.revision import PageRevision
-from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceStatus
+from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceOwner, SpaceStatus
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
 from app.models.user_tag import UserTag
@@ -84,6 +84,7 @@ from app.schemas.backup import (
     BackupSpaceFavorite,
     BackupSpaceGroupPermission,
     BackupSpaceMember,
+    BackupSpaceOwner,
     BackupSpaceUserPermission,
     BackupUser,
     BackupUserPageLabel,
@@ -412,6 +413,7 @@ class BackupService:
         spaces_by_id = {s.id: s for s in spaces}
 
         members = list((await self.session.execute(select(SpaceMember))).scalars())
+        owners = list((await self.session.execute(select(SpaceOwner))).scalars())
         favorites = list((await self.session.execute(select(SpaceFavorite))).scalars())
         groups = list((await self.session.execute(select(Group).order_by(Group.name))).scalars())
         group_members = list((await self.session.execute(select(GroupMember))).scalars())
@@ -483,6 +485,14 @@ class BackupService:
             )
             for m in members
             if m.space_id in spaces_by_id and m.user_id in users_by_id
+        ]
+        doc_owners = [
+            BackupSpaceOwner(
+                space_key=spaces_by_id[o.space_id].key,
+                username=users_by_id[o.user_id].username,
+            )
+            for o in owners
+            if o.space_id in spaces_by_id and o.user_id in users_by_id
         ]
         doc_favorites = [
             BackupSpaceFavorite(
@@ -637,6 +647,7 @@ class BackupService:
                     "users": len(doc_users),
                     "spaces": len(doc_spaces),
                     "space_members": len(doc_members),
+                    "space_owners": len(doc_owners),
                     "space_favorites": len(doc_favorites),
                     "groups": len(doc_groups),
                     "pages": len(doc_pages),
@@ -651,6 +662,7 @@ class BackupService:
             users=doc_users,
             spaces=doc_spaces,
             space_members=doc_members,
+            space_owners=doc_owners,
             space_favorites=doc_favorites,
             groups=doc_groups,
             group_members=doc_group_members,
@@ -733,6 +745,7 @@ class BackupService:
         avatar_users = [user for user in users if user.avatar_object_key]
 
         members = list((await self.session.execute(select(SpaceMember))).scalars())
+        owners = list((await self.session.execute(select(SpaceOwner))).scalars())
         favorites = list((await self.session.execute(select(SpaceFavorite))).scalars())
         groups = list((await self.session.execute(select(Group).order_by(Group.name))).scalars())
         group_members = list((await self.session.execute(select(GroupMember))).scalars())
@@ -803,6 +816,10 @@ class BackupService:
         doc_members = [
             BackupSpaceMember(space_key=spaces_by_id[m.space_id].key, username=users_by_id[m.user_id].username, role=m.role)
             for m in members if m.space_id in spaces_by_id and m.user_id in users_by_id
+        ]
+        doc_owners = [
+            BackupSpaceOwner(space_key=spaces_by_id[o.space_id].key, username=users_by_id[o.user_id].username)
+            for o in owners if o.space_id in spaces_by_id and o.user_id in users_by_id
         ]
         doc_favorites = [
             BackupSpaceFavorite(username=users_by_id[f.user_id].username, space_key=spaces_by_id[f.space_id].key)
@@ -892,6 +909,7 @@ class BackupService:
                     "users": len(doc_users),
                     "spaces": len(doc_spaces),
                     "space_members": len(doc_members),
+                    "space_owners": len(doc_owners),
                     "space_favorites": len(doc_favorites),
                     "groups": len(doc_groups),
                     "pages": len(pages_index),
@@ -904,7 +922,7 @@ class BackupService:
                     "page_restrictions": len(doc_page_user_restrictions) + len(doc_page_group_restrictions),
                 },
             ),
-            users=doc_users, spaces=doc_spaces, space_members=doc_members, space_favorites=doc_favorites,
+            users=doc_users, spaces=doc_spaces, space_members=doc_members, space_owners=doc_owners, space_favorites=doc_favorites,
             groups=doc_groups, group_members=doc_group_members, group_global_permissions=doc_group_permissions,
             space_user_permissions=doc_space_user_permissions, space_group_permissions=doc_space_group_permissions,
             pages=[], page_revisions=[],
@@ -1630,6 +1648,32 @@ class BackupService:
                 )
             await self.session.flush()
             report.add("space_member", member_label, "created")
+
+        # --- ownership ------------------------------------------------
+        # See `SpaceOwner` - independent of the legacy membership rows just
+        # restored above. A space with no matching entry here (an archive
+        # exported before this table existed, or one that genuinely had no
+        # explicit Owner) is not left unmanageable: `is_space_owner` and
+        # `list_space_owners` already fall back to every system
+        # administrator by default for exactly this case.
+        for owner_entry in doc.space_owners:
+            owner_label = f"{owner_entry.space_key}/{owner_entry.username}"
+            owner_space = await self.spaces.get_by_key(owner_entry.space_key)
+            owner_user = await self.users.get_by_username(owner_entry.username)
+            if owner_space is None:
+                report.add("space_owner", owner_label, "skipped", "missing_space")
+                continue
+            if owner_user is None:
+                report.add("space_owner", owner_label, "skipped", "missing_user")
+                continue
+            if await self.session.get(
+                SpaceOwner, {"space_id": owner_space.id, "user_id": owner_user.id}
+            ):
+                report.add("space_owner", owner_label, "skipped", "already_owner")
+                continue
+            self.session.add(SpaceOwner(space_id=owner_space.id, user_id=owner_user.id))
+            await self.session.flush()
+            report.add("space_owner", owner_label, "created")
 
         # --- favourites ---------------------------------------------------
         for favorite in doc.space_favorites:

@@ -62,17 +62,19 @@ def test_report_builder_counts_and_truncation(monkeypatch: pytest.MonkeyPatch) -
 async def test_export_document_without_credentials() -> None:
     svc = service()
     empty = Mock(scalars=Mock(return_value=[]))
-    # 18 queries: users, spaces, members, favorites, groups, group_members,
-    # group_permissions, space_user_permissions, space_group_permissions,
-    # pages, revisions, likes, pins, drafts, user_tags, user_page_labels,
-    # page_user_restrictions, page_group_restrictions - see export_document.
-    svc.session.execute = AsyncMock(side_effect=[empty] * 18)
+    # 19 queries: users, spaces, members, owners, favorites, groups,
+    # group_members, group_permissions, space_user_permissions,
+    # space_group_permissions, pages, revisions, likes, pins, drafts,
+    # user_tags, user_page_labels, page_user_restrictions,
+    # page_group_restrictions - see export_document.
+    svc.session.execute = AsyncMock(side_effect=[empty] * 19)
     result = await svc.export_document()
     assert result.wikihub_backup.includes_credentials is False
     assert result.wikihub_backup.counts == {
         "users": 0,
         "spaces": 0,
         "space_members": 0,
+        "space_owners": 0,
         "space_favorites": 0,
         "groups": 0,
         "pages": 0,
@@ -123,17 +125,20 @@ async def test_export_document_serializes_relations_and_credentials() -> None:
         created_by_id=user_id,
     )
     member = SimpleNamespace(space_id=space_id, user_id=user_id, role=SpaceRole.viewer)
+    owner = SimpleNamespace(space_id=space_id, user_id=user_id)
     favorite = SimpleNamespace(space_id=space_id, user_id=user_id)
     results = [
         Mock(scalars=Mock(return_value=[user])),
         Mock(scalars=Mock(return_value=[space])),
         Mock(scalars=Mock(return_value=[member])),
+        Mock(scalars=Mock(return_value=[owner])),
         Mock(scalars=Mock(return_value=[favorite])),
     ] + [Mock(scalars=Mock(return_value=[]))] * 14
     svc.session.execute = AsyncMock(side_effect=results)
     result = await svc.export_document(include_credentials=True)
     assert result.users[0].password_hash == "hash"
     assert result.space_members[0].username == "alice"
+    assert result.space_owners[0].username == "alice"
     assert result.space_favorites[0].space_key == "ENG"
 
 

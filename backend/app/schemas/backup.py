@@ -91,6 +91,17 @@ class BackupSpaceMember(BaseModel):
     role: SpaceRole = SpaceRole.viewer
 
 
+class BackupSpaceOwner(BaseModel):
+    """One row of `SpaceOwner` - see that model's docstring. Optional (an
+    archive from before this feature existed just parses with none), so a
+    restored space with no matching rows here falls back to the same
+    system-administrator default the live app already uses for a space that
+    has never had one."""
+
+    space_key: str
+    username: str
+
+
 class BackupSpaceFavorite(BaseModel):
     username: str
     space_key: str
@@ -248,6 +259,7 @@ class BackupDocument(BaseModel):
     users: list[BackupUser] = Field(default_factory=list)
     spaces: list[BackupSpace] = Field(default_factory=list)
     space_members: list[BackupSpaceMember] = Field(default_factory=list)
+    space_owners: list[BackupSpaceOwner] = Field(default_factory=list)
     space_favorites: list[BackupSpaceFavorite] = Field(default_factory=list)
     groups: list[BackupGroup] = Field(default_factory=list)
     group_members: list[BackupGroupMember] = Field(default_factory=list)
@@ -273,7 +285,7 @@ class BackupDocument(BaseModel):
 class ImportEntry(BaseModel):
     """One decision the importer made, for the report."""
 
-    kind: str  # user | space | space_member | space_favorite | site_settings
+    kind: str  # user | space | space_member | space_owner | space_favorite | site_settings
     label: str
     outcome: Literal["created", "skipped", "error"]
     reason: str = ""
