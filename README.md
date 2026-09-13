@@ -156,6 +156,31 @@ links so the archive works offline.
 
 Full guide: [`docs/export.md`](docs/export.md) *(Phase 6)*.
 
+## AI (proposed)
+
+Planned, not yet built. Sits behind the existing swappable search interface
+and the existing arq worker, so it fits without changing the modular
+monolith's shape:
+
+- **RAG Q&A** — natural-language questions answered with citations to the
+  source page(s), built on page-content embeddings computed by an arq job at
+  save time and stored via `pgvector` on the existing PostgreSQL instance.
+- **Hybrid semantic search** — the current full-text search upgraded to
+  combine keyword and vector matching, so a query finds a page even when the
+  words don't match exactly.
+- **Auto-summarization** — a TL;DR at the top of long pages, and a rollup
+  summary for an entire Space to speed up onboarding.
+- **Writing assistant** — inline suggestions in the Tiptap editor: sentence
+  completion, grammar/style fixes, consistent terminology.
+- **Auto-tagging & related pages** — suggested tags and related-page links at
+  save time, to cut down on duplicate content spread across Spaces.
+- **Stale-content detection** — a periodic scan flags heavily-viewed pages
+  that haven't been updated in a long time, for their owner to review.
+
+Because WikiHub is self-hosted, page content used for embeddings/answers stays
+inside company infrastructure instead of leaving to a third-party SaaS AI
+product — the same data-control argument as the rest of the platform.
+
 ## Deployment
 
 Kubernetes manifests and a Helm chart live in [`deploy/`](deploy/). Container
@@ -206,6 +231,7 @@ knowing that user's password. The rules:
 | 7 | Background jobs, Import Center, export packages | |
 | 8 | Audit logs, admin UI, security hardening | |
 | 9 | Full test suite, Kubernetes/Helm, CI, documentation | |
+| 10 | AI-assisted search & authoring — see [AI (proposed)](#ai-proposed) | 💡 Proposed |
 
 ## Documentation
 
