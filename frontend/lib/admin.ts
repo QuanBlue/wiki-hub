@@ -1,5 +1,5 @@
 import { queryString, serverGet } from "@/lib/server-api";
-import type { Page, SiteSettings, User } from "@/types/api";
+import type { AdminAccount, Page, SiteSettings, User } from "@/types/api";
 
 export interface UserQuery {
   q?: string;
@@ -41,4 +41,11 @@ export async function listAllUsers(): Promise<User[]> {
 
 export function getSiteSettings(): Promise<SiteSettings> {
   return serverGet<SiteSettings>("/api/v1/settings");
+}
+
+/** Every account that currently holds system_admin, however it got there -
+ * see `AdminAccount.admin_source`. Registered ahead of `GET /{user_id}` on
+ * the backend, so this literal path is safe to call directly. */
+export function listAdministrators(): Promise<AdminAccount[]> {
+  return serverGet<AdminAccount[]>("/api/v1/users/administrators");
 }

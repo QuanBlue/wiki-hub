@@ -346,13 +346,19 @@ async def test_simple_read_endpoints_and_backup_validation() -> None:
 @pytest.mark.asyncio
 async def test_user_administration_endpoint_wrappers(monkeypatch: pytest.MonkeyPatch) -> None:
     actor = _user()
-    session = Mock(execute=AsyncMock(return_value=[]))
+    # `scalars` backs `_read_user`'s own group-name lookup, and `execute`
+    # backs both `list_users`'s group-name batch query and `_read_user`'s
+    # permission-override lookup - reset to `[]` below once the group-batch
+    # assertion is done with it, so the single-user calls after it don't try
+    # to unpack "engineering" as a `(permission, enabled)` override row.
+    session = Mock(execute=AsyncMock(return_value=[]), scalars=AsyncMock(return_value=[]))
 
     class _Permissions:
         def __init__(self, _session):
             pass
 
         require_global = AsyncMock()
+        global_permissions = AsyncMock(return_value=[])
 
     monkeypatch.setattr(users, "PermissionService", _Permissions)
     target = _user()
@@ -370,6 +376,12 @@ async def test_user_administration_endpoint_wrappers(monkeypatch: pytest.MonkeyP
     session.execute = AsyncMock(return_value=[(target.id, "engineering")])
     page = await users.list_users(actor, session, service, limit=50, offset=0)
     assert page.items[0].groups == ["engineering"]
+    # `_read_user`'s override lookup calls `.all()` on the `execute()`
+    # result, unlike `list_users`'s own group-batch query above (which just
+    # iterates it directly) - a plain list stands in for a real `Result` for
+    # that, but needs this much to also support `.all()`.
+    empty_rows = Mock(all=Mock(return_value=[]))
+    session.execute = AsyncMock(return_value=empty_rows)
     assert await users.create_user(
         UserCreate(username="newuser", email="new@example.com", password="password1"),
         actor,

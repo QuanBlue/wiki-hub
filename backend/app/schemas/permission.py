@@ -40,6 +40,51 @@ class GroupRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     global_permissions: list[GlobalPermission] = Field(default_factory=list)
+    #: How many distinct Spaces/Pages currently grant this group an access
+    #: permission - what `delete_group` refuses to delete out from under
+    #: (see `GroupUsageRead` for exactly which ones). Zero on both means
+    #: deleting the group cannot fail with `group_in_use`.
+    space_count: int = 0
+    page_count: int = 0
+
+
+class GroupSpaceUsage(BaseModel):
+    """One Space this group is granted access to, and with what."""
+
+    space_id: uuid.UUID
+    space_key: str
+    space_name: str
+    permissions: list[Permission]
+
+
+class GroupPagePermissionEntry(BaseModel):
+    permission: PageRestrictionPermission
+    #: `True` for an explicit block on this group rather than a grant - see
+    #: `PageGroupRestriction.denied`.
+    denied: bool
+
+
+class GroupPageUsage(BaseModel):
+    """One Page this group has a restriction row on - a grant (the page is
+    Restricted and this group is on its allow-list) or a block (denied)."""
+
+    page_id: uuid.UUID
+    page_title: str
+    page_slug: str
+    space_id: uuid.UUID
+    space_key: str
+    space_name: str
+    entries: list[GroupPagePermissionEntry]
+
+
+class GroupUsageRead(BaseModel):
+    """Backs the Edit Group dialog's "Used in" tab: exactly where this group
+    currently grants (or blocks) access, so an operator does not have to
+    hunt through every Space and Page to find out before `delete_group`
+    will let them remove it."""
+
+    spaces: list[GroupSpaceUsage] = Field(default_factory=list)
+    pages: list[GroupPageUsage] = Field(default_factory=list)
 
 
 class GroupMemberRead(BaseModel):

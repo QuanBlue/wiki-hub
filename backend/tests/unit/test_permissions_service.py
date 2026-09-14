@@ -19,7 +19,11 @@ def svc() -> PermissionService:
     service.session.scalar = AsyncMock()
     service.session.scalars = AsyncMock()
     service.session.get = AsyncMock()
-    service.session.execute = AsyncMock()
+    # Default: no rows, so `_user_permission_overrides`'s `for permission,
+    # enabled in rows` iterates zero times unless a test overrides this -
+    # every other caller of `session.execute` already sets its own
+    # return_value/side_effect before relying on it.
+    service.session.execute = AsyncMock(return_value=[])
     service.session.flush = AsyncMock()
     service.session.delete = AsyncMock()
     service.session.add = Mock()
@@ -43,21 +47,23 @@ async def test_permission_resolution_and_guards() -> None:
     assert await service.effective_permissions(space, admin)
     assert await service.role_of(space, admin) is SpaceRole.admin
 
-    # `session.scalar` covers both `_has_group_global_permission` and the
-    # new `is_space_owner` check inside `effective_permissions` - None means
-    # "not an owner" throughout this block, same as it already meant "no
-    # global grant".
+    # `session.scalar` covers the `is_space_owner` check inside
+    # `effective_permissions` - None means "not an owner". `session.scalars`
+    # (plural) backs every group-membership query, including the one behind
+    # `global_permissions`/`is_system_admin` now that a user-level override
+    # can also apply on top of it (see `_user_permission_overrides`, which
+    # reads `session.execute` and defaults to no rows via `svc()`) - a plain
+    # `return_value` rather than a fixed-length `side_effect` list means this
+    # doesn't have to be recounted every time a call above adds another query.
     service.session.scalar.return_value = None
-    service.session.scalars.side_effect = [[], []]
+    service.session.scalars.return_value = []
     assert await service.is_system_admin(regular) is False
     permissions = await service.effective_permissions(space, regular)
     # An Open space now hands out everything except admin/restrictions
     # (OPEN_SPACE_PERMISSIONS), not just View - see the module docstring.
     assert permissions == set(OPEN_SPACE_PERMISSIONS)
-    service.session.scalars.side_effect = [[], []]
     # Add is part of that Open baseline, so this reads as an editor now.
     assert await service.role_of(space, regular) is SpaceRole.editor
-    service.session.scalars.side_effect = [[], []]
     with pytest.raises(PermissionDeniedError):
         # restrictions is one of the two permissions Open never hands out
         # for free - unlike delete/move, which it now does.
@@ -65,7 +71,6 @@ async def test_permission_resolution_and_guards() -> None:
     with pytest.raises(PermissionDeniedError):
         await service.require_global(regular, GlobalPermission.manage_groups)
 
-    service.session.scalars.side_effect = None
     service.session.scalars.return_value = [GlobalPermission.manage_groups]
     assert await service.global_permissions(regular) == [GlobalPermission.manage_groups]
     service.effective_permissions = AsyncMock(return_value={Permission.add})

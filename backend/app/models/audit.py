@@ -35,6 +35,7 @@ class AuditAction(StrEnum):
     user_activated = "user_activated"
     user_deactivated = "user_deactivated"
     user_role_changed = "user_role_changed"
+    user_permissions_changed = "user_permissions_changed"
     user_password_reset = "user_password_reset"  # noqa: S105 - an action name
     user_password_changed = "user_password_changed"  # noqa: S105 - an action name
     user_deleted = "user_deleted"

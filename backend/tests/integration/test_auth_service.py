@@ -338,28 +338,122 @@ class TestSelfLockoutGuards:
         assert await service.users.get(actor.id) is not None
 
     async def test_cannot_remove_the_last_active_administrator(self, session: AsyncSession) -> None:
+        """`_assert_superuser_remains`'s own floor-of-one invariant, exercised
+        directly rather than through `update_user`: an ordinary administrator
+        acting on a peer one is no longer a reachable path at all now that
+        `assert_peer_admin_editable` blocks that pairing outright (see
+        `TestPeerAdminProtection` below) - in a normally seeded instance the
+        protected account always keeps the count above the floor, exactly as
+        its own docstring already says. This still matters for whichever
+        caller *can* reach another administrator (the protected account)."""
         target = await self._make_superuser(session)
-        # A different actor, so the self-guards do not fire first.
-        actor = await self._make_superuser(session)
-        # Leave exactly one active administrator.
-        await AuthService(session, actor=target).update_user(actor.id, UserUpdate(is_active=False))
+        service = AuthService(session, actor=target)
 
         with pytest.raises(ConflictError, match="only active administrator"):
-            await AuthService(session, actor=actor).update_user(
-                target.id, UserUpdate(is_active=False)
-            )
+            await service._assert_superuser_remains(target)
 
     async def test_can_deactivate_another_admin_while_one_remains(
         self, session: AsyncSession
     ) -> None:
-        actor = await self._make_superuser(session)
+        protected = await _make_protected_admin(AuthService(session))
         other = await self._make_superuser(session)
 
-        updated = await AuthService(session, actor=actor).update_user(
+        updated = await AuthService(session, actor=protected).update_user(
             other.id, UserUpdate(is_active=False)
         )
 
         assert updated.is_active is False
+
+
+class TestPeerAdminProtection:
+    """An ordinary Administrator (`is_superuser`, not `is_protected`) can
+    manage every Member, but not a peer Administrator - only the protected
+    account may touch those. See `AuthService.assert_peer_admin_editable`."""
+
+    async def _make_superuser(self, session: AsyncSession) -> User:
+        return await AuthService(session).create_user(
+            UserCreate(
+                username=unique("root"),
+                email=f"{unique('root')}@example.com",
+                full_name="Root",
+                password="root-password-1",
+                is_superuser=True,
+            )
+        )
+
+    async def _make_member(self, session: AsyncSession) -> User:
+        return await AuthService(session).create_user(
+            UserCreate(
+                username=unique("member"),
+                email=f"{unique('member')}@example.com",
+                full_name="Member",
+                password="member-password-1",
+            )
+        )
+
+    async def test_ordinary_admin_cannot_update_a_peer_admin(self, session: AsyncSession) -> None:
+        actor = await self._make_superuser(session)
+        target = await self._make_superuser(session)
+
+        with pytest.raises(PermissionDeniedError, match="super administrator"):
+            await AuthService(session, actor=actor).update_user(
+                target.id, UserUpdate(full_name="Renamed")
+            )
+
+    async def test_ordinary_admin_cannot_reset_a_peer_admins_password(
+        self, session: AsyncSession
+    ) -> None:
+        actor = await self._make_superuser(session)
+        target = await self._make_superuser(session)
+
+        with pytest.raises(PermissionDeniedError, match="super administrator"):
+            await AuthService(session, actor=actor).reset_password(target.id, "new-password-123")
+
+    async def test_ordinary_admin_cannot_delete_a_peer_admin(self, session: AsyncSession) -> None:
+        actor = await self._make_superuser(session)
+        target = await self._make_superuser(session)
+
+        with pytest.raises(PermissionDeniedError, match="super administrator"):
+            await AuthService(session, actor=actor).delete_user(target.id)
+
+        assert await AuthService(session).users.get(target.id) is not None
+
+    async def test_ordinary_admin_can_still_manage_an_ordinary_member(
+        self, session: AsyncSession
+    ) -> None:
+        actor = await self._make_superuser(session)
+        member = await self._make_member(session)
+
+        updated = await AuthService(session, actor=actor).update_user(
+            member.id, UserUpdate(is_active=False)
+        )
+
+        assert updated.is_active is False
+
+    async def test_protected_admin_can_edit_a_peer_admin(self, session: AsyncSession) -> None:
+        protected = await _make_protected_admin(AuthService(session))
+        target = await self._make_superuser(session)
+
+        updated = await AuthService(session, actor=protected).update_user(
+            target.id, UserUpdate(full_name="Renamed by the super administrator")
+        )
+
+        assert updated.full_name == "Renamed by the super administrator"
+
+    async def test_promoting_an_ordinary_member_to_admin_is_unaffected(
+        self, session: AsyncSession
+    ) -> None:
+        """The guard only fires for a target that is *already* an
+        Administrator - promoting a Member to one is an ordinary
+        `manage_users` action, not "editing a peer admin"."""
+        actor = await self._make_superuser(session)
+        member = await self._make_member(session)
+
+        updated = await AuthService(session, actor=actor).update_user(
+            member.id, UserUpdate(is_superuser=True)
+        )
+
+        assert updated.is_superuser is True
 
 
 class TestAdminPasswordReset:

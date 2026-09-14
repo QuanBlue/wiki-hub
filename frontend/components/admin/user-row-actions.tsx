@@ -1,45 +1,47 @@
 "use client";
 
-import { KeyRound, Trash2, UserCheck, UserX } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { ResetPasswordDialog } from "@/components/admin/reset-password-dialog";
-import { RowActionsMenu, type RowAction } from "@/components/admin/row-actions-menu";
+import { EditUserDialog } from "@/components/admin/edit-user-dialog";
+import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import type { User } from "@/types/api";
 
 /**
- * Per-row administrative actions, behind one menu.
+ * Per-row administrative actions: Edit (role, status, password and
+ * permission overrides, all in one modal - see `EditUserDialog`) and
+ * Delete, matching the Edit/Delete pair `GroupManager`'s rows already use.
  *
- * Three buttons per row put a delete control one stray click from every row
- * and made the table's widest column its least important one. A menu also
- * gives each action room for a full label, so "Password" no longer has to
- * stand in for "set a new password".
+ * For the protected bootstrap account both buttons are **absent**, not
+ * disabled: the backend answers 403 for every one of these, so a greyed-out
+ * button would only invite a click that cannot succeed. The "protected"
+ * badge next to the name already says why.
  *
- * For the protected bootstrap account the menu is **absent**, not disabled:
- * the backend answers 403 for every one of these, so a greyed-out menu would
- * only invite a click that cannot succeed. The badge in the Role column says
- * why.
+ * An Administrator row that is not the viewer's own account is disabled
+ * instead, unless the viewer is themselves the protected super
+ * administrator - see `AuthService.assert_peer_admin_editable` on the
+ * backend, which is the actual source of truth this only mirrors.
  */
 export function UserRowActions({
   user,
   isSelf,
+  viewerIsProtected,
 }: {
   user: User;
   isSelf: boolean;
+  viewerIsProtected: boolean;
 }) {
   const router = useRouter();
-  const [pending, setPending] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
 
   if (user.is_protected) {
-    // The "protected" badge next to the name already explains why (with a
-    // tooltip); repeating the explanation here would just be noise for a
-    // column that otherwise holds a menu.
     return (
       <div className="flex justify-end">
         <span className="text-muted-foreground text-sm">—</span>
@@ -47,29 +49,11 @@ export function UserRowActions({
     );
   }
 
-  async function setActive(active: boolean) {
-    setPending(active ? "activate" : "deactivate");
-    try {
-      await api.patch<User>(`/api/v1/users/${user.id}`, { is_active: active });
-      toast.success(
-        active
-          ? `${user.username} activated.`
-          : `${user.username} deactivated.`,
-      );
-      router.refresh();
-    } catch (error) {
-      toast.error(
-        error instanceof ApiError
-          ? error.message
-          : "Could not update the user.",
-      );
-    } finally {
-      setPending(null);
-    }
-  }
+  const peerAdminBlocked = user.is_superuser && !isSelf && !viewerIsProtected;
+  const peerAdminTitle = "Only the built-in super administrator can edit another administrator's account.";
 
   async function remove() {
-    setPending("delete");
+    setPending(true);
     try {
       await api.delete<void>(`/api/v1/users/${user.id}`);
       toast.success(`${user.username} deleted.`);
@@ -82,33 +66,55 @@ export function UserRowActions({
           : "Could not delete the user.",
       );
     } finally {
-      setPending(null);
+      setPending(false);
     }
   }
 
-  const actions: RowAction[] = [
-    { label: "Reset password", icon: <KeyRound className="size-4" />, onSelect: () => setResetOpen(true), disabled: pending !== null },
-    user.is_active
-      ? { label: "Deactivate account", icon: <UserX className="size-4" />, onSelect: () => void setActive(false), disabled: pending !== null || isSelf, title: isSelf ? "You cannot deactivate your own account" : undefined }
-      : { label: "Activate account", icon: <UserCheck className="size-4" />, onSelect: () => void setActive(true), disabled: pending !== null },
-    { separator: true },
-    { label: "Delete user…", icon: <Trash2 className="size-4" />, onSelect: () => setConfirmDelete(true), disabled: pending !== null || isSelf, destructive: true, title: isSelf ? "You cannot delete your own account" : undefined },
-  ];
-
   return (
-    <div className="flex justify-end">
-      <RowActionsMenu label={`Actions for ${user.username}`} actions={actions} />
+    <div className="flex items-center justify-end gap-1">
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => setEditOpen(true)}
+        disabled={peerAdminBlocked}
+        title={peerAdminBlocked ? peerAdminTitle : undefined}
+        aria-label={`Edit ${user.username}`}
+      >
+        <Pencil />
+        Edit
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={() => setConfirmDelete(true)}
+        disabled={isSelf || peerAdminBlocked}
+        title={
+          isSelf
+            ? "You cannot delete your own account"
+            : peerAdminBlocked
+              ? peerAdminTitle
+              : `Delete ${user.username}`
+        }
+        aria-label={`Delete ${user.username}`}
+        className={cn(
+          "hover:bg-danger-bg hover:text-danger",
+          (isSelf || peerAdminBlocked) &&
+            "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-inherit",
+        )}
+      >
+        <Trash2 />
+      </Button>
 
-      {resetOpen ? <ResetPasswordDialog user={user} open onOpenChange={setResetOpen} /> : null}
+      <EditUserDialog user={user} isSelf={isSelf} open={editOpen} onOpenChange={setEditOpen} />
 
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title={`Delete ${user.username}?`}
-        description="This permanently removes the account and its space memberships. It cannot be undone. Deactivating instead keeps the account and its history."
+        description="This permanently removes the account and its space memberships. It cannot be undone. Deactivating instead (from Edit) keeps the account and its history."
         confirmLabel="Delete user"
         destructive
-        pending={pending === "delete"}
+        pending={pending}
         onConfirm={remove}
       />
     </div>

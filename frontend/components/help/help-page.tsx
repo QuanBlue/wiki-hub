@@ -1727,13 +1727,17 @@ const sections: HelpSection[] = [
       "audio",
       "syntax highlighting",
       "code preview",
+      "quota",
+      "quotas",
+      "browse files",
     ],
     body: (
       <>
         <p>
           Administrators configure global workspace behavior under{" "}
-          <strong>Administration &gt; Settings</strong> and manage raw S3 storage under{" "}
-          <strong>Storage</strong>.
+          <strong>Administration &gt; Settings</strong>, and everything about the S3
+          bucket - browsing it and setting its limits - under{" "}
+          <strong>Administration &gt; Storage</strong>.
         </p>
 
         <p className="mt-3 font-semibold text-foreground">1. Global Instance Settings:</p>
@@ -1745,37 +1749,34 @@ const sections: HelpSection[] = [
             <strong>Session Lifetime (Hours)</strong>: Configure JWT session expiration (e.g. 24h, 72h, 168h).
           </li>
           <li>
-            <strong>Max Single Attachment Size (MB)</strong>: Enforce upload size limits (e.g. 25MB, 50MB, 100MB).
-          </li>
-          <li>
-            <strong>Max Backup Import Size (MB)</strong>: Set upper limit for ZIP backup imports (e.g. 500MB, 2000MB).
-          </li>
-          <li>
-            <strong>Allowed Attachment Extensions</strong>: Whitelist file extensions (e.g. <Code>png, pdf, zip, docx, *</Code>).
-          </li>
-          <li>
             <strong>Sidebar Access Matrix</strong>: Select which navigation sections are visible per user role (<Code>member</Code>, <Code>admin</Code>).
           </li>
         </ul>
 
-        <p className="mt-4 font-semibold text-foreground">2. Object Storage Explorer:</p>
+        <p className="mt-4 font-semibold text-foreground">2. Storage: Browse files & Quotas:</p>
         <p className="text-sm">
-          The <strong>Storage</strong> panel provides a clean S3 bucket tree browser:
+          <strong>Administration &gt; Storage</strong> splits into two sections, picked from
+          its own left-hand list:
         </p>
         <ul className="list-disc pl-5 space-y-1 text-sm mt-1">
-          <li>Clean tree formatting with regular text font styling for folders and files.</li>
-          <li>Filter objects by search query, file type, space, or page ID.</li>
-          <li>Generate secure pre-signed download URLs.</li>
           <li>
-            Preview images, video and audio files, and code/text files
-            (syntax-coloured by the file&apos;s extension), plus Word, Excel,
-            PowerPoint and PDF documents (opened read-only through the same
-            document viewer pages use to edit attachments - see it, download
-            it, nothing is ever saved back from here). Each preview scrolls
-            in one place, rather than in both the dialog and the content
-            underneath it.
+            <strong>Browse files</strong>: a clean S3 bucket tree browser. Filter objects by
+            search query, file type, space, or page ID; generate secure pre-signed download
+            URLs; preview images, video and audio files, code/text files (syntax-coloured by
+            the file&apos;s extension), and Word, Excel, PowerPoint and PDF documents (opened
+            read-only through the same document viewer pages use to edit attachments - see
+            it, download it, nothing is ever saved back from here, and each preview scrolls
+            in one place rather than in both the dialog and the content underneath it); and
+            delete orphan objects, which also clears the matching database attachment and
+            archive hash records automatically.
           </li>
-          <li>Delete orphan objects with automatic database attachment and archive hash clearance.</li>
+          <li>
+            <strong>Quotas</strong>: <strong>Max single attachment size</strong>,{" "}
+            <strong>Max backup import size</strong>, and{" "}
+            <strong>Allowed attachment extensions</strong> (a whitelist, e.g.{" "}
+            <Code>png, pdf, zip, docx, *</Code>) - each shown as{" "}
+            <Code>(inherited from environment)</Code> until you actually override it here.
+          </li>
         </ul>
       </>
     ),
@@ -1795,6 +1796,10 @@ const sections: HelpSection[] = [
       "deactivate",
       "delete user",
       "role",
+      "global permission override",
+      "administrators tab",
+      "bulk delete",
+      "select multiple",
     ],
     body: (
       <>
@@ -1805,7 +1810,7 @@ const sections: HelpSection[] = [
           (chat, in person, etc.).
         </Callout>
 
-        <p className="mt-3 font-semibold text-foreground">1. Users:</p>
+        <p className="mt-3 font-semibold text-foreground">1. People directory:</p>
         <ul className="list-disc pl-5 space-y-1.5 text-sm">
           <li>
             The directory shows summary tiles (Total / Administrators / Members /
@@ -1818,15 +1823,80 @@ const sections: HelpSection[] = [
             role of <Code>Member</Code> or <Code>Administrator</Code>.
           </li>
           <li>
-            Per-user actions: <strong>Reset password</strong>,{" "}
-            <strong>Deactivate</strong>/<strong>Activate account</strong>, and{" "}
-            <strong>Delete user…</strong>. Your own account and the protected bootstrap
-            admin account are excluded from these destructive actions, so you can never
-            lock yourself out.
+            Each row has an <strong>Edit</strong> button opening one dialog for
+            everything about that account: <Code>Role</Code> (Member/Administrator),{" "}
+            <Code>Status</Code> (Active/Disabled), an optional new password (leave both
+            fields blank to keep the current one), and its{" "}
+            <strong>Workspace Global Access</strong> overrides - see below. A separate,
+            icon-only <strong>Delete</strong> button removes the account entirely. Your
+            own account and the protected bootstrap admin account never show these
+            controls, so you can never lock yourself out.
+          </li>
+          <li>
+            An ordinary <Code>Administrator</Code> cannot Edit or Delete another{" "}
+            <Code>Administrator</Code> account, or reset its password - only the
+            protected bootstrap admin can. This keeps one administrator from
+            demoting, deactivating or locking out another; an ordinary
+            Administrator can still fully manage every <Code>Member</Code> account,
+            including promoting one to <Code>Administrator</Code>.
+          </li>
+          <li>
+            <strong>Select</strong> (next to the search box) turns on a checkbox per
+            row and a <strong>Delete selected</strong> bar for removing several
+            accounts at once - each one still goes through its own guards (protected,
+            your own account, ...), so a batch that includes one of those just skips it
+            and reports how many succeeded.
           </li>
         </ul>
 
-        <p className="mt-4 font-semibold text-foreground">2. Groups:</p>
+        <p className="mt-4 font-semibold text-foreground">2. Workspace Global Access overrides:</p>
+        <ul className="list-disc pl-5 space-y-1.5 text-sm">
+          <li>
+            The four global permissions (<Code>Create spaces</Code>,{" "}
+            <Code>Manage users</Code>, <Code>Manage groups</Code>,{" "}
+            <Code>System administrator</Code>) normally come from a user&apos;s groups.
+            The Edit dialog lets you set one of three states per permission, per
+            person: <Code>Inherit from groups</Code> (the default), <Code>Force
+            enabled</Code>, or <Code>Force disabled</Code> - the override always wins
+            over whatever that person&apos;s groups say for that one permission.
+          </li>
+          <li>
+            This has no effect on an account whose <Code>Role</Code> is already{" "}
+            <Code>Administrator</Code>: that role unconditionally grants every
+            permission, the same way it always has.
+          </li>
+        </ul>
+
+        <p className="mt-4 font-semibold text-foreground">3. Administrators tab:</p>
+        <ul className="list-disc pl-5 space-y-1.5 text-sm">
+          <li>
+            Lists every account that currently holds <Code>System administrator</Code>{" "}
+            access however it got there - the <Code>Role</Code> switch, a group&apos;s
+            global permission, or a per-user override - with a{" "}
+            <strong>Granted via</strong> column saying which. The Role filter on the
+            People directory only ever shows the first of these three.
+          </li>
+          <li>
+            Under <strong>Granted via</strong>, a Role or override grant also names{" "}
+            <strong>who</strong> did it - the account that flipped the switch or added
+            the override, read off the audit log. A group grant instead names{" "}
+            <strong>which group</strong>: group membership and a group&apos;s own
+            permission grants aren&apos;t tracked per member, so there is no individual
+            person to point to there. Either can read as unattributed for an account
+            that has held its access since before this tracking existed.
+          </li>
+          <li>
+            <strong>Demote to Member</strong> undoes whichever of those it was: it
+            flips <Code>Role</Code> back to Member for a direct Administrator, or adds
+            a force-disabled override for one granted through a group or an existing
+            override. Disabled for the protected admin, your own account, or the last
+            remaining administrator on the list - and, for a direct Administrator
+            (Granted via: <Code>Administrator role</Code>), disabled for anyone except
+            the protected bootstrap admin, same as Edit/Delete in the People directory.
+          </li>
+        </ul>
+
+        <p className="mt-4 font-semibold text-foreground">4. Groups:</p>
         <ul className="list-disc pl-5 space-y-1.5 text-sm">
           <li>
             Groups bundle users for reusable space-permission grants - assign a group
@@ -1841,6 +1911,29 @@ const sections: HelpSection[] = [
             The default system groups (<Code>administrators</Code>, <Code>users</Code>,{" "}
             <Code>confluence-administrators</Code>, <Code>confluence-users</Code>)
             cannot be deleted, only edited.
+          </li>
+          <li>
+            A group still granting access to any Space or with a restriction on any
+            Page cannot be deleted - <strong>&quot;Remove this group&apos;s permission
+            assignments before deleting it&quot;</strong> means exactly that, and both
+            have to be cleared first (its global permissions, under Edit &gt; Global
+            access, don&apos;t count - only Space/Page grants do).
+          </li>
+          <li>
+            The Directory table&apos;s <strong>Access grants</strong> column names how
+            many Spaces and Pages a group is granted access to - <Code>Not used</Code>{" "}
+            means it can be deleted outright. Clicking the count opens a quick-view
+            listing every one of them by name, each linking straight to that Space or
+            Page, with its own <strong>Remove</strong> button right there to clear the
+            grant on the spot - no need to hunt through every Space&apos;s Access panel
+            first. The same list, with the same Remove buttons, is also its own tab
+            (<strong>Access grants</strong>) inside the full Edit Group dialog, right
+            next to Members.
+          </li>
+          <li>
+            The same <strong>Select</strong> / bulk-delete control as the People
+            directory is available next to the group search box; a default system group
+            stays excluded even when selected.
           </li>
         </ul>
       </>

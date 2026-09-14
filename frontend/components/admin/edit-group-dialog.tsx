@@ -23,12 +23,13 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
+import { GroupUsagePanel } from "@/components/admin/group-usage-panel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, ApiError } from "@/lib/api-client";
-import { listGroupMembers } from "@/lib/group-members";
+import { getGroupUsage, listGroupMembers } from "@/lib/group-members";
 import { cn } from "@/lib/utils";
-import type { GlobalPermission, Group, GroupMember, User } from "@/types/api";
+import type { GlobalPermission, Group, GroupMember, GroupUsage, User } from "@/types/api";
 
 const PERMISSION_CONFIG: Record<
   GlobalPermission,
@@ -56,7 +57,7 @@ const PERMISSION_CONFIG: Record<
   },
 };
 
-type TabKey = "details" | "members" | "permissions";
+type TabKey = "details" | "members" | "usage" | "permissions";
 
 function SearchableUserPicker({
   users,
@@ -221,6 +222,8 @@ export function EditGroupDialog({
   const [pendingAddedUserIds, setPendingAddedUserIds] = useState<string[]>([]);
   const [pendingRemovedUserIds, setPendingRemovedUserIds] = useState<string[]>([]);
   const [globalPermissions, setGlobalPermissions] = useState<GlobalPermission[]>([]);
+  const [usage, setUsage] = useState<GroupUsage | null>(null);
+  const [loadingUsage, setLoadingUsage] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -236,6 +239,18 @@ export function EditGroupDialog({
       // Best-effort load
     } finally {
       setLoadingMembers(false);
+    }
+  }
+
+  async function loadUsage(groupId: string) {
+    setLoadingUsage(true);
+    try {
+      const data = await getGroupUsage(groupId);
+      setUsage(data);
+    } catch {
+      // Best-effort load
+    } finally {
+      setLoadingUsage(false);
     }
   }
 
@@ -262,13 +277,27 @@ export function EditGroupDialog({
       setPendingRemovedUserIds([]);
       setActiveTab("details");
       setError(null);
+      setUsage(null);
       void loadMembers(group.id);
+      void loadUsage(group.id);
       prevGroupIdRef.current = group.id;
     }
     prevOpenRef.current = open;
   }, [group, open]);
 
   if (!group) return null;
+
+  // Removal in the Used in tab is immediate (see `GroupUsagePanel`), not
+  // staged behind Save like the rest of this dialog - so the Directory
+  // table's own counts need to hear about it right away too, not just this
+  // dialog's local state.
+  function handleUsageChanged(next: GroupUsage) {
+    setUsage(next);
+    // `group` is narrowed non-null above, but that narrowing doesn't carry
+    // into this closure - it's a stable prop, never reassigned, so this is
+    // safe.
+    onGroupUpdated({ ...group!, space_count: next.spaces.length, page_count: next.pages.length });
+  }
 
   // Change detection for General Details
   const isNameChanged = name.trim() !== group.name;
@@ -483,6 +512,19 @@ export function EditGroupDialog({
           >
             <UsersRound className="size-4" />
             Members ({allDisplayedMembers.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("usage")}
+            className={cn(
+              "flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium transition-colors cursor-pointer",
+              activeTab === "usage"
+                ? "border-primary text-foreground font-semibold"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <FolderKanban className="size-4" />
+            Access grants{usage ? ` (${usage.spaces.length + usage.pages.length})` : ""}
           </button>
           <button
             type="button"
@@ -711,7 +753,21 @@ export function EditGroupDialog({
             </div>
           ) : null}
 
-          {/* Tab 3: Global Permissions (Feature List with Toggle Switches) */}
+          {/* Tab 3: Access grants - every Space/Page this group is
+              currently granted access to, what `delete_group`'s
+              `group_in_use` error refers to. */}
+          {activeTab === "usage" ? (
+            <div className="h-full overflow-y-auto pr-1 pb-2">
+              <GroupUsagePanel
+                group={group}
+                usage={usage}
+                loading={loadingUsage}
+                onUsageChanged={handleUsageChanged}
+              />
+            </div>
+          ) : null}
+
+          {/* Tab 4: Global Permissions (Feature List with Toggle Switches) */}
           {activeTab === "permissions" ? (
             <div className="space-y-3 h-full flex flex-col min-h-0">
               <div className="bg-surface-sunken/50 border border-border p-3 rounded-lg flex items-start gap-2.5 shrink-0">

@@ -80,6 +80,37 @@ class AuthService:
         if user.is_protected:
             raise PermissionDeniedError(PROTECTED_ACCOUNT_MESSAGE, code="account_protected")
 
+    def assert_peer_admin_editable(self, target: User) -> None:
+        """Reject a write to another Administrator account unless the actor
+        is the protected super administrator.
+
+        An ordinary Administrator (``is_superuser``, not ``is_protected``)
+        can manage every Member, but not a peer Administrator - only the
+        one account this instance can never lock itself out of may touch
+        those, the same way only it may touch a protected account at all.
+        Without this, any Administrator could silently demote, deactivate,
+        delete or reset the password of any other - including one senior to
+        them - since ``manage_users`` alone does not otherwise distinguish
+        between the two.
+
+        Excludes the actor's own account: editing yourself is governed by
+        the self-lock guards (``_assert_not_self``/``_assert_superuser_remains``)
+        instead, not this one. Also excludes a system-level call with no
+        actor at all (the seed script, a token-verification path), which
+        this was never meant to constrain.
+        """
+        if not target.is_superuser:
+            return
+        if self.actor is None or self.actor.id == target.id:
+            return
+        if self.actor.is_protected:
+            return
+        raise PermissionDeniedError(
+            "Only the built-in super administrator can modify another "
+            "administrator's account.",
+            code="peer_admin_protected",
+        )
+
     def _assert_not_self(self, target: User, *, code: str, message: str) -> None:
         """Block an action an administrator would regret performing on itself.
 
@@ -284,6 +315,7 @@ class AuthService:
 
         # The protected account is immutable even for a superuser.
         self.assert_mutable(user)
+        self.assert_peer_admin_editable(user)
 
         data = payload.model_dump(exclude_unset=True)
 
@@ -321,6 +353,12 @@ class AuthService:
         if data.get("is_superuser") is not None:
             user.is_superuser = bool(data["is_superuser"])
 
+        overrides = data.get("global_permission_overrides")
+        if overrides:
+            from app.modules.permissions.service import PermissionService
+
+            await PermissionService(self.session).set_user_permission_overrides(user, overrides)
+
         await self.session.flush()
 
         after = {field: getattr(user, field, None) for field in AUDITED_USER_FIELDS}
@@ -342,6 +380,14 @@ class AuthService:
                 entity_id=user.id,
                 entity_label=user.username,
                 details={"is_superuser": user.is_superuser},
+            )
+        if overrides:
+            await self.audit.record(
+                AuditAction.user_permissions_changed,
+                entity_type="user",
+                entity_id=user.id,
+                entity_label=user.username,
+                details={"overrides": {str(k): v for k, v in overrides.items()}},
             )
         if diff:
             await self.audit.record(
@@ -442,6 +488,7 @@ class AuthService:
             raise NotFoundError("User not found.")
 
         self.assert_mutable(user)
+        self.assert_peer_admin_editable(user)
 
         user.password_hash = hash_password(new_password)
         await self.session.flush()
@@ -462,6 +509,7 @@ class AuthService:
             raise NotFoundError("User not found.")
 
         self.assert_mutable(user)
+        self.assert_peer_admin_editable(user)
         self._assert_not_self(
             user,
             code="self_deletion",

@@ -132,6 +132,11 @@ export interface User {
   created_at: string;
   groups: string[];
   global_permissions: GlobalPermission[];
+  /** This user's own grant/deny rows - each one beats whatever their groups
+   * say for that one permission. `global_permissions` above already
+   * reflects the result; this is only so the Edit User dialog can show
+   * *why* (inherited vs overridden) and change just the override. */
+  global_permission_overrides: GlobalPermissionOverride[];
 }
 
 /**
@@ -242,6 +247,24 @@ export type SpacePermission =
   | "admin";
 export type GlobalPermission =
   "create_space" | "manage_users" | "manage_groups" | "system_admin";
+export interface GlobalPermissionOverride {
+  permission: GlobalPermission;
+  enabled: boolean;
+}
+/** One row of the Administrators tab: a `User` plus why they hold
+ * system_admin - `is_superuser` trumps everything else, so it's checked
+ * first even for an account that also has a group grant or an override. */
+export interface AdminAccount extends User {
+  admin_source: "superuser" | "override" | "group";
+  /** Username of whoever last granted this - `null` when that predates the
+   * audit trail, was never recorded, or the source is `group` (group
+   * membership and a group's own permission grants aren't audited per
+   * member, so there is no individual actor to name). */
+  granted_by: string | null;
+  /** Name(s) of the group(s) currently granting it, only set for a `group`
+   * source. */
+  granted_via_group: string | null;
+}
 export type PageContentFormat = "html" | "markdown";
 
 export interface Space {
@@ -301,6 +324,46 @@ export interface Group {
   created_at: string;
   updated_at: string;
   global_permissions: GlobalPermission[];
+  /** How many distinct Spaces/Pages currently grant this group an access
+   * permission - what deleting it would refuse over (`group_in_use`). Zero
+   * on both means the group can be deleted outright. */
+  space_count: number;
+  page_count: number;
+}
+
+export type PageRestrictionPermission = "view" | "edit";
+
+/** One Space a group is granted access to, and with what - one entry of the
+ * Edit Group dialog's "Used in" tab. */
+export interface GroupSpaceUsage {
+  space_id: string;
+  space_key: string;
+  space_name: string;
+  permissions: SpacePermission[];
+}
+
+export interface GroupPagePermissionEntry {
+  permission: PageRestrictionPermission;
+  /** `true` for an explicit block on this group, `false` for an allow-list
+   * grant. */
+  denied: boolean;
+}
+
+/** One Page a group has a restriction row on (a grant or a block) - the
+ * other half of the "Used in" tab. */
+export interface GroupPageUsage {
+  page_id: string;
+  page_title: string;
+  page_slug: string;
+  space_id: string;
+  space_key: string;
+  space_name: string;
+  entries: GroupPagePermissionEntry[];
+}
+
+export interface GroupUsage {
+  spaces: GroupSpaceUsage[];
+  pages: GroupPageUsage[];
 }
 
 /** One row of the page-restriction picker's search - every active user/group,

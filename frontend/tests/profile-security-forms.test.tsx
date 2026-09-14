@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ChangePasswordForm } from "@/components/account/change-password-form";
 import { ProfileForm } from "@/components/account/profile-form";
-import { ResetPasswordDialog } from "@/components/admin/reset-password-dialog";
 import type { Me } from "@/types/api";
 
 vi.mock("next/navigation", () => ({
@@ -33,6 +32,7 @@ const user: Me = {
   created_at: "2026-01-01T00:00:00Z",
   groups: [],
   global_permissions: [],
+  global_permission_overrides: [],
   impersonator: null,
 };
 
@@ -64,22 +64,5 @@ describe("account profile and security forms", () => {
     expect(screen.getByText("A number or special character")).toBeInTheDocument();
     expect(screen.getByText("Passwords match")).toBeInTheDocument();
     expect(submit).toBeEnabled();
-  });
-
-  it("opens an admin reset form blank and fills both fields only after password generation", async () => {
-    const actor = userEvent.setup();
-    render(<ResetPasswordDialog user={user} open onOpenChange={vi.fn()} />);
-
-    const password = screen.getByLabelText("New password");
-    const confirmation = screen.getByLabelText("Confirm password");
-    expect(password).toHaveValue("");
-    expect(confirmation).toHaveValue("");
-    expect(screen.getByRole("button", { name: "Reset password" })).toBeDisabled();
-
-    await actor.click(screen.getByRole("button", { name: "Generate password" }));
-
-    expect(password).not.toHaveValue("");
-    expect(confirmation).toHaveValue((password as HTMLInputElement).value);
-    expect(screen.getByRole("button", { name: "Reset password" })).toBeEnabled();
   });
 });

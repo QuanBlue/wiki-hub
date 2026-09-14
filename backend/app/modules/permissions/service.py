@@ -77,6 +77,7 @@ from app.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
+from app.models.audit import AuditAction, AuditLog
 from app.models.page import WikiPage
 from app.models.permission import (
     GlobalPermission,
@@ -87,6 +88,7 @@ from app.models.permission import (
     Permission,
     SpaceGroupPermission,
     SpaceUserPermission,
+    UserGlobalPermissionOverride,
 )
 from app.models.restriction import (
     PageGroupRestriction,
@@ -116,32 +118,30 @@ class PermissionService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def _has_group_global_permission(self, user: User, permission: GlobalPermission) -> bool:
-        return (
-            await self.session.scalar(
-                select(GroupGlobalPermission.group_id)
-                .join(GroupMember, GroupMember.group_id == GroupGlobalPermission.group_id)
-                .join(Group, Group.id == GroupMember.group_id)
-                .where(
-                    GroupMember.user_id == user.id,
-                    GroupGlobalPermission.permission == permission,
-                    Group.is_active.is_(True),
-                )
-                .limit(1)
-            )
-        ) is not None
+    async def _user_permission_overrides(self, user: User) -> dict[GlobalPermission, bool]:
+        """This user's own grant/deny rows, keyed by permission.
+
+        Never consulted for a superuser - `global_permissions`/`is_system_admin`
+        both short-circuit on `user.is_superuser` before this runs, so an
+        override can never claw capability back from that account."""
+        rows = await self.session.execute(
+            select(
+                UserGlobalPermissionOverride.permission, UserGlobalPermissionOverride.enabled
+            ).where(UserGlobalPermissionOverride.user_id == user.id)
+        )
+        return {permission: enabled for permission, enabled in rows}
 
     async def is_system_admin(self, user: User) -> bool:
         """Return whether the user has the instance-wide admin capability."""
-        return user.is_superuser or await self._has_group_global_permission(
-            user, GlobalPermission.system_admin
-        )
+        if user.is_superuser:
+            return True
+        return GlobalPermission.system_admin in await self.global_permissions(user)
 
     async def global_permissions(self, user: User) -> list[GlobalPermission]:
         """Return the effective global capabilities for the current user."""
         if user.is_superuser:
             return list(GlobalPermission)
-        return list(
+        from_groups = set(
             await self.session.scalars(
                 select(GroupGlobalPermission.permission)
                 .join(GroupMember, GroupMember.group_id == GroupGlobalPermission.group_id)
@@ -150,6 +150,14 @@ class PermissionService:
                 .distinct()
             )
         )
+        # A user-level override beats whichever way the groups voted: it adds
+        # a permission no group grants, or withdraws one a group does.
+        for permission, enabled in (await self._user_permission_overrides(user)).items():
+            if enabled:
+                from_groups.add(permission)
+            else:
+                from_groups.discard(permission)
+        return list(from_groups)
 
     async def effective_permissions(self, space: Space, user: User) -> set[Permission]:
         if await self.is_system_admin(user):
@@ -351,13 +359,237 @@ class PermissionService:
         return None
 
     async def has_global(self, user: User, permission: GlobalPermission) -> bool:
-        if await self.is_system_admin(user):
+        if user.is_superuser:
             return True
-        return await self._has_group_global_permission(user, permission)
+        permissions = await self.global_permissions(user)
+        # `system_admin` means "all of them", same as `is_superuser` above -
+        # it must unlock every other global permission too, not just the one
+        # literally named `system_admin`. `global_permissions` itself stays a
+        # faithful list of what is actually granted (the Administrators tab
+        # and the Edit User modal both need to show *that*, not the expanded
+        # form), so the shortcut lives here instead.
+        return GlobalPermission.system_admin in permissions or permission in permissions
 
     async def require_global(self, user: User, permission: GlobalPermission) -> None:
         if not await self.has_global(user, permission):
             raise PermissionDeniedError("This action requires a global permission.")
+
+    async def set_user_permission_overrides(
+        self, user: User, overrides: dict[GlobalPermission, bool | None]
+    ) -> None:
+        """Upsert or clear this user's per-permission grant/deny rows.
+
+        A `True`/`False` value replaces whatever row already exists (or adds
+        one); `None` removes the row entirely, reverting that one permission
+        to "inherit from groups". Permissions not present in `overrides` are
+        left untouched - this is a partial update, not a replace-all, so the
+        Edit User modal saving just the Role field never has to resend every
+        permission's current override alongside it."""
+        if not overrides:
+            return
+        existing = dict(
+            (
+                await self.session.execute(
+                    select(
+                        UserGlobalPermissionOverride.permission,
+                        UserGlobalPermissionOverride,
+                    ).where(UserGlobalPermissionOverride.user_id == user.id)
+                )
+            ).all()
+        )
+        for permission, enabled in overrides.items():
+            row = existing.get(permission)
+            if enabled is None:
+                if row is not None:
+                    await self.session.delete(row)
+                continue
+            if row is not None:
+                row.enabled = enabled
+            else:
+                self.session.add(
+                    UserGlobalPermissionOverride(
+                        user_id=user.id, permission=permission, enabled=enabled
+                    )
+                )
+        await self.session.flush()
+
+    async def list_effective_system_admins(
+        self,
+    ) -> list[tuple[User, str, str | None, str | None]]:
+        """Every active user who currently holds `system_admin`, with why -
+        and, where it is knowable, *who* granted it.
+
+        Three independent paths grant it - a direct `is_superuser` flag, a
+        group's `system_admin` global permission, or a user-level override -
+        and `global_permissions`/`is_system_admin` already resolve all three
+        into one answer for authorization purposes. This is the one place
+        that needs to tell them apart instead: the Administrators tab, so an
+        operator can see *why* an account is on the list and, for a
+        group-granted one, "Demote" means "add a deny override" rather than
+        the no-op flipping `is_superuser` would be.
+
+        Priority when more than one path applies, matching `is_superuser`'s
+        unconditional precedence everywhere else: superuser first, then an
+        explicit override, then group membership.
+
+        Each result is `(user, source, granted_by, granted_via_group)`.
+        `granted_by` is the *username* of whoever last flipped `is_superuser`
+        on or added a `system_admin: true` override, read off the audit
+        trail - `None` for an account that has always been this way (the
+        bootstrap admin, or a fixture/import predating this feature).
+        `granted_via_group` names the group(s) responsible for a `group`-
+        sourced grant instead: group membership and a group's own permission
+        grants are not audited per member, so there is no individual actor to
+        name there, only the group itself."""
+        superusers = list(
+            (
+                await self.session.scalars(
+                    select(User)
+                    .where(User.is_superuser.is_(True), User.is_active.is_(True))
+                    .order_by(User.username)
+                )
+            ).all()
+        )
+        result: list[tuple[User, str]] = [(u, "superuser") for u in superusers]
+        seen = {u.id for u in superusers}
+
+        override_rows = (
+            await self.session.execute(
+                select(
+                    UserGlobalPermissionOverride.user_id, UserGlobalPermissionOverride.enabled
+                ).where(UserGlobalPermissionOverride.permission == GlobalPermission.system_admin)
+            )
+        ).all()
+        forced_on = {user_id for user_id, enabled in override_rows if enabled}
+        forced_off = {user_id for user_id, enabled in override_rows if not enabled}
+
+        if forced_on:
+            overridden = list(
+                (
+                    await self.session.scalars(
+                        select(User)
+                        .where(User.id.in_(forced_on), User.is_active.is_(True))
+                        .order_by(User.username)
+                    )
+                ).all()
+            )
+            for u in overridden:
+                if u.id in seen:
+                    continue
+                seen.add(u.id)
+                result.append((u, "override"))
+
+        group_admins = list(
+            (
+                await self.session.scalars(
+                    select(User)
+                    .join(GroupMember, GroupMember.user_id == User.id)
+                    .join(Group, Group.id == GroupMember.group_id)
+                    .join(GroupGlobalPermission, GroupGlobalPermission.group_id == Group.id)
+                    .where(
+                        GroupGlobalPermission.permission == GlobalPermission.system_admin,
+                        Group.is_active.is_(True),
+                        User.is_active.is_(True),
+                    )
+                    # `group_by(User.id)` rather than `.distinct()`: a user in
+                    # more than one group granting system_admin would
+                    # otherwise repeat once per group, but PostgreSQL can't
+                    # DISTINCT a full `User` row - `social_links` is a plain
+                    # `json` column with no equality operator. Grouping by
+                    # the primary key sidesteps that and still lets every
+                    # other column be selected unaggregated (functional
+                    # dependency on the primary key).
+                    .group_by(User.id)
+                    .order_by(User.username)
+                )
+            ).all()
+        )
+        for u in group_admins:
+            if u.id in seen or u.id in forced_off:
+                continue
+            seen.add(u.id)
+            result.append((u, "group"))
+
+        result.sort(key=lambda pair: pair[0].username)
+
+        # `granted_by`, for the two paths where the actor is on the audit
+        # trail: whichever of these rows for this user, across both possible
+        # actions, most recently turned the flag/override *on* - a demote
+        # then re-promote must point at the re-promotion, not the original
+        # grant.
+        grantable_ids = [u.id for u, source in result if source in ("superuser", "override")]
+        grant_rows: dict[UUID, list[AuditLog]] = {}
+        if grantable_ids:
+            rows = list(
+                (
+                    await self.session.scalars(
+                        select(AuditLog)
+                        .where(
+                            AuditLog.entity_type == "user",
+                            AuditLog.entity_id.in_(grantable_ids),
+                            AuditLog.action.in_(
+                                [
+                                    AuditAction.user_created,
+                                    AuditAction.user_role_changed,
+                                    AuditAction.user_permissions_changed,
+                                ]
+                            ),
+                        )
+                        .order_by(AuditLog.created_at.desc())
+                    )
+                ).all()
+            )
+            for row in rows:
+                if row.entity_id is not None:
+                    grant_rows.setdefault(row.entity_id, []).append(row)
+
+        # `granted_via_group`, for the one path with no per-user actor to
+        # name: every currently-active group that grants `system_admin` and
+        # counts this user among its members right now.
+        group_ids = [u.id for u, source in result if source == "group"]
+        grant_groups: dict[UUID, list[str]] = {}
+        if group_ids:
+            group_rows = (
+                await self.session.execute(
+                    select(GroupMember.user_id, Group.name)
+                    .join(Group, Group.id == GroupMember.group_id)
+                    .join(GroupGlobalPermission, GroupGlobalPermission.group_id == Group.id)
+                    .where(
+                        GroupMember.user_id.in_(group_ids),
+                        GroupGlobalPermission.permission == GlobalPermission.system_admin,
+                        Group.is_active.is_(True),
+                    )
+                    .order_by(Group.name)
+                )
+            ).all()
+            for user_id, name in group_rows:
+                grant_groups.setdefault(user_id, []).append(name)
+
+        enriched: list[tuple[User, str, str | None, str | None]] = []
+        for user, source in result:
+            granted_by: str | None = None
+            granted_via_group: str | None = None
+            if source == "superuser":
+                for row in grant_rows.get(user.id, []):
+                    if row.action in (
+                        AuditAction.user_created,
+                        AuditAction.user_role_changed,
+                    ) and row.details.get("is_superuser") is True:
+                        granted_by = row.actor_username
+                        break
+            elif source == "override":
+                for row in grant_rows.get(user.id, []):
+                    if (
+                        row.action == AuditAction.user_permissions_changed
+                        and row.details.get("overrides", {}).get("system_admin") is True
+                    ):
+                        granted_by = row.actor_username
+                        break
+            else:
+                names = grant_groups.get(user.id)
+                granted_via_group = ", ".join(names) if names else None
+            enriched.append((user, source, granted_by, granted_via_group))
+        return enriched
 
     async def assert_user_can_be_removed(self, user: User) -> None:
         """Protect group ownership, space ownership, and the last active

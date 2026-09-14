@@ -12,8 +12,21 @@ from datetime import datetime
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from typing import Literal
+
 from app.models.permission import GlobalPermission
 from app.schemas.page import PageRecentItem
+
+
+class GlobalPermissionOverride(BaseModel):
+    """One user-level grant/deny that beats whatever this user's groups say.
+
+    See `UserGlobalPermissionOverride` for the semantics `enabled` carries."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    permission: GlobalPermission
+    enabled: bool
 
 
 class UserRead(BaseModel):
@@ -41,6 +54,12 @@ class UserRead(BaseModel):
     created_at: datetime
     groups: list[str] = Field(default_factory=list)
     global_permissions: list[GlobalPermission] = Field(default_factory=list)
+    #: This user's own overrides, each beating whatever their groups grant for
+    #: that one permission - `global_permissions` above already reflects
+    #: their effect and is what every authorization check actually reads;
+    #: this is only so the admin UI can show *why* (inherited vs overridden)
+    #: and let an administrator change just the override.
+    global_permission_overrides: list[GlobalPermissionOverride] = Field(default_factory=list)
 
 
 class PublicUserRead(BaseModel):
@@ -123,6 +142,24 @@ class UserTagCreate(BaseModel):
         return value.strip()
 
 
+class AdminAccountRead(UserRead):
+    """One row of the Administrators tab: a `UserRead` plus *why* this account
+    currently holds `system_admin` - `is_superuser` trumps everything else,
+    so it is checked first even for an account that also has a group or an
+    override in play."""
+
+    admin_source: Literal["superuser", "override", "group"]
+    #: Username of whoever last granted `superuser`/`override` access, read
+    #: off the audit trail - `None` when that predates the audit trail (the
+    #: bootstrap admin, a seed script, an import) or simply was never
+    #: recorded. Always `None` for a `group` source: group membership and a
+    #: group's own permission grants are not audited per member.
+    granted_by: str | None = None
+    #: Name(s) of the group(s) currently granting `system_admin`, only set
+    #: for a `group` source - there is no individual actor to name there.
+    granted_via_group: str | None = None
+
+
 class MeRead(UserRead):
     """``/auth/me`` - the session, not just the account.
 
@@ -147,6 +184,10 @@ class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     is_active: bool | None = None
     is_superuser: bool | None = None
+    #: Keyed by permission; `True`/`False` sets that permission's override,
+    #: `None` clears it back to "inherit from groups". Only the permissions
+    #: present are touched - omit a key to leave its current override alone.
+    global_permission_overrides: dict[GlobalPermission, bool | None] | None = None
 
 
 class SelfProfileUpdate(BaseModel):

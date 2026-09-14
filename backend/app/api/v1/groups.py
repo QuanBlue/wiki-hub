@@ -7,15 +7,29 @@ from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.exceptions import PermissionDeniedError
-from app.models.permission import GlobalPermission, Group, GroupGlobalPermission, GroupMember, GroupOwner
+from app.models.page import WikiPage
+from app.models.permission import (
+    GlobalPermission,
+    Group,
+    GroupGlobalPermission,
+    GroupMember,
+    GroupOwner,
+    SpaceGroupPermission,
+)
+from app.models.restriction import PageGroupRestriction
+from app.models.space import Space
 from app.models.user import User
 from app.modules.permissions.service import PermissionService
 from app.schemas.permission import (
     GroupCreate,
     GroupMemberRead,
     GroupMemberUpsert,
+    GroupPagePermissionEntry,
+    GroupPageUsage,
     GroupRead,
+    GroupSpaceUsage,
     GroupUpdate,
+    GroupUsageRead,
 )
 
 router = APIRouter(prefix="/groups", tags=["groups"])
@@ -73,6 +87,17 @@ async def group_read(session: DbSession, group: Group) -> GroupRead:
     if not owner_ids and group.owner_id:
         owner_ids = [group.owner_id]
 
+    space_count = await session.scalar(
+        select(func.count(func.distinct(SpaceGroupPermission.space_id))).where(
+            SpaceGroupPermission.group_id == group.id
+        )
+    )
+    page_count = await session.scalar(
+        select(func.count(func.distinct(PageGroupRestriction.page_id))).where(
+            PageGroupRestriction.group_id == group.id
+        )
+    )
+
     return GroupRead(
         id=group.id,
         name=group.name,
@@ -85,7 +110,67 @@ async def group_read(session: DbSession, group: Group) -> GroupRead:
         created_at=group.created_at,
         updated_at=group.updated_at,
         global_permissions=global_permissions,
+        space_count=int(space_count or 0),
+        page_count=int(page_count or 0),
     )
+
+
+async def group_usage(session: DbSession, group: Group) -> GroupUsageRead:
+    """Every Space/Page this group is granted access to right now - what
+    `delete_group`'s `group_in_use` error refers to, spelled out so an
+    operator does not have to guess or hunt through every Space's Access
+    panel and every Page's Restrictions to find them."""
+    space_rows = (
+        await session.execute(
+            select(Space.id, Space.key, Space.name, SpaceGroupPermission.permission)
+            .join(SpaceGroupPermission, SpaceGroupPermission.space_id == Space.id)
+            .where(SpaceGroupPermission.group_id == group.id)
+            .order_by(Space.name)
+        )
+    ).all()
+    spaces: dict[UUID, GroupSpaceUsage] = {}
+    for space_id, key, name, permission in space_rows:
+        usage = spaces.setdefault(
+            space_id,
+            GroupSpaceUsage(space_id=space_id, space_key=key, space_name=name, permissions=[]),
+        )
+        usage.permissions.append(permission)
+
+    page_rows = (
+        await session.execute(
+            select(
+                WikiPage.id,
+                WikiPage.title,
+                WikiPage.slug,
+                Space.id,
+                Space.key,
+                Space.name,
+                PageGroupRestriction.permission,
+                PageGroupRestriction.denied,
+            )
+            .join(PageGroupRestriction, PageGroupRestriction.page_id == WikiPage.id)
+            .join(Space, Space.id == WikiPage.space_id)
+            .where(PageGroupRestriction.group_id == group.id)
+            .order_by(Space.name, WikiPage.title)
+        )
+    ).all()
+    pages: dict[UUID, GroupPageUsage] = {}
+    for page_id, title, slug, space_id, space_key, space_name, permission, denied in page_rows:
+        usage = pages.setdefault(
+            page_id,
+            GroupPageUsage(
+                page_id=page_id,
+                page_title=title,
+                page_slug=slug,
+                space_id=space_id,
+                space_key=space_key,
+                space_name=space_name,
+                entries=[],
+            ),
+        )
+        usage.entries.append(GroupPagePermissionEntry(permission=permission, denied=denied))
+
+    return GroupUsageRead(spaces=list(spaces.values()), pages=list(pages.values()))
 
 
 @router.get("", response_model=list[GroupRead])
@@ -136,6 +221,16 @@ async def update_group(
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_group(group_id: UUID, user: CurrentUser, service: ServiceDep) -> None:
     await service.delete_group(await service.get_group(group_id), user)
+
+
+@router.get("/{group_id}/usage", response_model=GroupUsageRead)
+async def get_group_usage(
+    group_id: UUID, user: CurrentUser, service: ServiceDep, session: DbSession
+) -> GroupUsageRead:
+    group = await service.get_group(group_id)
+    if not await service.can_manage_group(group, user):
+        raise PermissionDeniedError("You cannot view this group.")
+    return await group_usage(session, group)
 
 
 @router.get("/{group_id}/members", response_model=list[GroupMemberRead])

@@ -22,6 +22,7 @@ from app.models.permission import (
     Permission,
     SpaceGroupPermission,
     SpaceUserPermission,
+    UserGlobalPermissionOverride,
 )
 from app.models.restriction import (
     PageGroupRestriction,
@@ -82,6 +83,7 @@ __all__ = [
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
     "User",
+    "UserGlobalPermissionOverride",
     "UserPagePin",
     "UserSession",
     "UserTag",

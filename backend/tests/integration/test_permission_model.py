@@ -7,6 +7,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.groups import group_read, group_usage
 from app.core.exceptions import ConflictError, PermissionDeniedError
 from app.models.permission import (
     GlobalPermission,
@@ -217,6 +218,202 @@ async def test_system_admin_group_bypasses_space_and_global_checks(
     )
     assert await permissions.can_view_page(page, system_admin)
     await SpaceService(session).update(space, SpaceUpdate(name="Renamed"), system_admin)
+
+
+async def test_list_effective_system_admins_covers_every_path_and_dedupes_groups(
+    session: AsyncSession,
+) -> None:
+    """`list_effective_system_admins` backs the Administrators tab - it must
+    run against a real database, not mocks: the group-granted branch selects
+    full `User` rows and originally deduplicated them with `.distinct()`,
+    which PostgreSQL rejects once `social_links` (a plain `json` column, no
+    equality operator) is among the selected columns. A user in *two*
+    system_admin groups is what triggers that dedup path at all."""
+    owner = await _user(session, "owner")
+    superuser = await _user(session, "superuser", superuser=True)
+    group_admin = await _user(session, "groupadmin")
+    override_admin = await _user(session, "overrideadmin")
+    denied_admin = await _user(session, "deniedadmin")
+
+    first_group = await _group(session, owner, group_admin)
+    session.add(
+        GroupGlobalPermission(group_id=first_group.id, permission=GlobalPermission.system_admin)
+    )
+    # A second group granting the same permission to the same user is what
+    # would have produced a duplicate row for `group_admin` pre-`group_by`.
+    second_group = await _group(session, owner, group_admin)
+    session.add(
+        GroupGlobalPermission(group_id=second_group.id, permission=GlobalPermission.system_admin)
+    )
+    denied_group = await _group(session, owner, denied_admin)
+    session.add(
+        GroupGlobalPermission(group_id=denied_group.id, permission=GlobalPermission.system_admin)
+    )
+    await session.flush()
+
+    permissions = PermissionService(session)
+    await permissions.set_user_permission_overrides(
+        override_admin, {GlobalPermission.system_admin: True}
+    )
+    # A deny override beats the group grant above - `denied_admin` must not
+    # appear at all despite being a member of `denied_group`.
+    await permissions.set_user_permission_overrides(
+        denied_admin, {GlobalPermission.system_admin: False}
+    )
+
+    admins = await permissions.list_effective_system_admins()
+    by_id = {user.id: (source, granted_by, granted_via_group)
+             for user, source, granted_by, granted_via_group in admins}
+
+    assert by_id[superuser.id][0] == "superuser"
+    assert by_id[group_admin.id][0] == "group"
+    assert by_id[override_admin.id][0] == "override"
+    assert denied_admin.id not in by_id
+    # Exactly one row for `group_admin`, not one per system_admin group.
+    assert sum(1 for user, *_ in admins if user.id == group_admin.id) == 1
+
+    # `superuser` was made one at creation, via `AuthService.create_user` -
+    # that *is* audited (a `user_created` row), but the fixture builds its
+    # own unauthenticated `AuthService(session)` with no actor, so the actor
+    # on that row is the audit trail's fallback: "system".
+    assert by_id[superuser.id][1] == "system"
+    # `override_admin` got their override through
+    # `set_user_permission_overrides` directly, bypassing `update_user` (and
+    # so the audit trail) entirely - nothing to attribute it to at all.
+    assert by_id[override_admin.id][1] is None
+    # `group_admin` has no per-user actor to name, but both groups that grant
+    # it are named.
+    assert by_id[group_admin.id][2] is not None
+    assert first_group.name in by_id[group_admin.id][2]
+    assert second_group.name in by_id[group_admin.id][2]
+
+
+async def test_list_effective_system_admins_reports_who_granted_it(
+    session: AsyncSession,
+) -> None:
+    """The actual feature: promote/override *through* `AuthService`, as a
+    named actor, and confirm the Administrators tab can say who did it -
+    not just that it happened."""
+    protected, _created, _rotated, _changed = await AuthService(session).ensure_bootstrap_admin(
+        username=_name("root"),
+        password="password-1234",
+        email=f"{_name('root')}@example.com",
+        full_name="root",
+    )
+    member = await _user(session, "member")
+    other = await _user(session, "other")
+
+    acting_service = AuthService(session, actor=protected)
+    await acting_service.update_user(member.id, UserUpdate(is_superuser=True))
+    await acting_service.update_user(
+        other.id, UserUpdate(global_permission_overrides={GlobalPermission.system_admin: True})
+    )
+
+    by_id = {
+        user.id: (source, granted_by, granted_via_group)
+        for user, source, granted_by, granted_via_group in (
+            await PermissionService(session).list_effective_system_admins()
+        )
+    }
+
+    assert by_id[member.id] == ("superuser", protected.username, None)
+    assert by_id[other.id] == ("override", protected.username, None)
+
+    # Demote `member` back to Member, then re-promote as a *different* actor
+    # - the report must follow the most recent grant, not the first one.
+    # Postgres's `now()` is frozen for the life of a transaction, so without
+    # a commit in between, these two audit rows would land with an
+    # identical timestamp and the ordering this relies on would be
+    # accidental - `get_db` commits once per request in production, which is
+    # what actually keeps sequential grants ordered there.
+    await acting_service.update_user(member.id, UserUpdate(is_superuser=False))
+    await session.commit()
+    await AuthService(session, actor=other).update_user(
+        member.id, UserUpdate(is_superuser=True)
+    )
+
+    by_id = {
+        user.id: (source, granted_by)
+        for user, source, granted_by, _ in (
+            await PermissionService(session).list_effective_system_admins()
+        )
+    }
+    assert by_id[member.id] == ("superuser", other.username)
+
+
+async def test_group_read_and_usage_report_every_space_and_page_it_grants(
+    session: AsyncSession,
+) -> None:
+    """`GroupRead.space_count`/`page_count` (the Directory table's "used in"
+    numbers) and `group_usage` (the Edit Group dialog's "Used in" tab) must
+    agree, and both must survive a group holding *more than one* permission
+    on the same Space or Page - the exact shape that would double-count with
+    a naive `len(rows)` instead of counting distinct spaces/pages, the same
+    class of bug `list_effective_system_admins` had with `.distinct()` on a
+    `json` column (not applicable here - space/page ids are plain UUID
+    columns - but the multi-row-per-entity shape is the same trap)."""
+    owner = await _user(session, "owner")
+    member = await _user(session, "member")
+    group = await _group(session, owner, member)
+    permissions = PermissionService(session)
+
+    space = await SpaceService(session).create(
+        SpaceCreate(key=f"USAGE{uuid.uuid4().hex[:5]}", name="Usage tracking"), owner
+    )
+    # Two permissions on the *same* space - must count as one space, not two.
+    await permissions.set_space_permission(
+        space, group.id, Permission.view, owner, group=True, present=True
+    )
+    await permissions.set_space_permission(
+        space, group.id, Permission.add, owner, group=True, present=True
+    )
+
+    page = await PageService(session).create(space, PageCreate(title="Restricted"), owner)
+    # An allow-list grant and a block, both on the same page - must count as
+    # one page, not two, and both entries must show up distinctly.
+    await permissions.set_page_restriction(
+        page, group.id, PageRestrictionPermission.view, owner, group=True, present=True
+    )
+    await permissions.set_page_permission_denial(
+        page, group.id, PageRestrictionPermission.edit, owner, group=True, denied=True
+    )
+
+    read = await group_read(session, group)
+    assert read.space_count == 1
+    assert read.page_count == 1
+
+    usage = await group_usage(session, group)
+    assert len(usage.spaces) == 1
+    assert usage.spaces[0].space_id == space.id
+    assert usage.spaces[0].space_key == space.key
+    assert set(usage.spaces[0].permissions) == {Permission.view, Permission.add}
+
+    assert len(usage.pages) == 1
+    assert usage.pages[0].page_id == page.id
+    assert usage.pages[0].page_slug == page.slug
+    assert usage.pages[0].space_id == space.id
+    entries = {(entry.permission, entry.denied) for entry in usage.pages[0].entries}
+    assert entries == {
+        (PageRestrictionPermission.view, False),
+        (PageRestrictionPermission.edit, True),
+    }
+
+    # Dropping one of the two space permissions - but not both - must still
+    # count as one space (not zero), now with just the remaining permission.
+    # Dropping *every* permission is covered by
+    # `test_multiple_group_permissions_are_additive` and friends already;
+    # `set_space_permission` also purges any now-orphaned page restriction
+    # for the group at that point, which is a separate, already-covered
+    # behaviour this test isn't about.
+    await permissions.set_space_permission(
+        space, group.id, Permission.view, owner, group=True, present=False
+    )
+    read = await group_read(session, group)
+    assert read.space_count == 1
+    usage = await group_usage(session, group)
+    assert usage.spaces[0].permissions == [Permission.add]
+    # The page restriction is untouched - the group still has space access.
+    assert read.page_count == 1
 
 
 async def test_superuser_is_owner_of_a_space_that_was_never_given_one(

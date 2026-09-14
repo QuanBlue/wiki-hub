@@ -30,7 +30,7 @@ from app.core.exceptions import (
 from app.models.draft import PageDraft
 from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.user_page_label import UserPageLabel
-from app.models.permission import GlobalPermission, Group, GroupMember
+from app.models.permission import GlobalPermission, Group, GroupMember, UserGlobalPermissionOverride
 from app.models.space import Space, SpaceStatus
 from app.models.user import User
 from app.models.user_session import UserSession
@@ -40,6 +40,8 @@ from app.modules.permissions.service import PermissionService
 from app.repositories.user import UserRepository
 from app.schemas.pagination import Page
 from app.schemas.user import (
+    AdminAccountRead,
+    GlobalPermissionOverride,
     PasswordChange,
     PasswordReset,
     PublicUserRead,
@@ -381,6 +383,76 @@ async def delete_own_tag(tag_id: uuid.UUID, user: CurrentUser, session: DbSessio
     await session.execute(delete(UserTag).where(UserTag.id == tag_id, UserTag.user_id == user.id))
 
 
+async def _read_user(session: DbSession, target: User) -> UserRead:
+    """Build a `UserRead` with `groups`/`global_permissions`/
+    `global_permission_overrides` actually populated.
+
+    The plain ORM `User` row has none of those as attributes, so
+    `UserRead.model_validate(target)` alone would silently leave every one of
+    them at its empty default - fine for `list_users` (which never showed
+    them and still fills `groups` in separately), but wrong for the single-
+    user reads the Edit User modal's Global Access section depends on."""
+    group_names = list(
+        await session.scalars(
+            select(Group.name)
+            .join(GroupMember, GroupMember.group_id == Group.id)
+            .where(GroupMember.user_id == target.id, Group.is_active.is_(True))
+            .order_by(Group.name)
+        )
+    )
+    global_permissions = await PermissionService(session).global_permissions(target)
+    override_rows = (
+        await session.execute(
+            select(
+                UserGlobalPermissionOverride.permission, UserGlobalPermissionOverride.enabled
+            ).where(UserGlobalPermissionOverride.user_id == target.id)
+        )
+    ).all()
+    return UserRead.model_validate(target).model_copy(
+        update={
+            "groups": group_names,
+            "global_permissions": global_permissions,
+            "global_permission_overrides": [
+                GlobalPermissionOverride(permission=permission, enabled=enabled)
+                for permission, enabled in override_rows
+            ],
+        }
+    )
+
+
+@router.get(
+    "/administrators",
+    response_model=list[AdminAccountRead],
+    summary="List every account that currently holds system_admin",
+)
+async def list_administrators(user: CurrentUser, session: DbSession) -> list[AdminAccountRead]:
+    """Registered ahead of `GET /{user_id}` on purpose - `user_id` is typed as
+    a UUID path param, and Starlette matches routes in registration order, so
+    this literal path must come first or a request here would 422 trying to
+    parse "administrators" as one instead of falling through to this route.
+    """
+    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
+    admins = await PermissionService(session).list_effective_system_admins()
+    return [
+        AdminAccountRead(
+            **(await _read_user(session, account)).model_dump(),
+            admin_source=source,
+            granted_by=granted_by,
+            granted_via_group=granted_via_group,
+        )
+        for account, source, granted_by, granted_via_group in admins
+    ]
+
+
+@router.get("/{user_id}", response_model=UserRead, summary="Read a user")
+async def get_user(user_id: uuid.UUID, user: CurrentUser, session: DbSession) -> UserRead:
+    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
+    target = await session.get(User, user_id)
+    if target is None:
+        raise NotFoundError("User not found.")
+    return await _read_user(session, target)
+
+
 @router.get("", response_model=Page[UserRead], summary="List users")
 async def list_users(
     user: CurrentUser,
@@ -428,8 +500,8 @@ async def create_user(
     service: ActingAuthServiceDep,
 ) -> UserRead:
     await PermissionService(session).require_global(user, GlobalPermission.manage_users)
-    user = await service.create_user(payload)
-    return UserRead.model_validate(user)
+    created = await service.create_user(payload)
+    return await _read_user(session, created)
 
 
 @router.patch("/{user_id}", response_model=UserRead, summary="Update a user")
@@ -441,8 +513,8 @@ async def update_user(
     service: ActingAuthServiceDep,
 ) -> UserRead:
     await PermissionService(session).require_global(user, GlobalPermission.manage_users)
-    user = await service.update_user(user_id, payload)
-    return UserRead.model_validate(user)
+    updated = await service.update_user(user_id, payload)
+    return await _read_user(session, updated)
 
 
 @router.post(
@@ -465,7 +537,7 @@ async def reset_user_password(
     """
     await PermissionService(session).require_global(user, GlobalPermission.manage_users)
     updated = await service.reset_password(user_id, payload.new_password)
-    return UserRead.model_validate(updated)
+    return await _read_user(session, updated)
 
 
 @router.delete(

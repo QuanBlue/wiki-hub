@@ -89,6 +89,35 @@ class GroupGlobalPermission(Base):
     )
 
 
+class UserGlobalPermissionOverride(Base):
+    """A per-user override of one global permission.
+
+    Group grants combine additively, but a person's job sometimes disagrees
+    with every group they happen to be in - they need `manage_users` without
+    the rest of what their team's group grants, or they must NOT have
+    `system_admin` despite being in a group that hands it out. A row here
+    settles that regardless of group membership: `enabled=True` grants the
+    permission even if no group does, `enabled=False` denies it even if one
+    does. No row at all means "inherit from groups", the behaviour before
+    this table existed.
+
+    Deliberately independent of `User.is_superuser`: a superuser already has
+    every permission unconditionally (see `PermissionService.global_permissions`)
+    and that check runs first, so an override here never needs to - and must
+    never be able to - claw capability back from a superuser account.
+    """
+
+    __tablename__ = "user_global_permission_overrides"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    permission: Mapped[GlobalPermission] = mapped_column(
+        _enum_column(GlobalPermission, "global_permission"), primary_key=True
+    )
+    enabled: Mapped[bool] = mapped_column(nullable=False)
+
+
 class SpaceUserPermission(Base):
     __tablename__ = "space_user_permissions"
 

@@ -6,6 +6,7 @@ import {
   Pencil,
   Search,
   Trash2,
+  Users,
   UsersRound,
   X,
 } from "lucide-react";
@@ -15,8 +16,10 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { BulkDeleteBar, BulkSelectionProvider, SelectionCell, SelectionHeaderCell, SelectModeButton } from "@/components/admin/bulk-select";
 import { CreateGroupDialog } from "@/components/admin/create-group-dialog";
 import { EditGroupDialog } from "@/components/admin/edit-group-dialog";
+import { GroupUsageDialog } from "@/components/admin/group-usage-dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -59,6 +62,7 @@ export function GroupManager({
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
+  const [usageGroup, setUsageGroup] = useState<Group | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Group | null>(null);
   const [deletePending, setDeletePending] = useState(false);
 
@@ -82,6 +86,12 @@ export function GroupManager({
     activePage * pageSize,
     (activePage + 1) * pageSize,
   );
+  // Same eligibility each row's own `SelectionCell` already enforces (a
+  // default system group can't be bulk-selected) - "select all" must match
+  // it exactly.
+  const selectableGroupIds = pageGroups
+    .filter((group) => !isDefaultGroup(group))
+    .map((group) => group.id);
   const totalMembers = groups.reduce(
     (total, group) => total + group.member_count,
     0,
@@ -115,9 +125,13 @@ export function GroupManager({
     if (editingGroup?.id === updated.id) {
       setEditingGroup(updated);
     }
+    if (usageGroup?.id === updated.id) {
+      setUsageGroup(updated);
+    }
   }
 
   return (
+    <BulkSelectionProvider>
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-5 text-sm">
@@ -126,8 +140,12 @@ export function GroupManager({
             <strong>{groups.length}</strong>
             <span className="text-muted-foreground">groups</span>
           </span>
-          <span className="text-muted-foreground">
-            {totalMembers} member{totalMembers === 1 ? "" : "s"} assigned
+          <span className="flex items-center gap-2">
+            <Users className="text-muted-foreground size-4" />
+            <strong>{totalMembers}</strong>
+            <span className="text-muted-foreground">
+              member{totalMembers === 1 ? "" : "s"} assigned
+            </span>
           </span>
         </div>
         <CreateGroupDialog
@@ -150,44 +168,52 @@ export function GroupManager({
               Manage workspace teams, member assignments, and global access.
             </p>
           </div>
-          <form
-            className="flex w-full items-end gap-2 sm:w-auto"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setPage(0);
-            }}
-          >
-            <div className="relative">
-              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-              <Input
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  setPage(0);
-                }}
-                placeholder="Search groups"
-                aria-label="Search groups"
-                className="w-56 pr-8 pl-8"
-              />
-              {query ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery("");
+          <div className="flex w-full flex-wrap items-end gap-2 sm:w-auto">
+            <form
+              className="flex w-full items-end gap-2 sm:w-auto"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setPage(0);
+              }}
+            >
+              <div className="relative">
+                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+                <Input
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
                     setPage(0);
                   }}
-                  className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring absolute top-1/2 right-2 flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                  aria-label="Clear group search"
-                >
-                  <X className="size-3.5" />
-                </button>
-              ) : null}
-            </div>
-            <Button type="submit" variant="secondary">
-              Search
-            </Button>
-          </form>
+                  placeholder="Search groups"
+                  aria-label="Search groups"
+                  className="w-56 pr-8 pl-8"
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery("");
+                      setPage(0);
+                    }}
+                    className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring absolute top-1/2 right-2 flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                    aria-label="Clear group search"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                ) : null}
+              </div>
+              <Button type="submit" variant="secondary">
+                Search
+              </Button>
+            </form>
+            <SelectModeButton />
+          </div>
         </div>
+        <BulkDeleteBar
+          deleteEndpointBase="/api/v1/groups"
+          itemNoun="group"
+          confirmNote="Existing space permissions must already be removed - a group still granting one will fail to delete and stay in the list."
+        />
         {groups.length === 0 ? (
           <EmptyGroups
             users={users}
@@ -218,16 +244,18 @@ export function GroupManager({
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full min-w-[900px] text-sm">
                 <thead>
                   <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
-                    <th className="w-[31%] px-4 py-3 font-medium">Group</th>
-                    <th className="w-[18%] px-4 py-3 font-medium">Owner</th>
-                    <th className="w-[12%] px-4 py-3 font-medium">Members</th>
-                    <th className="w-[25%] px-4 py-3 font-medium">
+                    <SelectionHeaderCell ids={selectableGroupIds} />
+                    <th className="w-[26%] px-4 py-3 font-medium">Group</th>
+                    <th className="w-[15%] px-4 py-3 font-medium">Owner</th>
+                    <th className="w-[9%] px-4 py-3 font-medium">Members</th>
+                    <th className="w-[20%] px-4 py-3 font-medium">
                       Global access
                     </th>
-                    <th className="w-[14%] px-4 py-3 text-right font-medium">
+                    <th className="w-[17%] px-4 py-3 font-medium">Access grants</th>
+                    <th className="w-[13%] px-4 py-3 text-right font-medium">
                       Actions
                     </th>
                   </tr>
@@ -239,6 +267,7 @@ export function GroupManager({
                       group={group}
                       users={users}
                       onEdit={() => setEditingGroup(group)}
+                      onViewUsage={() => setUsageGroup(group)}
                       onDelete={() => setDeleteTarget(group)}
                     />
                   ))}
@@ -310,6 +339,15 @@ export function GroupManager({
         onGroupUpdated={handleGroupUpdated}
       />
 
+      <GroupUsageDialog
+        group={usageGroup}
+        open={usageGroup !== null}
+        onOpenChange={(open) => {
+          if (!open) setUsageGroup(null);
+        }}
+        onGroupUpdated={handleGroupUpdated}
+      />
+
       <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
@@ -331,6 +369,7 @@ export function GroupManager({
         }}
       />
     </div>
+    </BulkSelectionProvider>
   );
 }
 
@@ -359,11 +398,13 @@ function GroupRow({
   group,
   users,
   onEdit,
+  onViewUsage,
   onDelete,
 }: {
   group: Group;
   users: User[];
   onEdit: () => void;
+  onViewUsage: () => void;
   onDelete: () => void;
 }) {
   const owner = users.find((user) => user.id === group.owner_id);
@@ -371,6 +412,11 @@ function GroupRow({
 
   return (
     <tr className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0">
+      <SelectionCell
+        id={group.id}
+        disabled={isDefault}
+        title={isDefault ? "Default system group cannot be deleted" : undefined}
+      />
       <td className="px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-md">
@@ -416,6 +462,29 @@ function GroupRow({
           </div>
         ) : (
           <span className="text-muted-foreground">No global access</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        {group.space_count === 0 && group.page_count === 0 ? (
+          <span className="text-muted-foreground">Not used</span>
+        ) : (
+          <button
+            type="button"
+            onClick={onViewUsage}
+            className="text-muted-foreground hover:text-foreground cursor-pointer text-left underline decoration-dotted underline-offset-2"
+            title="View and remove this group's Space/Page access grants"
+          >
+            {[
+              group.space_count > 0
+                ? `${group.space_count} space${group.space_count === 1 ? "" : "s"}`
+                : null,
+              group.page_count > 0
+                ? `${group.page_count} page${group.page_count === 1 ? "" : "s"}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(", ")}
+          </button>
         )}
       </td>
       <td className="px-4 py-3">
