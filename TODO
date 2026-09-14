@@ -1,4 +1,5 @@
 - cho tích hợp với mail để gửi mail thông báo (đổi password, có người yêu cầu quyền truy cập vào space/page, bị disable,...)
+
 AI (sáng kiến)
 - RAG chatbot hỏi-đáp tri thức nội bộ, trả lời kèm trích dẫn link trang nguồn (pgvector + arq embedding job + LLM)
 - semantic search hybrid (full-text + vector)
@@ -6,10 +7,15 @@ AI (sáng kiến)
 - trợ lý soạn thảo trong Tiptap (hoàn thiện câu, sửa ngữ pháp, thuật ngữ nhất quán)
 - tự gắn nhãn & gợi ý trang liên quan khi tạo/sửa trang
 - phát hiện nội dung lỗi thời (quét định kỳ, gắn cờ trang lâu không cập nhật nhưng nhiều lượt xem)
+
 Doing
-- export luu ca pinned, save for later, like, label, favorite space
-- tag, pinned, save for later page, like
-- revision history hien thi khong dung (edit lan dau)
-- test export full (co pass, k pass, cancel) + export confluence
-  - owner, created_at/created_by_username, member
-- page access
+- export confluence 
+   + import vao khong co user/quyen
+   + group permission
+   + admin list
+   + user permission
+- test user co quyền admin thì có bị loại khỏi các space restrict không 
+   + trường hợp không add user đó 
+   + trường hợp add user đó nhưng không có đọc/ ghi -> chỉnh lại user đó sẽ luôn có trong space restrict với quyền admin (cao nhất) và không thể bị xóa khỏi space restrict
+- Group/user global permission
+   + group access to space/page
