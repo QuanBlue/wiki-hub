@@ -17,7 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.attachment import PageAttachment
 from app.models.backup_job import BackupArchive, BackupJob
 from app.models.page import WikiPage
-from app.models.space import Space
+from app.models.permission import Group, GroupMember, SpaceGroupPermission, SpaceUserPermission
+from app.models.restriction import PageGroupRestriction, PageUserRestriction
+from app.models.space import Space, SpaceOwner
+from app.models.user import User
 from app.modules.backup.confluence_export import CONFLUENCE_DC_PROFILES, write_confluence_dc_export
 from app.modules.backup.service import (
     STALE_JOB_AFTER,
@@ -413,6 +416,26 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
             spaces = list((await session.execute(spaces_query)).scalars())
             pages = list((await session.execute(select(WikiPage))).scalars())
             attachments = list((await session.execute(select(PageAttachment))).scalars())
+            # Everything below is who-has-access-to-what for the spaces above -
+            # see write_confluence_dc_export's own docstring for why this
+            # matters: without it, every space that comes back out of a
+            # restore has nobody but the importing admin on it.
+            users = list((await session.execute(select(User))).scalars())
+            groups = list((await session.execute(select(Group))).scalars())
+            group_members = list((await session.execute(select(GroupMember))).scalars())
+            space_owners = list((await session.execute(select(SpaceOwner))).scalars())
+            space_user_permissions = list(
+                (await session.execute(select(SpaceUserPermission))).scalars()
+            )
+            space_group_permissions = list(
+                (await session.execute(select(SpaceGroupPermission))).scalars()
+            )
+            page_user_restrictions = list(
+                (await session.execute(select(PageUserRestriction))).scalars()
+            )
+            page_group_restrictions = list(
+                (await session.execute(select(PageGroupRestriction))).scalars()
+            )
             await write_confluence_dc_export(
                 local_path,
                 storage,
@@ -420,6 +443,14 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
                 spaces=spaces,
                 pages=pages,
                 attachments=attachments,
+                users=users,
+                groups=groups,
+                group_members=group_members,
+                space_owners=space_owners,
+                space_user_permissions=space_user_permissions,
+                space_group_permissions=space_group_permissions,
+                page_user_restrictions=page_user_restrictions,
+                page_group_restrictions=page_group_restrictions,
                 session=session,
                 job=job,
             )

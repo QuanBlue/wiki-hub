@@ -1533,6 +1533,13 @@ class BackupService:
     ) -> None:
         protected = await self.users.get_protected()
 
+        # Keys of spaces this import itself creates, as opposed to ones that
+        # already existed locally and were left alone below ("key_exists").
+        # The ownership loop further down needs this distinction: a space
+        # that already has its own local owners must not have backup owners
+        # piled on top of them (see the comment there).
+        created_space_keys: set[str] = set()
+
         # --- users --------------------------------------------------------
         for user_entry in doc.users:
             username = user_entry.username.strip()
@@ -1613,6 +1620,7 @@ class BackupService:
                 space.id = space_entry.id
             self.session.add(space)
             await self.session.flush()
+            created_space_keys.add(key)
             report.add("space", key, "created")
 
         # --- membership ---------------------------------------------------
@@ -1658,6 +1666,17 @@ class BackupService:
         # administrator by default for exactly this case.
         for owner_entry in doc.space_owners:
             owner_label = f"{owner_entry.space_key}/{owner_entry.username}"
+            owner_key = owner_entry.space_key.strip().upper()
+            # Only restore ownership onto spaces THIS import created. A space
+            # that already existed locally (key_exists, above) already has
+            # its own local owner(s) - piling the backup's owner on top of
+            # them instead of replacing them just leaves two "Owner" chips
+            # for what looks like one admin account (e.g. re-importing a
+            # backup taken from this same instance, or from a near-duplicate
+            # one, onto itself).
+            if owner_key not in created_space_keys:
+                report.add("space_owner", owner_label, "skipped", "space_preexisting")
+                continue
             owner_space = await self.spaces.get_by_key(owner_entry.space_key)
             owner_user = await self.users.get_by_username(owner_entry.username)
             if owner_space is None:

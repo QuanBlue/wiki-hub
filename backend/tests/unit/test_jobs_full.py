@@ -205,7 +205,7 @@ async def test_run_backup_job_complete(monkeypatch):
     job = BackupJob(id=job_id, kind="confluence_export", status="queued", cancel_requested=False, created_at=datetime.now(UTC), confluence_profile="dc-8", space_keys=["TEST"])
     session.get.return_value = job
 
-    async def mock_conf_export(path, storage, *, profile, spaces, pages, attachments, session=None, job=None):
+    async def mock_conf_export(path, storage, *, profile, spaces, pages, attachments, **_kwargs):
         with open(path, "w") as f:
             f.write("test")
 
