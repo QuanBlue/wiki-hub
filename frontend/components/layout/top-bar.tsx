@@ -39,7 +39,7 @@ export function TopBar({ siteName: propSiteName, user }: { siteName?: string; us
           <Wordmark siteName={effectiveSiteName} />
         </Link>
 
-        <div className="mx-auto w-full max-w-md">
+        <div className="mx-auto w-full min-w-0 max-w-md">
           <button
             type="button"
             onClick={() => setSearchOpen(true)}

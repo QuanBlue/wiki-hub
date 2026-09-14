@@ -629,8 +629,6 @@ function PageTree({
     return grouped;
   }, [homePageId, pages]);
   const [expandedPageIds, setExpandedPageIds] = useState<Set<string>>(() => {
-    // Keep the first client render identical to the server render. Browser
-    // storage is restored in an effect below, after hydration completes.
     const activePage = pages.find((p) => p.slug === activeSlug);
     const pageById = new Map(pages.map((p) => [p.id, p]));
     const ancestorIds = new Set<string>();
@@ -639,29 +637,33 @@ function PageTree({
       ancestorIds.add(parentId);
       parentId = pageById.get(parentId)?.parent_id;
     }
+    // Merge in whatever was already expanded before this mount, read
+    // synchronously here rather than restored in a later effect. Page
+    // routes remount this whole tree on every navigation (see the comment
+    // on SpaceWorkspace's own sidebar-scroll-restore effect), and restoring
+    // this asynchronously used to mean the tree grew *after* the parent
+    // sidebar had already measured its height and restored a scroll
+    // position against it - visibly shifting the scroll the user had just
+    // set up on every single page click. `window` is undefined during SSR,
+    // so this still only ever runs client-side; a true first-ever page load
+    // (real hydration, not a later soft navigation) has no prior session to
+    // restore from anyway, so there is nothing here for it to mismatch.
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.sessionStorage.getItem(storageKey);
+        const ids: unknown = saved ? JSON.parse(saved) : null;
+        if (Array.isArray(ids)) {
+          for (const id of ids as string[]) ancestorIds.add(id);
+        }
+      } catch {
+        // Ignore storage errors.
+      }
+    }
     return ancestorIds;
   });
-  const restoredStorage = useRef(false);
-
-  useEffect(() => {
-    try {
-      const saved = window.sessionStorage.getItem(storageKey);
-      if (!saved) return;
-      const ids: unknown = JSON.parse(saved);
-      if (Array.isArray(ids)) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate persisted tree expansion state
-        setExpandedPageIds(new Set<string>(ids as string[]));
-      }
-    } catch {
-      // Ignore storage errors.
-    } finally {
-      restoredStorage.current = true;
-    }
-  }, [storageKey]);
 
   // Persist expansion state whenever it changes.
   useEffect(() => {
-    if (!restoredStorage.current) return;
     try {
       window.sessionStorage.setItem(
         storageKey,
@@ -672,6 +674,10 @@ function PageTree({
     }
   }, [expandedPageIds, storageKey]);
 
+  // Defensive only: the initializer above already covers the normal case
+  // (a fresh mount per navigation). This keeps the active page's ancestors
+  // expanded if `pages`/`activeSlug` ever change on an *already-mounted*
+  // instance instead.
   useEffect(() => {
     const activePage = pages.find((page) => page.slug === activeSlug);
     const pageById = new Map(pages.map((page) => [page.id, page]));
