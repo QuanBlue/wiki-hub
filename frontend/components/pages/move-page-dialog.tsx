@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { inputClassName } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import type { Space, WikiPage } from "@/types/api";
 
 function pageHref(spaceKey: string, slug: string): string {
@@ -59,6 +60,7 @@ export function MovePageDialog({
   onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const { t } = useTranslation();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
@@ -88,9 +90,9 @@ export function MovePageDialog({
     void api
       .get<Space[]>("/api/v1/spaces")
       .then(setSpaces)
-      .catch(() => toast.error("Could not load spaces."))
+      .catch(() => toast.error(t("movePage.loadSpacesError")))
       .finally(() => setLoading(false));
-  }, [open, page.parent_id, pages, space.key]);
+  }, [open, page.parent_id, pages, space.key, t]);
 
   async function selectDestination(nextKey: string) {
     setDestinationKey(nextKey);
@@ -111,7 +113,7 @@ export function MovePageDialog({
       );
     } catch {
       setDestinationPages([]);
-      toast.error("Could not load pages in that space.");
+      toast.error(t("movePage.loadPagesError"));
     } finally {
       setLoading(false);
     }
@@ -142,14 +144,17 @@ export function MovePageDialog({
       );
       const destination = spaces.find((item) => item.key === destinationKey);
       toast.success(
-        `Moved "${moved.title}"${destination ? ` to ${destination.name}` : ""}.`,
+        t("movePage.movedToast", {
+          title: moved.title,
+          destination: destination ? ` ${t("movePage.destinationTo", { name: destination.name })}` : "",
+        }),
       );
       setOpen(false);
       router.push(pageHref(destinationKey, moved.slug));
       router.refresh();
     } catch (error) {
       toast.error(
-        error instanceof ApiError ? error.message : "Could not move this page.",
+        error instanceof ApiError ? error.message : t("movePage.moveError"),
       );
     } finally {
       setPending(false);
@@ -174,24 +179,24 @@ export function MovePageDialog({
         <DialogTrigger asChild>
           <Button variant="ghost" size="sm">
             <FolderInput />
-            Move
+            {t("movePage.trigger")}
           </Button>
         </DialogTrigger>
       ) : null}
       <DialogContent
-        title="Move page"
-        description="The page and any child pages move together."
+        title={t("movePage.title")}
+        description={t("movePage.description")}
         className="overflow-visible"
       >
         <form onSubmit={submit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
-            <Label htmlFor="move-page-space">Destination space</Label>
+            <Label htmlFor="move-page-space">{t("movePage.destinationLabel")}</Label>
             <Select
               value={destinationKey}
               onValueChange={(value) => void selectDestination(value)}
               disabled={loading || pending}
             >
-              <SelectTrigger id="move-page-space" aria-label="Destination space">
+              <SelectTrigger id="move-page-space" aria-label={t("movePage.destinationLabel")}>
                 <SelectValue>
                   {spaces.find((candidate) => candidate.key === destinationKey)?.name ?? space.name}
                 </SelectValue>
@@ -210,7 +215,7 @@ export function MovePageDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="move-page-parent">Parent page</Label>
+            <Label htmlFor="move-page-parent">{t("movePage.parentLabel")}</Label>
             <div ref={parentPickerRef} className="relative">
               <Search
                 aria-hidden
@@ -236,7 +241,7 @@ export function MovePageDialog({
                 onKeyDown={(event) => {
                   if (event.key === "Escape") setParentOpen(false);
                 }}
-                placeholder="Top-level page"
+                placeholder={t("movePage.topLevelPage")}
                 className={`${inputClassName} pr-9 pl-9`}
                 disabled={loading || pending}
               />
@@ -261,7 +266,7 @@ export function MovePageDialog({
                     }}
                     className="text-foreground hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex min-h-8 w-full cursor-pointer items-center rounded px-2 text-left text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                   >
-                    Top-level page
+                    {t("movePage.topLevelPage")}
                   </button>
                   {eligibleParents.map((candidate) => (
                     <button
@@ -281,7 +286,7 @@ export function MovePageDialog({
                   ))}
                   {eligibleParents.length === 0 ? (
                     <p className="text-muted-foreground px-2 py-1.5 text-sm">
-                      No matching pages.
+                      {t("movePage.noMatchingPages")}
                     </p>
                   ) : null}
                 </div>
@@ -296,7 +301,7 @@ export function MovePageDialog({
               disabled={loading || pending}
             >
               {pending ? <Loader2 className="animate-spin" /> : <FolderInput />}
-              {pending ? "Moving..." : "Move page"}
+              {pending ? t("movePage.moving") : t("movePage.title")}
             </Button>
           </DialogFooter>
         </form>

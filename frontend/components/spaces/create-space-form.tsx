@@ -24,14 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api, ApiError, describeApiError } from "@/lib/api-client";
+import { api, ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import type { Space, User } from "@/types/api";
 
 //: Mirrors the backend's rule (see `_check_name_start` in
 //: `app/schemas/space.py`): a space name may not start with a digit or a
 //: symbol, though any Unicode letter (including accented ones) is fine.
 const NAME_START_PATTERN = /^\p{L}/u;
-const NAME_ERROR = "Name must start with a letter, not a digit or special character.";
 
 function deriveKey(name: string): string {
   const base = name
@@ -49,6 +49,7 @@ function deriveKey(name: string): string {
 
 export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
   const router = useRouter();
+  const { t, apiErrorText } = useTranslation();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -66,9 +67,9 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
   const nameError = !trimmedName
     ? null
     : !NAME_START_PATTERN.test(trimmedName)
-      ? NAME_ERROR
+      ? t("spaces.nameError")
       : isDuplicateName
-        ? `A space named "${trimmedName}" already exists.`
+        ? t("spaces.duplicateName", { name: trimmedName })
         : null;
   const normalizedMemberQuery = memberQuery.trim().toLowerCase();
   const filteredUsers = users.filter(
@@ -155,8 +156,10 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
         } catch (membershipError) {
           toast.error(
             membershipError instanceof ApiError
-              ? `Space created, but some members could not be added: ${membershipError.message}`
-              : "Space created, but some members could not be added.",
+              ? t("spaces.membersPartialError", {
+                  message: membershipError.message,
+                })
+              : t("spaces.membersPartialErrorPlain"),
           );
           setOpen(false);
           reset();
@@ -164,12 +167,12 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
           return;
         }
       }
-      toast.success(`Space "${space.name}" created.`);
+      toast.success(t("spaces.createdToast", { name: space.name }));
       setOpen(false);
       reset();
       router.refresh();
     } catch (err) {
-      const message = describeApiError(err, "Could not create the space.");
+      const message = apiErrorText(err, "spaces.createError");
       setError(message);
       toast.error(message);
     } finally {
@@ -181,7 +184,7 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
     <>
       <Button variant="primary" onClick={() => setOpen(true)}>
         <Plus />
-        Create space
+        {t("spaces.createSpace")}
       </Button>
       <Dialog
         open={open}
@@ -192,28 +195,30 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
       >
         <DialogContent
           className="max-w-xl"
-          title="Create a space"
-          description="Give a knowledge area a clear identity, owner and starting membership."
+          title={t("spaces.createTitle")}
+          description={t("spaces.createDescription")}
         >
           <div className="bg-primary-subtle text-primary mb-5 flex items-start gap-3 rounded-md px-3 py-2.5">
             <FolderPlus className="mt-0.5 size-4 shrink-0" aria-hidden />
             <div className="text-xs leading-5">
-              <p className="font-medium">Space key: {key || "—"}</p>
+              <p className="font-medium">
+                {t("spaces.spaceKeyLabel", { key: key || "—" })}
+              </p>
               <p className="text-primary/80">
-                The key is generated from the name and used in links.
+                {t("spaces.spaceKeyHint")}
               </p>
             </div>
           </div>
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="new-space-name">Name</Label>
+                <Label htmlFor="new-space-name">{t("spaces.nameLabel")}</Label>
                 <div className="relative">
                   <Input
                     id="new-space-name"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder="Engineering"
+                    placeholder={t("spaces.namePlaceholder")}
                     required
                     autoFocus
                     disabled={pending}
@@ -243,27 +248,27 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
                   </p>
                 ) : (
                   <p className="text-muted-foreground text-xs">
-                    Start with a letter and use a name no other space has.
+                    {t("spaces.nameHint")}
                   </p>
                 )}
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="new-space-description">
-                  Description{" "}
+                  {t("spaces.descriptionLabel")}{" "}
                   <span className="text-muted-foreground font-normal">
-                    (optional)
+                    {t("spaces.optionalSuffix")}
                   </span>
                 </Label>
                 <Input
                   id="new-space-description"
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
-                  placeholder="Product and engineering knowledge"
+                  placeholder={t("spaces.descriptionPlaceholder")}
                   disabled={pending}
                 />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="new-space-visibility">Access</Label>
+                <Label htmlFor="new-space-visibility">{t("spaces.accessLabel")}</Label>
                 <Select
                   value={visibility}
                   onValueChange={(value) =>
@@ -273,27 +278,27 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
                 >
                   <SelectTrigger
                     id="new-space-visibility"
-                    aria-label="Space access"
+                    aria-label={t("spaces.accessAria")}
                   >
                     <SelectValue>
                       {visibility === "open"
-                        ? "Open to signed-in users"
-                        : "Restricted to assigned users and groups"}
+                        ? t("spaces.accessOpen")
+                        : t("spaces.accessRestricted")}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="open">
-                      Open to signed-in users
+                      {t("spaces.accessOpen")}
                     </SelectItem>
                     <SelectItem value="restricted">
-                      Restricted to assigned users and groups
+                      {t("spaces.accessRestricted")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               {users.length > 0 ? (
                 <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="new-space-owner">Owner</Label>
+                  <Label htmlFor="new-space-owner">{t("spaces.ownerLabel")}</Label>
                   <Select
                     value={ownerId}
                     onValueChange={(value) => {
@@ -306,12 +311,12 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
                   >
                     <SelectTrigger
                       id="new-space-owner"
-                      aria-label="Space owner"
+                      aria-label={t("spaces.ownerAria")}
                     >
-                      <SelectValue placeholder="Choose an owner">
+                      <SelectValue placeholder={t("spaces.chooseOwner")}>
                         {users.find((user) => user.id === ownerId)?.full_name ||
                           users.find((user) => user.id === ownerId)?.username ||
-                          "Choose an owner"}
+                          t("spaces.chooseOwner")}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
@@ -328,13 +333,13 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
                 <div className="space-y-1.5 sm:col-span-2">
                   <div className="flex items-end justify-between gap-3">
                     <div>
-                      <Label htmlFor="new-space-members">Members</Label>
+                      <Label htmlFor="new-space-members">{t("spaces.membersLabel")}</Label>
                       <p className="text-muted-foreground mt-1 text-xs">
-                        Select one or more people to add to this space.
+                        {t("spaces.membersHint")}
                       </p>
                     </div>
                     <span className="text-muted-foreground shrink-0 text-xs">
-                      {selectedUserIds.length} selected
+                      {t("spaces.selectedCount", { count: selectedUserIds.length })}
                     </span>
                   </div>
                   <div className="relative mt-2">
@@ -346,20 +351,20 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
                       id="new-space-members"
                       value={memberQuery}
                       onChange={(event) => setMemberQuery(event.target.value)}
-                      placeholder="Filter users by name, username or e-mail"
+                      placeholder={t("spaces.membersFilterPlaceholder")}
                       className="pl-8"
                       disabled={pending}
-                      aria-label="Filter users"
+                      aria-label={t("spaces.filterUsersAria")}
                     />
                   </div>
                   <div
                     className="border-border bg-surface max-h-48 overflow-y-auto rounded-md border"
                     role="group"
-                    aria-label="Space members"
+                    aria-label={t("spaces.membersGroupAria")}
                   >
                     {filteredUsers.length === 0 ? (
                       <p className="text-muted-foreground px-3 py-3 text-sm">
-                        No users match this filter.
+                        {t("spaces.noUsersMatch")}
                       </p>
                     ) : (
                       filteredUsers.map((user) => {
@@ -376,7 +381,9 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
                               disabled={pending || isOwner}
                               onChange={() => toggleMember(user.id)}
                               className="accent-primary border-border focus-visible:ring-ring size-4 cursor-pointer rounded focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                              aria-label={`Add ${user.full_name || user.username}`}
+                              aria-label={t("spaces.addUserAria", {
+                                name: user.full_name || user.username,
+                              })}
                             />
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-sm font-medium">
@@ -389,7 +396,7 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
                             {isOwner ? (
                               <span className="text-primary flex shrink-0 items-center gap-1 text-xs font-medium">
                                 <Check className="size-3.5" />
-                                Owner
+                                {t("spaces.ownerBadge")}
                               </span>
                             ) : null}
                           </label>
@@ -415,7 +422,7 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
                 onClick={() => setOpen(false)}
                 disabled={pending}
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 type="submit"
@@ -423,7 +430,7 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
                 disabled={pending || !trimmedName || !key || !!nameError}
               >
                 {pending ? <Loader2 className="animate-spin" /> : <Plus />}
-                Create space
+                {t("spaces.createSpace")}
               </Button>
             </DialogFooter>
           </form>

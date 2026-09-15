@@ -287,6 +287,10 @@ async def test_space_and_page_permission_assignments() -> None:
         space, principal.id, Permission.view, actor, group=False, present=True
     )
     service.session.scalar = AsyncMock(return_value=SimpleNamespace())
+    # Removing View is refused whenever another permission still sits on the
+    # same principal (see `_has_other_space_permissions`) - here there is
+    # none, so the removal goes through same as before that guard existed.
+    service._has_other_space_permissions = AsyncMock(return_value=False)
     await service.set_space_permission(
         space, principal.id, Permission.view, actor, group=False, present=False
     )
@@ -311,6 +315,10 @@ async def test_space_and_page_permission_assignments() -> None:
         page, principal.id, PageRestrictionPermission.view, actor, group=False, present=True
     )
     service.session.scalar = AsyncMock(return_value=SimpleNamespace())
+    # Same guard as `set_space_permission`'s View removal check - refused
+    # only when another (non-denied) permission still sits on the same
+    # principal; here there is none, so this removal still goes through.
+    service._has_other_page_restriction = AsyncMock(return_value=False)
     await service.set_page_restriction(
         page, principal.id, PageRestrictionPermission.view, actor, group=False, present=False
     )

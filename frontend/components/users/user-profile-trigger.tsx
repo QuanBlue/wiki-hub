@@ -11,6 +11,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { api } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { PublicUser } from "@/types/api";
 
@@ -38,6 +39,7 @@ export function UserProfileTrigger({
   const [profile, setProfile] = useState<PublicUser | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const { t } = useTranslation();
   const label = fullName || username;
 
   function handleOpenChange(nextOpen: boolean) {
@@ -72,7 +74,7 @@ export function UserProfileTrigger({
         {variant === "avatar" ? (
           <button
             type="button"
-            aria-label={`Show profile summary for ${label}`}
+            aria-label={t("userProfile.profileSummaryAria", { name: label })}
             className={cn(
               "bg-primary-subtle text-primary hover:bg-surface-selected focus-visible:ring-ring flex shrink-0 cursor-pointer items-center justify-center rounded-full font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
               className,
@@ -99,7 +101,7 @@ export function UserProfileTrigger({
         {loading ? (
           <div className="text-muted-foreground flex items-center justify-center gap-2 py-5 text-sm">
             <Loader2 className="text-primary size-4 animate-spin" aria-hidden />
-            Loading profile…
+            {t("userProfile.loadingProfile")}
           </div>
         ) : profile || !loadError ? (
           <div>
@@ -140,13 +142,13 @@ export function UserProfileTrigger({
             ) : null}
             <Button className="mt-4 w-full" size="sm" asChild>
               <Link href={`/users/${encodeURIComponent(username)}`}>
-                View profile
+                {t("userProfile.viewProfile")}
               </Link>
             </Button>
           </div>
         ) : (
           <p className="text-muted-foreground py-3 text-center text-sm">
-            Profile information is unavailable.
+            {t("userProfile.profileUnavailable")}
           </p>
         )}
       </PopoverContent>

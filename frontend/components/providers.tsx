@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Toaster } from "sonner";
 
 import { ApiError } from "@/lib/api-client";
+import { LocaleProvider, type Locale } from "@/lib/i18n/context";
 import { NavigationLoading } from "@/components/navigation-loading";
 import { ThemeColorProvider } from "@/components/theme-color-provider";
 import { ScrollToTop } from "@/components/ui/scroll-to-top";
@@ -34,6 +35,7 @@ export function Providers({
   initialDefaultFont,
   initialLogoIcon,
   initialCustomLogoUrl,
+  initialLocale,
 }: {
   children: React.ReactNode;
   initialSiteName?: string;
@@ -41,6 +43,7 @@ export function Providers({
   initialDefaultFont?: string;
   initialLogoIcon?: string;
   initialCustomLogoUrl?: string | null;
+  initialLocale?: Locale;
 }) {
   // Held in state so each browser session gets exactly one client, and so a
   // server render never shares a cache between two users' requests.
@@ -55,18 +58,20 @@ export function Providers({
         themes={["light", "dark"]}
         disableTransitionOnChange
       >
-        <ThemeColorProvider
-          initialSiteName={initialSiteName}
-          initialThemeColor={initialThemeColor}
-          initialDefaultFont={initialDefaultFont}
-          initialLogoIcon={initialLogoIcon}
-          initialCustomLogoUrl={initialCustomLogoUrl}
-        >
-          {children}
-          <NavigationLoading />
-          <Toaster position="bottom-right" closeButton richColors />
-          <ScrollToTop />
-        </ThemeColorProvider>
+        <LocaleProvider initialLocale={initialLocale}>
+          <ThemeColorProvider
+            initialSiteName={initialSiteName}
+            initialThemeColor={initialThemeColor}
+            initialDefaultFont={initialDefaultFont}
+            initialLogoIcon={initialLogoIcon}
+            initialCustomLogoUrl={initialCustomLogoUrl}
+          >
+            {children}
+            <NavigationLoading />
+            <Toaster position="bottom-right" closeButton richColors />
+            <ScrollToTop />
+          </ThemeColorProvider>
+        </LocaleProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

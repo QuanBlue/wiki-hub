@@ -21,6 +21,7 @@ import type { CSSProperties } from "react";
 import { Providers } from "@/components/providers";
 import { SITE_NAME } from "@/lib/env";
 import { getFontFamilyCss } from "@/lib/font-presets";
+import { LOCALE_COOKIE, isLocale } from "@/lib/i18n/core";
 import { serverGet } from "@/lib/server-api";
 import {
   generateFaviconSvg,
@@ -150,6 +151,7 @@ const THEME_COLOR_COOKIE = "wikihub_theme_color";
 const DEFAULT_FONT_COOKIE = "wikihub_default_font";
 const LOGO_ICON_COOKIE = "wikihub_logo_icon";
 const SITE_NAME_COOKIE = "wikihub_site_name";
+// LOCALE_COOKIE ("wikihub_locale") is defined next to the i18n constants.
 
 function preferredWidth(
   value: string | undefined,
@@ -178,6 +180,9 @@ export default async function RootLayout({
     320,
     200,
   );
+
+  const localeCookie = preferenceCookies.get(LOCALE_COOKIE)?.value;
+  const initialLocale = isLocale(localeCookie) ? localeCookie : "en";
 
   let initialSiteName =
     preferenceCookies.get(SITE_NAME_COOKIE)?.value || SITE_NAME;
@@ -215,7 +220,7 @@ export default async function RootLayout({
 
   return (
     <html
-      lang="en"
+      lang={initialLocale}
       suppressHydrationWarning
       data-wh-sidebar-collapsed={String(sidebarCollapsed)}
       data-wh-sidebar-hydrated="false"
@@ -295,6 +300,7 @@ export default async function RootLayout({
           initialDefaultFont={initialDefaultFont}
           initialLogoIcon={initialLogoIcon}
           initialCustomLogoUrl={initialCustomLogoUrl}
+          initialLocale={initialLocale}
         >
           {children}
         </Providers>

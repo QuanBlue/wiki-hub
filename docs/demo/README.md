@@ -14,6 +14,7 @@ instance — nothing here is a mockup.
 - [Permissions & access control](#permissions--access-control)
 - [Backup & migration](#backup--migration)
 - [Theme & branding](#theme--branding)
+- [Language switching](#language-switching)
 - [Small screens](#small-screens)
 
 ## Signing in
@@ -122,6 +123,17 @@ WikiHub backup on a schedule with no one needing to click anything.
 Administrators can pick a curated color palette or a custom hex color, choose
 a logo preset or upload a custom one, and preview both light and dark mode
 before saving — changes apply instantly across the whole workspace once saved.
+
+## Language switching
+
+<img src="assets/screenshot-language.png" alt="The language dropdown in the top bar, open, showing English and Tiếng Việt with the active language checked" width="720">
+
+The **EN**/**VI** badge in the top bar switches the whole interface between
+English and Vietnamese — every label, button, toast, and validation message
+comes from the same translation dictionary, so nothing is left half-translated.
+The choice is per-browser (cookie + `localStorage`, no account setting or
+server round-trip) and applies instantly, without a page reload — anything
+mid-edit in the page editor survives the switch untouched.
 
 ## Small screens
 

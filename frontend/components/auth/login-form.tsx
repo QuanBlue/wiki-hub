@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { api, ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import type { LoginResponse } from "@/types/api";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -55,7 +57,7 @@ export function LoginForm() {
         setError(err.message);
         setErrorCode(err.code);
       } else {
-        setError("Could not reach the server. Please try again.");
+        setError(t("auth.networkError"));
       }
       setPassword("");
       setPending(false);
@@ -66,7 +68,7 @@ export function LoginForm() {
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       <div className="space-y-1.5">
         <label htmlFor="username" className="text-sm font-medium">
-          Username or e-mail
+          {t("auth.usernameLabel")}
         </label>
         <Input
           id="username"
@@ -83,7 +85,7 @@ export function LoginForm() {
 
       <div className="space-y-1.5">
         <label htmlFor="password" className="text-sm font-medium">
-          Password
+          {t("auth.passwordLabel")}
         </label>
         <PasswordInput
           id="password"
@@ -121,10 +123,10 @@ export function LoginForm() {
         {pending ? (
           <>
             <Loader2 className="animate-spin" />
-            Signing in…
+            {t("auth.signingIn")}
           </>
         ) : (
-          "Sign in"
+          t("auth.signIn")
         )}
       </Button>
     </form>

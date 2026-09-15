@@ -111,6 +111,31 @@ class AuthService:
             code="peer_admin_protected",
         )
 
+    async def assert_actor_is_system_admin(self, action: str) -> None:
+        """Reject `action` unless the actor is a system administrator.
+
+        `manage_users` alone lets someone create, delete, reset the password
+        of, and manage the group memberships of an ordinary Member - but it
+        must never let them hand out (or take away) power they do not
+        themselves hold. Both a Role change and a Global Access override are
+        exactly that lever (an override can grant `system_admin` just as
+        surely as flipping Role would), so both stay system-administrator-
+        only here - the only way to gain either is to actually be promoted,
+        never a side door through someone else's `manage_users` grant.
+
+        Skipped when there is no actor at all (the seed script, a
+        token-verification path) - this was never meant to constrain those.
+        """
+        if self.actor is None:
+            return
+        from app.modules.permissions.service import PermissionService
+
+        if not await PermissionService(self.session).is_system_admin(self.actor):
+            raise PermissionDeniedError(
+                f"Only a System Administrator can {action}.",
+                code="system_admin_required",
+            )
+
     def _assert_not_self(self, target: User, *, code: str, message: str) -> None:
         """Block an action an administrator would regret performing on itself.
 
@@ -278,6 +303,12 @@ class AuthService:
 
     # -- account management ------------------------------------------------
     async def create_user(self, payload: UserCreate, *, is_protected: bool = False) -> User:
+        # Same rule as promoting an existing account (see
+        # `assert_actor_is_system_admin`): a `manage_users`-only actor may
+        # create new Members freely, but not mint a new Administrator - that
+        # still takes an actual system administrator.
+        if payload.is_superuser:
+            await self.assert_actor_is_system_admin("create a new account as Administrator")
         if await self.users.get_by_username(payload.username):
             raise ConflictError(
                 f"Username '{payload.username}' is already taken.", code="username_taken"
@@ -318,6 +349,20 @@ class AuthService:
         self.assert_peer_admin_editable(user)
 
         data = payload.model_dump(exclude_unset=True)
+
+        # Both a Role change and a Global Access override can hand out power
+        # the actor may not themselves hold (an override can grant
+        # `system_admin` just as surely as flipping Role would) - see
+        # `assert_actor_is_system_admin`. Checked before anything else below,
+        # including the self-lock guards, so a `manage_users`-only actor
+        # never gets a misleading "you'd lock yourself out" message for an
+        # action they were never allowed to attempt in the first place.
+        if data.get("is_superuser") is not None:
+            await self.assert_actor_is_system_admin("change a user's Administrator role")
+        if data.get("global_permission_overrides"):
+            await self.assert_actor_is_system_admin(
+                "change a user's Global Access permissions"
+            )
 
         # Guard the two ways an administrator can lock themselves out, before
         # anything is mutated.

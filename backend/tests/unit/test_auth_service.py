@@ -363,6 +363,13 @@ async def test_auth_conflict_and_failure_branches(monkeypatch: pytest.MonkeyPatc
         )
 
     svc.users.get = AsyncMock(return_value=target)
+    # An admin demoting themselves needs to *be* one - otherwise
+    # `assert_actor_is_system_admin` (checked before the self-demotion guard
+    # below) would reject the attempt for lacking system-admin power in the
+    # first place, rather than for the self-lockout this is actually
+    # exercising. Being a superuser also short-circuits that check without
+    # touching the mocked session, same as every other target here.
+    target.is_superuser = True
     svc.actor = target
     with pytest.raises(ConflictError, match="deactivate"):
         await svc.update_user(target.id, UserUpdate(is_active=False))

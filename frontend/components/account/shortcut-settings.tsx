@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   SHORTCUT_ACTIONS,
-  SHORTCUT_SCOPE_LABELS,
   bindingsFor,
   eventToBinding,
   findConflicts,
@@ -15,22 +14,47 @@ import {
   setBindings,
   useShortcutOverrides,
   type ShortcutAction,
+  type ShortcutScope,
 } from "@/lib/keyboard-shortcuts";
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 
 /** A recorded chord, or `null` for the "add a binding" slot. */
 type RecordingTarget = { actionId: string; index: number } | null;
 
-function Kbd({ binding }: { binding: string }) {
-  return (
-    <kbd className="border-border bg-surface-sunken text-foreground rounded border px-1.5 py-0.5 font-mono text-[11px] font-semibold">
-      {formatBinding(binding)}
-    </kbd>
-  );
+const GROUP_KEYS: Record<string, string> = {
+  Navigation: "shortcuts.groupNavigation",
+  Editing: "shortcuts.groupEditing",
+  "Attachment previews": "shortcuts.groupAttachmentPreviews",
+};
+
+const SCOPE_KEYS: Record<string, string> = {
+  global: "shortcuts.scopeGlobal",
+  editor: "shortcuts.scopeEditor",
+  preview: "shortcuts.scopePreview",
+};
+
+const ACTION_KEY_PARTS: Record<string, string> = {
+  "search.open": "SearchOpen",
+  "page.save": "PageSave",
+  "page.reload": "PageReload",
+  "attachment.find": "AttachmentFind",
+  "video.playPause": "VideoPlayPause",
+};
+
+function actionLabelKey(action: ShortcutAction): string {
+  const part = ACTION_KEY_PARTS[action.id] ?? action.id;
+  return `shortcuts.action${part}Label`;
+}
+
+function actionDescriptionKey(action: ShortcutAction): string {
+  const part = ACTION_KEY_PARTS[action.id] ?? action.id;
+  return `shortcuts.action${part}Description`;
 }
 
 export function ShortcutSettings() {
   const overrides = useShortcutOverrides();
+  const { t } = useTranslation();
   const [recording, setRecording] = useState<RecordingTarget>(null);
 
   const conflicts = useMemo(() => findConflicts(overrides), [overrides]);
@@ -93,10 +117,9 @@ export function ShortcutSettings() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight">Keyboard shortcuts</h2>
+          <h2 className="text-xl font-semibold tracking-tight">{t("shortcuts.title")}</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Rebind the app&rsquo;s shortcuts to whatever you prefer. Changes save as you
-            make them and apply to this browser.
+            {t("shortcuts.hint")}
           </p>
         </div>
         <Button
@@ -110,7 +133,7 @@ export function ShortcutSettings() {
           disabled={!isCustomised}
         >
           <RotateCcw aria-hidden />
-          Reset all to defaults
+          {t("shortcuts.resetAll")}
         </Button>
       </div>
 
@@ -118,9 +141,10 @@ export function ShortcutSettings() {
         <div className="border-warning/40 bg-warning-bg text-foreground flex items-start gap-2 rounded-md border p-3 text-sm">
           <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
           <p>
-            {conflicts.size === 1 ? "One shortcut is" : `${conflicts.size} shortcuts are`}{" "}
-            assigned to more than one action in the same context. Whichever action
-            handles the key first will win, so the other may not fire.
+            {conflicts.size === 1
+              ? t("shortcuts.conflictOne")
+              : t("shortcuts.conflictMany", { count: conflicts.size })}{" "}
+            {t("shortcuts.conflictSuffix")}
           </p>
         </div>
       ) : null}
@@ -128,7 +152,7 @@ export function ShortcutSettings() {
       {groups.map(([group, actions]) => (
         <section key={group} className="space-y-2">
           <h3 className="text-muted-foreground text-[11px] font-semibold tracking-[0.08em] uppercase">
-            {group}
+            {t(GROUP_KEYS[group] ?? group)}
           </h3>
           <ul className="border-border divide-border divide-y rounded-md border">
             {actions.map((action) => {
@@ -141,12 +165,12 @@ export function ShortcutSettings() {
                   className="flex flex-col gap-3 p-3 sm:flex-row sm:items-start sm:justify-between"
                 >
                   <div className="min-w-0 sm:pr-6">
-                    <p className="text-foreground text-sm font-medium">{action.label}</p>
+                    <p className="text-foreground text-sm font-medium">{t(actionLabelKey(action))}</p>
                     <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
-                      {action.description}
+                      {t(actionDescriptionKey(action))}
                     </p>
                     <p className="text-muted-foreground mt-1 text-[11px]">
-                      {SHORTCUT_SCOPE_LABELS[action.scope]}
+                      {t(SCOPE_KEYS[action.scope as ShortcutScope] ?? action.scope)}
                     </p>
                   </div>
 
@@ -155,6 +179,7 @@ export function ShortcutSettings() {
                       const isRecording =
                         recording?.actionId === action.id && recording.index === index;
                       const conflicting = conflicts.has(binding);
+                      const label = t(actionLabelKey(action));
 
                       return (
                         <span key={`${binding}-${index}`} className="inline-flex items-center">
@@ -165,7 +190,7 @@ export function ShortcutSettings() {
                                 isRecording ? null : { actionId: action.id, index },
                               )
                             }
-                            aria-label={`Change shortcut for ${action.label}`}
+                            aria-label={t("shortcuts.changeShortcutAria", { label })}
                             className={cn(
                               "focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center rounded border px-2 font-mono text-[11px] font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
                               isRecording
@@ -175,13 +200,16 @@ export function ShortcutSettings() {
                                   : "border-border bg-surface-sunken text-foreground hover:bg-surface-hover hover:border-border-strong",
                             )}
                           >
-                            {isRecording ? "Press keys…" : formatBinding(binding)}
+                            {isRecording ? t("shortcuts.pressKeys") : formatBinding(binding)}
                           </button>
                           {bindings.length > 1 && !isRecording ? (
                             <button
                               type="button"
                               onClick={() => removeBinding(action.id, index)}
-                              aria-label={`Remove ${formatBinding(binding)} from ${action.label}`}
+                              aria-label={t("shortcuts.removeBindingAria", {
+                                binding: formatBinding(binding),
+                                label,
+                              })}
                               className="text-muted-foreground hover:text-danger focus-visible:ring-ring ml-0.5 cursor-pointer rounded p-0.5 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                             >
                               <X className="size-3" aria-hidden />
@@ -194,7 +222,7 @@ export function ShortcutSettings() {
                     {recording?.actionId === action.id &&
                     recording.index >= bindings.length ? (
                       <span className="border-primary bg-primary-subtle text-primary inline-flex h-7 animate-pulse items-center rounded border px-2 font-mono text-[11px] font-semibold">
-                        Press keys…
+                        {t("shortcuts.pressKeys")}
                       </span>
                     ) : (
                       <button
@@ -202,8 +230,10 @@ export function ShortcutSettings() {
                         onClick={() =>
                           setRecording({ actionId: action.id, index: bindings.length })
                         }
-                        aria-label={`Add another shortcut for ${action.label}`}
-                        title="Add another shortcut"
+                        aria-label={t("shortcuts.addShortcutAria", {
+                          label: t(actionLabelKey(action)),
+                        })}
+                        title={t("shortcuts.addShortcut")}
                         className="text-muted-foreground hover:text-foreground hover:bg-surface-hover border-border focus-visible:ring-ring inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded border border-dashed transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                       >
                         <Plus className="size-3.5" aria-hidden />
@@ -217,9 +247,13 @@ export function ShortcutSettings() {
                           setBindings(action.id, action.defaultBindings);
                           setRecording(null);
                         }}
-                        title={`Reset to ${action.defaultBindings.map(formatBinding).join(" or ")}`}
+                        title={t("shortcuts.resetTitle", {
+                          bindings: action.defaultBindings.map(formatBinding).join(" or "),
+                        })}
                         className="text-muted-foreground hover:text-foreground hover:bg-surface-hover focus-visible:ring-ring inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                        aria-label={`Reset ${action.label} to its default shortcut`}
+                        aria-label={t("shortcuts.resetAria", {
+                          label: t(actionLabelKey(action)),
+                        })}
                       >
                         <RotateCcw className="size-3.5" aria-hidden />
                       </button>
@@ -236,13 +270,13 @@ export function ShortcutSettings() {
         <Keyboard className="mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="space-y-1">
           <p>
-            Click a shortcut, then press the keys you want. <Kbd binding="Escape" /> cancels
-            without changing it.
+            {t("shortcuts.recordHint", { esc: formatBinding("Escape") })}
           </p>
           <p>
-            Some combinations are reserved by the browser itself (
-            <Kbd binding="Mod+W" />, <Kbd binding="Mod+T" />) and never reach the page,
-            so they cannot be bound here.
+            {t("shortcuts.browserReserved", {
+              modW: formatBinding("Mod+W"),
+              modT: formatBinding("Mod+T"),
+            })}
           </p>
         </div>
       </div>

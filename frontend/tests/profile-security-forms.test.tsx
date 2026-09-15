@@ -27,12 +27,15 @@ const user: Me = {
   company: "",
   is_active: true,
   is_superuser: false,
+  is_effective_admin: false,
   is_protected: false,
   last_login_at: null,
   created_at: "2026-01-01T00:00:00Z",
   groups: [],
+  group_memberships: [],
   global_permissions: [],
   global_permission_overrides: [],
+  global_permissions_from_groups: [],
   impersonator: null,
 };
 

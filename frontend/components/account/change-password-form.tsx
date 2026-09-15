@@ -8,7 +8,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import type { User } from "@/types/api";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -58,17 +59,19 @@ function passwordStrength(password: string) {
   return "Use a stronger password";
 }
 
-function passwordRules(password: string, confirmation: string) {
-  return [
-    { label: "At least 8 characters", met: password.length >= MIN_PASSWORD_LENGTH },
-    { label: "An uppercase and lowercase letter", met: /[A-Z]/.test(password) && /[a-z]/.test(password) },
-    { label: "A number or special character", met: /\d/.test(password) || /[^A-Za-z0-9]/.test(password) },
-    { label: "Passwords match", met: Boolean(confirmation) && password === confirmation },
-  ];
+function passwordRules(t: (key: string) => string) {
+  return (password: string, confirmation: string) =>
+    [
+      { label: t("password.ruleMinLength"), met: password.length >= MIN_PASSWORD_LENGTH },
+      { label: t("password.ruleCase"), met: /[A-Z]/.test(password) && /[a-z]/.test(password) },
+      { label: t("password.ruleNumberOrSymbol"), met: /\d/.test(password) || /[^A-Za-z0-9]/.test(password) },
+      { label: t("password.ruleMatch"), met: Boolean(confirmation) && password === confirmation },
+    ];
 }
 
 export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => void; onSuccess?: () => void } = {}) {
   const router = useRouter();
+  const { t, apiErrorText } = useTranslation();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -78,13 +81,22 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
   const [pending, setPending] = useState(false);
 
   const mismatch = confirm.length > 0 && next !== confirm;
-  const strength = next ? passwordStrength(next) : null;
-  const strengthClass = strength === "Strong"
+  const strengthKey = next ? passwordStrength(next) : null;
+  const strength = strengthKey
+    ? t(
+        strengthKey === "Strong"
+          ? "password.strengthStrong"
+          : strengthKey === "Good"
+            ? "password.strengthGood"
+            : "password.strengthWeak",
+      )
+    : null;
+  const strengthClass = strengthKey === "Strong"
     ? "text-success"
-    : strength === "Good"
+    : strengthKey === "Good"
       ? "text-primary"
       : "text-danger";
-  const rules = passwordRules(next, confirm);
+  const rules = passwordRules(t)(next, confirm);
   const hasValidNewPassword = rules.slice(0, 3).every((rule) => rule.met);
   const canSubmit = Boolean(current) && hasValidNewPassword && rules[3]!.met;
 
@@ -94,22 +106,22 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
     setConfirm(password);
     setGenerated(true);
     setError(null);
-    toast.success("A strong password was generated.");
+    toast.success(t("password.generatedToast"));
   }
 
   async function copyPassword() {
     try {
       await navigator.clipboard.writeText(next);
-      toast.success("Password copied to clipboard.");
+      toast.success(t("password.copiedToast"));
     } catch {
-      toast.error("Could not copy the password. Select it from the field instead.");
+      toast.error(t("password.copyFailedToast"));
     }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!hasValidNewPassword || next !== confirm) {
-      setError("Your new password does not meet all requirements.");
+      setError(t("password.requirementsNotMet"));
       return;
     }
     setPending(true);
@@ -119,7 +131,7 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
         current_password: current,
         new_password: next,
       });
-      toast.success("Password changed.");
+      toast.success(t("password.passwordChanged"));
       setCurrent("");
       setNext("");
       setConfirm("");
@@ -127,11 +139,7 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
       onSuccess?.();
       router.refresh();
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : "Could not change the password.",
-      );
+      setError(apiErrorText(err, "password.couldNotChangePassword"));
     } finally {
       setPending(false);
     }
@@ -141,8 +149,8 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
     <form onSubmit={handleSubmit} className="max-w-4xl" noValidate>
       <div className="grid gap-8 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="border-border bg-surface-sunken/60 rounded-lg border p-5">
-          <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Password requirements</p>
-          <p className="text-muted-foreground mt-2 text-xs leading-5">Complete each requirement to update your password.</p>
+          <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t("password.requirements")}</p>
+          <p className="text-muted-foreground mt-2 text-xs leading-5">{t("password.requirementsHint")}</p>
           <ul className="mt-4 space-y-3" aria-live="polite">
             {rules.map((rule) => (
               <li key={rule.label} className={rule.met ? "text-foreground flex gap-2 text-sm leading-5" : "text-muted-foreground flex gap-2 text-sm leading-5"}>
@@ -155,7 +163,7 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
 
         <div>
           <section className="space-y-1.5">
-            <Label htmlFor="current-password">Current password</Label>
+            <Label htmlFor="current-password">{t("password.currentPassword")}</Label>
             <PasswordInput
               id="current-password"
               autoComplete="current-password"
@@ -169,18 +177,18 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
           <section className="border-border mt-8 border-t pt-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h3 className="font-semibold">New password</h3>
-                <p className="text-muted-foreground mt-1 text-sm">Choose a strong, unique password for your account.</p>
+                <h3 className="font-semibold">{t("password.newPassword")}</h3>
+                <p className="text-muted-foreground mt-1 text-sm">{t("password.newPasswordHint")}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                {generated && next ? <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => void copyPassword()}><Copy />Copy</Button> : null}
-                <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={fillGeneratedPassword}><Sparkles />Generate password</Button>
+                {generated && next ? <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => void copyPassword()}><Copy />{t("password.copy")}</Button> : null}
+                <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={fillGeneratedPassword}><Sparkles />{t("password.generatePassword")}</Button>
               </div>
             </div>
 
             <div className="mt-5 grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="next-password">New password</Label>
+                <Label htmlFor="next-password">{t("password.newPassword")}</Label>
                 <PasswordInput
                   id="next-password"
                   autoComplete="new-password"
@@ -192,10 +200,10 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
                   aria-invalid={newPasswordFocused && !hasValidNewPassword}
                   required
                 />
-                {strength ? <p className="text-muted-foreground text-xs">Password strength: <span className={`font-medium ${strengthClass}`}>{strength}</span></p> : null}
+                {strength ? <p className="text-muted-foreground text-xs">{t("password.strengthLabel")} <span className={`font-medium ${strengthClass}`}>{strength}</span></p> : null}
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="confirm-password">Confirm new password</Label>
+                <Label htmlFor="confirm-password">{t("password.confirmPassword")}</Label>
                 <PasswordInput
                   id="confirm-password"
                   autoComplete="new-password"
@@ -205,7 +213,7 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
                   aria-invalid={mismatch || undefined}
                   required
                 />
-                {mismatch ? <p className="text-danger text-xs">The passwords do not match.</p> : null}
+                {mismatch ? <p className="text-danger text-xs">{t("password.mismatch")}</p> : null}
               </div>
             </div>
           </section>
@@ -215,10 +223,10 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
       </div>
 
       <footer className="border-border mt-8 flex flex-wrap justify-end gap-2 border-t pt-5">
-        {onCancel ? <Button type="button" variant="secondary" onClick={onCancel} disabled={pending}>Cancel</Button> : null}
+        {onCancel ? <Button type="button" variant="secondary" onClick={onCancel} disabled={pending}>{t("common.cancel")}</Button> : null}
         <Button type="submit" variant="primary" disabled={pending || !canSubmit}>
           {pending ? <Loader2 className="animate-spin" /> : <KeyRound />}
-          Change password
+          {t("password.changePassword")}
         </Button>
       </footer>
     </form>

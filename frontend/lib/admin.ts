@@ -49,3 +49,11 @@ export function getSiteSettings(): Promise<SiteSettings> {
 export function listAdministrators(): Promise<AdminAccount[]> {
   return serverGet<AdminAccount[]>("/api/v1/users/administrators");
 }
+
+/** Every account with at least one Global Access override, with
+ * `global_permission_overrides` actually populated - unlike `listUsers`'s
+ * own rows, which never carry it (see `_read_user`'s docstring on the
+ * backend). Also registered ahead of `GET /{user_id}`. */
+export function listPermissionOverrideUsers(): Promise<User[]> {
+  return serverGet<User[]>("/api/v1/users/permission-overrides");
+}

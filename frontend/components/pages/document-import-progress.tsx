@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { JobProgress } from "@/components/ui/job-progress";
 import { LogDisclosure } from "@/components/ui/log-disclosure";
 import { api, ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { DocumentImportItem, DocumentImportJob } from "@/types/api";
 
@@ -51,6 +52,7 @@ function ItemRow({
   item: DocumentImportItem;
   spaceKey: string;
 }) {
+  const { t } = useTranslation();
   return (
     <li className="flex items-start gap-2 px-3 py-2">
       <ItemIcon status={item.status} />
@@ -61,7 +63,7 @@ function ItemRow({
             href={pageHref(spaceKey, item.page_slug)}
             className="text-primary hover:underline focus-visible:underline"
           >
-            {item.page_title ?? "Open page"}
+            {item.page_title ?? t("importProgress.openPage")}
           </Link>
         ) : null}
         {item.error ? <p className="text-danger">{item.error}</p> : null}
@@ -102,6 +104,7 @@ export function DocumentImportProgress({
   // Guards the completion handling: a second poll tick landing before the
   // effect tears down would otherwise re-open the dialog just dismissed.
   const settledRef = useRef<string | null>(null);
+  const { t } = useTranslation();
 
   const finished = TERMINAL.has(job.status);
 
@@ -126,19 +129,23 @@ export function DocumentImportProgress({
     const created = job.counters?.pages_created ?? 0;
     const failed = job.counters?.items_failed ?? 0;
     if (job.status === "cancelled") {
-      toast(`Import cancelled. ${created} page${created === 1 ? "" : "s"} were kept.`);
+      toast(t("importProgress.cancelledToast", { count: created }));
     } else if (job.status === "failed") {
-      toast.error(job.error ?? "The import failed.");
+      toast.error(job.error ?? t("importProgress.failedToast"));
     } else if (failed > 0) {
       toast.warning(
-        `Imported ${created} of ${created + failed} files. ${failed} could not be converted.`,
+        t("importProgress.partialToast", {
+          created,
+          total: created + failed,
+          failed,
+        }),
       );
     } else {
-      toast.success(`Imported ${created} page${created === 1 ? "" : "s"}.`);
+      toast.success(t("importProgress.completeToast", { count: created }));
     }
     setShowSummary(true);
     onFinished(job);
-  }, [job, onFinished]);
+  }, [job, onFinished, t]);
 
   async function cancel() {
     setCancelling(true);
@@ -149,7 +156,9 @@ export function DocumentImportProgress({
       setConfirmingCancel(false);
     } catch (error) {
       toast.error(
-        error instanceof ApiError ? error.message : "Could not cancel the import.",
+        error instanceof ApiError
+          ? error.message
+          : t("importProgress.cancelError"),
       );
     } finally {
       setCancelling(false);
@@ -174,12 +183,12 @@ export function DocumentImportProgress({
             finished ? (
               <span className="inline-flex items-center gap-1.5">
                 <FileText className="size-4" />
-                Import {job.status}
+                {t("importProgress.statusTitle", { status: job.status })}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5">
                 <Loader2 className="size-4 animate-spin" />
-                Importing {total} document{total === 1 ? "" : "s"}
+                {t("importProgress.importingTitle", { count: total })}
               </span>
             )
           }
@@ -187,14 +196,14 @@ export function DocumentImportProgress({
           etaSeconds={finished ? 0 : job.eta_seconds}
           detail={
             <>
-              <span className="text-foreground font-medium">Files:</span> {processed} /{" "}
+              <span className="text-foreground font-medium">{t("importProgress.filesLabel")}</span> {processed} /{" "}
               {total}
             </>
           }
         />
 
         <LogDisclosure
-          title="Files"
+          title={t("importProgress.filesHeading")}
           count={items.length}
           expanded={logExpanded}
           onExpandedChange={setLogExpanded}
@@ -207,7 +216,7 @@ export function DocumentImportProgress({
         <div className="mt-3 flex justify-end gap-2">
           {finished ? (
             <Button variant="secondary" size="sm" onClick={onDismiss}>
-              Dismiss
+              {t("importProgress.dismiss")}
             </Button>
           ) : (
             <Button
@@ -216,7 +225,9 @@ export function DocumentImportProgress({
               onClick={() => setConfirmingCancel(true)}
               disabled={job.cancel_requested}
             >
-              {job.cancel_requested ? "Cancelling…" : "Cancel import"}
+              {job.cancel_requested
+                ? t("importProgress.cancelling")
+                : t("importProgress.cancelImport")}
             </Button>
           )}
         </div>
@@ -224,8 +235,8 @@ export function DocumentImportProgress({
 
       <Dialog open={confirmingCancel} onOpenChange={setConfirmingCancel}>
         <DialogContent
-          title="Cancel this import?"
-          description="Files already imported keep their pages. The rest will be skipped."
+          title={t("importProgress.cancelTitle")}
+          description={t("importProgress.cancelDescription")}
         >
           <DialogFooter>
             <Button
@@ -233,11 +244,11 @@ export function DocumentImportProgress({
               onClick={() => setConfirmingCancel(false)}
               disabled={cancelling}
             >
-              Keep importing
+              {t("importProgress.keepImporting")}
             </Button>
             <Button variant="danger" onClick={cancel} disabled={cancelling}>
               {cancelling ? <Loader2 className="animate-spin" /> : null}
-              Cancel import
+              {t("importProgress.cancelImport")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -245,16 +256,20 @@ export function DocumentImportProgress({
 
       <Dialog open={showSummary} onOpenChange={setShowSummary}>
         <DialogContent
-          title={job.status === "complete" ? "Import finished" : `Import ${job.status}`}
+          title={
+            job.status === "complete"
+              ? t("importProgress.finishedTitle")
+              : t("importProgress.statusTitle", { status: job.status })
+          }
           description={
             createdPages.length > 0
-              ? `${createdPages.length} page${createdPages.length === 1 ? "" : "s"} created.`
-              : "No pages were created."
+              ? t("importProgress.summaryCreated", { count: createdPages.length })
+              : t("importProgress.summaryNone")
           }
         >
           {createdPages.length > 0 ? (
             <div className="border-border bg-surface-sunken rounded-md border p-3 text-sm">
-              <p className="text-foreground font-medium">New pages</p>
+              <p className="text-foreground font-medium">{t("importProgress.newPages")}</p>
               <ul className="mt-1.5 space-y-1">
                 {createdPages.map((item) => (
                   <li key={item.id}>
@@ -281,8 +296,7 @@ export function DocumentImportProgress({
               )}
             >
               <p className="text-foreground font-medium">
-                {failedItems.length} file{failedItems.length === 1 ? "" : "s"} could not be
-                imported
+                {t("importProgress.failedHeading", { count: failedItems.length })}
               </p>
               <ul className="text-muted-foreground mt-1.5 space-y-1">
                 {failedItems.map((item) => (
@@ -297,7 +311,7 @@ export function DocumentImportProgress({
 
           <DialogFooter>
             <Button variant="primary" onClick={() => setShowSummary(false)}>
-              Done
+              {t("importProgress.done")}
             </Button>
           </DialogFooter>
         </DialogContent>

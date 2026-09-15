@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import type {
   PageAccessRosterGroup,
   PageAccessRosterUser,
@@ -33,7 +34,7 @@ import type {
  * page-level restriction for one, so blocking them here would silently do
  * nothing. Locking the boxes (rather than leaving them clickable but inert)
  * keeps the UI from implying a block took effect when it didn't. */
-const ADMIN_BYPASS_TITLE = "This person is a Space Admin - Space Admins bypass every page-level restriction.";
+const ADMIN_BYPASS_KEY = "restrictions.adminBypassTitle";
 
 type RestrictionPermission = "view" | "edit";
 type Restriction = {
@@ -115,6 +116,7 @@ export function PageRestrictionsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const { t } = useTranslation();
   // The page's own General-access setting, not something derived from
   // `rows` below - the two are meant to vary independently now, so a
   // Restricted allow-list can sit dormant while the page is Open (and come
@@ -232,7 +234,7 @@ export function PageRestrictionsDialog({
           setRosterGroups(nextGroups);
         });
     request
-      .catch((error) => { if (!cancelled) toast.error(error instanceof ApiError ? error.message : "Could not load page restrictions."); })
+      .catch((error) => { if (!cancelled) toast.error(error instanceof ApiError ? error.message : t("restrictions.loadError")); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [open, isViewRestricted, reloadNonce, pagePath]);
@@ -253,35 +255,46 @@ export function PageRestrictionsDialog({
     try {
       if (enabled) await api.put(pathFor(type, id, nextPermission));
       else await api.delete(pathFor(type, id, nextPermission));
-      setRows((current) => enabled
-        ? [
-            ...current.filter(
-              (row) =>
-                !(
-                  row.principal_id === id &&
-                  row.principal_type === type &&
-                  row.permission === nextPermission
-                ),
-            ),
-            {
-              page_id: page.id,
-              principal_id: id,
-              principal_type: type,
-              principal_name: principalName ?? current.find((row) => row.principal_id === id && row.principal_type === type)?.principal_name ?? id,
-              permission: nextPermission,
-            },
-          ]
-        : current.filter((row) => !(row.principal_id === id && row.principal_type === type && row.permission === nextPermission)));
+      setRows((current) => {
+        const name = principalName ?? current.find((row) => row.principal_id === id && row.principal_type === type)?.principal_name ?? id;
+        let next = enabled
+          ? [
+              ...current.filter(
+                (row) =>
+                  !(
+                    row.principal_id === id &&
+                    row.principal_type === type &&
+                    row.permission === nextPermission
+                  ),
+              ),
+              {
+                page_id: page.id,
+                principal_id: id,
+                principal_type: type,
+                principal_name: name,
+                permission: nextPermission,
+              },
+            ]
+          : current.filter((row) => !(row.principal_id === id && row.principal_type === type && row.permission === nextPermission));
+        // Granting Edit implicitly grants View too on the backend (every
+        // other page permission is useless without it, same rule as the
+        // space permission matrix) - mirror that here so the row's View box
+        // reads as checked without waiting on a reload.
+        if (enabled && nextPermission === "edit" && !next.some((row) => row.principal_id === id && row.principal_type === type && row.permission === "view")) {
+          next = [...next, { page_id: page.id, principal_id: id, principal_type: type, principal_name: name, permission: "view" }];
+        }
+        return next;
+      });
       // Adding the first View grant is how a page becomes Restricted (see
       // `set_page_restriction` on the backend) - the breadcrumb padlock/globe
       // icon reads `currentPage.is_restricted`, a prop fetched once when the
       // page loaded, so a refresh keeps it in sync with what just happened here.
-      if (nextPermission === "view") {
+      if (nextPermission === "view" || (nextPermission === "edit" && enabled)) {
         if (enabled) setIsViewRestricted(true);
         router.refresh();
       }
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Could not update page restrictions.");
+      toast.error(error instanceof ApiError ? error.message : t("restrictions.updateError"));
     } finally {
       setPending(false);
     }
@@ -303,10 +316,12 @@ export function PageRestrictionsDialog({
 
   /** Drops both View and Edit for one principal at once - the same end
    * state as unchecking both boxes, just in one action (matches the
-   * remove button `EditSpaceModal` uses for its own rows). */
+   * remove button `EditSpaceModal` uses for its own rows). Edit first: the
+   * backend refuses to remove View while Edit still exists (every other
+   * permission is useless without it), so removing View first would 409. */
   async function removePrincipal(row: PrincipalRow) {
-    if (row.view) await setRestriction(row.type, row.id, "view", false);
     if (row.edit) await setRestriction(row.type, row.id, "edit", false);
+    if (row.view) await setRestriction(row.type, row.id, "view", false);
   }
 
   /** Open mode's per-principal block toggle - the counterpart to
@@ -325,7 +340,7 @@ export function PageRestrictionsDialog({
       setReloadNonce((value) => value + 1);
       if (permission === "view") router.refresh();
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Could not update page access.");
+      toast.error(error instanceof ApiError ? error.message : t("restrictions.accessUpdateError"));
     } finally {
       setPending(false);
     }
@@ -338,10 +353,10 @@ export function PageRestrictionsDialog({
       setIsViewRestricted(restricted);
       router.refresh();
       if (restricted) {
-        toast.info("Add a person or group below with View checked to restrict this page.");
+        toast.info(t("restrictions.restrictHintToast"));
       }
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Could not update page access.");
+      toast.error(error instanceof ApiError ? error.message : t("restrictions.accessUpdateError"));
     } finally {
       setPending(false);
     }
@@ -353,14 +368,14 @@ export function PageRestrictionsDialog({
       await api.post(`${pagePath}/restrictions/reset`);
       toast.success(
         isViewRestricted
-          ? `Cleared the allow-list for "${page.title}".`
-          : `Cleared every block on "${page.title}".`,
+          ? t("restrictions.clearedAllowList", { title: page.title })
+          : t("restrictions.clearedBlocks", { title: page.title }),
       );
       setConfirmResetOpen(false);
       setReloadNonce((value) => value + 1);
       router.refresh();
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Could not reset page access.");
+      toast.error(error instanceof ApiError ? error.message : t("restrictions.resetError"));
     } finally {
       setPending(false);
     }
@@ -383,7 +398,7 @@ export function PageRestrictionsDialog({
         <div className="border-border bg-surface-sunken/40 flex items-center justify-between gap-2 border-b p-3">
           {locked ? (
             <p className="text-muted-foreground text-xs">
-              {label} permissions are read-only. Edit to make changes.
+              {t("restrictions.readOnlyHint", { label })}
             </p>
           ) : (
             <div className="flex flex-1 items-center gap-2">
@@ -392,9 +407,9 @@ export function PageRestrictionsDialog({
                 value={idToAdd}
                 onValueChange={setIdToAdd}
                 disabled={options.length === 0 || pending}
-                placeholder={`Add a ${kind}...`}
-                searchPlaceholder={kind === "user" ? "Search users…" : "Search groups…"}
-                emptyMessage={kind === "user" ? "No matching user." : "No matching group."}
+                placeholder={kind === "user" ? t("restrictions.addUser") : t("restrictions.addGroup")}
+                searchPlaceholder={kind === "user" ? t("restrictions.searchUsers") : t("restrictions.searchGroups")}
+                emptyMessage={kind === "user" ? t("restrictions.noMatchingUser") : t("restrictions.noMatchingGroup")}
                 triggerClassName="h-8 text-xs bg-background flex-1"
                 items={options.map((option) => {
                   const isAdded = assignedIds.has(option.id);
@@ -405,11 +420,11 @@ export function PageRestrictionsDialog({
                   // them out at the space door regardless.
                   const badge = isAdded ? (
                     <Badge variant="neutral" className="text-[10px] text-muted-foreground px-1.5 py-0 font-normal">
-                      Added
+                      {t("restrictions.addedBadge")}
                     </Badge>
                   ) : !option.hasSpaceAccess ? (
                     <Badge variant="warning" className="text-[10px] px-1.5 py-0 font-normal">
-                      Not added to space
+                      {t("restrictions.notInSpaceBadge")}
                     </Badge>
                   ) : null;
                   return {
@@ -428,7 +443,7 @@ export function PageRestrictionsDialog({
                 onClick={onAdd}
                 disabled={!idToAdd || pending}
               >
-                <Plus className="size-3.5" /> Add {kind}
+                <Plus className="size-3.5" /> {t("restrictions.addKind", { kind })}
               </Button>
             </div>
           )}
@@ -441,7 +456,7 @@ export function PageRestrictionsDialog({
             disabled={pending}
           >
             {locked ? <Pencil className="size-3.5" /> : <Check className="size-3.5" />}
-            {locked ? "Edit" : "Done"}
+            {locked ? t("restrictions.edit") : t("restrictions.done")}
           </Button>
         </div>
 
@@ -450,16 +465,18 @@ export function PageRestrictionsDialog({
             <thead>
               <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
                 <th className="px-3 py-2 font-medium">{label}</th>
-                <th className="px-1.5 py-2 text-center font-medium">View</th>
-                <th className="px-1.5 py-2 text-center font-medium">Edit</th>
-                <th className="px-1.5 py-2 text-center font-medium"><span className="sr-only">Remove</span></th>
+                <th className="px-1.5 py-2 text-center font-medium">{t("restrictions.columnView")}</th>
+                <th className="px-1.5 py-2 text-center font-medium">{t("restrictions.columnEdit")}</th>
+                <th className="px-1.5 py-2 text-center font-medium"><span className="sr-only">{t("restrictions.removeSr")}</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {principalRows.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="text-muted-foreground p-4 text-center text-xs">
-                    No {kind === "user" ? "users" : "groups"} restricted on this page yet.
+                    {t("restrictions.emptyPrincipal", {
+                      noun: kind === "user" ? t("restrictions.usersNoun") : t("restrictions.groupsNoun"),
+                    })}
                   </td>
                 </tr>
               ) : (
@@ -469,18 +486,18 @@ export function PageRestrictionsDialog({
                     <td className="px-1.5 py-2 text-center">
                       <input
                         type="checkbox"
-                        className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={`${row.name}: Can view`}
+                        className="accent-primary size-3.5 cursor-pointer rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={t("restrictions.canViewAria", { name: row.name })}
                         checked={row.view}
-                        disabled={locked || pending}
-                        onChange={(event) => void setRestriction(row.type, row.id, "view", event.target.checked, row.name)}
+                        disabled
+                        title={t("restrictions.viewIsFloorTitle")}
                       />
                     </td>
                     <td className="px-1.5 py-2 text-center">
                       <input
                         type="checkbox"
-                        className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={`${row.name}: Can edit`}
+                        className="accent-primary size-3.5 cursor-pointer rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={t("restrictions.canEditAria", { name: row.name })}
                         checked={row.edit}
                         disabled={locked || pending}
                         onChange={(event) => void setRestriction(row.type, row.id, "edit", event.target.checked, row.name)}
@@ -490,8 +507,8 @@ export function PageRestrictionsDialog({
                       {locked ? null : (
                         <button
                           type="button"
-                          aria-label={`Remove ${row.name} from this page's restrictions`}
-                          title="Remove"
+                          aria-label={t("restrictions.removeNamedAria", { name: row.name })}
+                          title={t("restrictions.removeSr")}
                           className="text-muted-foreground hover:text-danger hover:bg-danger-bg focus-visible:ring-ring inline-flex cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
                           disabled={pending}
                           onClick={() => void removePrincipal(row)}
@@ -528,8 +545,18 @@ export function PageRestrictionsDialog({
         <div className="border-border bg-surface-sunken/40 flex items-center justify-between gap-2 border-b p-3">
           <p className="text-muted-foreground flex-1 text-xs">
             {locked
-              ? `Every ${kind} with access to this space, and their current access to this page. Edit to make changes.`
-              : `Uncheck a box to block just that ${kind} - everyone else is unaffected.`}
+              ? t("restrictions.rosterLocked", {
+                  kind:
+                    kind === "user"
+                      ? t("restrictions.usersNoun")
+                      : t("restrictions.groupsNoun"),
+                })
+              : t("restrictions.rosterUnlocked", {
+                  kind:
+                    kind === "user"
+                      ? t("restrictions.usersNoun")
+                      : t("restrictions.groupsNoun"),
+                })}
           </p>
           <Button
             type="button"
@@ -540,7 +567,7 @@ export function PageRestrictionsDialog({
             disabled={pending}
           >
             {locked ? <Pencil className="size-3.5" /> : <Check className="size-3.5" />}
-            {locked ? "Edit" : "Done"}
+            {locked ? t("restrictions.edit") : t("restrictions.done")}
           </Button>
         </div>
         <div className="max-h-60 overflow-y-auto">
@@ -548,15 +575,17 @@ export function PageRestrictionsDialog({
             <thead>
               <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
                 <th className="px-3 py-2 font-medium">{label}</th>
-                <th className="px-1.5 py-2 text-center font-medium">View</th>
-                <th className="px-1.5 py-2 text-center font-medium">Edit</th>
+                <th className="px-1.5 py-2 text-center font-medium">{t("restrictions.columnView")}</th>
+                <th className="px-1.5 py-2 text-center font-medium">{t("restrictions.columnEdit")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {rosterRows.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="text-muted-foreground p-4 text-center text-xs">
-                    No {kind === "user" ? "users" : "groups"} have access to this space yet.
+                    {t("restrictions.emptyRoster", {
+                      noun: kind === "user" ? t("restrictions.usersNoun") : t("restrictions.groupsNoun"),
+                    })}
                   </td>
                 </tr>
               ) : (
@@ -566,29 +595,33 @@ export function PageRestrictionsDialog({
                     <td className="px-1.5 py-2 text-center">
                       <input
                         type="checkbox"
-                        className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={`${row.name}: Can view`}
+                        className="accent-primary size-3.5 cursor-pointer rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={t("restrictions.canViewAria", { name: row.name })}
                         checked={row.view}
                         disabled={locked || pending || row.viewLocked}
-                        title={row.viewLocked ? ADMIN_BYPASS_TITLE : undefined}
+                        title={row.viewLocked ? t(ADMIN_BYPASS_KEY) : undefined}
                         onChange={(event) => void setBlocked(kind, row.id, "view", !event.target.checked)}
                       />
                     </td>
                     <td className="px-1.5 py-2 text-center">
+                      {/* Read-only here: Edit always follows View under Open
+                          access (there is no separate "editor demoted to
+                          viewer" block any more - see `set_page_permission_denial`
+                          / `can_edit_page`, which already require View
+                          first) - blocking View above is the only lever. */}
                       <input
                         type="checkbox"
-                        className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={`${row.name}: Can edit`}
+                        className="accent-primary size-3.5 cursor-pointer rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={t("restrictions.canEditAria", { name: row.name })}
                         checked={row.edit}
-                        disabled={locked || pending || row.editLocked}
+                        disabled
                         title={
                           row.viewLocked
-                            ? ADMIN_BYPASS_TITLE
+                            ? t(ADMIN_BYPASS_KEY)
                             : row.editLocked
-                              ? "This person's space role doesn't include editing here."
-                              : undefined
+                              ? t("restrictions.roleNoEditTitle")
+                              : t("restrictions.editFollowsViewTitle")
                         }
-                        onChange={(event) => void setBlocked(kind, row.id, "edit", !event.target.checked)}
                       />
                     </td>
                   </tr>
@@ -612,28 +645,26 @@ export function PageRestrictionsDialog({
         onOpenAutoFocus={(event) => event.preventDefault()}
         title={
           <span className="inline-flex items-center gap-1.5">
-            Page access
+            {t("restrictions.title")}
             <TooltipProvider delayDuration={200}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex cursor-help rounded-full focus-visible:ring-2 focus-visible:outline-none"
-                    aria-label="Who can be added here"
+                    aria-label={t("restrictions.whoCanBeAddedAria")}
                   >
                     <Info className="size-3.5" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">
-                  Can&apos;t find (or can&apos;t select) the person or group you&apos;re
-                  looking for? They need to be added to this space&apos;s own Access
-                  &amp; Permissions first.
+                  {t("restrictions.whoCanBeAddedHint")}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </span>
         }
-        description={`Choose who can view or edit "${page.title}". View restrictions inherit to child pages.`}
+        description={t("restrictions.description", { title: page.title })}
         className="max-w-2xl"
       >
         {/* General access, same box as EditSpaceModal's own - an actual
@@ -651,10 +682,10 @@ export function PageRestrictionsDialog({
               ) : (
                 <Globe2 className="text-primary size-3.5" />
               )}
-              General access
+              {t("restrictions.generalAccess")}
             </h4>
             <p className="text-muted-foreground mt-0.5 text-[11px]">
-              Choose whether everyone who can view this space can view this page.
+              {t("restrictions.generalAccessHint")}
             </p>
           </div>
           <Select
@@ -663,18 +694,24 @@ export function PageRestrictionsDialog({
             disabled={pending || loading}
           >
             <SelectTrigger className="h-8 w-36 bg-background text-xs">
-              <SelectValue>{isViewRestricted ? "Restricted" : "Open"}</SelectValue>
+              <SelectValue>
+                {isViewRestricted
+                  ? t("restrictions.modeRestricted")
+                  : t("restrictions.modeOpen")}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="restricted">Restricted</SelectItem>
+              <SelectItem value="open">{t("restrictions.modeOpen")}</SelectItem>
+              <SelectItem value="restricted">
+                {t("restrictions.modeRestricted")}
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         {loading ? (
           <div className="text-muted-foreground mt-3 flex items-center gap-2 p-4 text-sm">
-            <Loader2 className="animate-spin" /> Loading restrictions...
+            <Loader2 className="animate-spin" /> {t("restrictions.loading")}
           </div>
         ) : (
           <div className="mt-3 space-y-3">
@@ -689,7 +726,7 @@ export function PageRestrictionsDialog({
                     gets there without hovering it. */}
                 {renderPrincipalTable(
                   "group",
-                  "Group",
+                  t("restrictions.groupLabel"),
                   groupRows,
                   groupsLocked,
                   setGroupsLocked,
@@ -701,7 +738,7 @@ export function PageRestrictionsDialog({
                 )}
                 {renderPrincipalTable(
                   "user",
-                  "User",
+                  t("restrictions.userLabel"),
                   userRows,
                   usersLocked,
                   setUsersLocked,
@@ -714,8 +751,8 @@ export function PageRestrictionsDialog({
               </>
             ) : (
               <>
-                {renderRosterTable("group", "Group", rosterGroupRows, groupsLocked, setGroupsLocked)}
-                {renderRosterTable("user", "User", rosterUserRows, usersLocked, setUsersLocked)}
+                {renderRosterTable("group", t("restrictions.groupLabel"), rosterGroupRows, groupsLocked, setGroupsLocked)}
+                {renderRosterTable("user", t("restrictions.userLabel"), rosterUserRows, usersLocked, setUsersLocked)}
               </>
             )}
           </div>
@@ -729,22 +766,26 @@ export function PageRestrictionsDialog({
             onClick={() => setConfirmResetOpen(true)}
             disabled={pending || loading}
           >
-            <RotateCcw className="size-3.5" /> Reset to default
+            <RotateCcw className="size-3.5" /> {t("restrictions.resetToDefault")}
           </Button>
-          <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Done</Button>
+          <Button type="button" variant="secondary" onClick={() => setOpen(false)}>{t("restrictions.done")}</Button>
         </DialogFooter>
       </DialogContent>
 
       <ConfirmDialog
         open={confirmResetOpen}
         onOpenChange={setConfirmResetOpen}
-        title={isViewRestricted ? "Reset this allow-list?" : "Clear every block on this page?"}
+        title={
+          isViewRestricted
+            ? t("restrictions.resetAllowListTitle")
+            : t("restrictions.resetBlocksTitle")
+        }
         description={
           isViewRestricted
-            ? `This clears every person and group listed below for "${page.title}", leaving it closed to everyone but space admins until you add people back.`
-            : `This clears every explicit block below on "${page.title}", so everyone falls back to the access their space role already gives them.`
+            ? t("restrictions.resetAllowListDescription", { title: page.title })
+            : t("restrictions.resetBlocksDescription", { title: page.title })
         }
-        confirmLabel="Reset"
+        confirmLabel={t("restrictions.reset")}
         destructive
         pending={pending}
         onConfirm={() => void resetAccess()}

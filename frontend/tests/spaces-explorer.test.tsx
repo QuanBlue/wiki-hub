@@ -104,3 +104,34 @@ describe("SpacesExplorer - Own tab and Owner column", () => {
     expect(screen.getByText("@legacycreator")).toBeInTheDocument();
   });
 });
+
+describe("SpacesExplorer - Edit space access", () => {
+  it("enables the row's Edit button for an Owner/Admin, disables it (with a tooltip) for anyone else", () => {
+    const admin = makeSpace({ id: "s1", key: "ADM", name: "Administered" });
+    const viewerOnly = makeSpace({
+      id: "s2",
+      key: "OPEN",
+      name: "Open to everyone",
+      my_role: null,
+      // An Open space still hands regular members `add`/`view`/etc. (see
+      // the permission service) - `admin` is the one permission that stays
+      // opt-in, so this is what a non-admin member's row actually looks
+      // like, not an empty list.
+      my_permissions: ["view", "add"],
+    });
+    render(<SpacesExplorer spaces={[admin, viewerOnly]} />);
+
+    // Every row gets an Edit button - a non-admin viewer's is disabled
+    // (with an explanatory tooltip) rather than hidden outright, so they
+    // can see the row's full space-administration action exists without
+    // being able to open it. See `canAdmin` in `spaces-explorer.tsx`.
+    const editButtons = screen.getAllByRole("button", { name: "Edit" });
+    expect(editButtons).toHaveLength(2);
+    expect(editButtons[0]).toBeEnabled();
+    expect(editButtons[1]).toBeDisabled();
+    expect(editButtons[1]).toHaveAttribute(
+      "title",
+      "Only this space's Owner or an Admin can edit it.",
+    );
+  });
+});

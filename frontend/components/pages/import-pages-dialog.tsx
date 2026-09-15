@@ -16,6 +16,7 @@ import { formatBytes } from "@/components/ui/job-progress";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import type { DocumentImportJob, InstanceInfo, WikiPage } from "@/types/api";
 import { DocumentImportProgress } from "@/components/pages/document-import-progress";
 
@@ -63,14 +64,29 @@ function titleVariantsFromFilename(name: string): string[] {
     : [title];
 }
 
-function inspect(file: File, maxUploadBytes: number): string | null {
+type ImportProblem =
+  | { key: "importDialog.badExtension"; vars: { extension: string } }
+  | { key: "importDialog.emptyFile"; vars?: undefined }
+  | { key: "importDialog.tooLarge"; vars: { size: string } };
+
+function inspect(
+  file: File,
+  maxUploadBytes: number,
+  noExtensionLabel: string,
+): ImportProblem | null {
   const extension = extensionOf(file.name);
   if (!ACCEPTED_EXTENSIONS.includes(extension as (typeof ACCEPTED_EXTENSIONS)[number])) {
-    return `WikiHub cannot import .${extension || "files without an extension"}`;
+    return {
+      key: "importDialog.badExtension",
+      vars: { extension: extension || noExtensionLabel },
+    };
   }
-  if (file.size === 0) return "This file is empty";
+  if (file.size === 0) return { key: "importDialog.emptyFile" };
   if (maxUploadBytes > 0 && file.size > maxUploadBytes) {
-    return `Larger than the ${formatBytes(maxUploadBytes)} upload limit`;
+    return {
+      key: "importDialog.tooLarge",
+      vars: { size: formatBytes(maxUploadBytes) },
+    };
   }
   return null;
 }
@@ -120,12 +136,17 @@ export function ImportPagesDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const requestRef = useRef<XMLHttpRequest | null>(null);
   const [dragging, setDragging] = useState(false);
+  const { t } = useTranslation();
 
   // Derived, never stored: the upload ceiling arrives asynchronously, and a
   // `problem` kept in state would have to be re-synced when it does.
   const inspected = candidates.map((candidate) => ({
     ...candidate,
-    problem: inspect(candidate.file, maxUploadBytes),
+    problem: inspect(
+      candidate.file,
+      maxUploadBytes,
+      t("importDialog.noExtension"),
+    ),
   }));
   const sendable = inspected.filter((c) => c.problem === null);
   const conflicts = sendable.filter((candidate) =>
@@ -154,13 +175,13 @@ export function ImportPagesDialog({
           next.push({ key: `${identity}:${next.length}`, file });
         }
         if (next.length > MAX_FILES) {
-          toast.error(`Import at most ${MAX_FILES} documents at a time.`);
+          toast.error(t("importDialog.maxFilesToast", { count: MAX_FILES }));
           return next.slice(0, MAX_FILES);
         }
         return next;
       });
     },
-    [],
+    [t],
   );
 
   useEffect(() => {
@@ -271,11 +292,11 @@ export function ImportPagesDialog({
             try {
               resolve(JSON.parse(request.responseText) as DocumentImportJob);
             } catch {
-              reject(new Error("The server sent a response WikiHub could not read."));
+              reject(new Error(t("importDialog.unreadableResponse")));
             }
             return;
           }
-          let message = "The import could not be started.";
+          let message: unknown = t("importDialog.startFailed");
           let errorCode: string | undefined;
           let conflictNames: string[] = [];
           try {
@@ -296,14 +317,14 @@ export function ImportPagesDialog({
             /* keep the fallback */
           }
           const error = new Error(
-            typeof message === "string" ? message : "The import could not be started.",
+            typeof message === "string" ? message : t("importDialog.startFailed"),
           ) as Error & { code?: string; conflictNames?: string[] };
           error.code = errorCode;
           error.conflictNames = conflictNames;
           reject(error);
         };
         request.onerror = () =>
-          reject(new Error("The upload failed. Check your connection and try again."));
+          reject(new Error(t("importDialog.uploadFailed")));
         request.onabort = () => reject(new DOMException("Aborted", "AbortError"));
         request.send(form);
       });
@@ -325,7 +346,9 @@ export function ImportPagesDialog({
         );
         setConflictDialogOpen(true);
       } else {
-        toast.error(error instanceof Error ? error.message : "The import could not be started.");
+        toast.error(
+          error instanceof Error ? error.message : t("importDialog.startFailed"),
+        );
       }
       setUploading(false);
     }
@@ -345,11 +368,11 @@ export function ImportPagesDialog({
       )}
       <DialogContent
         className="max-w-2xl"
-        title="Import pages from files"
+        title={t("workspace.importPagesTitle")}
         description={
           parentPage
-            ? `Each file becomes a new page under "${parentPage.title}".`
-            : "Each file becomes a new top-level page in this space."
+            ? t("importDialog.descriptionChild", { title: parentPage.title })
+            : t("importDialog.descriptionTop")
         }
       >
         {importJob ? (
@@ -366,7 +389,7 @@ export function ImportPagesDialog({
           />
         ) : <form onSubmit={submit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
-            <Label htmlFor="import-files">Documents</Label>
+            <Label htmlFor="import-files">{t("importDialog.documentsLabel")}</Label>
             <div
               onDragOver={(event) => {
                 event.preventDefault();
@@ -381,7 +404,7 @@ export function ImportPagesDialog({
             >
               <Upload className="text-muted-foreground size-5" />
               <p className="text-muted-foreground text-sm">
-                Drop Word, PDF, HTML or Markdown files here
+                {t("importDialog.dropHint")}
               </p>
               <Button
                 type="button"
@@ -390,7 +413,7 @@ export function ImportPagesDialog({
                 onClick={() => inputRef.current?.click()}
                 disabled={uploading}
               >
-                Choose files
+                {t("importDialog.chooseFiles")}
               </Button>
               <input
                 ref={inputRef}
@@ -416,7 +439,9 @@ export function ImportPagesDialog({
                     {candidate.problem ? (
                       // Inline, next to the file it is about, rather than a
                       // toast that leaves you guessing which one it meant.
-                      <p className="text-danger text-xs">{candidate.problem}</p>
+                      <p className="text-danger text-xs">
+                        {t(candidate.problem.key, candidate.problem.vars)}
+                      </p>
                     ) : (
                       <p className="text-muted-foreground text-xs">
                         {formatBytes(candidate.file.size)}
@@ -427,7 +452,9 @@ export function ImportPagesDialog({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    aria-label={`Remove ${candidate.file.name}`}
+                    aria-label={t("importDialog.removeFileAria", {
+                      name: candidate.file.name,
+                    })}
                     onClick={() =>
                       setCandidates((current) =>
                         current.filter((c) => c.key !== candidate.key),
@@ -444,7 +471,9 @@ export function ImportPagesDialog({
 
           {uploading ? (
             <div
-              aria-label={`Upload ${uploadPercent}% complete`}
+              aria-label={t("importDialog.uploadProgressAria", {
+                percent: uploadPercent,
+              })}
               aria-valuemax={100}
               aria-valuemin={0}
               aria-valuenow={uploadPercent}
@@ -466,28 +495,33 @@ export function ImportPagesDialog({
             >
               {uploading ? <Loader2 className="animate-spin" /> : <FileUp />}
               {uploading
-                ? `Uploading… ${uploadPercent}%`
+                ? t("importDialog.uploading", { percent: uploadPercent })
                 : sendable.length > 1
-                  ? `Import ${sendable.length} files`
-                  : "Import"}
+                  ? t("importDialog.importMany", { count: sendable.length })
+                  : t("importDialog.importOne")}
             </Button>
           </DialogFooter>
         </form>}
       </DialogContent>
       <Dialog open={conflictDialogOpen} onOpenChange={setConflictDialogOpen}>
         <DialogContent
-          title="Page already exists"
+          title={t("importDialog.conflictTitle")}
           description={
             serverConflictNames.length === 1 || conflicts.length === 1
-              ? `A page matching “${firstConflictName ? titleFromFilename(firstConflictName) : "this file"}” already exists.`
+              ? t("importDialog.conflictOne", {
+                  name: firstConflictName
+                    ? titleFromFilename(firstConflictName)
+                    : t("importDialog.conflictThisFile"),
+                })
               : serverConflictNames.length > 1 || conflicts.length > 1
-                ? `${serverConflictNames.length || conflicts.length} pages with the same names already exist.`
-                : "Choose how to handle pages whose imported titles already exist."
+                ? t("importDialog.conflictMany", {
+                    count: serverConflictNames.length || conflicts.length,
+                  })
+                : t("importDialog.conflictGeneral")
           }
         >
           <p className="text-muted-foreground text-sm leading-5">
-            If a matching page is found, replace its content or keep both pages by adding a
-            numbered suffix such as <span className="text-foreground font-medium">(1)</span> or <span className="text-foreground font-medium">(2)</span>.
+            {t("importDialog.conflictHint", { first: "(1)", second: "(2)" })}
           </p>
           <DialogFooter>
             <Button
@@ -498,7 +532,7 @@ export function ImportPagesDialog({
                 void startImport("rename");
               }}
             >
-              Keep both
+              {t("importDialog.keepBoth")}
             </Button>
             <Button
               type="button"
@@ -508,7 +542,7 @@ export function ImportPagesDialog({
                 void startImport("replace");
               }}
             >
-              Replace existing
+              {t("importDialog.replaceExisting")}
             </Button>
           </DialogFooter>
         </DialogContent>

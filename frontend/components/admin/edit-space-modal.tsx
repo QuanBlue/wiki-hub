@@ -152,14 +152,20 @@ function PermissionColGroup({ visibility }: { visibility: "open" | "restricted" 
 }
 
 /** Applies one checkbox click to a principal's current permission set,
- * folding in the Admin<->everything-else relationship the backend also
- * enforces (Admin *is* every other permission, see `ALL_SPACE_PERMISSIONS`
- * in `PermissionService`):
+ * folding in the relationships the backend also enforces
+ * (`PermissionService.set_space_permission`):
  * - Checking Admin checks every other column too - a partial Admin grant
  *   would just be confusing to read back later.
  * - Unchecking any column while every column was checked (i.e. Admin was
  *   on) also unchecks Admin - it can no longer honestly claim "everything"
- *   once one box is missing. */
+ *   once one box is missing.
+ * - Checking anything other than View checks View along with it - every
+ *   other permission is meaningless without it, so there's no such thing as
+ *   a principal who can e.g. Add but not View.
+ * - View can never be unchecked through this matrix at all - it's the
+ *   floor every grant here sits on (the lowest role is Viewer, never
+ *   "nothing"); dropping it is only ever done by removing the principal's
+ *   row entirely (the trash icon), not by unchecking one box. */
 function nextPermissionsFor(
   current: SpacePermission[],
   permission: SpacePermission,
@@ -167,7 +173,11 @@ function nextPermissionsFor(
 ): SpacePermission[] {
   if (enabled) {
     if (permission === "admin") return [...ALL_PERMISSION_KEYS];
-    return Array.from(new Set([...current, permission]));
+    return Array.from(new Set([...current, permission, "view"]));
+  }
+
+  if (permission === "view") {
+    return current;
   }
 
   const hadEverything = ALL_PERMISSION_KEYS.every((p) => current.includes(p));
@@ -601,6 +611,13 @@ function EditSpaceModalContent({
       }
 
       const requests: Promise<unknown>[] = [];
+      // View removals run in their own, later batch: the backend refuses to
+      // drop View while a sibling permission still exists on that principal
+      // (every other permission is useless without it), so a "remove
+      // everything" diff has to clear the siblings first - issuing every
+      // removal in one `Promise.all` would race those two requests against
+      // each other and could hit that guard depending on which lands first.
+      const viewRemovals: Promise<unknown>[] = [];
 
       // Diffs to add
       for (const [key, currentPerms] of currentMap.entries()) {
@@ -625,12 +642,13 @@ function EditSpaceModalContent({
           if (!currentPerms.has(perm)) {
             const endpoint = principal_type === "group" ? "groups" : "users";
             const path = `/api/v1/spaces/${encodeURIComponent(space.key)}/permissions/${endpoint}/${principal_id}/${perm}`;
-            requests.push(api.delete(path));
+            (perm === "view" ? viewRemovals : requests).push(api.delete(path));
           }
         }
       }
 
       await Promise.all(requests);
+      await Promise.all(viewRemovals);
       toast.success("Space access & permissions saved.");
       setInitialAssignments(assignments);
       setGroupsLocked(true);
@@ -1371,18 +1389,33 @@ function EditSpaceModalContent({
                               </span>
                             </td>
                             <td className="text-muted-foreground px-2 py-2">{ROLE_LABEL[role]}</td>
-                            {PERMISSIONS.map(([permission, label]) => (
-                              <td key={permission} className="px-1.5 py-2 text-center">
-                                <input
-                                  type="checkbox"
-                                  className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
-                                  aria-label={`${group.name}: ${label}`}
-                                  checked={hasGroupPermission(group, permission)}
-                                  disabled={groupsLocked}
-                                  onChange={(e) => toggleGroupPermission(group, permission, e.target.checked)}
-                                />
-                              </td>
-                            ))}
+                            {PERMISSIONS.map(([permission, label]) => {
+                              // View is the floor every grant sits on - it's
+                              // never independently toggleable, so this box
+                              // stays disabled (and checked) regardless of
+                              // edit mode. Dropping it happens only by
+                              // removing the group's row entirely (the trash
+                              // icon below), which reads as "no access" not
+                              // "access minus View".
+                              const isViewColumn = permission === "view";
+                              return (
+                                <td key={permission} className="px-1.5 py-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    className="accent-primary size-3.5 cursor-pointer rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
+                                    aria-label={`${group.name}: ${label}`}
+                                    title={
+                                      isViewColumn
+                                        ? "View is the baseline access every grant here includes - remove the group entirely to revoke it."
+                                        : undefined
+                                    }
+                                    checked={hasGroupPermission(group, permission)}
+                                    disabled={groupsLocked || isViewColumn}
+                                    onChange={(e) => toggleGroupPermission(group, permission, e.target.checked)}
+                                  />
+                                </td>
+                              );
+                            })}
                             <td className="px-1.5 py-2 text-center">
                               {groupsLocked ? null : (
                                 <button
@@ -1575,18 +1608,28 @@ function EditSpaceModalContent({
                             >
                               {isOwnerRow ? "Owner" : ROLE_LABEL[role]}
                             </td>
-                            {PERMISSIONS.map(([permission, label]) => (
-                              <td key={permission} className="px-1.5 py-2 text-center">
-                                <input
-                                  type="checkbox"
-                                  className="accent-primary size-3.5 rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
-                                  aria-label={`${user.username}: ${label}`}
-                                  checked={isOwnerRow ? true : hasUserPermission(user, permission)}
-                                  disabled={isOwnerRow || usersLocked}
-                                  onChange={(e) => toggleUserPermission(user, permission, e.target.checked)}
-                                />
-                              </td>
-                            ))}
+                            {PERMISSIONS.map(([permission, label]) => {
+                              // View is the floor every grant sits on - see
+                              // the matching comment on the group table above.
+                              const isViewColumn = permission === "view";
+                              return (
+                                <td key={permission} className="px-1.5 py-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    className="accent-primary size-3.5 cursor-pointer rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
+                                    aria-label={`${user.username}: ${label}`}
+                                    title={
+                                      isViewColumn
+                                        ? "View is the baseline access every grant here includes - remove the person entirely to revoke it."
+                                        : undefined
+                                    }
+                                    checked={isOwnerRow ? true : hasUserPermission(user, permission)}
+                                    disabled={isOwnerRow || usersLocked || isViewColumn}
+                                    onChange={(e) => toggleUserPermission(user, permission, e.target.checked)}
+                                  />
+                                </td>
+                              );
+                            })}
                             <td className="px-1.5 py-2 text-center">
                               {usersLocked || isOwnerRow ? null : (
                                 <button

@@ -35,6 +35,8 @@ import {
   listPageRevisions,
   restorePageRevision,
 } from "@/lib/revisions";
+import { formatDateTime } from "@/lib/i18n/format";
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type {
   PageRevisionDiff,
@@ -43,21 +45,6 @@ import type {
   PageRevisionItem,
 } from "@/types/api";
 
-function formatDate(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  } catch {
-    return dateStr;
-  }
-}
-
 function RevisionAuthor({
   username,
   fullName,
@@ -65,7 +52,8 @@ function RevisionAuthor({
   username: string | null;
   fullName: string | null;
 }) {
-  const label = fullName || username || "System";
+  const { t } = useTranslation();
+  const label = fullName || username || t("history.systemAuthor");
   if (!username || username === "system") return <>{label}</>;
   return <UserProfileTrigger username={username} fullName={fullName} />;
 }
@@ -294,6 +282,7 @@ export function PageHistoryModal({
   const oldContentRef = useRef<HTMLDivElement | null>(null);
   const newContentRef = useRef<HTMLDivElement | null>(null);
   const syncingScrollRef = useRef(false);
+  const { t, locale } = useTranslation();
 
   const syncPanelScroll = useCallback((side: "old" | "new", event: UIEvent<HTMLDivElement>) => {
     if (syncingScrollRef.current) return;
@@ -332,11 +321,11 @@ export function PageHistoryModal({
         setFromVersion(previous);
       }
     } catch {
-      toast.error("Could not load revision history.");
+      toast.error(t("history.loadError"));
     } finally {
       setLoadingRevisions(false);
     }
-  }, [spaceKey, slug]);
+  }, [spaceKey, slug, t]);
 
   useEffect(() => {
     if (open) {
@@ -357,9 +346,9 @@ export function PageHistoryModal({
     setLoadingDiff(true);
     getRevisionDiff(spaceKey, slug, fromVersion, toVersion)
       .then((data) => setDiffData(data))
-      .catch(() => toast.error("Could not calculate revision diff."))
+      .catch(() => toast.error(t("history.diffError")))
       .finally(() => setLoadingDiff(false));
-  }, [open, spaceKey, slug, fromVersion, toVersion]);
+  }, [open, spaceKey, slug, fromVersion, toVersion, t]);
 
   // Restore page handler
   const handleRestore = async () => {
@@ -367,12 +356,12 @@ export function PageHistoryModal({
     setRestoring(true);
     try {
       await restorePageRevision(spaceKey, slug, toVersion);
-      toast.success(`Page restored to version ${toVersion}.`);
+      toast.success(t("history.restoredToast", { version: toVersion }));
       setShowConfirmRestore(false);
       onOpenChange(false);
       onRestored?.();
     } catch {
-      toast.error(`Could not restore page to version ${toVersion}.`);
+      toast.error(t("history.restoreError", { version: toVersion }));
     } finally {
       setRestoring(false);
     }
@@ -414,9 +403,11 @@ export function PageHistoryModal({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="font-bold text-foreground text-base">Revision History</h2>
+                  <h2 className="font-bold text-foreground text-base">{t("history.title")}</h2>
                   <Badge variant="subtle" className="font-mono text-xs">
-                    {revisions.length} {revisions.length === 1 ? "version" : "versions"}
+                    {revisions.length === 1
+                      ? t("history.versionCountOne", { count: revisions.length })
+                      : t("history.versionCountMany", { count: revisions.length })}
                   </Badge>
                 </div>
                 <p className="text-muted-foreground text-xs truncate max-w-md">
@@ -430,7 +421,7 @@ export function PageHistoryModal({
                 type="button"
                 onClick={() => onOpenChange(false)}
                 className="text-muted-foreground hover:text-foreground rounded-lg p-1.5 hover:bg-surface-hover cursor-pointer"
-                aria-label="Close revision modal"
+                aria-label={t("history.closeAria")}
               >
                 <X className="size-5" />
               </button>
@@ -442,17 +433,17 @@ export function PageHistoryModal({
             {/* Left Revision Timeline Sidebar */}
             <div className="w-[25rem] shrink-0 overflow-hidden bg-surface-sunken p-3 space-y-2">
               <div className="text-muted-foreground px-2 py-1 text-[11px] font-semibold uppercase tracking-wider">
-                Versions
+                {t("history.versionsHeading")}
               </div>
 
               {loadingRevisions ? (
                 <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
                   <Loader2 className="mr-2 size-4 animate-spin text-primary" />
-                  Loading history...
+                  {t("history.loading")}
                 </div>
               ) : revisions.length === 0 ? (
                 <div className="py-8 text-center text-xs text-muted-foreground">
-                  No revisions found.
+                  {t("history.noRevisions")}
                 </div>
               ) : (
                 <ul className="max-h-[min(42rem,calc(100vh-12rem))] space-y-1.5 overflow-y-auto pr-1">
@@ -488,12 +479,12 @@ export function PageHistoryModal({
                               </Badge>
                               {rev.version === revisions[0].version ? (
                                 <span className="bg-success-bg text-success rounded px-1.5 py-0.5 text-[10px] font-semibold">
-                                  CURRENT
+                                  {t("history.currentBadge")}
                                 </span>
                               ) : null}
                             </div>
                             <span className="text-muted-foreground text-[11px]">
-                              {formatDate(rev.created_at)}
+                              {formatDateTime(rev.created_at, locale)}
                             </span>
                           </div>
 
@@ -504,7 +495,7 @@ export function PageHistoryModal({
                                 : <User className="size-3" />}
                             </div>
                             <span className="font-medium text-xs text-foreground truncate">
-                              {rev.created_by_full_name || rev.created_by_username || "System"}
+                              {rev.created_by_full_name || rev.created_by_username || t("history.systemAuthor")}
                             </span>
                           </div>
 
@@ -528,7 +519,10 @@ export function PageHistoryModal({
                 <div className="flex items-center gap-3 text-muted-foreground">
                   <GitCompare className="size-4 text-primary" />
                   <span>
-                    Comparing <strong className="text-foreground font-semibold">v{fromVersion}</strong> to <strong className="text-foreground font-semibold">v{toVersion}</strong>
+                    {t("history.comparing")}{" "}
+                    <strong className="text-foreground font-semibold">v{fromVersion}</strong>{" "}
+                    {t("history.comparingTo")}{" "}
+                    <strong className="text-foreground font-semibold">v{toVersion}</strong>
                   </span>
                 </div>
 
@@ -540,7 +534,7 @@ export function PageHistoryModal({
                     disabled={restoring}
                   >
                     <RotateCcw className="size-3.5" />
-                    Restore to v{toVersion}
+                    {t("history.restoreButton", { version: toVersion ?? 0 })}
                   </Button>
                 ) : null}
               </div>
@@ -550,7 +544,7 @@ export function PageHistoryModal({
                 {loadingDiff ? (
                   <div className="flex items-center justify-center py-24 text-muted-foreground text-sm">
                     <Loader2 className="mr-2 size-5 animate-spin text-primary" />
-                    Calculating differences...
+                    {t("history.calculating")}
                   </div>
                 ) : Boolean(diffData) ? (
                   <div className="grid min-h-0 flex-1 grid-cols-2 gap-4">
@@ -563,7 +557,11 @@ export function PageHistoryModal({
                           </p>
                           <div className="text-danger flex items-center gap-2 text-sm font-semibold">
                             <CircleMinus className="size-4" />
-                            <span>{diffData!.deleted_count} {diffData!.deleted_count === 1 ? "removal" : "removals"}</span>
+                            <span>
+                              {diffData!.deleted_count === 1
+                                ? t("history.removalsOne", { count: diffData!.deleted_count })
+                                : t("history.removalsMany", { count: diffData!.deleted_count })}
+                            </span>
                           </div>
                         </div>
                         {selectedFromRev ? (
@@ -573,7 +571,7 @@ export function PageHistoryModal({
                               fullName={selectedFromRev.created_by_full_name}
                             />
                             <span className="mx-1">·</span>
-                            {formatDate(selectedFromRev.created_at)}
+                            {formatDateTime(selectedFromRev.created_at, locale)}
                           </p>
                         ) : null}
                       </div>
@@ -599,7 +597,11 @@ export function PageHistoryModal({
                           </p>
                           <div className="text-success flex items-center gap-2 text-sm font-semibold">
                             <CirclePlus className="size-4" />
-                            <span>{diffData!.added_count} {diffData!.added_count === 1 ? "addition" : "additions"}</span>
+                            <span>
+                              {diffData!.added_count === 1
+                                ? t("history.additionsOne", { count: diffData!.added_count })
+                                : t("history.additionsMany", { count: diffData!.added_count })}
+                            </span>
                           </div>
                         </div>
                         {selectedToRev ? (
@@ -609,7 +611,7 @@ export function PageHistoryModal({
                               fullName={selectedToRev.created_by_full_name}
                             />
                             <span className="mx-1">·</span>
-                            {formatDate(selectedToRev.created_at)}
+                            {formatDateTime(selectedToRev.created_at, locale)}
                           </p>
                         ) : null}
                       </div>
@@ -631,7 +633,7 @@ export function PageHistoryModal({
                   <div className="space-y-3 max-w-4xl mx-auto">
                     {diffData.title_changed ? (
                       <div className="border-warning/30 bg-warning-bg text-warning rounded-lg border p-3 font-sans text-xs">
-                        <strong>Title changed:</strong> &ldquo;{diffData.from_title}&rdquo; → &ldquo;<strong className="text-foreground">{diffData.to_title}</strong>&rdquo;
+                        <strong>{t("history.titleChanged")}</strong> &ldquo;{diffData.from_title}&rdquo; → &ldquo;<strong className="text-foreground">{diffData.to_title}</strong>&rdquo;
                       </div>
                     ) : null}
 
@@ -668,7 +670,7 @@ export function PageHistoryModal({
                     </div>
                   </div>
                 ) : (
-                  <div className="py-12 text-center text-muted-foreground">Select revisions to calculate diff.</div>
+                  <div className="py-12 text-center text-muted-foreground">{t("history.selectRevisions")}</div>
                 )}
               </div>
             </div>
@@ -683,9 +685,9 @@ export function PageHistoryModal({
                     <RotateCcw className="size-5" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-foreground text-base">Restore Version {toVersion}?</h3>
+                    <h3 className="font-bold text-foreground text-base">{t("history.restoreTitle", { version: toVersion ?? 0 })}</h3>
                     <p className="text-muted-foreground mt-0.5 text-xs">
-                      This will restore the page title and content to version {toVersion}. A new version will be created to preserve full history.
+                      {t("history.restoreDescription", { version: toVersion ?? 0 })}
                     </p>
                   </div>
                 </div>
@@ -697,7 +699,7 @@ export function PageHistoryModal({
                     disabled={restoring}
                     onClick={() => setShowConfirmRestore(false)}
                   >
-                    Cancel
+                    {t("history.cancel")}
                   </Button>
                   <Button
                     variant="primary"
@@ -706,7 +708,7 @@ export function PageHistoryModal({
                     onClick={handleRestore}
                   >
                     {restoring ? <Loader2 className="size-3.5 animate-spin" /> : null}
-                    Confirm Restore
+                    {t("history.confirmRestore")}
                   </Button>
                 </div>
               </div>

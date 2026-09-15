@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { SpaceAccessPanel } from "@/components/admin/space-access-panel";
+import { getServerLocale } from "@/lib/i18n/server";
 import {
   getSpace,
   listSpacePermissionGroups,
@@ -17,21 +18,20 @@ export default async function AdminSpaceAccessPage({
   params: Promise<{ key: string }>;
 }) {
   const { key } = await params;
-  const [space, groups, users, assignments] = await Promise.all([
+  const [space, groups, users, assignments, { t }] = await Promise.all([
     getSpace(key),
     listSpacePermissionGroups(key),
     listSpacePermissionUsers(key),
     listSpacePermissions(key),
+    getServerLocale(),
   ]);
 
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold">Access - {space.name}</h2>
+        <h2 className="text-lg font-semibold">{t("adminSpaces.accessTitle", { name: space.name })}</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Manage visibility and per-user/group permissions for this Space. A
-          user&apos;s own grant overrides their groups&apos; once they have one
-          (Admin aside); otherwise their groups combine.
+          {t("adminSpaces.accessDescription")}
         </p>
       </div>
       <SpaceAccessPanel

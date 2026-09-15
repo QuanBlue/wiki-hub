@@ -7,11 +7,13 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { Space } from "@/types/api";
 
 export function SpaceCard({ space }: { space: Space }) {
   const router = useRouter();
+  const { t } = useTranslation();
   const [favorite, setFavorite] = useState(space.is_favorite);
   const [pending, setPending] = useState(false);
 
@@ -33,11 +35,15 @@ export function SpaceCard({ space }: { space: Space }) {
       router.refresh();
     } catch {
       setFavorite(!next); // roll back
-      toast.error("Could not update favourites.");
+      toast.error(t("spaces.favouriteError"));
     } finally {
       setPending(false);
     }
   }
+
+  const favouriteLabel = favorite
+    ? t("spaces.removeFavourite")
+    : t("spaces.addFavourite");
 
   return (
     <Link
@@ -64,17 +70,18 @@ export function SpaceCard({ space }: { space: Space }) {
             </code>
             {space.status === "archived" ? (
               <span className="text-muted-foreground border-border rounded border px-1.5 py-0.5 text-[11px]">
-                archived
+                {t("spaces.archivedBadge")}
               </span>
             ) : null}
           </div>
           <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">
-            {space.description || "No description."}
+            {space.description || t("spaces.noDescription")}
           </p>
           <p className="text-muted-foreground mt-2 text-xs">
-            {space.member_count}{" "}
-            {space.member_count === 1 ? "member" : "members"}
-            {space.my_role ? ` · you are ${space.my_role}` : ""}
+            {space.member_count === 1
+              ? t("spaces.memberCountOne", { count: space.member_count })
+              : t("spaces.memberCountMany", { count: space.member_count })}
+            {space.my_role ? ` · ${t("spaces.youAreRole", { role: space.my_role })}` : ""}
           </p>
         </div>
 
@@ -82,9 +89,9 @@ export function SpaceCard({ space }: { space: Space }) {
           type="button"
           onClick={toggleFavorite}
           disabled={pending}
-          aria-label={favorite ? "Remove from favourites" : "Add to favourites"}
+          aria-label={favouriteLabel}
           aria-pressed={favorite}
-          title={favorite ? "Remove from favourites" : "Add to favourites"}
+          title={favouriteLabel}
           className={cn(
             "rounded-md p-1.5 transition-colors duration-150",
             "hover:bg-surface-selected focus-visible:ring-ring cursor-pointer",

@@ -4,6 +4,8 @@ import { Download, Expand, FileText, Loader2, RotateCw, Shrink, ZoomIn, ZoomOut 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { useTranslation } from "@/lib/i18n/context";
+
 type PdfViewport = { width: number; height: number };
 type PdfRenderTask = { promise: Promise<void>; cancel?: () => void };
 type PdfPage = {
@@ -52,6 +54,7 @@ function PdfPageCanvas({ document: pdfDocument, pageNumber, scale, rotation }: {
 }
 
 export function PdfAttachmentPreview({ contentUrl, filename, expanded, onExpandedChange, toolbarContainer }: { contentUrl: string; filename: string; expanded?: boolean; onExpandedChange?: (expanded: boolean) => void; toolbarContainer?: HTMLElement | null }) {
+  const { t } = useTranslation();
   const [pdf, setPdf] = useState<PdfDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,18 +111,18 @@ export function PdfAttachmentPreview({ contentUrl, filename, expanded, onExpande
   }, [isExpanded, pdf]);
 
   const controls: ReactNode = <>
-    <button type="button" onClick={() => setScale(value => Math.max(.1, Number((value - .1).toFixed(1))))} disabled={scale <= .1} aria-label="Zoom out" title="Zoom out" className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"><ZoomOut className="size-4" /></button>
-    <button type="button" onClick={() => setScale(1)} aria-label="Actual size" title="Actual size (100%)" className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring min-w-12 rounded px-1 text-xs tabular-nums transition-colors focus-visible:ring-2 focus-visible:outline-none">{Math.round(scale * 100)}%</button>
-    <button type="button" onClick={() => setScale(value => Math.min(4, Number((value + .1).toFixed(1))))} disabled={scale >= 4} aria-label="Zoom in" title="Zoom in" className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"><ZoomIn className="size-4" /></button>
-    <button type="button" onClick={() => setRotation(value => (value + 90) % 360)} aria-label="Rotate pages" title="Rotate pages" className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none"><RotateCw className="size-4" /></button>
-    <button type="button" onClick={() => setExpanded(!isExpanded)} aria-expanded={isExpanded} aria-label={isExpanded ? "Shrink preview" : "Expand preview"} title={isExpanded ? "Shrink preview" : "Expand preview"} className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none">{isExpanded ? <Shrink className="size-4" /> : <Expand className="size-4" />}</button>
+    <button type="button" onClick={() => setScale(value => Math.max(.1, Number((value - .1).toFixed(1))))} disabled={scale <= .1} aria-label={t("previews.zoomOut")} title={t("previews.zoomOut")} className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"><ZoomOut className="size-4" /></button>
+    <button type="button" onClick={() => setScale(1)} aria-label={t("previews.actualSize")} title={t("previews.actualSizeTitle")} className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring min-w-12 rounded px-1 text-xs tabular-nums transition-colors focus-visible:ring-2 focus-visible:outline-none">{Math.round(scale * 100)}%</button>
+    <button type="button" onClick={() => setScale(value => Math.min(4, Number((value + .1).toFixed(1))))} disabled={scale >= 4} aria-label={t("previews.zoomIn")} title={t("previews.zoomIn")} className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"><ZoomIn className="size-4" /></button>
+    <button type="button" onClick={() => setRotation(value => (value + 90) % 360)} aria-label={t("previews.rotatePages")} title={t("previews.rotatePages")} className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none"><RotateCw className="size-4" /></button>
+    <button type="button" onClick={() => setExpanded(!isExpanded)} aria-expanded={isExpanded} aria-label={isExpanded ? t("previews.shrinkPreview") : t("previews.expandPreview")} title={isExpanded ? t("previews.shrinkPreview") : t("previews.expandPreview")} className="hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none">{isExpanded ? <Shrink className="size-4" /> : <Expand className="size-4" />}</button>
   </>;
 
   return <div className={`fv-root pdf-preview-card relative flex w-full flex-col overflow-hidden ${isExpanded ? "h-full" : "h-[24rem] min-h-80"}`} data-expanded={isExpanded ? "true" : "false"}>
     {useHeaderControls && toolbarContainer ? createPortal(controls, toolbarContainer) : <div className="pdf-preview-toolbar bg-surface-sunken text-muted-foreground flex h-9 shrink-0 items-center justify-end gap-1 border-b px-2">{controls}</div>}
     <div ref={viewportRef} className="bg-surface-sunken min-h-0 flex-1 overflow-auto p-4">
-      {loading ? <div className="text-muted-foreground flex h-full min-h-48 flex-col items-center justify-center gap-2 text-sm"><Loader2 className="size-5 animate-spin" /><span>Loading PDF pages...</span></div> : null}
-      {error ? <div className="text-danger flex h-full min-h-48 flex-col items-center justify-center gap-3 text-sm"><FileText className="size-10" /><span>{error}</span><a href={contentUrl} download={filename} className="text-primary hover:text-primary-hover focus-visible:ring-ring rounded px-2 py-1 font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"><Download className="mr-1 inline size-4" />Download PDF</a></div> : null}
+      {loading ? <div className="text-muted-foreground flex h-full min-h-48 flex-col items-center justify-center gap-2 text-sm"><Loader2 className="size-5 animate-spin" /><span>{t("previews.pdfLoading")}</span></div> : null}
+      {error ? <div className="text-danger flex h-full min-h-48 flex-col items-center justify-center gap-3 text-sm"><FileText className="size-10" /><span>{error}</span><a href={contentUrl} download={filename} className="text-primary hover:text-primary-hover focus-visible:ring-ring rounded px-2 py-1 font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"><Download className="mr-1 inline size-4" />{t("previews.downloadPdf")}</a></div> : null}
       {pdf ? <div className="flex min-h-full flex-col items-center gap-4">{Array.from({ length: pdf.numPages }, (_, index) => <PdfPageCanvas key={index + 1} document={pdf} pageNumber={index + 1} scale={scale} rotation={rotation} />)}</div> : null}
     </div>
   </div>;

@@ -51,6 +51,7 @@ export function SpaceRowActions({
         variant="ghost"
         onClick={() => setEditOpen(true)}
         aria-label={"Edit " + space.name}
+        className="hover:bg-surface-selected!"
       >
         <Pencil className="size-4" />
         Edit
@@ -62,7 +63,7 @@ export function SpaceRowActions({
         onClick={() => setConfirmDeleteOpen(true)}
         title={"Delete " + space.name}
         aria-label={"Delete " + space.name}
-        className="hover:bg-danger-bg hover:text-danger cursor-pointer"
+        className="hover:bg-danger-bg! hover:text-danger! cursor-pointer"
       >
         <Trash2 className="size-4" />
       </Button>
@@ -173,6 +174,7 @@ export function AdminSpaceRow({
               variant="ghost"
               onClick={() => setEditOpen(true)}
               aria-label={"Edit " + space.name}
+              className="hover:bg-surface-selected!"
             >
               <Pencil className="size-4" />
               Edit
@@ -184,7 +186,7 @@ export function AdminSpaceRow({
               onClick={() => setConfirmDeleteOpen(true)}
               title={"Delete " + space.name}
               aria-label={"Delete " + space.name}
-              className="hover:bg-danger-bg hover:text-danger cursor-pointer"
+              className="hover:bg-danger-bg! hover:text-danger! cursor-pointer"
             >
               <Trash2 className="size-4" />
             </Button>

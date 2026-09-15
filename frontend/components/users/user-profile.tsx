@@ -32,6 +32,11 @@ import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { Button } from "@/components/ui/button";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { api, ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
+import {
+  formatDate,
+  formatTime,
+} from "@/lib/i18n/format";
 import {
   SIDEBAR_SHORTCUT_LIMIT,
   useSidebarShortcuts,
@@ -79,61 +84,54 @@ function initials(user: PublicUser) {
     .join("");
 }
 
-function dateLabel(value: string | null) {
-  if (!value) return "No recent activity";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
-function timeLabel(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(value));
-}
-
-function relativeDate(value: string) {
+function relativeDate(
+  value: string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
   const elapsedMinutes = Math.max(
     0,
     Math.floor((Date.now() - new Date(value).getTime()) / 60_000),
   );
-  if (elapsedMinutes < 1) return "Just now";
-  if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`;
+  if (elapsedMinutes < 1) return t("userProfile.justNow");
+  if (elapsedMinutes < 60)
+    return t("userProfile.minutesAgo", { count: elapsedMinutes });
   const hours = Math.floor(elapsedMinutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  if (hours < 48) return "Yesterday";
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 24) return t("userProfile.hoursAgo", { count: hours });
+  if (hours < 48) return t("userProfile.yesterday");
+  return t("userProfile.daysAgo", { count: Math.floor(hours / 24) });
 }
 
-function presenceOf(lastActiveAt: string | null, now: number) {
+function presenceOf(
+  lastActiveAt: string | null,
+  now: number,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
   if (!lastActiveAt)
-    return { isOnline: false, label: "Offline", minutesAgo: undefined };
+    return { isOnline: false, label: t("userProfile.offline"), minutesAgo: undefined };
 
   const lastActiveTime = new Date(lastActiveAt).getTime();
   if (Number.isNaN(lastActiveTime)) {
-    return { isOnline: false, label: "Offline", minutesAgo: undefined };
+    return { isOnline: false, label: t("userProfile.offline"), minutesAgo: undefined };
   }
   const elapsedMinutes = Math.max(
     0,
     Math.floor((now - lastActiveTime) / 60_000),
   );
   if (elapsedMinutes < 5) {
-    return { isOnline: true, label: "Active now", minutesAgo: undefined };
+    return { isOnline: true, label: t("userProfile.activeNow"), minutesAgo: undefined };
   }
   if (elapsedMinutes < 60) {
     return {
       isOnline: false,
-      label: `Active ${elapsedMinutes}m ago`,
+      label: t("userProfile.activeMinutesAgo", { count: elapsedMinutes }),
       minutesAgo: elapsedMinutes < 60 ? elapsedMinutes : undefined,
     };
   }
   return {
     isOnline: false,
-    label: `Active ${relativeDate(lastActiveAt)}`,
+    label: t("userProfile.activeRelative", {
+      relative: relativeDate(lastActiveAt, t),
+    }),
     minutesAgo: undefined,
   };
 }
@@ -267,6 +265,7 @@ function SearchableFilterSelect({
   const filteredOptions = needle
     ? options.filter((option) => option.label.toLowerCase().includes(needle))
     : options;
+  const { t } = useTranslation();
 
   const toggle = (optionValue: string) => {
     onChange(
@@ -360,7 +359,7 @@ function SearchableFilterSelect({
             })}
             {needle && filteredOptions.length === 0 ? (
               <li className="text-muted-foreground px-2.5 py-2 text-xs">
-                No matches
+                {t("userProfile.noMatches")}
               </li>
             ) : null}
           </ul>
@@ -379,6 +378,7 @@ function ActivityRow({
   onViewChange: (item: RecentPageItem) => void;
   treePosition?: "middle" | "last";
 }) {
+  const { t, locale } = useTranslation();
   const treeClassName = treeConnectorClass(treePosition);
 
   return (
@@ -393,13 +393,16 @@ function ActivityRow({
             {item.title}
           </Link>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            Updated {dateLabel(item.updated_at)} at {timeLabel(item.updated_at)}{" "}
+            {t("userProfile.updatedRow", {
+              date: formatDate(item.updated_at, locale),
+              time: formatTime(item.updated_at, locale),
+            })}{" "}
             <button
               type="button"
               onClick={() => onViewChange(item)}
               className="text-primary hover:bg-primary-subtle hover:text-primary-hover active:bg-surface-selected focus-visible:ring-ring cursor-pointer rounded-sm px-0.5 transition-colors duration-150 hover:underline focus-visible:ring-2 focus-visible:outline-none"
             >
-              (view change)
+              {t("userProfile.viewChange")}
             </button>{" "}
             ·{" "}
             <Link
@@ -416,6 +419,7 @@ function ActivityRow({
 }
 
 function DraftRow({ draft }: { draft: UserDraftItem }) {
+  const { t, locale } = useTranslation();
   return (
     <li>
       <div className="hover:bg-surface-hover group flex items-start gap-2 rounded-md px-2 py-2 transition-colors duration-150">
@@ -428,8 +432,11 @@ function DraftRow({ draft }: { draft: UserDraftItem }) {
             {draft.title}
           </Link>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            Draft saved {dateLabel(draft.updated_at)} at{" "}
-            {timeLabel(draft.updated_at)} · {draft.space_name}
+            {t("userProfile.draftSavedRow", {
+              date: formatDate(draft.updated_at, locale),
+              time: formatTime(draft.updated_at, locale),
+            })}{" "}
+            · {draft.space_name}
           </p>
         </div>
       </div>
@@ -459,6 +466,7 @@ function CompactActivityFeed({
     }
     return [...byUser.entries()];
   }, [items]);
+  const { t } = useTranslation();
   if (!showActors) {
     return items.length ? (
       <ul className="space-y-0.5 p-4">
@@ -469,7 +477,7 @@ function CompactActivityFeed({
     ) : (
       <div className="p-12 text-center">
         <FileText className="text-muted-foreground mx-auto size-6" />
-        <p className="mt-3 text-sm font-medium">No visible activity yet</p>
+        <p className="mt-3 text-sm font-medium">{t("userProfile.noVisibleActivity")}</p>
       </div>
     );
   }
@@ -517,7 +525,7 @@ function CompactActivityFeed({
   ) : (
     <div className="p-12 text-center">
       <FileText className="text-muted-foreground mx-auto size-6" />
-      <p className="mt-3 text-sm font-medium">No visible activity yet</p>
+      <p className="mt-3 text-sm font-medium">{t("userProfile.noVisibleActivity")}</p>
     </div>
   );
 }
@@ -554,6 +562,7 @@ export function UserProfile({
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activityScrollRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
+  const { t, locale, apiErrorText } = useTranslation();
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [savedPageKeys, setSavedPageKeys] = useState<string[]>([]);
   // "Saved for later" only stores "spaceKey/slug" strings client-side, so the
@@ -720,11 +729,7 @@ export function UserProfile({
       ]);
       setNextCursor(page.next_cursor);
     } catch (error) {
-      setLoadError(
-        error instanceof ApiError
-          ? error.message
-          : "Could not load more activity.",
-      );
+      setLoadError(apiErrorText(error, "userProfile.couldNotLoadMoreActivity"));
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -755,7 +760,7 @@ export function UserProfile({
   // Home, where "My activity" is also meaningful.
   const visibleItems =
     isOwner && activeTab === "all" ? initialAllActivity : items;
-  const presence = presenceOf(user.last_active_at, presenceNow);
+  const presence = presenceOf(user.last_active_at, presenceNow, t);
   const presenceIndicatorClass =
     presence.minutesAgo !== undefined
       ? "border-success/40 bg-success-bg text-success ring-surface absolute -right-1 bottom-0 flex h-5 min-w-7 items-center justify-center rounded-full border px-1.5 text-[10px] font-semibold leading-none ring-2"
@@ -888,23 +893,23 @@ export function UserProfile({
     { title: string; description: string; icon: React.ReactNode }
   > = {
     favourites: {
-      title: "Favourite spaces",
-      description: "Spaces you marked as favourites.",
+      title: t("userProfile.sectionFavourites"),
+      description: t("userProfile.sectionFavouritesDescription"),
       icon: <Star className="size-4" aria-hidden />,
     },
     pinned: {
-      title: "Pinned pages",
-      description: "Pages you pinned to keep them close at hand.",
+      title: t("userProfile.sectionPinned"),
+      description: t("userProfile.sectionPinnedDescription"),
       icon: <Pin className="size-4" aria-hidden />,
     },
     liked: {
-      title: "Liked pages",
-      description: "Pages you have liked.",
+      title: t("userProfile.sectionLiked"),
+      description: t("userProfile.sectionLikedDescription"),
       icon: <ThumbsUp className="size-4" aria-hidden />,
     },
     saved: {
-      title: "Saved for later",
-      description: "Pages you saved to revisit later.",
+      title: t("userProfile.sectionSaved"),
+      description: t("userProfile.sectionSavedDescription"),
       icon: <Bookmark className="size-4" aria-hidden />,
     },
   };
@@ -915,12 +920,12 @@ export function UserProfile({
       <main className="min-w-0 lg:flex lg:h-[calc(100dvh-var(--wh-topbar-height)-5rem)] lg:flex-col lg:overflow-hidden">
         <div className="shrink-0 px-2 pt-1">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold tracking-tight">Activity</h2>
+            <h2 className="text-lg font-semibold tracking-tight">{t("userProfile.activity")}</h2>
           </div>
           <div
             className="mt-3 flex gap-5"
             role="tablist"
-            aria-label="Profile activity"
+            aria-label={t("userProfile.activityAria")}
           >
             {activityTabs.map((tab) => (
               <button
@@ -933,15 +938,15 @@ export function UserProfile({
               >
                 {tab === "all"
                   ? isOwner
-                    ? "All activity"
-                    : `@${user.username} activity`
+                    ? t("userProfile.tabAllActivity")
+                    : t("userProfile.tabUserActivity", { username: user.username })
                   : tab === "mine"
-                    ? "My activity"
+                    ? t("userProfile.tabMyActivity")
                     : tab === "knowledge"
-                      ? "My knowledge"
+                      ? t("userProfile.tabMyKnowledge")
                       : isOwner
-                        ? "Drafts"
-                        : `@${user.username} Draft`}
+                        ? t("userProfile.tabDrafts")
+                        : t("userProfile.tabUserDraft", { username: user.username })}
               </button>
             ))}
           </div>
@@ -955,18 +960,18 @@ export function UserProfile({
             <div className="p-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
               <div className="grid gap-5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-row lg:items-start lg:gap-7">
                 <nav
-                  aria-label="My knowledge sections"
+                  aria-label={t("userProfile.knowledgeNavAria")}
                   className="border-border lg:w-48 lg:shrink-0 lg:border-r lg:pr-5"
                 >
                   <p className="text-muted-foreground px-2 text-[10px] font-semibold tracking-[0.08em] uppercase">
-                    Knowledge sections
+                    {t("userProfile.knowledgeSections")}
                   </p>
                   <div className="mt-3 space-y-1">
                     {(
                       [
                         [
                           "favourites",
-                          "Favourite spaces",
+                          t("userProfile.sectionFavourites"),
                           <Star
                             key="favourites"
                             className="size-4 shrink-0"
@@ -975,12 +980,12 @@ export function UserProfile({
                         ],
                         [
                           "pinned",
-                          "Pinned pages",
+                          t("userProfile.sectionPinned"),
                           <Pin key="pinned" className="size-4 shrink-0" aria-hidden />,
                         ],
                         [
                           "liked",
-                          "Liked pages",
+                          t("userProfile.sectionLiked"),
                           <ThumbsUp
                             key="liked"
                             className="size-4 shrink-0"
@@ -989,7 +994,7 @@ export function UserProfile({
                         ],
                         [
                           "saved",
-                          "Saved for later",
+                          t("userProfile.sectionSaved"),
                           <Bookmark
                             key="saved"
                             className="size-4 shrink-0"
@@ -1035,7 +1040,9 @@ export function UserProfile({
                       {knowledgeSection === "favourites" || knowledgeSection === "pinned" ? (
                         <span
                           className="bg-primary-subtle text-primary inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
-                          title={`Shown as shortcuts in the sidebar (up to ${SIDEBAR_SHORTCUT_LIMIT})`}
+                          title={t("userProfile.sidebarShortcutsTitle", {
+                            limit: SIDEBAR_SHORTCUT_LIMIT,
+                          })}
                         >
                           <PanelLeft className="size-3.5" aria-hidden />
                           {knowledgeSection === "favourites"
@@ -1058,15 +1065,15 @@ export function UserProfile({
                             onChange={(event) =>
                               setKnowledgeSpaceSearch(event.target.value)
                             }
-                            placeholder="Search spaces"
-                            aria-label="Search favourite spaces"
+                            placeholder={t("userProfile.searchSpaces")}
+                            aria-label={t("userProfile.searchFavouriteSpacesAria")}
                             className="border-border bg-surface placeholder:text-muted-foreground hover:border-border-strong focus-visible:ring-ring h-8 w-full rounded-md border py-1.5 pr-7 pl-8 text-xs outline-none transition-colors duration-150 focus-visible:ring-2"
                           />
                           {knowledgeSpaceSearch ? (
                             <button
                               type="button"
                               onClick={() => setKnowledgeSpaceSearch("")}
-                              aria-label="Clear space search"
+                              aria-label={t("userProfile.clearSpaceSearch")}
                               className="text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute top-1/2 right-1.5 -translate-y-1/2 cursor-pointer rounded p-0.5 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                             >
                               <X className="size-3" aria-hidden />
@@ -1076,29 +1083,29 @@ export function UserProfile({
                       ) : (
                         <>
                           <SearchableFilterSelect
-                            ariaLabel="Filter by space"
+                            ariaLabel={t("userProfile.filterBySpace")}
                             value={knowledgeSpace}
-                            allLabel="All spaces"
-                            pluralNoun="spaces"
+                            allLabel={t("userProfile.allSpaces")}
+                            pluralNoun={t("userProfile.spacesNoun")}
                             options={knowledgeSpaces.map(([key, name]) => ({
                               value: key,
                               label: name,
                             }))}
                             onChange={setKnowledgeSpace}
-                            searchPlaceholder="Search spaces"
+                            searchPlaceholder={t("userProfile.searchSpaces")}
                             className="w-32"
                           />
                           <SearchableFilterSelect
-                            ariaLabel="Filter by label"
+                            ariaLabel={t("userProfile.filterByLabel")}
                             value={knowledgeLabel}
-                            allLabel="All labels"
-                            pluralNoun="labels"
+                            allLabel={t("userProfile.allLabels")}
+                            pluralNoun={t("userProfile.labelsNoun")}
                             options={knowledgeLabels.map((label) => ({
                               value: label,
                               label,
                             }))}
                             onChange={setKnowledgeLabel}
-                            searchPlaceholder="Search labels"
+                            searchPlaceholder={t("userProfile.searchLabels")}
                             className="w-28"
                             align="end"
                           />
@@ -1109,8 +1116,8 @@ export function UserProfile({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          aria-label="Clear filters"
-                          title="Clear filters"
+                          aria-label={t("userProfile.clearFilters")}
+                          title={t("userProfile.clearFilters")}
                           className="size-8"
                           onClick={clearKnowledgeFilters}
                         >
@@ -1124,7 +1131,7 @@ export function UserProfile({
                       {knowledgeSection === "favourites" ? (
                         <KnowledgeCard
                           icon={<Star className="size-4" aria-hidden />}
-                          title="Favourite spaces"
+                          title={t("userProfile.sectionFavourites")}
                           count={filteredFavoriteSpaces.length}
                         >
                           {filteredFavoriteSpaces.length ? (
@@ -1155,13 +1162,13 @@ export function UserProfile({
                                         size="icon"
                                         aria-label={
                                           shownInSidebar
-                                            ? `Remove ${space.name} from sidebar`
-                                            : `Show ${space.name} in sidebar`
+                                            ? t("nav.removeFromSidebar", { name: space.name })
+                                            : t("nav.showInSidebar", { name: space.name })
                                         }
                                         title={
                                           shownInSidebar
-                                            ? "Shown in sidebar"
-                                            : "Show in sidebar"
+                                            ? t("nav.shownInSidebar")
+                                            : t("nav.showInSidebarShort")
                                         }
                                         disabled={
                                           !shownInSidebar &&
@@ -1183,7 +1190,7 @@ export function UserProfile({
                             </ul>
                           ) : (
                             <KnowledgeEmpty>
-                              No favourite spaces match the current filters.
+                              {t("userProfile.noFavouriteSpacesFiltered")}
                             </KnowledgeEmpty>
                           )}
                         </KnowledgeCard>
@@ -1191,7 +1198,7 @@ export function UserProfile({
                       {knowledgeSection === "pinned" ? (
                         <KnowledgeCard
                           icon={<Pin className="size-4" aria-hidden />}
-                          title="Pinned pages"
+                          title={t("userProfile.sectionPinned")}
                           count={filteredPinnedPages.length}
                         >
                           {filteredPinnedPages.length ? (
@@ -1227,13 +1234,13 @@ export function UserProfile({
                                         size="icon"
                                         aria-label={
                                           shownInSidebar
-                                            ? `Remove ${page.title} from sidebar`
-                                            : `Show ${page.title} in sidebar`
+                                            ? t("nav.removeFromSidebar", { name: page.title })
+                                            : t("nav.showInSidebar", { name: page.title })
                                         }
                                         title={
                                           shownInSidebar
-                                            ? "Shown in sidebar"
-                                            : "Show in sidebar"
+                                            ? t("nav.shownInSidebar")
+                                            : t("nav.showInSidebarShort")
                                         }
                                         disabled={
                                           !shownInSidebar &&
@@ -1255,7 +1262,7 @@ export function UserProfile({
                             </ul>
                           ) : (
                             <KnowledgeEmpty>
-                              No pinned pages match the current filters.
+                              {t("userProfile.noPinnedPagesFiltered")}
                             </KnowledgeEmpty>
                           )}
                         </KnowledgeCard>
@@ -1263,7 +1270,7 @@ export function UserProfile({
                       {knowledgeSection === "liked" ? (
                         <KnowledgeCard
                           icon={<ThumbsUp className="size-4" aria-hidden />}
-                          title="Liked pages"
+                          title={t("userProfile.sectionLiked")}
                           count={
                             likedPages.filter((page) =>
                               matchesKnowledge(page.space_key, page.slug),
@@ -1305,7 +1312,7 @@ export function UserProfile({
                             </ul>
                           ) : (
                             <KnowledgeEmpty>
-                              No liked pages match the current filters.
+                              {t("userProfile.noLikedPagesFiltered")}
                             </KnowledgeEmpty>
                           )}
                         </KnowledgeCard>
@@ -1313,7 +1320,7 @@ export function UserProfile({
                       {knowledgeSection === "saved" ? (
                         <KnowledgeCard
                           icon={<Bookmark className="size-4" aria-hidden />}
-                          title="Saved for later"
+                          title={t("userProfile.sectionSaved")}
                           count={filteredSavedPageKeys.length}
                         >
                           {filteredSavedPageKeys.length ? (
@@ -1343,7 +1350,7 @@ export function UserProfile({
                                           </span>
                                           <span className="text-muted-foreground mt-0.5 block truncate text-xs">
                                             {page === null
-                                              ? "No longer available"
+                                              ? t("userProfile.noLongerAvailable")
                                               : (savedSpaceNames[spaceKey ?? ""] ?? spaceKey)}
                                           </span>
                                         </span>
@@ -1355,13 +1362,13 @@ export function UserProfile({
                           ) : (
                             <KnowledgeEmpty>
                               <span>
-                                No saved pages match the current filters.
+                                {t("userProfile.noSavedPagesFiltered")}
                               </span>
                               <Link
                                 href="/saved"
                                 className="text-primary hover:text-primary-hover focus-visible:ring-ring mt-1 rounded-sm focus-visible:ring-2 focus-visible:outline-none"
                               >
-                                Open Saved for later
+                                {t("userProfile.openSavedForLater")}
                               </Link>
                             </KnowledgeEmpty>
                           )}
@@ -1371,14 +1378,18 @@ export function UserProfile({
                     {knowledgeItemCount > 0 ? (
                       <div className="border-border flex items-center justify-between border-t pt-3">
                         <p className="text-muted-foreground text-xs">
-                          Showing {knowledgeStart + 1}–{Math.min(knowledgeStart + knowledgePageSize, knowledgeItemCount)} of {knowledgeItemCount}
+                          {t("common.showingRange", {
+                            from: knowledgeStart + 1,
+                            to: Math.min(knowledgeStart + knowledgePageSize, knowledgeItemCount),
+                            total: knowledgeItemCount,
+                          })}
                         </p>
                         <div className="flex items-center gap-2">
                           <label
                             htmlFor="knowledge-page-size"
                             className="text-muted-foreground text-xs"
                           >
-                            Rows
+                            {t("common.rows")}
                           </label>
                           <select
                             id="knowledge-page-size"
@@ -1400,11 +1411,14 @@ export function UserProfile({
                             ))}
                           </select>
                           <span className="text-muted-foreground hidden text-xs sm:inline">
-                            Page {knowledgeSafePage + 1} of {knowledgePageCount}
+                            {t("common.pageIndicator", {
+                              current: knowledgeSafePage + 1,
+                              total: knowledgePageCount,
+                            })}
                           </span>
                           <div className="flex items-center gap-1.5">
-                            <Button type="button" variant="secondary" size="icon" aria-label="Previous page" title="Previous page" disabled={knowledgeSafePage === 0} onClick={() => setKnowledgePage(knowledgeSafePage - 1)}><ChevronLeft aria-hidden /></Button>
-                            <Button type="button" variant="secondary" size="icon" aria-label="Next page" title="Next page" disabled={knowledgeSafePage >= knowledgePageCount - 1} onClick={() => setKnowledgePage(knowledgeSafePage + 1)}><ChevronRight aria-hidden /></Button>
+                            <Button type="button" variant="secondary" size="icon" aria-label={t("common.previousPage")} title={t("common.previousPage")} disabled={knowledgeSafePage === 0} onClick={() => setKnowledgePage(knowledgeSafePage - 1)}><ChevronLeft aria-hidden /></Button>
+                            <Button type="button" variant="secondary" size="icon" aria-label={t("common.nextPage")} title={t("common.nextPage")} disabled={knowledgeSafePage >= knowledgePageCount - 1} onClick={() => setKnowledgePage(knowledgeSafePage + 1)}><ChevronRight aria-hidden /></Button>
                           </div>
                         </div>
                       </div>
@@ -1422,7 +1436,7 @@ export function UserProfile({
                   ))}
                 </ul>
               ) : (
-                <EmptyCard>No drafts are available to view.</EmptyCard>
+                <EmptyCard>{t("userProfile.noDraftsAvailable")}</EmptyCard>
               )}
             </div>
           ) : (
@@ -1437,14 +1451,14 @@ export function UserProfile({
           ) : null}
           {loading ? (
             <p className="text-muted-foreground p-4 text-center text-sm">
-              Loading more activity…
+              {t("userProfile.loadingMoreActivity")}
             </p>
           ) : null}
           {loadError ? (
             <div className="border-danger/30 bg-danger-bg m-4 flex items-center justify-between gap-3 rounded-lg border p-3">
               <p className="text-danger text-sm">{loadError}</p>
               <Button size="sm" onClick={() => void loadMore()}>
-                Try again
+                {t("userProfile.tryAgain")}
               </Button>
             </div>
           ) : null}
@@ -1499,7 +1513,7 @@ export function UserProfile({
                 className="mt-4 w-full"
               >
                 <Link href="/account">
-                  <Pencil aria-hidden /> Edit profile
+                  <Pencil aria-hidden /> {t("profile.editProfile")}
                 </Link>
               </Button>
             ) : null}
@@ -1507,60 +1521,60 @@ export function UserProfile({
           <dl className="border-border space-y-2.5 border-t px-4 py-3 text-xs">
             <div className="flex items-center gap-2">
               <UsersRound className="text-muted-foreground size-4" />
-              <dt className="text-muted-foreground">Workspace role</dt>
+              <dt className="text-muted-foreground">{t("profile.workspaceRole")}</dt>
               <dd className="ml-auto">
-                {user.is_workspace_admin ? "Administrator" : "Member"}
+                {user.is_workspace_admin ? t("profile.administrator") : t("profile.member")}
               </dd>
             </div>
             <div className="flex items-center gap-2">
               <CalendarDays className="text-muted-foreground size-4" />
-              <dt className="text-muted-foreground">Joined</dt>
-              <dd className="ml-auto">{dateLabel(user.created_at)}</dd>
+              <dt className="text-muted-foreground">{t("userProfile.joined")}</dt>
+              <dd className="ml-auto">
+                {user.created_at
+                  ? formatDate(user.created_at, locale)
+                  : t("userProfile.noRecentActivity")}
+              </dd>
             </div>
             <div className="flex items-center gap-2">
               <Mail className="text-muted-foreground size-4" />
-              <dt className="text-muted-foreground">Email</dt>
+              <dt className="text-muted-foreground">{t("profile.email")}</dt>
               <dd className="ml-auto max-w-36 truncate">{user.email}</dd>
             </div>
             <div className="flex items-center gap-2">
               <Clock3 className="text-muted-foreground size-4" />
-              <dt className="text-muted-foreground">Last active</dt>
+              <dt className="text-muted-foreground">{t("userProfile.lastActive")}</dt>
               <dd className="ml-auto">
-                {user.last_active_at ? relativeDate(user.last_active_at) : "—"}
+                {user.last_active_at ? relativeDate(user.last_active_at, t) : "—"}
               </dd>
             </div>
           </dl>
         </section>
-        <SideCard title="Activity statistics">
+        <SideCard title={t("userProfile.statsTitle")}>
           <dl className="space-y-3 text-xs">
             <div className="flex items-center justify-between">
               <dt className="text-muted-foreground flex items-center gap-2">
-                <FilePenLine className="size-4" aria-hidden="true" /> Pages
-                updated
+                <FilePenLine className="size-4" aria-hidden="true" /> {t("userProfile.statsPagesUpdated")}
               </dt>
               <dd className="font-semibold">{stats.pages_updated}</dd>
             </div>
             <div className="flex items-center justify-between">
               <dt className="text-muted-foreground flex items-center gap-2">
-                <FilePlus2 className="size-4" aria-hidden="true" /> Pages
-                created
+                <FilePlus2 className="size-4" aria-hidden="true" /> {t("userProfile.statsPagesCreated")}
               </dt>
               <dd className="font-semibold">{stats.pages_created}</dd>
             </div>
             <div className="flex items-center justify-between">
               <dt className="text-muted-foreground flex items-center gap-2">
-                <FolderTree className="size-4" aria-hidden="true" /> Spaces
-                contributed
+                <FolderTree className="size-4" aria-hidden="true" /> {t("userProfile.statsSpacesContributed")}
               </dt>
               <dd className="font-semibold">{stats.spaces_contributed}</dd>
             </div>
           </dl>
         </SideCard>
         {!isOwner && isAdmin ? (
-          <SideCard title="Draft access">
+          <SideCard title={t("userProfile.draftAccess")}>
             <EmptyCard>
-              Administrator preview is read-only. Choose the Drafts tab to
-              review available drafts.
+              {t("userProfile.draftAccessHint")}
             </EmptyCard>
           </SideCard>
         ) : null}

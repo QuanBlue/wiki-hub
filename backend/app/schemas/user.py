@@ -29,6 +29,15 @@ class GlobalPermissionOverride(BaseModel):
     enabled: bool
 
 
+class UserGroupMembership(BaseModel):
+    """One group this user belongs to, with the id a "leave this group"
+    action needs - `UserRead.groups` only ever carried names, enough for a
+    read-only badge but not enough to act on."""
+
+    id: uuid.UUID
+    name: str
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,17 +58,51 @@ class UserRead(BaseModel):
     company: str
     is_active: bool
     is_superuser: bool
+    #: Whether this account currently holds `system_admin` from *any* source -
+    #: `is_superuser` directly, a group's global permission, or a personal
+    #: override (see `PermissionService.is_system_admin`) - not just
+    #: `is_superuser` on its own. A plain `Role: Member` account can still
+    #: have this be `True` when a group they belong to grants
+    #: `system_admin`; the People directory and the Edit User dialog's
+    #: Global Access tab both read this so an account's *actual* access is
+    #: never hidden behind a Role column that only ever reflects one of the
+    #: three paths that can grant it. Populated by both `list_users` and
+    #: `_read_user`. `AdminAccountRead` (the Administrators tab) already
+    #: names the source precisely via `admin_source`/`granted_via_group` -
+    #: this field is the cheap yes/no version for everywhere else.
+    is_effective_admin: bool = False
     is_protected: bool
     last_login_at: datetime | None
     created_at: datetime
     groups: list[str] = Field(default_factory=list)
+    #: Only populated by a single-user read (`_read_user`) - same reasoning
+    #: as `global_permission_overrides` below. `groups` above stays name-only
+    #: and is what `list_users` still fills in for the directory table's own
+    #: badges; this is for the Edit User dialog's "leave this group" action,
+    #: which needs an id to act on, not just a label.
+    group_memberships: list[UserGroupMembership] = Field(default_factory=list)
     global_permissions: list[GlobalPermission] = Field(default_factory=list)
     #: This user's own overrides, each beating whatever their groups grant for
     #: that one permission - `global_permissions` above already reflects
     #: their effect and is what every authorization check actually reads;
     #: this is only so the admin UI can show *why* (inherited vs overridden)
     #: and let an administrator change just the override.
+    #:
+    #: Only populated by a single-user read (`_read_user`), never by
+    #: `list_users` - the Edit User dialog used to seed its Global Access
+    #: tab from the People directory's own row data, which always left this
+    #: empty, so every save looked like it silently reverted on reopen. It
+    #: now fetches a fresh `GET /users/{id}` when it opens specifically to
+    #: get this filled in.
     global_permission_overrides: list[GlobalPermissionOverride] = Field(default_factory=list)
+    #: What this user's groups grant on their own, before any override above
+    #: is applied - `global_permissions` cannot be un-mixed back into this
+    #: once an override has folded into it, so the Edit User dialog reads
+    #: this separately to show, live as each override dropdown is changed,
+    #: what "Inherit from groups" would actually fall back to (rather than
+    #: only being able to show that after a save and a re-open). Only
+    #: populated by a single-user read, same as `global_permission_overrides`.
+    global_permissions_from_groups: list[GlobalPermission] = Field(default_factory=list)
 
 
 class PublicUserRead(BaseModel):

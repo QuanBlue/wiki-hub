@@ -32,16 +32,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api } from "@/lib/api-client";
+import { formatDate } from "@/lib/i18n/format";
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { Space } from "@/types/api";
-
-function formatCreatedDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 /** "@admin" for one owner, "@admin +2" for more - the column has no room to
  * list every name, and the first one plus a count is enough to recognise
@@ -68,12 +62,17 @@ function FavoriteButton({
   pending: boolean;
   onToggle: (event: React.MouseEvent) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       type="button"
       onClick={onToggle}
       disabled={pending}
-      aria-label={favorite ? "Remove " + space.name + " from favourites" : "Add " + space.name + " to favourites"}
+      aria-label={
+        favorite
+          ? t("spaces.removeFavouriteNamed", { name: space.name })
+          : t("spaces.addFavouriteNamed", { name: space.name })
+      }
       aria-pressed={favorite}
       className={cn(
         "focus-visible:ring-ring cursor-pointer rounded-md p-2 transition-colors duration-150 hover:bg-surface-selected focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
@@ -90,10 +89,20 @@ function FavoriteButton({
 
 function SpaceDirectoryRow({ space }: { space: Space }) {
   const router = useRouter();
+  const { t, locale } = useTranslation();
   const [favorite, setFavorite] = useState(space.is_favorite);
   const [pending, setPending] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const href = "/spaces/" + encodeURIComponent(space.key);
+  // Same "full space administration" gate as the Edit space button inside
+  // the space itself (see `canAdmin` in space-workspace.tsx) - this row's
+  // Edit button opens the same modal, so it stays disabled (with a tooltip
+  // explaining why) for a viewer who only has this space's content-editing
+  // permissions (e.g. `add`, handed out to everyone by an Open space - see
+  // the permission service's module docstring); only its actual Owner/Admin
+  // can click through.
+  const canAdmin =
+    space.my_role === "admin" || space.my_permissions?.includes("admin") === true;
 
   async function toggleFavorite(event: React.MouseEvent) {
     event.preventDefault();
@@ -108,7 +117,7 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
       router.refresh();
     } catch {
       setFavorite(!next);
-      toast.error("Could not update favourites.");
+      toast.error(t("spaces.favouriteError"));
     } finally {
       setPending(false);
     }
@@ -134,12 +143,12 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
               </Badge>
               {space.status === "archived" ? (
                 <Badge variant="neutral" className="hidden text-[10px] md:inline-flex">
-                  Archived
+                  {t("spaces.archivedBadge")}
                 </Badge>
               ) : null}
             </span>
             <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-              {space.description || "No description"}
+              {space.description || t("spaces.noDescriptionShort")}
             </span>
           </span>
         </span>
@@ -149,7 +158,7 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
         </span>
         <span className="text-muted-foreground hidden items-center gap-1.5 text-xs xl:flex">
           <CalendarDays className="size-3.5 shrink-0" />
-          {formatCreatedDate(space.created_at)}
+          {formatDate(space.created_at, locale)}
         </span>
         <span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:flex">
           {space.visibility === "open" ? (
@@ -157,7 +166,11 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
           ) : (
             <Lock className="size-3.5 shrink-0" />
           )}
-          <span>{space.visibility === "open" ? "Open" : "Private"}</span>
+          <span>
+            {space.visibility === "open"
+              ? t("spaces.visibilityOpen")
+              : t("spaces.visibilityPrivate")}
+          </span>
         </span>
         <span className="text-muted-foreground hidden items-center gap-1.5 text-xs md:flex">
           <Users className="size-3.5 shrink-0" />
@@ -182,6 +195,10 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
             variant="secondary"
             size="sm"
             className="h-7 text-xs gap-1 px-2 font-medium cursor-pointer"
+            disabled={!canAdmin}
+            title={
+              canAdmin ? undefined : t("spaces.editOnlyOwnerAdmin")
+            }
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -189,7 +206,7 @@ function SpaceDirectoryRow({ space }: { space: Space }) {
             }}
           >
             <Pencil className="size-3" />
-            Edit
+            {t("spaces.edit")}
           </Button>
         </span>
       </Link>
@@ -212,6 +229,7 @@ function tabFromParam(value: string | null): SpacesTab {
 
 export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<SpacesTab>(tabFromParam(searchParams.get("tab")));
   const [page, setPage] = useState(0);
@@ -250,7 +268,7 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
 
   return (
     <div className="space-y-7">
-      <section aria-label="Space directory">
+      <section aria-label={t("spaces.directoryAria")}>
         <div className="flex flex-col gap-3 border-border border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="border-border bg-surface-sunken flex w-fit items-center rounded-md border p-0.5 text-xs">
             <button
@@ -267,7 +285,7 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
               )}
             >
               <Grid2X2 className="size-3.5" />
-              All ({spaces.length})
+              {t("spaces.tabAll", { count: spaces.length })}
             </button>
             <button
               type="button"
@@ -283,7 +301,7 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
               )}
             >
               <Star className="size-3.5" />
-              Favorite ({starredSpaces.length})
+              {t("spaces.tabFavorite", { count: starredSpaces.length })}
             </button>
             <button
               type="button"
@@ -299,7 +317,7 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
               )}
             >
               <Crown className="size-3.5" />
-              Own ({ownedSpaces.length})
+              {t("spaces.tabOwn", { count: ownedSpaces.length })}
             </button>
           </div>
           <div className="relative w-full sm:w-72">
@@ -311,7 +329,7 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
                 setQuery(event.target.value);
                 setPage(0);
               }}
-              placeholder="Search spaces"
+              placeholder={t("spaces.searchSpaces")}
               className="border-border bg-surface placeholder:text-muted-foreground hover:border-border-strong focus-visible:ring-ring w-full rounded-md border py-2 pr-8 pl-9 text-sm outline-none transition-[color,background-color,border-color,box-shadow] duration-150 focus-visible:ring-2"
             />
             {query ? (
@@ -321,7 +339,7 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
                   setQuery("");
                   setPage(0);
                 }}
-                aria-label="Clear space search"
+                aria-label={t("spaces.clearSpaceSearch")}
                 className="text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
               >
                 <X className="size-3.5" />
@@ -333,24 +351,28 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
         {filteredSpaces.length > 0 ? (
           <div className="border-border bg-surface mt-4 overflow-hidden rounded-xl border shadow-sm">
             <div className="border-border bg-surface-sunken grid grid-cols-[minmax(0,1fr)_8rem] gap-3 border-b px-4 py-2 text-xs font-medium sm:grid-cols-[minmax(0,1fr)_7.5rem_8rem] md:grid-cols-[minmax(0,1fr)_7.5rem_5.5rem_5rem_8rem] lg:grid-cols-[minmax(0,1fr)_9rem_7.5rem_5.5rem_5rem_8rem] xl:grid-cols-[minmax(0,1fr)_9rem_8rem_7.5rem_5.5rem_5rem_8rem]">
-              <span>Space</span>
-              <span className="hidden lg:block">Owner</span>
-              <span className="hidden xl:block">Created</span>
-              <span className="hidden sm:block">Access</span>
-              <span className="hidden md:block">Members</span>
-              <span className="hidden md:block">Groups</span>
-              <span className="text-right">Favorite</span>
+              <span>{t("spaces.columnSpace")}</span>
+              <span className="hidden lg:block">{t("spaces.columnOwner")}</span>
+              <span className="hidden xl:block">{t("spaces.columnCreated")}</span>
+              <span className="hidden sm:block">{t("spaces.columnAccess")}</span>
+              <span className="hidden md:block">{t("spaces.columnMembers")}</span>
+              <span className="hidden md:block">{t("spaces.columnGroups")}</span>
+              <span className="text-right">{t("spaces.columnFavorite")}</span>
             </div>
             {paginatedSpaces.map((space) => (
               <SpaceDirectoryRow key={space.id} space={space} />
             ))}
             <div className="border-border flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
               <p className="text-muted-foreground text-sm" aria-live="polite">
-                Showing {from}–{to} of {filteredSpaces.length}
+                {t("common.showingRange", {
+                  from,
+                  to,
+                  total: filteredSpaces.length,
+                })}
               </p>
               <div className="flex items-center gap-2">
                 <label htmlFor="spaces-page-size" className="text-muted-foreground text-xs">
-                  Rows
+                  {t("common.rows")}
                 </label>
                 <Select
                   value={String(pageSize)}
@@ -359,7 +381,7 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
                     setPage(0);
                   }}
                 >
-                  <SelectTrigger id="spaces-page-size" className="h-8 w-18" aria-label="Rows per page">
+                  <SelectTrigger id="spaces-page-size" className="h-8 w-18" aria-label={t("common.rowsPerPage")}>
                     <SelectValue>{pageSize}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -371,14 +393,17 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
                   </SelectContent>
                 </Select>
                 <span className="text-muted-foreground hidden text-xs sm:inline">
-                  Page {safePage + 1} of {pageCount}
+                  {t("common.pageIndicator", {
+                    current: safePage + 1,
+                    total: pageCount,
+                  })}
                 </span>
                 <Button
                   variant="secondary"
                   size="icon"
                   disabled={safePage === 0}
                   onClick={() => setPage((current) => Math.max(0, current - 1))}
-                  aria-label="Previous page"
+                  aria-label={t("common.previousPage")}
                 >
                   <ChevronLeft />
                 </Button>
@@ -387,7 +412,7 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
                   size="icon"
                   disabled={safePage >= pageCount - 1}
                   onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
-                  aria-label="Next page"
+                  aria-label={t("common.nextPage")}
                 >
                   <ChevronRight />
                 </Button>
@@ -398,19 +423,19 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
           <div className="border-border bg-surface mt-4 rounded-lg border border-dashed p-8 text-center">
             <p className="text-sm font-semibold">
               {query
-                ? "No spaces match your search"
+                ? t("spaces.emptyNoMatch")
                 : tab === "starred"
-                  ? "No favorite spaces yet"
+                  ? t("spaces.emptyNoFavorite")
                   : tab === "owned"
-                    ? "You don't own any spaces yet"
-                    : "No spaces found"}
+                    ? t("spaces.emptyNoOwned")
+                    : t("spaces.emptyNoSpaces")}
             </p>
             <p className="text-muted-foreground mt-1 text-xs">
               {query
-                ? "Try another term or clear the search."
+                ? t("spaces.emptyHintSearch")
                 : tab === "owned"
-                  ? "Spaces you create make you their Owner - see Edit space → General to check or change who owns one."
-                  : "Create a space to organise your team’s knowledge."}
+                  ? t("spaces.emptyHintOwned")
+                  : t("spaces.emptyHintCreate")}
             </p>
             {query ? (
               <Button
@@ -422,7 +447,7 @@ export function SpacesExplorer({ spaces }: { spaces: Space[] }) {
                   setPage(0);
                 }}
               >
-                Clear search
+                {t("spaces.clearSearch")}
               </Button>
             ) : null}
           </div>

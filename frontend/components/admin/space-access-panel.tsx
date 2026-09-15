@@ -45,6 +45,27 @@ function committedPermissions(
   return set;
 }
 
+/** Mutates a draft permission set in place for one checkbox click, mirroring
+ * the backend's `set_space_permission` rule that every other permission is
+ * useless without View: checking anything else pulls View along with it, and
+ * View itself can never be unchecked through this matrix - it's the floor
+ * every grant sits on (the UI also disables that checkbox entirely - see
+ * `viewLocked` below - this is just the matching guard against the change
+ * still reaching state some other way). Clearing a principal's access
+ * entirely is only ever done by dropping their whole row (`clearGroupDraft`/
+ * `clearUserDraft`), not by unchecking View. */
+function applyPermissionChange(set: Set<SpacePermission>, permission: SpacePermission, enabled: boolean): void {
+  if (enabled) {
+    set.add(permission);
+    set.add("view");
+    return;
+  }
+  if (permission === "view") {
+    return;
+  }
+  set.delete(permission);
+}
+
 function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
   if (a.size !== b.size) return false;
   for (const value of a) if (!b.has(value)) return false;
@@ -175,7 +196,7 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
   function setGroupDraftPermission(id: string, permission: SpacePermission, enabled: boolean) {
     setGroupDraft((current) => {
       const next = { ...current, [id]: new Set(current[id] ?? []) };
-      if (enabled) next[id].add(permission); else next[id].delete(permission);
+      applyPermissionChange(next[id], permission, enabled);
       return next;
     });
   }
@@ -205,10 +226,17 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
     for (const group of groups) {
       const draftSet = groupDraft[group.id] ?? new Set<SpacePermission>();
       const committedSet = committedPermissions(assignments, "group", group.id);
+      // View removed last: the backend refuses to drop it while a sibling
+      // permission still exists (see `applyPermissionChange`), so clearing
+      // every box at once (`clearGroupDraft`) has to remove the siblings
+      // first or that request would hit the guard.
       for (const [permission] of PERMISSIONS) {
+        if (permission === "view") continue;
         const now = draftSet.has(permission);
         if (now !== committedSet.has(permission)) await applyGroupPermission(group, permission, now);
       }
+      const viewNow = draftSet.has("view");
+      if (viewNow !== committedSet.has("view")) await applyGroupPermission(group, "view", viewNow);
     }
   }
 
@@ -256,7 +284,7 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
   function setUserDraftPermission(id: string, permission: SpacePermission, enabled: boolean) {
     setUserDraft((current) => {
       const next = { ...current, [id]: new Set(current[id] ?? []) };
-      if (enabled) next[id].add(permission); else next[id].delete(permission);
+      applyPermissionChange(next[id], permission, enabled);
       return next;
     });
   }
@@ -286,10 +314,14 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
     for (const user of users) {
       const draftSet = userDraft[user.id] ?? new Set<SpacePermission>();
       const committedSet = committedPermissions(assignments, "user", user.id);
+      // View removed last - see the matching comment in `commitGroupChanges`.
       for (const [permission] of PERMISSIONS) {
+        if (permission === "view") continue;
         const now = draftSet.has(permission);
         if (now !== committedSet.has(permission)) await applyUserPermission(user, permission, now);
       }
+      const viewNow = draftSet.has("view");
+      if (viewNow !== committedSet.has("view")) await applyUserPermission(user, "view", viewNow);
     }
   }
 
@@ -391,7 +423,7 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
           )}
         </div>
       </div>
-      <table className="w-full min-w-190 text-sm"><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-4 py-3 font-medium">Group</th>{PERMISSIONS.map(([, label]) => <th key={label} className="px-2 py-3 text-center font-medium">{label}</th>)}<th className="px-2 py-3 text-center font-medium"><span className="sr-only">Remove</span></th></tr></thead><tbody>{groups.map((group) => <tr key={group.id} className="border-border hover:bg-surface-hover border-b last:border-0"><td className="px-4 py-3 font-medium">{group.name}</td>{PERMISSIONS.map(([permission, label]) => <td key={permission} className="px-2 py-3 text-center"><input className="accent-primary size-4 rounded border-border focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" type="checkbox" aria-label={`${group.name}: ${label}`} checked={groupHasPermission(group, permission)} disabled={!groupEditing} onChange={(event) => setGroupDraftPermission(group.id, permission, event.target.checked)} /></td>)}<td className="px-2 py-3 text-center">{groupEditing ? <button type="button" aria-label={`Remove ${group.name} from this space`} title="Remove" className="text-muted-foreground hover:text-danger hover:bg-danger-bg focus-visible:ring-ring inline-flex cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none" onClick={() => clearGroupDraft(group.id)}><Trash2 className="size-3.5" /></button> : null}</td></tr>)}</tbody></table>
+      <table className="w-full min-w-190 text-sm"><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-4 py-3 font-medium">Group</th>{PERMISSIONS.map(([, label]) => <th key={label} className="px-2 py-3 text-center font-medium">{label}</th>)}<th className="px-2 py-3 text-center font-medium"><span className="sr-only">Remove</span></th></tr></thead><tbody>{groups.map((group) => <tr key={group.id} className="border-border hover:bg-surface-hover border-b last:border-0"><td className="px-4 py-3 font-medium">{group.name}</td>{PERMISSIONS.map(([permission, label]) => { const viewLocked = permission === "view"; return <td key={permission} className="px-2 py-3 text-center"><input className="accent-primary size-4 cursor-pointer rounded border-border focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" type="checkbox" aria-label={`${group.name}: ${label}`} title={viewLocked ? "View is the baseline access every grant here includes - remove the group entirely to revoke it." : undefined} checked={groupHasPermission(group, permission)} disabled={!groupEditing || viewLocked} onChange={(event) => setGroupDraftPermission(group.id, permission, event.target.checked)} /></td>; })}<td className="px-2 py-3 text-center">{groupEditing ? <button type="button" aria-label={`Remove ${group.name} from this space`} title="Remove" className="text-muted-foreground hover:text-danger hover:bg-danger-bg focus-visible:ring-ring inline-flex cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none" onClick={() => clearGroupDraft(group.id)}><Trash2 className="size-3.5" /></button> : null}</td></tr>)}</tbody></table>
     </div>
 
     <div className="border-border bg-surface overflow-x-auto rounded-xl border shadow-sm">
@@ -432,7 +464,7 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
           )}
         </div>
       </div>
-      <table className="w-full min-w-190 text-sm"><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-4 py-3 font-medium">User</th>{PERMISSIONS.map(([, label]) => <th key={label} className="px-2 py-3 text-center font-medium">{label}</th>)}<th className="px-2 py-3 text-center font-medium"><span className="sr-only">Remove</span></th></tr></thead><tbody>{users.map((user) => <tr key={user.id} className="border-border hover:bg-surface-hover border-b last:border-0"><td className="px-4 py-3 font-medium">{user.full_name || user.username} <span className="text-muted-foreground">@{user.username}</span></td>{PERMISSIONS.map(([permission, label]) => <td key={permission} className="px-2 py-3 text-center"><input className="accent-primary size-4 rounded border-border focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" type="checkbox" aria-label={`${user.username}: ${label}`} checked={userHasPermission(user, permission)} disabled={!userEditing} onChange={(event) => setUserDraftPermission(user.id, permission, event.target.checked)} /></td>)}<td className="px-2 py-3 text-center">{userEditing ? <button type="button" aria-label={`Remove ${user.username} from this space`} title="Remove" className="text-muted-foreground hover:text-danger hover:bg-danger-bg focus-visible:ring-ring inline-flex cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none" onClick={() => clearUserDraft(user.id)}><Trash2 className="size-3.5" /></button> : null}</td></tr>)}</tbody></table>
+      <table className="w-full min-w-190 text-sm"><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-4 py-3 font-medium">User</th>{PERMISSIONS.map(([, label]) => <th key={label} className="px-2 py-3 text-center font-medium">{label}</th>)}<th className="px-2 py-3 text-center font-medium"><span className="sr-only">Remove</span></th></tr></thead><tbody>{users.map((user) => <tr key={user.id} className="border-border hover:bg-surface-hover border-b last:border-0"><td className="px-4 py-3 font-medium">{user.full_name || user.username} <span className="text-muted-foreground">@{user.username}</span></td>{PERMISSIONS.map(([permission, label]) => { const viewLocked = permission === "view"; return <td key={permission} className="px-2 py-3 text-center"><input className="accent-primary size-4 cursor-pointer rounded border-border focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" type="checkbox" aria-label={`${user.username}: ${label}`} title={viewLocked ? "View is the baseline access every grant here includes - remove the person entirely to revoke it." : undefined} checked={userHasPermission(user, permission)} disabled={!userEditing || viewLocked} onChange={(event) => setUserDraftPermission(user.id, permission, event.target.checked)} /></td>; })}<td className="px-2 py-3 text-center">{userEditing ? <button type="button" aria-label={`Remove ${user.username} from this space`} title="Remove" className="text-muted-foreground hover:text-danger hover:bg-danger-bg focus-visible:ring-ring inline-flex cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none" onClick={() => clearUserDraft(user.id)}><Trash2 className="size-3.5" /></button> : null}</td></tr>)}</tbody></table>
     </div>
 
     <div className="border-border bg-surface rounded-xl border p-4 shadow-sm">

@@ -172,7 +172,7 @@ export function AdministratorsTable({
                         disabled={disableDemote || pendingId !== null}
                         title={title}
                         onClick={() => setTarget(account)}
-                        className={disableDemote ? undefined : "hover:bg-danger-bg hover:text-danger"}
+                        className={disableDemote ? undefined : "hover:bg-danger-bg! hover:text-danger!"}
                       >
                         <UserMinus />
                         Demote to Member

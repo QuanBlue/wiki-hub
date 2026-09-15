@@ -44,6 +44,9 @@ Thumbs.db
 tmp/
 .tmp/
 
+.claude/
+.kilo/
+
 # Postgres/Redis/MinIO/automated-backups data, bind-mounted from here by
 # docker-compose.yml (see WIKIHUB_*_HOST_DIRECTORY in .env.example) whenever
 # a deployment leaves those at their default, project-relative path instead

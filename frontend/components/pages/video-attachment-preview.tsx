@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api-client";
 import { matchesShortcut } from "@/lib/keyboard-shortcuts";
+import { useTranslation } from "@/lib/i18n/context";
 
 type MediaTrack = {
   id: string;
@@ -580,6 +581,8 @@ export function VideoAttachmentPreview({
   const activeLabel =
     subtitles.find((track) => track.id === activeSubtitle)?.label ?? null;
 
+  const { t } = useTranslation();
+
   const toolbarButtonClass =
     "text-muted-foreground border-border bg-surface hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1 rounded border px-2 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none";
 
@@ -588,22 +591,22 @@ export function VideoAttachmentPreview({
       {subtitles.length > 0 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button type="button" className={toolbarButtonClass} title="Subtitles">
+            <button type="button" className={toolbarButtonClass} title={t("previews.subtitles")}>
               {activeLabel ? (
                 <Captions className="size-3.5" aria-hidden="true" />
               ) : (
                 <CaptionsOff className="size-3.5" aria-hidden="true" />
               )}
-              <span className="max-w-40 truncate">{activeLabel ?? "Subtitles off"}</span>
+              <span className="max-w-40 truncate">{activeLabel ?? t("previews.subtitlesOff")}</span>
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="max-w-72">
-            <DropdownMenuLabel>Subtitles</DropdownMenuLabel>
+            <DropdownMenuLabel>{t("previews.subtitles")}</DropdownMenuLabel>
             <DropdownMenuItem onSelect={() => selectSubtitle(SUBTITLES_OFF)}>
               <Check
                 className={`size-3.5 ${activeSubtitle === SUBTITLES_OFF ? "" : "invisible"}`}
               />
-              Off
+              {t("previews.off")}
             </DropdownMenuItem>
             {subtitles.map((track) => (
               <DropdownMenuItem key={track.id} onSelect={() => selectSubtitle(track.id)}>
@@ -620,15 +623,15 @@ export function VideoAttachmentPreview({
       {audioTracks.length > 1 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button type="button" className={toolbarButtonClass} title="Audio track">
+            <button type="button" className={toolbarButtonClass} title={t("previews.audioTrack")}>
               <Volume2 className="size-3.5" aria-hidden="true" />
               <span className="max-w-40 truncate">
-                {audioTracks.find((track) => track.enabled)?.label ?? "Audio"}
+                {audioTracks.find((track) => track.enabled)?.label ?? t("previews.audio")}
               </span>
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="max-w-72">
-            <DropdownMenuLabel>Audio track</DropdownMenuLabel>
+            <DropdownMenuLabel>{t("previews.audioTrack")}</DropdownMenuLabel>
             {audioTracks.map((track) => (
               <DropdownMenuItem key={track.index} onSelect={() => selectAudioTrack(track.index)}>
                 <Check className={`size-3.5 ${track.enabled ? "" : "invisible"}`} />
@@ -641,17 +644,17 @@ export function VideoAttachmentPreview({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button type="button" className={toolbarButtonClass} title="Playback speed">
+          <button type="button" className={toolbarButtonClass} title={t("previews.playbackSpeed")}>
             <Gauge className="size-3.5" aria-hidden="true" />
             <span>{playbackRate === 1 ? "1x" : `${playbackRate}x`}</span>
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="max-w-72">
-          <DropdownMenuLabel>Playback speed</DropdownMenuLabel>
+          <DropdownMenuLabel>{t("previews.playbackSpeed")}</DropdownMenuLabel>
           {PLAYBACK_RATES.map((rate) => (
             <DropdownMenuItem key={rate} onSelect={() => selectPlaybackRate(rate)}>
               <Check className={`size-3.5 ${playbackRate === rate ? "" : "invisible"}`} />
-              {rate === 1 ? "Normal" : `${rate}x`}
+              {rate === 1 ? t("previews.normalSpeed") : `${rate}x`}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -662,10 +665,10 @@ export function VideoAttachmentPreview({
           type="button"
           onClick={() => void enterDocumentPip()}
           className={toolbarButtonClass}
-          title="Picture in picture"
+          title={t("previews.pictureInPicture")}
         >
           <PictureInPicture2 className="size-3.5" aria-hidden="true" />
-          Picture in picture
+          {t("previews.pictureInPicture")}
         </button>
       ) : null}
     </>

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import type { Me, Page, User } from "@/types/api";
 
 /**
@@ -34,6 +35,7 @@ export function SwitchAccountMenu({
   const [users, setUsers] = useState<User[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
+  const { t, apiErrorText } = useTranslation();
 
   useEffect(() => {
     if (!expanded || !canSwitch || users !== null) return;
@@ -50,15 +52,13 @@ export function SwitchAccountMenu({
       .catch((err: unknown) => {
         if (stale) return;
         setUsers([]);
-        setError(
-          err instanceof ApiError ? err.message : "Could not load accounts.",
-        );
+        setError(apiErrorText(err, "switchAccount.loadError"));
       });
 
     return () => {
       stale = true;
     };
-  }, [canSwitch, expanded, users]);
+  }, [canSwitch, expanded, users, apiErrorText]);
 
   async function switchTo(user: User) {
     setSwitching(user.id);
@@ -71,9 +71,7 @@ export function SwitchAccountMenu({
       router.replace("/");
       router.refresh();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Could not switch account.",
-      );
+      toast.error(apiErrorText(err, "switchAccount.switchError"));
       setSwitching(null);
     }
   }
@@ -112,7 +110,7 @@ export function SwitchAccountMenu({
             type="button"
             onClick={() => setExpanded((value) => !value)}
             aria-expanded={expanded}
-            aria-label="Switch account"
+            aria-label={t("switchAccount.switchAccount")}
             className="bg-surface-sunken text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
           >
             <ArrowLeftRight className="size-4" />
@@ -125,13 +123,13 @@ export function SwitchAccountMenu({
           {users === null ? (
             <p className="text-muted-foreground flex items-center gap-2 px-3 py-3 text-sm">
               <Loader2 className="size-4 animate-spin" />
-              Loading accounts…
+              {t("switchAccount.loadingAccounts")}
             </p>
           ) : error ? (
             <p className="text-danger px-3 py-3 text-sm">{error}</p>
           ) : selectable.length === 0 ? (
             <p className="text-muted-foreground px-3 py-3 text-sm">
-              No other active accounts.
+              {t("switchAccount.noOtherAccounts")}
             </p>
           ) : (
             <ul className="max-h-56 overflow-y-auto p-1">

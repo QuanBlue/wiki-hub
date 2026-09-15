@@ -126,17 +126,53 @@ export interface User {
   company: string;
   is_active: boolean;
   is_superuser: boolean;
+  /** Whether this account currently holds `system_admin` from any source -
+   * `is_superuser` directly, a group's global permission, or a personal
+   * override - not just `is_superuser` on its own. A `Role: Member` account
+   * can still have this `true` when a group they belong to grants
+   * `system_admin`; the People directory's Role badge and the Edit User
+   * dialog's Global Access tab both read this instead of `is_superuser`
+   * alone, so effective access is never hidden behind a Role column that
+   * only reflects one of the three paths that can grant it. */
+  is_effective_admin: boolean;
   /** The built-in administrator: immutable and undeletable through the API. */
   is_protected: boolean;
   last_login_at: string | null;
   created_at: string;
   groups: string[];
+  /** Only populated by a single-user fetch (`GET /users/{id}`), never by the
+   * People directory's own list endpoint - same reasoning as
+   * `global_permission_overrides` below. `groups` above stays name-only for
+   * the directory table's badges; this is for the Edit User dialog's Groups
+   * tab, which needs an id to act on ("leave this group"), not just a
+   * label. */
+  group_memberships: UserGroupMembership[];
   global_permissions: GlobalPermission[];
   /** This user's own grant/deny rows - each one beats whatever their groups
    * say for that one permission. `global_permissions` above already
    * reflects the result; this is only so the Edit User dialog can show
-   * *why* (inherited vs overridden) and change just the override. */
+   * *why* (inherited vs overridden) and change just the override.
+   *
+   * Only populated by a single-user fetch, never by the People directory's
+   * list endpoint - a row built straight from that list used to seed the
+   * dialog's Global Access tab, which always looked empty there, making a
+   * just-saved override look reverted the next time the dialog opened. */
   global_permission_overrides: GlobalPermissionOverride[];
+  /** What this user's groups grant on their own, before any override above
+   * is applied - `global_permissions` has already folded an override in and
+   * cannot be un-mixed back apart, so the Edit User dialog reads this
+   * separately to show, the instant an override dropdown is changed, what
+   * `Inherit from groups` would actually fall back to - instead of only
+   * being able to show that after a save and a re-open.
+   *
+   * Only populated by a single-user fetch, same as
+   * `global_permission_overrides`. */
+  global_permissions_from_groups: GlobalPermission[];
+}
+
+export interface UserGroupMembership {
+  id: string;
+  name: string;
 }
 
 /**

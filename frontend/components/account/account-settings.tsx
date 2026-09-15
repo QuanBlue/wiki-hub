@@ -9,22 +9,24 @@ import { ProfileSummary } from "@/components/account/profile-summary";
 import { SessionsPanel } from "@/components/account/sessions-panel";
 import { ShortcutSettings } from "@/components/account/shortcut-settings";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { Me } from "@/types/api";
 
 type AccountTab = "profile" | "security" | "sessions" | "shortcuts";
 
-const tabs: { id: AccountTab; label: string; icon: typeof UserRound }[] = [
-  { id: "profile", label: "Profile", icon: UserRound },
-  { id: "security", label: "Password & authentication", icon: ShieldCheck },
-  { id: "sessions", label: "Sessions", icon: KeyRound },
-  { id: "shortcuts", label: "Keyboard shortcuts", icon: Keyboard },
+const tabs: { id: AccountTab; labelKey: string; icon: typeof UserRound }[] = [
+  { id: "profile", labelKey: "account.tabProfile", icon: UserRound },
+  { id: "security", labelKey: "account.tabSecurity", icon: ShieldCheck },
+  { id: "sessions", labelKey: "account.tabSessions", icon: KeyRound },
+  { id: "shortcuts", labelKey: "account.tabShortcuts", icon: Keyboard },
 ];
 
 export function AccountSettings({ user }: { user: Me }) {
   const [activeTab, setActiveTab] = useState<AccountTab>("profile");
   const [profileEditing, setProfileEditing] = useState(false);
   const [passwordEditing, setPasswordEditing] = useState(false);
+  const { t } = useTranslation();
   const tabRefs = useRef<Record<AccountTab, HTMLButtonElement | null>>({
     profile: null,
     security: null,
@@ -53,11 +55,11 @@ export function AccountSettings({ user }: { user: Me }) {
     <div className="grid items-start gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
       <aside
         role="tablist"
-        aria-label="Account settings"
+        aria-label={t("account.settingsAria")}
         className="border-border border-r pr-5 lg:sticky lg:top-24"
       >
         <p className="text-muted-foreground px-2 text-[10px] font-semibold tracking-[0.08em] uppercase">
-          Personal settings
+          {t("account.personalSettings")}
         </p>
         <div className="mt-3 space-y-1">
           {tabs.map((tab) => {
@@ -86,14 +88,13 @@ export function AccountSettings({ user }: { user: Me }) {
                 )}
               >
                 <Icon className="size-4" aria-hidden />
-                {tab.label}
+                {t(tab.labelKey)}
               </button>
             );
           })}
         </div>
         <p className="border-border text-muted-foreground mt-5 border-t px-2 pt-4 text-xs leading-relaxed">
-          Manage your personal profile, credentials, active security sessions, and
-          keyboard shortcuts.
+          {t("account.settingsHint")}
         </p>
       </aside>
 
@@ -115,8 +116,8 @@ export function AccountSettings({ user }: { user: Me }) {
           {passwordEditing ? (
             <div>
               <div className="mb-6">
-                <h2 className="font-semibold">Change account password</h2>
-                <p className="text-muted-foreground mt-1 text-sm">Update the password you use to sign in to WikiHub.</p>
+                <h2 className="font-semibold">{t("account.changePasswordTitle")}</h2>
+                <p className="text-muted-foreground mt-1 text-sm">{t("account.changePasswordHint")}</p>
               </div>
               <ChangePasswordForm
                 onCancel={() => setPasswordEditing(false)}
@@ -125,18 +126,18 @@ export function AccountSettings({ user }: { user: Me }) {
             </div>
           ) : (
             <div className="max-w-4xl">
-              <h2 className="text-xl font-semibold tracking-tight">Sign-in methods</h2>
+              <h2 className="text-xl font-semibold tracking-tight">{t("account.signInMethods")}</h2>
               <div className="border-border mt-5 overflow-hidden rounded-lg border">
                 <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
                   <span className="bg-surface-sunken text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-md">
                     <Mail className="size-5" aria-hidden />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold">Email and password</h3>
-                    <p className="text-muted-foreground mt-1 text-sm">Sign in with {user.email} and your account password.</p>
+                    <h3 className="font-semibold">{t("account.emailPassword")}</h3>
+                    <p className="text-muted-foreground mt-1 text-sm">{t("account.emailPasswordHint", { email: user.email })}</p>
                   </div>
                   <Button variant="secondary" onClick={() => setPasswordEditing(true)}>
-                    Change password
+                    {t("account.changePassword")}
                   </Button>
                 </div>
 
@@ -145,11 +146,11 @@ export function AccountSettings({ user }: { user: Me }) {
                     <ShieldCheck className="size-5" aria-hidden />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold">Single sign-on (SSO)</h3>
-                    <p className="text-muted-foreground mt-1 text-sm">Sign in with your organization&apos;s identity provider.</p>
+                    <h3 className="font-semibold">{t("account.sso")}</h3>
+                    <p className="text-muted-foreground mt-1 text-sm">{t("account.ssoHint")}</p>
                   </div>
                   <span className="border-primary/30 bg-primary-subtle text-primary rounded-md border px-2 py-1 text-xs font-medium">
-                    Incoming feature
+                    {t("account.incomingFeature")}
                   </span>
                 </div>
               </div>

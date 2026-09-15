@@ -147,6 +147,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
+import { formatDateTime } from "@/lib/i18n/format";
+import { translate } from "@/lib/i18n/core";
+import { useTranslation } from "@/lib/i18n/context";
 import {
   CODE_LANGUAGES,
   codeLanguageForFilename,
@@ -221,6 +224,7 @@ function AudioAttachmentPreview({
   const lastWaveUpdateRef = useRef(0);
   const [waveLevels, setWaveLevels] = useState(AUDIO_WAVEFORM_BARS);
   const [isPlaying, setIsPlaying] = useState(false);
+  const { t } = useTranslation();
 
   const stopWaveform = useCallback(() => {
     if (animationFrameRef.current !== null) {
@@ -340,7 +344,7 @@ function AudioAttachmentPreview({
       </div>
       <div
         className="bg-surface-sunken flex h-20 items-center gap-px overflow-hidden rounded-md px-3"
-        aria-label="Animated audio waveform"
+        aria-label={t("editor.audioWaveformAria")}
         role="img"
       >
         {waveLevels.map((height, index) => (
@@ -360,7 +364,7 @@ function AudioAttachmentPreview({
         controls
         preload="metadata"
         className="w-full"
-        aria-label={`Preview audio: ${filename}`}
+        aria-label={t("editor.previewAudioAria", { filename })}
         onPlay={() => void startWaveform()}
         onPause={() => {
           setIsPlaying(false);
@@ -1137,6 +1141,7 @@ function CodeBlockWithLines({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [captionDraft, setCaptionDraft] = useState(caption);
   const [languageDraft, setLanguageDraft] = useState(language || "plaintext");
+  const { t } = useTranslation();
 
   function openDetails() {
     setCaptionDraft(caption);
@@ -1187,7 +1192,7 @@ function CodeBlockWithLines({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    aria-label="Code block options"
+                    aria-label={t("editor.codeBlockOptionsAria")}
                     title="Code block options"
                     className="text-code-muted hover:bg-code-border hover:text-code-fg focus-visible:ring-ring flex size-6 shrink-0 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                   >
@@ -1197,7 +1202,7 @@ function CodeBlockWithLines({
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onSelect={openDetails} className="gap-2">
                     <Pencil className="size-4" aria-hidden />
-                    Edit title &amp; language
+                    {t("editor.editTitleLanguage")}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={deleteNode}
@@ -1205,7 +1210,7 @@ function CodeBlockWithLines({
                     className="gap-2"
                   >
                     <Trash2 className="size-4" aria-hidden />
-                    Delete code block
+                    {t("editor.deleteCodeBlock")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1216,21 +1221,21 @@ function CodeBlockWithLines({
       {canEdit ? (
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
           <DialogContent
-            title="Code block details"
-            description="Give this code block a title and choose its language for syntax colours."
+            title={t("editor.codeBlockDetails")}
+            description={t("editor.codeBlockDetailsDescription")}
             className="max-w-5xl"
           >
             <div className="flex flex-col gap-6 sm:flex-row">
               <div className="space-y-5 sm:w-56 sm:shrink-0">
                 <div className="space-y-2">
                   <label className="text-sm font-medium" htmlFor="code-caption">
-                    Title
+                    {t("editor.title")}
                   </label>
                   <Input
                     id="code-caption"
                     value={captionDraft}
                     onChange={(event) => setCaptionDraft(event.target.value)}
-                    placeholder="e.g. deploy.sh"
+                    placeholder={t("editor.captionPlaceholder")}
                     autoFocus
                   />
                 </div>
@@ -1239,7 +1244,7 @@ function CodeBlockWithLines({
                     className="text-sm font-medium"
                     htmlFor="code-language"
                   >
-                    Language
+                    {t("editor.language")}
                   </label>
                   <Select
                     value={languageDraft}
@@ -1247,7 +1252,7 @@ function CodeBlockWithLines({
                   >
                     <SelectTrigger
                       id="code-language"
-                      aria-label="Code language"
+                      aria-label={t("editor.codeLanguageAria")}
                     >
                       <SelectValue>
                         {CODE_LANGUAGES[languageDraft] ?? languageDraft}
@@ -1379,13 +1384,14 @@ function CalloutComponent({ node }: NodeViewProps) {
  */
 function ToggleComponent({ node, updateAttributes }: NodeViewProps) {
   const open = node.attrs.open !== false;
+  const { t } = useTranslation();
 
   return (
     <NodeViewWrapper className="my-1">
       <div className="flex items-start gap-1">
         <button
           type="button"
-          aria-label={open ? "Collapse toggle" : "Expand toggle"}
+          aria-label={open ? t("editor.collapseToggle") : t("editor.expandToggle")}
           aria-expanded={open}
           contentEditable={false}
           onMouseDown={(event) => event.preventDefault()}
@@ -1465,55 +1471,55 @@ function parseImageCrop(value: unknown): ImageCrop | null {
 
 const imageResizeHandles: Array<{
   handle: ImageResizeHandle;
-  label: string;
+  labelKey: string;
   className: string;
   markerClassName: string;
 }> = [
   {
     handle: "nw",
-    label: "Resize image from top left",
+    labelKey: "editor.resizeTopLeft",
     className: "-top-3 -left-3 cursor-nwse-resize size-8",
     markerClassName: "h-px w-3 -rotate-45 bg-primary",
   },
   {
     handle: "n",
-    label: "Resize image from top",
+    labelKey: "editor.resizeTop",
     className: "-top-3 left-1/2 -translate-x-1/2 cursor-ns-resize size-8",
     markerClassName: "h-px w-5 bg-primary",
   },
   {
     handle: "ne",
-    label: "Resize image from top right",
+    labelKey: "editor.resizeTopRight",
     className: "-top-3 -right-3 cursor-nesw-resize size-8",
     markerClassName: "h-px w-3 rotate-45 bg-primary",
   },
   {
     handle: "e",
-    label: "Resize image from right",
+    labelKey: "editor.resizeRight",
     className: "inset-y-0 right-0 cursor-ew-resize",
     markerClassName: "h-5 w-px bg-primary",
   },
   {
     handle: "se",
-    label: "Resize image",
+    labelKey: "editor.resize",
     className: "-right-3 -bottom-3 cursor-nwse-resize size-8",
     markerClassName: "h-px w-3 -rotate-45 bg-primary",
   },
   {
     handle: "s",
-    label: "Resize image from bottom",
+    labelKey: "editor.resizeBottom",
     className: "-bottom-3 left-1/2 -translate-x-1/2 cursor-ns-resize size-8",
     markerClassName: "h-px w-5 bg-primary",
   },
   {
     handle: "sw",
-    label: "Resize image from bottom left",
+    labelKey: "editor.resizeBottomLeft",
     className: "-bottom-3 -left-3 cursor-nesw-resize size-8",
     markerClassName: "h-px w-3 rotate-45 bg-primary",
   },
   {
     handle: "w",
-    label: "Resize image from left",
+    labelKey: "editor.resizeLeft",
     className: "inset-y-0 left-0 cursor-ew-resize",
     markerClassName: "h-5 w-px bg-primary",
   },
@@ -1540,6 +1546,7 @@ function ResizableImageComponent({
   const [hovered, setHovered] = useState(false);
   const [resizing, setResizing] = useState(false);
   const [captionOpen, setCaptionOpen] = useState(false);
+  const { t } = useTranslation();
   const [captionDraft, setCaptionDraft] = useState(
     String(node.attrs.caption ?? ""),
   );
@@ -2021,15 +2028,17 @@ function ResizableImageComponent({
             <div
               className="border-border bg-surface-raised/95 flex h-9 items-center gap-0.5 rounded-md border p-1 shadow-md backdrop-blur-sm"
               role="toolbar"
-              aria-label="Image options"
+              aria-label={t("editor.imageOptionsAria")}
             >
               {(
                 [
-                  ["left", AlignLeft, "Align image left"],
-                  ["center", AlignCenter, "Align image center"],
-                  ["right", AlignRight, "Align image right"],
+                  ["left", AlignLeft, "editor.alignImageLeft"],
+                  ["center", AlignCenter, "editor.alignImageCenter"],
+                  ["right", AlignRight, "editor.alignImageRight"],
                 ] as const
-              ).map(([value, Icon, label]) => (
+              ).map(([value, Icon, labelKey]) => {
+                const label = t(labelKey);
+                return (
                 <button
                   key={value}
                   type="button"
@@ -2045,12 +2054,13 @@ function ResizableImageComponent({
                 >
                   <Icon className="size-4" aria-hidden />
                 </button>
-              ))}
+                );
+              })}
               <span className="bg-border mx-0.5 h-5 w-px" aria-hidden />
               <button
                 type="button"
-                aria-label="Add image caption"
-                title="Add image caption"
+                aria-label={t("editor.addImageCaption")}
+                title={t("editor.addImageCaption")}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() => {
                   setCaptionDraft(String(node.attrs.caption ?? ""));
@@ -2066,8 +2076,8 @@ function ResizableImageComponent({
               </button>
               <button
                 type="button"
-                aria-label="Crop image"
-                title="Crop image"
+                aria-label={t("editor.cropImage")}
+                title={t("editor.cropImage")}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={openCropEditor}
                 className={cn(
@@ -2079,8 +2089,8 @@ function ResizableImageComponent({
               </button>
               <button
                 type="button"
-                aria-label="Image details"
-                title="Image details"
+                aria-label={t("editor.imageDetails")}
+                title={t("editor.imageDetails")}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() => {
                   const src = String(node.attrs.src ?? "");
@@ -2101,16 +2111,16 @@ function ResizableImageComponent({
             </div>
           </div>
           <Dialog open={captionOpen} onOpenChange={setCaptionOpen}>
-            <DialogContent title="Image caption" className="max-w-md">
+            <DialogContent title={t("editor.imageCaption")} className="max-w-md">
               <div className="space-y-2">
                 <label className="text-sm font-medium" htmlFor="image-caption">
-                  Caption
+                  {t("editor.caption")}
                 </label>
                 <Input
                   id="image-caption"
                   value={captionDraft}
                   onChange={(event) => setCaptionDraft(event.target.value)}
-                  placeholder="Describe this image"
+                  placeholder={t("editor.imagePlaceholder")}
                   autoFocus
                 />
               </div>
@@ -2120,10 +2130,10 @@ function ResizableImageComponent({
                   variant="secondary"
                   onClick={() => setCaptionOpen(false)}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button type="button" variant="primary" onClick={saveCaption}>
-                  Save caption
+                  {t("editor.saveCaption")}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -2234,7 +2244,7 @@ function ResizableImageComponent({
                       <button
                         key={handle}
                         type="button"
-                        aria-label={`Resize crop from ${handle}`}
+                        aria-label={t("editor.resizeCrop", { handle })}
                         onPointerDown={(event) => beginCrop(event, handle)}
                         className={cn(
                           "bg-foreground border-surface focus-visible:ring-ring absolute size-3 rounded-sm border-2 focus-visible:ring-2 focus-visible:outline-none",
@@ -2253,8 +2263,8 @@ function ResizableImageComponent({
           </Dialog>
           <button
             type="button"
-            aria-label="Inactive image resize control"
-            title="Drag to resize image"
+            aria-label={t("editor.inactiveResizeAria")}
+            title={t("editor.dragToResizeImage")}
             onPointerDown={(event) => beginResize(event, "se")}
             onMouseDown={(event) => beginMouseResize(event, "se")}
             onKeyDown={(event) => resizeWithKeyboard(event, "se")}
@@ -2267,12 +2277,12 @@ function ResizableImageComponent({
       {canResize
         ? imageResizeHandles
             .filter(({ handle }) => handle === "e" || handle === "w")
-            .map(({ handle, label, className }) => (
+            .map(({ handle, labelKey, className }) => (
               <button
                 key={handle}
                 type="button"
-                aria-label={label}
-                title={label}
+                aria-label={t(labelKey)}
+                title={t(labelKey)}
                 onPointerDown={(event) => beginResize(event, handle)}
                 onMouseDown={(event) => beginMouseResize(event, handle)}
                 onKeyDown={(event) => resizeWithKeyboard(event, handle)}
@@ -2651,6 +2661,7 @@ function numberTableOfContentsHeadings(
  * headings, so this table of contents stays current as the document changes.
  */
 function TableOfContentsComponent({ editor }: NodeViewProps) {
+  const { t } = useTranslation();
   const headingSnapshot = useEditorState({
     editor,
     selector: ({ editor: currentEditor }) => {
@@ -2690,13 +2701,13 @@ function TableOfContentsComponent({ editor }: NodeViewProps) {
   return (
     <NodeViewWrapper
       as="nav"
-      aria-label="Table of contents"
+      aria-label={t("slash.tableOfContentsLabel")}
       className="border-border bg-surface-sunken my-4 rounded-md border px-4 py-3"
       contentEditable={false}
     >
       <div className="text-foreground flex items-center gap-2 text-sm font-semibold">
         <ListTree className="text-muted-foreground size-4" aria-hidden />
-        Table of contents
+        {t("slash.tableOfContentsLabel")}
       </div>
       {headings.length ? (
         <ol
@@ -2971,6 +2982,7 @@ function AttachmentTile({
   const attachmentRef = useRef<HTMLSpanElement>(null);
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
   const icon = attachmentIcon(filename);
+  const { t } = useTranslation();
 
   const isCard = displayMode !== "link";
   const showToolbar = editor.isEditable && (selected || hovered);
@@ -3077,10 +3089,10 @@ function AttachmentTile({
               ? "bg-primary text-primary-foreground shadow-2xs"
               : "text-muted-foreground hover:text-foreground hover:bg-surface-raised",
           )}
-          title="Display as Card"
+          title={t("editor.displayAsCard")}
         >
           <LayoutGrid className="size-3" />
-          <span>Card</span>
+          <span>{t("editor.card")}</span>
         </button>
         <button
           type="button"
@@ -3094,10 +3106,10 @@ function AttachmentTile({
               ? "bg-primary text-primary-foreground shadow-2xs"
               : "text-muted-foreground hover:text-foreground hover:bg-surface-raised",
           )}
-          title="Display as Link"
+          title={t("editor.displayAsLink")}
         >
           <Link2 className="size-3" />
-          <span>Link</span>
+          <span>{t("editor.link")}</span>
         </button>
       </div>
 
@@ -3107,7 +3119,7 @@ function AttachmentTile({
         type="button"
         onClick={handleOpenDetails}
         className="text-muted-foreground hover:text-foreground hover:bg-surface-sunken focus-visible:ring-ring cursor-pointer rounded p-1 transition-colors focus-visible:ring-2 focus-visible:outline-none"
-        title="View file details and preview"
+        title={t("editor.viewFileDetails")}
       >
         <Info className="size-3.5" />
       </button>
@@ -3125,7 +3137,7 @@ function AttachmentTile({
           document.body.removeChild(a);
         }}
         className="text-muted-foreground hover:text-foreground hover:bg-surface-sunken focus-visible:ring-ring flex cursor-pointer items-center justify-center rounded p-1 transition-colors focus-visible:ring-2 focus-visible:outline-none"
-        title="Download file"
+        title={t("editor.downloadFile")}
       >
         <Download className="size-3.5" />
       </button>
@@ -3137,7 +3149,7 @@ function AttachmentTile({
           deleteNode();
         }}
         className="focus-visible:ring-ring cursor-pointer rounded p-1 text-red-500 transition-colors hover:bg-red-500/10 hover:text-red-600 focus-visible:ring-2 focus-visible:outline-none dark:text-red-400 dark:hover:bg-red-500/20 dark:hover:text-red-300"
-        title="Remove attachment"
+        title={t("editor.removeAttachment")}
       >
         <Trash2 className="size-3.5 text-red-500 dark:text-red-400" />
       </button>
@@ -3488,7 +3500,8 @@ const HeadingWithId = Heading.extend({
  */
 function buildEditorExtensions({
   allowBase64 = false,
-}: { allowBase64?: boolean } = {}) {
+  placeholder,
+}: { allowBase64?: boolean; placeholder?: string } = {}) {
   return [
   StarterKit.configure({
     heading: false,
@@ -3542,12 +3555,13 @@ function buildEditorExtensions({
   TableColumnResize,
   TableRowResize,
   Placeholder.configure({
-    placeholder: "Write your documentation here...",
+    placeholder:
+      placeholder ??
+      translate("en", "editor.editorPlaceholder"),
   }),
   ];
 }
 
-const editorExtensions = buildEditorExtensions();
 // RichTextContent's read-only render: see buildEditorExtensions' own comment
 // for why this one alone needs to accept a `data:` URI image.
 const readOnlyEditorExtensions = buildEditorExtensions({ allowBase64: true });
@@ -3856,6 +3870,7 @@ function OverflowToolbarButton({
 }
 
 function HeadingMenu({ editor }: { editor: Editor | null }) {
+  const { t } = useTranslation();
   const currentLevel =
     useEditorState({
       editor,
@@ -3872,15 +3887,15 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
           type="button"
           variant="ghost"
           size="sm"
-          aria-label="Text style"
-          title="Text style"
+          aria-label={t("editor.textStyleAria")}
+          title={t("editor.textStyleAria")}
           disabled={!editor}
           className={cn(
             "h-8 min-w-14 px-2",
             currentLevel && "bg-surface-selected text-primary",
           )}
         >
-          {currentLevel ? `H${currentLevel}` : "Text"}
+          {currentLevel ? `H${currentLevel}` : t("editor.textButton")}
           <ChevronDown className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
@@ -3889,7 +3904,7 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
           onSelect={() => editor?.chain().focus().setParagraph().run()}
         >
           <Pilcrow />
-          Paragraph
+          {t("editor.paragraph")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() =>
@@ -3897,7 +3912,7 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
           }
         >
           <Heading1 />
-          Heading 1
+          {t("slash.heading1Label")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() =>
@@ -3905,7 +3920,7 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
           }
         >
           <Heading2 />
-          Heading 2
+          {t("slash.heading2Label")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() =>
@@ -3913,7 +3928,7 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
           }
         >
           <Heading3 />
-          Heading 3
+          {t("slash.heading3Label")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() =>
@@ -3921,7 +3936,7 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
           }
         >
           <Heading4 />
-          Heading 4
+          {t("slash.heading4Label")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -3929,6 +3944,7 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
 }
 
 function AlignmentMenu({ editor }: { editor: Editor | null }) {
+  const { t } = useTranslation();
   const alignment =
     useEditorState({
       editor,
@@ -3949,8 +3965,8 @@ function AlignmentMenu({ editor }: { editor: Editor | null }) {
           type="button"
           variant="ghost"
           size="icon"
-          aria-label="Text alignment"
-          title="Text alignment"
+          aria-label={t("editor.textAlignAria")}
+          title={t("editor.textAlignAria")}
           disabled={!editor}
           className={cn(
             alignment !== "left" && "bg-surface-selected text-primary",
@@ -3965,19 +3981,19 @@ function AlignmentMenu({ editor }: { editor: Editor | null }) {
           onSelect={() => editor?.chain().focus().setTextAlign("left").run()}
         >
           <AlignLeft />
-          Align left
+          {t("editor.alignLeft")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => editor?.chain().focus().setTextAlign("center").run()}
         >
           <AlignCenter />
-          Align center
+          {t("editor.alignCenter")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => editor?.chain().focus().setTextAlign("right").run()}
         >
           <AlignRight />
-          Align right
+          {t("editor.alignRight")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -3985,19 +4001,19 @@ function AlignmentMenu({ editor }: { editor: Editor | null }) {
 }
 
 const textColorOptions = [
-  { label: "Blue", value: "var(--primary)" },
-  { label: "Green", value: "var(--wh-success)" },
-  { label: "Amber", value: "var(--wh-warning)" },
-  { label: "Red", value: "var(--danger)" },
-  { label: "Muted", value: "var(--muted-foreground)" },
+  { labelKey: "editor.colorBlue", value: "var(--primary)" },
+  { labelKey: "editor.colorGreen", value: "var(--wh-success)" },
+  { labelKey: "editor.colorAmber", value: "var(--wh-warning)" },
+  { labelKey: "editor.colorRed", value: "var(--danger)" },
+  { labelKey: "editor.colorMuted", value: "var(--muted-foreground)" },
 ];
 
 const highlightOptions = [
-  { label: "Blue", value: "var(--primary-subtle)" },
-  { label: "Neutral", value: "var(--surface-sunken)" },
-  { label: "Green", value: "var(--wh-success-bg)" },
-  { label: "Amber", value: "var(--wh-warning-bg)" },
-  { label: "Red", value: "var(--wh-danger-bg)" },
+  { labelKey: "editor.colorBlue", value: "var(--primary-subtle)" },
+  { labelKey: "editor.colorNeutral", value: "var(--surface-sunken)" },
+  { labelKey: "editor.colorGreen", value: "var(--wh-success-bg)" },
+  { labelKey: "editor.colorAmber", value: "var(--wh-warning-bg)" },
+  { labelKey: "editor.colorRed", value: "var(--wh-danger-bg)" },
 ];
 
 const cellColorOptions = [
@@ -4041,7 +4057,8 @@ function ColorMenu({
   });
   const current = options.find((option) => option.value === currentValue);
   const Icon = isText ? Type : Palette;
-  const label = isText ? "Text colour" : "Text highlight";
+  const { t } = useTranslation();
+  const label = isText ? t("editor.textColour") : t("editor.textHighlight");
 
   function setColor(value: string | null) {
     if (!editor) return;
@@ -4076,7 +4093,7 @@ function ColorMenu({
             aria-hidden
             style={current ? { color: current.value } : undefined}
           />
-          <span>{current?.label ?? label}</span>
+          <span>{current ? t(current.labelKey) : label}</span>
           <ChevronDown className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
@@ -4095,7 +4112,7 @@ function ColorMenu({
               className="border-border size-4 shrink-0 rounded-sm border"
               style={{ backgroundColor: option.value }}
             />
-            <span className="flex-1">{option.label}</span>
+            <span className="flex-1">{t(option.labelKey)}</span>
             {currentValue === option.value ? (
               <Check className="size-4" />
             ) : null}
@@ -4105,7 +4122,7 @@ function ColorMenu({
           <span className="border-border text-muted-foreground flex size-4 shrink-0 items-center justify-center rounded-sm border text-[10px]">
             ×
           </span>
-          Clear {isText ? "colour" : "highlight"}
+          {isText ? t("editor.clearColour") : t("editor.clearHighlight")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -4115,6 +4132,7 @@ function ColorMenu({
 function TablePicker({ editor }: { editor: Editor | null }) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState({ rows: 0, cols: 0 });
+  const { t } = useTranslation();
   const maxRows = 8;
   const maxCols = 10;
 
@@ -4143,8 +4161,8 @@ function TablePicker({ editor }: { editor: Editor | null }) {
           type="button"
           variant="ghost"
           size="icon"
-          aria-label="Insert table"
-          title="Insert table"
+          aria-label={t("editor.insertTable")}
+          title={t("editor.insertTable")}
           disabled={!editor}
         >
           <Table2 />
@@ -4156,14 +4174,14 @@ function TablePicker({ editor }: { editor: Editor | null }) {
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <div className="text-muted-foreground mb-2 flex items-center justify-between px-1 text-xs">
-          <span>Select table size</span>
+          <span>{t("editor.selectTableSize")}</span>
           <span className="text-foreground font-medium tabular-nums">
             {hovered.rows}×{hovered.cols}
           </span>
         </div>
         <div
           role="grid"
-          aria-label="Table size"
+          aria-label={t("editor.tableSizeAria")}
           className="border-border grid grid-cols-10 overflow-hidden rounded-sm border"
           onPointerDown={(event) => event.preventDefault()}
           onPointerLeave={() => setHovered({ rows: 0, cols: 0 })}
@@ -4177,7 +4195,7 @@ function TablePicker({ editor }: { editor: Editor | null }) {
                 key={`${row}-${col}`}
                 type="button"
                 role="gridcell"
-                aria-label={`${row} rows by ${col} columns`}
+                aria-label={t("editor.gridSizeAria", { rows: row, cols: col })}
                 className={cn(
                   "border-border h-5 w-5 border-r border-b transition-colors duration-100 last:border-r-0",
                   "hover:bg-primary-subtle hover:border-primary focus-visible:ring-ring focus-visible:z-10 focus-visible:ring-2 focus-visible:outline-none",
@@ -4190,7 +4208,7 @@ function TablePicker({ editor }: { editor: Editor | null }) {
           })}
         </div>
         <p className="text-muted-foreground mt-2 px-1 text-[11px]">
-          Click a cell to insert
+          {t("editor.clickCellToInsert")}
         </p>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -4200,6 +4218,7 @@ function TablePicker({ editor }: { editor: Editor | null }) {
 function CellColorMenu({ editor }: { editor: Editor | null }) {
   const [open, setOpen] = useState(false);
   const [customColor, setCustomColor] = useState("#ffffff");
+  const { t } = useTranslation();
 
   function setCellColor(value: string | null) {
     editor?.chain().focus().setCellAttribute("backgroundColor", value).run();
@@ -4213,13 +4232,13 @@ function CellColorMenu({ editor }: { editor: Editor | null }) {
           type="button"
           variant="ghost"
           size="sm"
-          aria-label="Cell colour"
-          title="Cell colour"
+          aria-label={t("editor.cellColour")}
+          title={t("editor.cellColour")}
           disabled={!editor}
           className="h-8 gap-1.5 px-2"
         >
           <Palette className="size-4" aria-hidden />
-          <span>Cell colour</span>
+          <span>{t("editor.cellColour")}</span>
           <ChevronDown className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
@@ -4232,11 +4251,11 @@ function CellColorMenu({ editor }: { editor: Editor | null }) {
         }}
       >
         <div className="text-muted-foreground mb-2 px-1 text-[11px] font-semibold tracking-wide uppercase">
-          Cell colour
+          {t("editor.cellColour")}
         </div>
         <div
           role="grid"
-          aria-label="Cell colour palette"
+          aria-label={t("editor.cellColourPaletteAria")}
           className="grid grid-cols-5 overflow-hidden rounded-sm"
         >
           {cellColorOptions.map((color, index) => (
@@ -4255,8 +4274,8 @@ function CellColorMenu({ editor }: { editor: Editor | null }) {
         <div className="border-border mt-2 flex items-center justify-between border-t pt-2">
           <button
             type="button"
-            aria-label="Clear cell colour"
-            title="Clear cell colour"
+            aria-label={t("editor.clearCellColour")}
+            title={t("editor.clearCellColour")}
             className="border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-8 items-center justify-center rounded-md border transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
             onClick={() => setCellColor(null)}
           >
@@ -4265,13 +4284,13 @@ function CellColorMenu({ editor }: { editor: Editor | null }) {
             </span>
           </button>
           <label
-            title="Custom cell colour"
+            title={t("editor.customCellColour")}
             className="border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-within:ring-ring relative flex size-8 cursor-pointer items-center justify-center rounded-md border transition-colors duration-150 focus-within:ring-2"
           >
             <Palette className="size-4" aria-hidden />
             <input
               type="color"
-              aria-label="Custom cell colour"
+              aria-label={t("editor.customCellColour")}
               value={customColor}
               onChange={(event) => {
                 setCustomColor(event.target.value);
@@ -4333,6 +4352,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
   const [position, setPosition] = useState<TableMenuPosition | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredTable, setHoveredTable] = useState({ rows: 0, cols: 0 });
+  const { t } = useTranslation();
   const maxRows = 8;
   const maxCols = 10;
 
@@ -4411,7 +4431,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
       className="border-border bg-surface-raised fixed z-50 flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-0.5 rounded-md border p-1 shadow-lg"
       style={position}
       role="toolbar"
-      aria-label="Table actions"
+      aria-label={t("editor.tableActionsAria")}
       onMouseDown={(event) => {
         // Keep the ProseMirror selection for button actions, but let the native
         // colour picker receive its normal pointer interaction.
@@ -4422,7 +4442,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
     >
       <TableActionButton
         editor={editor}
-        label="Merge selected cells"
+        label={t("editor.mergeSelectedCells")}
         disabled={!editor?.can().mergeCells()}
         onClick={() => editor?.chain().focus().mergeCells().run()}
       >
@@ -4430,7 +4450,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
       </TableActionButton>
       <TableActionButton
         editor={editor}
-        label="Split cell"
+        label={t("editor.splitCell")}
         disabled={!editor?.can().splitCell()}
         onClick={() => editor?.chain().focus().splitCell().run()}
       >
@@ -4448,7 +4468,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
             className="h-8 gap-1.5 px-2"
           >
             <Plus />
-            <span>Add</span>
+            <span>{t("editor.add")}</span>
             <ChevronDown className="size-3.5" />
           </Button>
         </DropdownMenuTrigger>
@@ -4458,30 +4478,30 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
             onClick={() => editor?.chain().focus().addRowAfter().run()}
           >
             <BetweenHorizontalEnd />
-            <span>Add row</span>
+            <span>{t("editor.addRow")}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             className="text-muted-foreground data-[highlighted]:text-foreground"
             onClick={() => editor?.chain().focus().addColumnAfter().run()}
           >
             <BetweenVerticalEnd />
-            <span>Add column</span>
+            <span>{t("editor.addColumn")}</span>
           </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="text-muted-foreground data-[highlighted]:text-foreground">
               <Table2 />
-              <span>Add table</span>
+              <span>{t("editor.addTable")}</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-[13.5rem] p-2">
               <div className="text-muted-foreground mb-2 flex items-center justify-between px-1 text-xs">
-                <span>Select table size</span>
+                <span>{t("editor.selectTableSize")}</span>
                 <span className="text-foreground font-medium tabular-nums">
                   {hoveredTable.rows}×{hoveredTable.cols}
                 </span>
               </div>
               <div
                 role="grid"
-                aria-label="Table size"
+                aria-label={t("editor.tableSizeAria")}
                 className="border-border grid grid-cols-10 overflow-hidden rounded-sm border"
                 onPointerDown={(event) => event.preventDefault()}
                 onPointerLeave={() => setHoveredTable({ rows: 0, cols: 0 })}
@@ -4496,7 +4516,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
                       key={`${row}-${col}`}
                       type="button"
                       role="gridcell"
-                      aria-label={`${row} rows by ${col} columns`}
+                      aria-label={t("editor.gridSizeAria", { rows: row, cols: col })}
                       className={cn(
                         "border-border h-5 w-5 border-r border-b transition-colors duration-100 last:border-r-0",
                         "hover:bg-primary-subtle hover:border-primary focus-visible:ring-ring focus-visible:z-10 focus-visible:ring-2 focus-visible:outline-none",
@@ -4511,7 +4531,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
                 })}
               </div>
               <p className="text-muted-foreground mt-2 px-1 text-[11px]">
-                Click a cell to insert
+                {t("editor.clickCellToInsert")}
               </p>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
@@ -4528,7 +4548,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
             className="text-danger hover:bg-danger-bg hover:text-danger active:bg-danger-bg/85 h-8 gap-1.5 px-2"
           >
             <Trash2 />
-            <span>Delete</span>
+            <span>{t("editor.delete")}</span>
             <ChevronDown className="size-3.5" />
           </Button>
         </DropdownMenuTrigger>
@@ -4538,21 +4558,21 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
             onClick={() => editor?.chain().focus().deleteRow().run()}
           >
             <Trash2 />
-            <span>Delete row</span>
+            <span>{t("editor.deleteRow")}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             destructive
             onClick={() => editor?.chain().focus().deleteColumn().run()}
           >
             <Trash2 />
-            <span>Delete column</span>
+            <span>{t("editor.deleteColumn")}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             destructive
             onClick={() => editor?.chain().focus().deleteTable().run()}
           >
             <Trash2 />
-            <span>Delete table</span>
+            <span>{t("editor.deleteTable")}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -4585,6 +4605,7 @@ function LinkFloatingToolbar({
   const containerRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isHoveredRef = useRef(false);
+  const { t } = useTranslation();
 
   const keepToolbar = useCallback(() => {
     isHoveredRef.current = true;
@@ -4767,7 +4788,7 @@ function LinkFloatingToolbar({
     if (!position?.href) return;
     void navigator.clipboard.writeText(position.href);
     setCopied(true);
-    toast.success("Link copied to clipboard");
+    toast.success(t("editor.linkCopiedToast"));
     setTimeout(() => setCopied(false), 2000);
   }
 
@@ -4823,8 +4844,8 @@ function LinkFloatingToolbar({
         className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground cursor-pointer rounded p-1.5 transition-colors"
         title={
           position.target === "_self"
-            ? `Open link in current window (${position.href})`
-            : `Open link in new tab (${position.href})`
+            ? t("editor.openLinkCurrent", { href: position.href })
+            : t("editor.openLinkNewTab", { href: position.href })
         }
       >
         <ExternalLink className="size-3.5" />
@@ -4834,7 +4855,7 @@ function LinkFloatingToolbar({
         type="button"
         onClick={copyLink}
         className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground cursor-pointer rounded p-1.5 transition-colors"
-        title="Copy link URL"
+        title={t("editor.copyLinkUrl")}
       >
         {copied ? (
           <Check className="text-success size-3.5" />
@@ -4859,7 +4880,7 @@ function LinkFloatingToolbar({
           setPosition(null);
         }}
         className="hover:bg-surface-sunken text-muted-foreground hover:text-foreground cursor-pointer rounded p-1.5 transition-colors"
-        title="Edit link"
+        title={t("editor.editLink")}
       >
         <Pencil className="size-3.5" />
       </button>
@@ -4868,7 +4889,7 @@ function LinkFloatingToolbar({
         type="button"
         onClick={removeLink}
         className="cursor-pointer rounded p-1.5 text-red-500 transition-colors hover:bg-red-500/10 hover:text-red-600 dark:text-red-400 dark:hover:bg-red-500/20 dark:hover:text-red-300"
-        title="Remove link"
+        title={t("editor.removeLink")}
       >
         <Unlink className="size-3.5 text-red-500 dark:text-red-400" />
       </button>
@@ -4884,6 +4905,7 @@ function MoreFormattingMenu({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
 
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
@@ -4892,8 +4914,8 @@ function MoreFormattingMenu({
           type="button"
           variant="ghost"
           size="icon"
-          aria-label="More formatting actions"
-          title="More formatting actions"
+          aria-label={t("editor.moreFormattingAria")}
+          title={t("editor.moreFormattingAria")}
         >
           <Ellipsis />
         </Button>
@@ -4906,7 +4928,7 @@ function MoreFormattingMenu({
         {hasActions ? (
           <div
             role="toolbar"
-            aria-label="Hidden formatting actions"
+            aria-label={t("editor.hiddenFormattingAria")}
             className="flex max-w-56 flex-wrap gap-0.5"
             onClick={(event) => {
               if ((event.target as HTMLElement).closest("button")) {
@@ -4918,14 +4940,13 @@ function MoreFormattingMenu({
           </div>
         ) : (
           <p className="text-muted-foreground px-2 py-1.5 text-xs">
-            All actions are visible
+            {t("editor.allActionsVisible")}
           </p>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
-
 function RichTextToolbar({
   editor,
   wrapText,
@@ -4960,6 +4981,7 @@ function RichTextToolbar({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pagePickerOpen, setPagePickerOpen] = useState(false);
+  const { t, apiErrorText } = useTranslation();
   const [pagePickerSearch, setPagePickerSearch] = useState("");
   const [pagePickerPages, setPagePickerPages] = useState<WikiPage[]>([]);
   const [pagePickerLoading, setPagePickerLoading] = useState(false);
@@ -5144,11 +5166,11 @@ function RichTextToolbar({
       )
       .then(setPagePickerPages)
       .catch(() => {
-        toast.error("Could not load pages.");
+        toast.error(t("editor.loadPagesError"));
         setPagePickerPages([]);
       })
       .finally(() => setPagePickerLoading(false));
-  }, [editor, pageLinkContext]);
+  }, [editor, pageLinkContext, t]);
 
   function insertPageLink(page: WikiPage) {
     if (!editor || !pageLinkContext) return;
@@ -5220,7 +5242,7 @@ function RichTextToolbar({
       onSubpageCreated?.(page);
     } catch (error) {
       toast.error(
-        error instanceof ApiError ? error.message : "Could not create page.",
+        error instanceof ApiError ? error.message : t("editor.createPageError"),
       );
     } finally {
       setSubpagePending(false);
@@ -5309,7 +5331,9 @@ function RichTextToolbar({
       }
     } catch (error) {
       setUploadError(
-        error instanceof Error ? error.message : "Could not upload this file.",
+        error instanceof Error
+          ? error.message
+          : t("editor.uploadError"),
       );
     } finally {
       setUploading(false);
@@ -5340,11 +5364,11 @@ function RichTextToolbar({
       );
   });
 
-  return (
+    return (
     <div
       className="border-border bg-surface-sunken top-topbar sticky z-20 flex flex-nowrap items-center gap-1 overflow-hidden rounded-t-md border px-1 py-1 shadow-xs md:top-0 [&>button]:shrink-0"
       role="toolbar"
-      aria-label="Page formatting"
+      aria-label={t("editor.pageFormattingAria")}
     >
       <input
         ref={imageInput}
@@ -5371,7 +5395,7 @@ function RichTextToolbar({
       >
         <ToolbarButton
           editor={editor}
-          label="Bold"
+          label={t("editor.bold")}
           active={editor?.isActive("bold")}
           onClick={() => editor?.chain().focus().toggleBold().run()}
         >
@@ -5379,7 +5403,7 @@ function RichTextToolbar({
         </ToolbarButton>
         <ToolbarButton
           editor={editor}
-          label="Italic"
+          label={t("editor.italic")}
           active={editor?.isActive("italic")}
           onClick={() => editor?.chain().focus().toggleItalic().run()}
         >
@@ -5387,7 +5411,7 @@ function RichTextToolbar({
         </ToolbarButton>
         <ToolbarButton
           editor={editor}
-          label="Underline"
+          label={t("editor.underline")}
           active={editor?.isActive("underline")}
           onClick={() => editor?.chain().focus().toggleMark("underline").run()}
         >
@@ -5395,7 +5419,7 @@ function RichTextToolbar({
         </ToolbarButton>
         <ToolbarButton
           editor={editor}
-          label="Strikethrough"
+          label={t("editor.strikethrough")}
           active={editor?.isActive("strike")}
           onClick={() => editor?.chain().focus().toggleStrike().run()}
         >
@@ -5403,7 +5427,7 @@ function RichTextToolbar({
         </ToolbarButton>
         <ToolbarButton
           editor={editor}
-          label="Inline code"
+          label={t("editor.inlineCode")}
           active={editor?.isActive("code")}
           onClick={() => editor?.chain().focus().toggleCode().run()}
         >
@@ -5413,7 +5437,7 @@ function RichTextToolbar({
         <ColorMenu editor={editor} kind="highlight" />
         <ToolbarButton
           editor={editor}
-          label="Clear text colour and highlight"
+          label={t("editor.clearTextColourHighlight")}
           onClick={() => {
             if (!editor) return;
             const markType = editor.schema.marks.textStyle;
@@ -5450,7 +5474,7 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 1 ? (
           <ToolbarButton
             editor={editor}
-            label="Bulleted list"
+            label={t("editor.bulletedList")}
             active={editor?.isActive("bulletList")}
             onClick={() => editor?.chain().focus().toggleBulletList().run()}
           >
@@ -5460,7 +5484,7 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 2 ? (
           <ToolbarButton
             editor={editor}
-            label="Numbered list"
+            label={t("editor.numberedList")}
             active={editor?.isActive("orderedList")}
             onClick={() => editor?.chain().focus().toggleOrderedList().run()}
           >
@@ -5480,7 +5504,7 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 4 ? (
           <ToolbarButton
             editor={editor}
-            label="Toggle list"
+            label={t("editor.toggleList")}
             active={editor?.isActive("toggle")}
             onClick={() => editor && insertToggle(editor)}
           >
@@ -5500,7 +5524,7 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 6 ? (
           <ToolbarButton
             editor={editor}
-            label="Code block"
+            label={t("editor.codeBlock")}
             active={editor?.isActive("codeBlock")}
             onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
           >
@@ -5510,7 +5534,7 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 7 ? (
           <ToolbarButton
             editor={editor}
-            label="Insert divider"
+            label={t("editor.insertDivider")}
             onClick={() => editor?.chain().focus().setHorizontalRule().run()}
           >
             <Minus />
@@ -5519,7 +5543,7 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 8 ? (
           <ToolbarButton
             editor={editor}
-            label="Add link"
+                label={t("editor.addLink")}
             onClick={openLinkDialog}
           >
             <Link2 />
@@ -5528,7 +5552,9 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 9 ? (
           <ToolbarButton
             editor={editor}
-            label="Insert image"
+              label={
+                uploading ? t("editor.uploadingImage") : t("editor.insertImage")
+              }
             disabled={uploading}
             onClick={insertImage}
           >
@@ -5542,7 +5568,9 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 10 ? (
           <ToolbarButton
             editor={editor}
-            label="Upload file"
+            label={
+              uploading ? t("editor.uploadingFile") : t("editor.uploadFile")
+            }
             disabled={uploading}
             onClick={insertAttachment}
           >
@@ -5556,7 +5584,7 @@ function RichTextToolbar({
         <TablePicker editor={editor} />
         <ToolbarButton
           editor={editor}
-          label="Insert table of contents"
+          label={t("editor.insertToc")}
           onClick={() =>
             editor
               ?.chain()
@@ -5571,7 +5599,7 @@ function RichTextToolbar({
       <div className="border-border ml-auto flex shrink-0 items-center gap-1 border-l pl-1">
         <ToolbarButton
           editor={editor}
-          label="Undo"
+          label={t("editor.undo")}
           disabled={!editor?.can().undo()}
           onClick={() => editor?.chain().focus().undo().run()}
         >
@@ -5579,7 +5607,7 @@ function RichTextToolbar({
         </ToolbarButton>
         <ToolbarButton
           editor={editor}
-          label="Redo"
+          label={t("editor.redo")}
           disabled={!editor?.can().redo()}
           onClick={() => editor?.chain().focus().redo().run()}
         >
@@ -5589,7 +5617,7 @@ function RichTextToolbar({
           <MoreFormattingMenu hasActions>
             {visibleOverflowActionCount < 1 ? (
               <OverflowToolbarButton
-                label={wrapText ? "Unwrap text" : "Wrap text"}
+                label={wrapText ? t("sourceEditor.unwrapText") : t("sourceEditor.wrapText")}
                 active={wrapText}
                 onClick={onToggleWrap}
               >
@@ -5598,7 +5626,7 @@ function RichTextToolbar({
             ) : null}
             {visibleOverflowActionCount < 2 ? (
               <OverflowToolbarButton
-                label="Bulleted list"
+                label={t("editor.bulletedList")}
                 active={editor?.isActive("bulletList")}
                 onClick={() => editor?.chain().focus().toggleBulletList().run()}
               >
@@ -5607,7 +5635,7 @@ function RichTextToolbar({
             ) : null}
             {visibleOverflowActionCount < 3 ? (
               <OverflowToolbarButton
-                label="Numbered list"
+                label={t("editor.numberedList")}
                 active={editor?.isActive("orderedList")}
                 onClick={() =>
                   editor?.chain().focus().toggleOrderedList().run()
@@ -5618,7 +5646,7 @@ function RichTextToolbar({
             ) : null}
             {visibleOverflowActionCount < 4 ? (
               <OverflowToolbarButton
-                label="To-do list"
+                label={t("slash.todoListLabel")}
                 active={editor?.isActive("taskList")}
                 onClick={() => editor?.chain().focus().toggleTaskList().run()}
               >
@@ -5627,7 +5655,7 @@ function RichTextToolbar({
             ) : null}
             {visibleOverflowActionCount < 5 ? (
               <OverflowToolbarButton
-                label="Toggle list"
+                label={t("editor.toggleList")}
                 active={editor?.isActive("toggle")}
                 onClick={() => editor && insertToggle(editor)}
               >
@@ -5636,7 +5664,7 @@ function RichTextToolbar({
             ) : null}
             {visibleOverflowActionCount < 6 ? (
               <OverflowToolbarButton
-                label="Quote"
+                label={t("editor.quote")}
                 active={editor?.isActive("blockquote")}
                 onClick={() => editor?.chain().focus().toggleBlockquote().run()}
               >
@@ -5645,7 +5673,7 @@ function RichTextToolbar({
             ) : null}
             {visibleOverflowActionCount < 7 ? (
               <OverflowToolbarButton
-                label="Code block"
+                label={t("editor.codeBlock")}
                 active={editor?.isActive("codeBlock")}
                 onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
               >
@@ -5654,7 +5682,7 @@ function RichTextToolbar({
             ) : null}
             {visibleOverflowActionCount < 8 ? (
               <OverflowToolbarButton
-                label="Insert divider"
+                label={t("editor.insertDivider")}
                 onClick={() =>
                   editor?.chain().focus().setHorizontalRule().run()
                 }
@@ -5663,13 +5691,15 @@ function RichTextToolbar({
               </OverflowToolbarButton>
             ) : null}
             {visibleOverflowActionCount < 9 ? (
-              <OverflowToolbarButton label="Add link" onClick={openLinkDialog}>
+              <OverflowToolbarButton             label={t("editor.addLink")} onClick={openLinkDialog}>
                 <Link2 />
               </OverflowToolbarButton>
             ) : null}
             {visibleOverflowActionCount < 10 ? (
               <OverflowToolbarButton
-                label={uploading ? "Uploading image" : "Insert image"}
+                label={
+                  uploading ? t("editor.uploadingImage") : t("editor.insertImage")
+                }
                 disabled={uploading}
                 onClick={insertImage}
               >
@@ -5682,7 +5712,9 @@ function RichTextToolbar({
             ) : null}
             {visibleOverflowActionCount < 11 ? (
               <OverflowToolbarButton
-                label={uploading ? "Uploading file" : "Upload file"}
+                label={
+                  uploading ? t("editor.uploadingFile") : t("editor.uploadFile")
+                }
                 disabled={uploading}
                 onClick={insertAttachment}
               >
@@ -5698,7 +5730,7 @@ function RichTextToolbar({
       </div>
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
         <DialogContent
-          title={linkUrl ? "Edit link" : "Insert link"}
+          title={linkUrl ? t("editor.editLink") : t("editor.insertLink")}
           className="max-w-xl"
         >
           <form
@@ -5712,7 +5744,7 @@ function RichTextToolbar({
           >
             <div className="space-y-1.5">
               <label htmlFor="link-url" className="text-sm font-medium">
-                Url
+                {t("editor.urlLabel")}
               </label>
               <Input
                 id="link-url"
@@ -5724,39 +5756,41 @@ function RichTextToolbar({
             </div>
             <div className="space-y-1.5">
               <label htmlFor="link-text" className="text-sm font-medium">
-                Link text
+                {t("editor.linkLabel")}
               </label>
               <Input
                 id="link-text"
                 value={linkText}
                 onChange={(event) => setLinkText(event.target.value)}
-                placeholder="Text shown to readers"
+                placeholder={t("editor.linkTextPlaceholder")}
               />
             </div>
             <div className="space-y-1.5">
               <label htmlFor="link-title" className="text-sm font-medium">
-                Title
+                {t("editor.title")}
               </label>
               <Input
                 id="link-title"
                 value={linkTitle}
                 onChange={(event) => setLinkTitle(event.target.value)}
-                placeholder="Optional"
+                placeholder={t("editor.optional")}
               />
             </div>
             <div className="space-y-1.5">
               <label htmlFor="link-target" className="text-sm font-medium">
-                Open link in...
+                {t("editor.openLinkIn")}
               </label>
               <Select value={linkTarget} onValueChange={setLinkTarget}>
-                <SelectTrigger id="link-target" aria-label="Open link in">
+                <SelectTrigger id="link-target" aria-label={t("editor.openLinkIn")}>
                   <SelectValue>
-                    {linkTarget === "_blank" ? "New window" : "Current window"}
+                    {linkTarget === "_blank"
+                      ? t("editor.targetBlank")
+                      : t("editor.targetSelf")}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="_self">Current window</SelectItem>
-                  <SelectItem value="_blank">New window</SelectItem>
+                  <SelectItem value="_self">{t("editor.targetSelf")}</SelectItem>
+                  <SelectItem value="_blank">{t("editor.targetBlank")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -5766,21 +5800,21 @@ function RichTextToolbar({
                 variant="secondary"
                 onClick={() => setLinkOpen(false)}
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 type="submit"
                 variant="primary"
                 onClick={(e) => e.stopPropagation()}
               >
-                Save
+                {t("common.save")}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
       <Dialog open={pagePickerOpen} onOpenChange={setPagePickerOpen}>
-        <DialogContent title="Link to page" className="max-w-md">
+        <DialogContent title={t("slash.linkLabel")} className="max-w-md">
           <div className="space-y-3">
             <div className="relative">
               <Search
@@ -5792,7 +5826,7 @@ function RichTextToolbar({
                 role="combobox"
                 aria-expanded
                 aria-controls="slash-page-picker-options"
-                aria-label="Search pages"
+                aria-label={t("editor.searchPagesAria")}
                 autoFocus
                 value={pagePickerSearch}
                 onChange={(event) => setPagePickerSearch(event.target.value)}
@@ -5803,12 +5837,12 @@ function RichTextToolbar({
             <div
               id="slash-page-picker-options"
               role="listbox"
-              aria-label="Pages"
+              aria-label={t("editor.pagesAria")}
               className="border-border max-h-64 overflow-y-auto rounded-md border p-1"
             >
               {pagePickerLoading ? (
                 <p className="text-muted-foreground flex items-center gap-2 px-2 py-1.5 text-sm">
-                  <Loader2 className="size-4 animate-spin" /> Loading pages...
+                  <Loader2 className="size-4 animate-spin" /> {t("editor.loadingPages")}
                 </p>
               ) : (
                 (() => {
@@ -5822,7 +5856,7 @@ function RichTextToolbar({
                   if (results.length === 0) {
                     return (
                       <p className="text-muted-foreground px-2 py-1.5 text-sm">
-                        No matching pages.
+                        {t("movePage.noMatchingPages")}
                       </p>
                     );
                   }
@@ -5850,8 +5884,8 @@ function RichTextToolbar({
       </Dialog>
       <Dialog open={subpageOpen} onOpenChange={setSubpageOpen}>
         <DialogContent
-          title="Create sub-page"
-          description="Creates a page under this one and takes you there - save this page first if you have unsaved changes you want to keep."
+          title={t("slash.createSubpageLabel")}
+          description={t("editor.subpageDescription")}
         >
           <form
             onSubmit={(e) => {
@@ -5863,12 +5897,12 @@ function RichTextToolbar({
             noValidate
           >
             <div className="space-y-1.5">
-              <Label htmlFor="slash-subpage-title">Title</Label>
+              <Label htmlFor="slash-subpage-title">{t("editor.title")}</Label>
               <Input
                 id="slash-subpage-title"
                 value={subpageTitle}
                 onChange={(event) => setSubpageTitle(event.target.value)}
-                placeholder="Meeting notes, runbook, project brief..."
+                placeholder={t("editor.newSubpagePlaceholder")}
                 autoFocus
                 required
                 maxLength={255}
@@ -5881,7 +5915,7 @@ function RichTextToolbar({
                 onClick={() => setSubpageOpen(false)}
                 disabled={subpagePending}
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 type="submit"
@@ -5894,7 +5928,9 @@ function RichTextToolbar({
                 ) : (
                   <FilePlus2 />
                 )}
-                {subpagePending ? "Creating..." : "Create page"}
+                {subpagePending
+                  ? t("pageCreate.creating")
+                  : t("pageCreate.createTitle")}
               </Button>
             </DialogFooter>
           </form>
@@ -6036,7 +6072,12 @@ export function RichTextEditor({
   );
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: editorExtensions,
+    extensions: buildEditorExtensions({
+      placeholder: translate(
+        document.documentElement.lang === "vi" ? "vi" : "en",
+        "editor.editorPlaceholder",
+      ),
+    }),
     content: normalizedContent,
     editorProps: {
       attributes: { class: editorClassName },
@@ -6474,6 +6515,7 @@ function ImageLightbox({
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const { t } = useTranslation();
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -6551,7 +6593,7 @@ function ImageLightbox({
       }}
     >
       <DialogContent
-        title="Image preview"
+        title={t("editor.imagePreview")}
         onClick={closeOnBackdrop}
         className={cn(
           "flex h-screen max-h-none w-screen max-w-none flex-col",
@@ -6561,7 +6603,7 @@ function ImageLightbox({
       >
         <div className="flex shrink-0 items-center justify-between gap-2 p-3">
           <p className="truncate pl-1 text-xs text-white/60">
-            {image?.alt || "Scroll or double-click the image to zoom"}
+            {image?.alt || t("editor.scrollOrDoubleClickToZoom")}
           </p>
           <div className="flex shrink-0 items-center gap-1">
             <Button
@@ -6570,7 +6612,7 @@ function ImageLightbox({
               size="icon"
               onClick={() => applyScale((prev) => prev - 0.5)}
               disabled={scale <= LIGHTBOX_MIN_SCALE}
-              aria-label="Zoom out"
+              aria-label={t("editor.zoomOut")}
               className="text-white/80 hover:bg-white/10 hover:text-white"
             >
               <ZoomOut className="size-4" />
@@ -6584,7 +6626,7 @@ function ImageLightbox({
               size="icon"
               onClick={() => applyScale((prev) => prev + 0.5)}
               disabled={scale >= LIGHTBOX_MAX_SCALE}
-              aria-label="Zoom in"
+              aria-label={t("editor.zoomIn")}
               className="text-white/80 hover:bg-white/10 hover:text-white"
             >
               <ZoomIn className="size-4" />
@@ -6595,7 +6637,7 @@ function ImageLightbox({
               size="icon"
               onClick={resetZoom}
               disabled={scale === 1 && offset.x === 0 && offset.y === 0}
-              aria-label="Reset zoom"
+              aria-label={t("editor.resetZoom")}
               className="text-white/80 hover:bg-white/10 hover:text-white"
             >
               <RotateCcw className="size-4" />
@@ -6605,7 +6647,7 @@ function ImageLightbox({
               variant="ghost"
               size="icon"
               onClick={onClose}
-              aria-label="Close"
+              aria-label={t("editor.closeAria")}
               className="text-white/80 hover:bg-white/10 hover:text-white"
             >
               <X className="size-4" />
@@ -6807,6 +6849,7 @@ function AttachmentDetailsModal({
   const [previewToolbarContainer, setPreviewToolbarContainer] =
     useState<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const { t, locale: attachmentLocale } = useTranslation();
 
   // All hooks must run unconditionally (rules of hooks)
   useEffect(() => {
@@ -6832,8 +6875,8 @@ function AttachmentDetailsModal({
           throw new Error(
             envelope?.error?.message ??
               (response.status === 404
-                ? "This attachment no longer exists."
-                : `Could not retrieve file details (HTTP ${response.status}).`),
+                ? t("editor.attachmentGone")
+                : t("editor.couldNotRetrieveDetails", { status: response.status })),
           );
         }
         const data = (await response.json()) as AttachmentMetadata;
@@ -6858,7 +6901,7 @@ function AttachmentDetailsModal({
           }
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "An error occurred.");
+        setError(err instanceof Error ? err.message : t("editor.genericError"));
       } finally {
         setLoading(false);
       }
@@ -6944,7 +6987,7 @@ function AttachmentDetailsModal({
 
   const formatDate = (dateStr: string) => {
     try {
-      return new Date(dateStr).toLocaleString();
+      return formatDateTime(dateStr, attachmentLocale);
     } catch {
       return dateStr;
     }
@@ -6972,12 +7015,12 @@ function AttachmentDetailsModal({
   const hasTextPreview = textContent !== null;
   const attachmentTitle = (
     <span className="inline-flex items-center gap-1.5">
-      Attachment details
+      {t("editor.attachmentDetails")}
       {metadata ? (
         <span className="group relative inline-flex">
           <button
             type="button"
-            aria-label="Show attachment information"
+            aria-label={t("editor.showAttachmentInfoAria")}
             aria-describedby="attachment-information"
             className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-6 cursor-pointer items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none"
           >
@@ -6988,14 +7031,14 @@ function AttachmentDetailsModal({
             role="tooltip"
             className="bg-surface-raised border-border text-muted-foreground pointer-events-none absolute top-full left-0 z-50 mt-2 grid w-max max-w-[min(28rem,calc(100vw-4rem))] grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border p-3 text-xs font-normal opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
           >
-            <span className="text-foreground font-semibold">File:</span>
+            <span className="text-foreground font-semibold">{t("editor.fileLabel")}</span>
             <span className="break-all">{metadata.filename}</span>
-            <span className="text-foreground font-semibold">Size:</span>
+            <span className="text-foreground font-semibold">{t("editor.sizeLabel")}</span>
             <span>{formatSize(metadata.size_bytes)}</span>
-            <span className="text-foreground font-semibold">Type:</span>
+            <span className="text-foreground font-semibold">{t("editor.typeLabel")}</span>
             <span className="break-all">{metadata.content_type}</span>
-            <span className="text-foreground font-semibold">Uploaded:</span>
-            <span>{formatDate(metadata.created_at)}</span>
+            <span className="text-foreground font-semibold">{t("editor.uploadedLabel")}</span>
+            <span>{formatDateTime(metadata.created_at, attachmentLocale)}</span>
           </span>
         </span>
       ) : null}
@@ -7058,13 +7101,13 @@ function AttachmentDetailsModal({
         {loading ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2">
             <Loader2 className="text-muted-foreground size-8 animate-spin" />
-            <p className="text-muted-foreground text-sm">Loading details...</p>
+            <p className="text-muted-foreground text-sm">{t("editor.loadingDetails")}</p>
           </div>
         ) : error ? (
           <div className="text-danger flex h-48 flex-col items-center justify-center gap-2">
             <p className="text-sm font-semibold">{error}</p>
             <Button variant="secondary" onClick={onClose}>
-              Close
+              {t("editor.closeAria")}
             </Button>
           </div>
         ) : metadata ? (
@@ -7081,7 +7124,7 @@ function AttachmentDetailsModal({
             {/* Compact details bar */}
             <div className="hidden">
               <div className={cn(isOffice && "min-w-0 shrink")}>
-                <span className="text-foreground font-semibold">File: </span>
+                <span className="text-foreground font-semibold">{t("editor.fileLabel")} </span>
                 <span
                   className={cn(
                     isOffice &&
@@ -7093,20 +7136,20 @@ function AttachmentDetailsModal({
                 </span>
               </div>
               <div>
-                <span className="text-foreground font-semibold">Size: </span>
+                <span className="text-foreground font-semibold">{t("editor.sizeLabel")} </span>
                 <span>{formatSize(metadata.size_bytes)}</span>
               </div>
               <div>
-                <span className="text-foreground font-semibold">Type: </span>
+                <span className="text-foreground font-semibold">{t("editor.typeLabel")} </span>
                 <span title={metadata.content_type}>
                   {metadata.content_type}
                 </span>
               </div>
               <div>
                 <span className="text-foreground font-semibold">
-                  Uploaded:{" "}
+                  {t("editor.uploadedLabel")}
                 </span>
-                <span>{formatDate(metadata.created_at)}</span>
+                <span>{formatDateTime(metadata.created_at, attachmentLocale)}</span>
               </div>
             </div>
 
@@ -7122,7 +7165,7 @@ function AttachmentDetailsModal({
               )}
             >
               <div className="bg-surface-sunken text-muted-foreground flex items-center justify-between border-b px-3 py-1.5 text-xs font-semibold tracking-wider uppercase">
-                <span>Preview</span>
+                <span>{t("editor.preview")}</span>
                 <div className="flex items-center gap-1 tracking-normal normal-case">
                   {!isEditingOffice ? (
                     <div
@@ -7137,10 +7180,10 @@ function AttachmentDetailsModal({
                     href={contentUrl}
                     download={metadata.filename}
                     className="text-muted-foreground border-border bg-surface hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1 rounded border px-2 text-xs font-medium tracking-normal normal-case transition-[color,background-color,border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-                    title={`Download ${metadata.filename}`}
+                    title={t("editor.downloadNamed", { filename: metadata.filename })}
                   >
                     <Download className="size-3.5" aria-hidden="true" />
-                    <span>Download</span>
+                    <span>{t("editor.download")}</span>
                   </a>
                   {canEditOffice && isEditableOffice ? (
                     <button
@@ -7169,7 +7212,7 @@ function AttachmentDetailsModal({
                                 setActiveMatchIdx(0);
                               }}
                               onKeyDown={handleSearchInputKeyDown}
-                              placeholder="Search content..."
+                              placeholder={t("editor.searchContent")}
                               className="h-7 w-40 pr-2 pl-7 text-xs"
                             />
                           </div>
@@ -7188,7 +7231,7 @@ function AttachmentDetailsModal({
                                   )
                                 }
                                 className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
-                                title="Previous match"
+                                title={t("editor.previousMatch")}
                               >
                                 <ChevronDown className="size-4 rotate-180" />
                               </button>
@@ -7200,7 +7243,7 @@ function AttachmentDetailsModal({
                                   )
                                 }
                                 className="hover:bg-surface-hover hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded transition-colors duration-150"
-                                title="Next match"
+                                title={t("editor.nextMatch")}
                               >
                                 <ChevronDown className="size-4" />
                               </button>
@@ -7218,8 +7261,8 @@ function AttachmentDetailsModal({
                           )}
                           title={
                             wrapLines
-                              ? "Disable line wrapping"
-                              : "Enable line wrapping"
+                              ? t("editor.disableLineWrapping")
+                              : t("editor.enableLineWrapping")
                           }
                         >
                           <WrapText className="size-4" />
@@ -7326,7 +7369,7 @@ function AttachmentDetailsModal({
                   <div className="flex flex-col items-center justify-center gap-2 py-4">
                     <Loader2 className="text-muted-foreground size-5 animate-spin" />
                     <span className="text-muted-foreground text-xs">
-                      Loading content...
+                      {t("editor.loadingContent")}
                     </span>
                   </div>
                 ) : isPdf ? (
@@ -7341,7 +7384,7 @@ function AttachmentDetailsModal({
                   <div className="py-6 text-center">
                     <FileText className="text-muted-foreground mx-auto size-12" />
                     <p className="text-muted-foreground mt-2 text-sm">
-                      No preview available for this file type.
+                      {t("editor.noPreview")}
                     </p>
                   </div>
                 )}

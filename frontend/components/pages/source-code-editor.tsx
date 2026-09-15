@@ -25,6 +25,8 @@ import htmlPlugin from "prettier/plugins/html";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n/context";
+import { toast } from "sonner";
 
 type SourceLanguage = "html" | "markdown";
 
@@ -150,6 +152,7 @@ export function SourceCodeEditor({
   const [formatting, setFormatting] = useState(false);
   const [prettierApplied, setPrettierApplied] = useState(false);
   const beforePrettier = useRef<string | null>(null);
+  const { t } = useTranslation();
 
   useEffect(() => {
     valueRef.current = value;
@@ -176,7 +179,9 @@ export function SourceCodeEditor({
           syntaxHighlighting(wikiHubHighlightStyle),
           EditorView.contentAttributes.of({
             "aria-label":
-              language === "html" ? "HTML source" : "Markdown source",
+              language === "html"
+                ? t("workspace.htmlSource")
+                : t("workspace.markdownSource"),
           }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged)
@@ -192,7 +197,7 @@ export function SourceCodeEditor({
       editor.current = null;
       view.destroy();
     };
-  }, [language]);
+  }, [language, t]);
 
   useEffect(() => {
     editor.current?.dispatch({
@@ -222,7 +227,9 @@ export function SourceCodeEditor({
       });
       setPrettierApplied(true);
     } catch {
-      window.alert("Prettier could not format this HTML.");
+      // Per the product's notification rules, use the toast instead of
+      // window.alert for in-app failures.
+      toast.error(t("sourceEditor.prettierError"));
     } finally {
       setFormatting(false);
     }
@@ -252,17 +259,19 @@ export function SourceCodeEditor({
       <div className="border-border bg-surface-sunken sticky top-topbar md:top-0 z-20 flex flex-wrap items-center gap-2 rounded-t-md border-b px-4 py-2.5 shadow-xs">
         <CodeXml className="text-primary size-4" aria-hidden />
         <p className="text-xs font-semibold tracking-wide uppercase">
-          {language} source
+          {language === "html"
+            ? t("workspace.htmlSource")
+            : t("workspace.markdownSource")}
         </p>
         <span className="text-muted-foreground ml-auto text-xs">
-          Editable source
+          {t("sourceEditor.editableSource")}
         </span>
         <Button
           type="button"
           variant="ghost"
           size="sm"
           aria-pressed={wrapText}
-          title={wrapText ? "Unwrap text" : "Wrap text"}
+          title={wrapText ? t("sourceEditor.unwrapText") : t("sourceEditor.wrapText")}
           onClick={() => setWrapText((current) => !current)}
           className="border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring inline-flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
         >
@@ -271,7 +280,7 @@ export function SourceCodeEditor({
           ) : (
             <WrapText className="size-4" aria-hidden />
           )}
-          {wrapText ? "Unwrap text" : "Wrap text"}
+          {wrapText ? t("sourceEditor.unwrapText") : t("sourceEditor.wrapText")}
         </Button>
         {language === "html" ? (
           <Button
@@ -280,8 +289,8 @@ export function SourceCodeEditor({
             size="sm"
             title={
               prettierApplied
-                ? "Restore HTML before Prettier"
-                : "Format HTML with Prettier"
+                ? t("sourceEditor.unprettierTitle")
+                : t("sourceEditor.prettierTitle")
             }
             onClick={() =>
               prettierApplied ? unprettierHtml() : void formatHtml()
@@ -295,10 +304,10 @@ export function SourceCodeEditor({
               <WandSparkles className="size-4" aria-hidden />
             )}
             {formatting
-              ? "Formatting..."
+              ? t("sourceEditor.formatting")
               : prettierApplied
-                ? "Unprettier"
-                : "Prettier"}
+                ? t("sourceEditor.unprettier")
+                : t("sourceEditor.prettier")}
           </Button>
         ) : null}
       </div>

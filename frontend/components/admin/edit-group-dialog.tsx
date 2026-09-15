@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Crown,
   FolderKanban,
+  Info,
   Loader2,
   Pencil,
   PlusCircle,
@@ -17,7 +18,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -26,14 +27,42 @@ import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { GroupUsagePanel } from "@/components/admin/group-usage-panel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { api, ApiError } from "@/lib/api-client";
 import { getGroupUsage, listGroupMembers } from "@/lib/group-members";
 import { cn } from "@/lib/utils";
 import type { GlobalPermission, Group, GroupMember, GroupUsage, User } from "@/types/api";
 
+/** An info icon next to a label, for an explanation that would otherwise be
+ * a permanent caption taking up its own line - see the same helper in
+ * `edit-user-dialog.tsx`, which this mirrors. */
+function FieldInfoTooltip({ children }: { children: ReactNode }) {
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground inline-flex cursor-help items-center"
+          >
+            <Info className="size-3.5" />
+            <span className="sr-only">More info</span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{children}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 const PERMISSION_CONFIG: Record<
   GlobalPermission,
-  { label: string; description: string; icon: React.ComponentType<{ className?: string }> }
+  { label: string; description: ReactNode; icon: React.ComponentType<{ className?: string }> }
 > = {
   create_space: {
     label: "Create spaces",
@@ -42,7 +71,19 @@ const PERMISSION_CONFIG: Record<
   },
   manage_users: {
     label: "Manage users",
-    description: "Allows creating, editing, resetting passwords, and deactivating user accounts.",
+    description: (
+      <div className="space-y-1.5">
+        <p>
+          Allows creating, editing, resetting passwords, and deactivating
+          Member accounts.
+        </p>
+        <p>
+          <strong className="text-foreground">Never</strong> promotes or
+          demotes anyone, or touches an Administrator account - that always
+          requires <strong className="text-foreground">System administrator</strong>.
+        </p>
+      </div>
+    ),
     icon: Users,
   },
   manage_groups: {
@@ -56,6 +97,16 @@ const PERMISSION_CONFIG: Record<
     icon: ShieldAlert,
   },
 };
+
+// System administrator sits above the other three in the Global Access tree
+// below - same shortcut as `has_global` on the backend (and the same tree
+// `edit-user-dialog.tsx` renders for a single account): a group granting it
+// silently grants every other permission too, to every member, regardless
+// of that permission's own toggle - so it renders as the parent the other
+// three nest under, not a sibling row.
+const CHILD_PERMISSIONS = (Object.keys(PERMISSION_CONFIG) as GlobalPermission[]).filter(
+  (permission) => permission !== "system_admin",
+);
 
 type TabKey = "details" | "members" | "usage" | "permissions";
 
@@ -378,11 +429,30 @@ export function EditGroupDialog({
         });
       }
 
+      // Track which member/permission changes actually went through - a
+      // failed request here (e.g. a `manage_groups` admin, who can manage
+      // members but not toggle Global Access - that PUT/DELETE pair is
+      // `system_admin`-only, see `set_group_global_permission`) must not be
+      // reported as saved just because the rest of the batch succeeded, nor
+      // silently kept in the dialog's own state as if it had. Every failed
+      // call previously vanished into a bare `.catch(() => {})`.
+      const failures: string[] = [];
+
+      async function applyChange(label: string, run: () => Promise<unknown>) {
+        try {
+          await run();
+        } catch (err) {
+          failures.push(err instanceof ApiError ? `${label}: ${err.message}` : label);
+        }
+      }
+
       // Add newly staged members
       if (pendingAddedUserIds.length > 0) {
         await Promise.all(
           pendingAddedUserIds.map((userId) =>
-            api.put(`/api/v1/groups/${group.id}/members`, { user_id: userId }).catch(() => {}),
+            applyChange(`Add member`, () =>
+              api.put(`/api/v1/groups/${group.id}/members`, { user_id: userId }),
+            ),
           ),
         );
       }
@@ -391,7 +461,9 @@ export function EditGroupDialog({
       if (pendingRemovedUserIds.length > 0) {
         await Promise.all(
           pendingRemovedUserIds.map((userId) =>
-            api.delete(`/api/v1/groups/${group.id}/members/${userId}`).catch(() => {}),
+            applyChange(`Remove member`, () =>
+              api.delete(`/api/v1/groups/${group.id}/members/${userId}`),
+            ),
           ),
         );
       }
@@ -403,7 +475,9 @@ export function EditGroupDialog({
       if (permsToAdd.length > 0) {
         await Promise.all(
           permsToAdd.map((p) =>
-            api.put(`/api/v1/groups/${group.id}/global-permissions/${p}`).catch(() => {}),
+            applyChange(`Grant ${PERMISSION_CONFIG[p].label}`, () =>
+              api.put(`/api/v1/groups/${group.id}/global-permissions/${p}`),
+            ),
           ),
         );
       }
@@ -411,22 +485,42 @@ export function EditGroupDialog({
       if (permsToRemove.length > 0) {
         await Promise.all(
           permsToRemove.map((p) =>
-            api.delete(`/api/v1/groups/${group.id}/global-permissions/${p}`).catch(() => {}),
+            applyChange(`Revoke ${PERMISSION_CONFIG[p].label}`, () =>
+              api.delete(`/api/v1/groups/${group.id}/global-permissions/${p}`),
+            ),
           ),
         );
       }
 
-      const nextMembers = await listGroupMembers(group.id);
+      // Re-read both from the server rather than trusting the dialog's own
+      // optimistic state, so a partial failure above shows up as what
+      // actually got saved, not what was merely attempted.
+      const [nextMembers, freshGroup] = await Promise.all([
+        listGroupMembers(group.id),
+        api.get<Group>(`/api/v1/groups/${group.id}`),
+      ]);
       setMembers(nextMembers);
+      setGlobalPermissions(freshGroup.global_permissions || []);
       setPendingAddedUserIds([]);
       setPendingRemovedUserIds([]);
 
       const updatedGroup = {
         ...updated,
         member_count: nextMembers.length,
-        global_permissions: globalPermissions,
+        global_permissions: freshGroup.global_permissions || [],
       };
       onGroupUpdated(updatedGroup);
+
+      if (failures.length > 0) {
+        setError(`Some changes could not be saved: ${failures.join("; ")}`);
+        toast.error("Some group changes could not be saved.");
+        // Leave the dialog open on the Global access tab so the admin can
+        // see exactly which toggle/row reverted and why, instead of it
+        // quietly closing on what looks like a full success.
+        setActiveTab("permissions");
+        return;
+      }
+
       toast.success("Group changes saved.");
       onOpenChange(false);
     } catch (err) {
@@ -770,82 +864,118 @@ export function EditGroupDialog({
           {/* Tab 4: Global Permissions (Feature List with Toggle Switches) */}
           {activeTab === "permissions" ? (
             <div className="space-y-3 h-full flex flex-col min-h-0">
-              <div className="bg-surface-sunken/50 border border-border p-3 rounded-lg flex items-start gap-2.5 shrink-0">
-                <ShieldCheck className="size-4.5 text-primary shrink-0 mt-0.5" />
-                <div className="text-xs">
-                  <p className="font-semibold text-foreground">Workspace Global Access</p>
-                  <p className="text-muted-foreground mt-0.5 leading-normal">
-                    Administrative permissions enabled here apply to all members of this group across the entire workspace.
-                  </p>
+              <div className="bg-surface-sunken/50 border border-border p-3 rounded-lg flex items-center gap-2.5 shrink-0">
+                <ShieldCheck className="size-4.5 text-primary shrink-0" />
+                <div className="flex items-center gap-1.5">
+                  <p className="font-semibold text-foreground text-xs">Workspace Global Access</p>
+                  <FieldInfoTooltip>
+                    Permissions enabled here apply to{" "}
+                    <strong className="text-foreground">every member of this group</strong>,{" "}
+                    across the <strong className="text-foreground">entire workspace</strong>.
+                  </FieldInfoTooltip>
                 </div>
               </div>
 
-              <div className="border border-border rounded-lg flex-1 min-h-0 overflow-y-auto divide-y divide-border bg-surface">
-                {(Object.keys(PERMISSION_CONFIG) as GlobalPermission[]).map((permission) => {
-                  const config = PERMISSION_CONFIG[permission];
-                  const Icon = config.icon;
-                  const isEnabled = globalPermissions.includes(permission);
+              <div className="border-border bg-surface flex-1 min-h-0 overflow-y-auto rounded-lg border p-2">
+                {(() => {
+                  const systemAdminOn = globalPermissions.includes("system_admin");
+
+                  function renderPermissionRow(permission: GlobalPermission) {
+                    const config = PERMISSION_CONFIG[permission];
+                    const Icon = config.icon;
+                    const isParent = permission === "system_admin";
+                    const ownToggle = globalPermissions.includes(permission);
+                    // A child reads (and locks) as forced-on whenever the
+                    // group already grants System administrator - matches
+                    // the backend's `has_global` shortcut, so this never
+                    // shows a toggle this group's real access ignores.
+                    const impliedByParent = !isParent && systemAdminOn;
+                    const effective = isParent ? ownToggle : ownToggle || impliedByParent;
+
+                    return (
+                      <div
+                        key={permission}
+                        className={cn(
+                          "relative flex h-14 items-center justify-between gap-3 px-5",
+                          !isParent &&
+                            "before:bg-border before:absolute before:top-1/2 before:left-10 before:h-px before:w-9",
+                        )}
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div
+                            className={cn(
+                              "relative z-10 flex size-10 shrink-0 items-center justify-center rounded-lg border",
+                              !isParent && "ml-14",
+                              effective
+                                ? "border-primary/40 bg-primary-subtle text-primary"
+                                : "border-border bg-surface text-muted-foreground",
+                            )}
+                          >
+                            <Icon className="size-4.5" />
+                          </div>
+                          <div className="min-w-0 flex flex-wrap items-center gap-1.5">
+                            <span className="text-foreground text-xs font-semibold">{config.label}</span>
+                            <FieldInfoTooltip>{config.description}</FieldInfoTooltip>
+                            <Badge variant={effective ? "success" : "neutral"} className="text-[10px]">
+                              {effective ? "Active" : "Disabled"}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-3">
+                          {impliedByParent ? (
+                            <span className="text-muted-foreground text-[11px]">
+                              Included via System administrator
+                            </span>
+                          ) : null}
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={effective}
+                            aria-label={`${config.label} toggle`}
+                            disabled={impliedByParent}
+                            title={
+                              impliedByParent
+                                ? "Included automatically - this group already grants System administrator, which grants every other permission too."
+                                : undefined
+                            }
+                            onClick={() => handleTogglePermission(permission, !ownToggle)}
+                            className={cn(
+                              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
+                              effective ? "bg-primary" : "bg-muted-foreground/30",
+                              impliedByParent && "cursor-not-allowed opacity-60",
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "pointer-events-none inline-block size-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out",
+                                effective ? "translate-x-4" : "translate-x-0",
+                              )}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
 
                   return (
-                    <div
-                      key={permission}
-                      className={cn(
-                        "flex items-center justify-between p-3 gap-3.5 transition-colors hover:bg-surface-hover",
-                        isEnabled && "bg-primary-subtle/10",
-                      )}
-                    >
-                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                        <div
-                          className={cn(
-                            "size-8 rounded-lg flex items-center justify-center shrink-0 border transition-colors mt-0.5",
-                            isEnabled
-                              ? "bg-primary-subtle text-primary border-primary/30"
-                              : "bg-muted/40 text-muted-foreground border-border/60",
-                          )}
-                        >
-                          <Icon className="size-4" />
-                        </div>
-
-                        <div className="min-w-0 space-y-0.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-semibold text-foreground">{config.label}</span>
-                            <span className="font-mono text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.2 rounded border border-border/50">
-                              {permission}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground leading-normal">{config.description}</p>
-                        </div>
+                    <>
+                      {renderPermissionRow("system_admin")}
+                      {/* Same tree shape as the Edit User dialog's Global
+                          access tab: the trunk's `left-10` matches the
+                          parent icon's own center-x above (20px row
+                          padding + half of its 40px chip), and each child
+                          row's own `::before` stub picks up from `left-10`
+                          and runs to that child's indented icon. */}
+                      <div className="relative">
+                        <div className="bg-border absolute top-0 bottom-7 left-10 w-px" />
+                        {CHILD_PERMISSIONS.map((permission) => (
+                          <div key={permission}>{renderPermissionRow(permission)}</div>
+                        ))}
                       </div>
-
-                      <div className="flex items-center gap-3 shrink-0">
-                        <Badge
-                          variant={isEnabled ? "success" : "neutral"}
-                          className="text-[10px] py-0.5 px-2 font-medium"
-                        >
-                          {isEnabled ? "Active" : "Disabled"}
-                        </Badge>
-
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={isEnabled}
-                          onClick={() => handleTogglePermission(permission, !isEnabled)}
-                          className={cn(
-                            "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
-                            isEnabled ? "bg-primary" : "bg-muted-foreground/30",
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "pointer-events-none inline-block size-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out",
-                              isEnabled ? "translate-x-4" : "translate-x-0",
-                            )}
-                          />
-                        </button>
-                      </div>
-                    </div>
+                    </>
                   );
-                })}
+                })()}
               </div>
             </div>
           ) : null}

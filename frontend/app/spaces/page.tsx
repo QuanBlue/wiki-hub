@@ -18,6 +18,8 @@ export const dynamic = "force-dynamic";
 export default async function SpacesPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const canCreateSpace =
+    user.is_superuser || user.global_permissions.includes("create_space");
 
   let spaces: Space[] = [];
   let spacesError: string | null = null;
@@ -41,7 +43,7 @@ export default async function SpacesPage() {
           eyebrow="Workspace"
           title="Spaces"
           description="Find the shared homes for your teams, projects, and documentation."
-          actions={<CreateSpaceForm />}
+          actions={canCreateSpace ? <CreateSpaceForm /> : null}
         />
 
         {spacesError ? (

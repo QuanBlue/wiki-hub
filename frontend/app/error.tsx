@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n/context";
 
 export default function ErrorPage({
   reset,
@@ -12,6 +13,7 @@ export default function ErrorPage({
   reset: () => void;
 }) {
   const router = useRouter();
+  const { t } = useTranslation();
 
   return (
     <main className="bg-surface-sunken flex min-h-screen items-center justify-center px-5 py-10 sm:px-8">
@@ -23,22 +25,21 @@ export default function ErrorPage({
           <AlertTriangle className="size-5" aria-hidden />
         </div>
         <p className="text-muted-foreground mt-5 text-xs font-semibold tracking-wide uppercase">
-          Page unavailable
+          {t("errors.pageUnavailable")}
         </p>
         <h1
           id="page-load-error-title"
           className="text-foreground mt-2 text-2xl font-semibold tracking-normal"
         >
-          This page couldn&apos;t load
+          {t("errors.pageCouldNotLoad")}
         </h1>
         <p className="text-muted-foreground mt-2 text-sm leading-6">
-          Try reloading the page. If the problem continues, return to your
-          previous page and try again.
+          {t("errors.pageCouldNotLoadHint")}
         </p>
         <div className="mt-6 flex flex-wrap gap-2">
           <Button type="button" variant="primary" onClick={reset}>
             <RefreshCw />
-            Try again
+            {t("errors.tryAgain")}
           </Button>
           <Button
             type="button"
@@ -49,7 +50,7 @@ export default function ErrorPage({
             }}
           >
             <ArrowLeft />
-            Go back
+            {t("errors.goBack")}
           </Button>
         </div>
       </section>

@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.groups import group_read, group_usage
+from app.api.v1.users import _read_user, list_users
 from app.core.exceptions import ConflictError, PermissionDeniedError
 from app.models.permission import (
     GlobalPermission,
@@ -218,6 +219,70 @@ async def test_system_admin_group_bypasses_space_and_global_checks(
     )
     assert await permissions.can_view_page(page, system_admin)
     await SpaceService(session).update(space, SpaceUpdate(name="Renamed"), system_admin)
+
+
+async def test_read_user_reports_group_memberships_and_overrides(
+    session: AsyncSession,
+) -> None:
+    """`_read_user` backs the Edit User dialog's Groups and Global access
+    tabs - `list_users` (the People directory's own listing, which is what
+    the dialog used to seed itself from) never populates either
+    `group_memberships` or `global_permission_overrides`, which is exactly
+    what made a just-saved override look reverted the next time the dialog
+    was reopened from a directory row. This is the fetch that replaced
+    that: a fresh single-user read, not the stale row."""
+    owner = await _user(session, "owner")
+    member = await _user(session, "member")
+    group = await _group(session, owner, member)
+
+    permissions = PermissionService(session)
+    await permissions.set_user_permission_overrides(
+        member, {GlobalPermission.create_space: True}
+    )
+
+    read = await _read_user(session, member)
+
+    assert {membership.id for membership in read.group_memberships} == {group.id}
+    assert read.group_memberships[0].name == group.name
+    assert {
+        (row.permission, row.enabled) for row in read.global_permission_overrides
+    } == {(GlobalPermission.create_space, True)}
+    # `groups` (plain names, used by the People directory's own badges) must
+    # still agree with `group_memberships` (id + name, used by the Groups
+    # tab) - the same query now backs both instead of two separate ones.
+    assert read.groups == [group.name]
+
+
+async def test_read_user_separates_group_granted_permissions_from_the_effective_set(
+    session: AsyncSession,
+) -> None:
+    """`global_permissions_from_groups` must report only what this account's
+    groups grant on their own - never what an override alone adds - or the
+    Edit User dialog's live "Inherit from groups" preview would show an
+    override-only permission as still active after switching back to
+    Inherit, instead of what it would actually revert to."""
+    owner = await _user(session, "owner")
+    member = await _user(session, "member")
+    group = await _group(session, owner, member)
+    admin = await _user(session, "admin", superuser=True)
+
+    permissions = PermissionService(session)
+    await permissions.set_group_global_permission(
+        group, GlobalPermission.manage_groups, admin, True
+    )
+    # Forced on for this one account, but never granted by any group of
+    # theirs - the split this test exists to prove.
+    await permissions.set_user_permission_overrides(
+        member, {GlobalPermission.create_space: True}
+    )
+
+    read = await _read_user(session, member)
+
+    assert set(read.global_permissions) == {
+        GlobalPermission.manage_groups,
+        GlobalPermission.create_space,
+    }
+    assert read.global_permissions_from_groups == [GlobalPermission.manage_groups]
 
 
 async def test_list_effective_system_admins_covers_every_path_and_dedupes_groups(
@@ -683,3 +748,63 @@ async def test_group_lifecycle_owner_permissions_and_page_restrictions(
         space, group.id, Permission.view, owner, group=True, present=False
     )
     await permissions.delete_group(group, admin)
+
+
+async def test_require_any_global_is_satisfied_by_any_one_permission(
+    session: AsyncSession,
+) -> None:
+    """`require_any_global` is the OR of `has_global`, not an AND - a
+    `manage_groups` holder with no `manage_users` must still pass a check
+    for either, since that is exactly what lets a `manage_groups`-only group
+    admin reach `list_users` below (the Groups admin page's own member
+    picker), which used to require `manage_users` alone."""
+    owner = await _user(session, "owner")
+    member = await _user(session, "member")
+    group = await _group(session, owner, member)
+    admin = await _user(session, "admin", superuser=True)
+    # Neither owner nor member of the group above - the negative case below
+    # must fail for lacking both permissions outright, not merely for being
+    # a different member of the same group.
+    outsider = await _user(session, "outsider")
+
+    permissions = PermissionService(session)
+    await permissions.set_group_global_permission(
+        group, GlobalPermission.manage_groups, admin, True
+    )
+
+    both = [GlobalPermission.manage_users, GlobalPermission.manage_groups]
+    await permissions.require_any_global(member, both)  # does not raise
+
+    with pytest.raises(PermissionDeniedError):
+        await permissions.require_any_global(outsider, both)
+
+
+async def test_list_users_is_reachable_by_a_manage_groups_only_admin(
+    session: AsyncSession,
+) -> None:
+    """The Groups admin page lists every user to populate its member picker
+    (see `app/admin/groups/page.tsx`), and reaches this exact endpoint - a
+    `manage_groups` holder with no `manage_users` grant must not 403 loading
+    their own page's data, even though editing a user account still needs
+    `manage_users` specifically (untouched by this change)."""
+    owner = await _user(session, "owner")
+    member = await _user(session, "member")
+    group = await _group(session, owner, member)
+    admin = await _user(session, "admin", superuser=True)
+
+    permissions = PermissionService(session)
+    await permissions.set_group_global_permission(
+        group, GlobalPermission.manage_groups, admin, True
+    )
+
+    service = AuthService(session)
+    page = await list_users(
+        member, session, service, q=None, status_filter=None, role=None, limit=50, offset=0
+    )
+    assert page.total >= 2  # at least owner and member exist
+
+    outsider = await _user(session, "outsider")
+    with pytest.raises(PermissionDeniedError):
+        await list_users(
+            outsider, session, service, q=None, status_filter=None, role=None, limit=50, offset=0
+        )

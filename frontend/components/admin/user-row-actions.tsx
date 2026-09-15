@@ -31,10 +31,17 @@ export function UserRowActions({
   user,
   isSelf,
   viewerIsProtected,
+  viewerIsSystemAdmin,
 }: {
   user: User;
   isSelf: boolean;
   viewerIsProtected: boolean;
+  /** Whether the signed-in viewer is a System Administrator themselves
+   * (`is_superuser`, or the `system_admin` global permission) - a
+   * `manage_users` grant alone is not enough to change Role or Global
+   * Access overrides on anyone, including this row - see
+   * `AuthService.assert_actor_is_system_admin` on the backend. */
+  viewerIsSystemAdmin: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -79,6 +86,7 @@ export function UserRowActions({
         disabled={peerAdminBlocked}
         title={peerAdminBlocked ? peerAdminTitle : undefined}
         aria-label={`Edit ${user.username}`}
+        className="not-disabled:hover:bg-surface-selected!"
       >
         <Pencil />
         Edit
@@ -97,7 +105,7 @@ export function UserRowActions({
         }
         aria-label={`Delete ${user.username}`}
         className={cn(
-          "hover:bg-danger-bg hover:text-danger",
+          "hover:bg-danger-bg! hover:text-danger!",
           (isSelf || peerAdminBlocked) &&
             "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-inherit",
         )}
@@ -105,7 +113,13 @@ export function UserRowActions({
         <Trash2 />
       </Button>
 
-      <EditUserDialog user={user} isSelf={isSelf} open={editOpen} onOpenChange={setEditOpen} />
+      <EditUserDialog
+        user={user}
+        isSelf={isSelf}
+        viewerIsSystemAdmin={viewerIsSystemAdmin}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
 
       <ConfirmDialog
         open={confirmDelete}

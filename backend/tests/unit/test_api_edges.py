@@ -358,7 +358,11 @@ async def test_user_administration_endpoint_wrappers(monkeypatch: pytest.MonkeyP
             pass
 
         require_global = AsyncMock()
+        require_any_global = AsyncMock()
         global_permissions = AsyncMock(return_value=[])
+        group_derived_global_permissions = AsyncMock(return_value=[])
+        is_system_admin = AsyncMock(return_value=False)
+        list_effective_system_admins = AsyncMock(return_value=[])
 
     monkeypatch.setattr(users, "PermissionService", _Permissions)
     target = _user()

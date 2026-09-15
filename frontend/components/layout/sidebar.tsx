@@ -26,6 +26,7 @@ import { useEffect, useState } from "react";
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useTranslation } from "@/lib/i18n/context";
 import {
   SIDEBAR_SHORTCUT_LIMIT,
   useSidebarShortcuts,
@@ -41,15 +42,25 @@ import type {
 interface NavItem {
   permission: keyof SidebarPermissions;
   href: string;
-  label: string;
+  /** Dictionary key under `nav.*`, resolved at render time. */
+  labelKey: string;
   icon: LucideIcon;
   /** Sections that only become reachable in a later phase. */
   disabled?: boolean;
+  /**
+   * A narrower global permission that also unlocks this one item, on top of
+   * whatever `permission`'s role-based check already allows - e.g. Users
+   * stays visible to a `manage_users` holder even when the "settings"
+   * section is configured as admin-only (see `app/admin/layout.tsx` for why
+   * `manage_users`/`manage_groups` each unlock exactly one section, and why
+   * `create_space` unlocks none of them).
+   */
+  extraGlobalPermission?: "manage_users" | "manage_groups";
 }
 
 const OVERVIEW_NAV: NavItem[] = [
-  { href: "/", label: "Home", icon: Home, permission: "home" },
-  { href: "/spaces", label: "Spaces", icon: LayoutGrid, permission: "spaces" },
+  { href: "/", labelKey: "nav.home", icon: Home, permission: "home" },
+  { href: "/spaces", labelKey: "nav.spaces", icon: LayoutGrid, permission: "spaces" },
 ];
 
 const COLLECTION_PAGE_SIZES = [5, 10, 25, 50] as const;
@@ -60,34 +71,41 @@ const COLLECTION_PAGE_SIZES = [5, 10, 25, 50] as const;
 // picking sections apart one by one. Backup keeps its own dedicated
 // "backups" key since the admin settings screen already offers it separately.
 const ADMIN_NAV: NavItem[] = [
-  { href: "/admin/users", label: "Users", icon: User, permission: "settings" },
+  {
+    href: "/admin/users",
+    labelKey: "nav.users",
+    icon: User,
+    permission: "settings",
+    extraGlobalPermission: "manage_users",
+  },
   {
     href: "/admin/groups",
-    label: "Groups",
+    labelKey: "nav.groups",
     icon: Users,
     permission: "settings",
+    extraGlobalPermission: "manage_groups",
   },
   {
     href: "/admin/spaces",
-    label: "Spaces",
+    labelKey: "nav.spaces",
     icon: FolderCog,
     permission: "settings",
   },
   {
     href: "/admin/settings",
-    label: "Settings",
+    labelKey: "nav.settings",
     icon: SlidersHorizontal,
     permission: "settings",
   },
   {
     href: "/admin/backup",
-    label: "Backup",
+    labelKey: "nav.backup",
     icon: Database,
     permission: "backups",
   },
   {
     href: "/admin/storage",
-    label: "Storage",
+    labelKey: "nav.storage",
     icon: HardDrive,
     permission: "settings",
   },
@@ -109,6 +127,8 @@ function NavLink({
   collapsed: boolean;
   onNavigate: () => void;
 }) {
+  const { t } = useTranslation();
+  const label = t(item.labelKey);
   const className = cn(
     // Colour and icon size match the ghost-button toolbar (components/ui/button.tsx):
     // muted by default, full-strength on hover. Weight stays light for an
@@ -130,10 +150,10 @@ function NavLink({
       <span
         className={className}
         aria-disabled
-        title="Available in a later phase"
+        title={t("nav.availableLater")}
       >
         <item.icon className="size-4 shrink-0" />
-        {!collapsed && item.label}
+        {!collapsed && label}
       </span>
     );
   }
@@ -144,12 +164,12 @@ function NavLink({
       className={className}
       aria-current={active ? "page" : undefined}
       // When collapsed the label is gone, so the icon needs an accessible name.
-      title={collapsed ? item.label : undefined}
-      aria-label={collapsed ? item.label : undefined}
+      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
       onClick={onNavigate}
     >
       <item.icon className="size-4 shrink-0" />
-      {!collapsed && item.label}
+      {!collapsed && label}
     </Link>
   );
 }
@@ -243,13 +263,14 @@ function FavoriteSpacesSection({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
   if (collapsed) return null;
 
   return (
     <>
       <div className="border-border my-3 border-t" />
       <SectionToggle
-        title="Favorite spaces"
+        title={t("nav.favoriteSpaces")}
         expanded={expanded}
         onToggle={onToggle}
       />
@@ -292,7 +313,7 @@ function FavoriteSpacesSection({
         </ul>
       ) : expanded ? (
         <p className="text-muted-foreground px-2 py-1.5 text-xs">
-          No favorite spaces yet.
+          {t("nav.noFavoriteSpaces")}
         </p>
       ) : null}
     </>
@@ -314,12 +335,13 @@ function PinnedPagesSection({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
   if (collapsed) return null;
   return (
     <>
       <div className="border-border my-3 border-t" />
       <SectionToggle
-        title="Pinned pages"
+        title={t("nav.pinnedPages")}
         expanded={expanded}
         onToggle={onToggle}
       />
@@ -350,7 +372,7 @@ function PinnedPagesSection({
         </ul>
       ) : expanded ? (
         <p className="text-muted-foreground px-2 py-1.5 text-xs">
-          No pinned pages yet.
+          {t("nav.noPinnedPages")}
         </p>
       ) : null}
     </>
@@ -369,6 +391,7 @@ export function Sidebar({
   pinnedPages: UserPinnedPageItem[];
 }) {
   const pathname = usePathname();
+  const { t } = useTranslation();
   const {
     collapsed,
     setCollapsed,
@@ -405,8 +428,11 @@ export function Sidebar({
   const overviewItems = OVERVIEW_NAV.filter((item) =>
     permissions[item.permission].includes(role),
   );
-  const adminItems = ADMIN_NAV.filter((item) =>
-    permissions[item.permission].includes(role),
+  const adminItems = ADMIN_NAV.filter(
+    (item) =>
+      permissions[item.permission].includes(role) ||
+      (item.extraGlobalPermission &&
+        user.global_permissions.includes(item.extraGlobalPermission)),
   );
   const showFavoriteSpaces = permissions.spaces.includes(role);
 
@@ -492,7 +518,7 @@ export function Sidebar({
       <nav
         id="wikihub-sidebar"
         data-sidebar-kind="app"
-        aria-label="Primary"
+        aria-label={t("nav.primary")}
         className={cn(
           "wh-scroll top-topbar border-border bg-surface-sunken fixed inset-y-0 left-0 z-20",
           "overflow-x-hidden overflow-y-auto border-r px-2 py-3",
@@ -509,7 +535,7 @@ export function Sidebar({
         }
       >
         <NavSection
-          title="Overview"
+          title={t("nav.overview")}
           items={overviewItems}
           pathname={pathname}
           collapsed={railCollapsed}
@@ -540,7 +566,7 @@ export function Sidebar({
         />
 
         <NavSection
-          title="Administration"
+          title={t("nav.administration")}
           items={adminItems}
           pathname={pathname}
           collapsed={railCollapsed}
@@ -561,7 +587,7 @@ export function Sidebar({
               className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
             >
               <MoreHorizontal className="size-4 shrink-0" aria-hidden />
-              <span>Manage sidebar</span>
+              <span>{t("nav.manageSidebar")}</span>
             </button>
           </>
         ) : null}
@@ -569,8 +595,8 @@ export function Sidebar({
         {!railCollapsed ? (
           <button
             type="button"
-            aria-label="Resize app sidebar"
-            title="Drag to resize sidebar"
+            aria-label={t("nav.resizeSidebar")}
+            title={t("nav.dragToResize")}
             onPointerDown={(event) => {
               event.preventDefault();
               setDragging(true);
@@ -598,15 +624,15 @@ export function Sidebar({
       >
         {collectionPanel ? (
           <DialogContent
-            title="Manage sidebar"
-            description="Choose which favourite spaces and pinned pages show as shortcuts in the sidebar."
+            title={t("nav.manageSidebarTitle")}
+            description={t("nav.manageSidebarDescription")}
             className="flex h-[28rem] max-w-md flex-col overflow-hidden"
           >
             <div className="flex min-h-0 flex-1 flex-col">
               {showFavoriteSpaces ? (
                 <div
                   role="tablist"
-                  aria-label="Sidebar shortcut type"
+                  aria-label={t("nav.sidebarShortcutType")}
                   className="border-border mb-3 flex gap-1 border-b"
                 >
                   {(["favorites", "pinned"] as const).map((panel) => {
@@ -633,23 +659,27 @@ export function Sidebar({
                         ) : (
                           <Pin className="size-3.5 shrink-0" aria-hidden />
                         )}
-                        {panel === "favorites" ? "Favorite spaces" : "Pinned pages"}
+                        {panel === "favorites"
+                          ? t("nav.favoriteSpaces")
+                          : t("nav.pinnedPages")}
                       </button>
                     );
                   })}
                 </div>
               ) : null}
               <div className="bg-primary-subtle text-primary mb-3 inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold">
-                {collectionCount}{" "}
-                {collectionPanel === "favorites" ? "spaces" : "pages"}
+                {collectionPanel === "favorites"
+                  ? t("nav.spacesCount", { count: collectionCount })
+                  : t("nav.pagesCount", { count: collectionCount })}
               </div>
               <p className="text-muted-foreground mb-2 text-xs">
-                Choose up to {SIDEBAR_SHORTCUT_LIMIT} shortcuts for the sidebar
-                (
-                {collectionPanel === "favorites"
-                  ? sidebarFavoriteIds.length
-                  : sidebarPinnedIds.length}
-                /{SIDEBAR_SHORTCUT_LIMIT}).
+                {t("nav.chooseUpTo", {
+                  limit: SIDEBAR_SHORTCUT_LIMIT,
+                  current:
+                    collectionPanel === "favorites"
+                      ? sidebarFavoriteIds.length
+                      : sidebarPinnedIds.length,
+                })}
               </p>
               <ul className="wh-scroll -mx-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1">
                 {collectionPanel === "favorites"
@@ -683,13 +713,13 @@ export function Sidebar({
                             size="icon"
                             aria-label={
                               sidebarFavoriteIds.includes(space.id)
-                                ? `Remove ${space.name} from sidebar`
-                                : `Show ${space.name} in sidebar`
+                                ? t("nav.removeFromSidebar", { name: space.name })
+                                : t("nav.showInSidebar", { name: space.name })
                             }
                             title={
                               sidebarFavoriteIds.includes(space.id)
-                                ? "Shown in sidebar"
-                                : "Show in sidebar"
+                                ? t("nav.shownInSidebar")
+                                : t("nav.showInSidebarShort")
                             }
                             disabled={
                               !sidebarFavoriteIds.includes(space.id) &&
@@ -738,13 +768,13 @@ export function Sidebar({
                             size="icon"
                             aria-label={
                               sidebarPinnedIds.includes(page.id)
-                                ? `Remove ${page.title} from sidebar`
-                                : `Show ${page.title} in sidebar`
+                                ? t("nav.removeFromSidebar", { name: page.title })
+                                : t("nav.showInSidebar", { name: page.title })
                             }
                             title={
                               sidebarPinnedIds.includes(page.id)
-                                ? "Shown in sidebar"
-                                : "Show in sidebar"
+                                ? t("nav.shownInSidebar")
+                                : t("nav.showInSidebarShort")
                             }
                             disabled={
                               !sidebarPinnedIds.includes(page.id) &&
@@ -767,15 +797,17 @@ export function Sidebar({
                 <div className="border-border mt-4 flex items-center justify-between border-t pt-3">
                   <div className="text-muted-foreground flex items-center gap-2 text-xs">
                     <p>
-                      Showing {collectionStart + 1}–
-                      {Math.min(
-                        collectionStart + collectionPageSize,
-                        collectionCount,
-                      )}{" "}
-                      of {collectionCount}
+                      {t("common.showingRange", {
+                        from: collectionStart + 1,
+                        to: Math.min(
+                          collectionStart + collectionPageSize,
+                          collectionCount,
+                        ),
+                        total: collectionCount,
+                      })}
                     </p>
                     <label className="sr-only" htmlFor="collection-page-size">
-                      Items per page
+                      {t("common.itemsPerPage")}
                     </label>
                     <select
                       id="collection-page-size"
@@ -792,7 +824,7 @@ export function Sidebar({
                     >
                       {COLLECTION_PAGE_SIZES.map((size) => (
                         <option key={size} value={size}>
-                          {size} / page
+                          {t("common.perPage", { size })}
                         </option>
                       ))}
                     </select>
@@ -802,8 +834,8 @@ export function Sidebar({
                       type="button"
                       variant="secondary"
                       size="icon"
-                      aria-label="Previous page"
-                      title="Previous page"
+                      aria-label={t("common.previousPage")}
+                      title={t("common.previousPage")}
                       disabled={collectionPage === 0}
                       onClick={() => setCollectionPage((page) => page - 1)}
                     >
@@ -813,8 +845,8 @@ export function Sidebar({
                       type="button"
                       variant="secondary"
                       size="icon"
-                      aria-label="Next page"
-                      title="Next page"
+                      aria-label={t("common.nextPage")}
+                      title={t("common.nextPage")}
                       disabled={collectionPage >= collectionPageCount - 1}
                       onClick={() => setCollectionPage((page) => page + 1)}
                     >

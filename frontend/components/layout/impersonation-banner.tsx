@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import type { User } from "@/types/api";
 
 /**
@@ -30,6 +31,7 @@ export function ImpersonationBanner({
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const { t, apiErrorText } = useTranslation();
 
   async function stop() {
     setPending(true);
@@ -38,11 +40,7 @@ export function ImpersonationBanner({
       router.replace("/");
       router.refresh();
     } catch (error) {
-      toast.error(
-        error instanceof ApiError
-          ? error.message
-          : "Could not return to your account.",
-      );
+      toast.error(apiErrorText(error, "userMenu.returnToSelfError"));
       setPending(false);
     }
   }
@@ -54,11 +52,11 @@ export function ImpersonationBanner({
     >
       <UserRoundCog aria-hidden className="size-4 shrink-0" />
       <p className="min-w-0 flex-1 truncate">
-        Viewing WikiHub as{" "}
+        {t("impersonation.viewingAsPrefix")}{" "}
         <strong className="font-semibold">
           {viewingAs.full_name || viewingAs.username}
         </strong>
-        . Your actions are recorded against {impersonator.username}.
+        . {t("impersonation.recordedAs", { username: impersonator.username })}
       </p>
       <button
         type="button"
@@ -67,7 +65,7 @@ export function ImpersonationBanner({
         className="border-warning/40 hover:bg-warning/10 active:bg-warning/20 focus-visible:ring-warning flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
       >
         <Undo2 aria-hidden className="size-3.5" />
-        {pending ? "Returning…" : "Return to my account"}
+        {pending ? t("impersonation.returning") : t("impersonation.returnToMyAccount")}
       </button>
     </div>
   );

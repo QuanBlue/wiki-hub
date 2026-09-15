@@ -120,6 +120,8 @@ unformatted text.
   have permission to see.
 - **Theming & branding** — curated color palettes or a custom hex color, logo
   presets or a custom upload, and a live preview before anything goes live.
+- **English & Vietnamese UI** — a top-bar language switch translates the whole
+  interface instantly, no reload; the choice is remembered per browser.
 - **Admin backup & restore** — scheduled, resumable WikiHub backups with password
   hash handling called out explicitly, plus safety checks against uploading the
   wrong archive type.

@@ -4,6 +4,7 @@ import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n/context";
 
 /**
  * One control, two behaviours by breakpoint: it opens the drawer on small
@@ -14,6 +15,7 @@ import { Button } from "@/components/ui/button";
 export function SidebarToggle() {
   const { collapsed, toggleCollapsed, mobileOpen, setMobileOpen } =
     useSidebar();
+  const { t } = useTranslation();
 
   const isMobileViewport = () =>
     typeof window !== "undefined" &&
@@ -21,6 +23,9 @@ export function SidebarToggle() {
 
   const open = mobileOpen || !collapsed;
   const Icon = open ? PanelLeftClose : PanelLeftOpen;
+  const toggleLabel = open
+    ? t("topbar.collapseSidebar")
+    : t("topbar.expandSidebar");
 
   return (
     <Button
@@ -29,8 +34,8 @@ export function SidebarToggle() {
       onClick={() =>
         isMobileViewport() ? setMobileOpen(!mobileOpen) : toggleCollapsed()
       }
-      aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-      title={open ? "Collapse sidebar" : "Expand sidebar"}
+      aria-label={toggleLabel}
+      title={toggleLabel}
       aria-expanded={open}
       aria-controls="wikihub-sidebar"
     >

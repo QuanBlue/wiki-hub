@@ -26,7 +26,19 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type UsernameCheck = "idle" | "checking" | "available" | "taken" | "error";
 
-export function CreateUserDialog() {
+export function CreateUserDialog({
+  viewerIsSystemAdmin,
+}: {
+  /** Whether the signed-in viewer is a System Administrator themselves
+   * (`is_superuser`, or the `system_admin` global permission). `manage_users`
+   * alone - whether from a Role, a group, or an override - lets someone
+   * create ordinary Members, but never mint a new Administrator: that still
+   * takes an actual System Administrator. See
+   * `AuthService.assert_actor_is_system_admin` on the backend, which this
+   * only mirrors so the option simply isn't offered rather than 403ing on
+   * submit. */
+  viewerIsSystemAdmin: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -267,20 +279,40 @@ export function CreateUserDialog() {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="new-role">Role</Label>
-                <Select value={role} onValueChange={setRole} disabled={pending}>
-                  <SelectTrigger id="new-role" aria-label="Role">
+                <Select
+                  value={role}
+                  onValueChange={setRole}
+                  disabled={pending || !viewerIsSystemAdmin}
+                >
+                  <SelectTrigger
+                    id="new-role"
+                    aria-label="Role"
+                    title={
+                      !viewerIsSystemAdmin
+                        ? "Only a System Administrator can create a new account as Administrator."
+                        : undefined
+                    }
+                  >
                     <SelectValue>
                       {role === "admin" ? "Administrator" : "Member"}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="admin">Administrator</SelectItem>
+                    {viewerIsSystemAdmin ? (
+                      <SelectItem value="admin">Administrator</SelectItem>
+                    ) : null}
                   </SelectContent>
                 </Select>
                 {role === "admin" ? (
                   <p className="text-muted-foreground text-xs">
                     Administrators can manage every user, space and setting.
+                  </p>
+                ) : !viewerIsSystemAdmin ? (
+                  <p className="text-muted-foreground text-xs">
+                    Only a System Administrator can create a new account as
+                    Administrator - a Manage users grant alone always creates
+                    a Member.
                   </p>
                 ) : null}
               </div>

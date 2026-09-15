@@ -77,10 +77,22 @@ async def login(
     )
     _set_access_cookie(response, token, max_age=ttl_seconds)
 
+    # `UserRead.model_validate(user)` alone leaves `global_permissions` at its
+    # empty default - the ORM `User` has no such attribute, only
+    # `PermissionService.global_permissions` can compute it. Nothing in this
+    # codebase currently reads it off the login response (the frontend always
+    # re-fetches `/auth/me`, which does this correctly), but any other client
+    # of this API would otherwise see a freshly-granted group permission as
+    # absent until its next explicit `/auth/me` call - the same bug class the
+    # People directory's own list endpoint had (see `_read_user` in
+    # `app/api/v1/users.py`).
+    global_permissions = await PermissionService(session).global_permissions(user)
     return LoginResponse(
         access_token=token,
         expires_at=expires_at,
-        user=UserRead.model_validate(user),
+        user=UserRead.model_validate(user).model_copy(
+            update={"global_permissions": global_permissions}
+        ),
     )
 
 

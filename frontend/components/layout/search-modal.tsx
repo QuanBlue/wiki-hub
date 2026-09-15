@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { api } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import { matchesShortcut } from "@/lib/keyboard-shortcuts";
 import { isLocalFindActive } from "@/lib/local-find-registry";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,7 @@ export function SearchModal({
 }) {
   const router = useRouter();
   const themeSettings = useThemeSettings();
+  const { t } = useTranslation();
   const siteName = themeSettings?.siteName || "WikiHub";
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
@@ -186,7 +188,7 @@ export function SearchModal({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={`Search ${siteName}...`}
+              placeholder={t("search.inputPlaceholder", { siteName })}
               className="text-foreground placeholder:text-muted-foreground w-full bg-transparent text-base outline-none"
             />
             {query ? (
@@ -194,7 +196,7 @@ export function SearchModal({
                 type="button"
                 onClick={() => setQuery("")}
                 className="text-muted-foreground hover:text-foreground mr-2 cursor-pointer rounded p-1"
-                aria-label="Clear search query"
+                aria-label={t("search.clearQuery")}
               >
                 <X className="size-4" />
               </button>
@@ -209,18 +211,18 @@ export function SearchModal({
             {loading ? (
               <div className="text-muted-foreground flex items-center justify-center py-12 text-sm">
                 <Loader2 className="mr-2 size-5 animate-spin text-primary" />
-                Searching {siteName}...
+                {t("search.searching", { siteName })}
               </div>
             ) : !query.trim() ? (
               <div className="text-muted-foreground py-12 text-center text-sm">
-                <p className="font-medium text-foreground">Quick Search {siteName}</p>
-                <p className="mt-1 text-xs">
-                  Type a space handle, page title, or keyword to find documentation instantly.
+                <p className="font-medium text-foreground">
+                  {t("search.quickSearchTitle", { siteName })}
                 </p>
+                <p className="mt-1 text-xs">{t("search.quickSearchHint")}</p>
               </div>
             ) : results && flatItems.length === 0 ? (
               <div className="text-muted-foreground py-12 text-center text-sm">
-                No spaces or pages matched &ldquo;<span className="text-foreground font-medium">{query}</span>&rdquo;
+                {t("search.noResults", { query })}
               </div>
             ) : (
               <div className="space-y-4 py-1">
@@ -336,14 +338,17 @@ export function SearchModal({
             <div className="flex items-center gap-3">
               <span>
                 <kbd className="border-border bg-surface rounded border px-1 font-mono">↑</kbd>{" "}
-                <kbd className="border-border bg-surface rounded border px-1 font-mono">↓</kbd> to navigate
+                <kbd className="border-border bg-surface rounded border px-1 font-mono">↓</kbd>{" "}
+                {t("search.hintNavigate")}
               </span>
               <span>
-                <kbd className="border-border bg-surface rounded border px-1 font-mono">↵</kbd> to select
+                <kbd className="border-border bg-surface rounded border px-1 font-mono">↵</kbd>{" "}
+                {t("search.hintSelect")}
               </span>
             </div>
             <span>
-              <kbd className="border-border bg-surface rounded border px-1 font-mono">ESC</kbd> to close
+              <kbd className="border-border bg-surface rounded border px-1 font-mono">ESC</kbd>{" "}
+              {t("search.hintClose")}
             </span>
           </div>
         </DialogPrimitive.Content>

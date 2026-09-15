@@ -9,6 +9,12 @@ import {
   type SlashCommandListRef,
   filterSlashCommandItems,
 } from "@/components/pages/slash-command";
+import { translate } from "@/lib/i18n/core";
+
+/** English label for a slash item, matching the default test locale. */
+function labelOf(item: SlashCommandItem): string {
+  return translate("en", item.labelKey);
+}
 
 // Only `event.key` is ever read - the rest of the real shape
 // (`view`, `range`) is irrelevant to onKeyDown here.
@@ -56,7 +62,7 @@ describe("SlashCommandList", () => {
     expect(screen.getAllByRole("option")).toHaveLength(items.length);
     for (const item of items) {
       expect(
-        screen.getByRole("option", { name: new RegExp(item.label) }),
+        screen.getByRole("option", { name: new RegExp(labelOf(item)) }),
       ).toBeInTheDocument();
     }
     expect(screen.getByText("Basic blocks")).toBeInTheDocument();

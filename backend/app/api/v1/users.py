@@ -49,6 +49,7 @@ from app.schemas.user import (
     UserActivityPage,
     UserCreate,
     UserDraftItem,
+    UserGroupMembership,
     UserPinnedPageItem,
     UserPageLabelItem,
     UserProfileStats,
@@ -384,23 +385,28 @@ async def delete_own_tag(tag_id: uuid.UUID, user: CurrentUser, session: DbSessio
 
 
 async def _read_user(session: DbSession, target: User) -> UserRead:
-    """Build a `UserRead` with `groups`/`global_permissions`/
-    `global_permission_overrides` actually populated.
+    """Build a `UserRead` with `groups`/`group_memberships`/
+    `global_permissions`/`global_permission_overrides`/
+    `global_permissions_from_groups` actually populated.
 
     The plain ORM `User` row has none of those as attributes, so
     `UserRead.model_validate(target)` alone would silently leave every one of
     them at its empty default - fine for `list_users` (which never showed
     them and still fills `groups` in separately), but wrong for the single-
-    user reads the Edit User modal's Global Access section depends on."""
-    group_names = list(
-        await session.scalars(
-            select(Group.name)
+    user reads the Edit User modal's Global Access and Groups tabs depend
+    on."""
+    group_rows = (
+        await session.execute(
+            select(Group.id, Group.name)
             .join(GroupMember, GroupMember.group_id == Group.id)
             .where(GroupMember.user_id == target.id, Group.is_active.is_(True))
             .order_by(Group.name)
         )
-    )
-    global_permissions = await PermissionService(session).global_permissions(target)
+    ).all()
+    permissions = PermissionService(session)
+    global_permissions = await permissions.global_permissions(target)
+    global_permissions_from_groups = await permissions.group_derived_global_permissions(target)
+    is_effective_admin = await permissions.is_system_admin(target)
     override_rows = (
         await session.execute(
             select(
@@ -410,12 +416,17 @@ async def _read_user(session: DbSession, target: User) -> UserRead:
     ).all()
     return UserRead.model_validate(target).model_copy(
         update={
-            "groups": group_names,
+            "groups": [name for _group_id, name in group_rows],
+            "group_memberships": [
+                UserGroupMembership(id=group_id, name=name) for group_id, name in group_rows
+            ],
             "global_permissions": global_permissions,
             "global_permission_overrides": [
                 GlobalPermissionOverride(permission=permission, enabled=enabled)
                 for permission, enabled in override_rows
             ],
+            "global_permissions_from_groups": global_permissions_from_groups,
+            "is_effective_admin": is_effective_admin,
         }
     )
 
@@ -444,6 +455,38 @@ async def list_administrators(user: CurrentUser, session: DbSession) -> list[Adm
     ]
 
 
+@router.get(
+    "/permission-overrides",
+    response_model=list[UserRead],
+    summary="List every account with at least one Global Access override",
+)
+async def list_permission_override_users(user: CurrentUser, session: DbSession) -> list[UserRead]:
+    """The People directory's own row data never carries per-user overrides
+    (see `_read_user`'s docstring) - there was previously no way to see
+    *which* accounts have one without opening each Edit dialog in turn and
+    checking its Global Access tab. Registered ahead of `GET /{user_id}` on
+    purpose, same reason as `/administrators` above: Starlette matches
+    routes in registration order, and `user_id` is typed as a UUID path
+    param, so this literal path must come first.
+    """
+    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
+    # One query for *which* accounts have any override at all, rather than
+    # running `_read_user`'s own per-account override query against every
+    # user in the workspace - only the (typically small) matching subset
+    # ever pays for a full `_read_user`.
+    user_ids = (
+        await session.execute(select(UserGlobalPermissionOverride.user_id).distinct())
+    ).scalars().all()
+    if not user_ids:
+        return []
+    accounts = (
+        await session.execute(
+            select(User).where(User.id.in_(user_ids)).order_by(User.username)
+        )
+    ).scalars().all()
+    return [await _read_user(session, account) for account in accounts]
+
+
 @router.get("/{user_id}", response_model=UserRead, summary="Read a user")
 async def get_user(user_id: uuid.UUID, user: CurrentUser, session: DbSession) -> UserRead:
     await PermissionService(session).require_global(user, GlobalPermission.manage_users)
@@ -466,11 +509,24 @@ async def list_users(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> Page[UserRead]:
-    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
+    # Also reachable with just `manage_groups`: the Groups admin page lists
+    # users to populate its member picker, and someone trusted to manage
+    # group membership has just as real a reason to browse this directory as
+    # someone trusted to manage accounts outright - see `require_any_global`.
+    await PermissionService(session).require_any_global(
+        user, [GlobalPermission.manage_users, GlobalPermission.manage_groups]
+    )
     users, total = await service.search_users(
         q=q, status=status_filter, role=role, limit=limit, offset=offset
     )
     group_names: dict[uuid.UUID, list[str]] = {item.id: [] for item in users}
+    # One bulk query for *every* effective admin in the workspace, same as
+    # the Administrators tab uses - reading `is_effective_admin` per row via
+    # `PermissionService.is_system_admin(item)` instead would mean one extra
+    # round-trip (group joins included) per user on the page. The set this
+    # returns is typically tiny regardless of how many users are being
+    # listed, so this stays a flat cost rather than growing with `limit`.
+    admin_ids: set[uuid.UUID] = set()
     if users:
         rows = await session.execute(
             select(GroupMember.user_id, Group.name)
@@ -480,8 +536,17 @@ async def list_users(
         )
         for user_id, group_name in rows:
             group_names[user_id].append(group_name)
+        admin_ids = {
+            account.id
+            for account, *_rest in await PermissionService(session).list_effective_system_admins()
+        }
     result = [
-        UserRead.model_validate(item).model_copy(update={"groups": group_names[item.id]})
+        UserRead.model_validate(item).model_copy(
+            update={
+                "groups": group_names[item.id],
+                "is_effective_admin": item.id in admin_ids,
+            }
+        )
         for item in users
     ]
     return Page.of(result, total, limit=limit, offset=offset)

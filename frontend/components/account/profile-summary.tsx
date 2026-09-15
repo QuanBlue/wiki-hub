@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/lib/i18n/context";
 import type { Me } from "@/types/api";
 
 function initials(name: string, username: string): string {
@@ -59,16 +60,17 @@ function ProfileField({
 export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void }) {
   const hasAbout = Boolean(user.pronouns || user.company);
   const hasLinks = Boolean(user.profile_url || user.social_links.length);
+  const { t } = useTranslation();
 
   return (
     <section className="w-full">
       <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_15rem]">
         <div className="max-w-2xl">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h2 className="text-base font-semibold">Profile</h2>
+            <h2 className="text-base font-semibold">{t("profile.profileTitle")}</h2>
             <Button variant="secondary" onClick={onEdit}>
               <Pencil />
-              Edit profile
+              {t("profile.editProfile")}
             </Button>
           </div>
 
@@ -85,28 +87,28 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
 
           <dl className="border-border mt-8 space-y-7 border-t pt-6">
             <div className="grid gap-6 sm:grid-cols-2">
-              <ProfileField label="Email address">
+              <ProfileField label={t("profile.email")}>
                 <span className="flex min-w-0 items-center gap-2 font-medium">
                   <Mail className="text-muted-foreground size-4 shrink-0" aria-hidden />
                   <span className="truncate">{user.email}</span>
                 </span>
               </ProfileField>
-              <ProfileField label="Workspace role">
+              <ProfileField label={t("profile.workspaceRole")}>
                 <span className="flex flex-wrap items-center gap-2 font-medium">
                   <ShieldCheck className="text-muted-foreground size-4" aria-hidden />
                   <Badge variant={user.is_superuser ? "info" : "neutral"}>
-                    {user.is_superuser ? "Administrator" : "Member"}
+                    {user.is_superuser ? t("profile.administrator") : t("profile.member")}
                   </Badge>
-                  {user.is_protected ? <Badge>Protected</Badge> : null}
+                  {user.is_protected ? <Badge>{t("profile.protected")}</Badge> : null}
                 </span>
               </ProfileField>
             </div>
 
             {hasAbout ? (
               <div className="border-border grid gap-6 border-t pt-6 sm:grid-cols-2">
-                {user.pronouns ? <ProfileField label="Pronouns">{user.pronouns}</ProfileField> : <div />}
+                {user.pronouns ? <ProfileField label={t("profile.pronouns")}>{user.pronouns}</ProfileField> : <div />}
                 {user.company ? (
-                  <ProfileField label="Company or team">
+                  <ProfileField label={t("profile.company")}>
                     <span className="flex items-center gap-2">
                       <Building2 className="text-muted-foreground size-4" aria-hidden />
                       {user.company}
@@ -119,14 +121,14 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
             {hasLinks ? (
               <div className="border-border grid gap-6 border-t pt-6 sm:grid-cols-2">
                 {user.profile_url ? (
-                  <ProfileField label="Website">
+                  <ProfileField label={t("profile.website")}>
                     <ExternalProfileLink href={user.profile_url}>
                       {user.profile_url}
                     </ExternalProfileLink>
                   </ProfileField>
                 ) : <div />}
                 {user.social_links.length ? (
-                  <ProfileField label="Social links">
+                  <ProfileField label={t("profile.socialLinks")}>
                     <div className="space-y-2">
                       {user.social_links.map((link) => (
                         <div key={link} className="flex items-center gap-2">
@@ -153,8 +155,8 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
               initials(user.full_name, user.username) || <UserRound className="size-10" />
             )}
           </span>
-          <p className="mt-4 text-sm font-medium">Profile picture</p>
-          <p className="text-muted-foreground mt-1 text-xs">Shown in the account menu and collaboration activity.</p>
+          <p className="mt-4 text-sm font-medium">{t("profile.profilePicture")}</p>
+          <p className="text-muted-foreground mt-1 text-xs">{t("profile.profilePictureHint")}</p>
         </aside>
       </div>
     </section>

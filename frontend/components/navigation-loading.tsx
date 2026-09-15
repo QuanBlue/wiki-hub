@@ -3,9 +3,12 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { useTranslation } from "@/lib/i18n/context";
+
 export function NavigationLoading() {
   const pathname = usePathname();
   const [loading, setLoading] = useState(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- route completion clears the navigation indicator
@@ -48,7 +51,7 @@ export function NavigationLoading() {
     <div
       className="bg-primary fixed top-14 right-0 left-0 z-50 h-0.5 origin-left animate-pulse"
       role="progressbar"
-      aria-label="Loading page"
+      aria-label={t("navigation.loadingPage")}
     />
   );
 }

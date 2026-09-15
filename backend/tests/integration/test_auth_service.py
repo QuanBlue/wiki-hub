@@ -27,8 +27,10 @@ from app.core.exceptions import (
     PermissionDeniedError,
 )
 from app.models.audit import AuditAction, AuditLog
+from app.models.permission import GlobalPermission, Group, GroupMember
 from app.models.user import User
 from app.modules.auth.service import AuthService
+from app.modules.permissions.service import PermissionService
 from app.schemas.user import UserCreate, UserUpdate
 from tests.integration.conftest import unique
 
@@ -451,6 +453,117 @@ class TestPeerAdminProtection:
 
         updated = await AuthService(session, actor=actor).update_user(
             member.id, UserUpdate(is_superuser=True)
+        )
+
+        assert updated.is_superuser is True
+
+
+class TestManageUsersCannotGrantAdminPower:
+    """`manage_users` lets someone create, edit, deactivate, reset the
+    password of and delete an ordinary Member - but never hand out (or take
+    away) power they do not themselves hold. A Role change and a Global
+    Access override both stay system-administrator-only, whether that power
+    comes from `is_superuser` or a group's `system_admin` grant. See
+    `AuthService.assert_actor_is_system_admin`."""
+
+    async def _make_member(self, session: AsyncSession) -> User:
+        return await AuthService(session).create_user(
+            UserCreate(
+                username=unique("member"),
+                email=f"{unique('member')}@example.com",
+                full_name="Member",
+                password="member-password-1",
+            )
+        )
+
+    async def test_a_non_admin_actor_cannot_promote_a_member_to_administrator(
+        self, session: AsyncSession
+    ) -> None:
+        actor = await self._make_member(session)
+        target = await self._make_member(session)
+
+        with pytest.raises(PermissionDeniedError, match="System Administrator"):
+            await AuthService(session, actor=actor).update_user(
+                target.id, UserUpdate(is_superuser=True)
+            )
+
+        assert (await AuthService(session).users.get(target.id)).is_superuser is False
+
+    async def test_a_non_admin_actor_cannot_set_a_global_access_override(
+        self, session: AsyncSession
+    ) -> None:
+        """Not even a lesser-looking override, since any of them could
+        include `system_admin` - the exact side door this whole guard exists
+        to close."""
+        actor = await self._make_member(session)
+        target = await self._make_member(session)
+
+        with pytest.raises(PermissionDeniedError, match="System Administrator"):
+            await AuthService(session, actor=actor).update_user(
+                target.id,
+                UserUpdate(
+                    global_permission_overrides={GlobalPermission.system_admin: True}
+                ),
+            )
+
+    async def test_a_non_admin_actor_cannot_create_a_new_administrator(
+        self, session: AsyncSession
+    ) -> None:
+        actor = await self._make_member(session)
+
+        with pytest.raises(PermissionDeniedError, match="System Administrator"):
+            await AuthService(session, actor=actor).create_user(
+                UserCreate(
+                    username=unique("newadmin"),
+                    email=f"{unique('newadmin')}@example.com",
+                    full_name="New Admin",
+                    password="password-1234",
+                    is_superuser=True,
+                )
+            )
+
+    async def test_a_non_admin_actor_can_still_manage_an_ordinary_member(
+        self, session: AsyncSession
+    ) -> None:
+        actor = await self._make_member(session)
+        target = await self._make_member(session)
+
+        updated = await AuthService(session, actor=actor).update_user(
+            target.id, UserUpdate(full_name="Renamed", is_active=False)
+        )
+
+        assert updated.full_name == "Renamed"
+        assert updated.is_active is False
+
+    async def test_a_system_admin_group_permission_is_enough_without_is_superuser(
+        self, session: AsyncSession
+    ) -> None:
+        """The check is against real effective capability
+        (`PermissionService.is_system_admin`), not just the `is_superuser`
+        column - a Member whose *group* carries `system_admin` can promote
+        others too, the same as an actual superuser could."""
+        actor = await self._make_member(session)
+        target = await self._make_member(session)
+        root = await AuthService(session).create_user(
+            UserCreate(
+                username=unique("root"),
+                email=f"{unique('root')}@example.com",
+                full_name="Root",
+                password="root-password-1",
+                is_superuser=True,
+            )
+        )
+        group = Group(name=unique("group"), description="", owner_id=actor.id)
+        session.add(group)
+        await session.flush()
+        session.add(GroupMember(group_id=group.id, user_id=actor.id))
+        await session.flush()
+        await PermissionService(session).set_group_global_permission(
+            group, GlobalPermission.system_admin, root, True
+        )
+
+        updated = await AuthService(session, actor=actor).update_user(
+            target.id, UserUpdate(is_superuser=True)
         )
 
         assert updated.is_superuser is True

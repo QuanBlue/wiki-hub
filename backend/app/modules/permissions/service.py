@@ -39,6 +39,7 @@ someone else's block."""
 from __future__ import annotations
 
 import inspect
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -137,19 +138,34 @@ class PermissionService:
             return True
         return GlobalPermission.system_admin in await self.global_permissions(user)
 
+    async def group_derived_global_permissions(self, user: User) -> list[GlobalPermission]:
+        """The global permissions ``user``'s groups grant, before any of
+        their own overrides are applied.
+
+        Split out of `global_permissions` so the Edit User dialog's Global
+        Access tab can show what each override choice would *actually* do
+        the moment it is picked - `Inherit from groups` reverting to this
+        list, `Force enabled`/`Force disabled` pinning it regardless of this
+        list - without needing a round-trip to find out, and without the
+        override already in effect masking what "inherit" would fall back
+        to."""
+        return list(
+            set(
+                await self.session.scalars(
+                    select(GroupGlobalPermission.permission)
+                    .join(GroupMember, GroupMember.group_id == GroupGlobalPermission.group_id)
+                    .join(Group, Group.id == GroupMember.group_id)
+                    .where(GroupMember.user_id == user.id, Group.is_active.is_(True))
+                    .distinct()
+                )
+            )
+        )
+
     async def global_permissions(self, user: User) -> list[GlobalPermission]:
         """Return the effective global capabilities for the current user."""
         if user.is_superuser:
             return list(GlobalPermission)
-        from_groups = set(
-            await self.session.scalars(
-                select(GroupGlobalPermission.permission)
-                .join(GroupMember, GroupMember.group_id == GroupGlobalPermission.group_id)
-                .join(Group, Group.id == GroupMember.group_id)
-                .where(GroupMember.user_id == user.id, Group.is_active.is_(True))
-                .distinct()
-            )
-        )
+        from_groups = set(await self.group_derived_global_permissions(user))
         # A user-level override beats whichever way the groups voted: it adds
         # a permission no group grants, or withdraws one a group does.
         for permission, enabled in (await self._user_permission_overrides(user)).items():
@@ -373,6 +389,21 @@ class PermissionService:
     async def require_global(self, user: User, permission: GlobalPermission) -> None:
         if not await self.has_global(user, permission):
             raise PermissionDeniedError("This action requires a global permission.")
+
+    async def require_any_global(
+        self, user: User, permissions: Sequence[GlobalPermission]
+    ) -> None:
+        """Like `require_global`, but satisfied by any one of `permissions`.
+
+        For an action two different admin capabilities both legitimately need
+        - e.g. browsing the user directory, which both `manage_users` (to
+        edit an account) and `manage_groups` (to pick who to add to a group)
+        have a real reason to do - rather than that action silently reverting
+        to whichever single permission happened to gate it first."""
+        for permission in permissions:
+            if await self.has_global(user, permission):
+                return
+        raise PermissionDeniedError("This action requires a global permission.")
 
     async def set_user_permission_overrides(
         self, user: User, overrides: dict[GlobalPermission, bool | None]
@@ -884,6 +915,15 @@ class PermissionService:
                 raise ConflictError(
                     "A Space must retain at least one administrator.", code="last_space_admin"
                 )
+            if permission is Permission.view and await self._has_other_space_permissions(
+                space, principal_id, group=group, excluding=Permission.view
+            ):
+                raise ConflictError(
+                    "View cannot be removed while this principal still holds another "
+                    "permission on the space - every other permission is useless "
+                    "without it. Remove those first.",
+                    code="view_required",
+                )
             await self.session.delete(row)
             await self.session.flush()
             if not await self._has_space_access(space.id, principal_id, group=group):
@@ -891,6 +931,36 @@ class PermissionService:
                     space, principal_id, group=group
                 )
         await self.session.flush()
+        # Every permission is useless without View, so granting any of the
+        # others implicitly grants it too - mirrors the removal guard above,
+        # which keeps View from being dropped while a sibling permission
+        # still depends on it.
+        if present and permission is not Permission.view:
+            view_key = dict(key, permission=Permission.view)
+            view_row = await self.session.scalar(select(model).filter_by(**view_key))
+            if view_row is None:
+                self.session.add(model(**view_key))
+                await self.session.flush()
+
+    async def _has_other_space_permissions(
+        self,
+        space: Space,
+        principal_id: uuid.UUID,
+        *,
+        group: bool,
+        excluding: Permission,
+    ) -> bool:
+        model = SpaceGroupPermission if group else SpaceUserPermission
+        principal_column = model.group_id if group else model.user_id
+        return (
+            await self.session.scalar(
+                select(model.permission).where(
+                    model.space_id == space.id,
+                    principal_column == principal_id,
+                    model.permission != excluding,
+                )
+            )
+        ) is not None
 
     async def _purge_page_restrictions_for_removed_principal(
         self, space: Space, principal_id: uuid.UUID, *, group: bool
@@ -1199,6 +1269,18 @@ class PermissionService:
         if present and row is None:
             self.session.add(model(**key))
         elif not present and row is not None:
+            if (
+                permission is PageRestrictionPermission.view
+                and await self._has_other_page_restriction(
+                    page, principal_id, group=group, excluding=PageRestrictionPermission.view
+                )
+            ):
+                raise ConflictError(
+                    "View cannot be removed while this principal still has Edit "
+                    "access on this page - Edit is useless without it. Remove "
+                    "Edit first.",
+                    code="view_required",
+                )
             await self.session.delete(row)
         # Adding the first person to the allow-list is how this page becomes
         # "Restricted" through the dialog's own Add flow, same as before -
@@ -1209,6 +1291,39 @@ class PermissionService:
         if present and permission is PageRestrictionPermission.view and not page.view_restricted:
             await self._set_page_view_restricted(page, True)
         await self.session.flush()
+        # Every other page permission is useless without View, same rule as
+        # `set_space_permission` - granting Edit implicitly grants View too
+        # (and, same as a direct View grant above, puts the page into
+        # Restricted mode if it wasn't already).
+        if present and permission is not PageRestrictionPermission.view:
+            view_key = dict(key, permission=PageRestrictionPermission.view)
+            view_row = await self.session.scalar(select(model).filter_by(**view_key))
+            if view_row is None:
+                self.session.add(model(**view_key))
+                await self.session.flush()
+                if not page.view_restricted:
+                    await self._set_page_view_restricted(page, True)
+
+    async def _has_other_page_restriction(
+        self,
+        page: WikiPage,
+        principal_id: uuid.UUID,
+        *,
+        group: bool,
+        excluding: PageRestrictionPermission,
+    ) -> bool:
+        model = PageGroupRestriction if group else PageUserRestriction
+        principal_column = model.group_id if group else model.user_id
+        return (
+            await self.session.scalar(
+                select(model.permission).where(
+                    model.page_id == page.id,
+                    principal_column == principal_id,
+                    model.permission != excluding,
+                    model.denied.is_(False),
+                )
+            )
+        ) is not None
 
     async def set_page_view_mode(self, page: WikiPage, actor: User, *, restricted: bool) -> None:
         """Flips the page's own General-access setting without touching any

@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { useTranslation } from "@/lib/i18n/context";
+
 /**
  * Marks the export as failed on `<body>` - the same element and attribute
  * `ExportShell`'s own watchdog uses - so the backend's Playwright capture has
@@ -15,13 +17,15 @@ export function ExportError({
   reason: "missing-token" | "fetch-failed";
   message?: string;
 }) {
+  const { t } = useTranslation();
+
   useEffect(() => {
     document.body.dataset.exportError = reason;
   }, [reason]);
 
   return (
     <div className="p-10 text-sm text-red-600">
-      {message ?? "This export link is missing or invalid."}
+      {message ?? t("editor.exportLinkInvalid")}
     </div>
   );
 }

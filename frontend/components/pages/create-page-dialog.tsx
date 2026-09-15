@@ -16,6 +16,7 @@ import {
 import { inputClassName } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { WikiPage } from "@/types/api";
 
@@ -33,6 +34,7 @@ export function CreatePageDialog({
   triggerSize?: ButtonProps["size"];
 }) {
   const router = useRouter();
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -53,7 +55,7 @@ export function CreatePageDialog({
           parent_id: parentPage?.id ?? null,
         },
       );
-      toast.success(`Page "${page.title}" created.`);
+      toast.success(t("pageCreate.createdToast", { title: page.title }));
       setOpen(false);
       setTitle("");
       setContent("");
@@ -62,7 +64,7 @@ export function CreatePageDialog({
       );
     } catch (error) {
       toast.error(
-        error instanceof ApiError ? error.message : "Could not create page.",
+        error instanceof ApiError ? error.message : t("pageCreate.createError"),
       );
       setPending(false);
     }
@@ -74,30 +76,30 @@ export function CreatePageDialog({
         <Button
           variant={triggerVariant}
           size={triggerSize}
-          aria-label={triggerLabel || "New page"}
-          title={triggerLabel || "New page"}
+          aria-label={triggerLabel || t("pageCreate.newPageAria")}
+          title={triggerLabel || t("pageCreate.newPageAria")}
         >
           <FilePlus2 />
           {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent
-        title={parentPage ? "Create child page" : "Create page"}
+        title={parentPage ? t("pageCreate.createChildTitle") : t("pageCreate.createTitle")}
         description={
           parentPage
-            ? `Add a page under "${parentPage.title}".`
-            : "Add a top-level page to this space."
+            ? t("pageCreate.createChildDescription", { title: parentPage.title })
+            : t("pageCreate.createTopLevelDescription")
         }
       >
         <form onSubmit={submit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
-            <Label htmlFor="page-title">Title</Label>
+            <Label htmlFor="page-title">{t("pageCreate.titleLabel")}</Label>
             <input
               id="page-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               className={inputClassName}
-              placeholder="Meeting notes, runbook, project brief..."
+              placeholder={t("pageCreate.titlePlaceholder")}
               autoFocus
               required
               maxLength={255}
@@ -105,13 +107,13 @@ export function CreatePageDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="page-content">Content</Label>
+            <Label htmlFor="page-content">{t("pageCreate.contentLabel")}</Label>
             <textarea
               id="page-content"
               value={content}
               onChange={(event) => setContent(event.target.value)}
               className={cn(inputClassName, "min-h-40 resize-y py-2 leading-6")}
-              placeholder="Start writing..."
+              placeholder={t("pageCreate.contentPlaceholder")}
               maxLength={200000}
             />
           </div>
@@ -123,7 +125,7 @@ export function CreatePageDialog({
               disabled={pending || !title.trim()}
             >
               {pending ? <Loader2 className="animate-spin" /> : <FilePlus2 />}
-              {pending ? "Creating..." : "Create page"}
+              {pending ? t("pageCreate.creating") : t("pageCreate.createTitle")}
             </Button>
           </DialogFooter>
         </form>

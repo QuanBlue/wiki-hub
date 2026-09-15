@@ -6,40 +6,40 @@ import { FolderTree, History, Search, ShieldCheck } from "lucide-react";
 import { LoginForm } from "@/components/auth/login-form";
 import { LogoMark, Wordmark } from "@/components/brand/logo";
 import { SITE_NAME } from "@/lib/env";
+import { getServerLocale } from "@/lib/i18n/server";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-// Rendered per request: the login form reads `?next=` from the URL.
+// Rendered per request: the login form reads `?next=` from the URL, and the
+// copy follows the locale cookie.
 export const dynamic = "force-dynamic";
 
-const highlights = [
-  {
-    icon: FolderTree,
-    title: "Organise with spaces",
-    description:
-      "Group work into spaces with their own page tree, so projects, policies and playbooks stay easy to navigate.",
-  },
-  {
-    icon: Search,
-    title: "Find answers faster",
-    description:
-      "Full-text search across every space turns scattered context into knowledge your team can actually trust.",
-  },
-  {
-    icon: History,
-    title: "Track every change",
-    description:
-      "Full version history on each page lets you compare edits, see who changed what, and restore an earlier draft.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Control who sees what",
-    description:
-      "Space and page-level permissions keep sensitive documentation restricted to the right people.",
-  },
-];
+export default async function LoginPage() {
+  const { t } = await getServerLocale();
 
-export default function LoginPage() {
+  const highlights = [
+    {
+      icon: FolderTree,
+      title: t("auth.highlightOrganiseTitle"),
+      description: t("auth.highlightOrganiseDescription"),
+    },
+    {
+      icon: Search,
+      title: t("auth.highlightFindTitle"),
+      description: t("auth.highlightFindDescription"),
+    },
+    {
+      icon: History,
+      title: t("auth.highlightTrackTitle"),
+      description: t("auth.highlightTrackDescription"),
+    },
+    {
+      icon: ShieldCheck,
+      title: t("auth.highlightControlTitle"),
+      description: t("auth.highlightControlDescription"),
+    },
+  ];
+
   return (
     <main className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,32rem)] xl:grid-cols-[minmax(0,1fr)_minmax(0,36rem)]">
       <section className="bg-primary text-primary-foreground relative hidden overflow-hidden px-16 py-16 lg:flex lg:items-center xl:px-20">
@@ -75,15 +75,13 @@ export default function LoginPage() {
           <Wordmark siteName={SITE_NAME} className="text-lg" />
 
           <p className="text-primary-foreground/70 mt-14 text-sm font-medium">
-            Your team&apos;s shared knowledge
+            {t("auth.tagline")}
           </p>
           <h1 className="mt-3 text-4xl leading-tight font-semibold tracking-tight text-balance">
-            Keep the context behind every decision.
+            {t("auth.headline")}
           </h1>
           <p className="text-primary-foreground/70 mt-4 max-w-md text-[0.9375rem] leading-6">
-            WikiHub is a calm, organised home for the pages, practices and
-            ideas your team relies on — built so documentation stays as easy
-            to find as it was to write.
+            {t("auth.subheading")}
           </p>
 
           <ul className="mt-12 space-y-5">
@@ -103,7 +101,7 @@ export default function LoginPage() {
           </ul>
 
           <p className="text-primary-foreground/50 border-primary-foreground/15 mt-12 border-t pt-6 text-xs">
-            Made for focused teams that value clarity.
+            {t("auth.footerTagline")}
           </p>
         </div>
       </section>
@@ -119,10 +117,10 @@ export default function LoginPage() {
               <LogoMark className="size-5" />
             </div>
             <h2 className="mt-4 text-2xl font-semibold tracking-tight">
-              Welcome back
+              {t("auth.welcomeBack")}
             </h2>
             <p className="text-muted-foreground mt-1.5 text-sm">
-              Sign in to continue to {SITE_NAME}.
+              {t("auth.signInToContinue", { siteName: SITE_NAME })}
             </p>
           </div>
 
@@ -132,7 +130,7 @@ export default function LoginPage() {
           </Suspense>
 
           <p className="text-muted-foreground mt-8 text-center text-xs">
-            Trouble signing in? Contact your workspace admin.
+            {t("auth.troubleSigningIn")}
           </p>
         </div>
       </section>

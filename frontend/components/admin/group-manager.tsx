@@ -5,7 +5,9 @@ import {
   ChevronRight,
   Pencil,
   Search,
+  ShieldCheck,
   Trash2,
+  UserCheck,
   Users,
   UsersRound,
   X,
@@ -19,7 +21,9 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { BulkDeleteBar, BulkSelectionProvider, SelectionCell, SelectionHeaderCell, SelectModeButton } from "@/components/admin/bulk-select";
 import { CreateGroupDialog } from "@/components/admin/create-group-dialog";
 import { EditGroupDialog } from "@/components/admin/edit-group-dialog";
+import { GroupGlobalAccessSummary, GroupGlobalAccessTable } from "@/components/admin/group-global-access-table";
 import { GroupUsageDialog } from "@/components/admin/group-usage-dialog";
+import { SummaryMetrics } from "@/components/admin/summary-metrics";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -58,6 +62,7 @@ export function GroupManager({
   users: User[];
 }) {
   const [groups, setGroups] = useState(initialGroups);
+  const [activeTab, setActiveTab] = useState<"directory" | "global-access">("directory");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
@@ -96,6 +101,13 @@ export function GroupManager({
     (total, group) => total + group.member_count,
     0,
   );
+  // The few groups worth double-checking before handing out membership, out
+  // of what is usually a much longer list scoped to Space/Page access only -
+  // `global_permissions` is already on every `Group` row, unlike a user's
+  // per-account overrides, so no extra request is needed for this tab.
+  const globalAccessGroups = groups.filter(
+    (group) => group.global_permissions.length > 0,
+  );
 
   async function removeGroup(group: Group) {
     if (isDefaultGroup(group)) {
@@ -133,21 +145,47 @@ export function GroupManager({
   return (
     <BulkSelectionProvider>
     <div className="space-y-4">
+      <SummaryMetrics
+        label="Group summary"
+        items={[
+          { icon: Users, label: "Total groups", value: groups.length, tone: "primary" },
+          { icon: UserCheck, label: "Members assigned", value: totalMembers },
+          { icon: ShieldCheck, label: "Global access", value: globalAccessGroups.length },
+        ]}
+      />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-5 text-sm">
-          <span className="flex items-center gap-2">
-            <UsersRound className="text-muted-foreground size-4" />
-            <strong>{groups.length}</strong>
-            <span className="text-muted-foreground">groups</span>
-          </span>
-          <span className="flex items-center gap-2">
-            <Users className="text-muted-foreground size-4" />
-            <strong>{totalMembers}</strong>
-            <span className="text-muted-foreground">
-              member{totalMembers === 1 ? "" : "s"} assigned
-            </span>
-          </span>
-        </div>
+        <nav
+          className="border-border bg-surface-sunken flex w-fit shrink-0 items-center rounded-md border p-0.5"
+          aria-label="Groups sections"
+        >
+          <button
+            type="button"
+            onClick={() => setActiveTab("directory")}
+            className={cn(
+              "focus-visible:ring-ring flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+              activeTab === "directory"
+                ? "bg-surface text-foreground shadow-xs"
+                : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+            )}
+          >
+            <UsersRound className="size-3.5" />
+            Group directory ({groups.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("global-access")}
+            className={cn(
+              "focus-visible:ring-ring flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+              activeTab === "global-access"
+                ? "bg-surface text-foreground shadow-xs"
+                : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+            )}
+          >
+            <ShieldCheck className="size-3.5" />
+            Global access ({globalAccessGroups.length})
+          </button>
+        </nav>
         <CreateGroupDialog
           users={users}
           onCreated={(group) =>
@@ -160,6 +198,26 @@ export function GroupManager({
         />
       </div>
 
+      {activeTab === "global-access" ? (
+        <section className="border-border bg-surface overflow-hidden rounded-xl border shadow-sm">
+          <div className="border-border flex shrink-0 flex-wrap items-end justify-between gap-3 border-b px-4 py-3">
+            <div>
+              <h3 className="font-medium">Global access</h3>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                Every group that grants at least one Global permission, so you
+                can see which ones carry workspace-wide power instead of
+                checking each group by hand.
+              </p>
+            </div>
+            <GroupGlobalAccessSummary count={globalAccessGroups.length} />
+          </div>
+          <GroupGlobalAccessTable
+            groups={globalAccessGroups}
+            onEdit={setEditingGroup}
+            onDelete={setDeleteTarget}
+          />
+        </section>
+      ) : (
       <section className="border-border bg-surface overflow-hidden rounded-xl border shadow-sm">
         <div className="border-border flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
           <div>
@@ -328,6 +386,7 @@ export function GroupManager({
           </>
         )}
       </section>
+      )}
 
       <EditGroupDialog
         group={editingGroup}
@@ -494,6 +553,7 @@ function GroupRow({
             variant="ghost"
             onClick={onEdit}
             aria-label={"Edit " + group.name}
+            className="hover:bg-surface-selected!"
           >
             <Pencil />
             Edit
@@ -510,7 +570,7 @@ function GroupRow({
             }
             aria-label={"Delete " + group.name}
             className={cn(
-              "hover:bg-danger-bg hover:text-danger",
+              "hover:bg-danger-bg! hover:text-danger!",
               isDefault && "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-inherit"
             )}
           >

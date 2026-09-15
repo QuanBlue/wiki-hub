@@ -14,7 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SwitchAccountMenu } from "@/components/layout/switch-account-dialog";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { Me, User } from "@/types/api";
 
@@ -35,6 +36,7 @@ export function UserMenu({ user }: { user: Me }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [open, setOpen] = useState(false);
+  const { t, apiErrorText } = useTranslation();
 
   const displayName = user.full_name || user.username;
   const impersonator = user.impersonator;
@@ -46,11 +48,7 @@ export function UserMenu({ user }: { user: Me }) {
       router.replace("/");
       router.refresh();
     } catch (error) {
-      toast.error(
-        error instanceof ApiError
-          ? error.message
-          : "Could not return to your account.",
-      );
+      toast.error(apiErrorText(error, "userMenu.returnToSelfError"));
       setPending(false);
     }
   }
@@ -62,8 +60,8 @@ export function UserMenu({ user }: { user: Me }) {
       await api.post<void>("/api/v1/auth/logout");
       router.replace("/login");
       router.refresh();
-    } catch {
-      toast.error("Could not sign out. Please try again.");
+    } catch (error) {
+      toast.error(apiErrorText(error, "userMenu.signOutError"));
       setPending(false);
     }
   }
@@ -78,7 +76,7 @@ export function UserMenu({ user }: { user: Me }) {
           "data-[state=open]:bg-surface-selected",
           "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
         )}
-        aria-label={`Account menu for ${displayName}`}
+        aria-label={t("userMenu.accountMenuAria", { name: displayName })}
       >
         <span
           className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
@@ -113,7 +111,7 @@ export function UserMenu({ user }: { user: Me }) {
         {impersonator ? (
           <div className="px-4 pb-2">
             <span className="text-warning block truncate text-xs">
-              Signed in as {impersonator.username}
+              {t("userMenu.signedInAs", { username: impersonator.username })}
             </span>
           </div>
         ) : null}
@@ -123,7 +121,7 @@ export function UserMenu({ user }: { user: Me }) {
         <DropdownMenuItem asChild>
           <Link href="/account">
             <UserRound />
-            Your account
+            {t("userMenu.yourAccount")}
           </Link>
         </DropdownMenuItem>
 
@@ -138,7 +136,7 @@ export function UserMenu({ user }: { user: Me }) {
             onSelect={() => void returnToSelf()}
           >
             <Undo2 />
-            Return to {impersonator.username}
+            {t("userMenu.returnTo", { username: impersonator.username })}
           </DropdownMenuItem>
         ) : null}
 
@@ -152,7 +150,7 @@ export function UserMenu({ user }: { user: Me }) {
           onSelect={() => void signOut()}
         >
           <LogOut />
-          Sign out
+          {t("userMenu.signOut")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

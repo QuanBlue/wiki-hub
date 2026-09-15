@@ -75,6 +75,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api-client";
 import { apiBaseUrl } from "@/lib/env";
+import { formatDate, formatTime } from "@/lib/i18n/format";
+import { useTranslation } from "@/lib/i18n/context";
 import {
   clearLocalPageDraft,
   discardPageDraft,
@@ -136,7 +138,7 @@ export function navigationTargetOf(event: MouseEvent): URL | null {
  * things can close it - a view restriction on the page (or an ancestor) and a
  * restricted space - so the reason is spelled out rather than left to a guess.
  */
-type PageAccess = { restricted: boolean; label: string };
+type PageAccess = { restricted: boolean; labelKey: string };
 
 function pageAccessOf(
   page: Pick<WikiPage, "is_restricted"> | null | undefined,
@@ -147,30 +149,32 @@ function pageAccessOf(
   if (pageRestricted && spaceRestricted)
     return {
       restricted: true,
-      label: "Private: a restricted page inside a restricted space",
+      labelKey: "workspace.accessPrivatePageInRestrictedSpace",
     };
   if (pageRestricted)
     return {
       restricted: true,
-      label: "Private: only the people this page names can read it",
+      labelKey: "workspace.accessPrivatePage",
     };
   if (spaceRestricted)
     return {
       restricted: true,
-      label: "Private: only members of this restricted space can read it",
+      labelKey: "workspace.accessRestrictedSpace",
     };
   return {
     restricted: false,
-    label: "Public: everyone with access to this site can read it",
+    labelKey: "workspace.accessPublic",
   };
 }
 
 function PageAccessIcon({ access }: { access: PageAccess }) {
+  const { t } = useTranslation();
+  const label = t(access.labelKey);
   return (
     <span
       role="img"
-      aria-label={access.label}
-      title={access.label}
+      aria-label={label}
+      title={label}
       // Flex centring puts the icon on the middle of the line box, which sits
       // about 0.16em above the middle of the letters themselves - the line box
       // reserves room for ascenders and descenders that most text never uses,
@@ -535,28 +539,22 @@ function pageHref(spaceKey: string, slug: string): string {
   return `/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(slug)}`;
 }
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
-function formatLastModified(value: string): string {
-  const date = formatDate(value);
+function formatDateAndTime(
+  value: string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  locale: "en" | "vi",
+): string {
+  const date = formatDate(value, locale);
   // Imports can provide a date without a clock value. Do not invent one in
   // the page metadata; normal WikiHub timestamps include an ISO time portion.
   if (!/[T\s]\d{2}:\d{2}/.test(value)) return date;
 
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) return date;
-  const time = new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(timestamp);
-  return `${date} at ${time}`;
+  return t("workspace.lastModifiedAt", {
+    date,
+    time: formatTime(value, locale),
+  });
 }
 
 function SpaceAvatar({ space }: { space: Space }) {
@@ -610,6 +608,7 @@ function PageTree({
   activeSlug: string | null;
 }) {
   const storageKey = `${TREE_EXPAND_PREFIX}${spaceKey}`;
+  const { t } = useTranslation();
   const homePageId = findHomePage(pages, spaceKey)?.id;
   const pagesByParent = useMemo(() => {
     const pageIds = new Set(pages.map((page) => page.id));
@@ -730,7 +729,12 @@ function PageTree({
                 type="button"
                 onClick={() => togglePage(page.id)}
                 aria-expanded={expanded}
-                aria-label={`${expanded ? "Collapse" : "Expand"} folder ${page.title}`}
+                aria-label={t(
+                  expanded
+                    ? "workspace.collapseFolderAria"
+                    : "workspace.expandFolderAria",
+                  { title: page.title },
+                )}
                 className={cn(
                   "text-muted-foreground hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
                   active && "bg-surface-selected text-primary",
@@ -795,6 +799,7 @@ export function SpaceWorkspace({
 }) {
   const router = useRouter();
   const spaceSidebarScrollRef = useRef<HTMLDivElement>(null);
+  const { t, locale } = useTranslation();
   const { collapsed, setCollapsed, mobileOpen } = useSidebar();
   const sidebarWidth = useSyncExternalStore(
     spaceSidebarWidthStore.subscribe,
@@ -1066,7 +1071,7 @@ export function SpaceWorkspace({
   useEffect(() => {
     if (!hasUnsavedChanges) return;
 
-    const message = "You have unsaved changes. Leave without saving?";
+    const message = t("workspace.leaveWithoutSavingMessage");
     const confirmUnload = (event: BeforeUnloadEvent) => {
       if (allowUnload.current) return;
       // The debounce timer may not have fired before a refresh or tab close.
@@ -1089,7 +1094,7 @@ export function SpaceWorkspace({
       window.removeEventListener("beforeunload", confirmUnload);
       document.removeEventListener("click", confirmInternalNavigation, true);
     };
-  }, [hasUnsavedChanges]);
+  }, [hasUnsavedChanges, t]);
 
   function leaveWithoutSaving() {
     if (cancelEditPending) {
@@ -1214,7 +1219,7 @@ export function SpaceWorkspace({
       await discardPageDraft(space.key, page.slug);
       clearLocalPageDraft(space.key, page.slug);
     } catch {
-      toast.error("Could not discard the draft.");
+      toast.error(t("workspace.discardDraftError"));
     }
   }
 
@@ -1284,7 +1289,7 @@ export function SpaceWorkspace({
     file: File,
   ): Promise<PageAttachmentUpload> {
     if (!currentPage)
-      throw new Error("Open a page before uploading an attachment.");
+      throw new Error(t("workspace.uploadNeedsPage"));
     const form = new FormData();
     form.append("file", file);
     return api.post<PageAttachmentUpload>(
@@ -1317,10 +1322,12 @@ export function SpaceWorkspace({
       clearLocalPageDraft(space.key, currentPage.slug);
       setRecoveryDraft(null);
       setDiscardDraftOpen(false);
-      toast.success("Unreleased draft discarded.");
+      toast.success(t("workspace.draftDiscarded"));
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not discard the draft.",
+        error instanceof Error
+          ? error.message
+          : t("workspace.discardDraftError"),
       );
     } finally {
       setDiscardDraftPending(false);
@@ -1441,7 +1448,7 @@ export function SpaceWorkspace({
       router.refresh();
     } catch {
       setFavorite(!next);
-      toast.error("Could not update favourites.");
+      toast.error(t("spaces.favouriteError"));
     } finally {
       setFavoritePending(false);
     }
@@ -1455,7 +1462,9 @@ export function SpaceWorkspace({
       : [...savedPageKeys, savedPageKey];
     savePageKeys(nextKeys);
     toast.success(
-      savedForLater ? "Removed from saved pages." : "Page saved for later.",
+      savedForLater
+        ? t("workspace.removedFromSaved")
+        : t("workspace.savedForLaterToast"),
     );
   }
 
@@ -1472,7 +1481,7 @@ export function SpaceWorkspace({
       setLikeStatus(next);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not update the like.",
+        error instanceof Error ? error.message : t("workspace.likeError"),
       );
     } finally {
       setLikePending(false);
@@ -1489,9 +1498,13 @@ export function SpaceWorkspace({
         await api.post(`/api/v1/users/me/pins/${encodeURIComponent(currentPage.id)}`);
       }
       setPinned((value) => !value);
-      toast.success(pinned ? "Removed from pinned pages." : "Page pinned.");
+      toast.success(
+        pinned ? t("workspace.unpinnedToast") : t("workspace.pinnedToast"),
+      );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update the pinned page.");
+      toast.error(
+        error instanceof Error ? error.message : t("workspace.pinError"),
+      );
     } finally {
       setPinPending(false);
     }
@@ -1550,11 +1563,11 @@ export function SpaceWorkspace({
         field.select();
         copied = document.execCommand("copy");
         document.body.removeChild(field);
-        if (!copied) throw new Error("Clipboard unavailable");
+        if (!copied) throw new Error(t("workspace.clipboardUnavailable"));
       }
-      toast.success("Page link copied to clipboard.");
+      toast.success(t("workspace.linkCopied"));
     } catch {
-      toast.error("Could not copy the page link.");
+      toast.error(t("workspace.linkCopyError"));
     }
   }
 
@@ -1571,7 +1584,9 @@ export function SpaceWorkspace({
     link.click();
     link.remove();
     toast.success(
-      `Preparing your ${format.toUpperCase()} export — the download will start shortly.`,
+      t("workspace.exportPreparing", {
+        format: format.toUpperCase(),
+      }),
     );
   }
 
@@ -1653,14 +1668,14 @@ export function SpaceWorkspace({
           description: overviewDraft,
         },
       );
-      toast.success("Overview updated.");
+      toast.success(t("workspace.overviewUpdated"));
       setOverviewEditing(false);
       router.refresh();
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Could not update the overview.",
+          : t("workspace.overviewError"),
       );
     } finally {
       setOverviewSavePending(false);
@@ -1707,7 +1722,7 @@ export function SpaceWorkspace({
       pageEditDirtyRef.current = false;
       clearLocalPageDraft(space.key, page.slug);
       setRecoveryDraft(null);
-      if (announce) toast.success(`Saved "${updated.title}".`);
+      if (announce) toast.success(t("workspace.pageSaved", { title: updated.title }));
       if (closeEditor) {
         setEditing(false);
         setPreviewing(false);
@@ -1717,7 +1732,7 @@ export function SpaceWorkspace({
     } catch (error) {
       if (announce) {
         toast.error(
-          error instanceof Error ? error.message : "Could not save this page.",
+          error instanceof Error ? error.message : t("workspace.pageSaveError"),
         );
       }
       return false;
@@ -1740,13 +1755,13 @@ export function SpaceWorkspace({
       await api.delete<void>(
         `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}`,
       );
-      toast.success(`Deleted "${currentPage.title}".`);
+      toast.success(t("workspace.pageDeleted", { title: currentPage.title }));
       setDeletePageOpen(false);
       router.push(`/spaces/${encodeURIComponent(space.key)}`);
       router.refresh();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not delete this page.",
+        error instanceof Error ? error.message : t("workspace.pageDeleteError"),
       );
     } finally {
       setDeletePagePending(false);
@@ -1782,6 +1797,9 @@ export function SpaceWorkspace({
 
   const sidebarVisible = mobileOpen || !collapsed;
   const desktopSidebarWidth = collapsed ? 0 : sidebarWidth;
+  const favouriteLabel = favorite
+    ? t("spaces.removeFavourite")
+    : t("spaces.addFavourite");
 
   return (
     <div className="bg-background min-h-[calc(100vh-var(--wh-topbar-height))] max-w-full min-w-0 overflow-x-hidden md:flex md:h-[calc(100vh-var(--wh-topbar-height))] md:overflow-hidden">
@@ -1823,13 +1841,9 @@ export function SpaceWorkspace({
                   type="button"
                   onClick={() => void toggleFavorite()}
                   disabled={favoritePending}
-                  aria-label={
-                    favorite ? "Remove from favourites" : "Add to favourites"
-                  }
+                  aria-label={favouriteLabel}
                   aria-pressed={favorite}
-                  title={
-                    favorite ? "Remove from favourites" : "Add to favourites"
-                  }
+                  title={favouriteLabel}
                   className={cn(
                     "hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
                     "disabled:pointer-events-none disabled:opacity-50",
@@ -1844,7 +1858,7 @@ export function SpaceWorkspace({
 
               <div className="mt-6 flex items-center justify-between gap-2 px-2">
                 <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                  Page Tree
+                  {t("workspace.pageTreeHeading")}
                 </p>
                 {space.status === "active" && canEdit ? (
                   <div className="flex items-center gap-0.5">
@@ -1858,8 +1872,8 @@ export function SpaceWorkspace({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      title="Import pages from files"
-                      aria-label="Import pages from files"
+                      title={t("workspace.importPagesTitle")}
+                      aria-label={t("workspace.importPagesTitle")}
                       onClick={() => setImportDialogOpen(true)}
                     >
                       <FileUp />
@@ -1872,7 +1886,7 @@ export function SpaceWorkspace({
               ref={spaceSidebarScrollRef}
               className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 pb-4"
             >
-              <nav aria-label={`${space.name} page tree`} className="mt-2">
+              <nav aria-label={t("workspace.pageTreeAria", { name: space.name })} className="mt-2">
                 <ul className="space-y-0.5">
                   <PageTree
                     pages={pages}
@@ -1883,28 +1897,32 @@ export function SpaceWorkspace({
               </nav>
             </div>
 
-            {/* Sidebar Footer: Edit Space button for Admins & Owners */}
-            {canAdmin ? (
-              <div className="border-border border-t p-3 shrink-0">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground cursor-pointer text-xs h-8"
-                  onClick={() => setEditSpaceModalOpen(true)}
-                >
-                  <Pencil className="size-3.5" />
-                  Edit space
-                </Button>
-              </div>
-            ) : null}
+            {/* Sidebar Footer: Edit Space button, disabled (with a tooltip
+                explaining why) rather than hidden for anyone who isn't this
+                space's Owner or Admin - so the click a viewer already made
+                lands on an explanation instead of a control that was just
+                never there. */}
+            <div className="border-border border-t p-3 shrink-0">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 text-muted-foreground not-disabled:hover:bg-surface-selected! not-disabled:hover:text-foreground! cursor-pointer text-xs h-8"
+                onClick={() => setEditSpaceModalOpen(true)}
+                disabled={!canAdmin}
+                title={canAdmin ? undefined : t("spaces.editOnlyOwnerAdmin")}
+              >
+                <Pencil className="size-3.5" />
+                {t("spaces.edit")}
+              </Button>
+            </div>
           </div>
         ) : null}
         {!collapsed ? (
           <button
             type="button"
-            aria-label="Resize space sidebar"
-            title="Drag to resize sidebar"
+            aria-label={t("workspace.resizeSpaceSidebar")}
+            title={t("nav.dragToResize")}
             onPointerDown={(event) => {
               event.preventDefault();
               setDragging(true);
@@ -1959,7 +1977,7 @@ export function SpaceWorkspace({
             )}
           >
             <nav
-              aria-label="Breadcrumb"
+              aria-label={t("workspace.breadcrumbAria")}
               className="min-w-0 flex-1 overflow-hidden text-sm"
             >
               <ol className="flex min-w-0 items-center whitespace-nowrap">
@@ -1968,7 +1986,7 @@ export function SpaceWorkspace({
                     href={homeHref}
                     className="text-primary focus-visible:ring-ring rounded hover:underline focus-visible:ring-2 focus-visible:outline-none"
                   >
-                    Pages
+                    {t("nav.spaces")}
                   </Link>
                 </li>
                 {compactBreadcrumbPages.map((page) => (
@@ -1982,7 +2000,7 @@ export function SpaceWorkspace({
                     {page === null ? (
                       <span
                         className="text-muted-foreground shrink-0"
-                        aria-label="Earlier pages"
+                        aria-label={t("workspace.earlierPagesAria")}
                       >
                         …
                       </span>
@@ -2021,7 +2039,9 @@ export function SpaceWorkspace({
                     disabled={overviewSavePending}
                   >
                     <Check />
-                    {overviewSavePending ? "Saving..." : "Save"}
+                    {overviewSavePending
+                      ? t("workspace.saving")
+                      : t("common.save")}
                   </Button>
                   <Button
                     type="button"
@@ -2031,7 +2051,7 @@ export function SpaceWorkspace({
                     disabled={overviewSavePending}
                   >
                     <X />
-                    Cancel
+                    {t("common.cancel")}
                   </Button>
                 </>
               ) : editing ? (
@@ -2045,7 +2065,9 @@ export function SpaceWorkspace({
                     aria-pressed={previewing}
                   >
                     {previewing ? <EyeOff /> : <Eye />}
-                    {previewing ? "Hide live preview" : "Live preview"}
+                    {previewing
+                      ? t("workspace.hideLivePreview")
+                      : t("workspace.livePreview")}
                   </Button>
                   <Button
                     type="button"
@@ -2054,8 +2076,8 @@ export function SpaceWorkspace({
                     aria-pressed={autoSaveEnabled}
                     title={
                       autoSaveEnabled
-                        ? "Auto-save is on. Saves every 30 seconds."
-                        : "Turn on auto-save. Saves every 30 seconds."
+                        ? t("workspace.autoSaveOnTitle")
+                        : t("workspace.autoSaveOffTitle")
                     }
                     onClick={() => {
                       setAutoSaveEnabled((current) => !current);
@@ -2076,10 +2098,10 @@ export function SpaceWorkspace({
                       <RefreshCw />
                     )}
                     {autoSaveStatus === "saved"
-                      ? "Saved"
+                      ? t("workspace.autoSaveSaved")
                       : autoSaveEnabled
-                        ? "Auto-save on"
-                        : "Auto-save"}
+                        ? t("workspace.autoSaveOn")
+                        : t("workspace.autoSave")}
                   </Button>
                   <Button
                     type="submit"
@@ -2087,14 +2109,18 @@ export function SpaceWorkspace({
                     variant="primary"
                     size="sm"
                     disabled={savePending}
-                    aria-label={pageEditDirty ? "Save changes" : "Save"}
+                    aria-label={
+                      pageEditDirty
+                        ? t("workspace.saveChanges")
+                        : t("common.save")
+                    }
                   >
                     <Check />
                     {savePending
-                      ? "Saving..."
+                      ? t("workspace.saving")
                       : pageEditDirty
-                        ? "Save*"
-                        : "Save"}
+                        ? t("workspace.saveDirty")
+                        : t("common.save")}
                   </Button>
                   <span aria-hidden className="bg-border mx-1 h-5 w-px" />
                   <Button
@@ -2105,7 +2131,7 @@ export function SpaceWorkspace({
                     disabled={savePending}
                   >
                     <X />
-                    Cancel
+                    {t("common.cancel")}
                   </Button>
                 </>
               ) : !currentPage && canEdit && space.status === "active" ? (
@@ -2116,14 +2142,16 @@ export function SpaceWorkspace({
                   onClick={beginOverviewEditing}
                 >
                   <Pencil />
-                  Edit overview
+                  {t("workspace.editOverview")}
                 </Button>
               ) : currentPage && canEdit && space.status === "active" ? (
                 <>
                   <CreatePageDialog
                     spaceKey={space.key}
                     parentPage={isHomePage ? null : currentPage}
-                    triggerLabel={isHomePage ? "New" : "Create"}
+                    triggerLabel={
+                      isHomePage ? t("workspace.newButton") : t("workspace.createButton")
+                    }
                     triggerVariant="ghost"
                     triggerSize="sm"
                   />
@@ -2131,7 +2159,7 @@ export function SpaceWorkspace({
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" disabled={editing}>
                         <Pencil />
-                        Edit
+                        {t("spaces.edit")}
                         <ChevronDown />
                       </Button>
                     </DropdownMenuTrigger>
@@ -2141,17 +2169,17 @@ export function SpaceWorkspace({
                     >
                       <DropdownMenuItem onSelect={() => beginEditing("normal")}>
                         <Pencil />
-                        Normal editor
+                        {t("workspace.normalEditor")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onSelect={() => beginEditing("markdown")}
                       >
                         <FileText />
-                        Markdown source
+                        {t("workspace.markdownSource")}
                       </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => beginEditing("html")}>
                         <CodeXml />
-                        HTML source
+                        {t("workspace.htmlSource")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -2173,7 +2201,9 @@ export function SpaceWorkspace({
                             savedForLater && "text-primary fill-current",
                           )}
                         />
-                        {savedForLater ? "Saved" : "Save for later"}
+                        {savedForLater
+                          ? t("workspace.savedToggle")
+                          : t("workspace.saveForLater")}
                       </Button>
                     ) : null}
                     {currentPage ? (
@@ -2186,7 +2216,9 @@ export function SpaceWorkspace({
                         aria-pressed={pinned}
                       >
                         <Pin className={cn(pinned && "text-primary fill-current")} />
-                        {pinned ? "Pinned" : "Pin page"}
+                        {pinned
+                          ? t("workspace.pinnedToggle")
+                          : t("workspace.pinPage")}
                       </Button>
                     ) : null}
                     <Button
@@ -2196,7 +2228,7 @@ export function SpaceWorkspace({
                       onClick={() => void shareCurrentPage()}
                     >
                       <Share2 />
-                      Share
+                      {t("workspace.share")}
                     </Button>
                   </div>
                   {currentPage ? (
@@ -2205,8 +2237,8 @@ export function SpaceWorkspace({
                         <Button
                           variant="ghost"
                           size="icon"
-                          aria-label="More page actions"
-                          title="More page actions"
+                          aria-label={t("workspace.moreActionsAria")}
+                          title={t("workspace.moreActionsAria")}
                           className="hidden lg:inline-flex"
                         >
                           <MoreHorizontal />
@@ -2221,43 +2253,43 @@ export function SpaceWorkspace({
                             onSelect={() => setMovePageOpen(true)}
                           >
                             <FolderInput />
-                            Move page
+                            {t("workspace.movePage")}
                           </DropdownMenuItem>
                         ) : null}
                         <DropdownMenuItem
                           onSelect={() => setHistoryModalOpen(true)}
                         >
                           <Clock3 />
-                          Page history
+                          {t("workspace.pageHistory")}
                         </DropdownMenuItem>
                         {canManageRestrictions ? (
                           <DropdownMenuItem onSelect={() => setPageAccessOpen(true)}>
                             <Lock />
-                            Page access
+                            {t("workspace.pageAccess")}
                           </DropdownMenuItem>
                         ) : null}
                         <DropdownMenuItem onSelect={() => setLabelsDialogOpen(true)}>
                           <Tag />
-                          Labels
+                          {t("workspace.labels")}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onSelect={() => setAttachmentsDialogOpen(true)}
                         >
                           <FileText />
-                          Attachments
+                          {t("workspace.attachments")}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuSub>
                           <DropdownMenuSubTrigger>
                             <Maximize2 />
-                            View
+                            {t("workspace.view")}
                           </DropdownMenuSubTrigger>
                           <DropdownMenuSubContent className="w-48">
                             <DropdownMenuItem
                               onSelect={() => setViewFullWidth(true)}
                             >
                               <Maximize2 />
-                              Full width
+                              {t("workspace.fullWidth")}
                               {viewFullWidth ? (
                                 <Check className="text-primary ml-auto size-4" />
                               ) : null}
@@ -2266,7 +2298,7 @@ export function SpaceWorkspace({
                               onSelect={() => setViewFullWidth(false)}
                             >
                               <Minimize2 />
-                              Normal width
+                              {t("workspace.normalWidth")}
                               {!viewFullWidth ? (
                                 <Check className="text-primary ml-auto size-4" />
                               ) : null}
@@ -2278,20 +2310,20 @@ export function SpaceWorkspace({
                           <DropdownMenuSub>
                             <DropdownMenuSubTrigger>
                               <Download />
-                              Export
+                              {t("workspace.export")}
                             </DropdownMenuSubTrigger>
                             <DropdownMenuSubContent className="text-muted-foreground w-48 text-sm font-medium">
                               <DropdownMenuItem onSelect={() => exportPage("html")}>
                                 <Download />
-                                Export HTML
+                                {t("workspace.exportHtml")}
                               </DropdownMenuItem>
                               <DropdownMenuItem onSelect={() => exportPage("pdf")}>
                                 <FileText />
-                                Export PDF
+                                {t("workspace.exportPdf")}
                               </DropdownMenuItem>
                               <DropdownMenuItem onSelect={() => exportPage("docx")}>
                                 <FileType />
-                                Export Word
+                                {t("workspace.exportWord")}
                               </DropdownMenuItem>
                             </DropdownMenuSubContent>
                           </DropdownMenuSub>
@@ -2304,7 +2336,7 @@ export function SpaceWorkspace({
                               onSelect={() => setDeletePageOpen(true)}
                             >
                               <Trash2 className="!text-danger" />
-                              Delete page
+                              {t("workspace.deletePage")}
                             </DropdownMenuItem>
                           </>
                         ) : null}
@@ -2316,7 +2348,7 @@ export function SpaceWorkspace({
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label="More page actions"
+                        aria-label={t("workspace.moreActionsAria")}
                         className="lg:hidden"
                       >
                         <MoreHorizontal />
@@ -2334,53 +2366,55 @@ export function SpaceWorkspace({
                             )}
                           />
                           {savedForLater
-                            ? "Remove from saved"
-                            : "Save for later"}
+                            ? t("workspace.removeFromSaved")
+                            : t("workspace.saveForLater")}
                         </DropdownMenuItem>
                       ) : null}
                       <DropdownMenuItem
                         onSelect={() => void shareCurrentPage()}
                       >
                         <Share2 />
-                        Share
+                        {t("workspace.share")}
                       </DropdownMenuItem>
                       {currentPage && canManageRestrictions ? (
                         <DropdownMenuItem onSelect={() => setPageAccessOpen(true)}>
                           <Lock />
-                          Page access
+                          {t("workspace.pageAccess")}
                         </DropdownMenuItem>
                       ) : null}
                       {currentPage ? (
                         <DropdownMenuItem onSelect={() => setLabelsDialogOpen(true)}>
                           <Tag />
-                          Labels
+                          {t("workspace.labels")}
                         </DropdownMenuItem>
                       ) : null}
                       {currentPage ? (
                         <>
                           <DropdownMenuItem disabled={pinPending} onSelect={() => void togglePinned()}>
                             <Pin className={cn(pinned && "text-primary fill-current")} />
-                            {pinned ? "Remove from pinned pages" : "Pin page"}
+                            {pinned
+                              ? t("workspace.removeFromPinned")
+                              : t("workspace.pinPage")}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {canExport ? (
                             <DropdownMenuSub>
                               <DropdownMenuSubTrigger>
                                 <Download />
-                                Export
+                                {t("workspace.export")}
                               </DropdownMenuSubTrigger>
                               <DropdownMenuSubContent className="text-muted-foreground w-48 text-sm font-medium">
                                 <DropdownMenuItem onSelect={() => exportPage("html")}>
                                   <Download />
-                                  Export HTML
+                                  {t("workspace.exportHtml")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onSelect={() => exportPage("pdf")}>
                                   <FileText />
-                                  Export PDF
+                                  {t("workspace.exportPdf")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onSelect={() => exportPage("docx")}>
                                   <FileType />
-                                  Export Word
+                                  {t("workspace.exportWord")}
                                 </DropdownMenuItem>
                               </DropdownMenuSubContent>
                             </DropdownMenuSub>
@@ -2390,20 +2424,20 @@ export function SpaceWorkspace({
                               onSelect={() => setMovePageOpen(true)}
                             >
                               <FolderInput />
-                              Move page
+                              {t("workspace.movePage")}
                             </DropdownMenuItem>
                           ) : null}
                           <DropdownMenuItem
                             onSelect={() => setHistoryModalOpen(true)}
                           >
                             <Clock3 />
-                            Page history
+                            {t("workspace.pageHistory")}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onSelect={() => setAttachmentsDialogOpen(true)}
                           >
                             <FileText />
-                            Attachments
+                            {t("workspace.attachments")}
                           </DropdownMenuItem>
                           {currentPage?.can_delete && space.status === "active" ? (
                             <DropdownMenuItem
@@ -2411,7 +2445,7 @@ export function SpaceWorkspace({
                               onSelect={() => setDeletePageOpen(true)}
                             >
                               <Trash2 className="!text-danger" />
-                              Delete page
+                              {t("workspace.deletePage")}
                             </DropdownMenuItem>
                           ) : null}
                         </>
@@ -2420,14 +2454,14 @@ export function SpaceWorkspace({
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
                           <Maximize2 />
-                          View
+                          {t("workspace.view")}
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="w-48">
                           <DropdownMenuItem
                             onSelect={() => setViewFullWidth(true)}
                           >
                             <Maximize2 />
-                            Full width
+                            {t("workspace.fullWidth")}
                             {viewFullWidth ? (
                               <Check className="text-primary ml-auto size-4" />
                             ) : null}
@@ -2436,7 +2470,7 @@ export function SpaceWorkspace({
                             onSelect={() => setViewFullWidth(false)}
                           >
                             <Minimize2 />
-                            Normal width
+                            {t("workspace.normalWidth")}
                             {!viewFullWidth ? (
                               <Check className="text-primary ml-auto size-4" />
                             ) : null}
@@ -2453,13 +2487,13 @@ export function SpaceWorkspace({
           {recoveryDraft && !editing && !overviewEditing ? (
             <div className="border-warning/30 bg-warning-bg text-warning mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3">
               <div className="min-w-0">
-                <p className="text-sm font-semibold">Draft not released</p>
+                <p className="text-sm font-semibold">{t("workspace.draftNotReleased")}</p>
                 <p className="mt-0.5 text-xs">
-                  This draft was last saved on{" "}
-                  {formatDate(recoveryDraft.updated_at)} and has not been saved
-                  to the page.
+                  {t("workspace.draftNotReleasedHint", {
+                    date: formatDate(recoveryDraft.updated_at, locale),
+                  })}
                   {recoveryDraft.is_conflict
-                    ? " The page has changed since this draft was created."
+                    ? t("workspace.draftConflictSuffix")
                     : ""}
                 </p>
               </div>
@@ -2471,7 +2505,7 @@ export function SpaceWorkspace({
                   onClick={openRecoveryDraft}
                 >
                   <Pencil />
-                  Open editor
+                  {t("workspace.openEditor")}
                 </Button>
                 <Button
                   type="button"
@@ -2480,7 +2514,7 @@ export function SpaceWorkspace({
                   onClick={() => setDiscardDraftOpen(true)}
                   disabled={discardDraftPending}
                 >
-                  Discard draft
+                  {t("workspace.discardDraft")}
                 </Button>
               </div>
             </div>
@@ -2506,7 +2540,9 @@ export function SpaceWorkspace({
                     onChange={setOverviewDraft}
                   />
                   <p className="text-muted-foreground mt-2 text-xs">
-                    {overviewDraft.length.toLocaleString()}/200,000 characters
+                    {t("workspace.charactersCount", {
+                      count: overviewDraft.length.toLocaleString(),
+                    })}
                   </p>
                 </div>
               </>
@@ -2520,7 +2556,7 @@ export function SpaceWorkspace({
                 <input
                   type="text"
                   id="page-editor-title"
-                  aria-label="Page title"
+                  aria-label={t("workspace.pageTitleAria")}
                   value={titleDraft}
                   onChange={(event) => updateTitleDraft(event.target.value)}
                   maxLength={255}
@@ -2590,7 +2626,7 @@ export function SpaceWorkspace({
                         <button
                           type="button"
                           role="separator"
-                          aria-label="Resize editor and live preview panels"
+                          aria-label={t("workspace.resizePreviewAria")}
                           aria-orientation="vertical"
                           aria-valuemin={MIN_PREVIEW_SPLIT}
                           aria-valuemax={MAX_PREVIEW_SPLIT}
@@ -2675,20 +2711,20 @@ export function SpaceWorkspace({
                         )}
                       >
                         <section
-                          aria-label="Live page preview"
+                          aria-label={t("workspace.livePreviewAria")}
                           className="border-border bg-surface-raised min-w-0 rounded-md border shadow-sm xl:h-full xl:flex-1"
                         >
                           <div className="border-border bg-surface-sunken flex items-center gap-2 border-b px-4 py-1">
                             <Eye className="text-primary size-4" aria-hidden />
                             <p className="text-xs font-semibold tracking-wide uppercase">
-                              Live preview
+                              {t("workspace.livePreview")}
                             </p>
                             <span className="text-muted-foreground ml-auto hidden text-xs sm:inline">
-                              Updates as you type
+                              {t("workspace.updatesAsYouType")}
                             </span>
                             <div
                               role="group"
-                              aria-label="Live preview layout"
+                              aria-label={t("workspace.previewLayoutAria")}
                               className="border-border bg-surface-raised ml-auto flex items-center gap-0.5 rounded-md border p-0.5 sm:ml-3"
                             >
                               <Button
@@ -2701,11 +2737,11 @@ export function SpaceWorkspace({
                                 size="sm"
                                 className="h-6 gap-1 px-2 text-xs"
                                 aria-pressed={previewLayout === "split"}
-                                title="Editor and preview side by side"
+                                title={t("workspace.splitTitle")}
                                 onClick={() => setPreviewLayout("split")}
                               >
                                 <Columns2 />
-                                Split
+                                {t("workspace.split")}
                               </Button>
                               <Button
                                 type="button"
@@ -2717,11 +2753,11 @@ export function SpaceWorkspace({
                                 size="sm"
                                 className="h-6 gap-1 px-2 text-xs"
                                 aria-pressed={previewLayout === "full"}
-                                title="Preview alone, across the full width"
+                                title={t("workspace.fullTitle")}
                                 onClick={() => setPreviewLayout("full")}
                               >
                                 <RectangleHorizontal />
-                                Full
+                                {t("workspace.full")}
                               </Button>
                             </div>
                           </div>
@@ -2738,7 +2774,7 @@ export function SpaceWorkspace({
                               )
                             ) : (
                               <p className="text-muted-foreground text-sm">
-                                Nothing to preview yet.
+                                {t("workspace.nothingToPreview")}
                               </p>
                             )}
                           </div>
@@ -2754,10 +2790,26 @@ export function SpaceWorkspace({
                   {title}
                 </h1>
                 <p className="text-muted-foreground mt-2 text-xs">
-                  Created by {author ? <UserProfileTrigger username={author} /> : "unknown"}
-                  {updatedAt
-                    ? <>, last modified {updatedBy ? <>by <UserProfileTrigger username={updatedBy} />{" "}</> : null}on {formatLastModified(updatedAt)}</>
-                    : ""}
+                  {t("workspace.createdByPrefix")}{" "}
+                  {author ? (
+                    <UserProfileTrigger username={author} />
+                  ) : (
+                    t("workspace.unknownAuthor")
+                  )}
+                  {updatedAt ? (
+                    <>
+                      {t("workspace.lastModifiedPrefix")}{" "}
+                      {updatedBy ? (
+                        <>
+                          {t("workspace.byLabel")}{" "}
+                          <UserProfileTrigger username={updatedBy} />{" "}
+                        </>
+                      ) : null}
+                      {t("workspace.onDate", {
+                        date: formatDateAndTime(updatedAt, t, locale),
+                      })}
+                    </>
+                  ) : null}
                 </p>
 
                 <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
@@ -2776,14 +2828,14 @@ export function SpaceWorkspace({
                     <ThumbsUp
                       className={cn("size-4", liked && "fill-current")}
                     />
-                    {liked ? "Liked" : "Like"}
+                    {liked ? t("workspace.liked") : t("workspace.like")}
                     {likeStatus.like_count > 0
                       ? `(${likeStatus.like_count})`
                       : null}
                   </button>
                   <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                    {pageLabels.length ? pageLabels.map((label) => label.name).join(", ") : "No labels"}
-                    <button type="button" onClick={() => setLabelsDialogOpen(true)} className="hover:text-foreground focus-visible:ring-ring rounded-sm focus-visible:ring-2 focus-visible:outline-none" aria-label="Manage page labels" title="Manage page labels"><Tag className="size-3.5" /></button>
+                    {pageLabels.length ? pageLabels.map((label) => label.name).join(", ") : t("workspace.noLabels")}
+                    <button type="button" onClick={() => setLabelsDialogOpen(true)} className="hover:text-foreground focus-visible:ring-ring rounded-sm focus-visible:ring-2 focus-visible:outline-none" aria-label={t("workspace.manageLabelsAria")} title={t("workspace.manageLabelsAria")}><Tag className="size-3.5" /></button>
                   </span>
                 </div>
 
@@ -2796,9 +2848,9 @@ export function SpaceWorkspace({
                     )
                   ) : (
                     <div className="border-border bg-surface-sunken rounded-lg border border-dashed p-6">
-                      <p className="font-medium">No content yet</p>
+                      <p className="font-medium">{t("workspace.noContent")}</p>
                       <p className="text-muted-foreground mt-1 text-sm">
-                        Select Edit to start writing this page.
+                        {t("workspace.noContentHint")}
                       </p>
                     </div>
                   )}
@@ -2818,20 +2870,22 @@ export function SpaceWorkspace({
             }}
             title={
               reloadPending
-                ? "Reload site?"
+                ? t("workspace.reloadTitle")
                 : cancelEditPending
-                  ? "Save changes before cancelling?"
-                  : "Save changes before leaving?"
+                  ? t("workspace.cancelEditTitle")
+                  : t("workspace.leaveTitle")
             }
             description={
               reloadPending
-                ? "Changes you made may not be saved."
-                : "You have unsaved changes. Save them before leaving this edit session?"
+                ? t("workspace.reloadDescription")
+                : t("workspace.leaveDescription")
             }
-            confirmLabel={reloadPending ? "Reload" : "Save and leave"}
-            cancelLabel="Stay"
+            confirmLabel={reloadPending ? t("workspace.reload") : t("workspace.saveAndLeave")}
+            cancelLabel={t("workspace.stay")}
             secondaryLabel={
-              reloadPending ? "Reload without saving" : "Leave without saving"
+              reloadPending
+                ? t("workspace.reloadWithoutSaving")
+                : t("workspace.leaveWithoutSaving")
             }
             onSecondary={leaveWithoutSaving}
             pending={savePending}
@@ -2845,15 +2899,15 @@ export function SpaceWorkspace({
             }}
             title={
               conversionMode === "markdown"
-                ? "Convert this page to Markdown?"
-                : "Convert this page to HTML?"
+                ? t("workspace.convertMarkdownTitle")
+                : t("workspace.convertHtmlTitle")
             }
             description={
               conversionMode === "markdown"
-                ? "Markdown cannot represent every rich-text feature, including text colours, cell backgrounds and merged table cells. To preserve them, WikiHub will embed their HTML directly in the Markdown source. The resulting document will not be pure Markdown."
-                : "This changes the page source from Markdown to HTML. Its current Markdown source will be converted when you save."
+                ? t("workspace.convertMarkdownDescription")
+                : t("workspace.convertHtmlDescription")
             }
-            confirmLabel="Continue"
+            confirmLabel={t("workspace.continue")}
             onConfirm={() => {
               if (!conversionMode) return;
               const mode = conversionMode;
@@ -2867,9 +2921,9 @@ export function SpaceWorkspace({
             onOpenChange={(open) => {
               if (!open) setDiscardDraftOpen(false);
             }}
-            title="Discard unreleased draft?"
-            description="This removes the saved draft and restores the page to its current server content."
-            confirmLabel="Discard draft"
+            title={t("workspace.discardDraftTitle")}
+            description={t("workspace.discardDraftDescription")}
+            confirmLabel={t("workspace.discardDraft")}
             destructive
             pending={discardDraftPending}
             onConfirm={() => void discardRecoveryDraft()}
@@ -2940,9 +2994,12 @@ export function SpaceWorkspace({
           <ConfirmDialog
             open={deletePageOpen}
             onOpenChange={setDeletePageOpen}
-            title="Delete this page?"
-            description={`This permanently deletes \"${currentPage?.title ?? "this page"}\". Any child pages will be moved up one level so their content remains available.`}
-            confirmLabel="Delete page"
+            title={t("workspace.deletePageTitle")}
+            description={t("workspace.deletePageDescription", {
+              title:
+                currentPage?.title ?? t("workspace.deletePageFallback"),
+            })}
+            confirmLabel={t("workspace.deletePage")}
             destructive
             pending={deletePagePending}
             onConfirm={() => void deletePage()}
@@ -2951,8 +3008,9 @@ export function SpaceWorkspace({
           {members.length > 0 ? (
             <div className="border-border mt-12 border-t pt-4">
               <p className="text-muted-foreground text-xs">
-                {members.length} {members.length === 1 ? "member" : "members"}{" "}
-                in this space
+                {members.length === 1
+                  ? t("workspace.membersInSpaceOne", { count: members.length })
+                  : t("workspace.membersInSpaceMany", { count: members.length })}
               </p>
             </div>
           ) : null}

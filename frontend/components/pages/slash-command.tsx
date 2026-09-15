@@ -47,7 +47,13 @@ import {
   useState,
 } from "react";
 
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
+import { translate, type Locale } from "@/lib/i18n/core";
+
+function activeLocale(): Locale {
+  return document.documentElement.lang === "vi" ? "vi" : "en";
+}
 
 // Notion-style "/" menu: type "/" anywhere a plain character could go, a
 // filterable list of insertable blocks pops up under the caret, arrow keys +
@@ -85,11 +91,12 @@ export type SlashPreviewKind =
 
 export type SlashCommandItem = {
   id: string;
-  label: string;
-  description: string;
+  /** Dictionary key under `slash.*`, resolved at render time. */
+  labelKey: string;
+  descriptionKey: string;
   keywords: string[];
   icon: LucideIcon;
-  group: string;
+  groupKey: string;
   run: (editor: Editor) => void;
   /**
    * The markdown-style trigger shown as a hint next to this row (e.g. "#",
@@ -221,142 +228,142 @@ function requestPageAction(kind: "link-to-page" | "create-subpage") {
 export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
   {
     id: "text",
-    label: "Text",
-    description: "Plain paragraph text",
+    labelKey: "slash.textLabel",
+    descriptionKey: "slash.textDescription",
     keywords: ["paragraph", "p"],
     icon: Pilcrow,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     preview: "text",
     run: (editor) => editor.chain().focus().setParagraph().run(),
   },
   {
     id: "heading-1",
-    label: "Heading 1",
-    description: "Big section heading",
+    labelKey: "slash.heading1Label",
+    descriptionKey: "slash.heading1Description",
     keywords: ["h1", "title"],
     icon: Heading1,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     shortcut: "#",
     preview: "heading1",
     run: (editor) => editor.chain().focus().setHeading({ level: 1 }).run(),
   },
   {
     id: "heading-2",
-    label: "Heading 2",
-    description: "Medium section heading",
+    labelKey: "slash.heading2Label",
+    descriptionKey: "slash.heading2Description",
     keywords: ["h2", "subtitle"],
     icon: Heading2,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     shortcut: "##",
     preview: "heading2",
     run: (editor) => editor.chain().focus().setHeading({ level: 2 }).run(),
   },
   {
     id: "heading-3",
-    label: "Heading 3",
-    description: "Small section heading",
+    labelKey: "slash.heading3Label",
+    descriptionKey: "slash.heading3Description",
     keywords: ["h3"],
     icon: Heading3,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     shortcut: "###",
     preview: "heading3",
     run: (editor) => editor.chain().focus().setHeading({ level: 3 }).run(),
   },
   {
     id: "heading-4",
-    label: "Heading 4",
-    description: "Extra-small section heading",
+    labelKey: "slash.heading4Label",
+    descriptionKey: "slash.heading4Description",
     keywords: ["h4"],
     icon: Heading4,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     shortcut: "####",
     preview: "heading4",
     run: (editor) => editor.chain().focus().setHeading({ level: 4 }).run(),
   },
   {
     id: "bullet-list",
-    label: "Bulleted list",
-    description: "Simple unordered list",
+    labelKey: "slash.bulletListLabel",
+    descriptionKey: "slash.bulletListDescription",
     keywords: ["ul", "bullet", "list"],
     icon: List,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     shortcut: "-",
     preview: "bulletList",
     run: (editor) => editor.chain().focus().toggleBulletList().run(),
   },
   {
     id: "numbered-list",
-    label: "Numbered list",
-    description: "Ordered list with numbers",
+    labelKey: "slash.numberedListLabel",
+    descriptionKey: "slash.numberedListDescription",
     keywords: ["ol", "ordered", "list"],
     icon: ListOrdered,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     shortcut: "1.",
     preview: "numberedList",
     run: (editor) => editor.chain().focus().toggleOrderedList().run(),
   },
   {
     id: "todo-list",
-    label: "To-do list",
-    description: "Checklist with checkboxes",
+    labelKey: "slash.todoListLabel",
+    descriptionKey: "slash.todoListDescription",
     keywords: ["todo", "task", "checkbox", "checklist"],
     icon: ListTodo,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     shortcut: "[]",
     preview: "todoList",
     run: (editor) => editor.chain().focus().toggleTaskList().run(),
   },
   {
     id: "toggle-list",
-    label: "Toggle list",
-    description: "Collapsible content",
+    labelKey: "slash.toggleListLabel",
+    descriptionKey: "slash.toggleListDescription",
     keywords: ["toggle", "collapse", "details", "expand"],
     icon: ChevronRight,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     shortcut: ">",
     preview: "toggleList",
     run: (editor) => insertToggle(editor),
   },
   {
     id: "quote",
-    label: "Quote",
-    description: "Capture a quotation",
+    labelKey: "slash.quoteLabel",
+    descriptionKey: "slash.quoteDescription",
     keywords: ["blockquote"],
     icon: Quote,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     shortcut: '"',
     preview: "quote",
     run: (editor) => editor.chain().focus().toggleBlockquote().run(),
   },
   {
     id: "divider",
-    label: "Divider",
-    description: "Visually separate content",
+    labelKey: "slash.dividerLabel",
+    descriptionKey: "slash.dividerDescription",
     keywords: ["hr", "horizontal rule", "line"],
     icon: Minus,
-    group: "Basic blocks",
+    groupKey: "slash.groupBasicBlocks",
     shortcut: "---",
     preview: "divider",
     run: (editor) => editor.chain().focus().setHorizontalRule().run(),
   },
   {
     id: "code-block",
-    label: "Code block",
-    description: "A snippet with syntax colours",
+    labelKey: "slash.codeBlockLabel",
+    descriptionKey: "slash.codeBlockDescription",
     keywords: ["code", "snippet"],
     icon: Code2,
-    group: "Code",
+    groupKey: "slash.groupCode",
     shortcut: "```",
     preview: "codeBlock",
     run: (editor) => editor.chain().focus().toggleCodeBlock().run(),
   },
   {
     id: "table",
-    label: "Table",
-    description: "3×3 table with a header row",
+    labelKey: "slash.tableLabel",
+    descriptionKey: "slash.tableDescription",
     keywords: ["grid"],
     icon: Table2,
-    group: "Layout",
+    groupKey: "slash.groupLayout",
     preview: "table",
     run: (editor) =>
       editor
@@ -367,96 +374,96 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
   },
   {
     id: "table-of-contents",
-    label: "Table of contents",
-    description: "An automatically updated list of headings",
+    labelKey: "slash.tableOfContentsLabel",
+    descriptionKey: "slash.tableOfContentsDescription",
     keywords: ["toc", "contents", "outline", "headings"],
     icon: ListTree,
-    group: "Layout",
+    groupKey: "slash.groupLayout",
     preview: "tableOfContents",
     run: (editor) =>
       editor.chain().focus().insertContent({ type: "tableOfContents" }).run(),
   },
   {
     id: "callout-info",
-    label: "Callout: Info",
-    description: "Highlight information",
+    labelKey: "slash.calloutInfoLabel",
+    descriptionKey: "slash.calloutInfoDescription",
     keywords: ["callout", "note", "blue"],
     icon: CALLOUT_ICONS.info,
-    group: "Layout",
+    groupKey: "slash.groupLayout",
     preview: "callout",
     previewCalloutType: "info",
     run: (editor) => insertCallout(editor, "info"),
   },
   {
     id: "callout-warning",
-    label: "Callout: Warning",
-    description: "Highlight a warning",
+    labelKey: "slash.calloutWarningLabel",
+    descriptionKey: "slash.calloutWarningDescription",
     keywords: ["callout", "warning", "amber"],
     icon: CALLOUT_ICONS.warning,
-    group: "Layout",
+    groupKey: "slash.groupLayout",
     preview: "callout",
     previewCalloutType: "warning",
     run: (editor) => insertCallout(editor, "warning"),
   },
   {
     id: "callout-tip",
-    label: "Callout: Tip",
-    description: "Highlight a helpful tip",
+    labelKey: "slash.calloutTipLabel",
+    descriptionKey: "slash.calloutTipDescription",
     keywords: ["callout", "tip", "emerald"],
     icon: CALLOUT_ICONS.tip,
-    group: "Layout",
+    groupKey: "slash.groupLayout",
     preview: "callout",
     previewCalloutType: "tip",
     run: (editor) => insertCallout(editor, "tip"),
   },
   {
     id: "callout-panel",
-    label: "Callout: Panel",
-    description: "Neutral highlighted panel",
+    labelKey: "slash.calloutPanelLabel",
+    descriptionKey: "slash.calloutPanelDescription",
     keywords: ["callout", "panel"],
     icon: CALLOUT_ICONS.panel,
-    group: "Layout",
+    groupKey: "slash.groupLayout",
     preview: "callout",
     previewCalloutType: "panel",
     run: (editor) => insertCallout(editor, "panel"),
   },
   {
     id: "image",
-    label: "Image",
-    description: "Upload and embed an image",
+    labelKey: "slash.imageLabel",
+    descriptionKey: "slash.imageDescription",
     keywords: ["picture", "photo", "upload"],
     icon: ImagePlus,
-    group: "Media",
+    groupKey: "slash.groupMedia",
     preview: "image",
     run: () => requestFilePicker("image"),
   },
   {
     id: "attachment",
-    label: "Attachment",
-    description: "Upload any file",
+    labelKey: "slash.attachmentLabel",
+    descriptionKey: "slash.attachmentDescription",
     keywords: ["file", "upload"],
     icon: Paperclip,
-    group: "Media",
+    groupKey: "slash.groupMedia",
     preview: "attachment",
     run: () => requestFilePicker("attachment"),
   },
   {
     id: "link-to-page",
-    label: "Link to page",
-    description: "Search this space and link to a page",
+    labelKey: "slash.linkToPageLabel",
+    descriptionKey: "slash.linkToPageDescription",
     keywords: ["link", "page", "reference", "mention"],
     icon: Link2,
-    group: "Links",
+    groupKey: "slash.groupLinks",
     preview: "linkToPage",
     run: () => requestPageAction("link-to-page"),
   },
   {
     id: "create-subpage",
-    label: "Create sub-page",
-    description: "New page nested under this one",
+    labelKey: "slash.createSubpageLabel",
+    descriptionKey: "slash.createSubpageDescription",
     keywords: ["subpage", "child", "page", "new"],
     icon: FilePlus2,
-    group: "Links",
+    groupKey: "slash.groupLinks",
     preview: "createSubpage",
     run: () => requestPageAction("create-subpage"),
   },
@@ -464,13 +471,16 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
 
 /** Same case-insensitive substring match move-page-dialog.tsx already uses
  * for its parent-page picker - a second use of the one filtering idiom this
- * app has, not a new one. */
+ * app has, not a new one. Labels resolve through the active locale (the
+ * editor never unmounts on language change; the DOM lang attribute is the
+ * client's source of truth), while English keywords always match. */
 export function filterSlashCommandItems(query: string): SlashCommandItem[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return SLASH_COMMAND_ITEMS;
+  const locale = activeLocale();
   return SLASH_COMMAND_ITEMS.filter(
     (item) =>
-      item.label.toLowerCase().includes(normalized) ||
+      translate(locale, item.labelKey).toLowerCase().includes(normalized) ||
       item.keywords.some((keyword) =>
         keyword.toLowerCase().includes(normalized),
       ),
@@ -501,41 +511,40 @@ function PreviewMockup({
   kind: SlashPreviewKind;
   calloutType: CalloutType;
 }) {
+  const { t } = useTranslation();
   switch (kind) {
     case "text":
       return (
         <p className="text-sm leading-relaxed text-neutral-200">
-          To be the <em>foremost</em> driver of civilization, pioneering the
-          latest breakthroughs to propel society toward the perfection of{" "}
-          <em>science and art</em>.
+          {t("slash.previewText")}
         </p>
       );
     case "heading1":
-      return <p className="text-xl font-bold text-neutral-100">Heading 1</p>;
+      return <p className="text-xl font-bold text-neutral-100">{t("slash.heading1Label")}</p>;
     case "heading2":
       return (
-        <p className="text-lg font-semibold text-neutral-100">Heading 2</p>
+        <p className="text-lg font-semibold text-neutral-100">{t("slash.heading2Label")}</p>
       );
     case "heading3":
       return (
-        <p className="text-base font-semibold text-neutral-100">Heading 3</p>
+        <p className="text-base font-semibold text-neutral-100">{t("slash.heading3Label")}</p>
       );
     case "heading4":
       return (
-        <p className="text-sm font-semibold text-neutral-100">Heading 4</p>
+        <p className="text-sm font-semibold text-neutral-100">{t("slash.heading4Label")}</p>
       );
     case "bulletList":
       return (
         <ul className="list-disc space-y-1 pl-4 text-sm text-neutral-200">
-          <li>First item</li>
-          <li>Second item</li>
+          <li>{t("slash.previewFirstItem")}</li>
+          <li>{t("slash.previewSecondItem")}</li>
         </ul>
       );
     case "numberedList":
       return (
         <ol className="list-decimal space-y-1 pl-4 text-sm text-neutral-200">
-          <li>First item</li>
-          <li>Second item</li>
+          <li>{t("slash.previewFirstItem")}</li>
+          <li>{t("slash.previewSecondItem")}</li>
         </ol>
       );
     case "todoList":
@@ -548,11 +557,11 @@ function PreviewMockup({
               readOnly
               className="accent-neutral-500"
             />
-            Done already
+            {t("slash.previewDoneAlready")}
           </label>
           <label className="flex items-center gap-2 text-neutral-200">
             <input type="checkbox" readOnly className="accent-neutral-200" />
-            Still to do
+            {t("slash.previewStillToDo")}
           </label>
         </div>
       );
@@ -561,15 +570,15 @@ function PreviewMockup({
         <div className="text-sm text-neutral-200">
           <div className="flex items-center gap-1 font-medium">
             <ChevronRight className="size-3.5 text-neutral-400" aria-hidden />
-            Toggle title
+            {t("slash.previewToggleTitle")}
           </div>
-          <p className="mt-1 pl-4 text-neutral-400">Hidden until opened</p>
+          <p className="mt-1 pl-4 text-neutral-400">{t("slash.previewHiddenUntilOpened")}</p>
         </div>
       );
     case "quote":
       return (
         <blockquote className="border-l-2 border-neutral-500 pl-3 text-sm text-neutral-300 italic">
-          A quotation worth remembering.
+          {t("slash.previewQuote")}
         </blockquote>
       );
     case "divider":
@@ -583,7 +592,12 @@ function PreviewMockup({
     case "table":
       return (
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded border border-neutral-700 bg-neutral-700 text-xs text-neutral-200">
-          {["Name", "Status", "Ada", "Done"].map((cell, index) => (
+          {[
+            t("slash.previewTableName"),
+            t("slash.previewTableStatus"),
+            t("slash.previewTableOwner"),
+            t("slash.previewTableDone"),
+          ].map((cell, index) => (
             <div
               key={index}
               className={cn(
@@ -601,12 +615,12 @@ function PreviewMockup({
         <div className="rounded border border-neutral-700 bg-neutral-800 p-2 text-xs">
           <div className="mb-1.5 flex items-center gap-1.5 font-medium text-neutral-100">
             <ListTree className="size-3.5 text-neutral-400" aria-hidden />
-            Table of contents
+            {t("slash.previewTocTitle")}
           </div>
           <div className="space-y-1 text-neutral-400">
-            <div>Introduction</div>
-            <div className="pl-3">Getting started</div>
-            <div>Next steps</div>
+            <div>{t("slash.previewTocIntroduction")}</div>
+            <div className="pl-3">{t("slash.previewTocGettingStarted")}</div>
+            <div>{t("slash.previewTocNextSteps")}</div>
           </div>
         </div>
       );
@@ -618,7 +632,7 @@ function PreviewMockup({
             className={cn("mt-0.5 h-3.5 w-1 shrink-0 rounded-full", colors.bar)}
           />
           <p className={cn("text-sm", colors.text)}>
-            Something worth noticing.
+            {t("slash.previewCalloutText")}
           </p>
         </div>
       );
@@ -641,7 +655,7 @@ function PreviewMockup({
         <div className="flex items-center gap-2 rounded bg-neutral-800 p-2 text-sm">
           <FileText className="size-4 shrink-0 text-neutral-500" aria-hidden />
           <span className="text-blue-400 underline underline-offset-2">
-            Onboarding guide
+            {t("slash.previewLinkToPage")}
           </span>
         </div>
       );
@@ -649,7 +663,7 @@ function PreviewMockup({
       return (
         <div className="flex items-center gap-2 rounded bg-neutral-800 p-2 text-sm text-neutral-300">
           <FilePlus2 className="size-4 shrink-0 text-neutral-500" aria-hidden />
-          Untitled
+          {t("slash.previewUntitled")}
         </div>
       );
   }
@@ -662,6 +676,7 @@ function PreviewMockup({
  * shows now that rows are icon+label+shortcut only.
  */
 function SlashCommandPreview({ item }: { item: SlashCommandItem }) {
+  const { t } = useTranslation();
   return (
     <div className="w-56 rounded-md border border-neutral-700 bg-neutral-900 p-3 shadow-lg">
       <div className="pointer-events-none flex min-h-16 items-center">
@@ -673,7 +688,7 @@ function SlashCommandPreview({ item }: { item: SlashCommandItem }) {
         </div>
       </div>
       <p className="mt-2 border-t border-neutral-700 pt-2 text-xs text-neutral-400">
-        {item.description}
+        {t(item.descriptionKey)}
       </p>
     </div>
   );
@@ -705,6 +720,7 @@ export const SlashCommandList = forwardRef<
   const listRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [previewSide, setPreviewSide] = useState<"left" | "right">("right");
+  const { t } = useTranslation();
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- re-derive the highlighted row whenever the filtered item set changes, same pattern move-page-dialog.tsx already uses for resetting on prop change
@@ -758,9 +774,9 @@ export const SlashCommandList = forwardRef<
   const groups = useMemo(() => {
     const byGroup = new Map<string, SlashCommandItem[]>();
     for (const item of items) {
-      const group = byGroup.get(item.group) ?? [];
+      const group = byGroup.get(item.groupKey) ?? [];
       group.push(item);
-      byGroup.set(item.group, group);
+      byGroup.set(item.groupKey, group);
     }
     return [...byGroup.entries()];
   }, [items]);
@@ -770,7 +786,7 @@ export const SlashCommandList = forwardRef<
   // border-border/rounded/font-mono shape, reused rather than invented.
   const footer = (
     <div className="border-border text-muted-foreground flex shrink-0 items-center justify-between border-t px-2 py-1.5 text-xs">
-      <span>Close menu</span>
+      <span>{t("slash.closeMenu")}</span>
       <kbd className="border-border bg-surface rounded border px-1.5 py-0.5 font-mono">
         Esc
       </kbd>
@@ -781,7 +797,7 @@ export const SlashCommandList = forwardRef<
     return (
       <div className="border-border bg-surface-raised flex w-72 flex-col rounded-md border shadow-lg">
         <p className="text-muted-foreground px-3 py-1.5 text-sm">
-          No matching blocks.
+          {t("slash.noMatchingBlocks")}
         </p>
         {footer}
       </div>
@@ -809,13 +825,13 @@ export const SlashCommandList = forwardRef<
       <div
         ref={listRef}
         role="listbox"
-        aria-label="Insert a block"
+        aria-label={t("slash.insertBlockAria")}
         className="flex-1 overflow-y-auto p-1"
       >
-        {groups.map(([group, groupItems]) => (
-          <div key={group}>
+        {groups.map(([groupKey, groupItems]) => (
+          <div key={groupKey}>
             <p className="text-muted-foreground px-2 pt-1.5 pb-1 text-xs font-medium tracking-wide uppercase">
-              {group}
+              {t(groupKey)}
             </p>
             {groupItems.map((item) => {
               flatIndex += 1;
@@ -848,7 +864,7 @@ export const SlashCommandList = forwardRef<
                     aria-hidden
                   />
                   <span className="min-w-0 flex-1 truncate font-medium">
-                    {item.label}
+                    {t(item.labelKey)}
                   </span>
                   {item.shortcut ? (
                     <kbd className="border-border text-muted-foreground bg-surface shrink-0 rounded border px-1.5 py-0.5 font-mono text-xs">
@@ -891,12 +907,13 @@ function createSlashHintPlugin() {
       decorations(state) {
         const value = slashHintPluginKey.getState(state);
         if (!value || value.query) return null;
+        const hint = translate(activeLocale(), "slash.typeToSearch");
         return DecorationSet.create(state.doc, [
           Decoration.widget(
             value.to,
             () => {
               const span = document.createElement("span");
-              span.textContent = "Type to search";
+              span.textContent = hint;
               span.className = "text-muted-foreground text-sm";
               span.contentEditable = "false";
               return span;
