@@ -6,6 +6,15 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   experimental: {
+    // The same proxy also gives up on a slow *response*: unset, it aborts any
+    // request the backend is still answering after 30 s, and the browser gets
+    // a bare 500 (frontend log: "Failed to proxy ... socket hang up") even
+    // though the backend goes on to finish with a 200. `POST
+    // /confluence-imports/archives/{id}/scan` reads the whole uploaded archive
+    // out of object storage, which for a real Confluence export takes minutes:
+    // the upload finished, but the space picker never opened until a refresh
+    // restored the scanned archive from the server.
+    proxyTimeout: 15 * 60 * 1000,
     // The /api/v1/:path* rewrite below proxies every backend request
     // through this dev/runtime server, which by default only buffers the
     // first 10MB of a request body before silently truncating it - past
