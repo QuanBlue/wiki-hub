@@ -15,6 +15,9 @@
 **/htmlcov/
 **/playwright-report/
 **/test-results/
+# Tests are exercised from the source tree (dev bind-mounts ./backend); a
+# published image has no use for them.
+backend/tests/
 **/*.log
 .env
 .env.*
