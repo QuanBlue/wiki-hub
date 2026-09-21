@@ -198,9 +198,45 @@ running it again only reconciles what has drifted.
 `./scripts/run.sh --help` prints the same reference, plus common workflows
 (first run, after adding a dependency, resetting a broken database, ...).
 
-Prefer to drive Docker Compose yourself? `cp .env.example .env && docker
-compose up -d` works too — you just lose the health-wait, automatic port
-resolution, and auto-seeding that `run.sh` gives you for free.
+#### 🧩 The three compose files
+
+Prefer to drive Docker Compose yourself? Start with `cp .env.example .env`
+(every file below reads the same `.env`), then pick one — you just lose the
+health-wait, automatic port resolution, and auto-seeding that `run.sh` gives
+you for free.
+
+| File | Use it for | Where images come from | Source code |
+|---|---|---|---|
+| [`docker-compose.yml`](docker-compose.yml) | Production-like run on the machine that holds the repo (what plain `./scripts/run.sh` uses) | Built locally from `deploy/docker/` | `./backend` is bind-mounted over the image, so it needs the checkout |
+| [`docker-compose.dev.yml`](docker-compose.dev.yml) | Day-to-day development with hot reload (what `./scripts/run.sh --dev` uses) | Built locally, frontend uses the `dev` stage | `backend/` and `frontend/` bind-mounted; edits apply without a rebuild |
+| [`docker-compose.release.yml`](docker-compose.release.yml) | Any other server: pull and run | Pulled from GHCR, built by CI ([details](#prebuilt-images-no-build-on-the-server)) | None — copy only this file and `.env` |
+
+`docker-compose.dev.yml` is an **overlay**: it only overrides the base file, so
+it is never used alone — and it is deliberately not named
+`docker-compose.override.yml`, which Compose would auto-load and silently turn
+every plain `docker compose up` into a development run. `release` is
+**standalone**: never combine it with the other two.
+
+```bash
+# docker-compose.yml — production-like, built from source
+docker compose up -d --build
+docker compose down                      # stop (add -v to also drop volumes)
+
+# docker-compose.yml + docker-compose.dev.yml — development, hot reload
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+
+# docker-compose.release.yml — prebuilt images, e.g. on a server
+docker compose -f docker-compose.release.yml pull
+docker compose -f docker-compose.release.yml up -d
+docker compose -f docker-compose.release.yml down
+```
+
+All three share the project name `wikihub` and the same data directory
+(`WIKIHUB_DATA_HOST_DIRECTORY`), so they are alternatives, not side-by-side
+stacks: running `up` with a different file recreates the affected services in
+place (as `run.sh` does when you switch `--dev` on or off), and your data
+survives the switch. Use the same `-f` files for `down` as you did for `up`.
 
 | Service | URL |
 |---|---|
@@ -311,7 +347,39 @@ written yet — see [Roadmap](#-roadmap).
 
 A dedicated `docs/deployment.md` guide is not written yet either; until then,
 `./scripts/run.sh` (see [Getting Started](#-getting-started)) is the
-supported way to run WikiHub, in development or production-like mode alike.
+supported way to run WikiHub on the machine that holds the source.
+
+### Prebuilt images (no build on the server)
+
+Every push to `master` runs
+[`.github/workflows/release-images.yml`](.github/workflows/release-images.yml),
+which builds the backend and frontend images and publishes them to GitHub
+Container Registry as `ghcr.io/quanblue/wiki-hub-backend` and
+`ghcr.io/quanblue/wiki-hub-frontend`, tagged `latest` and `sha-<commit>`
+(pushing a `vX.Y.Z` tag also publishes `X.Y.Z` and `X.Y`). The images are
+`linux/amd64` only.
+
+On any other server, copy just
+[`docker-compose.release.yml`](docker-compose.release.yml) and a `.env` (from
+[`.env.example`](.env.example)) — no source checkout. The other two compose
+files are described under [The three compose files](#-the-three-compose-files);
+`docker-compose.yml` is not suitable here because it needs the source tree:
+
+```bash
+docker compose -f docker-compose.release.yml pull
+docker compose -f docker-compose.release.yml up -d
+```
+
+Repeat the same two commands to update. In `.env`, set
+`NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL` to the address your *browser* uses
+for the Document Server (e.g. `http://203.0.113.10:8080`), `WIKIHUB_CORS_ORIGINS`
+to the address people open WikiHub at, `WIKIHUB_ENV=production`, and real
+secrets. `WIKIHUB_IMAGE_TAG` pins a version (`sha-<commit>` or `1.2.0`) instead
+of following `latest`.
+
+Packages published from a private repository are private: either run
+`docker login ghcr.io` on the server with a token that has `read:packages`, or
+make the two packages public under the repository's *Packages* settings.
 
 ## 🔒 Security
 

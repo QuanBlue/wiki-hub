@@ -90,10 +90,15 @@ COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
 
+# Fills in the ONLYOFFICE URL placeholder a CI-built image carries (see the
+# comment above the build args); a no-op for an image built without one.
+COPY --chmod=755 deploy/docker/frontend-entrypoint.sh /usr/local/bin/wikihub-entrypoint
+
 USER node
 EXPOSE 3000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
     CMD curl -fsS http://localhost:3000/ >/dev/null || exit 1
 
+ENTRYPOINT ["wikihub-entrypoint"]
 CMD ["node", "server.js"]
