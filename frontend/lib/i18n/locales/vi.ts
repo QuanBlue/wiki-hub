@@ -136,7 +136,7 @@ export const vi: Dictionary = {
   language: {
     label: "Ngôn ngữ",
     changeLanguageAria: "Đổi ngôn ngữ",
-    english: "English",
+    english: "Tiếng Anh",
     vietnamese: "Tiếng Việt",
   },
 
@@ -422,7 +422,7 @@ export const vi: Dictionary = {
     spaceKeyLabel: "Key của space: {key}",
     spaceKeyHint: "Key được tạo từ tên và dùng trong các đường dẫn.",
     nameLabel: "Tên",
-    namePlaceholder: "Engineering",
+    namePlaceholder: "Kỹ thuật",
     nameHint: "Bắt đầu bằng chữ cái và dùng tên chưa space nào có.",
     descriptionLabel: "Mô tả",
     optionalSuffix: "(không bắt buộc)",
@@ -838,9 +838,9 @@ export const vi: Dictionary = {
 
   slash: {
     groupBasicBlocks: "Khối cơ bản",
-    groupCode: "Code",
+    groupCode: "Mã nguồn",
     groupLayout: "Bố cục",
-    groupMedia: "Media",
+    groupMedia: "Đa phương tiện",
     groupLinks: "Liên kết",
     textLabel: "Văn bản",
     textDescription: "Đoạn văn bản thông thường",
@@ -1122,9 +1122,9 @@ export const vi: Dictionary = {
     permissionRequiredTitle: "Cần có quyền truy cập",
     permissionRequiredBody:
       "{feature} yêu cầu quyền {permission}. Liên hệ quản trị viên nếu bạn cần quyền truy cập.",
-    systemAdministratorLabel: "System administrator",
-    manageGroupsLabel: "Manage groups",
-    manageUsersLabel: "Manage users",
+    systemAdministratorLabel: "Quản trị viên hệ thống",
+    manageGroupsLabel: "Quản lý nhóm",
+    manageUsersLabel: "Quản lý người dùng",
   },
 
   adminSettings: {
@@ -1181,7 +1181,7 @@ export const vi: Dictionary = {
     roleMember: "Thành viên",
     bulkDeleteNote: "Thao tác này xoá vĩnh viễn từng tài khoản cùng các membership space của họ. Không thể hoàn tác.",
     columnUser: "Người dùng",
-    columnEmail: "E-mail",
+    columnEmail: "Email",
     columnGroups: "Nhóm",
     columnRole: "Vai trò",
     columnStatus: "Trạng thái",
@@ -1194,7 +1194,7 @@ export const vi: Dictionary = {
     youBadge: "bạn",
     protectedBadge: "được bảo vệ",
     protectedBadgeTitle: "Tài khoản có sẵn: không thể sửa, vô hiệu hoá hoặc xoá.",
-    adminBadge: "Admin",
+    adminBadge: "Quản trị viên",
     notSetDirectlyTitle:
       "Không được đặt trực tiếp làm Administrator - được cấp thông qua một nhóm hoặc một ghi đè quyền. Xem tab Quản trị viên để biết chi tiết.",
   },
