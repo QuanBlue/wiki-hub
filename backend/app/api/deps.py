@@ -34,7 +34,14 @@ async def get_db() -> AsyncIterator[AsyncSession]:
             raise
 
 
-DbSession = Annotated[AsyncSession, Depends(get_db)]
+# `scope="function"` ends the dependency - and so runs the commit - before the
+# response is sent. FastAPI's default ("request") runs it after, which let a
+# client act on a 201 for a row that was not committed yet: `POST
+# /confluence-imports/uploads` answered, the browser immediately asked for that
+# archive's `upload-parts`, and got a 404 (visible on any server whose disk
+# commits slower than the round trip). A failing commit now also surfaces as a
+# 500 instead of vanishing after a success had already been reported.
+DbSession = Annotated[AsyncSession, Depends(get_db, scope="function")]
 
 
 def get_auth_service(session: DbSession) -> AuthService:
