@@ -127,10 +127,15 @@ services:
       start_period: 90s
 
   # Runs on every `up`, so a new image never meets an out-of-date schema.
+  #
+  # It also seeds the protected admin from WIKIHUB_ADMIN_* in .env. The app
+  # does not create that account itself - `scripts/run.sh` and `make seed` do,
+  # and neither runs here - so without this step nobody can log in. The seed is
+  # idempotent, and re-syncs the admin's password whenever .env changes.
   migrate:
     image: ${WIKIHUB_IMAGE_PREFIX:-ghcr.io/quanblue/wiki-hub}-backend:${WIKIHUB_IMAGE_TAG:-latest}
     restart: "no"
-    command: ["alembic", "upgrade", "head"]
+    command: ["sh", "-c", "alembic upgrade head && python -m scripts.seed"]
     env_file: [.env]
     depends_on:
       postgres:
