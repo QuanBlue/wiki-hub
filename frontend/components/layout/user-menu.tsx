@@ -101,7 +101,19 @@ export function UserMenu({ user }: { user: Me }) {
         />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-72">
+      <DropdownMenuContent
+        align="end"
+        className="w-72"
+        onPointerDownOutside={(e) => {
+          const target = e.target as HTMLElement;
+          if (
+            target?.closest?.("[data-radix-popper-content-wrapper]") ||
+            target?.closest?.("[data-switch-account-popup]")
+          ) {
+            e.preventDefault();
+          }
+        }}
+      >
         <SwitchAccountMenu
           currentUser={user}
           canSwitch={!impersonator && user.is_superuser}
