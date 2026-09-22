@@ -12,28 +12,40 @@ echo ============================================================
 echo   WikiHub WSL and Docker Disk Compactor
 echo ============================================================
 echo.
-echo This removes unused Docker images/build cache/volumes, then
-echo reclaims that freed space from the WSL virtual disks back onto
-echo drive C:. Deleting files alone never does this on its own -
-echo Windows has to be told which blocks are free before it can
-echo shrink a WSL disk file.
+echo This removes unused Docker images/containers/networks/build
+echo cache/volumes and stale Linux package/log caches, then reclaims
+echo that freed space from the WSL virtual disks back onto drive C:.
+echo Deleting files alone never does this on its own - Windows has to
+echo be told which blocks are free before it can shrink a WSL disk
+echo file.
 echo.
-echo It will ask for your Linux (sudo) password partway through -
-echo that is separate from the Administrator prompt you just approved.
+echo Note: each run only frees what has accumulated since the last
+echo run. A huge first-time reclaim followed by much smaller numbers
+echo later is expected, not a sign anything is broken.
 echo.
 
-echo 1. Removing unused Docker images, build cache and volumes...
+echo 1. Removing unused Docker images, containers, networks, build
+echo    cache and volumes...
 echo    (only things no container - running or stopped - references;
 echo    nothing you still have gets touched)
+wsl -d Ubuntu-24.04 -- docker container prune --force
 wsl -d Ubuntu-24.04 -- docker image prune --all --force
+wsl -d Ubuntu-24.04 -- docker network prune --force
 wsl -d Ubuntu-24.04 -- docker builder prune --all --force
-wsl -d Ubuntu-24.04 -- docker volume prune --force
+wsl -d Ubuntu-24.04 -- docker volume prune --all --force
 echo.
 
 echo 2. Trimming the WSL filesystem so Windows learns which blocks
 echo    are actually free - without this, compacting later reclaims
-echo    almost nothing no matter what was just deleted above.
-wsl -d Ubuntu-24.04 -- sudo fstrim -av
+echo    almost nothing no matter what was just deleted above. Also
+echo    clearing the apt package cache and old systemd journal logs,
+echo    which quietly build up over time.
+echo    (runs as root via "wsl --user root", so no Linux password
+echo    prompt - the Administrator elevation already covers this)
+wsl -d Ubuntu-24.04 --user root -- fstrim -av
+wsl -d Ubuntu-24.04 --user root -- apt-get clean
+wsl -d Ubuntu-24.04 --user root -- journalctl --vacuum-size=200M
+wsl -d Ubuntu-24.04 --user root -- fstrim -av
 echo.
 
 echo 3. Closing Docker Desktop and shutting down WSL...
