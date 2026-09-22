@@ -1649,6 +1649,12 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                         updated_by_label=INVALID_IMPORT_USERNAME if modifier_is_invalid else None,
                         content_format="html",
                     )
+                    if source_page.created_at:
+                        page.created_at = source_page.created_at
+                    if source_page.updated_at:
+                        page.updated_at = source_page.updated_at
+                    elif source_page.created_at:
+                        page.updated_at = source_page.created_at
                     session.add(page)
                     pages[source_page.source_id] = page
                     imported_pages[source_page.source_id] = page
@@ -1880,6 +1886,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 "attachments",
                 f"Imported {attachments_imported} attachments and linked them to their pages.",
             )
+            restore_timestamps()
             job.status, job.phase = "completed", "completed"
             await session.commit()
     except ImportCancelled as exc:

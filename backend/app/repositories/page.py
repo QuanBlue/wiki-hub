@@ -103,7 +103,10 @@ class PageRepository:
             select(WikiPage)
             .join(WikiPage.space)
             .where(
-                WikiPage.updated_by_id == user_id,
+                or_(
+                    WikiPage.updated_by_id == user_id,
+                    and_(WikiPage.created_by_id == user_id, WikiPage.updated_by_id.is_(None)),
+                ),
                 Space.status != "archived",
             )
             .options(

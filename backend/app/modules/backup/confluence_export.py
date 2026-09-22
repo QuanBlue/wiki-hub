@@ -252,6 +252,8 @@ async def write_confluence_dc_export(
         _property(space_element, "key", space.key)
         _property(space_element, "name", space.name)
         _property(space_element, "description", space.description)
+        if space.created_at is not None:
+            _property(space_element, "creationDate", space.created_at.isoformat())
 
         if space.visibility == SpaceVisibility.open:
             # A true anonymous grant - no userName/groupName - is what
@@ -308,6 +310,10 @@ async def write_confluence_dc_export(
         _reference_property(page_element, "space", "Space", ids[page.space_id])
         _reference_property(page_element, "parent", "Page", ids.get(page.parent_id))
         _property(page_element, "contentStatus", "current")
+        if page.created_at is not None:
+            _property(page_element, "creationDate", page.created_at.isoformat())
+        if page.updated_at is not None:
+            _property(page_element, "lastModificationDate", page.updated_at.isoformat())
         creator = users_by_id.get(page.created_by_id) if page.created_by_id else None
         modifier = users_by_id.get(page.updated_by_id) if page.updated_by_id else None
         if creator is not None:

@@ -42,6 +42,11 @@ dependencies = [
   "markdown-it-py>=3.0",
   "python-slugify>=8.0",
   "filetype>=1.2",
+  # Confluence export dates come in several free-form formats (e.g.
+  # "26/09/2022 2:04 PM") that datetime.fromisoformat cannot parse. Was only
+  # ever present transitively via botocore; declared directly now that
+  # app/modules/import_export/confluence.py imports it itself.
+  "python-dateutil>=2.9",
   # Allowlist HTML sanitizer (Rust `ammonia`). Content imported from .docx/.pdf/
   # .html is untrusted and is stored in page_revisions, which the page-history
   # modal renders with dangerouslySetInnerHTML - the hand-rolled denylist in

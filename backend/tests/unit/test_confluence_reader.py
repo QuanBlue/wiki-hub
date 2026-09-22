@@ -258,3 +258,71 @@ def test_scan_keeps_the_generic_message_for_a_merely_broken_archive(tmp_path):
         scan_archive(path)
     assert "entities.xml" in str(excinfo.value)
     assert "WikiHub backup" not in str(excinfo.value)
+
+
+XML_PAGE_TIMESTAMPS = """<root>
+<object class="Space"><id>s1</id><property name="key">DSP</property><property name="name">Digital Sales</property><property name="creationDate">2022-01-15 08:30:00.000</property></object>
+<object class="Page">
+  <id>p1</id>
+  <property name="title">DSP.DienQuang</property>
+  <property name="space"><id>s1</id></property>
+  <property name="contentStatus">current</property>
+  <property name="creatorName">admin</property>
+  <property name="lastModifierName">chientm4</property>
+  <property name="creationDate"><id>106727221</id><date>2022-09-26 14:04:47.000</date></property>
+  <property name="lastModificationDate"><id>106727222</id><date>2023-05-11 10:25:31.000</date></property>
+</object>
+<object class="Page">
+  <id>p2</id>
+  <property name="title">ISO Date Page</property>
+  <property name="space"><id>s1</id></property>
+  <property name="contentStatus">current</property>
+  <property name="creationDate">2024-06-01T12:00:00Z</property>
+  <property name="lastModificationDate">2024-06-02T15:30:00+00:00</property>
+</object>
+</root>"""
+
+
+def test_scan_confluence_page_creation_and_last_modified_date(tmp_path):
+    path = tmp_path / "timestamps_export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", XML_PAGE_TIMESTAMPS)
+
+    spaces = scan_archive(path)
+    assert len(spaces) == 1
+    dsp_space = spaces[0]
+    assert dsp_space.key == "DSP"
+    assert dsp_space.created_at is not None
+    assert dsp_space.created_at.year == 2022
+    assert dsp_space.created_at.month == 1
+    assert dsp_space.created_at.day == 15
+
+    pages_by_title = {p.title: p for p in dsp_space.pages}
+    p1 = pages_by_title["DSP.DienQuang"]
+    assert p1.created_at is not None
+    assert p1.created_at.year == 2022
+    assert p1.created_at.month == 9
+    assert p1.created_at.day == 26
+    assert p1.created_at.hour == 14
+    assert p1.created_at.minute == 4
+    assert p1.created_at.second == 47
+
+    assert p1.updated_at is not None
+    assert p1.updated_at.year == 2023
+    assert p1.updated_at.month == 5
+    assert p1.updated_at.day == 11
+    assert p1.updated_at.hour == 10
+    assert p1.updated_at.minute == 25
+    assert p1.updated_at.second == 31
+
+    p2 = pages_by_title["ISO Date Page"]
+    assert p2.created_at is not None
+    assert p2.created_at.year == 2024
+    assert p2.created_at.month == 6
+    assert p2.created_at.day == 1
+
+    assert p2.updated_at is not None
+    assert p2.updated_at.year == 2024
+    assert p2.updated_at.month == 6
+    assert p2.updated_at.day == 2
+

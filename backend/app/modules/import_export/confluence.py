@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO
 
+from dateutil import parser as dateutil_parser
+
 from app.core.exceptions import BadRequestError
 
 
@@ -119,17 +121,40 @@ def _text(properties: dict[str, ET.Element], name: str, default: str = "") -> st
     return element.text.strip() if element is not None and element.text else default
 
 
+def _property_text(element: ET.Element | None) -> str:
+    """Extract raw text from a property element, checking child tags like <date>."""
+    if element is None:
+        return ""
+    # Confluence DC / Server serializes dates and IDs into child tags
+    # e.g. <property name="creationDate"><id>123</id><date>2022-09-26 14:04:47.000</date></property>
+    for child_tag in ("date", "value"):
+        child_val = element.findtext(child_tag)
+        if child_val and child_val.strip():
+            return child_val.strip()
+    if element.text and element.text.strip():
+        return element.text.strip()
+    # Check any child elements that are not <id> or <ref>
+    for child in element:
+        if child.tag not in ("id", "ref") and child.text and child.text.strip():
+            return child.text.strip()
+    return ""
+
+
 def _timestamp(properties: dict[str, ET.Element], *names: str) -> datetime | None:
-    """Read Confluence's ISO-8601 Page timestamp in UTC when present."""
+    """Read Confluence's Page/Space timestamp in UTC when present."""
     for name in names:
-        value = _text(properties, name)
+        element = properties.get(name)
+        value = _property_text(element)
         if not value:
             continue
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
-            continue
-        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+            try:
+                parsed = dateutil_parser.parse(value)
+            except (ValueError, TypeError, OverflowError):
+                continue
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
     return None
 
 
