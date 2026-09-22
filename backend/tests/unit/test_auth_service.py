@@ -51,6 +51,8 @@ def service(actor=None, impersonator=None) -> AuthService:
 
 
 def test_password_change_rules() -> None:
+    """Self-service changes must be a strong password: the account owner is
+    the one who has to live with it, so the app enforces its shape."""
     valid = PasswordChange(current_password="current", new_password="Stronger8")
     assert valid.new_password == "Stronger8"
 
@@ -58,8 +60,16 @@ def test_password_change_rules() -> None:
         PasswordChange(current_password="current", new_password="lowercase8")
     with pytest.raises(ValidationError):
         PasswordChange(current_password="current", new_password="NoNumbers")
+
+
+def test_password_reset_skips_strength_rules() -> None:
+    """An administrator resetting someone else's password is trusted to pick
+    whatever value they need - only the minimum length still applies."""
+    reset = PasswordReset(new_password="123456a@")
+    assert reset.new_password == "123456a@"
+
     with pytest.raises(ValidationError):
-        PasswordReset(new_password="123456a@")
+        PasswordReset(new_password="short1")
 
 
 def test_self_profile_email_validation() -> None:
