@@ -30,6 +30,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -58,6 +65,8 @@ type ActivityTab = "all" | "mine" | "drafts" | "knowledge";
 type KnowledgeSection = "favourites" | "pinned" | "liked" | "saved";
 
 const KNOWLEDGE_PAGE_SIZES = [10, 25, 50, 100] as const;
+// Matches the `/api/v1/pages/recent` endpoint's `le=100` cap.
+const ALL_ACTIVITY_LIMITS = [20, 50, 100] as const;
 // Mirrors SAVED_PAGE_KEYS_STORAGE / SAVED_PAGE_KEYS_EVENT in
 // components/pages/space-workspace.tsx and STORAGE_KEY / CHANGE_EVENT in
 // components/recent/saved-pages-list.tsx - duplicated for the same reason
@@ -444,6 +453,12 @@ function DraftRow({ draft }: { draft: UserDraftItem }) {
   );
 }
 
+// How close two consecutive updates from the same person need to be to read
+// as one sitting rather than two separate visits. Long enough to absorb a
+// short break, short enough that a stretch of a prolific user's history
+// doesn't swallow everyone else's more recent activity into one block.
+const ACTIVITY_GROUP_GAP_MS = 3 * 60 * 60 * 1000;
+
 function CompactActivityFeed({
   items,
   onViewChange,
@@ -454,17 +469,34 @@ function CompactActivityFeed({
   showActors?: boolean;
 }) {
   const groups = useMemo(() => {
-    const byUser = new Map<string, { name: string; items: RecentPageItem[] }>();
+    // Items arrive sorted newest-first. Only merge an item into the previous
+    // group when it's both the same person *and* close enough in time to the
+    // group's last entry - otherwise a prolific user's older activity would
+    // absorb everyone else's more recent activity into one long block, which
+    // breaks the newest-to-oldest reading order the list is meant to show.
+    const result: { key: string; username: string; name: string; items: RecentPageItem[] }[] = [];
     for (const item of items) {
       const username = item.user_username || "system";
-      const group = byUser.get(username) ?? {
-        name: item.user_full_name || username,
-        items: [],
-      };
-      group.items.push(item);
-      byUser.set(username, group);
+      const current = result[result.length - 1];
+      const lastItem = current?.items[current.items.length - 1];
+      const withinGap =
+        lastItem !== undefined &&
+        Math.abs(
+          new Date(item.updated_at).getTime() - new Date(lastItem.updated_at).getTime(),
+        ) <= ACTIVITY_GROUP_GAP_MS;
+
+      if (current && current.username === username && withinGap) {
+        current.items.push(item);
+      } else {
+        result.push({
+          key: `${username}-${item.id}`,
+          username,
+          name: item.user_full_name || username,
+          items: [item],
+        });
+      }
     }
-    return [...byUser.entries()];
+    return result;
   }, [items]);
   const { t } = useTranslation();
   if (!showActors) {
@@ -484,43 +516,46 @@ function CompactActivityFeed({
 
   return groups.length ? (
     <div className="space-y-2 p-4">
-      {groups.map(([username, group]) => (
-        <section key={username}>
-          <div className="flex items-center gap-3 py-1.5">
-            {username === "system" ? (
-              <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
-                W
-              </span>
-            ) : (
-              <UserProfileTrigger
-                username={username}
-                fullName={group.name}
-                variant="avatar"
-                className="size-8 text-xs"
-              />
-            )}
-            <p className="min-w-0 text-sm font-semibold">
+      {groups.map((group) => {
+        const username = group.username;
+        return (
+          <section key={group.key}>
+            <div className="flex items-center gap-3 py-1.5">
               {username === "system" ? (
-                group.name
+                <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+                  W
+                </span>
               ) : (
-                <UserProfileTrigger username={username} fullName={group.name} />
+                <UserProfileTrigger
+                  username={username}
+                  fullName={group.name}
+                  variant="avatar"
+                  className="size-8 text-xs"
+                />
               )}
-            </p>
-          </div>
-          <ul className="mt-0.5 ml-4 space-y-0.5">
-            {group.items.map((item, index) => (
-              <ActivityRow
-                key={item.id}
-                item={item}
-                onViewChange={onViewChange}
-                treePosition={
-                  index === group.items.length - 1 ? "last" : "middle"
-                }
-              />
-            ))}
-          </ul>
-        </section>
-      ))}
+              <p className="min-w-0 text-sm font-semibold">
+                {username === "system" ? (
+                  group.name
+                ) : (
+                  <UserProfileTrigger username={username} fullName={group.name} />
+                )}
+              </p>
+            </div>
+            <ul className="mt-0.5 ml-4 space-y-0.5">
+              {group.items.map((item, index) => (
+                <ActivityRow
+                  key={item.id}
+                  item={item}
+                  onViewChange={onViewChange}
+                  treePosition={
+                    index === group.items.length - 1 ? "last" : "middle"
+                  }
+                />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   ) : (
     <div className="p-12 text-center">
@@ -558,6 +593,11 @@ export function UserProfile({
   const [activeTab, setActiveTab] = useState<ActivityTab>("all");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [allActivityItems, setAllActivityItems] = useState(initialAllActivity);
+  const [allActivityLimit, setAllActivityLimit] =
+    useState<(typeof ALL_ACTIVITY_LIMITS)[number]>(50);
+  const [allActivityLoading, setAllActivityLoading] = useState(false);
+  const [allActivityError, setAllActivityError] = useState<string | null>(null);
   const [historyItem, setHistoryItem] = useState<RecentPageItem | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activityScrollRef = useRef<HTMLDivElement | null>(null);
@@ -589,6 +629,32 @@ export function UserProfile({
     useState<(typeof KNOWLEDGE_PAGE_SIZES)[number]>(10);
   const { sidebarFavoriteIds, sidebarPinnedIds, toggleSidebarShortcut } =
     useSidebarShortcuts(isOwner ? favoriteSpaces : [], isOwner ? pinnedPages : []);
+
+  useEffect(() => {
+    setItems(initialActivity.items);
+    setNextCursor(initialActivity.next_cursor);
+  }, [initialActivity]);
+
+  useEffect(() => {
+    setAllActivityItems(initialAllActivity);
+    setAllActivityLimit(50);
+  }, [initialAllActivity]);
+
+  async function changeAllActivityLimit(limit: (typeof ALL_ACTIVITY_LIMITS)[number]) {
+    setAllActivityLimit(limit);
+    setAllActivityLoading(true);
+    setAllActivityError(null);
+    try {
+      const result = await api.get<RecentPageItem[]>(
+        `/api/v1/pages/recent?limit=${limit}`,
+      );
+      setAllActivityItems(result);
+    } catch (err) {
+      setAllActivityError(apiErrorText(err, "userProfile.couldNotLoadMoreActivity"));
+    } finally {
+      setAllActivityLoading(false);
+    }
+  }
 
   useEffect(() => {
     const interval = window.setInterval(
@@ -759,7 +825,7 @@ export function UserProfile({
   // public activity. The workspace-wide feed belongs to the signed-in user's
   // Home, where "My activity" is also meaningful.
   const visibleItems =
-    isOwner && activeTab === "all" ? initialAllActivity : items;
+    isOwner && activeTab === "all" ? allActivityItems : items;
   const presence = presenceOf(user.last_active_at, presenceNow, t);
   const presenceIndicatorClass =
     presence.minutesAgo !== undefined
@@ -922,33 +988,65 @@ export function UserProfile({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-tight">{t("userProfile.activity")}</h2>
           </div>
-          <div
-            className="mt-3 flex gap-5"
-            role="tablist"
-            aria-label={t("userProfile.activityAria")}
-          >
-            {activityTabs.map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab}
-                onClick={() => setActiveTab(tab)}
-                className={`focus-visible:ring-ring cursor-pointer border-b-2 px-0.5 pb-2.5 text-xs font-medium capitalize transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none ${activeTab === tab ? "border-primary text-primary" : "text-muted-foreground hover:text-foreground border-transparent"}`}
-              >
-                {tab === "all"
-                  ? isOwner
-                    ? t("userProfile.tabAllActivity")
-                    : t("userProfile.tabUserActivity", { username: user.username })
-                  : tab === "mine"
-                    ? t("userProfile.tabMyActivity")
-                    : tab === "knowledge"
-                      ? t("userProfile.tabMyKnowledge")
-                      : isOwner
-                        ? t("userProfile.tabDrafts")
-                        : t("userProfile.tabUserDraft", { username: user.username })}
-              </button>
-            ))}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <div
+              className="flex gap-5"
+              role="tablist"
+              aria-label={t("userProfile.activityAria")}
+            >
+              {activityTabs.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`focus-visible:ring-ring cursor-pointer border-b-2 px-0.5 pb-2.5 text-xs font-medium capitalize transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none ${activeTab === tab ? "border-primary text-primary" : "text-muted-foreground hover:text-foreground border-transparent"}`}
+                >
+                  {tab === "all"
+                    ? isOwner
+                      ? t("userProfile.tabAllActivity")
+                      : t("userProfile.tabUserActivity", { username: user.username })
+                    : tab === "mine"
+                      ? t("userProfile.tabMyActivity")
+                      : tab === "knowledge"
+                        ? t("userProfile.tabMyKnowledge")
+                        : isOwner
+                          ? t("userProfile.tabDrafts")
+                          : t("userProfile.tabUserDraft", { username: user.username })}
+                </button>
+              ))}
+            </div>
+            {isOwner && activeTab === "all" ? (
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground text-xs">
+                  {t("userProfile.showRecentCount")}
+                </span>
+                <Select
+                  value={String(allActivityLimit)}
+                  disabled={allActivityLoading}
+                  onValueChange={(value) =>
+                    void changeAllActivityLimit(
+                      Number(value) as (typeof ALL_ACTIVITY_LIMITS)[number],
+                    )
+                  }
+                >
+                  <SelectTrigger
+                    aria-label={t("userProfile.showRecentCount")}
+                    className="h-7 w-18 px-2 text-xs"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALL_ACTIVITY_LIMITS.map((limit) => (
+                      <SelectItem key={limit} value={String(limit)}>
+                        {limit}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -1449,7 +1547,7 @@ export function UserProfile({
           {nextCursor && activeTab === "mine" ? (
             <div ref={sentinelRef} className="h-px" aria-hidden />
           ) : null}
-          {loading ? (
+          {loading || (allActivityLoading && activeTab === "all") ? (
             <p className="text-muted-foreground p-4 text-center text-sm">
               {t("userProfile.loadingMoreActivity")}
             </p>
@@ -1458,6 +1556,14 @@ export function UserProfile({
             <div className="border-danger/30 bg-danger-bg m-4 flex items-center justify-between gap-3 rounded-lg border p-3">
               <p className="text-danger text-sm">{loadError}</p>
               <Button size="sm" onClick={() => void loadMore()}>
+                {t("userProfile.tryAgain")}
+              </Button>
+            </div>
+          ) : null}
+          {allActivityError && activeTab === "all" ? (
+            <div className="border-danger/30 bg-danger-bg m-4 flex items-center justify-between gap-3 rounded-lg border p-3">
+              <p className="text-danger text-sm">{allActivityError}</p>
+              <Button size="sm" onClick={() => void changeAllActivityLimit(allActivityLimit)}>
                 {t("userProfile.tryAgain")}
               </Button>
             </div>
