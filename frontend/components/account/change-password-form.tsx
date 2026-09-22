@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
+import { cn } from "@/lib/utils";
 import type { User } from "@/types/api";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -99,6 +100,11 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
   const rules = passwordRules(t)(next, confirm);
   const hasValidNewPassword = rules.slice(0, 3).every((rule) => rule.met);
   const canSubmit = Boolean(current) && hasValidNewPassword && rules[3]!.met;
+  // Rules read as neutral until there is something to judge - otherwise every
+  // row would open already flagged red, which reads as an error before the
+  // person has typed anything.
+  const interacted = newPasswordFocused || next.length > 0 || confirm.length > 0;
+  const metCount = rules.filter((rule) => rule.met).length;
 
   function fillGeneratedPassword() {
     const password = generatePassword();
@@ -149,12 +155,41 @@ export function ChangePasswordForm({ onCancel, onSuccess }: { onCancel?: () => v
     <form onSubmit={handleSubmit} className="max-w-4xl" noValidate>
       <div className="grid gap-8 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="border-border bg-surface-sunken/60 rounded-lg border p-5">
-          <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t("password.requirements")}</p>
-          <p className="text-muted-foreground mt-2 text-xs leading-5">{t("password.requirementsHint")}</p>
-          <ul className="mt-4 space-y-3" aria-live="polite">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t("password.requirements")}</p>
+            <span
+              className={cn(
+                "text-[11px] font-semibold tabular-nums",
+                metCount === rules.length ? "text-success" : interacted ? "text-danger" : "text-muted-foreground",
+              )}
+            >
+              {metCount}/{rules.length}
+            </span>
+          </div>
+          <div className="bg-border/80 mt-2.5 h-1 w-full overflow-hidden rounded-full">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all duration-300",
+                metCount === rules.length ? "bg-success" : interacted ? "bg-danger" : "bg-muted-foreground/40",
+              )}
+              style={{ width: `${(metCount / rules.length) * 100}%` }}
+            />
+          </div>
+          <p className="text-muted-foreground mt-3 text-xs leading-5">{t("password.requirementsHint")}</p>
+          <ul className="mt-4 space-y-2.5" aria-live="polite">
             {rules.map((rule) => (
-              <li key={rule.label} className={rule.met ? "text-foreground flex gap-2 text-sm leading-5" : "text-muted-foreground flex gap-2 text-sm leading-5"}>
-                {rule.met ? <Check className="text-success mt-0.5 size-4 shrink-0" aria-hidden /> : <X className={newPasswordFocused || next || confirm ? "text-danger mt-0.5 size-4 shrink-0" : "text-muted-foreground/50 mt-0.5 size-4 shrink-0"} aria-hidden />}
+              <li
+                key={rule.label}
+                className={cn(
+                  "flex items-center gap-2 text-sm leading-5 transition-colors",
+                  rule.met ? "text-success font-medium" : interacted ? "text-danger font-medium" : "text-muted-foreground",
+                )}
+              >
+                {rule.met ? (
+                  <Check className="size-4 shrink-0" aria-hidden />
+                ) : (
+                  <X className="size-4 shrink-0" aria-hidden />
+                )}
                 <span>{rule.label}</span>
               </li>
             ))}
