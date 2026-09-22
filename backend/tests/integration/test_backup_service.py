@@ -795,6 +795,13 @@ class TestRoundTrip:
                 ),
             ]
         )
+        # Deliberately far in the past, so a restore that silently re-stamps
+        # them to "now" (e.g. the parent-linking pass overwriting `updated_at`
+        # via its `onupdate`) is easy to catch below.
+        parent_created_at = datetime(2020, 1, 1, tzinfo=UTC)
+        parent_updated_at = datetime(2020, 3, 15, tzinfo=UTC)
+        child_created_at = datetime(2021, 6, 1, tzinfo=UTC)
+        child_updated_at = datetime(2021, 6, 15, tzinfo=UTC)
         parent = WikiPage(
             space_id=space.id,
             title="Overview",
@@ -802,6 +809,8 @@ class TestRoundTrip:
             content="Parent content",
             created_by_id=alice.id,
             updated_by_id=alice.id,
+            created_at=parent_created_at,
+            updated_at=parent_updated_at,
         )
         session.add(parent)
         await session.flush()
@@ -813,6 +822,8 @@ class TestRoundTrip:
             content="Child content",
             created_by_id=bob.id,
             updated_by_id=bob.id,
+            created_at=child_created_at,
+            updated_at=child_updated_at,
         )
         session.add(child)
         await session.flush()
@@ -857,6 +868,13 @@ class TestRoundTrip:
             await session.execute(select(WikiPage).where(WikiPage.slug == "overview"))
         ).scalar_one()
         assert restored_child.parent_id == restored_parent.id
+        # The child goes through the restore's second, parent-linking pass -
+        # exactly the UPDATE whose `onupdate` would silently re-stamp
+        # `updated_at` to restore time if the importer didn't reapply it.
+        assert restored_parent.created_at == parent_created_at
+        assert restored_parent.updated_at == parent_updated_at
+        assert restored_child.created_at == child_created_at
+        assert restored_child.updated_at == child_updated_at
         assert restored_parent.created_by_id == restored_alice.id
         assert restored_parent.updated_by_id == restored_alice.id
         assert restored_child.created_by_id == restored_bob.id

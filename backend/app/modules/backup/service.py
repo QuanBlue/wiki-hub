@@ -28,6 +28,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.config import settings
 from app.core.exceptions import BadRequestError
@@ -572,6 +573,8 @@ class BackupService:
                 ),
                 created_by_label=page.created_by_label,
                 updated_by_label=page.updated_by_label,
+                created_at=page.created_at,
+                updated_at=page.updated_at,
             )
             for page in pages
             if page.space_id in spaces_by_id
@@ -1009,6 +1012,7 @@ class BackupService:
                                     WikiPage.id, WikiPage.slug, WikiPage.title, WikiPage.content,
                                     WikiPage.content_format, WikiPage.parent_id, WikiPage.created_by_id,
                                     WikiPage.updated_by_id, WikiPage.created_by_label, WikiPage.updated_by_label,
+                                    WikiPage.created_at, WikiPage.updated_at,
                                 ).where(WikiPage.id.in_(batch_ids))
                             )
                         ).all()
@@ -1025,6 +1029,7 @@ class BackupService:
                             created_by_username=users_by_id[row.created_by_id].username if row.created_by_id in users_by_id else None,
                             updated_by_username=users_by_id[row.updated_by_id].username if row.updated_by_id in users_by_id else None,
                             created_by_label=row.created_by_label, updated_by_label=row.updated_by_label,
+                            created_at=row.created_at, updated_at=row.updated_at,
                         )
                         if not first:
                             writer.write(",")
@@ -1903,6 +1908,15 @@ class BackupService:
                 created_by_label=page_entry.created_by_label,
                 updated_by_label=page_entry.updated_by_label,
             )
+            # Otherwise the row's created_at/updated_at default to "now" and
+            # every restored page reads as edited at restore time instead of
+            # when it actually last changed - mirrors the Confluence importer.
+            if page_entry.created_at:
+                page.created_at = page_entry.created_at
+            if page_entry.updated_at:
+                page.updated_at = page_entry.updated_at
+            elif page_entry.created_at:
+                page.updated_at = page_entry.created_at
             if await self.session.get(WikiPage, page_entry.id) is None:
                 page.id = page_entry.id
             self.session.add(page)
@@ -1928,6 +1942,19 @@ class BackupService:
                 )
                 continue
             child_page.parent_id = parent_page.id
+            # Re-apply: `updated_at` has `onupdate=func.now()`, so without
+            # this an UPDATE that only touches parent_id would silently
+            # re-stamp every nested page back to restore time.
+            if page_entry.updated_at:
+                child_page.updated_at = page_entry.updated_at
+                # Reassigning to the value it may already hold leaves the
+                # attribute out of SQLAlchemy's change-history, so the
+                # UPDATE's SET clause would omit it and the server-side
+                # `onupdate` would win anyway - force it in.
+                flag_modified(child_page, "updated_at")
+            elif page_entry.created_at:
+                child_page.updated_at = page_entry.created_at
+                flag_modified(child_page, "updated_at")
             await self.session.flush()
 
         for revision_entry in doc.page_revisions:

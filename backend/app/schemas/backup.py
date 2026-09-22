@@ -149,6 +149,10 @@ class BackupPage(BaseModel):
     updated_by_username: str | None = None
     created_by_label: str | None = None
     updated_by_label: str | None = None
+    #: Additive - archives exported before this field existed still parse and
+    #: just fall back to restore-time timestamps, same as `BackupSpace`.
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class BackupPageRevision(BaseModel):
