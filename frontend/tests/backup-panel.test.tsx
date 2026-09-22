@@ -66,6 +66,11 @@ const SPACES = [
 function baseRoutes(): Array<{ method: string; match: (pathname: string) => boolean; handler: RouteHandler }> {
   return [
     {
+      method: "POST",
+      match: (p) => p === "/api/v1/auth/renew",
+      handler: () => ({ body: {} }),
+    },
+    {
       method: "GET",
       match: (p) => p === "/api/v1/confluence-imports/jobs",
       handler: () => ({ body: [] }),

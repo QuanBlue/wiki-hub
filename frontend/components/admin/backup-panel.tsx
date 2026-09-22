@@ -1477,9 +1477,54 @@ export function BackupPanel() {
     }),
   );
 
-  async function renewUploadSession() {
+  const renewUploadSession = useCallback(async () => {
     await apiFetch<void>("/api/v1/auth/renew", { method: "POST" });
-  }
+  }, []);
+
+  // Keep the administrator's session alive for as long as this backup/restore
+  // panel is open. Being on this panel and performing backups, restores, or
+  // monitoring jobs is active work, so periodic renewal prevents unexpected
+  // session expiry.
+  useEffect(() => {
+    let timer: number | null = null;
+    let cancelled = false;
+
+    const runHeartbeat = () => {
+      if (cancelled) return;
+      void renewUploadSession().catch(() => {
+        // Transient network issues should not break the panel; subsequent
+        // intervals will retry.
+      });
+    };
+
+    // Renew immediately on entering the backup/restore page so any session
+    // approaching expiry from earlier navigation is refreshed immediately.
+    runHeartbeat();
+
+    // Renew periodically every 2 minutes
+    timer = window.setInterval(runHeartbeat, 2 * 60 * 1000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        runHeartbeat();
+      }
+    };
+    const onFocus = () => {
+      runHeartbeat();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        window.clearInterval(timer);
+      }
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [renewUploadSession]);
 
   const appendPreparationLog = useCallback((message: string) => {
     const time = new Intl.DateTimeFormat(undefined, {
@@ -2585,7 +2630,7 @@ export function BackupPanel() {
       });
     try {
       await renewUploadSession();
-      sessionRenewalTimer = window.setInterval(runRenewal, 5 * 60 * 1000);
+      sessionRenewalTimer = window.setInterval(runRenewal, 2 * 60 * 1000);
       visibilityRenewalHandler = () => {
         if (document.visibilityState === "visible") runRenewal();
       };
@@ -2799,6 +2844,7 @@ export function BackupPanel() {
       appendPreparationLog(
         "Upload finished. Completing multipart upload in object storage.",
       );
+      await renewUploadSession().catch(() => {});
       await apiFetch(
         `/api/v1/confluence-imports/archives/${target.archive_id}/complete-upload`,
         { method: "POST" },
@@ -2806,6 +2852,7 @@ export function BackupPanel() {
       appendPreparationLog("Multipart upload completed. Scanning archive.");
       await clearStoredUpload();
       setStoredConfluenceUpload(null);
+      await renewUploadSession().catch(() => {});
       const archive = await apiFetch<ConfluenceArchive>(
         `/api/v1/confluence-imports/archives/${target.archive_id}/scan`,
         { method: "POST" },
@@ -3028,7 +3075,22 @@ export function BackupPanel() {
     // fresh restore is a clean slate, so that stale card goes with it.
     setPortableBackupJob(null);
     let reachedScan = false;
+    let sessionRenewalTimer: number | null = null;
+    let visibilityRenewalHandler: (() => void) | null = null;
+    const runRenewal = () =>
+      void renewUploadSession().catch((renewError) => {
+        if (renewError instanceof ApiError && renewError.status === 401) {
+          setError(SESSION_EXPIRED_UPLOAD_MESSAGE);
+          restoreUploadRequest.current?.abort();
+        }
+      });
     try {
+      await renewUploadSession().catch(() => {});
+      sessionRenewalTimer = window.setInterval(runRenewal, 2 * 60 * 1000);
+      visibilityRenewalHandler = () => {
+        if (document.visibilityState === "visible") runRenewal();
+      };
+      document.addEventListener("visibilitychange", visibilityRenewalHandler);
       appendRestorePreparationLog(
         `Selected ${targetFile.name} (${formatBytes(targetFile.size)}).`,
       );
@@ -3177,6 +3239,7 @@ export function BackupPanel() {
         appendRestorePreparationLog(
           "Upload finished. Completing multipart upload in object storage.",
         );
+        await renewUploadSession().catch(() => {});
         await apiFetch(
           `/api/v1/backup/archives/${target.archive_id}/complete-upload`,
           { method: "POST" },
@@ -3193,6 +3256,7 @@ export function BackupPanel() {
         "Scanning the archive for its space list. This can take a few minutes.",
       );
       setIsScanningBackupArchive(true);
+      await renewUploadSession().catch(() => {});
       const scanned = await apiFetch<BackupArchive>(
         `/api/v1/backup/archives/${target.archive_id}/scan`,
         { method: "POST" },
@@ -3220,6 +3284,15 @@ export function BackupPanel() {
         // toast - nothing further to report here.
         return;
       }
+      if (err instanceof ApiError && err.status === 401) {
+        setError(SESSION_EXPIRED_UPLOAD_MESSAGE);
+        toast.error("Upload paused because your session expired.");
+        appendRestorePreparationLog(
+          "Upload paused: Your session expired.",
+          "error",
+        );
+        return;
+      }
       // A 4xx from the scan is a verdict on the file, not on the transfer:
       // the bytes all arrived and the server looked inside and said no. A 5xx
       // or a dropped connection is not - that is worth another attempt, which
@@ -3244,6 +3317,12 @@ export function BackupPanel() {
           : "Could not upload or scan the backup archive.",
       );
     } finally {
+      if (sessionRenewalTimer !== null) {
+        window.clearInterval(sessionRenewalTimer);
+      }
+      if (visibilityRenewalHandler !== null) {
+        document.removeEventListener("visibilitychange", visibilityRenewalHandler);
+      }
       if (stillCurrent()) {
         restoreUploadActiveRef.current = false;
         setIsHashingBackupArchive(false);
