@@ -98,7 +98,7 @@ describe("DocumentImportProgress", () => {
 
     const bar = screen.getByRole("progressbar");
     expect(bar).toHaveAttribute("aria-valuenow", "50");
-    expect(screen.getByText(/Importing 2 documents/)).toBeInTheDocument();
+    expect(screen.getByText(/Importing 2 document/)).toBeInTheDocument();
     expect(screen.getByText(/1 \/ 2/)).toBeInTheDocument();
   });
 
@@ -222,7 +222,7 @@ describe("DocumentImportProgress", () => {
       }),
     );
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Imported 2 pages."));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Imported 2 page(s)."));
     expect(props.onFinished).toHaveBeenCalledTimes(1);
   });
 
