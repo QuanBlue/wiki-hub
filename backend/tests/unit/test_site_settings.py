@@ -21,13 +21,15 @@ def test_sidebar_permissions_default_keeps_knowledge_navigation_open() -> None:
 
     assert permissions.home == ["admin", "member"]
     assert permissions.spaces == ["admin", "member"]
+    assert permissions.favorites == ["admin", "member"]
+    assert permissions.pinned == ["admin", "member"]
     assert permissions.settings == ["admin"]
     assert permissions.backups == ["admin"]
 
 
-def test_sidebar_permissions_requires_a_role_for_knowledge_navigation() -> None:
-    with pytest.raises(ValidationError, match="At least one role"):
-        SidebarPermissions(recent=[])
+def test_sidebar_permissions_allows_hiding_knowledge_navigation_from_everyone() -> None:
+    permissions = SidebarPermissions(recent=[])
+    assert permissions.recent == []
 
 
 def test_sidebar_permissions_dedupes_an_explicit_role_list() -> None:
@@ -38,6 +40,14 @@ def test_sidebar_permissions_dedupes_an_explicit_role_list() -> None:
 def test_sidebar_permissions_does_not_expose_administration_to_members() -> None:
     with pytest.raises(ValidationError, match="administrators only"):
         SidebarPermissions(settings=["admin", "member"])
+
+
+def test_sidebar_permissions_coerces_home_back_to_visible_for_everyone() -> None:
+    """Coerced, not rejected: this model also parses whatever is already
+    stored on the settings row, including a legacy value saved before Home
+    became fixed. Rejecting it would crash every effective-settings read."""
+    assert SidebarPermissions(home=["admin"]).home == ["admin", "member"]
+    assert SidebarPermissions(home=[]).home == ["admin", "member"]
 
 
 def test_site_settings_validators_normalise_and_validate_extensions() -> None:

@@ -536,8 +536,9 @@ export type AppRole = "admin" | "member";
 export interface SidebarPermissions {
   home: AppRole[];
   spaces: AppRole[];
-  recent: AppRole[];
+  recent?: AppRole[];
   favorites: AppRole[];
+  pinned: AppRole[];
   settings: AppRole[];
   backups: AppRole[];
 }

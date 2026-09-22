@@ -32,23 +32,34 @@ class SidebarPermissions(BaseModel):
     membership rules regardless of whether its parent navigation is visible.
     """
 
+    # Home is the one link every signed-in user must always be able to reach,
+    # so its role set is fixed the same way settings/backups are fixed below.
     home: list[AppRole] = Field(default_factory=_all_app_roles)
     spaces: list[AppRole] = Field(default_factory=_all_app_roles)
     recent: list[AppRole] = Field(default_factory=_all_app_roles)
     favorites: list[AppRole] = Field(default_factory=_all_app_roles)
+    pinned: list[AppRole] = Field(default_factory=_all_app_roles)
     # Administrative routes already enforce this on the server. Keeping their
     # policy fixed prevents a member from seeing a link that can only end in a
     # 403 and ensures an administrator can always reach Settings.
     settings: list[AppRole] = Field(default_factory=_admin_role)
     backups: list[AppRole] = Field(default_factory=_admin_role)
 
-    @field_validator("home", "spaces", "recent", "favorites")
+    @field_validator("spaces", "recent", "favorites", "pinned")
     @classmethod
-    def _require_a_role(cls, value: list[AppRole]) -> list[AppRole]:
-        unique = list(dict.fromkeys(value))
-        if not unique:
-            raise ValueError("At least one role must be allowed for each navigation item.")
-        return unique
+    def _dedupe_roles(cls, value: list[AppRole]) -> list[AppRole]:
+        # An empty list is a valid, deliberate state: "hidden from everyone".
+        return list(dict.fromkeys(value))
+
+    @field_validator("home")
+    @classmethod
+    def _keep_home_visible(cls, value: list[AppRole]) -> list[AppRole]:
+        # Coerce rather than raise: this model also parses whatever is
+        # already stored on the settings row, including values saved before
+        # Home became a fixed, always-visible link (e.g. a legacy row with
+        # `home: ["admin"]`). Rejecting that would crash every page load
+        # that reads effective settings instead of just healing it.
+        return ["admin", "member"]
 
     @model_validator(mode="after")
     def _keep_administration_safe(self) -> SidebarPermissions:
