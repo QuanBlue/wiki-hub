@@ -343,6 +343,7 @@ def _make_export_fixtures():
     page_content_row = SimpleNamespace(
         id=page_id, slug="page-1-slug", title="Page 1", content="hello", content_format="html",
         parent_id=None, created_by_id=None, updated_by_id=None, created_by_label=None, updated_by_label=None,
+        created_at=None, updated_at=None,
     )
     attachments = [
         PageAttachment(
@@ -435,6 +436,7 @@ async def test_export_package_streams_pages_and_revisions_correctly(
     page_content_row = SimpleNamespace(
         id=page_id, slug="page-1-slug", title="Page One", content="<p>hi</p>", content_format="html",
         parent_id=None, created_by_id=None, updated_by_id=None, created_by_label=None, updated_by_label=None,
+        created_at=None, updated_at=None,
     )
     revision_rows = [
         SimpleNamespace(
