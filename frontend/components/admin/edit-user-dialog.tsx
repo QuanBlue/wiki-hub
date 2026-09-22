@@ -81,23 +81,16 @@ function generatePassword() {
 
 /** Each rule doubles as a checklist row (label + met), not just a pass/fail -
  * see the "Passwords match" rule, which only makes sense once both fields
- * exist. Mirrors `passwordRules` in `change-password-form.tsx`. */
+ * exist. Unlike `passwordRules` in `change-password-form.tsx`, an
+ * administrator setting a password on someone else's behalf isn't held to
+ * the app's strong-password shape (uppercase/lowercase/number) - only the
+ * account owner changing their own password is. */
 function passwordRules(password: string, confirmation: string) {
   return [
     {
       key: "length",
       label: "At least 8 characters",
       met: password.length >= 8,
-    },
-    {
-      key: "case",
-      label: "An uppercase and lowercase letter",
-      met: /[a-z]/.test(password) && /[A-Z]/.test(password),
-    },
-    {
-      key: "numberOrSymbol",
-      label: "A number or special character",
-      met: /\d/.test(password) || /[^A-Za-z0-9]/.test(password),
     },
     {
       key: "match",
@@ -579,11 +572,10 @@ export function EditUserDialog({
 
   const changingPassword = password.length > 0 || confirm.length > 0;
   const rules = passwordRules(password, confirm);
-  // First 3 rules are the password's own shape; "Passwords match" is kept
-  // separate so a valid-but-not-yet-confirmed password doesn't read as
-  // invalid before the user has even reached the Confirm field.
-  const passwordIsValid = rules.slice(0, 3).every((rule) => rule.met);
-  const passwordsMatch = rules[3]!.met;
+  // "Passwords match" is kept separate so a valid-but-not-yet-confirmed
+  // password doesn't read as invalid before reaching the Confirm field.
+  const passwordIsValid = rules[0]!.met;
+  const passwordsMatch = rules[1]!.met;
   const mismatch = confirm.length > 0 && !passwordsMatch;
   // Rules read as muted (neither red nor green) until the operator actually
   // starts typing a new password - otherwise every row would open already

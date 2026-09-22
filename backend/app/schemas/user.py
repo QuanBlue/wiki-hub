@@ -283,15 +283,13 @@ class PasswordReset(BaseModel):
     """Administrative reset: authorised by the caller's superuser role instead.
 
     Deliberately has no ``current_password`` - the whole point is recovering an
-    account whose password nobody knows.
+    account whose password nobody knows. Also deliberately skips the strength
+    check that ``PasswordChange`` enforces: an admin setting a password on
+    someone else's behalf (e.g. a temporary handoff value) is trusted to pick
+    whatever they need, since that account's owner will change it themselves.
     """
 
     new_password: str = Field(min_length=8, max_length=128)
-
-    @field_validator("new_password")
-    @classmethod
-    def validate_new_password_strength(cls, value: str) -> str:
-        return validate_password_strength(value)
 
 
 class ImpersonateRequest(BaseModel):
