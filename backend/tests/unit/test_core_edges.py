@@ -71,7 +71,8 @@ def test_logging_security_and_small_schema_edges() -> None:
     ).allowed_attachment_types == ["png", "jpg"]
     assert SiteSettingsUpdate(site_name=None).site_name is None
     assert SpaceCreate(key="eng-1", name="Engineering").key == "ENG_1"
-    assert SidebarPermissions(home=["admin", "admin"]).home == ["admin"]
+    assert SidebarPermissions(spaces=["admin", "admin"]).spaces == ["admin"]
+    assert SidebarPermissions(home=["admin", "admin"]).home == ["admin", "member"]
     assert SpaceRole.admin.rank == 2
     with pytest.raises(ValidationError):
         SpaceCreate(key="1bad", name="Invalid")

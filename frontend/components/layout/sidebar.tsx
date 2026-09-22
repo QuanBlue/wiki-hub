@@ -426,15 +426,21 @@ export function Sidebar({
       ? "admin"
       : "member";
   const overviewItems = OVERVIEW_NAV.filter((item) =>
-    permissions[item.permission].includes(role),
+    (permissions[item.permission] ?? ["admin", "member"]).includes(role),
   );
   const adminItems = ADMIN_NAV.filter(
     (item) =>
-      permissions[item.permission].includes(role) ||
+      (permissions[item.permission] ?? ["admin"]).includes(role) ||
       (item.extraGlobalPermission &&
         user.global_permissions.includes(item.extraGlobalPermission)),
   );
-  const showFavoriteSpaces = permissions.spaces.includes(role);
+  const showFavoriteSpaces = (
+    permissions.favorites ??
+    permissions.spaces ?? ["admin", "member"]
+  ).includes(role);
+  const showPinnedPages = (
+    permissions.pinned ?? ["admin", "member"]
+  ).includes(role);
 
   // Navigating on a phone must close the drawer, otherwise it covers the page
   // the user just asked for.
@@ -556,14 +562,16 @@ export function Sidebar({
           />
         ) : null}
 
-        <PinnedPagesSection
-          pages={sidebarPinnedPages}
-          collapsed={railCollapsed}
-          pathname={pathname}
-          onNavigate={onNavigate}
-          expanded={expandedSections.pinned}
-          onToggle={() => toggleSection("pinned")}
-        />
+        {showPinnedPages ? (
+          <PinnedPagesSection
+            pages={sidebarPinnedPages}
+            collapsed={railCollapsed}
+            pathname={pathname}
+            onNavigate={onNavigate}
+            expanded={expandedSections.pinned}
+            onToggle={() => toggleSection("pinned")}
+          />
+        ) : null}
 
         <NavSection
           title={t("nav.administration")}
@@ -575,7 +583,7 @@ export function Sidebar({
           onToggle={() => toggleSection("administration")}
         />
 
-        {!railCollapsed ? (
+        {!railCollapsed && (showFavoriteSpaces || showPinnedPages) ? (
           <>
             <div className="border-border my-3 border-t" />
             <button

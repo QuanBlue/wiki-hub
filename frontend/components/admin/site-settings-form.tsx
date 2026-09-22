@@ -14,26 +14,33 @@ import {
   Compass,
   Copy,
   Cpu,
+  Database,
   Download,
   ExternalLink,
   Eye,
+  EyeOff,
   Feather,
   FilePlus,
   FileText,
   Folder,
   FolderOpen,
+  Globe,
   GraduationCap,
   HelpCircle,
+  Home,
   ImagePlus,
   Info,
   Layers,
+  LayoutGrid,
   Loader2,
+  Lock,
   Moon,
   MoreHorizontal,
   Network,
   Palette,
   PanelLeft,
   Pencil,
+  Pin,
   Plus,
   RotateCcw,
   Search,
@@ -54,6 +61,7 @@ import { useRouter } from "next/navigation";
 import {
   useState,
   useRef,
+  useEffect,
   type FormEvent,
   type ChangeEvent,
   type CSSProperties,
@@ -62,6 +70,8 @@ import { toast } from "sonner";
 
 import { LogoMark, Wordmark } from "@/components/brand/logo";
 import { useThemeSettings } from "@/components/theme-color-provider";
+import { useTranslation } from "@/lib/i18n/context";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -102,47 +112,172 @@ const LOGO_ICON_MAP: Record<string, LucideIcon> = {
   shield: ShieldCheck,
 };
 
-const NAVIGATION_ITEMS: Array<{
+interface NavigationItemConfig {
   key: keyof SidebarPermissions;
-  label: string;
-  description: string;
+  labelEn: string;
+  labelVi: string;
+  descEn: string;
+  descVi: string;
+  icon: LucideIcon;
   fixed?: boolean;
-}> = [
-  { key: "home", label: "Home", description: "Workspace overview" },
-  { key: "spaces", label: "Spaces", description: "Browse team knowledge" },
-  { key: "recent", label: "Recent", description: "Recently updated spaces" },
+  alwaysOn?: boolean;
+}
+
+interface NavigationGroupConfig {
+  sectionEn: string;
+  sectionVi: string;
+  icon: LucideIcon;
+  items: NavigationItemConfig[];
+}
+
+const NAVIGATION_GROUPS: NavigationGroupConfig[] = [
   {
-    key: "settings",
-    label: "Settings",
-    description: "Instance configuration",
-    fixed: true,
+    sectionEn: "Overview Navigation",
+    sectionVi: "Điều hướng tổng quan",
+    icon: Compass,
+    items: [
+      {
+        key: "home",
+        labelEn: "Home",
+        labelVi: "Trang chủ",
+        descEn: "Main dashboard, personalized shortcuts, and recent activity stream. Always visible to every user.",
+        descVi: "Trang tổng quan chính, lối tắt cá nhân và dòng hoạt động gần đây. Luôn hiển thị với mọi người dùng.",
+        icon: Home,
+        alwaysOn: true,
+      },
+      {
+        key: "spaces",
+        labelEn: "Spaces",
+        labelVi: "Không gian làm việc",
+        descEn: "Browse all accessible team spaces and knowledge space directory",
+        descVi: "Duyệt danh mục toàn bộ không gian tri thức nhóm và không gian cá nhân",
+        icon: LayoutGrid,
+      },
+    ],
   },
   {
-    key: "backups",
-    label: "Backups",
-    description: "Export and restore data",
-    fixed: true,
+    sectionEn: "Personal Shortcuts & Collections",
+    sectionVi: "Mục cá nhân & Truy cập nhanh",
+    icon: Bookmark,
+    items: [
+      {
+        key: "favorites",
+        labelEn: "Favorite Spaces",
+        labelVi: "Không gian yêu thích",
+        descEn: "Quick-access section for starred spaces on the user's sidebar rail",
+        descVi: "Phân vùng hiển thị các không gian đã gắn sao trên thanh bên để mở nhanh",
+        icon: Star,
+      },
+      {
+        key: "pinned",
+        labelEn: "Pinned Pages",
+        labelVi: "Trang đã ghim",
+        descEn: "Quick-access section for user's pinned documents in the sidebar rail",
+        descVi: "Phân vùng hiển thị các trang tài liệu quan trọng đã ghim trên thanh bên",
+        icon: Pin,
+      },
+    ],
+  },
+  {
+    sectionEn: "Administration & Tools",
+    sectionVi: "Khu vực quản trị hệ thống",
+    icon: Lock,
+    items: [
+      {
+        key: "settings",
+        labelEn: "Administration & Settings",
+        labelVi: "Quản trị & Cài đặt hệ thống",
+        descEn: "System settings, user & group management, and space oversight (Admin only)",
+        descVi: "Cài đặt hệ thống, quản lý người dùng, phân quyền nhóm và quản trị không gian (Chỉ Admin)",
+        icon: SlidersHorizontal,
+        fixed: true,
+      },
+      {
+        key: "backups",
+        labelEn: "Backups & Restore",
+        labelVi: "Sao lưu & Khôi phục dữ liệu",
+        descEn: "Instance backup export, archive restore, and Confluence imports (Admin only)",
+        descVi: "Xuất bản sao lưu dữ liệu, khôi phục bản lưu trữ và nhập dữ liệu từ Confluence (Chỉ Admin)",
+        icon: Database,
+        fixed: true,
+      },
+    ],
   },
 ];
 
-const ROLE_OPTIONS: Array<{ value: AppRole; label: string }> = [
-  { value: "member", label: "Member" },
-  { value: "admin", label: "Admin" },
+const ROLE_OPTIONS: Array<{
+  value: AppRole;
+  labelEn: string;
+  labelVi: string;
+  badgeEn: string;
+  badgeVi: string;
+}> = [
+  {
+    value: "member",
+    labelEn: "Member",
+    labelVi: "Thành viên",
+    badgeEn: "Standard user",
+    badgeVi: "Người dùng tiêu chuẩn",
+  },
+  {
+    value: "admin",
+    labelEn: "Admin",
+    labelVi: "Quản trị viên",
+    badgeEn: "Administrator",
+    badgeVi: "Quản trị hệ thống",
+  },
 ];
 
 const SETTINGS_TABS: Array<{
   id: "appearance" | "general" | "sidebar";
-  label: string;
+  labelEn: string;
+  labelVi: string;
   icon: LucideIcon;
 }> = [
-  { id: "appearance", label: "Theme & Branding", icon: Palette },
-  { id: "general", label: "General workspace", icon: SlidersHorizontal },
-  { id: "sidebar", label: "Sidebar access", icon: ShieldCheck },
+  { id: "appearance", labelEn: "Theme & Branding", labelVi: "Giao diện & Thương hiệu", icon: Palette },
+  { id: "general", labelEn: "General & Sessions", labelVi: "Cấu hình chung & Phiên", icon: SlidersHorizontal },
+  { id: "sidebar", labelEn: "Sidebar access", labelVi: "Phân quyền thanh bên", icon: ShieldCheck },
 ];
+
+const SESSION_TTL_PRESETS: Array<{
+  hours: number;
+  labelEn: string;
+  labelVi: string;
+  descEn: string;
+  descVi: string;
+}> = [
+  { hours: 1, labelEn: "1 hour", labelVi: "1 giờ", descEn: "High security", descVi: "Bảo mật cao" },
+  { hours: 4, labelEn: "4 hours", labelVi: "4 giờ", descEn: "Short session", descVi: "Phiên ngắn" },
+  { hours: 8, labelEn: "8 hours", labelVi: "8 giờ", descEn: "Work shift", descVi: "Ca làm việc" },
+  { hours: 12, labelEn: "12h (Default)", labelVi: "12h (Mặc định)", descEn: "Recommended", descVi: "Khuyến nghị" },
+  { hours: 24, labelEn: "24 hours", labelVi: "24 giờ", descEn: "1 full day", descVi: "1 ngày trọn vẹn" },
+  { hours: 72, labelEn: "3 days", labelVi: "3 ngày", descEn: "Extended access", descVi: "Truy cập mở rộng" },
+  { hours: 168, labelEn: "7 days", labelVi: "7 ngày", descEn: "1 whole week", descVi: "1 tuần làm việc" },
+  { hours: 720, labelEn: "30 days", labelVi: "30 ngày", descEn: "1 full month", descVi: "1 tháng tiện dụng" },
+];
+
+function formatSessionDuration(hours: number, locale: string): string {
+  if (!Number.isFinite(hours) || hours <= 0) return "";
+  const isVi = locale === "vi";
+  if (hours < 24) {
+    return isVi ? `${hours} giờ` : `${hours} hour${hours > 1 ? "s" : ""}`;
+  }
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  const dayStr = isVi ? `${days} ngày` : `${days} day${days > 1 ? "s" : ""}`;
+  if (remainingHours === 0) {
+    return `${dayStr} (${hours} ${isVi ? "giờ" : "hours"})`;
+  }
+  const hourStr = isVi
+    ? `${remainingHours} giờ`
+    : `${remainingHours} hour${remainingHours > 1 ? "s" : ""}`;
+  return `${dayStr} ${hourStr} (${hours} ${isVi ? "giờ" : "hours"})`;
+}
 
 export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const router = useRouter();
   const themeContext = useThemeSettings();
+  const { t, locale } = useTranslation();
 
   // Settings states
   const [siteName, setSiteName] = useState(settings.overrides.site_name ?? "");
@@ -175,10 +310,28 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     settings.overrides.session_ttl_hours?.toString() ?? "",
   );
   const [sidebarPermissions, setSidebarPermissions] =
-    useState<SidebarPermissions>(settings.effective.sidebar_permissions);
+    useState<SidebarPermissions>(() => ({
+      home: ["admin", "member"],
+      spaces: settings.effective.sidebar_permissions?.spaces ?? ["admin", "member"],
+      favorites: settings.effective.sidebar_permissions?.favorites ?? ["admin", "member"],
+      pinned: settings.effective.sidebar_permissions?.pinned ?? ["admin", "member"],
+      settings: settings.effective.sidebar_permissions?.settings ?? ["admin"],
+      backups: settings.effective.sidebar_permissions?.backups ?? ["admin"],
+    }));
   const [activeTab, setActiveTab] = useState<
     "appearance" | "general" | "sidebar"
   >("appearance");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab") || window.location.hash.replace("#", "");
+      if (tabParam === "general" || tabParam === "sidebar" || tabParam === "appearance") {
+        setActiveTab(tabParam);
+      }
+    }
+  }, []);
+
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -296,7 +449,6 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   ) {
     setSidebarPermissions((current) => {
       const roles = current[item] || [];
-      if (!checked && roles.length === 1) return current;
       return {
         ...current,
         [item]: checked
@@ -307,10 +459,16 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   }
 
   const inheritedTag = (overridden: boolean) =>
-    overridden ? null : (
-      <span className="text-muted-foreground text-[11px] font-normal italic">
-        (inherited from environment)
-      </span>
+    overridden ? (
+      <Badge variant="info" className="text-[11px] font-medium gap-1 shadow-2xs">
+        <Check className="size-3" />
+        {locale === "vi" ? "Đã tùy chỉnh" : "Customized"}
+      </Badge>
+    ) : (
+      <Badge variant="neutral" className="text-[11px] font-medium gap-1 shadow-2xs">
+        <span className="size-1.5 rounded-full bg-muted-foreground/60" aria-hidden />
+        {t("adminSettings.sessionInheritedBadge")}
+      </Badge>
     );
 
   const initialThemeColor =
@@ -324,6 +482,9 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
 
   const initialSiteName = settings.overrides.site_name ?? "";
   const initialSessionTtl = settings.overrides.session_ttl_hours?.toString() ?? "";
+  const currentTtlHoursNum = sessionTtlHours.trim()
+    ? Number(sessionTtlHours)
+    : (settings.effective.session_ttl_hours || 12);
 
   const initialSidebarPermissions = settings.overrides.sidebar_permissions ?? settings.effective.sidebar_permissions;
 
@@ -341,8 +502,18 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     siteName.trim() !== initialSiteName.trim() ||
     sessionTtlHours.trim() !== initialSessionTtl.trim();
 
+  const normalizeSidebar = (perms?: SidebarPermissions | null) => ({
+    home: [...(perms?.home ?? ["admin", "member"])].sort(),
+    spaces: [...(perms?.spaces ?? ["admin", "member"])].sort(),
+    favorites: [...(perms?.favorites ?? ["admin", "member"])].sort(),
+    pinned: [...(perms?.pinned ?? ["admin", "member"])].sort(),
+    settings: [...(perms?.settings ?? ["admin"])].sort(),
+    backups: [...(perms?.backups ?? ["admin"])].sort(),
+  });
+
   const isSidebarChanged =
-    JSON.stringify(sidebarPermissions) !== JSON.stringify(initialSidebarPermissions);
+    JSON.stringify(normalizeSidebar(sidebarPermissions)) !==
+    JSON.stringify(normalizeSidebar(initialSidebarPermissions));
 
   return (
     <>
@@ -357,7 +528,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               Settings sections
             </p>
             <div className="mt-3 space-y-1">
-              {SETTINGS_TABS.map(({ id, label, icon: Icon }) => {
+              {SETTINGS_TABS.map(({ id, labelEn, labelVi, icon: Icon }) => {
                 const selected = activeTab === id;
                 return (
                   <button
@@ -374,7 +545,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                     )}
                   >
                     <Icon className="size-4" />
-                    {label}
+                    {locale === "vi" ? labelVi : labelEn}
                   </button>
                 );
               })}
@@ -766,10 +937,12 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                   <SlidersHorizontal className="text-primary size-5 shrink-0" />
                   <div>
                     <h3 className="text-foreground font-semibold text-sm sm:text-base">
-                      General Workspace
+                      {locale === "vi" ? "Cấu hình chung & Phiên làm việc" : "General Workspace & Sessions"}
                     </h3>
                     <p className="text-muted-foreground mt-0.5 text-xs hidden sm:block">
-                      Identity and session behaviour for this instance.
+                      {locale === "vi"
+                        ? "Tên workspace và thời hạn phiên đăng nhập (session lifetime) của hệ thống."
+                        : "Identity and session behaviour for this instance."}
                     </p>
                   </div>
                 </div>
@@ -811,61 +984,258 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               </div>
 
               <div className="p-6 space-y-6">
-                <div className="grid gap-6 sm:grid-cols-2">
-                  {/* Site Name */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="site-name" className="text-sm font-semibold">
-                        Site Name
-                      </Label>
-                      {inheritedTag(settings.overrides.site_name !== null)}
+                {/* Section 1: Workspace Identity */}
+                <div className="border-border bg-surface-sunken/40 rounded-xl border p-5 sm:p-6 space-y-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="border-primary/20 bg-primary-subtle text-primary flex size-9 items-center justify-center rounded-lg border shrink-0">
+                        <Globe className="size-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-foreground text-sm sm:text-base font-semibold">
+                          {t("adminSettings.workspaceIdentityTitle")}
+                        </h4>
+                        <p className="text-muted-foreground mt-0.5 text-xs">
+                          {t("adminSettings.workspaceIdentityDescription")}
+                        </p>
+                      </div>
                     </div>
-                    <Input
-                      id="site-name"
-                      value={siteName}
-                      onChange={(e) => setSiteName(e.target.value)}
-                      placeholder={settings.effective.site_name}
-                      disabled={pending}
-                      className="text-sm"
-                    />
-                    <p className="text-muted-foreground text-[11px]">
-                      Currently showing as{" "}
-                      <strong className="text-foreground">
-                        {settings.effective.site_name}
-                      </strong>
-                      . Leave empty for default.
-                    </p>
+                    {inheritedTag(settings.overrides.site_name !== null)}
                   </div>
 
-                  {/* Session Lifetime */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label
-                        htmlFor="session-ttl-hours"
-                        className="text-sm font-semibold"
-                      >
-                        Session Lifetime (hours)
-                      </Label>
-                      {inheritedTag(settings.overrides.session_ttl_hours !== null)}
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem] items-start pt-1">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="site-name" className="text-foreground text-xs font-semibold">
+                          {t("adminSettings.workspaceNameLabel")}
+                        </Label>
+                        {siteName.trim() !== "" && (
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() => setSiteName("")}
+                            className="text-primary hover:text-primary/80 text-xs font-medium cursor-pointer transition-colors"
+                          >
+                            {locale === "vi" ? "Đặt lại theo biến môi trường" : "Reset to default"}
+                          </button>
+                        )}
+                      </div>
+                      <Input
+                        id="site-name"
+                        value={siteName}
+                        onChange={(e) => setSiteName(e.target.value)}
+                        placeholder={settings.effective.site_name}
+                        disabled={pending}
+                        className="text-sm h-9"
+                      />
+                      <p className="text-muted-foreground text-xs leading-relaxed">
+                        {t("adminSettings.workspaceNameHelp", { name: effectiveDisplayName })}
+                      </p>
                     </div>
-                    <Input
-                      id="session-ttl-hours"
-                      type="number"
-                      min={1}
-                      max={8760}
-                      value={sessionTtlHours}
-                      onChange={(e) => setSessionTtlHours(e.target.value)}
-                      placeholder={
-                        settings.effective.session_ttl_hours
-                          ? String(settings.effective.session_ttl_hours)
-                          : "12"
-                      }
-                      disabled={pending}
-                      className="text-sm"
-                    />
-                    <p className="text-muted-foreground text-[11px]">
-                      Duration of user sessions before re-authentication is required.
-                      Default: 12h.
+
+                    {/* Live Topbar Brand Preview */}
+                    <div className="border-border bg-surface rounded-lg border p-3.5 space-y-2 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+                          {t("adminSettings.workspacePreview")}
+                        </span>
+                        <span className="text-primary text-[10px] font-medium bg-primary-subtle px-1.5 py-0.5 rounded">
+                          Live
+                        </span>
+                      </div>
+                      <div className="border-border/60 bg-surface-raised flex items-center gap-2.5 rounded-md border px-3 py-2 shadow-xs">
+                        <LogoMark
+                          icon={logoIcon}
+                          customLogoUrl={customLogoUrl}
+                          className="size-5 shrink-0"
+                        />
+                        <span className="text-foreground font-semibold text-sm tracking-tight truncate">
+                          {effectiveDisplayName}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Session Lifetime & Security */}
+                <div className="border-border bg-surface-sunken/40 rounded-xl border p-5 sm:p-6 space-y-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="border-primary/20 bg-primary-subtle text-primary flex size-9 items-center justify-center rounded-lg border shrink-0">
+                        <Clock className="size-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-foreground text-sm sm:text-base font-semibold">
+                          {t("adminSettings.sessionLifetimeTitle")}
+                        </h4>
+                        <p className="text-muted-foreground mt-0.5 text-xs">
+                          {t("adminSettings.sessionLifetimeDescription")}
+                        </p>
+                      </div>
+                    </div>
+                    {inheritedTag(settings.overrides.session_ttl_hours !== null)}
+                  </div>
+
+                  {/* Quick Presets Grid */}
+                  <div className="space-y-2.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+                        {t("adminSettings.sessionPresets")}
+                      </span>
+                      {sessionTtlHours.trim() !== "" && (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => setSessionTtlHours("")}
+                          className="text-primary hover:text-primary/80 text-xs font-medium cursor-pointer transition-colors"
+                        >
+                          {t("adminSettings.sessionResetDefault")}
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                      {SESSION_TTL_PRESETS.map((preset) => {
+                        const isSelected =
+                          sessionTtlHours.trim() === String(preset.hours) ||
+                          (sessionTtlHours.trim() === "" &&
+                            (settings.effective.session_ttl_hours || 12) === preset.hours);
+                        return (
+                          <button
+                            key={preset.hours}
+                            type="button"
+                            disabled={pending}
+                            onClick={() => setSessionTtlHours(String(preset.hours))}
+                            className={cn(
+                              "relative flex flex-col items-start justify-between rounded-lg border p-3 text-left transition-all duration-150 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                              isSelected
+                                ? "border-primary ring-2 ring-primary/20 bg-surface-selected shadow-xs"
+                                : "border-border bg-surface hover:border-border-strong hover:bg-surface-hover/80 text-foreground",
+                            )}
+                          >
+                            <div className="flex w-full items-center justify-between gap-1.5">
+                              <span
+                                className={cn(
+                                  "text-xs font-semibold",
+                                  isSelected ? "text-primary" : "text-foreground",
+                                )}
+                              >
+                                {locale === "vi" ? preset.labelVi : preset.labelEn}
+                              </span>
+                              {isSelected ? (
+                                <Check className="size-3.5 text-primary shrink-0" />
+                              ) : null}
+                            </div>
+                            <span className="text-muted-foreground mt-1 text-[11px] leading-tight">
+                              {locale === "vi" ? preset.descVi : preset.descEn}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Custom Duration Input & Live Policy Status */}
+                  <div className="grid gap-4 sm:grid-cols-2 items-stretch pt-2">
+                    {/* Custom Hours Input with Quick Stepper */}
+                    <div className="border-border bg-surface rounded-xl border p-4 space-y-3 flex flex-col justify-between">
+                      <div>
+                        <Label
+                          htmlFor="session-ttl-hours"
+                          className="text-foreground text-xs font-semibold"
+                        >
+                          {t("adminSettings.sessionCustomInputLabel")}
+                        </Label>
+                        <p className="text-muted-foreground text-[11px] mt-0.5">
+                          {t("adminSettings.sessionCustomInputHelp")}
+                        </p>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <div className="relative flex items-center">
+                          <Input
+                            id="session-ttl-hours"
+                            type="number"
+                            min={1}
+                            max={8760}
+                            value={sessionTtlHours}
+                            onChange={(e) => setSessionTtlHours(e.target.value)}
+                            placeholder={
+                              settings.effective.session_ttl_hours
+                                ? String(settings.effective.session_ttl_hours)
+                                : "12"
+                            }
+                            disabled={pending}
+                            className="pr-16 text-sm h-9 font-medium"
+                          />
+                          <span className="text-muted-foreground pointer-events-none absolute right-3 text-xs font-medium">
+                            {t("adminSettings.sessionUnitHours")}
+                          </span>
+                        </div>
+
+                        {/* Quick Stepper Buttons */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          {[
+                            { delta: -1, label: "-1h" },
+                            { delta: 1, label: "+1h" },
+                            { delta: -24, label: "-24h" },
+                            { delta: 24, label: "+24h" },
+                          ].map(({ delta, label }) => (
+                            <Button
+                              key={label}
+                              type="button"
+                              variant="subtle"
+                              size="sm"
+                              disabled={pending}
+                              onClick={() => {
+                                const current = currentTtlHoursNum;
+                                const nextVal = Math.min(8760, Math.max(1, current + delta));
+                                setSessionTtlHours(String(nextVal));
+                              }}
+                              className="h-6 px-2 text-[11px] font-mono text-muted-foreground hover:text-foreground hover:bg-surface-hover"
+                            >
+                              {label}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Live Effective Duration Card */}
+                    <div className="border-border bg-surface-raised rounded-xl border p-4 flex flex-col justify-between space-y-3 shadow-2xs">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+                            {t("adminSettings.sessionEffectiveInfo")}
+                          </span>
+                          <Badge variant={sessionTtlHours.trim() === "" ? "neutral" : "info"}>
+                            {sessionTtlHours.trim() === ""
+                              ? (locale === "vi" ? "Mặc định hệ thống" : "System default")
+                              : (locale === "vi" ? "Tùy chỉnh admin" : "Admin override")}
+                          </Badge>
+                        </div>
+                        <div className="text-foreground text-xl font-bold tracking-tight">
+                          {formatSessionDuration(currentTtlHoursNum, locale)}
+                        </div>
+                        <p className="text-muted-foreground text-xs leading-relaxed">
+                          {t("adminSettings.sessionPolicySummary", {
+                            duration: formatSessionDuration(currentTtlHoursNum, locale),
+                          })}
+                        </p>
+                      </div>
+
+                      <div className="border-border/60 bg-surface-sunken/60 flex items-start gap-2.5 rounded-lg border p-2.5 text-xs text-muted-foreground">
+                        <ShieldCheck className="size-4 text-success shrink-0 mt-0.5" />
+                        <span className="text-[11px] leading-relaxed">
+                          {t("adminSettings.sessionKeepAliveNote")}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-border/50 border-t pt-2">
+                    <p className="text-muted-foreground text-[11px] leading-relaxed">
+                      {t("adminSettings.sessionLifetimeHelp")}
                     </p>
                   </div>
                 </div>
@@ -887,10 +1257,12 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                   <ShieldCheck className="text-primary size-5 shrink-0" />
                   <div>
                     <h3 className="text-foreground font-semibold text-sm sm:text-base">
-                      Sidebar Access Matrix
+                      {locale === "vi" ? "Ma trận phân quyền thanh bên" : "Sidebar Access Matrix"}
                     </h3>
                     <p className="text-muted-foreground mt-0.5 text-xs hidden sm:block">
-                      Determine which user roles see specific application navigation links.
+                      {locale === "vi"
+                        ? "Kiểm soát các mục và phân vùng điều hướng hiển thị trên thanh bên cho từng vai trò người dùng."
+                        : "Determine which user roles see specific application navigation links and sidebar sections."}
                     </p>
                   </div>
                 </div>
@@ -902,11 +1274,18 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                     className="text-xs h-8"
                     disabled={pending || !isSidebarChanged}
                     onClick={() => {
-                      setSidebarPermissions(settings.effective.sidebar_permissions);
+                      setSidebarPermissions({
+                        home: ["admin", "member"],
+                        spaces: settings.effective.sidebar_permissions?.spaces ?? ["admin", "member"],
+                        favorites: settings.effective.sidebar_permissions?.favorites ?? ["admin", "member"],
+                        pinned: settings.effective.sidebar_permissions?.pinned ?? ["admin", "member"],
+                        settings: settings.effective.sidebar_permissions?.settings ?? ["admin"],
+                        backups: settings.effective.sidebar_permissions?.backups ?? ["admin"],
+                      });
                     }}
                   >
                     <RotateCcw className="size-3.5" />
-                    Reset Sidebar
+                    {locale === "vi" ? "Đặt lại phân quyền" : "Reset Sidebar"}
                   </Button>
                   <Button
                     type="submit"
@@ -918,12 +1297,12 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                     {pending ? (
                       <>
                         <Loader2 className="size-3.5 animate-spin" />
-                        Saving...
+                        {locale === "vi" ? "Đang lưu..." : "Saving..."}
                       </>
                     ) : (
                       <>
                         <Check className="size-3.5" />
-                        Save Sidebar
+                        {locale === "vi" ? "Lưu cấu hình thanh bên" : "Save Sidebar"}
                       </>
                     )}
                   </Button>
@@ -931,70 +1310,161 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               </div>
 
               <div className="p-6 space-y-6">
-                <div className="divide-border border-border divide-y rounded-lg border text-sm">
-                  <div className="bg-surface-sunken text-muted-foreground flex items-center justify-between px-4 py-2 text-xs font-semibold uppercase tracking-wider">
-                    <span>Navigation Item</span>
-                    <div className="flex gap-6 pr-2">
+                <div className="border-border bg-surface rounded-xl border divide-y divide-border overflow-hidden shadow-sm">
+                  {/* Table Column Headers */}
+                  <div className="bg-surface-sunken/80 px-4 sm:px-5 py-2.5 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <span>{locale === "vi" ? "Mục & Phân vùng điều hướng" : "Navigation Item & Section"}</span>
+                    <div className="flex gap-8 sm:gap-12 pr-2 sm:pr-4">
                       {ROLE_OPTIONS.map((r) => (
-                        <span key={r.value} className="w-20 text-center">
-                          {r.label}
-                        </span>
+                        <div key={r.value} className="w-20 sm:w-24 text-center">
+                          <span className="block font-semibold text-foreground text-xs">
+                            {locale === "vi" ? r.labelVi : r.labelEn}
+                          </span>
+                          <span className="block text-[10px] font-normal text-muted-foreground capitalize">
+                            {locale === "vi" ? r.badgeVi : r.badgeEn}
+                          </span>
+                        </div>
                       ))}
                     </div>
                   </div>
 
-                  {NAVIGATION_ITEMS.map((item) => {
-                    const allowedRoles = sidebarPermissions[item.key] || [];
+                  {/* Groups */}
+                  {NAVIGATION_GROUPS.map((group) => {
+                    const GroupIcon = group.icon;
                     return (
-                      <div
-                        key={item.key}
-                        className="hover:bg-surface-hover/50 flex items-center justify-between px-4 py-3 transition-colors"
-                      >
-                        <div>
-                          <p className="text-foreground font-medium">{item.label}</p>
-                          <p className="text-muted-foreground text-xs">
-                            {item.description}
-                          </p>
+                      <div key={group.sectionEn} className="divide-y divide-border/60">
+                        {/* Section Title Header */}
+                        <div className="bg-surface-sunken/40 px-4 sm:px-5 py-2 flex items-center justify-between gap-3">
+                          <span className="text-[11px] font-semibold tracking-wider uppercase text-primary/90 flex items-center gap-1.5">
+                            <GroupIcon className="size-3.5" />
+                            {locale === "vi" ? group.sectionVi : group.sectionEn}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground shrink-0">
+                            {group.items.length} {locale === "vi" ? "mục" : "items"}
+                          </span>
                         </div>
 
-                        <div className="flex gap-6 pr-2">
-                          {ROLE_OPTIONS.map((role) => {
-                            const checked = allowedRoles.includes(role.value);
-                            const disabled =
-                              item.fixed ||
-                              pending ||
-                              (checked && allowedRoles.length === 1);
-                            return (
-                              <label
-                                key={role.value}
-                                className="flex w-20 cursor-pointer justify-center"
-                                title={
-                                  item.fixed
-                                    ? "Administrative navigation is restricted to administrators."
-                                    : undefined
-                                }
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  disabled={disabled}
-                                  onChange={(event) =>
-                                    toggleNavigationRole(
-                                      item.key,
-                                      role.value,
-                                      event.target.checked,
-                                    )
-                                  }
-                                  aria-label={`${role.label} can access ${item.label}`}
-                                  className="accent-primary focus-visible:ring-ring border-border size-4 cursor-pointer rounded focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                                />
-                              </label>
-                            );
-                          })}
-                        </div>
+                        {/* Items in Group */}
+                        {group.items.map((item) => {
+                          const allowedRoles = sidebarPermissions[item.key] || [];
+                          const Icon = item.icon;
+                          const isAllRoles = ROLE_OPTIONS.every((r) => allowedRoles.includes(r.value));
+                          const isAdminOnly = allowedRoles.length === 1 && allowedRoles.includes("admin");
+                          const isHidden = allowedRoles.length === 0;
+
+                          return (
+                            <div
+                              key={item.key}
+                              className="hover:bg-surface-hover/50 flex items-center justify-between px-4 sm:px-5 py-3 transition-colors gap-4"
+                            >
+                              <div className="flex items-start gap-3 min-w-0">
+                                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-surface text-muted-foreground shadow-2xs mt-0.5">
+                                  <Icon className="size-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="text-foreground font-medium text-sm">
+                                      {locale === "vi" ? item.labelVi : item.labelEn}
+                                    </p>
+                                    {item.fixed ? (
+                                      <Badge variant="neutral" className="text-[10px] px-1.5 py-0 h-4.5 gap-1 font-normal">
+                                        <Lock className="size-2.5" />
+                                        {locale === "vi" ? "Chỉ Admin" : "Admin only"}
+                                      </Badge>
+                                    ) : item.alwaysOn ? (
+                                      <Badge variant="neutral" className="text-[10px] px-1.5 py-0 h-4.5 gap-1 font-normal text-muted-foreground">
+                                        <Lock className="size-2.5" />
+                                        {locale === "vi" ? "Luôn hiển thị" : "Always visible"}
+                                      </Badge>
+                                    ) : isHidden ? (
+                                      <Badge variant="danger" className="text-[10px] px-1.5 py-0 h-4.5 gap-1 font-normal">
+                                        <EyeOff className="size-2.5" />
+                                        {locale === "vi" ? "Ẩn với mọi vai trò" : "Hidden from everyone"}
+                                      </Badge>
+                                    ) : isAllRoles ? (
+                                      <Badge variant="neutral" className="text-[10px] px-1.5 py-0 h-4.5 gap-1 font-normal text-muted-foreground">
+                                        <Check className="size-2.5 text-success" />
+                                        {locale === "vi" ? "Tất cả vai trò" : "All roles"}
+                                      </Badge>
+                                    ) : isAdminOnly ? (
+                                      <Badge variant="neutral" className="text-[10px] px-1.5 py-0 h-4.5 gap-1 font-normal text-warning">
+                                        <Lock className="size-2.5" />
+                                        {locale === "vi" ? "Chỉ Admin" : "Admin only"}
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                  <p className="text-muted-foreground text-xs line-clamp-1 mt-0.5">
+                                    {locale === "vi" ? item.descVi : item.descEn}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-8 sm:gap-12 pr-2 sm:pr-4 shrink-0">
+                                {ROLE_OPTIONS.map((role) => {
+                                  const checked = allowedRoles.includes(role.value);
+                                  const disabled = item.fixed || item.alwaysOn || pending;
+
+                                  const tooltip = item.fixed
+                                    ? locale === "vi"
+                                      ? "Khu vực quản trị chỉ dành riêng cho tài khoản Quản trị viên."
+                                      : "Administrative navigation is restricted to administrators."
+                                    : item.alwaysOn
+                                      ? locale === "vi"
+                                        ? "Trang chủ luôn hiển thị cho mọi người dùng và không thể ẩn."
+                                        : "Home is always visible to every user and cannot be hidden."
+                                      : isHidden
+                                        ? locale === "vi"
+                                          ? "Không vai trò nào được phép truy cập - mục này đang bị ẩn khỏi thanh bên với tất cả mọi người."
+                                          : "No role can access this - it is currently hidden from the sidebar for everyone."
+                                        : undefined;
+
+                                  return (
+                                    <label
+                                      key={role.value}
+                                      className="flex w-20 sm:w-24 cursor-pointer justify-center items-center py-1"
+                                      title={tooltip}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        disabled={disabled}
+                                        onChange={(event) =>
+                                          toggleNavigationRole(
+                                            item.key,
+                                            role.value,
+                                            event.target.checked,
+                                          )
+                                        }
+                                        aria-label={`${role.labelEn} can access ${item.labelEn}`}
+                                        className="accent-primary focus-visible:ring-ring border-border size-4.5 cursor-pointer rounded transition-all focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+                                      />
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })}
+                </div>
+
+                {/* Security Reassurance Banner */}
+                <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-surface-sunken/40 p-4 shadow-2xs">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-surface text-muted-foreground shadow-2xs">
+                    <ShieldCheck className="size-4 text-primary" />
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    <p className="font-medium text-foreground">
+                      {locale === "vi" ? "Chính sách bảo mật & Quyền riêng tư" : "Security Policy & Space Isolation"}
+                    </p>
+                    <p className="text-muted-foreground leading-relaxed text-[11px]">
+                      {locale === "vi"
+                        ? "Quyền truy cập không gian và quyền riêng tư của tài liệu vẫn được bảo vệ nghiêm ngặt theo danh sách thành viên của từng không gian, độc lập với việc lối tắt có hiển thị trên thanh bên hay không."
+                        : "Space permissions and page privacy remain strictly protected by space membership rules regardless of whether navigation shortcuts are shown or hidden on the sidebar."}
+                    </p>
+                  </div>
                 </div>
               </div>
             </section>
