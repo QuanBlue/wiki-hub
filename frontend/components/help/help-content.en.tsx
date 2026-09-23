@@ -2452,6 +2452,13 @@ export const sectionsEn: HelpSection[] = [
             <strong>Replace existing spaces?</strong> conflict step for anything that
             would collide.
           </li>
+          <li>
+            Both upload paths reject a file above a configured size limit (shown on
+            each card, 1024 MB by default) before uploading starts. A system
+            administrator can raise it under{" "}
+            <strong>Administration &gt; Object storage &gt; Quotas &gt; &ldquo;Max
+            Confluence / Backup Archive (MB)&rdquo;</strong>.
+          </li>
         </ul>
 
         <Callout variant="tip" title="TWO SAFETY NETS AGAINST THE WRONG FILE">

@@ -32,6 +32,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode, Ref } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -2580,7 +2581,11 @@ export function BackupPanel() {
     if (settings?.effective?.max_backup_import_size_bytes) {
       if (selectedFile.size > settings.effective.max_backup_import_size_bytes) {
         setConfluenceUploadError(
-          `Archive exceeds the configured ${settings.effective.max_backup_import_size_mb} MB limit.`,
+          `This archive is ${formatBytes(selectedFile.size)}, which is over the ` +
+            `${settings.effective.max_backup_import_size_mb} MB limit set for Confluence ` +
+            `imports on this instance. A system administrator can raise it under ` +
+            `Admin → Object storage → Quotas → "Max Confluence / Backup Archive (MB)", ` +
+            `or you can split the export into smaller per-space archives.`,
         );
         return;
       }
@@ -4889,6 +4894,16 @@ export function BackupPanel() {
                 </span>
                 , and the built-in administrator is always left untouched.
               </p>
+              {siteSettings?.effective?.max_backup_import_size_mb ? (
+                <p className="text-muted-foreground mt-1 text-[11px]">
+                  Max file size: {siteSettings.effective.max_backup_import_size_mb}{" "}
+                  MB. Raise it under{" "}
+                  <Link href="/admin/storage" className="text-primary hover:underline">
+                    Admin → Object storage → Quotas
+                  </Link>
+                  .
+                </p>
+              ) : null}
 
               {(() => {
                 // A scanned archive is a `.zip` by definition, and it can
@@ -4930,7 +4945,11 @@ export function BackupPanel() {
                             setFile(null);
                             setReport(null);
                             toast.error(
-                              `Backup exceeds the configured ${siteSettings.effective.max_backup_import_size_mb} MB limit.`,
+                              `File is ${formatBytes(selectedFile.size)}, over the ${siteSettings.effective.max_backup_import_size_mb} MB import limit.`,
+                              {
+                                description:
+                                  'A system administrator can raise this under Admin → Object storage → Quotas → "Max Confluence / Backup Archive (MB)".',
+                              },
                             );
                             e.target.value = "";
                             return;
@@ -5189,6 +5208,16 @@ export function BackupPanel() {
                 archive to bring content into WikiHub. The archive uploads
                 directly to protected object storage.
               </p>
+              {siteSettings?.effective?.max_backup_import_size_mb ? (
+                <p className="text-muted-foreground mt-1 text-[11px]">
+                  Max file size: {siteSettings.effective.max_backup_import_size_mb}{" "}
+                  MB. Raise it under{" "}
+                  <Link href="/admin/storage" className="text-primary hover:underline">
+                    Admin → Object storage → Quotas
+                  </Link>
+                  .
+                </p>
+              ) : null}
 
               <div className="mt-auto space-y-3 pt-4">
                 <div>
@@ -5214,7 +5243,11 @@ export function BackupPanel() {
                           siteSettings.effective.max_backup_import_size_bytes
                         ) {
                           toast.error(
-                            `Archive exceeds the configured ${siteSettings.effective.max_backup_import_size_mb} MB limit.`,
+                            `File is ${formatBytes(nextFile.size)}, over the ${siteSettings.effective.max_backup_import_size_mb} MB import limit.`,
+                            {
+                              description:
+                                'A system administrator can raise this under Admin → Object storage → Quotas → "Max Confluence / Backup Archive (MB)".',
+                            },
                           );
                           event.target.value = "";
                           setConfluenceFile(null);

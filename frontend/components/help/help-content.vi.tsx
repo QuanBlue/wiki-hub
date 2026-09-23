@@ -2608,6 +2608,13 @@ export const sectionsVi: HelpSection[] = [
             đột <strong>Replace existing spaces?</strong> cho bất cứ thứ gì có
             thể va chạm.
           </li>
+          <li>
+            Cả hai đường tải lên đều từ chối tệp vượt quá giới hạn dung lượng đã
+            cấu hình (hiển thị ngay trên mỗi thẻ, mặc định 1024 MB) trước khi bắt
+            đầu tải. Quản trị viên hệ thống có thể tăng giới hạn này tại{" "}
+            <strong>Administration &gt; Object storage &gt; Quotas &gt;
+            &ldquo;Max Confluence / Backup Archive (MB)&rdquo;</strong>.
+          </li>
         </ul>
 
         <Callout variant="tip" title="HAI LỚP AN TOÀN CHỐNG SAI TỆP">
