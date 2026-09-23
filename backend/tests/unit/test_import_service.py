@@ -11,7 +11,8 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, PayloadTooLargeError
-from app.models.import_job import ImportArchive
+from app.models.attachment import PageAttachment
+from app.models.import_job import ImportArchive, ImportLog
 from app.models.permission import Group, GroupMember, Permission, SpaceGroupPermission
 from app.models.restriction import (
     PageGroupRestriction,
@@ -501,6 +502,80 @@ async def test_run_import_creates_space_pages_and_bodies(monkeypatch: pytest.Mon
         ]
     )
     await import_module.run_import(session, storage, uuid.uuid4())
+
+
+@pytest.mark.asyncio
+async def test_run_import_logs_and_skips_attachment_missing_from_archive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # iter_attachments() yields a (attachment, None) pair when entities.xml
+    # records an attachment but none of its ZIP-naming conventions found a
+    # matching binary - most often because Confluence's own export never
+    # bundled that file (a known limitation for very large attachments).
+    # This must be skipped without ever touching storage, and logged with the
+    # filename so the gap is diagnosable instead of a silent, untraceable
+    # dead `#attachment-<filename>` link in the page.
+    session = Mock()
+    session.get = AsyncMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.refresh = AsyncMock()
+    session.add = Mock()
+    added = []
+    session.add.side_effect = added.append
+
+    async def flush() -> None:
+        for item in added:
+            if getattr(item, "id", None) is None:
+                item.id = uuid.uuid4()
+
+    session.flush = AsyncMock(side_effect=flush)
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        import_all=True,
+        space_keys=[],
+        overwrite_existing=False,
+        created_by_id=uuid.uuid4(),
+        cancel_requested=False,
+        counters={"download_percent": 0, "spaces_completed": 0, "pages_processed": 0},
+    )
+    archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
+    session.get.side_effect = [job, archive]
+    session.execute = AsyncMock(return_value=_EntityResult(None))
+
+    source_page = ConfluencePage(
+        source_id="page-1",
+        space_id="space-1",
+        parent_id=None,
+        title="ENG",
+        status="current",
+        created_at=None,
+        updated_at=None,
+    )
+    source_space = ConfluenceSpace("space-1", "ENG", "Engineering", [source_page])
+
+    async def download(_key, target, **_kwargs):
+        with zipfile.ZipFile(target, "w") as source:
+            source.writestr("unused", b"data")
+
+    storage = Mock()
+    storage.download_to_file = AsyncMock(side_effect=download)
+    storage.put = AsyncMock()
+    monkeypatch.setattr(import_module, "scan_archive", lambda _path: [source_space])
+    monkeypatch.setattr(import_module, "iter_page_bodies", lambda _path: [])
+    attachment = ConfluenceAttachment("att-1", "page-1", "huge-export.pptx", "application/octet-stream")
+    monkeypatch.setattr(import_module, "iter_attachments", lambda _path: [(attachment, None)])
+
+    await import_module.run_import(session, storage, job.id)
+
+    assert job.status == "completed"
+    storage.put.assert_not_awaited()
+    assert not any(isinstance(item, PageAttachment) for item in added)
+    warnings = [item for item in added if isinstance(item, ImportLog) and item.level == "warning"]
+    assert any("huge-export.pptx" in item.message for item in warnings)
 
 
 @pytest.mark.asyncio
@@ -1062,8 +1137,11 @@ async def test_run_import_groups_space_permissions_and_page_restrictions(
     group_members = [item for item in added if isinstance(item, GroupMember)]
     assert len(group_members) == 3  # carol, dave (Existing Team) + erin (New Team)
 
+    # "Existing Team" holds Confluence's SETSPACEPERMISSIONS -> full admin role
+    # (every Permission value), so the union with "Perm Only"'s editor role
+    # ({view, add}) is just every permission.
     sgp_permissions = {item.permission for item in added if isinstance(item, SpaceGroupPermission)}
-    assert sgp_permissions == {Permission.admin, Permission.add, Permission.view}
+    assert sgp_permissions == set(Permission)
 
     user_restrictions = [item for item in added if isinstance(item, PageUserRestriction)]
     assert any(r.permission == PageRestrictionPermission.view for r in user_restrictions)

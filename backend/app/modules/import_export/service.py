@@ -26,7 +26,6 @@ from app.models.permission import (
     Group,
     GroupMember,
     GroupOwner,
-    Permission,
     SpaceGroupPermission,
     SpaceUserPermission,
 )
@@ -241,6 +240,52 @@ def _build_gallery_html(images: list[dict[str, str]]) -> str:
     return "".join(imgs)
 
 
+def _resolve_attachment_url(
+    urls: dict[tuple[str, str], str],
+    target_page_id: str,
+    filename: str,
+) -> str | None:
+    """Look up an attachment's WikiHub URL by the filename a Confluence macro
+    references, tolerating the ways that filename can drift from the one
+    `urls` is actually keyed by: `+`-encoded spaces, HTML-entity-escaped
+    accents/quotes surviving in an `<ac:parameter>` text node, incidental
+    leading/trailing whitespace, or a case difference. Without this, a
+    same-page exact-match miss used to fall straight through to a dead
+    `#attachment-<filename>` href (see `_link_imported_attachments`'s
+    view-file branch) even when the attachment was imported successfully
+    under a filename that only differed cosmetically.
+
+    Tries, in order: the target page under each filename variant, then the
+    same variants case-insensitively, then a cross-page match by filename
+    (exact, then case-insensitive) - matching the original code's fallback of
+    linking to a same-named attachment on another page of the same space.
+    """
+    variants = {filename, filename.replace("+", " "), html.unescape(filename).strip()}
+    variants |= {v.replace("+", " ") for v in list(variants)}
+    variants = {v for v in (v.strip() for v in variants) if v}
+
+    for variant in variants:
+        url = urls.get((target_page_id, variant))
+        if url:
+            return url
+
+    lowered = {v.lower() for v in variants}
+    for (pid, fn), u in urls.items():
+        if pid == target_page_id and fn.lower() in lowered:
+            return u
+
+    for variant in variants:
+        url = next((u for (_pid, fn), u in urls.items() if fn == variant), None)
+        if url:
+            return url
+
+    for (_pid, fn), u in urls.items():
+        if fn.lower() in lowered:
+            return u
+
+    return None
+
+
 def _link_imported_attachments(
     content: str,
     source_page_id: str,
@@ -278,18 +323,7 @@ def _link_imported_attachments(
         ref_title = page_ref.get("ri:content-title") if page_ref else None
         target_page_id = (title_to_page_id.get(ref_title) if ref_title else None) or source_page_id
 
-        url = urls.get((target_page_id, filename))
-        if not url:
-            url = urls.get((target_page_id, filename.replace("+", " ")))
-        if not url:
-            url = next(
-                (
-                    u
-                    for (_pid, fn), u in urls.items()
-                    if fn == filename or fn == filename.replace("+", " ")
-                ),
-                None,
-            )
+        url = _resolve_attachment_url(urls, target_page_id, filename)
 
         if url:
             image = soup.new_tag("img", src=url, alt=filename)
@@ -310,18 +344,7 @@ def _link_imported_attachments(
         ref_title = page_ref.get("ri:content-title") if page_ref else None
         target_page_id = (title_to_page_id.get(ref_title) if ref_title else None) or source_page_id
 
-        url = urls.get((target_page_id, filename))
-        if not url:
-            url = urls.get((target_page_id, filename.replace("+", " ")))
-        if not url:
-            url = next(
-                (
-                    u
-                    for (_pid, fn), u in urls.items()
-                    if fn == filename or fn == filename.replace("+", " ")
-                ),
-                None,
-            )
+        url = _resolve_attachment_url(urls, target_page_id, filename)
 
         if url:
             link = soup.new_tag(
@@ -403,18 +426,7 @@ def _link_imported_attachments(
         ref_title = page_ref.get("ri:content-title") if page_ref else None
         target_page_id = (title_to_page_id.get(ref_title) if ref_title else None) or source_page_id
 
-        url = urls.get((target_page_id, filename))
-        if not url:
-            url = urls.get((target_page_id, filename.replace("+", " ")))
-        if not url:
-            url = next(
-                (
-                    u
-                    for (_pid, fn), u in urls.items()
-                    if fn == filename or fn == filename.replace("+", " ")
-                ),
-                None,
-            )
+        url = _resolve_attachment_url(urls, target_page_id, filename)
 
         if not url:
             url = f"#attachment-{filename}"
@@ -1577,47 +1589,55 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                             )
                         added_user_ids.add(uid)
 
-                # Grant SpaceGroupPermissions for groups referenced in space permissions
-                added_space_group_perms: set[tuple[uuid.UUID, uuid.UUID, Permission]] = set()
+                # Grant SpaceGroupPermissions for groups referenced in space permissions.
+                # Classify each group into a single role first, then expand through
+                # ROLE_PERMISSIONS to the full permission set - the same two-step the
+                # user-permission loop above already does. Writing one raw Permission
+                # row per Confluence perm_type (the old approach) left a group whose
+                # Confluence permission was space-admin holding only a bare `admin`
+                # row: role_of()/effective_permissions() require the *whole* role set
+                # to recognise "admin", so the group neither displayed as Admin nor
+                # could actually add/delete/move a page.
+                group_roles: dict[str, SpaceRole] = {}
                 for perm in source_space.permissions:
                     if perm.group_name:
                         g_clean = perm.group_name.strip().lower()
-                        grp = group_by_name.get(g_clean)
-                        if grp:
-                            p_enum = (
-                                Permission.admin
-                                if perm.perm_type
-                                in {
-                                    "SETSPACEPERMISSIONS",
-                                    "ADMINISTERSPACE",
-                                    "SPACEADMIN",
-                                    "ADMINISTER",
-                                }
-                                else Permission.add
-                                if perm.perm_type
-                                in {"EDITSPACE", "CREATEPAGE", "REMOVEPAGE", "EDITBLOG"}
-                                else Permission.view
+                        if perm.perm_type in {
+                            "SETSPACEPERMISSIONS",
+                            "ADMINISTERSPACE",
+                            "SPACEADMIN",
+                            "ADMINISTER",
+                        }:
+                            group_roles[g_clean] = SpaceRole.admin
+                        elif perm.perm_type in {"EDITSPACE", "CREATEPAGE", "REMOVEPAGE", "EDITBLOG"}:
+                            if group_roles.get(g_clean) != SpaceRole.admin:
+                                group_roles[g_clean] = SpaceRole.editor
+                        elif perm.perm_type == "VIEWSPACE":
+                            if g_clean not in group_roles:
+                                group_roles[g_clean] = SpaceRole.viewer
+
+                for g_clean, role in group_roles.items():
+                    grp = group_by_name.get(g_clean)
+                    if not grp:
+                        continue
+                    for permission in ROLE_PERMISSIONS[role]:
+                        existing_sgp = (
+                            await session.execute(
+                                select(SpaceGroupPermission).where(
+                                    SpaceGroupPermission.space_id == space.id,
+                                    SpaceGroupPermission.group_id == grp.id,
+                                    SpaceGroupPermission.permission == permission,
+                                )
                             )
-                            sgp_key = (space.id, grp.id, p_enum)
-                            if sgp_key not in added_space_group_perms:
-                                added_space_group_perms.add(sgp_key)
-                                existing_sgp = (
-                                    await session.execute(
-                                        select(SpaceGroupPermission).where(
-                                            SpaceGroupPermission.space_id == space.id,
-                                            SpaceGroupPermission.group_id == grp.id,
-                                            SpaceGroupPermission.permission == p_enum,
-                                        )
-                                    )
-                                ).scalar_one_or_none()
-                                if not existing_sgp:
-                                    session.add(
-                                        SpaceGroupPermission(
-                                            space_id=space.id,
-                                            group_id=grp.id,
-                                            permission=p_enum,
-                                        )
-                                    )
+                        ).scalar_one_or_none()
+                        if not existing_sgp:
+                            session.add(
+                                SpaceGroupPermission(
+                                    space_id=space.id,
+                                    group_id=grp.id,
+                                    permission=permission,
+                                )
+                            )
 
                 pages: dict[str, WikiPage] = {}
                 occupied: set[str] = set()
@@ -1830,6 +1850,28 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 for idx, (source_attachment, archive_member) in enumerate(attachment_sources, 1):
                     target_page = imported_pages.get(source_attachment.page_id)
                     if target_page is None:
+                        continue
+                    if archive_member is None:
+                        # entities.xml records this attachment but none of
+                        # iter_attachments()'s naming conventions found its
+                        # binary in the ZIP - most often Confluence's own
+                        # export never bundled it (a known limitation for
+                        # very large files). Any view-file/ac:link/ac:image
+                        # macro referencing it will fall back to a dead
+                        # `#attachment-<filename>` href with nothing further
+                        # WikiHub can do; log it so that is diagnosable
+                        # instead of a silent, untraceable gap.
+                        await log(
+                            session,
+                            job,
+                            "warning",
+                            "attachments",
+                            f"Could not find the file for attachment "
+                            f"'{source_attachment.filename}' in the archive - it may be "
+                            "missing from the Confluence export. Skipped.",
+                            entity_type="attachment",
+                            entity_label=source_attachment.filename,
+                        )
                         continue
                     try:
                         size_bytes = source_archive.getinfo(archive_member).file_size
