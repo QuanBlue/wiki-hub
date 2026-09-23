@@ -337,6 +337,19 @@ def test_link_imported_attachments_view_file_url_resolution_fallbacks():
     assert 'href="#attachment-missing.txt"' in result
 
 
+def test_link_imported_attachments_view_file_matches_despite_case_and_whitespace():
+    # A real-world miss: the macro's filename differs from the stored
+    # attachment's only by case and incidental whitespace (both common when a
+    # Confluence export re-encodes an <ac:parameter> text node) - this must
+    # still resolve to the real attachment instead of falling back to a dead
+    # `#attachment-...` anchor.
+    content = '<div data-macro="view-file"><span data-filename=" Khung Quan Ly.PPTX "></span></div>'
+    urls = {("p1", "Khung Quan Ly.pptx"): "/files/khung-quan-ly.pptx"}
+    result = _link_imported_attachments(content, "p1", urls, {})
+    assert 'href="/files/khung-quan-ly.pptx"' in result
+    assert "#attachment-" not in result
+
+
 def test_link_imported_attachments_appends_unlinked_docs_table():
     content = "<p>No explicit attachment reference here.</p>"
     urls = {("p1", "unlinked.pdf"): "/files/unlinked.pdf"}

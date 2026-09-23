@@ -536,8 +536,16 @@ def iter_page_bodies(path: Path) -> Iterator[tuple[str, str]]:
                 element.clear()
 
 
-def iter_attachments(path: Path) -> Iterator[tuple[ConfluenceAttachment, str]]:
-    """Yield attachment metadata with its ZIP member path, not its binary."""
+def iter_attachments(path: Path) -> Iterator[tuple[ConfluenceAttachment, str | None]]:
+    """Yield attachment metadata with its ZIP member path, not its binary.
+
+    The member path is ``None`` when ``entities.xml`` records the attachment
+    but none of the naming conventions below find a matching entry in the
+    ZIP - e.g. the export genuinely never bundled that file's binary (a
+    known Confluence export limitation for very large attachments). Yielding
+    it anyway (instead of dropping it, as this used to) lets the caller log
+    which attachments it could not import instead of leaving a page's
+    view-file reference resolving to nothing with no trace of why."""
     with zipfile.ZipFile(path) as archive:
         attachments: list[ConfluenceAttachment] = []
         with archive.open("entities.xml") as stream:
@@ -595,5 +603,4 @@ def iter_attachments(path: Path) -> Iterator[tuple[ConfluenceAttachment, str]]:
                     with suppress(ValueError):
                         versions.sort(key=lambda x: int(x.split("/")[-1]))
                     entry = versions[-1]
-            if entry:
-                yield attachment, entry
+            yield attachment, entry
