@@ -572,6 +572,19 @@ def iter_attachments(path: Path) -> Iterator[tuple[ConfluenceAttachment, str | N
                         )
                 element.clear()
         names = set(archive.namelist())
+        # One pass over the archive instead of one full scan per attachment: a
+        # site export holds thousands of members and thousands of attachments,
+        # and each attachment used to rescan every member up to twice - minutes
+        # of silent CPU on a slow host, long enough to look like a dead worker.
+        by_basename: dict[str, str] = {}
+        by_directory: dict[str, list[str]] = {}
+        for name in sorted(names):
+            if name.endswith("/"):
+                continue
+            segments = name.split("/")
+            by_basename.setdefault(segments[-1], name)
+            for segment in segments[1:-1]:
+                by_directory.setdefault(segment, []).append(name)
         for attachment in attachments:
             candidates = (
                 f"attachments/{attachment.source_id}",
@@ -582,23 +595,13 @@ def iter_attachments(path: Path) -> Iterator[tuple[ConfluenceAttachment, str | N
             if entry is None:
                 # Site exports vary between Confluence versions; retain only a
                 # filename suffix fallback, never a broad fuzzy match.
-                entry = next(
-                    (
-                        name
-                        for name in names
-                        if name.endswith(f"/{attachment.filename}")
-                    ),
-                    None,
-                )
+                candidate = by_basename.get(attachment.filename.rsplit("/", 1)[-1])
+                if candidate is not None and candidate.endswith(f"/{attachment.filename}"):
+                    entry = candidate
             if entry is None:
                 # Confluence exports may store attachments by version number
                 # without the filename in the path (e.g. attachments/.../12345/1)
-                attachment_dir = f"/{attachment.source_id}/"
-                versions = [
-                    name
-                    for name in names
-                    if attachment_dir in name and not name.endswith("/")
-                ]
+                versions = list(by_directory.get(attachment.source_id, ()))
                 if versions:
                     with suppress(ValueError):
                         versions.sort(key=lambda x: int(x.split("/")[-1]))
