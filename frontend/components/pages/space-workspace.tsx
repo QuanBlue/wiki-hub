@@ -47,6 +47,7 @@ import { toast } from "sonner";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { EditSpaceModal } from "@/components/admin/edit-space-modal";
+import { PageContentLoading } from "@/components/pages/page-content-loading";
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { PageLabelsDialog } from "@/components/pages/page-labels-dialog";
 import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialog";
@@ -1955,6 +1956,7 @@ export function SpaceWorkspace({
             : undefined
         }
       >
+        <PageContentLoading />
         <div
           className={cn(
             "mx-auto max-w-full min-w-0 px-6 pb-5 sm:px-8 lg:px-10",
