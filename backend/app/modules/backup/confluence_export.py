@@ -327,8 +327,6 @@ async def write_confluence_dc_export(
         _reference_property(body, "content", "Page", ids[page.id])
 
         for restriction_type, entries in restrictions_by_page.get(page.id, {}).items():
-            if not entries:
-                continue
             set_id = _next_id()
             permission_set = _object(root, "ContentPermissionSet", set_id)
             _property(permission_set, "type", restriction_type.capitalize())

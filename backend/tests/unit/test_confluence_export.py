@@ -252,3 +252,113 @@ async def test_write_confluence_dc_export_detects_cancel_mid_plateau(tmp_path):
     # mid-plateau checkpoint, not by the guaranteed last-item one.
     assert storage.get.await_count == 9925
     assert job.counters["items_processed"] == 9900
+
+
+async def test_write_confluence_dc_export_carries_access_and_skips_unresolvable_rows(tmp_path):
+    """Owners, per-user/group roles, group membership and page allow-lists are
+    written by name; anything that cannot be resolved to a real account/group
+    (or is an explicit block, which Confluence has no equivalent for) is left
+    out rather than emitted as something it is not."""
+    from app.models.permission import Group, GroupMember, Permission, SpaceGroupPermission, SpaceUserPermission
+    from app.models.restriction import (
+        PageGroupRestriction,
+        PageRestrictionPermission,
+        PageUserRestriction,
+    )
+    from app.models.space import SpaceOwner, SpaceVisibility
+    from app.models.user import User
+
+    import zipfile
+
+    storage = AsyncMock()
+    path = str(tmp_path / "export.zip")
+    now = datetime.now(UTC)
+
+    open_space = Space(
+        id=uuid.uuid4(), key="OPEN", name="Open", description="", visibility=SpaceVisibility.open,
+        created_at=now,
+    )
+    closed_space = Space(
+        id=uuid.uuid4(), key="SHUT", name="Closed", description="", visibility=SpaceVisibility.restricted
+    )
+    page = WikiPage(
+        id=uuid.uuid4(), space_id=open_space.id, title="Guarded", slug="guarded",
+        content="<p>x</p>", created_at=now, updated_at=now,
+    )
+    alice = User(id=uuid.uuid4(), username="alice")
+    bob = User(id=uuid.uuid4(), username="bob")
+    page.created_by_id, page.updated_by_id = alice.id, bob.id
+    ghost_id = uuid.uuid4()
+    team = Group(id=uuid.uuid4(), name="Team")
+    unused = Group(id=uuid.uuid4(), name="Unused")
+    ghost_group_id = uuid.uuid4()
+
+    await write_confluence_dc_export(
+        path,
+        storage,
+        profile="dc-8",
+        spaces=[open_space, closed_space],
+        pages=[page],
+        attachments=[],
+        users=[alice, bob],
+        groups=[team, unused],
+        group_members=[
+            GroupMember(group_id=team.id, user_id=alice.id),
+            GroupMember(group_id=team.id, user_id=ghost_id),  # unknown account
+            GroupMember(group_id=unused.id, user_id=bob.id),  # group is not referenced
+        ],
+        space_owners=[SpaceOwner(space_id=open_space.id, user_id=alice.id)],
+        space_user_permissions=[
+            SpaceUserPermission(space_id=open_space.id, user_id=bob.id, permission=Permission.view),
+            # A lone Export grant maps to no Confluence role at all.
+            SpaceUserPermission(space_id=closed_space.id, user_id=bob.id, permission=Permission.export),
+            SpaceUserPermission(space_id=closed_space.id, user_id=ghost_id, permission=Permission.view),
+        ],
+        space_group_permissions=[
+            SpaceGroupPermission(space_id=open_space.id, group_id=team.id, permission=Permission.add),
+            SpaceGroupPermission(space_id=closed_space.id, group_id=team.id, permission=Permission.export),
+            SpaceGroupPermission(space_id=closed_space.id, group_id=ghost_group_id, permission=Permission.view),
+        ],
+        page_user_restrictions=[
+            PageUserRestriction(
+                page_id=page.id, user_id=alice.id, permission=PageRestrictionPermission.view, denied=False
+            ),
+            PageUserRestriction(  # a block has no Confluence equivalent
+                page_id=page.id, user_id=bob.id, permission=PageRestrictionPermission.edit, denied=True
+            ),
+            PageUserRestriction(  # page is not part of the export
+                page_id=uuid.uuid4(), user_id=alice.id, permission=PageRestrictionPermission.view, denied=False
+            ),
+            PageUserRestriction(  # unknown account
+                page_id=page.id, user_id=ghost_id, permission=PageRestrictionPermission.view, denied=False
+            ),
+        ],
+        page_group_restrictions=[
+            PageGroupRestriction(
+                page_id=page.id, group_id=team.id, permission=PageRestrictionPermission.edit, denied=False
+            ),
+            PageGroupRestriction(
+                page_id=page.id, group_id=unused.id, permission=PageRestrictionPermission.view, denied=True
+            ),
+            PageGroupRestriction(
+                page_id=uuid.uuid4(), group_id=team.id, permission=PageRestrictionPermission.view, denied=False
+            ),
+            PageGroupRestriction(  # unknown group
+                page_id=page.id, group_id=ghost_group_id, permission=PageRestrictionPermission.view, denied=False
+            ),
+        ],
+    )
+
+    with zipfile.ZipFile(path) as archive:
+        xml = archive.read("entities.xml").decode()
+
+    assert "alice" in xml and "bob" in xml
+    assert 'name="groupName">Team<' in xml
+    # Only the group something actually references becomes a Group object.
+    assert 'name="name">Team<' in xml
+    assert 'name="name">Unused<' not in xml
+    # The Open space also gets the anonymous "can view" grant.
+    assert xml.count('name="type">VIEWSPACE<') >= 2
+    # Allow-list entries survive as ContentPermissionSets; blocks do not.
+    assert xml.count('<object class="ContentPermissionSet"') == 2
+    assert "ghost" not in xml

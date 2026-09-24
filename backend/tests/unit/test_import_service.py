@@ -1073,6 +1073,8 @@ async def test_run_import_groups_space_permissions_and_page_restrictions(
         ConfluencePermission(perm_type="EDITSPACE", group_name="Perm Only"),
         ConfluencePermission(perm_type="SETSPACEPERMISSIONS", group_name="Existing Team"),
         ConfluencePermission(perm_type="VIEWSPACE", group_name="Existing Team"),
+        # A group that is not part of the export's group list is skipped.
+        ConfluencePermission(perm_type="VIEWSPACE", group_name="Unknown Team"),
     ]
 
     page1 = ConfluencePage(
@@ -1296,3 +1298,45 @@ async def test_run_import_marks_space_restricted_without_public_view_permission(
     assert job.status == "completed", getattr(job, "error", None)
     space = next(item for item in added if isinstance(item, Space))
     assert space.visibility == SpaceVisibility.restricted
+
+
+async def test_beat_only_touches_the_job_once_the_interval_has_elapsed(monkeypatch):
+    session = Mock(commit=AsyncMock())
+    job = SimpleNamespace(heartbeat_at=None)
+
+    # Not due yet: nothing is written and the old timestamp is kept.
+    monkeypatch.setattr(import_module, "HEARTBEAT_INTERVAL_SECONDS", 3600)
+    last_beat = import_module.time.monotonic()
+    assert await import_module._beat(session, job, last_beat) == last_beat
+    session.commit.assert_not_awaited()
+    assert job.heartbeat_at is None
+
+    # Due: the heartbeat is stamped, committed, and the clock restarts.
+    monkeypatch.setattr(import_module, "HEARTBEAT_INTERVAL_SECONDS", 0)
+    assert await import_module._beat(session, job, last_beat) > last_beat
+    session.commit.assert_awaited_once()
+    assert job.heartbeat_at is not None
+
+
+async def test_run_with_heartbeat_beats_while_a_blocking_call_runs(monkeypatch):
+    session = Mock(commit=AsyncMock())
+    job = SimpleNamespace(heartbeat_at=None)
+    monkeypatch.setattr(import_module, "HEARTBEAT_INTERVAL_SECONDS", 0.01)
+
+    def slow_blocking_call() -> str:
+        import time
+
+        time.sleep(0.15)
+        return "done"
+
+    assert await import_module._run_with_heartbeat(session, job, slow_blocking_call) == "done"
+    assert session.commit.await_count >= 1
+    assert job.heartbeat_at is not None
+
+
+async def test_run_with_heartbeat_stops_cleanly_when_the_call_returns_at_once():
+    session = Mock(commit=AsyncMock())
+    job = SimpleNamespace(heartbeat_at=None)
+
+    assert await import_module._run_with_heartbeat(session, job, lambda: 42) == 42
+    session.commit.assert_not_awaited()

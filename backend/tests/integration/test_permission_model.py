@@ -92,11 +92,17 @@ async def test_multiple_group_permissions_are_additive(
         Permission.export,
     }
 
+    # Dropping the first group's View changes nothing for this member: the
+    # second group's Delete carries its own View floor (every grant implies
+    # View), so the union still contains it.
     await permissions.set_space_permission(
         space, first.id, Permission.view, owner, group=True, present=False
     )
-    assert Permission.delete in await permissions.effective_permissions(space, member)
-    assert Permission.view not in await permissions.effective_permissions(space, member)
+    assert await permissions.effective_permissions(space, member) == {
+        Permission.view,
+        Permission.delete,
+        Permission.export,
+    }
 
 
 async def test_a_direct_user_grant_overrides_group_permissions_entirely(
@@ -465,18 +471,20 @@ async def test_group_read_and_usage_report_every_space_and_page_it_grants(
 
     # Dropping one of the two space permissions - but not both - must still
     # count as one space (not zero), now with just the remaining permission.
-    # Dropping *every* permission is covered by
+    # It is Add that goes, not View: View is the floor under every other
+    # grant and cannot be removed while another permission depends on it
+    # (`view_required`). Dropping *every* permission is covered by
     # `test_multiple_group_permissions_are_additive` and friends already;
     # `set_space_permission` also purges any now-orphaned page restriction
     # for the group at that point, which is a separate, already-covered
     # behaviour this test isn't about.
     await permissions.set_space_permission(
-        space, group.id, Permission.view, owner, group=True, present=False
+        space, group.id, Permission.add, owner, group=True, present=False
     )
     read = await group_read(session, group)
     assert read.space_count == 1
     usage = await group_usage(session, group)
-    assert usage.spaces[0].permissions == [Permission.add]
+    assert usage.spaces[0].permissions == [Permission.view]
     # The page restriction is untouched - the group still has space access.
     assert read.page_count == 1
 

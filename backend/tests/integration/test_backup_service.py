@@ -45,7 +45,7 @@ from app.modules.backup.jobs import create_export_job, reap_abandoned_export_job
 from app.modules.backup.service import STALE_JOB_AFTER, STALE_RESTORE_JOB_AFTER, BackupService
 from app.modules.permissions.service import PermissionService
 from app.modules.spaces.service import SpaceService
-from app.schemas.backup import BACKUP_VERSION, BackupDocument
+from app.schemas.backup import BACKUP_VERSION, BackupDocument, BackupSpaceOwner
 from app.schemas.space import SpaceCreate
 from app.schemas.user import UserCreate
 from app.services.storage import ObjectStorage
@@ -951,6 +951,77 @@ class TestRoundTrip:
         restored_space = await SpaceService(session).get_by_key("ENG")
         restored_owners = await PermissionService(session).list_space_owners(restored_space)
         assert {owner.username for owner in restored_owners} == {"alice", "bob"}
+
+    async def test_owner_rows_that_cannot_be_restored_are_reported_not_fatal(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A backup can name an Owner who no longer exists, name the same Owner
+        twice, or point at a space that vanished mid-restore - each is skipped
+        with a reason instead of failing the whole restore."""
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        document = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        assert any(entry.username == "alice" for entry in document.space_owners)
+        document.space_owners = [
+            *document.space_owners,
+            BackupSpaceOwner(space_key="ENG", username="nobody-at-all"),
+            BackupSpaceOwner(space_key="ENG", username=alice.username),
+            BackupSpaceOwner(space_key=" eng ", username=alice.username),
+        ]
+        await _wipe(session)
+
+        service = BackupService(session)
+        real_get_by_key = service.spaces.get_by_key
+
+        async def get_by_key(key: str):
+            # The space exists (its normalised key is in this run's created
+            # set) but the lookup by the entry's own spelling finds nothing,
+            # as it would if the space were removed concurrently.
+            return None if key == " eng " else await real_get_by_key(key)
+
+        monkeypatch.setattr(service.spaces, "get_by_key", get_by_key)
+        report = await service.import_document(document, dry_run=False)
+
+        restored_space = await SpaceService(session).get_by_key("ENG")
+        owners = await PermissionService(session).list_space_owners(restored_space)
+        assert "alice" in {owner.username for owner in owners}
+        skipped_reasons = {item.reason for item in report.entries if item.kind == "space_owner"}
+        assert {"missing_user", "already_owner", "missing_space"} <= skipped_reasons
+
+    async def test_restored_pages_fall_back_to_created_at_when_updated_at_is_absent(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_instance(session)
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        created = datetime(2019, 5, 1, tzinfo=UTC)
+        parent = WikiPage(
+            space_id=space.id, title="Root", slug="root-page", content="r",
+            created_by_id=alice.id, updated_by_id=alice.id, created_at=created, updated_at=created,
+        )
+        session.add(parent)
+        await session.flush()
+        session.add(
+            WikiPage(
+                space_id=space.id, parent_id=parent.id, title="Leaf", slug="leaf-page", content="l",
+                created_by_id=alice.id, updated_by_id=alice.id, created_at=created, updated_at=created,
+            )
+        )
+        await session.flush()
+
+        document = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        for entry in document.pages:
+            entry.updated_at = None
+        await _wipe(session)
+
+        await BackupService(session).import_document(document, dry_run=False)
+
+        for slug in ("root-page", "leaf-page"):
+            page = (
+                await session.execute(select(WikiPage).where(WikiPage.slug == slug))
+            ).scalar_one()
+            assert page.created_at == created
+            assert page.updated_at == created
 
     async def test_restores_into_an_empty_instance(self, session: AsyncSession) -> None:
         """The behaviour the whole feature exists for."""
