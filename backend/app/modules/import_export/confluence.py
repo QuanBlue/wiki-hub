@@ -116,6 +116,23 @@ def _reference(property_element: ET.Element | None) -> str | None:
     return identifier.text if identifier is not None else None
 
 
+def _is_live_attachment(props: dict[str, ET.Element]) -> bool:
+    """Whether an Attachment object is a file a page really carries today.
+
+    An export lists every row Confluence ever stored, not just what a page
+    shows: a file deleted from a page stays behind with `contentStatus`
+    `deleted` (its binary often still in the archive), and each earlier
+    upload of a re-attached file is its own row pointing at the newest one
+    through `originalVersion` - its binary lives under the *newest* row's
+    id, so looked up by its own id it can never be found. Importing these
+    resurrected deleted files, and logged a spurious "missing from the
+    export" warning for every old version of a re-uploaded file.
+    """
+    if _text(props, "contentStatus").lower() in {"deleted", "trashed"}:
+        return False
+    return _reference(props.get("originalVersion")) is None
+
+
 def _text(properties: dict[str, ET.Element], name: str, default: str = "") -> str:
     element = properties.get(name)
     return element.text.strip() if element is not None and element.text else default
@@ -389,7 +406,7 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
                         or _reference(props.get("container"))
                         or _reference(props.get("content"))
                     )
-                    if attachment_page_id:
+                    if attachment_page_id and _is_live_attachment(props):
                         attachment_page_ids.append(attachment_page_id)
                 element.clear()
 
@@ -561,7 +578,7 @@ def iter_attachments(path: Path) -> Iterator[tuple[ConfluenceAttachment, str | N
                         or _reference(props.get("content"))
                     )
                     filename = _text(props, "title") or _text(props, "fileName")
-                    if source_id and page_id and filename:
+                    if source_id and page_id and filename and _is_live_attachment(props):
                         attachments.append(
                             ConfluenceAttachment(
                                 source_id,
