@@ -2,9 +2,11 @@ import html
 import io
 import re
 import tempfile
+import time
 import urllib.parse
 import uuid
 import zipfile
+from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -1259,6 +1261,50 @@ async def log(
     return entry
 
 
+#: How often a long, otherwise silent step proves the worker is alive. Well
+#: under `STALE_IMPORT_AFTER` so a slow host (swapping, slow disk) never looks
+#: abandoned between two of a step's natural progress points.
+HEARTBEAT_INTERVAL_SECONDS = 30
+
+
+async def _beat(session: AsyncSession, job: ImportJob, last_beat: float) -> float:
+    """Refresh the job heartbeat if it is due; return the new "last beat" time."""
+    now = time.monotonic()
+    if now - last_beat < HEARTBEAT_INTERVAL_SECONDS:
+        return last_beat
+    job.heartbeat_at = datetime.now(UTC)
+    await session.commit()
+    return now
+
+
+async def _run_with_heartbeat[T](
+    session: AsyncSession, job: ImportJob, blocking: Callable[[], T]
+) -> T:
+    """Run a blocking call in a thread while beating the job heartbeat.
+
+    The calling coroutine is suspended for the duration, so the beater is the
+    only user of `session` until the thread returns. It stops via an event
+    rather than cancellation so it can never be cut off mid-commit.
+    """
+    finished = anyio.Event()
+
+    async def beater() -> None:
+        while not finished.is_set():
+            with anyio.move_on_after(HEARTBEAT_INTERVAL_SECONDS):
+                await finished.wait()
+            if finished.is_set():
+                return
+            job.heartbeat_at = datetime.now(UTC)
+            await session.commit()
+
+    async with anyio.create_task_group() as group:
+        group.start_soon(beater)
+        try:
+            return await anyio.to_thread.run_sync(blocking)
+        finally:
+            finished.set()
+
+
 async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid.UUID) -> None:
     service = ConfluenceImportService(session, storage)
     job = await session.get(ImportJob, job_id)
@@ -1835,8 +1881,8 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
 
             attachments_imported = 0
             attachment_urls: dict[tuple[str, str], str] = {}
-            attachment_sources = await anyio.to_thread.run_sync(
-                lambda: list(iter_attachments(path))
+            attachment_sources = await _run_with_heartbeat(
+                session, job, lambda: list(iter_attachments(path))
             )
             total_attachments = len(attachment_sources)
             job.counters = {
@@ -1846,8 +1892,14 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             }
             await session.commit()
 
+            last_beat = time.monotonic()
             with zipfile.ZipFile(path) as source_archive:
                 for idx, (source_attachment, archive_member) in enumerate(attachment_sources, 1):
+                    # Every iteration, not just the ones that import a file:
+                    # skipped attachments (missing binary, unknown page) used to
+                    # bypass the 25-file beat below, and a slow host can spend
+                    # longer than the reaper's window on a few large uploads.
+                    last_beat = await _beat(session, job, last_beat)
                     target_page = imported_pages.get(source_attachment.page_id)
                     if target_page is None:
                         continue
@@ -1912,6 +1964,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             if attachment_urls:
                 title_to_page_id = {page.title: pid for pid, page in imported_pages.items()}
                 for source_page_id, target_page in imported_pages.items():
+                    last_beat = await _beat(session, job, last_beat)
                     target_page.content = _link_imported_attachments(
                         target_page.content, source_page_id, attachment_urls, title_to_page_id
                     )
