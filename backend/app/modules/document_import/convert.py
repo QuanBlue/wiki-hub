@@ -655,9 +655,9 @@ def _reconstruct_mso_lists(soup: BeautifulSoup) -> None:
     while index < len(candidates):
         run = [candidates[index]]
         while True:
+            # `find_next_sibling` already skips the whitespace between two
+            # paragraphs (unlike the `.next_sibling` property).
             sibling = run[-1].find_next_sibling()
-            while isinstance(sibling, NavigableString) and not str(sibling).strip():
-                sibling = sibling.find_next_sibling()
             if index + len(run) < len(candidates) and sibling is candidates[index + len(run)]:
                 run.append(sibling)
             else:
@@ -675,7 +675,10 @@ def _replace_with_nested_list(soup: BeautifulSoup, run: list[Tag]) -> None:
     to it when the level drops back.
     """
     stack: list[tuple[int, Tag]] = []
-    root: Tag | None = None
+    # One entry per top-level list. Usually one, but a run can switch list
+    # kind at the same level (bullets, then numbers): the second list then
+    # sits beside the first rather than replacing it.
+    roots: list[Tag] = []
     for paragraph in run:
         level = _mso_list_level(paragraph) or 1
         ordered = bool(_ORDERED_LIST_MARKER.match(_extract_mso_list_marker(paragraph)))
@@ -695,7 +698,7 @@ def _replace_with_nested_list(soup: BeautifulSoup, run: list[Tag]) -> None:
                 parent_items = stack[-1][1].find_all("li", recursive=False)
                 (parent_items[-1] if parent_items else stack[-1][1]).append(new_list)
             else:
-                root = new_list
+                roots.append(new_list)
             stack.append((level, new_list))
 
         item = soup.new_tag("li")
@@ -703,9 +706,9 @@ def _replace_with_nested_list(soup: BeautifulSoup, run: list[Tag]) -> None:
             item.append(child.extract())
         stack[-1][1].append(item)
 
-    if root is None:
-        return
-    run[0].replace_with(root)
+    run[0].replace_with(roots[0])
+    for previous, following in zip(roots, roots[1:], strict=False):
+        previous.insert_after(following)
     for paragraph in run[1:]:
         paragraph.decompose()
 
@@ -2581,9 +2584,9 @@ def _render_pdf_region(
     sizes: list[float] = []
     for block in text_blocks:
         for line in block.get("lines", []):
-            line_bbox = line.get("bbox") or block.get("bbox")
-            if not line_bbox:
-                continue
+            # `text_blocks` only holds blocks with a bbox (see
+            # `_pdf_region_for_block`), so this fallback always resolves.
+            line_bbox = line.get("bbox") or block["bbox"]
             line_text = "".join(
                 str(span.get("text", "")) for span in line.get("spans", [])
             )
@@ -2605,24 +2608,22 @@ def _render_pdf_region(
     ordered_lines = sorted(lines.items())
     if not ordered_lines:
         return None
-    if region["kind"] == "code":
-        # A PDF has no literal indentation characters - a nested line is
-        # simply text placed further right, in units of a monospace
-        # character's width. Reconstruct that as real leading spaces,
-        # measured from this block's own least-indented line (its column
-        # zero) - otherwise every line comes out flush-left the moment it is
-        # no longer sitting inside its own bordered, backgrounded region.
-        left_edge = min(x for _y, items in ordered_lines for x, _text in items)
-        char_width = (sum(sizes) / len(sizes) if sizes else 9.0) * 0.6
-        code_lines = [
-            " " * max(0, round((min(x for x, _t in items) - left_edge) / char_width))
-            + "".join(text for _x, text in sorted(items))
-            for _y, items in ordered_lines
-        ]
-    else:
-        code_lines = [
-            "".join(text for _x, text in sorted(items)) for _y, items in ordered_lines
-        ]
+    # Only `code` regions reach here: `callout` returned above, and
+    # `_pdf_special_regions` emits no other kind.
+    #
+    # A PDF has no literal indentation characters - a nested line is simply
+    # text placed further right, in units of a monospace character's width.
+    # Reconstruct that as real leading spaces, measured from this block's own
+    # least-indented line (its column zero) - otherwise every line comes out
+    # flush-left the moment it is no longer sitting inside its own bordered,
+    # backgrounded region.
+    left_edge = min(x for _y, items in ordered_lines for x, _text in items)
+    char_width = (sum(sizes) / len(sizes) if sizes else 9.0) * 0.6
+    code_lines = [
+        " " * max(0, round((min(x for x, _t in items) - left_edge) / char_width))
+        + "".join(text for _x, text in sorted(items))
+        for _y, items in ordered_lines
+    ]
     code = html_module.escape("\n".join(code_lines).rstrip())
     class_attribute = f' class="language-{language}"' if language else ""
     return f"<pre><code{class_attribute}>{code}</code></pre>" if code else None

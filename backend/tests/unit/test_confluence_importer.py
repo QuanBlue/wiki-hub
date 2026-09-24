@@ -467,3 +467,54 @@ def test_space_has_public_view_false_for_restricted_named_group():
 def test_space_has_public_view_ignores_unrelated_permission_types():
     perms = [ConfluencePermission(perm_type="COMMENT", user_name=None, group_name=None)]
     assert _space_has_public_view(perms) is False
+
+
+def test_property_text_falls_back_to_element_text_and_unknown_children():
+    from xml.etree import ElementTree as ET
+
+    from app.modules.import_export.confluence import _property_text
+
+    assert _property_text(None) == ""
+    assert _property_text(ET.fromstring("<property>plain</property>")) == "plain"
+    # No date/value child and no own text: the first other child with text wins,
+    # and <id>/<ref> children are never mistaken for the value.
+    assert (
+        _property_text(ET.fromstring("<property><id>7</id><ref>r</ref><stamp>2022-01-01</stamp></property>"))
+        == "2022-01-01"
+    )
+    assert _property_text(ET.fromstring("<property><id>7</id><ref>r</ref></property>")) == ""
+
+
+def test_iter_attachments_ignores_directory_entries_and_matches_by_basename(tmp_path):
+    entities = """
+    <root>
+      <object class="Attachment"><id>a1</id><property name="title">report.pdf</property><property name="containerContent"><id>p1</id></property></object>
+      <object class="Attachment"><id>a2</id><property name="title">scan.png</property><property name="containerContent"><id>p1</id></property></object>
+      <object class="Attachment"><id>a3</id><property name="title">absent.bin</property><property name="containerContent"><id>p1</id></property></object>
+    </root>
+    """
+    path = tmp_path / "export.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("entities.xml", entities)
+        archive.writestr("attachments/", b"")
+        archive.writestr("attachments/p1/a1/report.pdf", b"pdf")
+        # Only the id directory is known: newest numeric version wins.
+        archive.writestr("attachments/p1/a2/1", b"old")
+        archive.writestr("attachments/p1/a2/2", b"new")
+
+    found = {item.source_id: entry for item, entry in iter_attachments(path)}
+    assert found == {
+        "a1": "attachments/p1/a1/report.pdf",
+        "a2": "attachments/p1/a2/2",
+        "a3": None,
+    }
+
+
+def test_link_imported_attachments_view_file_matches_another_page_case_insensitively():
+    # Neither the target page nor an exact-name cross-page lookup finds it; the
+    # last resort is the same filename on another page, ignoring case.
+    content = '<div data-macro="view-file"><span data-filename="report.pdf"></span></div>'
+    urls = {("other-page", "REPORT.PDF"): "/files/report-upper.pdf"}
+    result = _link_imported_attachments(content, "p1", urls, {})
+    assert 'href="/files/report-upper.pdf"' in result
+    assert "#attachment-" not in result

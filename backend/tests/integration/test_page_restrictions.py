@@ -206,7 +206,7 @@ async def test_is_restricted_reports_inherited_view_restrictions(
 async def test_is_restricted_ignores_edit_only_restrictions(
     session: AsyncSession,
 ) -> None:
-    """An edit restriction narrows who may write, not who may read."""
+    """An edit *denial* narrows who may write, not who may read."""
     owner = await _user(session, "owner")
     editor = await _user(session, "editor")
     spaces = SpaceService(session)
@@ -216,11 +216,31 @@ async def test_is_restricted_ignores_edit_only_restrictions(
     pages = PageService(session)
     page = await pages.create(space, PageCreate(title="Locked for editing"), owner)
     permissions = PermissionService(session)
-    await permissions.set_page_restriction(
-        page, editor.id, PageRestrictionPermission.edit, owner, group=False, present=True
+    await permissions.set_page_permission_denial(
+        page, editor.id, PageRestrictionPermission.edit, owner, group=False, denied=True
     )
 
     assert (await pages.to_read_for_user(page, owner)).is_restricted is False
+
+
+async def test_an_edit_allow_list_entry_also_restricts_reading(
+    session: AsyncSession,
+) -> None:
+    """Granting Edit implies View, so an Edit allow-list entry puts the page
+    into Restricted mode - unlike an edit denial, which only narrows writes."""
+    owner = await _user(session, "owner")
+    editor = await _user(session, "editor")
+    spaces = SpaceService(session)
+    space = await spaces.create(SpaceCreate(key="EDITG", name="Edit grants"), owner)
+    await spaces.set_member(space, owner, editor.id, SpaceRole.editor)
+
+    pages = PageService(session)
+    page = await pages.create(space, PageCreate(title="Edit allow-list"), owner)
+    await PermissionService(session).set_page_restriction(
+        page, editor.id, PageRestrictionPermission.edit, owner, group=False, present=True
+    )
+
+    assert (await pages.to_read_for_user(page, owner)).is_restricted is True
 
 
 async def test_create_cannot_nest_a_page_under_a_parent_the_creator_cannot_view(
