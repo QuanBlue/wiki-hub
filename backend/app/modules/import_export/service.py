@@ -1,3 +1,4 @@
+import asyncio
 import html
 import io
 import re
@@ -1991,6 +1992,25 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             job.status, job.phase = "cancelled", "cancelled"
             await log(session, job, "warning", "cancelled", str(exc))
             await session.commit()
+    except asyncio.CancelledError:
+        # Not an `Exception`, so the handler below never sees it: this is how
+        # the worker's own job timeout (or a shutdown) stops a run. Left
+        # unhandled the row stayed "running" until the reaper later blamed a
+        # dead worker, with nothing saying the import had simply been cut off.
+        # Shielded so a second cancellation cannot interrupt recording it.
+        with anyio.CancelScope(shield=True):
+            await session.rollback()
+            job = await session.get(ImportJob, job_id)
+            if job:
+                message = (
+                    "The import was interrupted before it finished (the worker's time "
+                    "limit was reached, or it was shut down). Pages imported so far are "
+                    "kept, but their attachments may be missing - run the import again."
+                )
+                job.status, job.phase, job.error = "failed", "failed", message
+                await log(session, job, "error", "failed", message)
+                await session.commit()
+        raise
     except Exception as exc:  # noqa: BLE001 - persist any worker failure for the operator
         await session.rollback()
         job = await session.get(ImportJob, job_id)
