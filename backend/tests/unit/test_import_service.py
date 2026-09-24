@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import io
 import uuid
@@ -813,6 +814,35 @@ async def test_run_import_persists_cancelled_and_failed_states() -> None:
     storage = Mock(download_to_file=AsyncMock(side_effect=cancelled_download))
     await import_module.run_import(session, storage, progress_job.id)
     assert final_job.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_run_import_records_a_worker_timeout_as_a_failure_and_propagates_it() -> None:
+    """The worker's job timeout cancels the coroutine with `CancelledError`, which
+    is not an `Exception`: it used to leave the row "running" with no explanation."""
+    session = Mock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.refresh = AsyncMock()
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        archive_id=uuid.uuid4(),
+        status="queued",
+        phase="queued",
+        counters={"download_percent": 0},
+        cancel_requested=False,
+    )
+    archive = SimpleNamespace(object_key="archive.zip", size_bytes=1)
+    final_job = SimpleNamespace(id=job.id, status="running", phase="attachments", error=None)
+    session.get = AsyncMock(side_effect=[job, archive, final_job])
+    storage = Mock(download_to_file=AsyncMock(side_effect=asyncio.CancelledError()))
+
+    with pytest.raises(asyncio.CancelledError):
+        await import_module.run_import(session, storage, job.id)
+
+    assert final_job.status == "failed" and final_job.phase == "failed"
+    assert "interrupted" in final_job.error and "run the import again" in final_job.error
+    session.commit.assert_awaited()
 
 
 def test_seekable_s3_file_read_seek_and_metadata() -> None:

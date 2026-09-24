@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from arq import cron
+from arq import cron, func
 from arq.connections import RedisSettings
 
 from app.core.config import settings
@@ -28,6 +28,14 @@ from app.workers.tasks import (
 )
 
 logger = get_logger(__name__)
+
+#: Ceiling for the two jobs that legitimately run for hours: a full Confluence
+#: site import (download tens of GB, then upload every attachment) and a full
+#: backup restore. The worker-wide default below is far too short for them -
+#: at one hour, importing every space of a 26GB export was cancelled part way
+#: through the attachments phase, so the pages existed but never got linked
+#: to their files, while importing a single space always finished in time.
+LONG_RUNNING_JOB_TIMEOUT_SECONDS = 24 * 3600
 
 
 def redis_settings() -> RedisSettings:
@@ -58,8 +66,8 @@ class WorkerSettings:
 
     functions: ClassVar[list[Any]] = [
         ping,
-        run_confluence_import,
-        run_backup_job,
+        func(run_confluence_import, timeout=LONG_RUNNING_JOB_TIMEOUT_SECONDS),
+        func(run_backup_job, timeout=LONG_RUNNING_JOB_TIMEOUT_SECONDS),
         run_document_import,
         schedule_automated_backup,
     ]
@@ -73,7 +81,7 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     max_jobs = 5
-    job_timeout = 3600  # a large Confluence import may legitimately run for an hour
+    job_timeout = 3600  # default for short jobs; long ones set their own via `func(...)` above
     keep_result = 3600
     # Heartbeat written to Redis; the container healthcheck reads it via
     # `arq ... --check`, so keep it well below the 30s probe interval.
