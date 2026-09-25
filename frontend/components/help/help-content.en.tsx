@@ -2524,6 +2524,27 @@ export const sectionsEn: HelpSection[] = [
           present to opt in each time. Restrict access to the mounted directory the
           same way you would any other credential store.
         </Callout>
+
+        <p className="mt-4 font-semibold text-foreground">4. Import history and logs:</p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            Under <strong>Import / Restore</strong>, the <strong>Import history</strong>{" "}
+            card lists every Confluence import and WikiHub restore - the current one and
+            all earlier runs - with its status, how long it took, and how many warnings
+            and errors it logged.
+          </li>
+          <li>
+            Click a run to read its full log, oldest line first. Filter to{" "}
+            <strong>Warnings</strong> or <strong>Errors</strong>, <strong>Copy</strong> the
+            lines, or use <strong>Download .txt</strong> to save the whole log.
+          </li>
+          <li>
+            Logs are stored on the server, so a long import that ran while your browser
+            was closed or asleep can still be explained afterwards. Files that a Confluence
+            export lists but does not actually contain are counted in a summary line, with
+            only the first 100 named individually.
+          </li>
+        </ul>
       </>
     ),
   },

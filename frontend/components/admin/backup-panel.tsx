@@ -39,6 +39,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { ImportHistory } from "@/components/admin/import-history";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
@@ -5788,6 +5789,14 @@ export function BackupPanel() {
         {activeSection === "import" && !restoreJobCardVisible
           ? renderRestoreLogPanel()
           : null}
+
+        {/* Past runs and their stored logs. Re-keyed on each job's status so
+            the list refetches when a run starts or finishes. */}
+        {activeSection === "import" ? (
+          <ImportHistory
+            key={`${confluenceJob?.id}:${confluenceJob?.status}:${portableBackupJob?.id}:${portableBackupJob?.status}`}
+          />
+        ) : null}
 
         {/* WikiHub restore: report */}
         {report && activeSection === "import" ? (
