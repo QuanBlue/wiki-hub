@@ -82,12 +82,20 @@ services:
       retries: 10
 
   minio:
-    # quay.io, not Docker Hub: MinIO removed minio/minio and minio/mc from
-    # Docker Hub, so a fresh `pull` there is "pull access denied".
-    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # MinIO no longer publishes runnable community images: minio/minio and
+    # minio/mc are gone from Docker Hub and quay.io/minio/* now refuses
+    # anonymous pulls ("unauthorized"). Bitnami's frozen legacy copy is the
+    # last one that still pulls anonymously; it receives no further updates.
+    image: bitnamilegacy/minio:2025.7.23-debian-12-r5
     restart: unless-stopped
-    command: ["server", "/data", "--console-address", ":9001"]
+    # Bitnami's image runs as uid 1001 and keeps its data in /bitnami/minio/data
+    # by default. Data written by the earlier quay.io image is owned by root and
+    # lives in /data, so run as root against that same directory - otherwise the
+    # existing buckets are unreadable after the swap. The Bitnami entrypoint
+    # starts the server itself (console on :9001), so there is no `command`.
+    user: "0:0"
     environment:
+      MINIO_DATA_DIR: /data
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
       # MinIO implements no per-bucket CORS API (PutBucketCors returns "not
@@ -109,7 +117,7 @@ services:
 
   # One-shot: create the bucket the application expects, then exit.
   minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
+    image: bitnamilegacy/minio-client:2025.7.21-debian-12-r3
     depends_on:
       minio:
         condition: service_healthy
