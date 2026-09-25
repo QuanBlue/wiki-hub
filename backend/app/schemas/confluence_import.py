@@ -78,6 +78,10 @@ class ImportJobRead(BaseModel):
     counters: dict[str, int]
     cancel_requested: bool
     error: str | None
+    #: How many warning / error lines this run logged, so a past run that had
+    #: problems is visible in the history list without opening its log.
+    warning_count: int = 0
+    error_count: int = 0
     created_at: datetime
     updated_at: datetime
 

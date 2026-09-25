@@ -317,11 +317,15 @@ async def test_confluence_import_route_wrappers(monkeypatch: pytest.MonkeyPatch)
             return self
 
     empty_result.scalars.return_value = ScalarItems()
-    assert await imports_api.list_jobs(user, session) == []
+    assert await imports_api.list_jobs(user, session, limit=30, offset=0) == []
     session.get = AsyncMock(return_value=None)
     with pytest.raises(imports_api.NotFoundError):
         await imports_api.get_job(job.id, user, session)
-    assert (await imports_api.get_logs(job.id, user, session, offset=0, limit=100)).items == []
+    assert (
+        await imports_api.get_logs(
+            job.id, user, session, offset=0, limit=100, level=None, order="desc"
+        )
+    ).items == []
 
     cancel_item = SimpleNamespace(
         id=job.id,

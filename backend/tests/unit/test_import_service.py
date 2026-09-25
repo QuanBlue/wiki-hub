@@ -567,8 +567,15 @@ async def test_run_import_logs_and_skips_attachment_missing_from_archive(
     storage.put = AsyncMock()
     monkeypatch.setattr(import_module, "scan_archive", lambda _path: [source_space])
     monkeypatch.setattr(import_module, "iter_page_bodies", lambda _path: [])
-    attachment = ConfluenceAttachment("att-1", "page-1", "huge-export.pptx", "application/octet-stream")
-    monkeypatch.setattr(import_module, "iter_attachments", lambda _path: [(attachment, None)])
+    # Only the first file is listed by name; the rest are counted in the summary
+    # instead of burying every other warning under one line each.
+    monkeypatch.setattr(import_module, "MAX_MISSING_FILE_WARNINGS", 1)
+    names = ["huge-export.pptx", "second.docx", "third.xlsx"]
+    missing = [
+        (ConfluenceAttachment(f"att-{i}", "page-1", name, "application/octet-stream"), None)
+        for i, name in enumerate(names)
+    ]
+    monkeypatch.setattr(import_module, "iter_attachments", lambda _path: missing)
 
     await import_module.run_import(session, storage, job.id)
 
@@ -576,7 +583,11 @@ async def test_run_import_logs_and_skips_attachment_missing_from_archive(
     storage.put.assert_not_awaited()
     assert not any(isinstance(item, PageAttachment) for item in added)
     warnings = [item for item in added if isinstance(item, ImportLog) and item.level == "warning"]
-    assert any("huge-export.pptx" in item.message for item in warnings)
+    messages = [item.message for item in warnings]
+    assert sum("huge-export.pptx" in message for message in messages) == 1
+    assert not any("second.docx" in message for message in messages)
+    assert any(message.startswith("2 more attachments were also missing") for message in messages)
+    assert any("3 attachments listed in the export had no file" in message for message in messages)
 
 
 @pytest.mark.asyncio
@@ -639,6 +650,7 @@ async def test_run_import_handles_home_creation_parenting_timestamps_and_cancel(
     cancel_session = Mock()
     cancel_session.commit = AsyncMock()
     cancel_session.rollback = AsyncMock()
+    cancel_session.new = []
     cancel_session.refresh = AsyncMock()
     cancelled_job = SimpleNamespace(
         id=uuid.uuid4(),
@@ -770,6 +782,7 @@ async def test_run_import_persists_cancelled_and_failed_states() -> None:
         session = Mock()
         session.commit = AsyncMock()
         session.rollback = AsyncMock()
+        session.new = []
         session.refresh = AsyncMock()
         job = SimpleNamespace(
             id=uuid.uuid4(),
@@ -795,6 +808,7 @@ async def test_run_import_persists_cancelled_and_failed_states() -> None:
     session = Mock()
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
+    session.new = []
     progress_job = SimpleNamespace(
         id=uuid.uuid4(),
         archive_id=uuid.uuid4(),
@@ -823,6 +837,7 @@ async def test_run_import_records_a_worker_timeout_as_a_failure_and_propagates_i
     session = Mock()
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
+    session.new = []
     session.refresh = AsyncMock()
     job = SimpleNamespace(
         id=uuid.uuid4(),

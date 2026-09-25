@@ -408,6 +408,9 @@ class BackupJobRead(BaseModel):
     kind: str
     status: str
     phase: str
+    #: Warning / error lines this job logged - see `ImportJobRead`.
+    warning_count: int = 0
+    error_count: int = 0
     counters: dict[str, int] = Field(default_factory=dict)
     cancel_requested: bool = False
     include_credentials: bool = False

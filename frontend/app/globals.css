@@ -558,6 +558,9 @@
   --primary-hover: var(--wh-brand-700);
   --primary-foreground: #ffffff;
   --primary-subtle: var(--wh-brand-50);
+  /* Text-selection highlight: --primary-subtle is a near-white wash meant
+     for hovered rows, far too faint to show where a selection ends. */
+  --selection: var(--wh-brand-200);
   --ring: var(--wh-brand-500);
   --danger: var(--wh-danger);
   --danger-foreground: #ffffff;
@@ -589,6 +592,7 @@
   --primary-hover: var(--wh-brand-300);
   --primary-foreground: #0f172a;
   --primary-subtle: color-mix(in oklab, var(--wh-brand-500) 20%, transparent);
+  --selection: color-mix(in oklab, var(--wh-brand-400) 55%, transparent);
   --ring: var(--wh-brand-400);
 
   --wh-success: #5eead4;
@@ -723,7 +727,8 @@
   }
 
   ::selection {
-    background-color: var(--primary-subtle);
+    background-color: var(--selection);
+    color: inherit;
   }
 }
 

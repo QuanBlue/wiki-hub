@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 import uuid
@@ -15,7 +16,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attachment import PageAttachment
-from app.models.backup_job import BackupArchive, BackupJob
+from app.models.backup_job import BackupArchive, BackupJob, BackupJobLog
 from app.models.page import WikiPage
 from app.models.permission import Group, GroupMember, SpaceGroupPermission, SpaceUserPermission
 from app.models.restriction import PageGroupRestriction, PageUserRestriction
@@ -30,6 +31,7 @@ from app.modules.backup.service import (
     checkpoint_backup_job,
     log_backup_event,
 )
+from app.services.job_log_recovery import pending_log_entries, restore_log_entries
 from app.services.storage import ObjectStorage
 
 
@@ -322,20 +324,44 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
             )
         await session.commit()
     except ExportCancelled:
-        # The rollback discards any log lines still pending in this session,
-        # so the closing line has to be written after it, not before.
+        # The rollback discards any log lines still pending in this session:
+        # keep them, and write the closing line after it, not before.
+        kept_logs = pending_log_entries(session, BackupJobLog)
         await session.rollback()
         current = await session.get(BackupJob, job_id)
         if current:
+            restore_log_entries(session, kept_logs)
             current.status, current.phase = "cancelled", "cancelled"
             await log_backup_event(
                 session, current, "warning", "cancelled", "Restore cancelled by an administrator."
             )
             await session.commit()
+    except asyncio.CancelledError:
+        # The worker's job timeout or a shutdown - not an `Exception`, so the
+        # handler below never sees it. Record it instead of leaving the row
+        # "running" until the reaper blames a dead worker; shielded so a second
+        # cancellation cannot interrupt writing it.
+        with anyio.CancelScope(shield=True):
+            kept_logs = pending_log_entries(session, BackupJobLog)
+            await session.rollback()
+            current = await session.get(BackupJob, job_id)
+            if current:
+                restore_log_entries(session, kept_logs)
+                message = (
+                    "The restore was interrupted before it finished (the worker's time "
+                    "limit was reached, or it was shut down). Changes from this run were "
+                    "rolled back where possible - check the data, then run it again."
+                )
+                current.status, current.phase, current.error = "failed", "failed", message
+                await log_backup_event(session, current, "error", "failed", message)
+                await session.commit()
+        raise
     except Exception as exc:
+        kept_logs = pending_log_entries(session, BackupJobLog)
         await session.rollback()
         current = await session.get(BackupJob, job_id)
         if current:
+            restore_log_entries(session, kept_logs)
             current.status, current.phase, current.error = "failed", "failed", str(exc)[:4000]
             await log_backup_event(session, current, "error", "failed", str(exc)[:4000])
             await session.commit()

@@ -526,8 +526,8 @@ export function Sidebar({
         data-sidebar-kind="app"
         aria-label={t("nav.primary")}
         className={cn(
-          "wh-scroll top-topbar border-border bg-surface-sunken fixed inset-y-0 left-0 z-20",
-          "overflow-x-hidden overflow-y-auto border-r px-2 py-3",
+          "top-topbar border-border bg-surface-sunken fixed inset-y-0 left-0 z-20",
+          "flex flex-col overflow-hidden border-r",
           !dragging &&
             "transition-[width,transform] duration-200 motion-reduce:transition-none",
           railCollapsed ? "w-14" : "w-sidebar md:w-(--app-sidebar-width)",
@@ -540,6 +540,7 @@ export function Sidebar({
           } as CSSProperties
         }
       >
+        <div className="wh-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 py-3">
         <NavSection
           title={t("nav.overview")}
           items={overviewItems}
@@ -583,43 +584,55 @@ export function Sidebar({
           onToggle={() => toggleSection("administration")}
         />
 
+        </div>
+
+        {/* Pinned to the bottom, like the space sidebar's Edit button, so it
+            stays in reach however long the list above grows. */}
         {!railCollapsed && (showFavoriteSpaces || showPinnedPages) ? (
-          <>
-            <div className="border-border my-3 border-t" />
+          <div className="border-border shrink-0 border-t p-3">
             <button
               type="button"
               onClick={() => {
                 setCollectionPage(0);
                 setCollectionPanel(showFavoriteSpaces ? "favorites" : "pinned");
               }}
-              className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+              className="text-muted-foreground hover:bg-surface-selected hover:text-foreground focus-visible:ring-ring flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
             >
-              <MoreHorizontal className="size-4 shrink-0" aria-hidden />
+              <MoreHorizontal className="size-3.5 shrink-0" aria-hidden />
               <span>{t("nav.manageSidebar")}</span>
             </button>
-          </>
-        ) : null}
-
-        {!railCollapsed ? (
-          <button
-            type="button"
-            aria-label={t("nav.resizeSidebar")}
-            title={t("nav.dragToResize")}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              setDragging(true);
-            }}
-            className="group focus-visible:ring-ring absolute top-0 right-0 hidden h-full w-3 translate-x-1/2 cursor-col-resize focus-visible:ring-2 focus-visible:outline-none md:block"
-          >
-            <span
-              className={cn(
-                "bg-border-strong absolute top-0 right-1/2 h-full w-px opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100",
-                dragging && "opacity-100",
-              )}
-            />
-          </button>
+          </div>
         ) : null}
       </nav>
+
+      {/* A sibling of the nav, not a child: inside it the handle scrolled with
+          the content, was offset by the scrollbar's width and lost half its
+          hit area to `overflow-x-hidden`, so the highlight sat left of the
+          sidebar's own border. Centred on that border instead. */}
+      {!railCollapsed ? (
+        <button
+          type="button"
+          aria-label={t("nav.resizeSidebar")}
+          title={t("nav.dragToResize")}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          style={{ left: sidebarWidth - 1 }}
+          className={cn(
+            "group focus-visible:ring-ring top-topbar fixed bottom-0 z-20 hidden w-3 -translate-x-1/2 cursor-col-resize focus-visible:ring-2 focus-visible:outline-none md:block",
+            !dragging &&
+              "transition-[left] duration-200 motion-reduce:transition-none",
+          )}
+        >
+          <span
+            className={cn(
+              "bg-border-strong absolute top-0 left-1/2 h-full w-px opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100",
+              dragging && "opacity-100",
+            )}
+          />
+        </button>
+      ) : null}
 
       <Dialog
         open={collectionPanel !== null}

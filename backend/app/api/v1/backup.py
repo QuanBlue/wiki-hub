@@ -44,6 +44,13 @@ from app.modules.backup.automated import (
 from app.modules.backup.archives import BackupArchiveService
 from app.modules.backup.jobs import create_export_job, create_import_job
 from app.modules.backup.service import STALE_JOB_AFTER, BackupService
+from app.services.job_logs import (
+    LogLevelFilter,
+    LogOrder,
+    format_log_line,
+    job_logs_query,
+    problem_counts,
+)
 from app.schemas.backup import (
     BackupArchiveRead,
     AutomatedBackupBulkDelete,
@@ -122,9 +129,11 @@ async def _enqueue(job_id: uuid.UUID) -> None:
         ) from exc
 
 
-async def _job_read(job: BackupJob) -> BackupJobRead:
+async def _job_read(job: BackupJob, counts: tuple[int, int] = (0, 0)) -> BackupJobRead:
     percent, eta_seconds = job_progress(job)
     return BackupJobRead(
+        warning_count=counts[0],
+        error_count=counts[1],
         id=job.id,
         kind=job.kind,
         status=job.status,
@@ -646,16 +655,25 @@ async def bulk_delete_automated_backups(
 
 
 @router.get("/jobs", response_model=list[BackupJobRead])
-async def list_backup_jobs(_user: CurrentSuperuser, session: DbSession) -> list[BackupJobRead]:
-    """Recent export jobs, newest first.
+async def list_backup_jobs(
+    _user: CurrentSuperuser,
+    session: DbSession,
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    kind: str | None = Query(None, max_length=32),
+) -> list[BackupJobRead]:
+    """Recent backup jobs, newest first, each with its warning/error counts.
 
     Lets the admin panel reattach to an in-flight export after a reload or on
-    a different tab, the same way the Confluence import job list does.
+    a different tab, the same way the Confluence import job list does - and,
+    with `kind=full_import`, lists past restores for the Import history card.
     """
-    jobs = (
-        await session.execute(select(BackupJob).order_by(BackupJob.created_at.desc()).limit(30))
-    ).scalars()
-    return [await _job_read(job) for job in jobs]
+    query = select(BackupJob).order_by(BackupJob.created_at.desc())
+    if kind is not None:
+        query = query.where(BackupJob.kind == kind)
+    jobs = list((await session.execute(query.offset(offset).limit(limit))).scalars())
+    counts = await problem_counts(session, BackupJobLog, [job.id for job in jobs])
+    return [await _job_read(job, counts.get(job.id, (0, 0))) for job in jobs]
 
 
 @router.get("/jobs/{job_id}", response_model=BackupJobRead)
@@ -675,20 +693,21 @@ async def get_backup_job_logs(
     session: DbSession,
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=250),
+    level: LogLevelFilter | None = None,
+    order: LogOrder = "desc",
 ) -> BackupJobLogPage:
-    """Narration for one backup job, newest first.
+    """Narration for one backup job, newest first by default.
 
     Paged the same way as the Confluence importer's `/jobs/{id}/logs`: a
     restore that copies every attachment writes a bounded number of lines,
-    but a failure can add one per item, and the panel only ever shows the
-    most recent page of them.
+    but a failure can add one per item, and the panel shows one page at a
+    time. `level` narrows to warnings or errors; `order=asc` reads it as a
+    story, oldest line first.
     """
     rows = (
         (
             await session.execute(
-                select(BackupJobLog)
-                .where(BackupJobLog.job_id == job_id)
-                .order_by(BackupJobLog.created_at.desc(), BackupJobLog.id.desc())
+                job_logs_query(BackupJobLog, job_id, level=level, order=order)
                 .offset(offset)
                 .limit(limit + 1)
             )
@@ -701,6 +720,21 @@ async def get_backup_job_logs(
             BackupJobLogRead.model_validate(row, from_attributes=True) for row in rows[:limit]
         ],
         next_offset=offset + limit if len(rows) > limit else None,
+    )
+
+
+@router.get("/jobs/{job_id}/logs/download")
+async def download_backup_job_logs(
+    job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession
+) -> Response:
+    """The whole log of one backup job as a plain-text file, oldest line first."""
+    if await session.get(BackupJob, job_id) is None:
+        raise BadRequestError("Backup job was not found.", code="backup_job_not_found")
+    rows = (await session.execute(job_logs_query(BackupJobLog, job_id, order="asc"))).scalars()
+    return Response(
+        "\n".join(format_log_line(row) for row in rows) + "\n",
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="backup-job-{job_id}.log"'},
     )
 
 

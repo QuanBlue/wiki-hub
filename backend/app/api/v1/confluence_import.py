@@ -8,7 +8,7 @@ from typing import Annotated
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import desc, select
 
 from app.api.deps import CurrentSuperuser, DbSession
@@ -28,6 +28,13 @@ from app.schemas.confluence_import import (
     UploadPartUrlsRequest,
     UploadProgressRead,
     UploadTarget,
+)
+from app.services.job_logs import (
+    LogLevelFilter,
+    LogOrder,
+    format_log_line,
+    job_logs_query,
+    problem_counts,
 )
 from app.services.import_concurrency import assert_no_active_wikihub_restore
 from app.services.site_settings import SiteSettingsService
@@ -55,7 +62,7 @@ def archive_read(item: ImportArchive) -> ArchiveRead:
     )
 
 
-def job_read(item: ImportJob) -> ImportJobRead:
+def job_read(item: ImportJob, counts: tuple[int, int] = (0, 0)) -> ImportJobRead:
     return ImportJobRead(
         id=item.id,
         archive_id=item.archive_id,
@@ -67,6 +74,8 @@ def job_read(item: ImportJob) -> ImportJobRead:
         counters=item.counters,
         cancel_requested=item.cancel_requested,
         error=item.error,
+        warning_count=counts[0],
+        error_count=counts[1],
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
@@ -245,13 +254,25 @@ async def create_job(
 
 
 @router.get("/jobs", response_model=list[ImportJobRead])
-async def list_jobs(_user: CurrentSuperuser, session: DbSession) -> list[ImportJobRead]:
-    return [
-        job_read(item)
-        for item in (
-            await session.execute(select(ImportJob).order_by(ImportJob.created_at.desc()).limit(30))
+async def list_jobs(
+    _user: CurrentSuperuser,
+    session: DbSession,
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> list[ImportJobRead]:
+    """Past and current imports, newest first, each with its warning/error counts."""
+    jobs = list(
+        (
+            await session.execute(
+                select(ImportJob)
+                .order_by(ImportJob.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+            )
         ).scalars()
-    ]
+    )
+    counts = await problem_counts(session, ImportLog, [job.id for job in jobs])
+    return [job_read(job, counts.get(job.id, (0, 0))) for job in jobs]
 
 
 @router.get("/jobs/{job_id}", response_model=ImportJobRead)
@@ -269,13 +290,13 @@ async def get_logs(
     session: DbSession,
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=250),
+    level: LogLevelFilter | None = None,
+    order: LogOrder = "desc",
 ) -> ImportLogPage:
     rows = (
         (
             await session.execute(
-                select(ImportLog)
-                .where(ImportLog.job_id == job_id)
-                .order_by(ImportLog.created_at.desc())
+                job_logs_query(ImportLog, job_id, level=level, order=order)
                 .offset(offset)
                 .limit(limit + 1)
             )
@@ -286,6 +307,21 @@ async def get_logs(
     return ImportLogPage(
         items=[ImportLogRead.model_validate(row, from_attributes=True) for row in rows[:limit]],
         next_offset=offset + limit if len(rows) > limit else None,
+    )
+
+
+@router.get("/jobs/{job_id}/logs/download")
+async def download_logs(job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession) -> Response:
+    """The whole log of one import as a plain-text file, oldest line first."""
+    if await session.get(ImportJob, job_id) is None:
+        raise NotFoundError("Import job was not found.")
+    rows = (
+        await session.execute(job_logs_query(ImportLog, job_id, order="asc"))
+    ).scalars()
+    return Response(
+        "\n".join(format_log_line(row) for row in rows) + "\n",
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="confluence-import-{job_id}.log"'},
     )
 
 

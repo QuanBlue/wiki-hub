@@ -2683,6 +2683,26 @@ export const sectionsVi: HelpSection[] = [
           cập vào thư mục đã mount giống như bất kỳ kho lưu trữ thông tin đăng
           nhập nào khác.
         </Callout>
+
+        <p className="mt-4 font-semibold text-foreground">4. Lịch sử import và log:</p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            Trong <strong>Import / Restore</strong>, thẻ <strong>Lịch sử import</strong>{" "}
+            liệt kê mọi lần import Confluence và khôi phục WikiHub - lần đang chạy và tất
+            cả các lần trước - kèm trạng thái, thời gian chạy và số cảnh báo/lỗi đã ghi.
+          </li>
+          <li>
+            Bấm vào một lần chạy để đọc toàn bộ log, dòng cũ nhất trước. Có thể lọc{" "}
+            <strong>Cảnh báo</strong> hoặc <strong>Lỗi</strong>, <strong>Sao chép</strong>{" "}
+            các dòng, hoặc dùng <strong>Tải .txt</strong> để lưu toàn bộ log.
+          </li>
+          <li>
+            Log được lưu trên máy chủ nên một lần import chạy lâu khi bạn đã đóng hoặc
+            treo trình duyệt vẫn xem lại được. Các file mà bản export Confluence liệt kê
+            nhưng không thực sự chứa được gộp thành một dòng tổng kết, chỉ 100 file đầu
+            được nêu tên riêng.
+          </li>
+        </ul>
       </>
     ),
   },

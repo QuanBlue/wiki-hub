@@ -48,6 +48,7 @@ from app.modules.import_export.confluence import (
     iter_page_bodies,
     scan_archive,
 )
+from app.services.job_log_recovery import pending_log_entries, restore_log_entries
 from app.services.storage import ObjectStorage
 
 
@@ -1252,6 +1253,10 @@ async def log(
 ) -> ImportLog:
     entry = ImportLog(
         job_id=job.id,
+        # Stamped now rather than at INSERT: if the job fails, this row is
+        # re-added after a rollback (see `job_log_recovery`) and must keep the
+        # time it was actually written, not the time of the failure.
+        created_at=datetime.now(UTC),
         level=level,
         phase=phase,
         message=message,
@@ -1266,6 +1271,10 @@ async def log(
 #: under `STALE_IMPORT_AFTER` so a slow host (swapping, slow disk) never looks
 #: abandoned between two of a step's natural progress points.
 HEARTBEAT_INTERVAL_SECONDS = 30
+
+#: Individually-listed "file missing from the export" warnings per import; the
+#: rest are only counted in the phase summary.
+MAX_MISSING_FILE_WARNINGS = 100
 
 
 async def _beat(session: AsyncSession, job: ImportJob, last_beat: float) -> float:
@@ -1881,6 +1890,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             await session.commit()
 
             attachments_imported = 0
+            missing_files = 0
             attachment_urls: dict[tuple[str, str], str] = {}
             attachment_sources = await _run_with_heartbeat(
                 session, job, lambda: list(iter_attachments(path))
@@ -1914,17 +1924,22 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                         # `#attachment-<filename>` href with nothing further
                         # WikiHub can do; log it so that is diagnosable
                         # instead of a silent, untraceable gap.
-                        await log(
-                            session,
-                            job,
-                            "warning",
-                            "attachments",
-                            f"Could not find the file for attachment "
-                            f"'{source_attachment.filename}' in the archive - it may be "
-                            "missing from the Confluence export. Skipped.",
-                            entity_type="attachment",
-                            entity_label=source_attachment.filename,
-                        )
+                        missing_files += 1
+                        # A large export can lack hundreds of files; one line each
+                        # buries every other warning. The first few name the
+                        # pattern, and the totals below carry the rest.
+                        if missing_files <= MAX_MISSING_FILE_WARNINGS:
+                            await log(
+                                session,
+                                job,
+                                "warning",
+                                "attachments",
+                                f"Could not find the file for attachment "
+                                f"'{source_attachment.filename}' in the archive - it may be "
+                                "missing from the Confluence export. Skipped.",
+                                entity_type="attachment",
+                                entity_label=source_attachment.filename,
+                            )
                         continue
                     try:
                         size_bytes = source_archive.getinfo(archive_member).file_size
@@ -1975,20 +1990,38 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 "attachments_processed": attachments_imported,
                 "attachments_total": total_attachments,
             }
+            if missing_files > MAX_MISSING_FILE_WARNINGS:
+                await log(
+                    session,
+                    job,
+                    "warning",
+                    "attachments",
+                    f"{missing_files - MAX_MISSING_FILE_WARNINGS} more attachments were also "
+                    f"missing from the archive (only the first {MAX_MISSING_FILE_WARNINGS} "
+                    "are listed above).",
+                )
             await log(
                 session,
                 job,
-                "info",
+                "warning" if missing_files else "info",
                 "attachments",
-                f"Imported {attachments_imported} attachments and linked them to their pages.",
+                f"Imported {attachments_imported} attachments and linked them to their pages."
+                + (
+                    f" {missing_files} attachments listed in the export had no file in the "
+                    "archive and were skipped."
+                    if missing_files
+                    else ""
+                ),
             )
             restore_timestamps()
             job.status, job.phase = "completed", "completed"
             await session.commit()
     except ImportCancelled as exc:
+        kept_logs = pending_log_entries(session, ImportLog)
         await session.rollback()
         job = await session.get(ImportJob, job_id)
         if job:
+            restore_log_entries(session, kept_logs)
             job.status, job.phase = "cancelled", "cancelled"
             await log(session, job, "warning", "cancelled", str(exc))
             await session.commit()
@@ -1999,9 +2032,11 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
         # dead worker, with nothing saying the import had simply been cut off.
         # Shielded so a second cancellation cannot interrupt recording it.
         with anyio.CancelScope(shield=True):
+            kept_logs = pending_log_entries(session, ImportLog)
             await session.rollback()
             job = await session.get(ImportJob, job_id)
             if job:
+                restore_log_entries(session, kept_logs)
                 message = (
                     "The import was interrupted before it finished (the worker's time "
                     "limit was reached, or it was shut down). Pages imported so far are "
@@ -2012,9 +2047,11 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 await session.commit()
         raise
     except Exception as exc:  # noqa: BLE001 - persist any worker failure for the operator
+        kept_logs = pending_log_entries(session, ImportLog)
         await session.rollback()
         job = await session.get(ImportJob, job_id)
         if job:
+            restore_log_entries(session, kept_logs)
             job.status, job.phase, job.error = "failed", "failed", str(exc)
             await log(session, job, "error", "failed", str(exc))
             await session.commit()

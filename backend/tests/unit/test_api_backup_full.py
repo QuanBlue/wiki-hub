@@ -226,10 +226,14 @@ async def test_list_backup_jobs():
     ]
     result = Mock()
     result.scalars.return_value = jobs
+    result.all.return_value = []  # no warning/error lines for either job
     session.execute.return_value = result
 
-    res = await list_backup_jobs(user, session)
+    res = await list_backup_jobs(user, session, limit=30, offset=0, kind=None)
     assert [job.id for job in res] == [j.id for j in jobs]
+    assert all((job.warning_count, job.error_count) == (0, 0) for job in res)
+    # Filtering by kind is just another WHERE on the same query.
+    assert len(await list_backup_jobs(user, session, limit=30, offset=0, kind="full_import")) == 2
 
 
 @pytest.mark.asyncio

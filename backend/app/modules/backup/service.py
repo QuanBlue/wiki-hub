@@ -150,6 +150,9 @@ async def log_backup_event(
     """
     entry = BackupJobLog(
         job_id=job.id,
+        # Stamped now, not at INSERT: a failed restore re-adds these after its
+        # rollback (see `job_log_recovery`) and they must keep their own time.
+        created_at=datetime.now(UTC),
         level=level,
         phase=phase,
         message=message,
