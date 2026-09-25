@@ -1,11 +1,12 @@
 "use client";
 
-import { ChevronDown, Copy, Download, Loader2, RefreshCw } from "lucide-react";
+import { Copy, Download, Eye, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { formatDateTime } from "@/lib/i18n/format";
@@ -314,7 +315,7 @@ export function ImportHistory() {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [selected, setSelected] = useState<HistoryRun | null>(null);
   const loaded = useRef({ confluence: 0, restore: 0 });
 
   const fetchRuns = useCallback(async (offsets: typeof loaded.current) => {
@@ -396,39 +397,46 @@ export function ImportHistory() {
     queued: t("importHistory.statusQueued"),
   };
 
+  const kindLabel = (run: HistoryRun) =>
+    run.kind === "confluence"
+      ? t("importHistory.kindConfluence")
+      : t("importHistory.kindRestore");
+
   return (
     <section
       aria-labelledby="import-history-title"
-      className="border-border bg-surface-raised mt-4 rounded-lg border p-5 shadow-sm"
+      className="border-border bg-surface-raised mt-4 rounded-lg border shadow-sm"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
-          <h3 id="import-history-title" className="text-base font-semibold">
+          <h3 id="import-history-title" className="text-sm font-semibold">
             {t("importHistory.title")}
           </h3>
-          <p className="text-muted-foreground mt-1 text-sm">
+          <p className="text-muted-foreground truncate text-xs">
             {t("importHistory.description")}
           </p>
         </div>
         <Button
           type="button"
           size="sm"
-          variant="secondary"
+          variant="ghost"
           onClick={() => void reload()}
           disabled={state === "loading"}
+          aria-label={t("importHistory.refresh")}
+          title={t("importHistory.refresh")}
         >
           <RefreshCw className={cn(state === "loading" && "animate-spin")} />
-          {t("importHistory.refresh")}
+          <span className="hidden sm:inline">{t("importHistory.refresh")}</span>
         </Button>
       </div>
 
       {state === "loading" && runs.length === 0 ? (
-        <p className="text-muted-foreground mt-4 flex items-center gap-2 text-sm">
+        <p className="text-muted-foreground border-border flex items-center gap-2 border-t px-4 py-3 text-sm">
           <Loader2 className="size-4 animate-spin" />{" "}
           {t("importHistory.loading")}
         </p>
       ) : state === "error" ? (
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+        <div className="border-border flex flex-wrap items-center gap-3 border-t px-4 py-3 text-sm">
           <span className="text-danger">{t("importHistory.loadError")}</span>
           <Button
             type="button"
@@ -440,101 +448,111 @@ export function ImportHistory() {
           </Button>
         </div>
       ) : runs.length === 0 ? (
-        <p className="text-muted-foreground mt-4 text-sm">
+        <p className="text-muted-foreground border-border border-t px-4 py-3 text-sm">
           {t("importHistory.empty")}
         </p>
       ) : (
         <>
-          <ul className="border-border mt-4 divide-y rounded-md border">
-            {runs.map((run) => {
-              const open = expanded === run.key;
-              const scope = run.spaces
-                ? run.spaces.join(", ")
-                : t("importHistory.scopeAll");
-              return (
-                <li key={run.key}>
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() => setExpanded(open ? null : run.key)}
-                    className="hover:bg-surface-hover focus-visible:ring-ring flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
-                  >
-                    <span className="font-medium">
-                      {run.kind === "confluence"
-                        ? t("importHistory.kindConfluence")
-                        : t("importHistory.kindRestore")}
-                    </span>
-                    <span
-                      className="text-muted-foreground min-w-0 max-w-xs truncate"
-                      title={scope}
-                    >
-                      {scope}
-                    </span>
-                    <Badge variant={statusVariant(run.status)}>
-                      {statusLabel[run.status]}
-                    </Badge>
-                    {run.errors > 0 ? (
-                      <Badge variant="danger">
-                        {t("importHistory.errorsLabel", { count: run.errors })}
-                      </Badge>
-                    ) : null}
-                    {run.warnings > 0 ? (
-                      <Badge variant="warning">
-                        {t("importHistory.warningsLabel", {
-                          count: run.warnings,
-                        })}
-                      </Badge>
-                    ) : null}
-                    {run.errors === 0 && run.warnings === 0 ? (
-                      <span className="text-muted-foreground text-xs">
-                        {t("importHistory.noProblems")}
-                      </span>
-                    ) : null}
-                    <span className="text-muted-foreground ml-auto text-xs">
-                      {t("importHistory.started", {
-                        time: formatDateTime(run.createdAt, locale),
-                      })}
-                      {" · "}
-                      {run.status === "running" || run.status === "queued"
-                        ? t("importHistory.inProgress")
-                        : t("importHistory.duration", {
-                            duration: formatDuration(
-                              run.createdAt,
-                              run.updatedAt,
-                            ),
-                          })}
-                    </span>
-                    <ChevronDown
-                      aria-hidden
-                      className={cn(
-                        "text-muted-foreground size-4 shrink-0 transition-transform duration-150",
-                        open && "rotate-180",
-                      )}
-                    />
+          <div className="border-border overflow-x-auto border-t">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left text-xs">
+                  <th className="px-4 py-2 font-medium">
+                    {t("importHistory.columnRun")}
+                  </th>
+                  <th className="px-4 py-2 font-medium">
+                    {t("importHistory.columnStatus")}
+                  </th>
+                  <th className="px-4 py-2 font-medium">
+                    {t("importHistory.columnProblems")}
+                  </th>
+                  <th className="px-4 py-2 font-medium">
+                    {t("importHistory.columnStarted")}
+                  </th>
+                  <th className="px-4 py-2 font-medium">
+                    {t("importHistory.columnDuration")}
+                  </th>
+                  <th className="px-4 py-2 text-right font-medium">
                     <span className="sr-only">
-                      {open
-                        ? t("importHistory.hideLog")
-                        : t("importHistory.showLog")}
+                      {t("importHistory.columnActions")}
                     </span>
-                  </button>
-                  {open ? (
-                    <>
-                      {run.error ? (
-                        <p className="text-danger px-3 pb-2 text-xs">
-                          {t("importHistory.errorPrefix", {
-                            message: run.error,
-                          })}
-                        </p>
-                      ) : null}
-                      <RunLog run={run} />
-                    </>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => {
+                  const scope = run.spaces
+                    ? run.spaces.join(", ")
+                    : t("importHistory.scopeAll");
+                  return (
+                    <tr
+                      key={run.key}
+                      className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0"
+                    >
+                      <td className="px-4 py-2">
+                        <div className="font-medium">{kindLabel(run)}</div>
+                        <div
+                          className="text-muted-foreground max-w-56 truncate text-xs"
+                          title={scope}
+                        >
+                          {scope}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <Badge variant={statusVariant(run.status)}>
+                          {statusLabel[run.status]}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {run.errors > 0 ? (
+                            <Badge variant="danger">
+                              {t("importHistory.errorsLabel", {
+                                count: run.errors,
+                              })}
+                            </Badge>
+                          ) : null}
+                          {run.warnings > 0 ? (
+                            <Badge variant="warning">
+                              {t("importHistory.warningsLabel", {
+                                count: run.warnings,
+                              })}
+                            </Badge>
+                          ) : null}
+                          {run.errors === 0 && run.warnings === 0 ? (
+                            <span className="text-muted-foreground text-xs">
+                              {t("importHistory.noProblems")}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="text-muted-foreground px-4 py-2 text-xs whitespace-nowrap">
+                        {formatDateTime(run.createdAt, locale)}
+                      </td>
+                      <td className="text-muted-foreground px-4 py-2 text-xs whitespace-nowrap">
+                        {run.status === "running" || run.status === "queued"
+                          ? t("importHistory.inProgress")
+                          : formatDuration(run.createdAt, run.updatedAt)}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setSelected(run)}
+                          aria-label={`${t("importHistory.viewDetails")}: ${kindLabel(run)} ${formatDateTime(run.createdAt, locale)}`}
+                        >
+                          <Eye /> {t("importHistory.viewDetails")}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           {hasMore ? (
-            <div className="mt-3">
+            <div className="border-border border-t px-4 py-2">
               <Button
                 type="button"
                 size="sm"
@@ -549,6 +567,33 @@ export function ImportHistory() {
           ) : null}
         </>
       )}
+
+      <Dialog
+        open={selected !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null);
+        }}
+      >
+        {selected ? (
+          <DialogContent
+            title={t("importHistory.detailsTitle", {
+              kind: kindLabel(selected),
+            })}
+            description={t("importHistory.detailsDescription", {
+              time: formatDateTime(selected.createdAt, locale),
+              status: statusLabel[selected.status],
+            })}
+            className="max-w-3xl overflow-hidden p-0 [&>div:first-child]:px-5 [&>div:first-child]:pt-5"
+          >
+            {selected.error ? (
+              <p className="text-danger px-5 pb-3 text-xs">
+                {t("importHistory.errorPrefix", { message: selected.error })}
+              </p>
+            ) : null}
+            <RunLog run={selected} />
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </section>
   );
 }
