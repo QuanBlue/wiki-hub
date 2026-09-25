@@ -257,7 +257,7 @@ function RunLog({ run }: { run: HistoryRun }) {
 
       {/* One scroll area of fixed size: switching filters swaps what is inside
           it instead of resizing the modal. */}
-      <div className="border-border min-h-0 flex-1 overflow-y-auto border-t">
+      <div className="border-border min-h-0 flex-1 overflow-y-auto border-t pb-3">
         {state === "loading" ? (
           <p className="text-muted-foreground flex items-center gap-2 px-5 py-4 text-sm">
             <Loader2 className="size-4 animate-spin" />{" "}
