@@ -102,16 +102,17 @@ describe("ImportHistory", () => {
 
     render(<ImportHistory />);
 
-    const rows = await screen.findAllByRole("button", { expanded: false });
+    const rows = (await screen.findAllByRole("row")).slice(1); // drop the header row
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("WikiHub restore")).toBeInTheDocument();
     expect(within(rows[0]).getByText("Completed")).toBeInTheDocument();
     expect(within(rows[0]).getByText("No warnings")).toBeInTheDocument();
-    expect(within(rows[0]).getByText(/Took 3h 12m/)).toBeInTheDocument();
+    expect(within(rows[0]).getByText("3h 12m")).toBeInTheDocument();
     expect(within(rows[1]).getByText("Confluence import")).toBeInTheDocument();
     expect(within(rows[1]).getByText("Failed")).toBeInTheDocument();
     expect(within(rows[1]).getByText("Warnings: 3")).toBeInTheDocument();
     expect(within(rows[1]).getByText("Errors: 1")).toBeInTheDocument();
+    expect(within(rows[1]).getByRole("button", { name: /View details/ })).toBeInTheDocument();
   });
 
   it("shows an empty state and an error state with retry", async () => {
@@ -185,7 +186,7 @@ describe("ImportHistory", () => {
 
     async function openLog() {
       render(<ImportHistory />);
-      fireEvent.click(await screen.findByRole("button", { expanded: false }));
+      fireEvent.click(await screen.findByRole("button", { name: /View details/ }));
     }
 
     it("shows the stored error and log lines oldest first, and can download them", async () => {
@@ -196,6 +197,7 @@ describe("ImportHistory", () => {
 
       await openLog();
 
+      expect(screen.getByRole("dialog", { name: "Confluence import log" })).toBeInTheDocument();
       expect(screen.getByText("Error: boom")).toBeInTheDocument();
       expect(await screen.findByText(/file missing/)).toBeInTheDocument();
       expect(screen.getByText(/file\.pdf: file missing/)).toBeInTheDocument();
@@ -294,14 +296,14 @@ describe("ImportHistory", () => {
       await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Could not copy the log."));
     });
 
-    it("collapses the run again", async () => {
+    it("closes the details modal again", async () => {
       logsFor = () => ({ items: [logLine("1", "info", "hello")], next_offset: null });
       await openLog();
       await screen.findByText(/hello/);
 
-      fireEvent.click(screen.getByRole("button", { expanded: true }));
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
-      expect(screen.queryByText(/hello/)).not.toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByText(/hello/)).not.toBeInTheDocument());
     });
   });
 });
