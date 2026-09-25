@@ -217,8 +217,8 @@ function RunLog({ run }: { run: HistoryRun }) {
   ];
 
   return (
-    <div className="border-border border-t">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+    <div className="border-border flex min-h-0 flex-1 flex-col border-t">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-5 py-2">
         <div
           role="group"
           aria-label={t("importHistory.filterAria")}
@@ -255,51 +255,55 @@ function RunLog({ run }: { run: HistoryRun }) {
         </div>
       </div>
 
-      {state === "loading" ? (
-        <p className="text-muted-foreground flex items-center gap-2 px-3 pb-3 text-xs">
-          <Loader2 className="size-4 animate-spin" />{" "}
-          {t("importHistory.logLoading")}
-        </p>
-      ) : state === "error" ? (
-        <p className="text-danger px-3 pb-3 text-xs">
-          {t("importHistory.logLoadError")}
-        </p>
-      ) : lines.length === 0 ? (
-        <p className="text-muted-foreground px-3 pb-3 text-xs">
-          {t("importHistory.logEmpty")}
-        </p>
-      ) : (
-        <>
-          <ul className="border-border max-h-80 divide-y overflow-y-auto border-t text-xs">
-            {lines.map((line) => (
-              <li key={line.id} className="px-3 py-2">
-                <span className="text-muted-foreground tabular-nums">
-                  {logTime(line.created_at, locale)}
-                </span>{" "}
-                <span className={cn("font-medium", levelClass(line.level))}>
-                  {line.level}
-                </span>{" "}
-                · {line.entity_label ? `${line.entity_label}: ` : ""}
-                {line.message}
-              </li>
-            ))}
-          </ul>
-          {nextOffset !== null ? (
-            <div className="border-border border-t px-3 py-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() => void loadMore()}
-                disabled={loadingMore}
-              >
-                {loadingMore ? <Loader2 className="animate-spin" /> : null}
-                {t("importHistory.logLoadMore")}
-              </Button>
-            </div>
-          ) : null}
-        </>
-      )}
+      {/* One scroll area of fixed size: switching filters swaps what is inside
+          it instead of resizing the modal. */}
+      <div className="border-border min-h-0 flex-1 overflow-y-auto border-t">
+        {state === "loading" ? (
+          <p className="text-muted-foreground flex items-center gap-2 px-5 py-4 text-sm">
+            <Loader2 className="size-4 animate-spin" />{" "}
+            {t("importHistory.logLoading")}
+          </p>
+        ) : state === "error" ? (
+          <p className="text-danger px-5 py-4 text-sm">
+            {t("importHistory.logLoadError")}
+          </p>
+        ) : lines.length === 0 ? (
+          <p className="text-muted-foreground px-5 py-4 text-sm">
+            {t("importHistory.logEmpty")}
+          </p>
+        ) : (
+          <>
+            <ul className="divide-border divide-y text-xs">
+              {lines.map((line) => (
+                <li key={line.id} className="px-5 py-2.5 leading-relaxed">
+                  <span className="text-muted-foreground tabular-nums">
+                    {logTime(line.created_at, locale)}
+                  </span>{" "}
+                  <span className={cn("font-medium", levelClass(line.level))}>
+                    {line.level}
+                  </span>{" "}
+                  · {line.entity_label ? `${line.entity_label}: ` : ""}
+                  {line.message}
+                </li>
+              ))}
+            </ul>
+            {nextOffset !== null ? (
+              <div className="border-border border-t px-5 py-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void loadMore()}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? <Loader2 className="animate-spin" /> : null}
+                  {t("importHistory.logLoadMore")}
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -583,10 +587,10 @@ export function ImportHistory() {
               time: formatDateTime(selected.createdAt, locale),
               status: statusLabel[selected.status],
             })}
-            className="max-w-3xl overflow-hidden p-0 [&>div:first-child]:px-5 [&>div:first-child]:pt-5"
+            className="flex h-[min(40rem,calc(100vh-4rem))] max-w-3xl flex-col overflow-hidden p-0 [&>div:first-child]:shrink-0 [&>div:first-child]:px-5 [&>div:first-child]:pt-5"
           >
             {selected.error ? (
-              <p className="text-danger px-5 pb-3 text-xs">
+              <p className="text-danger shrink-0 px-5 pb-3 text-xs">
                 {t("importHistory.errorPrefix", { message: selected.error })}
               </p>
             ) : null}
