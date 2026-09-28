@@ -550,6 +550,7 @@
   --surface-raised: var(--wh-neutral-0);
   --surface-hover: var(--wh-neutral-100);
   --surface-selected: var(--wh-brand-50);
+  --surface-selected-hover: var(--wh-brand-200);
   --border: var(--wh-neutral-200);
   --border-strong: var(--wh-neutral-300);
   --muted: var(--wh-neutral-50);
@@ -584,6 +585,7 @@
   --surface-raised: #2f3546;
   --surface-hover: #33394c;
   --surface-selected: color-mix(in oklab, var(--wh-brand-500) 24%, transparent);
+  --surface-selected-hover: color-mix(in oklab, var(--wh-brand-500) 40%, transparent);
   --border: #363d50;
   --border-strong: #444d64;
   --muted: #272c3b;
@@ -621,6 +623,7 @@
   --color-surface-raised: var(--surface-raised);
   --color-surface-hover: var(--surface-hover);
   --color-surface-selected: var(--surface-selected);
+  --color-surface-selected-hover: var(--surface-selected-hover);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-muted: var(--muted);
@@ -1104,14 +1107,20 @@
     text-decoration: underline;
     text-underline-offset: 2px;
     font-weight: 500;
+    border-radius: 2px;
     cursor: pointer;
-    transition: color 0.15s ease, text-decoration-color 0.15s ease;
+    transition: color 0.15s ease, background-color 0.15s ease,
+      text-decoration-color 0.15s ease;
   }
+  /* --primary-hover is a *darker* step for filled buttons, which makes inline
+     text sink on hover. Links keep the full-strength colour and gain a soft
+     wash instead, so they stand out without losing text contrast. */
   .ProseMirror a:not([data-attachment]):hover,
   .wikihub-editor a:not([data-attachment]):hover,
   .wikihub-reader a:not([data-attachment]):hover {
-    color: var(--primary-hover);
-    text-decoration-color: var(--primary-hover);
+    color: var(--primary);
+    background-color: var(--primary-subtle);
+    text-decoration-color: var(--primary);
   }
 
   /* Dynamic page typography for page title, overview, reader, and editor prose */

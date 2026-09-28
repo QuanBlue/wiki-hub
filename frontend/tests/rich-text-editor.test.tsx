@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   RichTextContent,
@@ -28,6 +28,25 @@ describe("RichTextContent table of contents", () => {
     });
     expect(contents).toHaveTextContent("1.Architecture");
     expect(contents).toHaveTextContent("1.1.Data model");
+  });
+});
+
+describe("RichTextContent underline colour", () => {
+  it.each([
+    ["underline outside the colour", '<u><span style="color: var(--danger)">a</span></u>'],
+    ["underline inside the colour", '<span style="color: var(--danger)"><u>a</u></span>'],
+  ])("nests the underline inside the colour span (%s)", async (_label, html) => {
+    const { container } = render(<RichTextContent content={`<p>${html}</p>`} />);
+
+    // A `<u>` paints its line in the colour it inherits, so it has to sit
+    // inside the coloured span or the line stays the default text colour.
+    const underline = await waitFor(() => {
+      const found = container.querySelector("u");
+      if (!found) throw new Error("underline not rendered yet");
+      return found;
+    });
+    expect(underline.closest("span[data-wikihub-text-style]")).not.toBeNull();
+    expect(underline.querySelector("span[data-wikihub-text-style]")).toBeNull();
   });
 });
 
@@ -534,6 +553,35 @@ describe("RichTextEditor images", () => {
 });
 
 describe("RichTextEditor tables", () => {
+  it("only lets a merged cell's real edges start a row resize", async () => {
+    // Left column: two rows. Right column: one cell merged down over both.
+    const { container } = render(
+      <RichTextEditor
+        content="<table><tbody><tr><td><p>a</p></td><td rowspan=&quot;2&quot;><p>merged</p></td></tr><tr><td><p>b</p></td></tr><tr><td><p>c</p></td><td><p>d</p></td></tr></tbody></table>"
+        onChange={vi.fn()}
+      />,
+    );
+    const merged = (await waitFor(() => {
+      const found = Array.from(container.querySelectorAll("td")).find(
+        (cell) => cell.textContent === "merged",
+      );
+      expect(found).toBeDefined();
+      return found;
+    })) as HTMLTableCellElement;
+    expect(merged.rowSpan).toBe(2);
+
+    // The merged cell covers y 0-100; the boundary between its two rows is at
+    // y 50 and is drawn as nothing, while y 100 is its real bottom edge.
+    merged.getBoundingClientRect = () =>
+      ({ top: 0, bottom: 100, left: 0, right: 100, width: 100, height: 100 }) as DOMRect;
+
+    // fireEvent returns false when a handler called preventDefault - which is
+    // what starting a resize does.
+    expect(fireEvent.mouseDown(merged, { button: 0, clientX: 50, clientY: 50 })).toBe(true);
+    expect(fireEvent.mouseDown(merged, { button: 0, clientX: 50, clientY: 98 })).toBe(false);
+    fireEvent.mouseUp(window);
+  });
+
   it("renders the same table structure in the editor and live reader", async () => {
     const content =
       "<table><tbody><tr><td><p>First</p><p>Second</p></td><td><p>Value</p></td></tr><tr><td><p></p></td><td><p></p></td></tr></tbody></table>";
@@ -680,7 +728,14 @@ describe("RichTextEditor tables", () => {
       configurable: true,
       value: () => ({ top: 20, bottom: 60, height: 40 }),
     });
-    fireEvent.mouseDown(row, { button: 0, clientY: 56 });
+    // The pointer's target is always a cell (the row is fully covered by its
+    // cells), and the resize hitbox is measured against that cell's edges.
+    const cell = row.querySelector("td") as HTMLTableCellElement;
+    Object.defineProperty(cell, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: 20, bottom: 60, height: 40 }),
+    });
+    fireEvent.mouseDown(cell, { button: 0, clientY: 56 });
     fireEvent.mouseMove(window, { clientY: 92 });
     expect(row).toHaveStyle({ height: "76px" });
     fireEvent.mouseUp(window);
@@ -1344,6 +1399,53 @@ describe("RichTextEditor toggle blocks", () => {
       expect(onChange).toHaveBeenCalledWith(
         expect.stringContaining('data-open="false"'),
       );
+    });
+  });
+});
+
+describe("RichTextEditor converting between toggle and list blocks", () => {
+  beforeEach(() => {
+    document.elementFromPoint = () => null;
+  });
+
+  const toggleHtml =
+    '<div data-type="toggle"><div data-type="toggle-summary">Title</div><div data-type="toggle-content"><p>Body</p></div></div>';
+
+  it("turns a toggle's title into a to-do item when the to-do button is pressed", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(<RichTextEditor content={toggleHtml} onChange={onChange} />);
+
+    await user.click(await screen.findByText("Title"));
+    await user.click(screen.getByRole("button", { name: "To-do list" }));
+
+    await waitFor(() => {
+      const html = onChange.mock.calls.at(-1)?.[0] as string;
+      expect(html).toContain('data-type="taskList"');
+      expect(html).not.toContain('data-type="toggle"');
+      expect(html).toContain("Title");
+      expect(html).toContain("Body");
+    });
+  });
+
+  it("turns a to-do item into a toggle titled with its text when the toggle button is pressed", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <RichTextEditor
+        content='<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>Buy milk</p></li></ul>'
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(await screen.findByText("Buy milk"));
+    await user.click(screen.getByRole("button", { name: "Toggle list" }));
+
+    await waitFor(() => {
+      const html = onChange.mock.calls.at(-1)?.[0] as string;
+      expect(html).toContain('data-type="toggle"');
+      expect(html).toMatch(/data-type="toggle-summary"[^>]*>Buy milk</);
+      expect(html).not.toContain('data-type="taskList"');
     });
   });
 });

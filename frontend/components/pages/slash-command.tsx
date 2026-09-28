@@ -2,6 +2,7 @@
 
 import { Extension } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
+import { Fragment } from "@tiptap/pm/model";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import type { Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -206,6 +207,141 @@ export function insertToggle(editor: Editor) {
     .run();
 }
 
+const LIST_ITEM_TYPES = [
+  { list: "taskList", item: "taskItem" },
+  { list: "bulletList", item: "listItem" },
+  { list: "orderedList", item: "listItem" },
+] as const;
+
+function isInToggleTitle(editor: Editor) {
+  return editor.state.selection.$from.parent.type.name === "toggleSummary";
+}
+
+// Turns the toggle whose title holds the cursor back into plain blocks: the
+// title becomes a paragraph and the body's blocks follow it. A toggle's title
+// only takes inline text, so no list or heading command can apply inside one;
+// unwrapping first is what lets "turn this into a to-do" work from a toggle.
+function unwrapToggleTitle(editor: Editor) {
+  return editor.commands.command(({ tr, state, dispatch }) => {
+    const { $from } = state.selection;
+    const toggleDepth = $from.depth - 1;
+    if ($from.parent.type.name !== "toggleSummary" || toggleDepth < 0) {
+      return false;
+    }
+    const toggleNode = $from.node(toggleDepth);
+    const summaryNode = toggleNode.firstChild;
+    const contentNode = toggleNode.lastChild;
+    if (toggleNode.type.name !== "toggle" || !summaryNode || !contentNode) {
+      return false;
+    }
+    if (dispatch) {
+      const toggleStart = $from.before(toggleDepth);
+      const contentIsEmpty =
+        contentNode.childCount === 0 ||
+        (contentNode.childCount === 1 &&
+          contentNode.firstChild?.isTextblock &&
+          contentNode.firstChild.content.size === 0);
+      tr.replaceWith(
+        toggleStart,
+        toggleStart + toggleNode.nodeSize,
+        Fragment.fromArray([
+          state.schema.nodes.paragraph.create(null, summaryNode.content),
+          ...(contentIsEmpty ? [] : contentNode.content.content),
+        ]),
+      );
+      tr.setSelection(
+        TextSelection.near(
+          tr.doc.resolve(toggleStart + 1 + $from.parentOffset),
+          1,
+        ),
+      );
+    }
+    return true;
+  });
+}
+
+// Pulls the cursor's block out of every list around it, leaving a paragraph.
+function liftOutOfLists(editor: Editor) {
+  for (let guard = 0; guard < 8; guard += 1) {
+    const current = LIST_ITEM_TYPES.find(({ list }) => editor.isActive(list));
+    if (!current) return;
+    if (!editor.chain().focus().liftListItem(current.item).run()) return;
+  }
+}
+
+// Replaces the paragraph holding the cursor with a toggle whose title is that
+// paragraph's text, so existing text (or a to-do's label) becomes the title.
+function paragraphToToggle(editor: Editor) {
+  return editor.chain().focus().command(({ tr, state, dispatch }) => {
+    const { $from } = state.selection;
+    const depth = $from.depth;
+    const { toggle, toggleSummary, toggleContent, paragraph } =
+      state.schema.nodes;
+    if (
+      depth < 1 ||
+      $from.parent.type !== paragraph ||
+      !toggle ||
+      !toggleSummary ||
+      !toggleContent
+    ) {
+      return false;
+    }
+    const container = $from.node(depth - 1);
+    if (
+      !container.canReplaceWith(
+        $from.index(depth - 1),
+        $from.indexAfter(depth - 1),
+        toggle,
+      )
+    ) {
+      return false;
+    }
+    if (dispatch) {
+      const start = $from.before(depth);
+      tr.replaceWith(
+        start,
+        $from.after(depth),
+        toggle.create({ open: true }, [
+          toggleSummary.create(null, $from.parent.content),
+          toggleContent.create(null, [paragraph.create()]),
+        ]),
+      );
+      // start + 2 steps inside the toggle and its title; the cursor goes to
+      // the end of the title text.
+      tr.setSelection(
+        TextSelection.near(
+          tr.doc.resolve(start + 2 + $from.parent.content.size),
+          -1,
+        ),
+      );
+    }
+    return true;
+  }).run();
+}
+
+// Shared by the toolbar's and the slash menu's "Toggle list" entries. In a
+// toggle's title it turns the toggle off; anywhere else it converts the
+// current block (a to-do, a bullet, a paragraph) rather than inserting a
+// second, empty toggle beside it.
+export function toggleToggleBlock(editor: Editor) {
+  if (isInToggleTitle(editor)) {
+    unwrapToggleTitle(editor);
+    return;
+  }
+  liftOutOfLists(editor);
+  if (!paragraphToToggle(editor)) insertToggle(editor);
+}
+
+// Shared by the toolbar's and the slash menu's list entries. From a toggle's
+// title the toggle unwraps first, so its title becomes the list item.
+export function toggleListBlock(
+  editor: Editor,
+  command: "toggleBulletList" | "toggleOrderedList" | "toggleTaskList",
+) {
+  if (isInToggleTitle(editor)) unwrapToggleTitle(editor);
+  return editor.chain().focus()[command]().run();
+}
+
 // Image/attachment insertion needs the hidden file input + upload flow that
 // RichTextToolbar already owns (upload state, error handling, the
 // onUploadFile prop). Rather than threading that through this
@@ -289,7 +425,7 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     groupKey: "slash.groupBasicBlocks",
     shortcut: "-",
     preview: "bulletList",
-    run: (editor) => editor.chain().focus().toggleBulletList().run(),
+    run: (editor) => toggleListBlock(editor, "toggleBulletList"),
   },
   {
     id: "numbered-list",
@@ -300,7 +436,7 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     groupKey: "slash.groupBasicBlocks",
     shortcut: "1.",
     preview: "numberedList",
-    run: (editor) => editor.chain().focus().toggleOrderedList().run(),
+    run: (editor) => toggleListBlock(editor, "toggleOrderedList"),
   },
   {
     id: "todo-list",
@@ -311,7 +447,7 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     groupKey: "slash.groupBasicBlocks",
     shortcut: "[]",
     preview: "todoList",
-    run: (editor) => editor.chain().focus().toggleTaskList().run(),
+    run: (editor) => toggleListBlock(editor, "toggleTaskList"),
   },
   {
     id: "toggle-list",
@@ -322,7 +458,7 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     groupKey: "slash.groupBasicBlocks",
     shortcut: ">",
     preview: "toggleList",
-    run: (editor) => insertToggle(editor),
+    run: (editor) => toggleToggleBlock(editor),
   },
   {
     id: "quote",

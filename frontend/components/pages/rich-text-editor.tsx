@@ -166,8 +166,9 @@ import {
 } from "@/lib/office-attachments";
 import {
   SlashCommand,
-  insertToggle,
   placeCursorInToggleSummary,
+  toggleListBlock,
+  toggleToggleBlock,
 } from "@/components/pages/slash-command";
 import type { WikiPage } from "@/types/api";
 
@@ -504,8 +505,20 @@ const TextStyleMark = Mark.create({
   },
 });
 
+// A `<u>` has no colour of its own: the line is painted in the colour it
+// inherits. StarterKit's stock Underline loads ahead of TextStyleMark, so a
+// coloured, underlined run rendered as `<u><span color>` and the line stayed
+// the default text colour while only the glyphs changed. The lower priority
+// makes this the innermost mark (`<span color><u>`), so it inherits the colour.
 const UnderlineMark = Mark.create({
   name: "underline",
+  priority: 50,
+  addKeyboardShortcuts() {
+    return {
+      "Mod-u": () => this.editor.commands.toggleMark(this.name),
+      "Mod-U": () => this.editor.commands.toggleMark(this.name),
+    };
+  },
   parseHTML() {
     return [{ tag: "u" }];
   },
@@ -642,7 +655,11 @@ function tableContextAtCell(view: Editor["view"], cell: HTMLElement) {
   for (let depth = $position.depth; depth > 0; depth -= 1) {
     const node = $position.node(depth);
     if (node.type.name === "table") {
-      return { node, start: $position.start(depth) };
+      const start = $position.start(depth);
+      // table > row > cell: the cell sits two levels below the table.
+      const cellOffset =
+        $position.depth >= depth + 2 ? $position.before(depth + 2) - start : -1;
+      return { node, start, cellOffset };
     }
   }
   return null;
@@ -705,37 +722,94 @@ const TableColumnResize = Extension.create({
         );
     };
 
-    const setColumnHover = (table: HTMLTableElement, column: number) => {
-      table.querySelectorAll("tr").forEach((row) => {
-        const cell = row.children.item(column) as HTMLElement | null;
-        cell?.classList.add("wikihub-column-resize-target");
-      });
+    // A merged cell spans several grid columns, and a rowspan cell is missing
+    // from the rows it covers, so a cell's index among its row's DOM children
+    // is not its grid column. Every lookup below goes through the TableMap.
+    const setColumnHover = (
+      view: Editor["view"],
+      target: NonNullable<ReturnType<typeof resizeTarget>>,
+    ) => {
+      const { map, context, leftColumn } = target;
+      for (let row = 0; row < map.height; row += 1) {
+        const offset = map.map[row * map.width + leftColumn];
+        const cellNode = context.node.nodeAt(offset);
+        // Only a cell that *ends* at this boundary has a real edge here; one
+        // that merely spans across it has no line to grab, or to light up.
+        if (!cellNode) continue;
+        if (map.colCount(offset) + cellNode.attrs.colspan - 1 !== leftColumn) {
+          continue;
+        }
+        const dom = view.nodeDOM(context.start + offset);
+        if (dom instanceof HTMLElement) {
+          dom.classList.add("wikihub-column-resize-target");
+        }
+      }
     };
 
-    const resizeTarget = (event: MouseEvent) => {
+    const resizeTarget = (view: Editor["view"], event: MouseEvent) => {
       const cell = (event.target as HTMLElement | null)?.closest(
         "th, td",
       ) as HTMLTableCellElement | null;
       const table = cell?.closest("table") as HTMLTableElement | null;
-      if (!cell || !table || cell.colSpan !== 1) return null;
-      const row = cell.parentElement as HTMLTableRowElement | null;
-      if (!row) return null;
-      const rowCells = Array.from(row.children) as HTMLElement[];
-      const cellIndex = rowCells.indexOf(cell);
-      if (cellIndex < 0 || rowCells.length < 2) return null;
+      if (!cell || !table) return null;
+      const context = tableContextAtCell(view, cell);
+      if (!context || context.cellOffset < 0) return null;
+      const map = TableMap.get(context.node);
+      if (map.width < 2) return null;
+      let rect: ReturnType<TableMap["findCell"]>;
+      try {
+        rect = map.findCell(context.cellOffset);
+      } catch {
+        return null;
+      }
 
       const bounds = cell.getBoundingClientRect();
       const nearLeft = event.clientX - bounds.left <= TABLE_COLUMN_RESIZE_ZONE;
       const nearRight =
         bounds.right - event.clientX <= TABLE_COLUMN_RESIZE_ZONE;
-      const leftColumn = nearRight ? cellIndex : nearLeft ? cellIndex - 1 : -1;
+      // The cell's own edges only: a merged cell has no boundary inside it.
+      const leftColumn = nearRight
+        ? rect.right - 1
+        : nearLeft
+          ? rect.left - 1
+          : -1;
       // The table's outer *left* edge has nothing to its left to resize, so it
       // stays inert. Its outer right edge does resize the last column - there
       // is simply no neighbour to trade width with, so the table itself grows.
       if (leftColumn < 0) return null;
-      const rightColumn =
-        leftColumn + 1 < rowCells.length ? leftColumn + 1 : null;
-      return { table, leftColumn, rightColumn, rowCells };
+      const rightColumn = leftColumn + 1 < map.width ? leftColumn + 1 : null;
+      return { table, context, map, leftColumn, rightColumn };
+    };
+
+    // Rendered width of every grid column. Cells that span several columns
+    // only contribute an even share for a column no single-column cell covers.
+    const gridColumnWidths = (
+      view: Editor["view"],
+      target: NonNullable<ReturnType<typeof resizeTarget>>,
+    ) => {
+      const { map, context } = target;
+      const widths: number[] = Array(map.width).fill(0);
+      const seen = new Set<number>();
+      const spanning: { column: number; span: number; width: number }[] = [];
+      for (const offset of map.map) {
+        if (seen.has(offset)) continue;
+        seen.add(offset);
+        const cellNode = context.node.nodeAt(offset);
+        const dom = view.nodeDOM(context.start + offset);
+        if (!cellNode || !(dom instanceof HTMLElement)) continue;
+        const width = dom.getBoundingClientRect().width;
+        const column = map.colCount(offset);
+        if (cellNode.attrs.colspan === 1) widths[column] = width;
+        else spanning.push({ column, span: cellNode.attrs.colspan, width });
+      }
+      for (const { column, span, width } of spanning) {
+        for (let index = column; index < column + span; index += 1) {
+          if (!widths[index]) widths[index] = width / span;
+        }
+      }
+      return widths.map((width) =>
+        Math.max(TABLE_CELL_MIN_WIDTH, Math.round(width)),
+      );
     };
 
     return [
@@ -745,8 +819,8 @@ const TableColumnResize = Extension.create({
             mousemove: (view, event) => {
               if (activeResize || !view.editable) return false;
               clearColumnHover(view);
-              const target = resizeTarget(event);
-              if (target) setColumnHover(target.table, target.leftColumn);
+              const target = resizeTarget(view, event);
+              if (target) setColumnHover(view, target);
               return false;
             },
             mouseleave: (view) => {
@@ -755,21 +829,12 @@ const TableColumnResize = Extension.create({
             },
             mousedown: (view, event) => {
               if (!view.editable || event.button !== 0) return false;
-              const target = resizeTarget(event);
+              const target = resizeTarget(view, event);
               if (!target) return false;
-              const context = tableContextAtCell(
-                view,
-                target.rowCells[target.leftColumn],
-              );
-              if (!context) return false;
+              const { context } = target;
 
               const columns = Array.from(target.table.querySelectorAll("col"));
-              const widths = target.rowCells.map((cell) =>
-                Math.max(
-                  TABLE_CELL_MIN_WIDTH,
-                  Math.round(cell.getBoundingClientRect().width),
-                ),
-              );
+              const widths = gridColumnWidths(view, target);
               if (columns.length !== widths.length) return false;
 
               event.preventDefault();
@@ -934,19 +999,29 @@ const TableRowResize = Extension.create({
     let disposeDrag = () => undefined;
 
     const resizeTarget = (event: MouseEvent) => {
-      const row = (event.target as HTMLElement | null)?.closest(
-        "tr",
-      ) as HTMLTableRowElement | null;
+      const cell = (event.target as HTMLElement | null)?.closest(
+        "th, td",
+      ) as HTMLTableCellElement | null;
+      const row = cell?.parentElement as HTMLTableRowElement | null;
       const table = row?.closest("table") as HTMLTableElement | null;
-      if (!row || !table) return null;
+      if (!cell || !row || !table) return null;
       const rows = Array.from(table.querySelectorAll("tr"));
       const rowIndex = rows.indexOf(row);
       if (rowIndex < 0 || rows.length < 2) return null;
 
-      const bounds = row.getBoundingClientRect();
+      // Measure the *cell*, not its row: a cell merged down over several rows
+      // has no edge at the boundaries it spans, so those must not be grabbable
+      // (they are drawn as nothing), while its true bottom edge is the bottom
+      // of the last row it covers.
+      const bounds = cell.getBoundingClientRect();
       const nearTop = event.clientY - bounds.top <= TABLE_ROW_RESIZE_ZONE;
       const nearBottom = bounds.bottom - event.clientY <= TABLE_ROW_RESIZE_ZONE;
-      const upperRowIndex = nearBottom ? rowIndex : nearTop ? rowIndex - 1 : -1;
+      const lastCoveredRow = rowIndex + Math.max(1, cell.rowSpan) - 1;
+      const upperRowIndex = nearBottom
+        ? lastCoveredRow
+        : nearTop
+          ? rowIndex - 1
+          : -1;
       // Only the table's outer *top* edge is inert - it has no row above it to
       // resize. The bottom edge resizes the last row like any other boundary,
       // since a drag only ever changes the row above it.
@@ -2049,7 +2124,7 @@ function ResizableImageComponent({
                   onClick={() => setImageAlignment(value)}
                   className={cn(
                     "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                    alignment === value && "bg-surface-selected text-primary",
+                    alignment === value && TOGGLE_ON_CLASS,
                   )}
                 >
                   <Icon className="size-4" aria-hidden />
@@ -2069,7 +2144,7 @@ function ResizableImageComponent({
                 aria-pressed={Boolean(node.attrs.caption)}
                 className={cn(
                   "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                  node.attrs.caption && "bg-surface-selected text-primary",
+                  node.attrs.caption && TOGGLE_ON_CLASS,
                 )}
               >
                 <Type className="size-4" aria-hidden />
@@ -2082,7 +2157,7 @@ function ResizableImageComponent({
                 onClick={openCropEditor}
                 className={cn(
                   "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                  crop && "bg-surface-selected text-primary",
+                  crop && TOGGLE_ON_CLASS,
                 )}
               >
                 <Crop className="size-4" aria-hidden />
@@ -3508,6 +3583,8 @@ function buildEditorExtensions({
     codeBlock: false,
     blockquote: false,
     listItem: false,
+    // Replaced by UnderlineMark below, which controls the mark's nesting order.
+    underline: false,
     // The stock drop cursor draws a rule across the whole block, which reads
     // like a horizontal divider rather than an insertion point. Styled down to
     // a caret in globals.css; the colour comes from there too.
@@ -3799,7 +3876,7 @@ export const readerClassName =
   "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:leading-tight " +
   "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:leading-tight " +
   "[&_h4]:mt-4 [&_h4]:mb-1.5 [&_h4]:text-sm [&_h4]:font-semibold [&_h4]:leading-tight " +
-  "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-primary/50 [&_a]:transition-colors [&_a]:duration-150 [&_a:hover]:text-primary-hover [&_a:hover]:decoration-primary " +
+  "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-primary/50 [&_a]:transition-colors [&_a]:duration-150 [&_a:hover]:bg-primary-subtle [&_a:hover]:decoration-primary " +
   "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-0.5 " +
   "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-0 [&_li[data-checked]]:flex [&_li[data-checked]]:items-start [&_li[data-checked]]:gap-2 [&_li[data-checked]>label]:mt-1 [&_li[data-checked]>label]:flex-shrink-0 [&_li[data-checked]>div]:min-w-0 [&_li[data-checked]>div]:flex-1 " +
   "[&_li[data-checked]>label>input[type=checkbox]]:accent-primary [&_li[data-checked]>label>input[type=checkbox]]:size-4 [&_li[data-checked]>label>input[type=checkbox]]:rounded [&_li[data-checked]>label>input[type=checkbox]]:pointer-events-none " +
@@ -3811,6 +3888,15 @@ export const readerClassName =
   // Fixed layout makes the reader honour those widths instead of allowing an
   // unbroken word to redistribute every column after the page is saved.
   "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_.tableWrapper]:overflow-y-hidden [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_th]:min-w-24 [&_th]:break-words [&_th]:whitespace-normal [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_th]:leading-[1.45] [&_td]:min-w-24 [&_td]:break-words [&_td]:whitespace-normal [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5 [&_td]:leading-[1.45]";
+
+
+// A toggled-on toolbar control. Hover has to stay blue: the ghost button's own
+// hover swaps in the grey surface and the dark text colour, which made a
+// selected control look deselected the moment the pointer touched it.
+const TOGGLE_ON_CLASS =
+  "bg-surface-selected text-primary hover:bg-surface-selected-hover hover:text-primary " +
+  "[&:not(:disabled)]:hover:bg-surface-selected-hover [&:not(:disabled)]:hover:text-primary " +
+  "active:bg-surface-selected-hover";
 
 function ToolbarButton({
   editor,
@@ -3837,7 +3923,7 @@ function ToolbarButton({
       aria-pressed={active || undefined}
       disabled={!editor || disabled}
       onClick={onClick}
-      className={cn(active && "bg-surface-selected text-primary")}
+      className={cn(active && TOGGLE_ON_CLASS)}
     >
       {children}
     </Button>
@@ -3860,7 +3946,7 @@ function OverflowToolbarButton({
       title={label}
       aria-pressed={active || undefined}
       disabled={disabled}
-      className={cn(active && "bg-surface-selected text-primary")}
+      className={cn(active && TOGGLE_ON_CLASS)}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
     >
@@ -3892,7 +3978,7 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
           disabled={!editor}
           className={cn(
             "h-8 min-w-14 px-2",
-            currentLevel && "bg-surface-selected text-primary",
+            currentLevel && TOGGLE_ON_CLASS,
           )}
         >
           {currentLevel ? `H${currentLevel}` : t("editor.textButton")}
@@ -3969,7 +4055,7 @@ function AlignmentMenu({ editor }: { editor: Editor | null }) {
           title={t("editor.textAlignAria")}
           disabled={!editor}
           className={cn(
-            alignment !== "left" && "bg-surface-selected text-primary",
+            alignment !== "left" && TOGGLE_ON_CLASS,
           )}
         >
           <Icon />
@@ -4000,23 +4086,9 @@ function AlignmentMenu({ editor }: { editor: Editor | null }) {
   );
 }
 
-const textColorOptions = [
-  { labelKey: "editor.colorBlue", value: "var(--primary)" },
-  { labelKey: "editor.colorGreen", value: "var(--wh-success)" },
-  { labelKey: "editor.colorAmber", value: "var(--wh-warning)" },
-  { labelKey: "editor.colorRed", value: "var(--danger)" },
-  { labelKey: "editor.colorMuted", value: "var(--muted-foreground)" },
-];
-
-const highlightOptions = [
-  { labelKey: "editor.colorBlue", value: "var(--primary-subtle)" },
-  { labelKey: "editor.colorNeutral", value: "var(--surface-sunken)" },
-  { labelKey: "editor.colorGreen", value: "var(--wh-success-bg)" },
-  { labelKey: "editor.colorAmber", value: "var(--wh-warning-bg)" },
-  { labelKey: "editor.colorRed", value: "var(--wh-danger-bg)" },
-];
-
-const cellColorOptions = [
+// One palette for every colour picker in the toolbar (text colour, text
+// highlight and table-cell background), so they look and behave alike.
+const colorPalette = [
   "var(--primary-subtle)",
   "var(--wh-info-bg)",
   "var(--wh-warning-bg)",
@@ -4039,6 +4111,105 @@ const cellColorOptions = [
   "var(--background)",
 ];
 
+/**
+ * The dropdown body shared by the colour pickers: a swatch grid, a clear
+ * button and a native picker for any custom colour. `current` marks the
+ * swatch already applied to the selection.
+ */
+function ColorPaletteContent({
+  title,
+  paletteAria,
+  clearLabel,
+  customLabel,
+  current,
+  onSelect,
+}: {
+  title: string;
+  paletteAria: string;
+  clearLabel: string;
+  customLabel: string;
+  current?: string | null;
+  onSelect: (value: string | null) => void;
+}) {
+  const [customColor, setCustomColor] = useState("#ffffff");
+  const { t } = useTranslation();
+
+  return (
+    <DropdownMenuContent
+      align="start"
+      className="w-52 p-2"
+      onPointerDown={(event) => {
+        const target = event.target as HTMLElement;
+        if (!target.closest("label, input")) event.preventDefault();
+      }}
+    >
+      <div className="text-muted-foreground mb-2 px-1 text-[11px] font-semibold tracking-wide uppercase">
+        {title}
+      </div>
+      <div
+        role="grid"
+        aria-label={paletteAria}
+        className="grid grid-cols-5 overflow-hidden rounded-sm"
+      >
+        {colorPalette.map((color, index) => {
+          const label = t("editor.colourSwatchAria", { index: index + 1 });
+          return (
+            <button
+              key={`${color}-${index}`}
+              type="button"
+              role="gridcell"
+              aria-label={label}
+              aria-selected={current === color}
+              title={label}
+              className="border-surface focus-visible:ring-ring relative flex size-9 items-center justify-center border transition-transform duration-100 hover:z-10 hover:scale-110 hover:rounded-sm focus-visible:z-10 focus-visible:scale-110 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:outline-none"
+              style={{ backgroundColor: color }}
+              onClick={() => onSelect(color)}
+            >
+              {current === color ? (
+                <span
+                  aria-hidden
+                  className="bg-surface text-foreground flex size-4 items-center justify-center rounded-full shadow-sm"
+                >
+                  <Check className="size-3" />
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      <div className="border-border mt-2 flex items-center justify-between border-t pt-2">
+        <button
+          type="button"
+          aria-label={clearLabel}
+          title={clearLabel}
+          className="border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-8 items-center justify-center rounded-md border transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+          onClick={() => onSelect(null)}
+        >
+          <span aria-hidden className="text-base leading-none">
+            ×
+          </span>
+        </button>
+        <label
+          title={customLabel}
+          className="border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-within:ring-ring relative flex size-8 cursor-pointer items-center justify-center rounded-md border transition-colors duration-150 focus-within:ring-2"
+        >
+          <Palette className="size-4" aria-hidden />
+          <input
+            type="color"
+            aria-label={customLabel}
+            value={customColor}
+            onChange={(event) => {
+              setCustomColor(event.target.value);
+              onSelect(event.target.value);
+            }}
+            className="sr-only"
+          />
+        </label>
+      </div>
+    </DropdownMenuContent>
+  );
+}
+
 function ColorMenu({
   editor,
   kind,
@@ -4046,8 +4217,8 @@ function ColorMenu({
   editor: Editor | null;
   kind: "text" | "highlight";
 }) {
+  const [open, setOpen] = useState(false);
   const isText = kind === "text";
-  const options = isText ? textColorOptions : highlightOptions;
   const currentValue = useEditorState({
     editor,
     selector: ({ editor: currentEditor }) =>
@@ -4055,7 +4226,6 @@ function ColorMenu({
         isText ? "color" : "backgroundColor"
       ] ?? "",
   });
-  const current = options.find((option) => option.value === currentValue);
   const Icon = isText ? Type : Palette;
   const { t } = useTranslation();
   const label = isText ? t("editor.textColour") : t("editor.textHighlight");
@@ -4071,10 +4241,11 @@ function ColorMenu({
         [isText ? "color" : "backgroundColor"]: value,
       })
       .run();
+    setOpen(false);
   }
 
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -4085,46 +4256,37 @@ function ColorMenu({
           disabled={!editor}
           className={cn(
             "h-8 gap-1.5 px-2",
-            current && "bg-surface-selected text-primary",
+            currentValue && TOGGLE_ON_CLASS,
           )}
         >
-          <Icon
-            className="size-4"
-            aria-hidden
-            style={current ? { color: current.value } : undefined}
-          />
-          <span>{current ? t(current.labelKey) : label}</span>
+          <span className="relative flex flex-col items-center">
+            <Icon className="size-4" aria-hidden />
+            {currentValue ? (
+              <span
+                aria-hidden
+                className="border-border absolute -bottom-1 h-[3px] w-4 rounded-full border"
+                style={{ backgroundColor: currentValue }}
+              />
+            ) : null}
+          </span>
+          <span>{label}</span>
           <ChevronDown className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-44 p-1">
-        <div className="text-muted-foreground px-2 py-1 text-[11px] font-semibold tracking-wide uppercase">
-          {label}
-        </div>
-        {options.map((option) => (
-          <DropdownMenuItem
-            key={option.value}
-            onSelect={() => setColor(option.value)}
-            className="gap-2"
-          >
-            <span
-              aria-hidden
-              className="border-border size-4 shrink-0 rounded-sm border"
-              style={{ backgroundColor: option.value }}
-            />
-            <span className="flex-1">{t(option.labelKey)}</span>
-            {currentValue === option.value ? (
-              <Check className="size-4" />
-            ) : null}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuItem onSelect={() => setColor(null)} className="gap-2">
-          <span className="border-border text-muted-foreground flex size-4 shrink-0 items-center justify-center rounded-sm border text-[10px]">
-            ×
-          </span>
-          {isText ? t("editor.clearColour") : t("editor.clearHighlight")}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
+      <ColorPaletteContent
+        title={label}
+        paletteAria={
+          isText
+            ? t("editor.textColourPaletteAria")
+            : t("editor.textHighlightPaletteAria")
+        }
+        clearLabel={isText ? t("editor.clearColour") : t("editor.clearHighlight")}
+        customLabel={
+          isText ? t("editor.customTextColour") : t("editor.customHighlight")
+        }
+        current={currentValue}
+        onSelect={setColor}
+      />
     </DropdownMenu>
   );
 }
@@ -4217,7 +4379,6 @@ function TablePicker({ editor }: { editor: Editor | null }) {
 
 function CellColorMenu({ editor }: { editor: Editor | null }) {
   const [open, setOpen] = useState(false);
-  const [customColor, setCustomColor] = useState("#ffffff");
   const { t } = useTranslation();
 
   function setCellColor(value: string | null) {
@@ -4242,65 +4403,13 @@ function CellColorMenu({ editor }: { editor: Editor | null }) {
           <ChevronDown className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className="w-52 p-2"
-        onPointerDown={(event) => {
-          const target = event.target as HTMLElement;
-          if (!target.closest("label, input")) event.preventDefault();
-        }}
-      >
-        <div className="text-muted-foreground mb-2 px-1 text-[11px] font-semibold tracking-wide uppercase">
-          {t("editor.cellColour")}
-        </div>
-        <div
-          role="grid"
-          aria-label={t("editor.cellColourPaletteAria")}
-          className="grid grid-cols-5 overflow-hidden rounded-sm"
-        >
-          {cellColorOptions.map((color, index) => (
-            <button
-              key={`${color}-${index}`}
-              type="button"
-              role="gridcell"
-              aria-label={`Cell colour ${index + 1}`}
-              title={`Cell colour ${index + 1}`}
-              className="border-surface focus-visible:ring-ring size-9 border transition-transform duration-100 hover:z-10 hover:scale-110 hover:rounded-sm focus-visible:z-10 focus-visible:scale-110 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:outline-none"
-              style={{ backgroundColor: color }}
-              onClick={() => setCellColor(color)}
-            />
-          ))}
-        </div>
-        <div className="border-border mt-2 flex items-center justify-between border-t pt-2">
-          <button
-            type="button"
-            aria-label={t("editor.clearCellColour")}
-            title={t("editor.clearCellColour")}
-            className="border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-8 items-center justify-center rounded-md border transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-            onClick={() => setCellColor(null)}
-          >
-            <span aria-hidden className="text-base leading-none">
-              ×
-            </span>
-          </button>
-          <label
-            title={t("editor.customCellColour")}
-            className="border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-within:ring-ring relative flex size-8 cursor-pointer items-center justify-center rounded-md border transition-colors duration-150 focus-within:ring-2"
-          >
-            <Palette className="size-4" aria-hidden />
-            <input
-              type="color"
-              aria-label={t("editor.customCellColour")}
-              value={customColor}
-              onChange={(event) => {
-                setCustomColor(event.target.value);
-                setCellColor(event.target.value);
-              }}
-              className="sr-only"
-            />
-          </label>
-        </div>
-      </DropdownMenuContent>
+      <ColorPaletteContent
+        title={t("editor.cellColour")}
+        paletteAria={t("editor.cellColourPaletteAria")}
+        clearLabel={t("editor.clearCellColour")}
+        customLabel={t("editor.customCellColour")}
+        onSelect={setCellColor}
+      />
     </DropdownMenu>
   );
 }
@@ -5476,7 +5585,7 @@ function RichTextToolbar({
             editor={editor}
             label={t("editor.bulletedList")}
             active={editor?.isActive("bulletList")}
-            onClick={() => editor?.chain().focus().toggleBulletList().run()}
+            onClick={() => editor && toggleListBlock(editor, "toggleBulletList")}
           >
             <List />
           </ToolbarButton>
@@ -5486,7 +5595,7 @@ function RichTextToolbar({
             editor={editor}
             label={t("editor.numberedList")}
             active={editor?.isActive("orderedList")}
-            onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+            onClick={() => editor && toggleListBlock(editor, "toggleOrderedList")}
           >
             <ListOrdered />
           </ToolbarButton>
@@ -5496,7 +5605,7 @@ function RichTextToolbar({
             editor={editor}
             label="To-do list"
             active={editor?.isActive("taskList")}
-            onClick={() => editor?.chain().focus().toggleTaskList().run()}
+            onClick={() => editor && toggleListBlock(editor, "toggleTaskList")}
           >
             <ListTodo />
           </ToolbarButton>
@@ -5506,7 +5615,7 @@ function RichTextToolbar({
             editor={editor}
             label={t("editor.toggleList")}
             active={editor?.isActive("toggle")}
-            onClick={() => editor && insertToggle(editor)}
+            onClick={() => editor && toggleToggleBlock(editor)}
           >
             <ChevronRight />
           </ToolbarButton>
@@ -5628,7 +5737,7 @@ function RichTextToolbar({
               <OverflowToolbarButton
                 label={t("editor.bulletedList")}
                 active={editor?.isActive("bulletList")}
-                onClick={() => editor?.chain().focus().toggleBulletList().run()}
+                onClick={() => editor && toggleListBlock(editor, "toggleBulletList")}
               >
                 <List />
               </OverflowToolbarButton>
@@ -5638,7 +5747,7 @@ function RichTextToolbar({
                 label={t("editor.numberedList")}
                 active={editor?.isActive("orderedList")}
                 onClick={() =>
-                  editor?.chain().focus().toggleOrderedList().run()
+                  editor && toggleListBlock(editor, "toggleOrderedList")
                 }
               >
                 <ListOrdered />
@@ -5648,7 +5757,7 @@ function RichTextToolbar({
               <OverflowToolbarButton
                 label={t("slash.todoListLabel")}
                 active={editor?.isActive("taskList")}
-                onClick={() => editor?.chain().focus().toggleTaskList().run()}
+                onClick={() => editor && toggleListBlock(editor, "toggleTaskList")}
               >
                 <ListTodo />
               </OverflowToolbarButton>
@@ -5657,7 +5766,7 @@ function RichTextToolbar({
               <OverflowToolbarButton
                 label={t("editor.toggleList")}
                 active={editor?.isActive("toggle")}
-                onClick={() => editor && insertToggle(editor)}
+                onClick={() => editor && toggleToggleBlock(editor)}
               >
                 <ChevronRight />
               </OverflowToolbarButton>
