@@ -7,6 +7,7 @@ growing its own copy.
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Iterable
 from typing import Any, Literal
@@ -16,6 +17,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 LogLevelFilter = Literal["warning", "error"]
 LogOrder = Literal["asc", "desc"]
+
+MAX_ERROR_LENGTH = 300
+_DRIVER_PREFIX = re.compile(r"^(?:\([\w.]+\)\s*)?(?:<class '[^']+'>:\s*)?")
+_FAILED_OBJECT = re.compile(r"^could not [^\"]*\"[^\"]*\":\s*")
+
+
+def concise_error(error: BaseException | str) -> str:
+    """The point of a failure, without the driver and SQL wrapping around it.
+
+    A database error arrives as `(sqlalchemy...Error) <class '...DiskFullError'>:
+    could not extend file "base/1/2": No space left on device HINT: ... [SQL:
+    INSERT ... thousands of parameters] (Background on this error at: ...)`.
+    The operator needs "No space left on device HINT: Check free disk space".
+    """
+    text = str(error)
+    text = text.split("[SQL:", 1)[0].split("(Background on this error", 1)[0]
+    text = _DRIVER_PREFIX.sub("", " ".join(text.split()))
+    text = _FAILED_OBJECT.sub("", text).strip()
+    if len(text) > MAX_ERROR_LENGTH:
+        text = text[: MAX_ERROR_LENGTH - 1].rstrip() + "…"
+    return text or "Unknown error"
 
 
 async def problem_counts(

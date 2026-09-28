@@ -421,3 +421,17 @@ async def test_cancel_import_leaves_a_live_worker_to_stop_itself():
     assert item.cancel_requested is True
     logged = [c.args[0] for c in session.add.call_args_list]
     assert any("stop shortly" in entry.message for entry in logged)
+
+
+@pytest.mark.asyncio
+async def test_cancel_import_pressed_again_does_not_repeat_the_log_line():
+    """The worker needs a moment to stop; each impatient click used to add a line."""
+    session = AsyncMock()
+    item = _running_import(heartbeat_at=datetime.now(UTC), cancel_requested=True)
+    session.get = AsyncMock(return_value=item)
+
+    result = await imports_api.cancel(item.id, Mock(), session)
+
+    assert result.status == "running"
+    assert item.cancel_requested is True
+    session.add.assert_not_called()

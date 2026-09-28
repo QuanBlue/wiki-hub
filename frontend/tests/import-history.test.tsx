@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  conciseError,
   formatDuration,
   ImportHistory,
   normaliseStatus,
@@ -72,6 +73,18 @@ describe("helpers", () => {
     expect(formatDuration("2026-01-01T00:00:00Z", "2026-01-01T00:12:00Z")).toBe("12m");
     expect(formatDuration("2026-01-01T00:00:00Z", "2026-01-01T03:12:00Z")).toBe("3h 12m");
     expect(formatDuration("2026-01-01T01:00:00Z", "2026-01-01T00:00:00Z")).toBe("0s");
+  });
+
+  it("cuts a database failure down to its cause", () => {
+    const raw =
+      "(sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.DiskFullError'>: " +
+      'could not extend file "base/16384/16731": No space left on device\nHINT:  Check free disk space.\n' +
+      "[SQL: INSERT INTO page_user_restrictions VALUES ($1::UUID)]\n[parameters: (UUID('x'),)]\n" +
+      "(Background on this error at: https://sqlalche.me/e/20/dbapi)";
+    expect(conciseError(raw)).toBe("No space left on device HINT: Check free disk space.");
+    expect(conciseError("archive is corrupt")).toBe("archive is corrupt");
+    expect(conciseError("[SQL: select 1]")).toBe("[SQL: select 1]".slice(0, 300));
+    expect(conciseError("x".repeat(500))).toHaveLength(300);
   });
 
   it("maps scope: import-all and empty selections mean every space", () => {
@@ -146,37 +159,116 @@ describe("ImportHistory", () => {
     expect(await screen.findByText(/In progress/)).toBeInTheDocument();
   });
 
-  it("loads further pages of runs without duplicating earlier ones", async () => {
-    const page = Array.from({ length: 20 }, (_, index) =>
-      job({ id: `c${index}`, created_at: `2026-09-24T10:${String(index).padStart(2, "0")}:00Z` }),
+  async function pick(trigger: string, option: string) {
+    fireEvent.keyDown(screen.getByRole("button", { name: trigger }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: option }));
+  }
+
+  function bodyRows() {
+    return screen.getAllByRole("row").slice(1);
+  }
+
+  it("fetches every server page, then paginates client-side", async () => {
+    confluence = Array.from({ length: 100 }, (_, index) =>
+      job({ id: `c${index}`, created_at: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString() }),
     );
-    confluence = page;
+    const secondPage = [job({ id: "c100", created_at: "2026-02-01T00:00:00Z" })];
+    vi.mocked(api.get).mockImplementation(((path: string, options?: { query?: Record<string, unknown> }) => {
+      if (path.startsWith("/api/v1/confluence-imports/jobs")) {
+        return Promise.resolve(options?.query?.offset === 100 ? secondPage : confluence);
+      }
+      return Promise.resolve([]);
+    }) as never);
+
     render(<ImportHistory />);
-    const more = await screen.findByRole("button", { name: "Load more runs" });
 
-    confluence = [page[19], job({ id: "older", created_at: "2026-09-01T00:00:00Z" })];
-    fireEvent.click(more);
+    expect(await screen.findByText("Showing 1–10 of 101")).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 11")).toBeInTheDocument();
+    expect(bodyRows()).toHaveLength(10);
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
 
-    await waitFor(() => expect(screen.getAllByText("Confluence import")).toHaveLength(21));
-    expect(screen.queryByRole("button", { name: "Load more runs" })).not.toBeInTheDocument();
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      "/api/v1/confluence-imports/jobs",
-      { query: { limit: 20, offset: 20 } },
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("Showing 11–20 of 101")).toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 11")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
+    expect(screen.getByText("Showing 1–10 of 101")).toBeInTheDocument();
   });
 
-  it("reports a failed load-more with a toast and keeps the list", async () => {
-    confluence = Array.from({ length: 20 }, (_, index) => job({ id: `c${index}` }));
-    render(<ImportHistory />);
-    const more = await screen.findByRole("button", { name: "Load more runs" });
-
-    vi.mocked(api.get).mockRejectedValue(new Error("down"));
-    fireEvent.click(more);
-
-    await waitFor(() =>
-      expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Could not load the import history."),
+  it("changes the page size and returns to the first page", async () => {
+    confluence = Array.from({ length: 25 }, (_, index) =>
+      job({ id: `c${index}`, created_at: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString() }),
     );
-    expect(screen.getAllByText("Confluence import")).toHaveLength(20);
+    render(<ImportHistory />);
+    await screen.findByText("Showing 1–10 of 25");
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+
+    await pick("Rows per page", "20");
+
+    expect(await screen.findByText("Showing 1–20 of 25")).toBeInTheDocument();
+    expect(bodyRows()).toHaveLength(20);
+  });
+
+  it("filters by status and says so when nothing matches", async () => {
+    confluence = [
+      job({ id: "ok", status: "completed" }),
+      job({ id: "bad", status: "failed", created_at: "2026-09-23T10:00:00Z" }),
+    ];
+    render(<ImportHistory />);
+    await screen.findByText("Showing 1–2 of 2");
+
+    await pick("Filter runs by status", "Failed");
+
+    expect(await screen.findByText("Showing 1–1 of 1")).toBeInTheDocument();
+    expect(bodyRows()).toHaveLength(1);
+    expect(within(bodyRows()[0]).getByText("Failed")).toBeInTheDocument();
+
+    await pick("Filter runs by status", "Running");
+
+    expect(await screen.findByText("No runs match this status.")).toBeInTheDocument();
+    expect(screen.getByText("No results")).toBeInTheDocument();
+
+    await pick("Filter runs by status", "Status: all");
+    expect(await screen.findByText("Showing 1–2 of 2")).toBeInTheDocument();
+  });
+
+  it("sorts by each column and toggles direction", async () => {
+    confluence = [
+      job({ id: "a", status: "failed", warning_count: 5, error_count: 0, created_at: "2026-09-20T10:00:00Z", updated_at: "2026-09-20T10:30:00Z" }),
+      job({ id: "b", status: "completed", warning_count: 0, error_count: 2, created_at: "2026-09-21T10:00:00Z", updated_at: "2026-09-21T10:01:00Z" }),
+    ];
+    restores = [
+      job({ id: "c", status: "running", warning_count: 1, error_count: 0, created_at: "2026-09-22T10:00:00Z", updated_at: "2026-09-22T10:10:00Z", space_keys: ["ENG"], import_all: undefined }),
+      job({ id: "d", status: "queued", created_at: "2026-09-19T10:00:00Z", updated_at: "2026-09-19T10:00:00Z", space_keys: ["ENG"], import_all: undefined }),
+    ];
+    render(<ImportHistory />);
+    await screen.findByText("Showing 1–4 of 4");
+
+    const statuses = () => bodyRows().map((row) => within(row).getAllByRole("cell")[1].textContent);
+    const header = (name: string) => screen.getByRole("button", { name });
+
+    // Default: newest first.
+    expect(statuses()).toEqual(["Running", "Completed", "Failed", "Queued"]);
+    expect(screen.getByRole("columnheader", { name: /Started/ })).toHaveAttribute("aria-sort", "descending");
+
+    fireEvent.click(header("Started"));
+    expect(statuses()).toEqual(["Queued", "Failed", "Completed", "Running"]);
+    expect(screen.getByRole("columnheader", { name: /Started/ })).toHaveAttribute("aria-sort", "ascending");
+
+    fireEvent.click(header("Status"));
+    expect(statuses()).toEqual(["Queued", "Running", "Completed", "Failed"]);
+    fireEvent.click(header("Status"));
+    expect(statuses()).toEqual(["Failed", "Completed", "Running", "Queued"]);
+
+    fireEvent.click(header("Problems"));
+    expect(statuses()).toEqual(["Queued", "Running", "Failed", "Completed"]);
+
+    fireEvent.click(header("Duration"));
+    expect(statuses()).toEqual(["Queued", "Completed", "Running", "Failed"]);
+
+    fireEvent.click(header("Run"));
+    expect(statuses()).toEqual(["Completed", "Failed", "Running", "Queued"]);
+    expect(screen.getByRole("columnheader", { name: /Run/ })).toHaveAttribute("aria-sort", "ascending");
   });
 
   describe("run log", () => {
@@ -198,7 +290,7 @@ describe("ImportHistory", () => {
       await openLog();
 
       expect(screen.getByRole("dialog", { name: "Confluence import log" })).toBeInTheDocument();
-      expect(screen.getByText("Error: boom")).toBeInTheDocument();
+      expect(await screen.findByText("Error: boom")).toBeInTheDocument();
       expect(await screen.findByText(/file missing/)).toBeInTheDocument();
       expect(screen.getByText(/file\.pdf: file missing/)).toBeInTheDocument();
       expect(vi.mocked(api.get)).toHaveBeenCalledWith(
@@ -210,6 +302,30 @@ describe("ImportHistory", () => {
         "href",
         "/api/v1/confluence-imports/jobs/run-1/logs/download",
       );
+    });
+
+    it("shows the failure inside the log, in a short form, except under Warnings", async () => {
+      confluence = [
+        job({
+          id: "run-1",
+          status: "failed",
+          error: "(sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'X'>: could not extend file \"base/1\": No space left on device [SQL: INSERT INTO t]",
+          error_count: 1,
+        }),
+      ];
+      await openLog();
+
+      const banner = await screen.findByRole("alert");
+      expect(banner).toHaveTextContent("Error: No space left on device");
+      expect(banner).not.toHaveTextContent("sqlalchemy");
+      expect(banner).not.toHaveTextContent("INSERT");
+
+      fireEvent.click(screen.getByRole("button", { name: "Warnings" }));
+      await screen.findByText("No log lines match this filter.");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Errors" }));
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
     });
 
     it("refetches with the chosen level and explains an empty result", async () => {

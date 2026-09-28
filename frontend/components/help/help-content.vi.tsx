@@ -2692,7 +2692,12 @@ export const sectionsVi: HelpSection[] = [
             cả các lần trước - kèm trạng thái, thời gian chạy và số cảnh báo/lỗi đã ghi.
           </li>
           <li>
-            Bấm vào một lần chạy để đọc toàn bộ log, dòng cũ nhất trước. Có thể lọc{" "}
+            Bảng được phân trang (10, 20 hoặc 50 dòng mỗi trang). Bấm vào tiêu đề cột
+            để sắp xếp, bấm lần nữa để đảo chiều, và dùng bộ lọc trạng thái để chỉ hiện
+            các lần <strong>Thất bại</strong>, <strong>Đang chạy</strong>,...
+          </li>
+          <li>
+            Bấm <strong>Xem chi tiết</strong> ở một lần chạy để đọc toàn bộ log, dòng cũ nhất trước. Có thể lọc{" "}
             <strong>Cảnh báo</strong> hoặc <strong>Lỗi</strong>, <strong>Sao chép</strong>{" "}
             các dòng, hoặc dùng <strong>Tải .txt</strong> để lưu toàn bộ log.
           </li>
