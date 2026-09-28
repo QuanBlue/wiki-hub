@@ -2534,7 +2534,13 @@ export const sectionsEn: HelpSection[] = [
             and errors it logged.
           </li>
           <li>
-            Click a run to read its full log, oldest line first. Filter to{" "}
+            The table is paged (10, 20 or 50 rows per page). Click a column heading
+            to sort by it, click again to reverse the order, and use the status
+            filter to show only <strong>Failed</strong>, <strong>Running</strong> and
+            so on.
+          </li>
+          <li>
+            Click <strong>View details</strong> on a run to read its full log, oldest line first. Filter to{" "}
             <strong>Warnings</strong> or <strong>Errors</strong>, <strong>Copy</strong> the
             lines, or use <strong>Download .txt</strong> to save the whole log.
           </li>

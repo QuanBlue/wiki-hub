@@ -32,6 +32,7 @@ from app.modules.backup.service import (
     log_backup_event,
 )
 from app.services.job_log_recovery import pending_log_entries, restore_log_entries
+from app.services.job_logs import concise_error
 from app.services.storage import ObjectStorage
 
 
@@ -362,8 +363,8 @@ async def _run_restore_job(session: AsyncSession, storage: ObjectStorage, job: B
         current = await session.get(BackupJob, job_id)
         if current:
             restore_log_entries(session, kept_logs)
-            current.status, current.phase, current.error = "failed", "failed", str(exc)[:4000]
-            await log_backup_event(session, current, "error", "failed", str(exc)[:4000])
+            current.status, current.phase, current.error = "failed", "failed", concise_error(exc)
+            await log_backup_event(session, current, "error", "failed", concise_error(exc))
             await session.commit()
         raise
     finally:
@@ -535,7 +536,7 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
         await session.rollback()
         job = await session.get(BackupJob, job_id)
         if job:
-            job.status, job.phase, job.error = "failed", "failed", str(exc)[:4000]
+            job.status, job.phase, job.error = "failed", "failed", concise_error(exc)
             await session.commit()
         raise
     finally:

@@ -49,6 +49,7 @@ from app.modules.import_export.confluence import (
     scan_archive,
 )
 from app.services.job_log_recovery import pending_log_entries, restore_log_entries
+from app.services.job_logs import concise_error
 from app.services.storage import ObjectStorage
 
 
@@ -1272,6 +1273,15 @@ async def log(
 #: abandoned between two of a step's natural progress points.
 HEARTBEAT_INTERVAL_SECONDS = 30
 
+#: How often a long step looks at the Cancel flag and publishes its progress
+#: counters. The step cannot stop mid-file, so this is also roughly how long
+#: Cancel waits when no large upload is in flight.
+CANCEL_CHECK_INTERVAL_SECONDS = 5
+
+#: How often a long step writes a progress line into the job log, so a quiet
+#: stretch reads as "still working" rather than "hung".
+PROGRESS_LOG_INTERVAL_SECONDS = 60
+
 #: Individually-listed "file missing from the export" warnings per import; the
 #: rest are only counted in the phase summary.
 MAX_MISSING_FILE_WARNINGS = 100
@@ -1285,6 +1295,19 @@ async def _beat(session: AsyncSession, job: ImportJob, last_beat: float) -> floa
     job.heartbeat_at = datetime.now(UTC)
     await session.commit()
     return now
+
+
+async def _raise_if_cancelled(session: AsyncSession, job: ImportJob) -> None:
+    """Stop the import if an administrator pressed Cancel.
+
+    Reads the flag with a plain query rather than `session.refresh(job)`, which
+    would throw away counters that are changed but not yet committed.
+    """
+    requested = (
+        await session.execute(select(ImportJob.cancel_requested).where(ImportJob.id == job.id))
+    ).scalar_one()
+    if requested:
+        raise ImportCancelled("Import cancelled by administrator.")
 
 
 async def _run_with_heartbeat[T](
@@ -1903,7 +1926,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
             }
             await session.commit()
 
-            last_beat = time.monotonic()
+            last_beat = last_check = last_progress = time.monotonic()
             with zipfile.ZipFile(path) as source_archive:
                 for idx, (source_attachment, archive_member) in enumerate(attachment_sources, 1):
                     # Every iteration, not just the ones that import a file:
@@ -1911,6 +1934,29 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     # bypass the 25-file beat below, and a slow host can spend
                     # longer than the reaper's window on a few large uploads.
                     last_beat = await _beat(session, job, last_beat)
+                    now = time.monotonic()
+                    if now - last_check >= CANCEL_CHECK_INTERVAL_SECONDS:
+                        last_check = now
+                        # This step used to ignore Cancel entirely and run to
+                        # the end, however many times it was pressed.
+                        await _raise_if_cancelled(session, job)
+                        job.counters = {
+                            **job.counters,
+                            "attachments_processed": idx - 1,
+                            "attachments_total": total_attachments,
+                        }
+                        await session.commit()
+                    if now - last_progress >= PROGRESS_LOG_INTERVAL_SECONDS:
+                        last_progress = now
+                        await log(
+                            session,
+                            job,
+                            "info",
+                            "attachments",
+                            f"Attachments: {idx - 1} of {total_attachments} processed "
+                            f"({attachments_imported} imported, {missing_files} missing).",
+                        )
+                        await session.commit()
                     target_page = imported_pages.get(source_attachment.page_id)
                     if target_page is None:
                         continue
@@ -1971,16 +2017,28 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     if idx % 25 == 0 or idx == total_attachments:
                         job.counters = {
                             **job.counters,
-                            "attachments_processed": attachments_imported,
+                            "attachments_processed": idx,
                             "attachments_total": total_attachments,
                         }
                         job.heartbeat_at = datetime.now(UTC)
                         await session.commit()
 
             if attachment_urls:
+                await log(
+                    session,
+                    job,
+                    "info",
+                    "attachments",
+                    f"Linking {attachments_imported} attachments into "
+                    f"{len(imported_pages)} pages...",
+                )
+                await session.commit()
                 title_to_page_id = {page.title: pid for pid, page in imported_pages.items()}
                 for source_page_id, target_page in imported_pages.items():
                     last_beat = await _beat(session, job, last_beat)
+                    if time.monotonic() - last_check >= CANCEL_CHECK_INTERVAL_SECONDS:
+                        last_check = time.monotonic()
+                        await _raise_if_cancelled(session, job)
                     target_page.content = _link_imported_attachments(
                         target_page.content, source_page_id, attachment_urls, title_to_page_id
                     )
@@ -2052,6 +2110,7 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
         job = await session.get(ImportJob, job_id)
         if job:
             restore_log_entries(session, kept_logs)
-            job.status, job.phase, job.error = "failed", "failed", str(exc)
-            await log(session, job, "error", "failed", str(exc))
+            logger.error("Confluence import %s failed: %s", job_id, exc)
+            job.status, job.phase, job.error = "failed", "failed", concise_error(exc)
+            await log(session, job, "error", "failed", concise_error(exc))
             await session.commit()

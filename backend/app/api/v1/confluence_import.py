@@ -332,6 +332,7 @@ async def cancel(job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession)
         raise NotFoundError("Import job was not found.")
     if item.status in {"completed", "cancelled", "failed"}:
         raise ConflictError("This import job has already finished.")
+    already_requested = item.cancel_requested
     item.cancel_requested = True
     # Finalise here whenever nothing is left to observe the flag, rather than
     # leaving the operator staring at a status that can never change:
@@ -361,7 +362,8 @@ async def cancel(job_id: uuid.UUID, _user: CurrentSuperuser, session: DbSession)
                 ),
             )
         )
-    else:
+    elif not already_requested:
+        # Pressing Cancel again while the worker winds down adds nothing to say.
         session.add(
             ImportLog(
                 job_id=item.id,
