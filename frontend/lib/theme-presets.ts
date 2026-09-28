@@ -254,7 +254,7 @@ export function generateFaviconSvg(icon: string, primaryColor: string): string {
       inner = `<path d="M12 3.5 5 6.5v5.5c0 5 3.5 8.5 7 10 3.5-1.5 7-5 7-10V6.5L12 3.5Z" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><polyline points="9 12 11 14 15 10" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
       break;
     default:
-      inner = `<path d="M6 8.5 12 5.5l6 3-6 3-6-3Z" fill="#ffffff" fill-opacity="0.95"/><path d="m6 12 6 3 6-3" stroke="#ffffff" stroke-opacity="0.75" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="m6 15.5 6 3 6-3" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
+      inner = `<path d="M6.2 10.3 9.5 17.7 12 12.6 14.5 17.7 17.8 10.3" fill="none" stroke="#ffffff" stroke-opacity="0.24" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.2 8.6 9.5 16 12 10.9 14.5 16 17.8 8.6" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.2 6.9 9.5 14.3 12 9.2 14.5 14.3 17.8 6.9" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.2" cy="6.9" r="1.4" fill="#ffffff"/><circle cx="17.8" cy="6.9" r="1.4" fill="#ffffff"/><circle cx="12" cy="9.2" r="2" fill="#ffffff"/><circle cx="12" cy="9.2" r="0.85" fill="${bg}"/>`;
       break;
   }
 

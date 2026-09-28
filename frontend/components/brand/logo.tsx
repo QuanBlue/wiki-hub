@@ -174,27 +174,35 @@ export function LogoMark({
       className={cn("size-6", className)}
     >
       <rect width="24" height="24" rx="5" fill="var(--primary)" />
+      {/* Two fainter copies of the W trail below it: the stacked layers. */}
       <path
-        d="M6 8.5 12 5.5l6 3-6 3-6-3Z"
-        fill="var(--primary-foreground)"
-        fillOpacity="0.95"
-      />
-      <path
-        d="m6 12 6 3 6-3"
+        d="M6.2 10.3 9.5 17.7 12 12.6 14.5 17.7 17.8 10.3"
         stroke="var(--primary-foreground)"
-        strokeOpacity="0.75"
-        strokeWidth="1.6"
+        strokeOpacity="0.24"
+        strokeWidth="1.4"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
-        d="m6 15.5 6 3 6-3"
+        d="M6.2 8.6 9.5 16 12 10.9 14.5 16 17.8 8.6"
         stroke="var(--primary-foreground)"
         strokeOpacity="0.5"
-        strokeWidth="1.6"
+        strokeWidth="1.4"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+      {/* The W as a network: linked nodes converging on a central hub. */}
+      <path
+        d="M6.2 6.9 9.5 14.3 12 9.2 14.5 14.3 17.8 6.9"
+        stroke="var(--primary-foreground)"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="6.2" cy="6.9" r="1.4" fill="var(--primary-foreground)" />
+      <circle cx="17.8" cy="6.9" r="1.4" fill="var(--primary-foreground)" />
+      <circle cx="12" cy="9.2" r="2" fill="var(--primary-foreground)" />
+      <circle cx="12" cy="9.2" r="0.85" fill="var(--primary)" />
     </svg>
   );
 }
