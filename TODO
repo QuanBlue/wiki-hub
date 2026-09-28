@@ -8,14 +8,4 @@ AI (sáng kiến)
 - tự gắn nhãn & gợi ý trang liên quan khi tạo/sửa trang
 - phát hiện nội dung lỗi thời (quét định kỳ, gắn cờ trang lâu không cập nhật nhưng nhiều lượt xem)
 
-Doing
-- export confluence 
-   + import vao khong co user/quyen
-   + group permission
-   + admin list
-   + user permission
-- test user co quyền admin thì có bị loại khỏi các space restrict không 
-   + trường hợp không add user đó 
-   + trường hợp add user đó nhưng không có đọc/ ghi -> chỉnh lại user đó sẽ luôn có trong space restrict với quyền admin (cao nhất) và không thể bị xóa khỏi space restrict
-- Group/user global permission
-   + group access to space/page
+
