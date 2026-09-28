@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <title>WikiHub</title>
+  <defs>
+    <linearGradient id="bg" x1="64" y1="0" x2="448" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3b97ea"/>
+      <stop offset="0.55" stop-color="#216fc0"/>
+      <stop offset="1" stop-color="#1c3b65"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="256" y1="0" x2="256" y2="260" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="116" fill="url(#shine)"/>
+
+  <g transform="translate(0 -18)">
+  <!-- Stacked layers: two fainter copies of the W trailing below the main one -->
+  <path d="M132 238 202 396 256 286 310 396 380 238" stroke="#ffffff" stroke-opacity="0.24" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M132 202 202 360 256 250 310 360 380 202" stroke="#ffffff" stroke-opacity="0.5" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- The W, drawn as a network: linked nodes converging on a central hub -->
+  <path d="M132 166 202 324 256 214 310 324 380 166" stroke="#ffffff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="132" cy="166" r="30" fill="#ffffff"/>
+  <circle cx="380" cy="166" r="30" fill="#ffffff"/>
+  <circle cx="256" cy="214" r="44" fill="#ffffff"/>
+  <circle cx="256" cy="214" r="18" fill="#216fc0"/>
+  </g>
+</svg>
