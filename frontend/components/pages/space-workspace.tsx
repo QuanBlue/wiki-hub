@@ -176,15 +176,14 @@ function PageAccessIcon({ access }: { access: PageAccess }) {
       role="img"
       aria-label={label}
       title={label}
-      // Flex centring puts the icon on the middle of the line box, which sits
-      // about 0.16em above the middle of the letters themselves - the line box
-      // reserves room for ascenders and descenders that most text never uses,
-      // so a centred icon reads as floating high. Nudging by that much lands
-      // it on the x-height middle, where `vertical-align: middle` would put it
-      // if this were not a flex child.
+      // No vertical nudge: with Inter, the middle of the line box lands between
+      // the middle of the x-height and the middle of the capitals, which is
+      // where mixed-case text reads as centred. (Measured at 14px: 1px above
+      // the lowercase middle, 0.5px below the capital middle. An earlier
+      // 0.16em nudge pushed it 1.2px / 2.7px below them, so it looked dropped.)
       // Both states share one colour: the padlock marks what a page is, not a
       // problem to be drawn to, and the shape already carries the difference.
-      className="text-muted-foreground inline-flex shrink-0 translate-y-[0.16em] items-center"
+      className="text-muted-foreground inline-flex shrink-0 items-center"
     >
       {access.restricted ? (
         <Lock className="size-3.5" aria-hidden />
