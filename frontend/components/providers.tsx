@@ -3,13 +3,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { useState } from "react";
-import { Toaster } from "sonner";
 
 import { ApiError } from "@/lib/api-client";
 import { LocaleProvider, type Locale } from "@/lib/i18n/context";
 import { NavigationLoading } from "@/components/navigation-loading";
 import { ThemeColorProvider } from "@/components/theme-color-provider";
 import { ScrollToTop } from "@/components/ui/scroll-to-top";
+import { Toaster } from "@/components/ui/toaster";
 
 function makeQueryClient() {
   return new QueryClient({
@@ -68,7 +68,10 @@ export function Providers({
           >
             {children}
             <NavigationLoading />
-            <Toaster position="bottom-right" closeButton richColors />
+            {/* Layout, timers and styling: components/ui/toaster.tsx and
+                globals.css ("Toasts"). Ten seconds each; hovering a toast
+                pauses that toast and lays the stack out in a column. */}
+            <Toaster />
             <ScrollToTop />
           </ThemeColorProvider>
         </LocaleProvider>

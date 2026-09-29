@@ -10,6 +10,7 @@ import type { Dictionary } from "./en";
  */
 export const vi: Dictionary = {
   common: {
+    moreInfo: "Xem hướng dẫn",
     previousPage: "Trang trước",
     nextPage: "Trang sau",
     itemsPerPage: "Số mục mỗi trang",
@@ -73,6 +74,63 @@ export const vi: Dictionary = {
     showInSidebarShort: "Hiện trên thanh bên",
     resizeSidebar: "Đổi độ rộng thanh bên",
     dragToResize: "Kéo để đổi độ rộng thanh bên",
+    inbox: "Yêu cầu",
+    mail: "Hộp thư quản trị",
+  },
+
+  notifications: {
+    title: "Thông báo",
+    markAllRead: "Đánh dấu tất cả đã đọc",
+    markRead: "Đánh dấu đã đọc",
+    markUnread: "Đánh dấu chưa đọc",
+    empty: "Bạn đã xem hết rồi",
+    emptyHint: "Những gì xảy ra với tài khoản của bạn - quyền truy cập, nhóm, đổi mật khẩu - sẽ hiện ở đây.",
+    unreadCount: "{count} mới",
+    unread: "Chưa đọc",
+    someone: "Một quản trị viên",
+    loadError: "Không tải được thông báo của bạn.",
+    openNotification: "Mở",
+    openInbox: "Mở Yêu cầu",
+    role: {
+      viewer: "người xem",
+      editor: "người chỉnh sửa",
+      admin: "quản trị viên",
+      member: "thành viên",
+    },
+    permission: {
+      view: "xem",
+      add: "thêm",
+      delete: "xóa",
+      delete_own: "xóa của mình",
+      restrictions: "giới hạn trang",
+      export: "xuất",
+      move: "di chuyển",
+      admin: "quản trị",
+    },
+    requestType: {
+      account: "yêu cầu tạo tài khoản",
+      password_reset: "yêu cầu đặt lại mật khẩu",
+      other: "yêu cầu",
+    },
+    kind: {
+      space_member_added: "**{actor}** đã thêm bạn vào space `{space}` với vai trò *{role}*.",
+      space_role_changed: "**{actor}** đã đổi vai trò của bạn trong `{space}` thành *{role}*.",
+      space_member_removed: "**{actor}** đã gỡ bạn khỏi space `{space}`.",
+      space_permission_granted: "**{actor}** đã cấp cho bạn quyền *{permission}* trong `{space}`.",
+      space_permission_revoked:
+        "**{actor}** đã thu hồi quyền *{permission}* của bạn trong `{space}`.",
+      space_owner_added: "**{actor}** đã chỉ định bạn làm chủ sở hữu của `{space}`.",
+      space_owner_removed: "**{actor}** đã gỡ vai trò chủ sở hữu của bạn ở `{space}`.",
+      group_member_added: "**{actor}** đã thêm bạn vào nhóm `{group}`.",
+      group_member_removed: "**{actor}** đã gỡ bạn khỏi nhóm `{group}`.",
+      password_reset_by_admin:
+        "**{actor}** đã đặt lại mật khẩu của bạn. Hãy đăng nhập bằng mật khẩu mới và đổi lại trong *Cài đặt tài khoản*.",
+      role_changed: "**{actor}** đã đổi vai trò của bạn thành *{role}*.",
+      global_permissions_changed: "**{actor}** đã thay đổi quyền của bạn trên workspace.",
+      account_enabled: "**{actor}** đã bật lại tài khoản của bạn.",
+      admin_request: "Có *{type}* mới từ `{name}`.",
+      unknown: "Có thay đổi mới trên tài khoản của bạn.",
+    },
   },
 
   topbar: {
@@ -84,6 +142,13 @@ export const vi: Dictionary = {
     themeAria: "Giao diện: {mode}. Nhấn để đổi.",
     collapseSidebar: "Thu gọn thanh bên",
     expandSidebar: "Mở rộng thanh bên",
+    notifications: "Thông báo",
+    notificationsUnread: "Thông báo ({count} chưa đọc)",
+    notificationsEmpty: "Chưa có yêu cầu nào.",
+    newRequest: "Có yêu cầu mới đang chờ bạn",
+    newRequestBody: "Có người vừa nhờ quản trị viên hỗ trợ.",
+    newRequestOpen: "Mở Yêu cầu",
+    notificationsViewAll: "Mở Yêu cầu",
   },
 
   userMenu: {
@@ -226,8 +291,8 @@ export const vi: Dictionary = {
     footerTagline: "Dành cho những nhóm tập trung và coi trọng sự rõ ràng.",
     welcomeBack: "Chào mừng trở lại",
     signInToContinue: "Đăng nhập để tiếp tục với {siteName}.",
-    troubleSigningIn:
-      "Gặp khó khăn khi đăng nhập? Hãy liên hệ quản trị viên không gian làm việc của bạn.",
+    troubleSigningIn: "Không đăng nhập được?",
+    contactAdminLink: "Liên hệ quản trị viên",
   },
 
   account: {
@@ -1304,6 +1369,280 @@ export const vi: Dictionary = {
     adminBadge: "Quản trị viên",
     notSetDirectlyTitle:
       "Không được đặt trực tiếp làm Administrator - được cấp thông qua một nhóm hoặc một ghi đè quyền. Xem tab Quản trị viên để biết chi tiết.",
+  },
+
+  adminMail: {
+    permissionFeature: "Hộp thư quản trị",
+    title: "Hộp thư quản trị",
+    description:
+      "Yêu cầu từ người không đăng nhập được sẽ gửi mail đến các hộp thư bên dưới. Chúng còn tạo thành một pool: admin không có hộp thư riêng sẽ tự động gửi qua hộp thư khác, chữ ký vẫn đứng tên chính họ.",
+    poolSummary:
+      "{count}/{total} hộp thư đang trong pool - còn hoạt động và sẵn sàng gửi thay cho admin nào chưa có hộp thư riêng.",
+    inPool: "Trong pool",
+    inPoolHelp:
+      "Đang hoạt động tốt, nên admin không có hộp thư riêng có thể tự động gửi qua đây.",
+    peerProtected:
+      "Chỉ chính chủ ({name}) hoặc super admin mặc định mới được chỉnh hộp thư này.",
+    addMailbox: "Thêm hộp thư",
+    editMailbox: "Sửa hộp thư",
+    emptyTitle: "Chưa có hộp thư nào",
+    emptyBody:
+      "Yêu cầu từ trang đăng nhập vẫn được lưu, nhưng sẽ không có ai nhận mail cho đến khi thêm hộp thư.",
+    columnAccount: "Tài khoản",
+    columnMailbox: "Hộp thư",
+    columnServer: "Máy chủ mail",
+    columnStatus: "Trạng thái",
+    columnChecked: "Kiểm tra lần cuối",
+    columnActions: "Thao tác",
+    neverChecked: "Chưa bao giờ",
+    statusOk: "Hoạt động",
+    statusAuthFailed: "Cần mật khẩu mới",
+    statusUnreachable: "Không kết nối được",
+    statusError: "Lỗi máy chủ",
+    statusUnknown: "Chưa kiểm tra",
+    statusOff: "Đã tắt",
+    statusAccountDisabled: "Tài khoản bị vô hiệu",
+    accountDisabledHint:
+      "Tài khoản này đang bị vô hiệu hóa nên hộp thư không nhận yêu cầu.",
+    checkNow: "Kiểm tra ngay",
+    checkOk: "Đăng nhập máy chủ mail thành công.",
+    checkFailed: "Không đăng nhập được: {reason}",
+    updatePassword: "Cập nhật mật khẩu",
+    updatePasswordTitle: "Mật khẩu mới cho {email}",
+    updatePasswordDescription:
+      "Nhà cung cấp mail yêu cầu đổi mật khẩu vài tháng một lần. Mật khẩu được kiểm tra với máy chủ mail trước khi lưu và được lưu dưới dạng mã hóa.",
+    newPassword: "Mật khẩu mới",
+    passwordSaved: "Đã cập nhật mật khẩu.",
+    passwordRejected:
+      "Máy chủ mail từ chối mật khẩu này. Hãy kiểm tra lại và thử lại.",
+    edit: "Sửa",
+    switchOn: "Bật",
+    switchOff: "Tắt",
+    remove: "Xóa",
+    removeTitle: "Xóa hộp thư này?",
+    removeBody:
+      "{email} sẽ không nhận yêu cầu nữa. Các yêu cầu đã nhận trước đó vẫn được giữ lại.",
+    removed: "Đã xóa hộp thư.",
+    formAccount: "Tài khoản quản trị",
+    formAccountPlaceholder: "Chọn tài khoản",
+    formAccountHelp:
+      "Yêu cầu sẽ hiện ở trang Yêu cầu của tài khoản này. Vô hiệu hóa tài khoản sẽ tắt hộp thư.",
+    formNoAccounts: "Mọi tài khoản quản trị hiện có đều đã có hộp thư.",
+    formNoAccountsLink: "Tạo tài khoản quản trị",
+    formChooseAccount: "Chọn tài khoản quản trị mà hộp thư này thuộc về.",
+    formEmailInvalid: "Nhập địa chỉ hộp thư hợp lệ.",
+    formHostInvalid: "Nhập địa chỉ SMTP server hợp lệ.",
+    formPortInvalid: "Cổng phải là số từ 1 đến 65535.",
+    formPasswordRequired: "Nhập mật khẩu của hộp thư.",
+    formEmail: "Địa chỉ hộp thư",
+    formEmailPlaceholder: "ops@congty.com",
+    formEmailHelp: "Địa chỉ nhận yêu cầu, hộp thư tự gửi thư cho chính nó.",
+    formDisplayName: "Tên người gửi",
+    formDisplayNamePlaceholder: "WikiHub Support",
+    formDisplayNameHelp:
+      "Tên hiển thị là người gửi của các email yêu cầu trong ứng dụng thư của bạn. Để trống sẽ hiện địa chỉ hộp thư.",
+    formOptional: "không bắt buộc",
+    formProvider: "Nhà cung cấp",
+    formProviderCustom: "Khác / tùy chỉnh",
+    formHost: "Máy chủ SMTP",
+    formHostPlaceholder: "smtp.congty.com",
+    formHostHelp: "Máy chủ gửi thư. Chọn nhà cung cấp sẽ tự điền.",
+    formPort: "Cổng",
+    formSecurity: "Bảo mật",
+    securityStarttls: "STARTTLS (thường là cổng 587)",
+    securitySsl: "SSL/TLS (thường là cổng 465)",
+    securityNone: "Không (chỉ dùng trong mạng tin cậy)",
+    formUsername: "Tên đăng nhập",
+    formUsernameHelp: "Để trống để dùng địa chỉ hộp thư.",
+    formPassword: "Mật khẩu",
+    formPasswordPlaceholder: "Mật khẩu hộp thư hoặc mật khẩu ứng dụng",
+    formPasswordHelp:
+      "Gmail và Microsoft 365 thường yêu cầu mật khẩu ứng dụng, không phải mật khẩu đăng nhập.",
+    formPasswordKeep: "Để trống để giữ mật khẩu hiện tại.",
+    formEnabled: "Nhận yêu cầu",
+    formEnabledHelp:
+      "Công tắc giống nút \"Bật/Tắt\" trong danh sách. Khi tắt, hộp thư ngừng nhận yêu cầu cho tới khi bạn bật lại - không có gì bị xóa.",
+    created: "Đã thêm hộp thư.",
+    checking: "Đang kiểm tra kết nối...",
+    notSavedTitle: "Kiểm tra kết nối thất bại nên chưa lưu gì.",
+    technicalDetails: "Chi tiết kỹ thuật",
+    errAppPassword:
+      "Gmail yêu cầu dùng mật khẩu ứng dụng ở đây, không phải mật khẩu Google thông thường. Hãy bật xác minh 2 bước cho tài khoản Google, tạo mật khẩu ứng dụng tại myaccount.google.com/apppasswords rồi dán vào ô Mật khẩu.",
+    errBasicAuthDisabled:
+      "Microsoft 365 đang tắt đăng nhập SMTP cho hộp thư này. Quản trị viên Microsoft 365 cần bật Authenticated SMTP cho hộp thư, hoặc bạn dùng mật khẩu ứng dụng nếu tổ chức cho phép.",
+    errStarttlsRequired:
+      "Máy chủ này bắt buộc kết nối mã hóa. Hãy đặt Bảo mật là STARTTLS (thường cổng 587) hoặc SSL/TLS (thường cổng 465).",
+    errBadCredentials:
+      "Máy chủ mail không chấp nhận tên đăng nhập hoặc mật khẩu. Hãy kiểm tra cả hai; nếu mật khẩu đã đổi hoặc hết hạn thì nhập mật khẩu mới.",
+    errUnknownHost:
+      "Không tìm thấy tên máy chủ mail. Hãy kiểm tra lại Máy chủ SMTP xem có gõ sai không.",
+    errRefused:
+      "Máy chủ mail từ chối kết nối. Hãy kiểm tra cổng, và xem tường lửa có chặn thư gửi ra từ máy chủ này không.",
+    errTimeout:
+      "Máy chủ mail không trả lời kịp. Hãy kiểm tra máy chủ, cổng, và xem mạng có cho phép gửi mail ra ngoài không.",
+    errDisconnected:
+      "Máy chủ mail đã đóng kết nối. Thường là do cổng và Bảo mật không khớp: STARTTLS đi với cổng 587, SSL/TLS đi với cổng 465.",
+    errTls:
+      "Không thiết lập được kết nối bảo mật. Hãy kiểm tra Bảo mật khớp với cổng: STARTTLS cho 587, SSL/TLS cho 465.",
+    errGeneric:
+      "Máy chủ mail báo có sự cố. Xem chi tiết kỹ thuật bên dưới, hoặc kiểm tra lại cấu hình rồi thử lại.",
+    updated: "Đã cập nhật hộp thư.",
+    saveError: "Không thể lưu hộp thư.",
+    actionError: "Thao tác không thành công. Hãy thử lại.",
+    loadError: "Không thể tải danh sách hộp thư.",
+  },
+
+  adminInbox: {
+    title: "Yêu cầu",
+    noMessage: "Không có nội dung.",
+    description: "Yêu cầu từ những người không đăng nhập được.",
+    noMailboxTitle: "Chưa có hộp thư nào gắn với tài khoản của bạn",
+    noMailboxBody:
+      "Trang này hiển thị yêu cầu của hộp thư quản trị gắn với tài khoản của bạn. Hãy nhờ quản trị viên hệ thống thêm một hộp thư trong mục Hộp thư quản trị.",
+    filterAria: "Lọc yêu cầu",
+    filterAll: "Tất cả ({count})",
+    filterUnread: "Chưa đọc ({count})",
+    filterOpen: "Đang mở ({count})",
+    filterResolved: "Đã xử lý ({count})",
+    typeFilter: "Loại yêu cầu",
+    typeAll: "Tất cả loại",
+    markAllRead: "Đánh dấu tất cả đã đọc",
+    empty: "Không có yêu cầu nào.",
+    columnFrom: "Từ",
+    columnType: "Loại",
+    columnMessage: "Nội dung",
+    columnReceived: "Nhận lúc",
+    columnEmail: "Mail",
+    kindAccount: "Yêu cầu tạo tài khoản",
+    kindPasswordReset: "Đặt lại mật khẩu",
+    kindOther: "Yêu cầu khác",
+    unread: "Chưa đọc",
+    resolved: "Đã xử lý",
+    emailSent: "Đã gửi mail",
+    emailFailed: "Chưa gửi được mail",
+    viewDetails: "Xem chi tiết",
+    detailsTitle: "Yêu cầu từ {name}",
+    fieldName: "Họ tên",
+    fieldEmail: "Email",
+    fieldUsername: "Tên đăng nhập",
+    fieldReceived: "Nhận lúc",
+    fieldMessage: "Nội dung",
+    unverifiedEmail: "Do người dùng tự nhập - chưa được xác minh.",
+    deliverySent: "Đã gửi mail tới {email}.",
+    deliveryFailed: "Không gửi được mail tới {email}.",
+    actionsTitle: "Xử lý yêu cầu này",
+    actionsResolved: "Yêu cầu này đã được xử lý.",
+    actionsLoadError: "Không kiểm tra được có thể làm gì cho yêu cầu này.",
+    existingAccountNote:
+      "Đã có tài khoản (“{username}”) dùng email này, nên cả hai cách đều đặt lại mật khẩu của nó thay vì tạo mới.",
+    noAccountForResetNote:
+      "Chưa có tài khoản nào tên “{username}”, nên cả hai cách đều tạo tài khoản mới thay vì đặt lại mật khẩu.",
+    autoCreate: "Tự động tạo tài khoản",
+    manualCreate: "Tạo tài khoản thủ công",
+    autoReset: "Tự động đặt lại mật khẩu",
+    manualReset: "Đặt mật khẩu thủ công",
+    autoCreateDetail:
+      "Tạo tài khoản “{username}” với vai trò Member từ thông tin trong yêu cầu, tự sinh mật khẩu và gửi thông tin đăng nhập tới {email}.",
+    manualCreateDetail:
+      "Mở form Tạo người dùng với các thông tin đã điền sẵn. Bạn tự chọn mật khẩu và tự chuyển cho họ.",
+    autoResetDetail:
+      "Sinh mật khẩu mới cho “{username}” và gửi tới {email}, là email đang có trên tài khoản.",
+    manualResetDetail:
+      "Bạn tự chọn mật khẩu mới và tự chuyển cho họ. WikiHub không gửi email mật khẩu này.",
+    blockedEmailInUse:
+      "Đã có tài khoản dùng {email} nên không tạo tự động. Hãy tìm trong Người dùng; nếu là của họ thì đặt lại mật khẩu.",
+    blockedEmailInvalid:
+      "Địa chỉ email trong yêu cầu này không dùng được để tạo tài khoản.",
+    blockedEmailMismatch:
+      "Email trong yêu cầu ({email}) không phải email của tài khoản “{username}” ({accountEmail}). Ai cũng có thể gõ email của người khác, nên mật khẩu không bao giờ được gửi tự động tới đó. Hãy xác nhận đúng người rồi đặt mật khẩu thủ công.",
+    blockedAccountInactive:
+      "Tài khoản “{username}” đang bị vô hiệu hóa. Hãy bật lại trong Người dùng trước.",
+    blockedAccountProtected:
+      "Đây là tài khoản quản trị dựng sẵn, không thể thay đổi ở đây.",
+    blockedPeerAdmin:
+      "Chỉ quản trị viên tối cao dựng sẵn mới đổi được mật khẩu của quản trị viên khác.",
+    noAccountToReset: "Không có tài khoản phù hợp để đặt mật khẩu.",
+    confirmCreateTitle: "Tạo tài khoản này?",
+    confirmCreateBody:
+      "“{username}” sẽ được tạo cho {name} và thông tin đăng nhập được gửi tới {email}.",
+    confirmCreateAction: "Tạo và gửi email",
+    confirmResetTitle: "Đặt lại mật khẩu này?",
+    confirmResetBody:
+      "Một mật khẩu mới sẽ được sinh cho “{username}” và gửi tới {email}. Mật khẩu hiện tại ngừng dùng được ngay.",
+    confirmResetAction: "Đặt lại và gửi email",
+    doneCreated:
+      "Đã tạo tài khoản `{username}`. Thông tin đăng nhập đã được gửi tới `{email}`.",
+    doneReset:
+      "Đã đặt lại mật khẩu của `{username}`. Mật khẩu mới đã được gửi tới `{email}`.",
+    emailFailedCreated:
+      "Đã tạo tài khoản `{username}`, nhưng không gửi được email.",
+    emailFailedReset:
+      "Đã đặt lại mật khẩu của `{username}`, nhưng không gửi được email.",
+    emailFailedHint:
+      "Hãy chuyển mật khẩu này cho họ bằng cách khác. Mật khẩu chỉ hiện lúc này và không được lưu.",
+    passwordLabel: "Mật khẩu tạm",
+    showDetails: "Hiện thông tin",
+    hideDetails: "Ẩn thông tin",
+    copy: "Sao chép",
+    copied: "Đã sao chép.",
+    copyFailed: "Không sao chép được. Hãy chọn và sao chép thủ công.",
+    passwordDialogTitle: "Đặt mật khẩu cho {username}",
+    passwordDialogBody:
+      "WikiHub không gửi email mật khẩu này. Hãy chuyển cho họ một cách an toàn; họ có thể đổi sau khi đăng nhập.",
+    newPassword: "Mật khẩu mới",
+    generatePassword: "Tạo ngẫu nhiên",
+    setPassword: "Đặt mật khẩu",
+    passwordSet: "Đã cập nhật mật khẩu của `{username}`.",
+    markResolved: "Đánh dấu đã xử lý",
+    reopen: "Mở lại",
+    markUnread: "Đánh dấu chưa đọc",
+    loadError: "Không tải được danh sách yêu cầu.",
+    actionError: "Thao tác không thành công. Hãy thử lại.",
+  },
+
+  contactAdmin: {
+    title: "Liên hệ quản trị viên",
+    description:
+      "Không đăng nhập được, cần tài khoản hoặc quên mật khẩu? Hãy gửi lời nhắn cho quản trị viên.",
+    kind: "Bạn cần gì?",
+    kindAccount: "Tạo tài khoản cho tôi",
+    kindPasswordReset: "Đặt lại mật khẩu của tôi",
+    kindOther: "Việc khác",
+    name: "Họ tên của bạn",
+    email: "Email của bạn",
+    emailHelp: "Quản trị viên sẽ trả lời qua địa chỉ này.",
+    emailInvalid: "Nhập địa chỉ email hợp lệ.",
+    username: "Tên đăng nhập",
+    usernameHelp: "Nếu bạn đã có tài khoản.",
+    usernameHelpRequired: "Tên đăng nhập tài khoản của bạn, để chúng tôi tìm đúng tài khoản.",
+    message: "Nội dung",
+    optional: "không bắt buộc",
+    messagePlaceholder: "Điều gì quản trị viên nên biết thêm (không bắt buộc).",
+    submit: "Gửi yêu cầu",
+    sending: "Đang gửi...",
+    backToSignIn: "Quay lại đăng nhập",
+    successTitle: "Đã gửi yêu cầu",
+    successBody:
+      "Quản trị viên sẽ phản hồi bạn qua email ngay khi có thể.",
+    summaryType: "Yêu cầu",
+    summaryName: "Họ tên",
+    summaryUsername: "Tên đăng nhập",
+    summaryEmail: "Phản hồi tới",
+    deliveryProblemTitle: "Không gửi được mail",
+    deliveryProblemBody:
+      "Yêu cầu của bạn đã được ghi lại, nhưng mail gửi tới quản trị viên chưa thành công. Vui lòng báo trực tiếp cho quản trị viên để họ kiểm tra.",
+    noMailboxBody:
+      "Yêu cầu của bạn đã được ghi lại, nhưng chưa có hộp thư quản trị nào được thiết lập. Vui lòng báo trực tiếp cho quản trị viên.",
+    sendAnother: "Gửi yêu cầu khác",
+    rateLimited: "Bạn gửi quá nhiều yêu cầu. Vui lòng chờ một lúc rồi thử lại.",
+    error: "Không thể gửi yêu cầu. Hãy thử lại.",
+  },
+
+  mailBanner: {
+    passwordTitle: "Hộp thư của bạn cần mật khẩu mới",
+    passwordBody:
+      "Máy chủ mail đã từ chối mật khẩu của {email}, có thể mật khẩu đã hết hạn. Cho đến khi cập nhật, bạn sẽ không nhận được yêu cầu qua mail.",
+    updateNow: "Cập nhật mật khẩu",
   },
 
   help: {

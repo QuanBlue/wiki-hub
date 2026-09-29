@@ -301,6 +301,149 @@ export interface AdminAccount extends User {
    * source. */
   granted_via_group: string | null;
 }
+export type MailHealth =
+  | "unknown"
+  | "ok"
+  | "auth_failed"
+  | "unreachable"
+  | "error";
+export type SmtpSecurity = "ssl" | "starttls" | "none";
+
+/** An administrator mailbox. The SMTP password is never part of this: the
+ * API only says whether one is stored. */
+export interface AdminMailbox {
+  id: string;
+  user_id: string;
+  username: string;
+  user_full_name: string | null;
+  user_is_active: boolean;
+  email: string;
+  display_name: string | null;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_security: SmtpSecurity;
+  smtp_username: string;
+  has_password: boolean;
+  is_enabled: boolean;
+  /** `is_enabled` and the linked account is active: what actually decides
+   * whether the mailbox receives requests. */
+  effective_enabled: boolean;
+  health_status: MailHealth;
+  health_checked_at: string | null;
+  health_error: string | null;
+  created_at: string;
+}
+
+export interface MailboxTestResult {
+  ok: boolean;
+  health_status: MailHealth;
+  error: string | null;
+}
+
+/** What every page needs to know: whether to show the Inbox and bell, how
+ * many requests are unread, and whether the password banner should show. */
+export interface MailSummary {
+  has_mailbox: boolean;
+  mailbox_id: string | null;
+  mailbox_email: string | null;
+  health_status: MailHealth | null;
+  health_error: string | null;
+  unread_count: number;
+  /** When the newest request arrived; changes whenever a new one lands. */
+  latest_request_at?: string | null;
+  /** Whether Create user / Edit user can email this account's sign-in details
+   * automatically. Independent of `has_mailbox`: a mailbox with "Receive
+   * requests" switched off still has no Inbox (`has_mailbox` is false), but a
+   * connected mailbox can still send. */
+  can_send_account_mail: boolean;
+}
+
+export type AdminRequestKind = "account" | "password_reset" | "other";
+export type InboxFilter = "all" | "unread" | "open" | "resolved";
+/** How many requests each Inbox tab lists. */
+export type InboxCounts = Record<InboxFilter, number>;
+/** What happened to a request submitted from the public form. */
+export type ContactDelivery = "sent" | "failed" | "no_mailbox";
+
+export interface InboxItem {
+  id: string;
+  kind: AdminRequestKind;
+  requester_name: string;
+  requester_email: string;
+  requester_username: string | null;
+  message: string;
+  created_at: string;
+  read_at: string | null;
+  resolved_at: string | null;
+  /** The email sent to *this* account's mailbox. */
+  delivery_status: "sent" | "failed";
+  delivery_error: string | null;
+  mailbox_email: string;
+}
+
+/** One thing that happened to the signed-in person (the bell's list). */
+export interface AppNotification {
+  id: string;
+  /** What happened, e.g. `space_member_added`; the client words it. */
+  kind: string;
+  params: Record<string, string>;
+  /** In-app path the notification leads to, if any. */
+  link: string | null;
+  /** Who caused it, when a person did. */
+  actor_name: string | null;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface NotificationSummary {
+  unread_count: number;
+  latest_at: string | null;
+}
+
+/** The account a password-reset request appears to be about. */
+export interface MatchedAccount {
+  id: string;
+  username: string;
+  full_name: string;
+  email: string;
+  is_active: boolean;
+}
+
+/** Why the automatic action is not offered for a request. */
+export type AutoBlocked =
+  | "not_applicable"
+  | "already_resolved"
+  | "email_in_use"
+  | "email_invalid"
+  | "email_mismatch"
+  | "account_inactive"
+  | "account_protected"
+  | "peer_admin";
+
+/** What the Inbox can offer for one request. */
+export interface RequestActionPreview {
+  kind: AdminRequestKind;
+  suggested_username: string | null;
+  email_in_use: boolean;
+  matched_account: MatchedAccount | null;
+  email_matches: boolean;
+  /** What the automatic button does. For an account request whose address
+   * already has an account, that is a password reset rather than a creation. */
+  auto_action: "create_account" | "reset_password" | null;
+  auto_allowed: boolean;
+  auto_blocked: AutoBlocked | null;
+}
+
+export interface AutoActionResult {
+  item: InboxItem;
+  username: string;
+  emailed_to: string;
+  email_sent: boolean;
+  email_error: string | null;
+  /** Only present when the email could not be sent. Shown once. */
+  password: string | null;
+}
+
 export type PageContentFormat = "html" | "markdown";
 
 export interface Space {

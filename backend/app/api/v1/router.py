@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    admin_mail,
     attachments,
     audit_logs,
     auth,
@@ -18,6 +19,7 @@ from app.api.v1 import (
     export_render,
     groups,
     meta,
+    notifications,
     pages,
     revisions,
     search,
@@ -47,6 +49,9 @@ api_router.include_router(confluence_import.router)
 api_router.include_router(document_imports.router)
 api_router.include_router(document_imports.space_router)
 api_router.include_router(storage_admin.router)
+api_router.include_router(admin_mail.router)
+api_router.include_router(admin_mail.public_router)
+api_router.include_router(notifications.router)
 api_router.include_router(export_render.router)
 
 # Registered in later phases:

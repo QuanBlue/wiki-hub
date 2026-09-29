@@ -48,13 +48,13 @@ export const sectionsVi: HelpSection[] = [
             <strong>Thanh điều hướng trên cùng</strong>: ô tìm kiếm (mở cùng một
             modal <Kbd>Ctrl</Kbd>+<Kbd>K</Kbd>), liên kết <strong>Help</strong>{" "}
             (biểu tượng quyển sách, đưa bạn đến đây), nút chuyển đổi giao diện
-            Sáng/Tối, và menu người dùng của bạn. WikiHub không có chuông thông
-            báo - chưa có hệ thống push/alert (xem ghi chú trong{" "}
-            <em>Vận hành an toàn & Xử lý sự cố hệ thống</em>).
+            Sáng/Tối, <strong>chuông thông báo</strong> (điều gì đã xảy ra với
+            bạn - xem <em>Thông báo</em>), và menu người dùng của bạn.
           </li>
           <li>
             <strong>Thanh sidebar bên trái</strong>: <strong>Home</strong> và{" "}
-            <strong>Spaces</strong>, sau đó là danh sách <strong>Most visited</strong>{" "}
+            <strong>Spaces</strong> (kèm <strong>Yêu cầu</strong> cho tài khoản gắn với hộp
+            thư quản trị), sau đó là danh sách <strong>Most visited</strong>{" "}
             của bạn - một danh sách tự động, xếp hạng theo server dựa trên những
             space bạn thực sự mở, không phải danh sách ghim thủ công - và, với
             admin, một mục <strong>Administration</strong>.
@@ -1456,6 +1456,65 @@ export const sectionsVi: HelpSection[] = [
     ),
   },
   {
+    id: "notifications",
+    title: "Thông báo: chuông và cửa sổ nhắc",
+    category: "Account",
+    description:
+      "Biết ngay điều gì xảy ra với tài khoản của bạn - quyền truy cập, nhóm, đặt lại mật khẩu - mà không cần tải lại trang.",
+    keywords: ["thông báo", "chuông", "toast", "notification", "chưa đọc"],
+    body: (
+      <>
+        <p>
+          <strong>Chuông</strong> trên thanh trên cùng cho bạn biết điều gì đã xảy ra <em>với
+          bạn</em>. Ai cũng có, không chỉ quản trị viên. Số đỏ trên chuông là số thông báo bạn
+          chưa đọc.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Bạn được báo về:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>Được thêm vào, bị gỡ khỏi, hoặc được đổi vai trò trong một space.</li>
+          <li>Được cấp hoặc bị thu hồi một quyền cụ thể trên space, hoặc trở thành (hay thôi là) chủ sở hữu space.</li>
+          <li>Được thêm vào hoặc bị gỡ khỏi một nhóm.</li>
+          <li>Quản trị viên đặt lại mật khẩu của bạn.</li>
+          <li>Vai trò hoặc quyền trên workspace của bạn bị thay đổi, hoặc tài khoản được bật lại.</li>
+          <li>Với quản trị viên có hộp thư: có yêu cầu mới từ trang đăng nhập.</li>
+        </ul>
+        <p className="mt-2 text-sm">
+          Việc chính bạn làm không tạo thông báo cho bạn. Thông báo hiển thị bằng ngôn ngữ của
+          bạn và chỉ mình bạn thấy được của mình.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Dùng chuông:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Mở ra để xem những thông báo mới nhất, mới nhất ở trên. Mỗi thông báo có biểu tượng
+            màu - xanh lá cho tin tốt (được thêm vào, được cấp quyền), xanh dương cho thay đổi,
+            vàng cam cho điều bị lấy đi hoặc mật khẩu bị đặt lại - và cho biết xảy ra cách đây bao
+            lâu.
+          </li>
+          <li>
+            Bấm vào một thông báo để đọc: nếu nó dẫn tới đâu đó (một space, trang Yêu cầu) bạn sẽ
+            được đưa tới đó, và nó không còn tính là chưa đọc.{" "}
+            <strong>Đánh dấu tất cả đã đọc</strong> xử lý toàn bộ.
+          </li>
+        </ul>
+
+        <p className="mt-3 font-semibold text-foreground">Cửa sổ nhắc:</p>
+        <p className="text-sm">
+          Thông báo mới cũng hiện thành một cửa sổ nhỏ ở góc dưới bên phải trong vài giây - bạn
+          không cần tải lại trang. Mọi thông điệp của ứng dụng (đã lưu, thất bại, ...) đều dùng
+          cùng kiểu này, tô màu theo nội dung: xanh lá là thành công, xanh dương là thông tin,
+          vàng cam là cảnh báo, đỏ là lỗi. Nhiều thông báo cùng lúc sẽ gộp thành một chồng gọn; rê
+          chuột vào là chúng xếp dọc, không chồng lên nhau, để bạn đọc trọn vẹn từng cái. Mỗi
+          thông báo có đồng hồ mười giây riêng, hiển thị bằng thanh dưới nội dung: rê chuột vào
+          thông báo nào thì chỉ thông báo đó tạm dừng, và đồng hồ chạy tiếp từ chỗ đã dừng khi bạn
+          rời chuột đi. Hết giờ, thông báo trượt sang phải rồi biến mất. Bấm dấu{" "}
+          <strong>x</strong> nhỏ để đóng sớm hơn.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "language-switching",
     title: "Chuyển đổi ngôn ngữ giao diện",
     category: "Account",
@@ -2134,10 +2193,18 @@ export const sectionsVi: HelpSection[] = [
     body: (
       <>
         <Callout variant="important" title="KHÔNG CÓ LUỒNG MỜI QUA E-MAIL">
-          WikiHub không gửi e-mail mời. Một quản trị viên tạo mọi tài khoản trực
+          WikiHub không tự gửi e-mail mời. Một quản trị viên tạo mọi tài khoản trực
           tiếp trong <strong>Administration &gt; Users &gt; Create user</strong>{" "}
           và chia sẻ mật khẩu tạm thời cho người đó ngoài hệ thống (chat, gặp
-          trực tiếp, v.v.).
+          trực tiếp, v.v.) - trừ khi quản trị viên đó có hộp thư đang hoạt động
+          (xem <em>Hộp thư quản trị & Yêu cầu</em>), thì WikiHub tự động gửi
+          thông tin đăng nhập qua email, không cần thêm thao tác nào (form Tạo
+          người dùng sẽ báo trước khi việc này xảy ra; đặt mật khẩu mới cho tài
+          khoản đã có, thăng cấp ai đó lên Quản trị viên trong Edit user, hay
+          thêm/gỡ ai đó khỏi tab Access của một space cũng vậy). Yêu cầu gửi từ
+          trang đăng nhập cũng hoạt động tương tự: quản trị viên có hộp thư có
+          thể tạo tài khoản ngay từ trang Yêu cầu và để WikiHub gửi mail tên
+          đăng nhập và mật khẩu cho người đó.
         </Callout>
 
         <Screenshot
@@ -2712,6 +2779,204 @@ export const sectionsVi: HelpSection[] = [
     ),
   },
   {
+    id: "admin-mail",
+    title: "Hộp thư quản trị & Yêu cầu",
+    category: "Administration",
+    description:
+      "Cho phép người không đăng nhập được xin tài khoản hoặc đặt lại mật khẩu từ quản trị viên, và đọc các yêu cầu đó ngay trong ứng dụng.",
+    keywords: [
+      "mail",
+      "email",
+      "smtp",
+      "inbox",
+      "hộp thư",
+      "thông báo",
+      "chuông",
+      "yêu cầu",
+      "mật khẩu",
+      "hết hạn",
+      "tài khoản",
+      "liên hệ",
+    ],
+    body: (
+      <>
+        <p>
+          Người chưa có tài khoản, hoặc quên mật khẩu, không thể đăng nhập để nhờ giúp đỡ.
+          Liên kết <strong>Liên hệ quản trị viên</strong> trên trang đăng nhập cho họ một biểu
+          mẫu ngắn (các ô có dấu * đỏ là bắt buộc: tên và email; nội dung không bắt buộc).
+          WikiHub lưu yêu cầu, sau đó gửi mail tới các hộp thư quản trị của bạn và
+          hiển thị nó ở trang <strong>Yêu cầu</strong> của họ.
+        </p>
+
+        <p className="mt-3">
+          <strong>Thiết lập hộp thư</strong> (Quản trị viên hệ thống): mở{" "}
+          <strong>Administration → Hộp thư quản trị</strong> và chọn{" "}
+          <strong>Thêm hộp thư</strong>.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Tài khoản quản trị</strong>: tài khoản có trang Yêu cầu nhận các yêu cầu. Chỉ
+            có thể gắn với Quản trị viên hệ thống, và mỗi tài khoản có một hộp thư. Nếu tài
+            khoản đó bị vô hiệu hóa, hộp thư của nó tự động ngừng nhận yêu cầu.
+          </li>
+          <li>
+            <strong>Địa chỉ hộp thư</strong>, <strong>Tên người gửi</strong> và{" "}
+            <strong>Nhà cung cấp</strong>: tên người gửi là tùy chọn, là tên hiển thị làm người
+            gửi của các email yêu cầu trong ứng dụng thư của bạn (để trống sẽ hiện địa chỉ). Chọn
+            Gmail hoặc Outlook để điền sẵn máy chủ, hoặc chọn <em>Khác</em> rồi tự nhập{" "}
+            <strong>Máy chủ SMTP</strong>, <strong>Cổng</strong> và <strong>Bảo mật</strong>{" "}
+            (STARTTLS thường là cổng 587, SSL/TLS là cổng 465). Mỗi hộp thư có cấu hình riêng.
+          </li>
+          <li>
+            <strong>Tên đăng nhập</strong> và <strong>Mật khẩu</strong>: để trống tên đăng nhập
+            để dùng địa chỉ hộp thư. Mật khẩu được lưu mã hóa và không bao giờ hiển thị lại. Khi
+            bấm <strong>Lưu</strong>, WikiHub đăng nhập thử vào máy chủ mail bằng các thông tin
+            này và chỉ lưu nếu thành công. Nếu không, sẽ không lưu gì và hộp thoại giải thích lỗi
+            bằng lời dễ hiểu (câu trả lời gốc của máy chủ nằm trong <em>Chi tiết kỹ thuật</em>) để
+            bạn sửa lại rồi thử tiếp. Gmail cần mật khẩu ứng dụng chứ không phải mật khẩu Google
+            thông thường.
+          </li>
+        </ul>
+        <p className="mt-2">
+          Mỗi hộp thư tự gửi mail cho chính nó, nên với ba hộp thư, một yêu cầu đến sẽ tạo ba
+          mail. Người gửi yêu cầu chỉ được báo có sự cố gửi mail khi <em>không hộp thư nào</em>{" "}
+          liên lạc được.
+        </p>
+        <p className="mt-2 text-sm">
+          Chỉ chính chủ hộp thư, hoặc quản trị viên cấp cao (built-in), mới có quyền sửa cấu
+          hình, kiểm tra kết nối, đổi mật khẩu hay xoá hộp thư đó - một Quản trị viên hệ thống
+          khác nhìn thấy nó trong danh sách nhưng các nút thao tác đều bị mờ đi (disabled), nên
+          không xảy ra chuyện sửa nhầm hay cố tình phá hộp thư của người khác.
+        </p>
+
+        <p className="mt-3">
+          <strong>Trạng thái</strong> trên trang Hộp thư quản trị:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Hoạt động</strong>: lần đăng nhập hoặc gửi gần nhất thành công.
+          </li>
+          <li>
+            <strong>Cần mật khẩu mới</strong>: máy chủ mail từ chối mật khẩu, thường vì đã hết
+            hạn.
+          </li>
+          <li>
+            <strong>Không kết nối được</strong> / <strong>Lỗi máy chủ</strong>: không liên lạc
+            được với máy chủ hoặc máy chủ từ chối thư. Không phải vấn đề mật khẩu.
+          </li>
+          <li>
+            <strong>Đã tắt</strong> / <strong>Tài khoản bị vô hiệu</strong>: không nhận yêu
+            cầu. Dùng nút nguồn để bật hoặc tắt một hộp thư.
+          </li>
+        </ul>
+
+        <p className="mt-3">
+          <strong>Khi mật khẩu hộp thư hết hạn.</strong> Nhiều nhà cung cấp mail bắt đổi mật
+          khẩu vài tháng một lần. WikiHub đăng nhập vào mọi hộp thư đang bật mỗi giờ một lần.
+          Khi máy chủ từ chối mật khẩu, chủ hộp thư sẽ thấy một thanh cảnh báo đỏ ở đầu mọi
+          trang với nút <strong>Cập nhật mật khẩu</strong> (cũng có ở biểu tượng chìa khóa trên
+          trang Hộp thư quản trị). Mật khẩu mới được thử với máy chủ mail trước khi lưu. Các
+          quản trị viên khác không thấy thanh này - việc sửa là của chủ hộp thư.
+        </p>
+
+        <p className="mt-3">
+          <strong>Pool hộp thư.</strong> Mọi hộp thư còn hoạt động trên trang này - được đánh dấu{" "}
+          <strong>Trong pool</strong> bên cạnh trạng thái - đều có thể gửi thay cho quản trị viên
+          chưa có hộp thư riêng. Các mail tự động nói ở trang này, cũng như ở{" "}
+          <em>Người dùng</em> và tab <strong>Access</strong> của một space, vẫn được gửi dù người
+          thực hiện thao tác chưa từng cấu hình hộp thư riêng (hoặc hộp thư của họ đang mất kết
+          nối): WikiHub sẽ chuyển tiếp mail qua một hộp thư trong pool, được chọn tự động. Mail
+          vẫn ký tên đúng người thực hiện thao tác, và khi ai đó bấm trả lời thì mail sẽ đến đúng
+          người đó, không phải chủ hộp thư vừa chuyển tiếp hộ. Chỉ khi pool rỗng - không còn hộp
+          thư nào trong hệ thống đang kết nối - thì mail mới thực sự không gửi được.
+        </p>
+
+        <p className="mt-3">
+          <strong>Trang Yêu cầu và chuông thông báo.</strong> Tài khoản gắn với một hộp thư đang
+          bật có mục <strong>Yêu cầu</strong> ngay dưới Trang chủ và Spaces trên thanh bên, kèm số yêu cầu chưa
+          đọc. Mỗi yêu cầu mới cũng đến <strong>chuông</strong> trên thanh trên cùng như mọi
+          thông báo khác (xem <em>Thông báo</em>).
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            Lọc theo <strong>Tất cả</strong>, <strong>Chưa đọc</strong>,{" "}
+            <strong>Đang mở</strong> hoặc <strong>Đã xử lý</strong>; mỗi tab cho biết có bao nhiêu
+            yêu cầu. Danh sách <strong>Loại yêu cầu</strong> thu hẹp về yêu cầu tạo tài khoản, đặt
+            lại mật khẩu hoặc yêu cầu khác, và số trên các tab đổi theo. Dùng <strong>Số dòng</strong>{" "}
+            và các mũi tên dưới bảng để chuyển trang. Mở một yêu cầu bằng{" "}
+            <strong>Xem chi tiết</strong> sẽ đánh dấu đã đọc; <strong>Đánh dấu chưa đọc</strong>{" "}
+            hoàn tác, và <strong>Đánh dấu tất cả đã đọc</strong> xử lý toàn bộ. Trạng thái đã
+            đọc là của riêng bạn.
+          </li>
+          <li>
+            <strong>Đánh dấu đã xử lý</strong> đóng yêu cầu cho tất cả những người nhận nó, để
+            hai quản trị viên không trả lời cùng một người. <strong>Mở lại</strong> hoàn tác.
+          </li>
+          <li>
+            Mỗi yêu cầu cho biết mail gửi tới hộp thư <em>của bạn</em> đã gửi được chưa. Yêu
+            cầu luôn được lưu ở trang Yêu cầu, kể cả khi không gửi được mail.
+          </li>
+        </ul>
+
+        <p className="mt-3">
+          <strong>Xử lý yêu cầu.</strong> Với yêu cầu tạo tài khoản hoặc đặt lại mật khẩu, cửa sổ
+          chi tiết có khung <strong>Xử lý yêu cầu này</strong> với hai cách làm:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Tự động.</strong> <em>Tự động tạo tài khoản</em> tạo tài khoản từ yêu cầu (vai
+            trò Member, tên đăng nhập lấy từ địa chỉ email, mật khẩu tự sinh) và gửi tên đăng nhập
+            cùng mật khẩu tới người gửi từ hộp thư của bạn. <em>Tự động đặt lại mật khẩu</em> đặt
+            một mật khẩu tự sinh cho tài khoản mà yêu cầu nêu tên và gửi mail cho họ. Bạn được hỏi
+            xác nhận trước, và yêu cầu được đánh dấu đã xử lý sau đó. Dù thế nào, kết quả cũng nằm
+            sau nút <strong>Hiện thông tin</strong> với nút <strong>Sao chép</strong> cho tên đăng
+            nhập và địa chỉ email - và nếu không gửi được mail thì có cả mật khẩu, chỉ hiện đúng
+            một lần đó và không được lưu lại - để bạn chuyển cho họ bằng cách khác.
+          </li>
+          <li>
+            <strong>Thủ công.</strong> <em>Tạo tài khoản thủ công</em> mở form Tạo người dùng quen
+            thuộc với thông tin của người gửi đã điền sẵn; <em>Đặt mật khẩu thủ công</em> cho bạn
+            tự chọn (hoặc tạo ngẫu nhiên) mật khẩu mới. WikiHub không gửi mail trong trường hợp
+            này, và yêu cầu được đánh dấu đã xử lý khi bạn lưu.
+          </li>
+        </ul>
+        <p className="mt-2 text-sm">
+          Đặt lại tự động chỉ được đề nghị khi email trong yêu cầu đúng là email đang có trên tài
+          khoản, để mật khẩu không bao giờ gửi tới một địa chỉ ai đó chỉ gõ vào. Nếu địa chỉ khác,
+          tài khoản bị vô hiệu hóa, hoặc là quản trị viên bạn không quản lý được, khung sẽ nói lý
+          do và chỉ còn cách thủ công. Yêu cầu đã xử lý thì không còn được đề nghị gì, nên không
+          thể làm hai lần. Cả hai thao tác cần quyền <strong>Manage users</strong> và được ghi vào
+          nhật ký kiểm toán của Người dùng.
+        </p>
+
+        <Callout variant="note" title="ĐỊA CHỈ MAIL CỦA NGƯỜI GỬI CHƯA ĐƯỢC XÁC MINH">
+          Ai cũng có thể nhập bất kỳ địa chỉ mail nào vào biểu mẫu. Hãy coi nó là cách để trả
+          lời, không phải bằng chứng về danh tính - hãy xác nhận danh tính trước khi tạo tài
+          khoản hoặc đặt lại mật khẩu cho ai đó. Mật khẩu gửi qua mail chỉ là tạm thời: hãy nhắc
+          họ đổi sau khi đăng nhập.
+        </Callout>
+
+        <p className="mt-3 text-sm">
+          <strong>Giao diện của các email.</strong> Thông báo mà hộp thư của bạn gửi cho chính
+          nó, và các thư cấp tài khoản hoặc mật khẩu cho người dùng, được trình bày theo màu và
+          tên của workspace, có bản văn bản thuần cho các ứng dụng thư không hiển thị được, và
+          kết thúc bằng chữ ký (với thư tài khoản và mật khẩu là tên và địa chỉ của chính bạn).
+          Hãy đặt <Code>WIKIHUB_PUBLIC_URL</Code> (ví dụ <Code>https://wiki.example.com</Code>)
+          để thư có nút <em>Mở Yêu cầu</em> hoặc <em>Đăng nhập</em>; để trống thì các nút
+          đó đơn giản là không có.
+        </p>
+
+        <Callout variant="tip" title="GIỮ KHÓA MÃ HÓA ỔN ĐỊNH">
+          Mật khẩu hộp thư được mã hóa bằng <Code>WIKIHUB_MAIL_ENCRYPTION_KEY</Code>, hoặc, khi
+          để trống, bằng khóa suy ra từ <Code>WIKIHUB_SECRET_KEY</Code>. Nếu giá trị đó đổi,
+          các mật khẩu đã lưu không đọc được nữa: các hộp thư sẽ hiện{" "}
+          <strong>Cần mật khẩu mới</strong> và mỗi chủ hộp thư nhập lại mật khẩu của mình.
+          Backend và worker phải dùng cùng một giá trị.
+        </Callout>
+      </>
+    ),
+  },
+  {
     id: "safe-operation",
     title: "Vận hành an toàn & Xử lý sự cố hệ thống",
     category: "Administration",
@@ -2754,11 +3019,14 @@ export const sectionsVi: HelpSection[] = [
 
         <Callout variant="note" title="ĐẶT KỲ VỌNG ĐÚNG: NHỮNG GÌ WIKIHUB CHƯA LÀM">
           Ba thứ mọi người thường đi tìm nhưng chưa tồn tại trong bản build này,
-          nên đáng để biết trước khi bạn đi tìm: không có luồng mời qua e-mail
-          (tài khoản được tạo trực tiếp - xem <em>Quản lý người dùng & Nhóm</em>),
-          không có hệ thống thông báo (không có biểu tượng chuông, không có cảnh
-          báo theo dõi trang/@-mention - thứ gần nhất là luồng hoạt động trên
-          Home và Recently visited/worked on), và không có trình xem nhật ký kiểm
+          nên đáng để biết trước khi bạn đi tìm: không có mail mời tự động
+          (tài khoản được tạo trực tiếp - xem <em>Quản lý người dùng & Nhóm</em>;
+          người không đăng nhập được có thể gửi yêu cầu từ trang đăng nhập, và quản trị viên có
+          thể trả lời từ trang Yêu cầu bằng cách tạo tài khoản và gửi mail thông tin đăng nhập, xem{" "}
+          <em>Hộp thư quản trị & Yêu cầu</em>), không có cảnh báo theo dõi
+          trang/@-mention (chuông báo về thay đổi quyền truy cập và tài khoản của chính bạn - với
+          hoạt động của trang, thứ gần nhất là luồng hoạt động trên Home và Recently
+          visited/worked on), và không có trình xem nhật ký kiểm
           toán trong ứng dụng (hành động của admin và việc giả lập tài khoản
           được ghi log phía server, nhưng chưa có nơi nào trong giao diện để
           duyệt log đó).

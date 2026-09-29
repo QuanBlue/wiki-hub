@@ -8,8 +8,10 @@ import {
   FolderCog,
   HardDrive,
   Home,
+  Inbox,
   Layers,
   LayoutGrid,
+  Mail,
   MoreHorizontal,
   PanelLeft,
   Pin,
@@ -23,6 +25,7 @@ import { usePathname } from "next/navigation";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 
+import { useMailSummary } from "@/components/layout/mail-summary-provider";
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -56,11 +59,25 @@ interface NavItem {
    * `create_space` unlocks none of them).
    */
   extraGlobalPermission?: "manage_users" | "manage_groups";
+  /** Only shown to an account linked to an active administrator mailbox: the
+   * Inbox holds their requests, and means nothing to anyone else. */
+  requiresMailbox?: boolean;
+  /** Draws a thin rule above this item, to start a new group in the list. */
+  startsGroup?: boolean;
 }
 
 const OVERVIEW_NAV: NavItem[] = [
   { href: "/", labelKey: "nav.home", icon: Home, permission: "home" },
   { href: "/spaces", labelKey: "nav.spaces", icon: LayoutGrid, permission: "spaces" },
+  // Personal, like the rest of Overview: the administrator's own requests, not
+  // a system setting. Only accounts with a mailbox have one.
+  {
+    href: "/admin/inbox",
+    labelKey: "nav.inbox",
+    icon: Inbox,
+    permission: "home",
+    requiresMailbox: true,
+  },
 ];
 
 const COLLECTION_PAGE_SIZES = [5, 10, 25, 50] as const;
@@ -70,6 +87,8 @@ const COLLECTION_PAGE_SIZES = [5, 10, 25, 50] as const;
 // real boundary); the sidebar toggle is about showing the whole section, not
 // picking sections apart one by one. Backup keeps its own dedicated
 // "backups" key since the admin settings screen already offers it separately.
+//
+// Two groups: people and content first, then the system's own machinery.
 const ADMIN_NAV: NavItem[] = [
   {
     href: "/admin/users",
@@ -96,18 +115,25 @@ const ADMIN_NAV: NavItem[] = [
     labelKey: "nav.settings",
     icon: SlidersHorizontal,
     permission: "settings",
+    startsGroup: true,
   },
   {
-    href: "/admin/backup",
-    labelKey: "nav.backup",
-    icon: Database,
-    permission: "backups",
+    href: "/admin/mail",
+    labelKey: "nav.mail",
+    icon: Mail,
+    permission: "settings",
   },
   {
     href: "/admin/storage",
     labelKey: "nav.storage",
     icon: HardDrive,
     permission: "settings",
+  },
+  {
+    href: "/admin/backup",
+    labelKey: "nav.backup",
+    icon: Database,
+    permission: "backups",
   },
 ];
 
@@ -121,15 +147,20 @@ function NavLink({
   active,
   collapsed,
   onNavigate,
+  badge = 0,
 }: {
   item: NavItem;
   active: boolean;
   collapsed: boolean;
   onNavigate: () => void;
+  /** An unread count shown beside the label (a dot when the rail is collapsed). */
+  badge?: number;
 }) {
   const { t } = useTranslation();
   const label = t(item.labelKey);
+  const accessibleLabel = badge > 0 ? `${label} (${badge})` : label;
   const className = cn(
+    "relative",
     // Colour and icon size match the ghost-button toolbar (components/ui/button.tsx):
     // muted by default, full-strength on hover. Weight stays light for an
     // inactive item and only picks up font-medium once selected, so the
@@ -164,12 +195,27 @@ function NavLink({
       className={className}
       aria-current={active ? "page" : undefined}
       // When collapsed the label is gone, so the icon needs an accessible name.
-      title={collapsed ? label : undefined}
-      aria-label={collapsed ? label : undefined}
+      title={collapsed ? accessibleLabel : undefined}
+      aria-label={collapsed || badge > 0 ? accessibleLabel : undefined}
       onClick={onNavigate}
     >
       <item.icon className="size-4 shrink-0" />
       {!collapsed && label}
+      {badge > 0 ? (
+        collapsed ? (
+          <span
+            aria-hidden
+            className="bg-danger absolute top-1 right-2 size-2 rounded-full"
+          />
+        ) : (
+          <span
+            aria-hidden
+            className="bg-danger text-danger-foreground ml-auto flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold"
+          >
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )
+      ) : null}
     </Link>
   );
 }
@@ -205,6 +251,7 @@ function NavSection({
   expanded,
   onToggle,
   withDivider = true,
+  badges,
 }: {
   title: string;
   items: NavItem[];
@@ -214,6 +261,8 @@ function NavSection({
   expanded: boolean;
   onToggle: () => void;
   withDivider?: boolean;
+  /** Unread counts by item href. */
+  badges?: Record<string, number>;
 }) {
   if (items.length === 0) return null;
 
@@ -225,13 +274,23 @@ function NavSection({
       ) : null}
       {expanded ? (
         <ul className="space-y-0.5">
-          {items.map((item) => (
-            <li key={item.href}>
+          {items.map((item, index) => (
+            <li
+              key={item.href}
+              // A rule between groups, but never above the first item shown
+              // (an earlier group may be hidden for this account).
+              className={cn(
+                item.startsGroup &&
+                  index > 0 &&
+                  "border-border mt-1.5 border-t pt-1.5",
+              )}
+            >
               <NavLink
                 item={item}
                 active={isNavItemActive(item, pathname)}
                 collapsed={collapsed}
                 onNavigate={onNavigate}
+                badge={badges?.[item.href]}
               />
             </li>
           ))}
@@ -425,14 +484,18 @@ export function Sidebar({
     user.is_superuser || user.global_permissions.includes("system_admin")
       ? "admin"
       : "member";
-  const overviewItems = OVERVIEW_NAV.filter((item) =>
-    (permissions[item.permission] ?? ["admin", "member"]).includes(role),
+  const { summary: mail } = useMailSummary();
+  const overviewItems = OVERVIEW_NAV.filter(
+    (item) =>
+      (!item.requiresMailbox || mail.has_mailbox) &&
+      (permissions[item.permission] ?? ["admin", "member"]).includes(role),
   );
   const adminItems = ADMIN_NAV.filter(
     (item) =>
-      (permissions[item.permission] ?? ["admin"]).includes(role) ||
-      (item.extraGlobalPermission &&
-        user.global_permissions.includes(item.extraGlobalPermission)),
+      (!item.requiresMailbox || mail.has_mailbox) &&
+      ((permissions[item.permission] ?? ["admin"]).includes(role) ||
+        (item.extraGlobalPermission &&
+          user.global_permissions.includes(item.extraGlobalPermission))),
   );
   const showFavoriteSpaces = (
     permissions.favorites ??
@@ -548,6 +611,7 @@ export function Sidebar({
           collapsed={railCollapsed}
           onNavigate={onNavigate}
           withDivider={false}
+          badges={{ "/admin/inbox": mail.unread_count }}
           expanded={expandedSections.overview}
           onToggle={() => toggleSection("overview")}
         />

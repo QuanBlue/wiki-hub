@@ -5,6 +5,7 @@
  */
 export const en = {
   common: {
+    moreInfo: "More info",
     previousPage: "Previous page",
     nextPage: "Next page",
     itemsPerPage: "Items per page",
@@ -67,6 +68,62 @@ export const en = {
     showInSidebarShort: "Show in sidebar",
     resizeSidebar: "Resize app sidebar",
     dragToResize: "Drag to resize sidebar",
+    inbox: "Requests",
+    mail: "Mailboxes",
+  },
+
+  notifications: {
+    title: "Notifications",
+    markAllRead: "Mark all as read",
+    markRead: "Mark as read",
+    markUnread: "Mark as unread",
+    empty: "You're all caught up",
+    emptyHint: "What happens to your account - access, groups, password changes - shows up here.",
+    unreadCount: "{count} new",
+    unread: "Unread",
+    someone: "An administrator",
+    loadError: "Could not load your notifications.",
+    openNotification: "Open",
+    openInbox: "Open Requests",
+    role: {
+      viewer: "viewer",
+      editor: "editor",
+      admin: "administrator",
+      member: "member",
+    },
+    permission: {
+      view: "view",
+      add: "add",
+      delete: "delete",
+      delete_own: "delete-own",
+      restrictions: "restrictions",
+      export: "export",
+      move: "move",
+      admin: "admin",
+    },
+    requestType: {
+      account: "account request",
+      password_reset: "password reset request",
+      other: "request",
+    },
+    kind: {
+      space_member_added: "**{actor}** added you to the space `{space}` as *{role}*.",
+      space_role_changed: "**{actor}** changed your role in `{space}` to *{role}*.",
+      space_member_removed: "**{actor}** removed you from the space `{space}`.",
+      space_permission_granted: "**{actor}** gave you *{permission}* access to `{space}`.",
+      space_permission_revoked: "**{actor}** removed your *{permission}* access to `{space}`.",
+      space_owner_added: "**{actor}** made you an owner of `{space}`.",
+      space_owner_removed: "**{actor}** removed you as an owner of `{space}`.",
+      group_member_added: "**{actor}** added you to the group `{group}`.",
+      group_member_removed: "**{actor}** removed you from the group `{group}`.",
+      password_reset_by_admin:
+        "**{actor}** reset your password. Sign in with the new one and change it in *Account settings*.",
+      role_changed: "**{actor}** changed your role to *{role}*.",
+      global_permissions_changed: "**{actor}** changed your workspace permissions.",
+      account_enabled: "**{actor}** switched your account back on.",
+      admin_request: "New *{type}* from `{name}`.",
+      unknown: "Something changed on your account.",
+    },
   },
 
   topbar: {
@@ -78,6 +135,13 @@ export const en = {
     themeAria: "Theme: {mode}. Click to change.",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
+    notifications: "Notifications",
+    notificationsUnread: "Notifications ({count} unread)",
+    notificationsEmpty: "No requests yet.",
+    newRequest: "New request waiting for you",
+    newRequestBody: "Someone asked an administrator for help.",
+    newRequestOpen: "Open Requests",
+    notificationsViewAll: "Open Requests",
   },
 
   userMenu: {
@@ -220,7 +284,8 @@ export const en = {
     footerTagline: "Made for focused teams that value clarity.",
     welcomeBack: "Welcome back",
     signInToContinue: "Sign in to continue to {siteName}.",
-    troubleSigningIn: "Trouble signing in? Contact your workspace admin.",
+    troubleSigningIn: "Trouble signing in?",
+    contactAdminLink: "Contact an administrator",
   },
 
   account: {
@@ -1294,6 +1359,281 @@ export const en = {
     adminBadge: "Admin",
     notSetDirectlyTitle:
       "Not set as Administrator directly - granted through a group or a permission override. See the Administrators tab for which.",
+  },
+
+  adminMail: {
+    permissionFeature: "Administrator mailboxes",
+    title: "Administrator mailboxes",
+    description:
+      "Requests from people who can't sign in are emailed to the mailboxes below. Together they also form a pool: an administrator with none of their own sends through another automatically, still signed as themselves.",
+    poolSummary:
+      "{count} of {total} mailboxes are in the pool right now - working, and available to send for an administrator who has none of their own.",
+    inPool: "In pool",
+    inPoolHelp:
+      "Healthy and active, so an administrator without a mailbox of their own can send through it automatically.",
+    peerProtected:
+      "Only {name} or the built-in super administrator can manage this mailbox.",
+    addMailbox: "Add mailbox",
+    editMailbox: "Edit mailbox",
+    emptyTitle: "No mailboxes yet",
+    emptyBody:
+      "Requests from the sign-in page are still saved, but nobody is emailed until a mailbox is added.",
+    columnAccount: "Account",
+    columnMailbox: "Mailbox",
+    columnServer: "Mail server",
+    columnStatus: "Status",
+    columnChecked: "Last checked",
+    columnActions: "Actions",
+    neverChecked: "Never",
+    statusOk: "Working",
+    statusAuthFailed: "Needs new password",
+    statusUnreachable: "Can't connect",
+    statusError: "Server error",
+    statusUnknown: "Not checked yet",
+    statusOff: "Switched off",
+    statusAccountDisabled: "Account disabled",
+    accountDisabledHint:
+      "This account is disabled, so its mailbox does not receive requests.",
+    checkNow: "Check now",
+    checkOk: "Signed in to the mail server.",
+    checkFailed: "Couldn't sign in: {reason}",
+    updatePassword: "Update password",
+    updatePasswordTitle: "New password for {email}",
+    updatePasswordDescription:
+      "Mail providers ask for a new password every few months. It is checked with the mail server before it is saved, and stored encrypted.",
+    newPassword: "New password",
+    passwordSaved: "Password updated.",
+    passwordRejected:
+      "The mail server rejected this password. Check it and try again.",
+    edit: "Edit",
+    switchOn: "Switch on",
+    switchOff: "Switch off",
+    remove: "Remove",
+    removeTitle: "Remove this mailbox?",
+    removeBody:
+      "{email} will stop receiving requests. Requests already received are kept.",
+    removed: "Mailbox removed.",
+    formAccount: "Administrator account",
+    formAccountPlaceholder: "Choose an account",
+    formAccountHelp:
+      "Requests appear on this account's Requests page. Disabling the account switches the mailbox off.",
+    formNoAccounts: "Every current administrator account already has a mailbox.",
+    formNoAccountsLink: "Create an administrator account",
+    formChooseAccount: "Choose which administrator account this mailbox belongs to.",
+    formEmailInvalid: "Enter a valid mailbox address.",
+    formHostInvalid: "Enter a valid SMTP server address.",
+    formPortInvalid: "Port must be a number from 1 to 65535.",
+    formPasswordRequired: "Enter the mailbox's password.",
+    formEmail: "Mailbox address",
+    formEmailPlaceholder: "ops@company.com",
+    formEmailHelp: "The address that receives requests and sends them to itself.",
+    formDisplayName: "Sender name",
+    formDisplayNamePlaceholder: "WikiHub Support",
+    formDisplayNameHelp:
+      "The name shown as the sender of the request emails in your mail client. Leave blank to show the address.",
+    formOptional: "optional",
+    formProvider: "Provider",
+    formProviderCustom: "Other / custom",
+    formHost: "SMTP server",
+    formHostPlaceholder: "smtp.company.com",
+    formHostHelp: "Outgoing mail server. Picking a provider fills this in.",
+    formPort: "Port",
+    formSecurity: "Security",
+    securityStarttls: "STARTTLS (usually port 587)",
+    securitySsl: "SSL/TLS (usually port 465)",
+    securityNone: "None (trusted network only)",
+    formUsername: "Username",
+    formUsernameHelp: "Leave blank to use the mailbox address.",
+    formPassword: "Password",
+    formPasswordPlaceholder: "Mailbox or app password",
+    formPasswordHelp:
+      "Gmail and Microsoft 365 usually need an app password, not your sign-in password.",
+    formPasswordKeep: "Leave blank to keep the current password.",
+    formEnabled: "Receive requests",
+    formEnabledHelp:
+      "The same switch as \"Switch on/off\" in the list. While off, this mailbox stops receiving requests until you turn it back on - nothing is deleted.",
+    created: "Mailbox added.",
+    checking: "Checking connection...",
+    notSavedTitle: "The connection test failed, so nothing was saved.",
+    technicalDetails: "Technical details",
+    errAppPassword:
+      "Gmail needs an app password here, not your normal Google password. Turn on 2-Step Verification for the Google account, create an app password at myaccount.google.com/apppasswords, and paste it in the Password field.",
+    errBasicAuthDisabled:
+      "Microsoft 365 has SMTP sign-in switched off for this mailbox. A Microsoft 365 administrator needs to enable Authenticated SMTP for it, or you can use an app password if your organisation allows them.",
+    errStarttlsRequired:
+      "This server insists on an encrypted connection. Set Security to STARTTLS (usually port 587) or SSL/TLS (usually port 465).",
+    errBadCredentials:
+      "The mail server did not accept the username or password. Check both, and if the password was changed or has expired, enter the new one.",
+    errUnknownHost:
+      "The mail server name could not be found. Check the SMTP server for typos.",
+    errRefused:
+      "The mail server refused the connection. Check the port, and whether a firewall blocks outgoing mail from this server.",
+    errTimeout:
+      "The mail server did not answer in time. Check the server and port, and whether the network allows outgoing mail.",
+    errDisconnected:
+      "The mail server closed the connection. This usually means the port and Security do not match: STARTTLS goes with port 587, SSL/TLS with port 465.",
+    errTls:
+      "The secure connection could not be set up. Check that Security matches the port: STARTTLS for 587, SSL/TLS for 465.",
+    errGeneric:
+      "The mail server reported a problem. See the technical details below, or check the settings and try again.",
+    updated: "Mailbox updated.",
+    saveError: "Could not save the mailbox.",
+    actionError: "That didn't work. Try again.",
+    loadError: "Could not load the mailboxes.",
+  },
+
+  adminInbox: {
+    title: "Requests",
+    noMessage: "No message written.",
+    description: "Requests from people who couldn't sign in.",
+    noMailboxTitle: "No mailbox is linked to your account",
+    noMailboxBody:
+      "This page shows requests for the administrator mailbox linked to your account. Ask a system administrator to add one under Mailboxes.",
+    filterAria: "Filter requests",
+    filterAll: "All ({count})",
+    filterUnread: "Unread ({count})",
+    filterOpen: "Open ({count})",
+    filterResolved: "Resolved ({count})",
+    typeFilter: "Request type",
+    typeAll: "All types",
+    markAllRead: "Mark all as read",
+    empty: "No requests here.",
+    columnFrom: "From",
+    columnType: "Type",
+    columnMessage: "Message",
+    columnReceived: "Received",
+    columnEmail: "Email",
+    kindAccount: "Account request",
+    kindPasswordReset: "Password reset",
+    kindOther: "Other request",
+    unread: "Unread",
+    resolved: "Resolved",
+    emailSent: "Emailed",
+    emailFailed: "Not emailed",
+    viewDetails: "View details",
+    detailsTitle: "Request from {name}",
+    fieldName: "Name",
+    fieldEmail: "Email",
+    fieldUsername: "Username",
+    fieldReceived: "Received",
+    fieldMessage: "Message",
+    unverifiedEmail: "As typed - not verified.",
+    deliverySent: "Emailed to {email}.",
+    deliveryFailed: "Could not email {email}.",
+    actionsTitle: "Handle this request",
+    actionsResolved: "This request has been resolved.",
+    actionsLoadError: "Could not check what can be done for this request.",
+    existingAccountNote:
+      "An account (“{username}”) already uses this email, so both actions reset its password instead of creating a new one.",
+    noAccountForResetNote:
+      "No account named “{username}” exists yet, so both actions create one instead of resetting a password.",
+    autoCreate: "Create account automatically",
+    manualCreate: "Create account manually",
+    autoReset: "Reset password automatically",
+    manualReset: "Set password manually",
+    autoCreateDetail:
+      "Creates the account “{username}” as a Member from the details in this request, generates a password and emails the sign-in details to {email}.",
+    manualCreateDetail:
+      "Opens the Create user form with these details filled in. You choose the password and pass it on yourself.",
+    autoResetDetail:
+      "Generates a new password for “{username}” and emails it to {email}, the address on the account.",
+    manualResetDetail:
+      "Choose the new password yourself and pass it on yourself. WikiHub does not email it.",
+    blockedEmailInUse:
+      "An account with {email} already exists, so none is created automatically. Look for it in Users; if it is theirs, reset the password instead.",
+    blockedEmailInvalid:
+      "The email address in this request cannot be used for an account.",
+    blockedEmailMismatch:
+      "The email in this request ({email}) is not the one on the account “{username}” ({accountEmail}). Anyone can type someone else's address, so a password is never emailed to it automatically. Confirm who this is first, then set the password manually.",
+    blockedAccountInactive:
+      "The account “{username}” is disabled. Enable it in Users first.",
+    blockedAccountProtected:
+      "This is the built-in administrator account, which cannot be changed here.",
+    blockedPeerAdmin:
+      "Only the built-in super administrator can change another administrator's password.",
+    noAccountToReset:
+      "There is no matching account to set a password for.",
+    confirmCreateTitle: "Create this account?",
+    confirmCreateBody:
+      "“{username}” will be created for {name} and the sign-in details emailed to {email}.",
+    confirmCreateAction: "Create and email",
+    confirmResetTitle: "Reset this password?",
+    confirmResetBody:
+      "A new password will be generated for “{username}” and emailed to {email}. The current password stops working immediately.",
+    confirmResetAction: "Reset and email",
+    doneCreated:
+      "Account `{username}` created. The sign-in details were emailed to `{email}`.",
+    doneReset:
+      "Password for `{username}` reset. The new password was emailed to `{email}`.",
+    emailFailedCreated:
+      "The account `{username}` was created, but the email could not be sent.",
+    emailFailedReset:
+      "The password for `{username}` was reset, but the email could not be sent.",
+    emailFailedHint:
+      "Pass this password on another way. It is shown only now and is not stored.",
+    passwordLabel: "Temporary password",
+    showDetails: "Show details",
+    hideDetails: "Hide details",
+    copy: "Copy",
+    copied: "Copied.",
+    copyFailed: "Could not copy. Select it and copy by hand.",
+    passwordDialogTitle: "Set a password for {username}",
+    passwordDialogBody:
+      "WikiHub does not email this one. Pass it on securely; they can change it after signing in.",
+    newPassword: "New password",
+    generatePassword: "Generate",
+    setPassword: "Set password",
+    passwordSet: "Password for `{username}` updated.",
+    markResolved: "Mark resolved",
+    reopen: "Reopen",
+    markUnread: "Mark as unread",
+    loadError: "Could not load the requests.",
+    actionError: "That didn't work. Try again.",
+  },
+
+  contactAdmin: {
+    title: "Contact an administrator",
+    description:
+      "Can't sign in, need an account or forgot your password? Send a note to the administrators.",
+    kind: "What do you need?",
+    kindAccount: "Create an account for me",
+    kindPasswordReset: "Reset my password",
+    kindOther: "Something else",
+    name: "Your name",
+    email: "Your email",
+    emailHelp: "Administrators reply to this address.",
+    emailInvalid: "Enter a valid email address.",
+    username: "Username",
+    usernameHelp: "If you already have an account.",
+    usernameHelpRequired: "Your account's username, so we can find it.",
+    message: "Message",
+    optional: "optional",
+    messagePlaceholder: "Anything the administrators should know (optional).",
+    submit: "Send request",
+    sending: "Sending...",
+    backToSignIn: "Back to sign in",
+    successTitle: "Request sent",
+    successBody:
+      "An administrator will get back to you by email as soon as they can.",
+    summaryType: "Request",
+    summaryName: "Name",
+    summaryUsername: "Username",
+    summaryEmail: "Reply to",
+    deliveryProblemTitle: "The email couldn't be delivered",
+    deliveryProblemBody:
+      "Your request was recorded, but the email to the administrators didn't go through. Please tell your administrator directly so they can check it.",
+    noMailboxBody:
+      "Your request was recorded, but no administrator mailbox is set up yet. Please tell your administrator directly.",
+    sendAnother: "Send another request",
+    rateLimited: "Too many requests. Please wait a while and try again.",
+    error: "Could not send your request. Try again.",
+  },
+
+  mailBanner: {
+    passwordTitle: "Your mailbox needs a new password",
+    passwordBody:
+      "The mail server rejected the password for {email}, which has probably expired. Until it is updated you will not receive requests by email.",
+    updateNow: "Update password",
   },
 
   help: {

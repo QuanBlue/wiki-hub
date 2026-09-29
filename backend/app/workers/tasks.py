@@ -11,6 +11,7 @@ from typing import Any
 
 from app.core.logging import get_logger
 from app.db.session import session_scope
+from app.modules.admin_mail.service import AdminMailService
 from app.modules.backup.jobs import reap_abandoned_export_jobs
 from app.modules.backup.jobs import run_backup_job as execute_backup_job
 from app.modules.backup.automated import (
@@ -76,6 +77,27 @@ async def run_document_import(ctx: dict[str, Any], job_id: str) -> None:
 
     async with session_scope() as session:
         await execute_document_import(session, get_storage(), uuid.UUID(job_id))
+
+
+async def check_admin_mailboxes(ctx: dict[str, Any]) -> None:
+    """Hourly: sign in to every active administrator mailbox.
+
+    Mail providers make people change their password every few months, and the
+    first sign that one has expired would otherwise be a user's request failing
+    to reach anyone. The result is recorded on the mailbox, and the owner's
+    banner reads it from there. Idempotent: it only ever overwrites the latest
+    status.
+    """
+    async with session_scope() as session:
+        summary = await AdminMailService(session).run_healthcheck()
+    if summary.needs_attention:
+        logger.warning(
+            "admin_mailboxes_need_attention",
+            checked=summary.checked,
+            needs_attention=summary.needs_attention,
+        )
+    else:
+        logger.info("admin_mailboxes_checked", checked=summary.checked)
 
 
 async def reap_backup_jobs(ctx: dict[str, Any], *, every_running_job: bool = False) -> None:

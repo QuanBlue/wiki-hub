@@ -22,6 +22,7 @@ from app.core.logging import get_logger
 from app.core.security import hash_password, needs_rehash, verify_password
 from app.models.audit import AuditAction
 from app.models.user import User
+from app.modules.notifications.service import notify
 from app.repositories.user import UserRepository
 from app.schemas.user import SelfProfileUpdate, UserCreate, UserUpdate
 from app.services.audit import AuditService, ClientInfo
@@ -418,6 +419,19 @@ class AuthService:
                 entity_id=user.id,
                 entity_label=user.username,
             )
+        # Tell the person, in their own bell, about what changed for them.
+        if "is_active" in diff and user.is_active:
+            await notify(self.session, user.id, "account_enabled", actor=self.actor)
+        if "is_superuser" in diff:
+            await notify(
+                self.session,
+                user.id,
+                "role_changed",
+                params={"role": "admin" if user.is_superuser else "member"},
+                actor=self.actor,
+            )
+        if overrides:
+            await notify(self.session, user.id, "global_permissions_changed", actor=self.actor)
         if "is_superuser" in diff:
             await self.audit.record(
                 AuditAction.user_role_changed,
@@ -538,6 +552,9 @@ class AuthService:
         user.password_hash = hash_password(new_password)
         await self.session.flush()
         logger.info("password_reset", username=user.username)
+        # An administrator changing it for them is worth a line in their bell
+        # (a person resetting their own is not - `notify` skips that).
+        await notify(self.session, user.id, "password_reset_by_admin", actor=self.actor)
         await self.audit.record(
             AuditAction.user_password_reset,
             entity_type="user",

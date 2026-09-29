@@ -57,6 +57,11 @@ class AuditAction(StrEnum):
     backup_exported = "backup_exported"
     backup_imported = "backup_imported"
 
+    admin_mailbox_created = "admin_mailbox_created"
+    admin_mailbox_updated = "admin_mailbox_updated"
+    admin_mailbox_password_updated = "admin_mailbox_password_updated"
+    admin_mailbox_deleted = "admin_mailbox_deleted"
+
 
 class AuditLog(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "audit_logs"

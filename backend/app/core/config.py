@@ -82,6 +82,24 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     cors_origins: CsvList = Field(default_factory=lambda: ["http://localhost:3000"])
     login_rate_limit: str = "10/minute"
+    # --- admin mail (public "contact an administrator" form) ---
+    # Unauthenticated, and every accepted request sends one email per admin
+    # mailbox, so it is throttled per client and again across all clients.
+    contact_admin_rate_limit: str = "5/hour"
+    contact_admin_global_rate_limit: str = "100/hour"
+    #: Where people reach WikiHub in a browser, e.g. ``https://wiki.example.com``
+    #: (no trailing slash needed). Used for the links in emails - "Open the
+    #: Inbox" and "Sign in". Blank leaves those links out rather than guessing.
+    public_url: str = ""
+    #: Fernet key (urlsafe base64, 32 bytes) protecting stored SMTP passwords.
+    #: Blank derives one from ``secret_key``, which then must never change or
+    #: every stored mailbox password becomes unreadable and must be re-entered.
+    mail_encryption_key: str = ""
+    #: Per-mailbox ceiling for one send. Kept well under the frontend proxy's
+    #: request limit because the requester is waiting on the answer.
+    mail_send_timeout_seconds: float = 8.0
+    #: Per-mailbox ceiling for a connect-and-authenticate check.
+    mail_verify_timeout_seconds: float = 15.0
     secure_cookies: bool = False
     auth_provider: Literal["local", "oidc"] = "local"
 

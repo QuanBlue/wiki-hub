@@ -46,13 +46,14 @@ export const sectionsEn: HelpSection[] = [
           <li>
             <strong>Top Navigation Bar</strong>: the search pill (opens the same{" "}
             <Kbd>Ctrl</Kbd>+<Kbd>K</Kbd> modal), a <strong>Help</strong> link (book
-            icon, takes you here), the Light/Dark theme toggle, and your user menu.
-            WikiHub has no notification bell - there is no push/alert system yet (see
-            the note in <em>Safe Operation &amp; System Troubleshooting</em>).
+            icon, takes you here), a <strong>notification bell</strong> (what has
+            happened to you - see <em>Notifications</em>), the Light/Dark theme toggle, and
+            your user menu.
           </li>
           <li>
             <strong>Left Sidebar Rail</strong>: <strong>Home</strong> and{" "}
-            <strong>Spaces</strong>, then your <strong>Most visited</strong> spaces -
+            <strong>Spaces</strong> (plus <strong>Requests</strong> for accounts linked to an
+            admin mailbox), then your <strong>Most visited</strong> spaces -
             an automatic, server-ranked list based on which spaces you actually open,
             not a manually pinned one - and, for admins, an{" "}
             <strong>Administration</strong> section.
@@ -1383,6 +1384,62 @@ export const sectionsEn: HelpSection[] = [
     ),
   },
   {
+    id: "notifications",
+    title: "Notifications: the Bell and Pop-ups",
+    category: "Account",
+    description:
+      "Hear about what happens to your account - access, groups, password resets - without reloading the page.",
+    keywords: ["notification", "bell", "toast", "alert", "unread", "popup"],
+    body: (
+      <>
+        <p>
+          The <strong>bell</strong> in the top bar tells you what has happened{" "}
+          <em>to you</em>. It is there for everyone, not only administrators. A red number on
+          it counts what you have not read yet.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">What you are told about:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>Being added to, removed from, or given a different role in a space.</li>
+          <li>Being given or losing a specific permission on a space, or becoming (or ceasing to be) a space owner.</li>
+          <li>Being added to or removed from a group.</li>
+          <li>An administrator resetting your password.</li>
+          <li>Your workspace role or permissions being changed, or your account being switched back on.</li>
+          <li>For administrators with a mailbox: a new request from the sign-in page.</li>
+        </ul>
+        <p className="mt-2 text-sm">
+          Something you do yourself does not notify you. Notifications are shown in your own
+          language and only you can see yours.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Using the bell:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Open it to see the latest, newest first. Each has a coloured icon - green for good
+            news (you were added or given access), blue for a change, amber for something taken
+            away or a password reset - and how long ago it happened.
+          </li>
+          <li>
+            Click one to read it: if it leads somewhere (a space, Requests) you go there, and it
+            stops counting as unread. <strong>Mark all as read</strong> clears the lot.
+          </li>
+        </ul>
+
+        <p className="mt-3 font-semibold text-foreground">Pop-ups:</p>
+        <p className="text-sm">
+          A new notification also appears as a pop-up in the bottom-right corner within a few
+          seconds - you do not need to reload. Every message the app shows (saved, failed, and so
+          on) uses the same style, coloured for what it says: green for success, blue for
+          information, amber for a warning, red for an error. Several at once form a compact
+          stack; hover over it and they line up in a column, none overlapping, so you can read
+          each in full. Each pop-up has its own ten-second timer, shown by the bar under its
+          text: hovering a pop-up pauses that one only, and the timer carries on from where it
+          stopped when you move away. When it runs out, the pop-up slides off to the right. Use the small <strong>x</strong> to close one sooner.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "language-switching",
     title: "Switching the Interface Language",
     category: "Account",
@@ -2005,10 +2062,19 @@ export const sectionsEn: HelpSection[] = [
     body: (
       <>
         <Callout variant="important" title="THERE IS NO E-MAIL INVITE FLOW">
-          WikiHub does not send invitation e-mails. An administrator creates every
+          WikiHub does not send invitation e-mails on its own. An administrator creates every
           account directly under <strong>Administration &gt; Users &gt; Create
           user</strong> and shares the temporary password with that person out of band
-          (chat, in person, etc.).
+          (chat, in person, etc.) - unless the administrator has a working mailbox (see{" "}
+          <em>Administrator Mail &amp; Requests</em>), in which case WikiHub
+          e-mails the sign-in details automatically, no extra step needed
+          (the Create user form says so when it is about to happen; the same
+          applies when setting a new password for an existing account,
+          promoting someone to Administrator in Edit user, and adding or
+          removing someone in a space Access tab). A request sent from the
+          sign-in page works the same way: an administrator with a mailbox
+          can create the account from their Requests page and have WikiHub
+          e-mail the username and password to the person.
         </Callout>
 
         <Screenshot
@@ -2555,6 +2621,209 @@ export const sectionsEn: HelpSection[] = [
     ),
   },
   {
+    id: "admin-mail",
+    title: "Administrator Mail & Requests",
+    category: "Administration",
+    description:
+      "Let people who can't sign in ask an administrator for an account or a password reset, and read those requests in the app.",
+    keywords: [
+      "mail",
+      "email",
+      "smtp",
+      "inbox",
+      "notification",
+      "bell",
+      "request",
+      "password",
+      "expired",
+      "account",
+      "contact",
+    ],
+    body: (
+      <>
+        <p>
+          Someone who has no account yet, or has forgotten their password, cannot sign in to
+          ask for help. The <strong>Contact an administrator</strong> link on the sign-in page
+          gives them a short form (fields marked with a red * are required: name and email; the
+          message is optional). WikiHub saves the request, then e-mails it to your
+          administrator mailboxes and shows it on their <strong>Requests</strong> page.
+        </p>
+
+        <p className="mt-3">
+          <strong>Set up a mailbox</strong> (System Administrators): open{" "}
+          <strong>Administration → Mailboxes</strong> and choose <strong>Add mailbox</strong>.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Administrator account</strong>: the account whose Requests page receives the
+            requests. Only System Administrators can be linked, and each account has one
+            mailbox. If that account is disabled, its mailbox stops receiving requests
+            automatically.
+          </li>
+          <li>
+            <strong>Mailbox address</strong>, <strong>Sender name</strong> and{" "}
+            <strong>Provider</strong>: the sender name is optional and is the name shown as the
+            sender of the request emails in your mail client (leave it blank to show the
+            address). Pick Gmail or Outlook to fill in the server, or choose <em>Other</em> and
+            enter the{" "}
+            <strong>SMTP server</strong>, <strong>Port</strong> and <strong>Security</strong>{" "}
+            (STARTTLS is usually port 587, SSL/TLS port 465) yourself. Each mailbox has its own
+            settings.
+          </li>
+          <li>
+            <strong>Username</strong> and <strong>Password</strong>: leave the username blank to
+            use the address. The password is stored encrypted and is never shown again. When you
+            press <strong>Save</strong>, WikiHub first signs in to the mail server with these
+            settings, and only saves if that works. If it does not, nothing is saved and the
+            dialog explains what went wrong in plain words (with the server&apos;s own reply under{" "}
+            <em>Technical details</em>), so you can correct the details and try again. Gmail
+            needs an app password rather than your normal Google password.
+          </li>
+        </ul>
+        <p className="mt-2">
+          Each mailbox e-mails a request to itself, so with three mailboxes an incoming request
+          produces three e-mails. The requester is only told about a delivery problem when{" "}
+          <em>none</em> of them could be reached.
+        </p>
+        <p className="mt-2 text-sm">
+          Only a mailbox&apos;s own account, or the built-in super administrator, can edit its
+          settings, test it, change its password or remove it - another System Administrator
+          seeing it in this list has those buttons greyed out, so a mistake (or a deliberate one)
+          on someone else&apos;s mailbox is not possible.
+        </p>
+
+        <p className="mt-3">
+          <strong>Status</strong> on the Mailboxes page:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Working</strong>: the last sign-in or send succeeded.
+          </li>
+          <li>
+            <strong>Needs new password</strong>: the mail server rejected the password, usually
+            because it expired.
+          </li>
+          <li>
+            <strong>Can&apos;t connect</strong> / <strong>Server error</strong>: the server was
+            unreachable or refused the message. Not a password problem.
+          </li>
+          <li>
+            <strong>Switched off</strong> / <strong>Account disabled</strong>: not receiving
+            requests. Use the power button to switch a mailbox on or off.
+          </li>
+        </ul>
+
+        <p className="mt-3">
+          <strong>When a mailbox password expires.</strong> Many mail providers require a new
+          password every few months. WikiHub signs in to every active mailbox once an hour. When
+          the server rejects a password, the mailbox&apos;s owner sees a red banner across the
+          top of every page with an <strong>Update password</strong> button (also available as
+          the key icon on the Mailboxes page). The new password is tested with the mail server
+          before it is saved. Other administrators do not see the banner - it is the owner&apos;s
+          to fix.
+        </p>
+
+        <p className="mt-3">
+          <strong>The mailbox pool.</strong> Every working mailbox on this page - marked{" "}
+          <strong>In pool</strong> next to its status - also stands in for administrators who have
+          none of their own. The automatic e-mails this page describes, and the ones in{" "}
+          <em>Users</em> and a space&apos;s <strong>Access</strong> tab, still go out even when the
+          administrator making the change has never set up a mailbox (or theirs is not connected
+          right now): WikiHub relays the message through one mailbox from the pool instead, chosen
+          automatically. The message is still signed with the acting administrator&apos;s own
+          name, and a reply reaches them, not whoever&apos;s mailbox happened to relay it. Nothing
+          goes out at all only when the pool is empty, too - no mailbox in the workspace is
+          currently connected.
+        </p>
+
+        <p className="mt-3">
+          <strong>Requests page and notification bell.</strong> An account linked to an active
+          mailbox gets a <strong>Requests</strong> entry under Home and Spaces in the sidebar, with a
+          count of unread requests. Each new request also arrives in the <strong>bell</strong> in the top
+          bar, like any other notification (see <em>Notifications</em>).
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            Filter by <strong>All</strong>, <strong>Unread</strong>, <strong>Open</strong> or{" "}
+            <strong>Resolved</strong>; each tab shows how many requests it holds. The{" "}
+            <strong>Request type</strong> list narrows everything to account requests, password
+            resets or other requests, and the tab numbers follow it. Use <strong>Rows</strong> and
+            the arrows under the table to page through. Opening a request with{" "}
+            <strong>View details</strong> marks
+            it read; <strong>Mark as unread</strong> undoes that, and{" "}
+            <strong>Mark all as read</strong> clears the lot. Read state is your own.
+          </li>
+          <li>
+            <strong>Mark resolved</strong> closes a request for everyone who received it, so two
+            administrators do not answer the same person. <strong>Reopen</strong> undoes it.
+          </li>
+          <li>
+            Each request shows whether the e-mail to <em>your</em> mailbox was sent. A request is
+            always saved on the Requests page, even when the e-mail could not be delivered.
+          </li>
+        </ul>
+
+        <p className="mt-3">
+          <strong>Handle a request.</strong> For an account or password-reset request, the
+          details window has a <strong>Handle this request</strong> box with two ways to do it:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Automatically.</strong> <em>Create account automatically</em> creates the
+            account from the request (a Member, with a username taken from the e-mail address, and
+            a generated password) and e-mails the username and password to the requester from your
+            mailbox. <em>Reset password automatically</em> sets a generated password on the
+            account the request names and e-mails it. You are asked to confirm first, and the
+            request is marked resolved afterwards. Either way, the result sits behind a{" "}
+            <strong>Show details</strong> toggle with a <strong>Copy</strong> button for the
+            username and address - and, if the e-mail could not be sent, the password too, shown
+            only that once and never stored - so you can pass any of them on another way.
+          </li>
+          <li>
+            <strong>Manually.</strong> <em>Create account manually</em> opens the usual Create user
+            form with the requester&apos;s details already filled in; <em>Set password manually</em>{" "}
+            lets you choose (or generate) the new password yourself. WikiHub does not e-mail
+            anything in this case, and the request is marked resolved once you save.
+          </li>
+        </ul>
+        <p className="mt-2 text-sm">
+          The automatic reset is only offered when the e-mail in the request is the one already on
+          the account, so a password is never sent to an address someone merely typed. If the
+          address differs, the account is disabled, or it is an administrator you cannot manage,
+          the box says why and only the manual route is left. Nothing is offered for a request
+          that is already resolved, so it cannot be done twice. Both actions need the{" "}
+          <strong>Manage users</strong> permission and appear in the Users audit trail.
+        </p>
+
+        <Callout variant="note" title="THE REQUESTER'S ADDRESS ISN'T VERIFIED">
+          Anyone can type any e-mail address into the form. Treat it as a way to reply, not as
+          proof of who they are - confirm identity before creating an account or resetting a
+          password for someone. Emailed passwords are temporary: ask people to change them after
+          signing in.
+        </Callout>
+
+        <p className="mt-3 text-sm">
+          <strong>What the e-mails look like.</strong> The notification your mailbox sends
+          itself, and the messages that give someone their new account or password, are styled
+          in the workspace&apos;s colours and name, with a plain-text version for clients that
+          cannot show it, and end with a signature (for account and password e-mails, your
+          own name and address). Set <Code>WIKIHUB_PUBLIC_URL</Code> (for example{" "}
+          <Code>https://wiki.example.com</Code>) so they can include an{" "}
+          <em>Open Requests</em> or <em>Sign in</em> button; left blank, those buttons are
+          simply left out.
+        </p>
+
+        <Callout variant="tip" title="KEEP THE ENCRYPTION KEY STABLE">
+          Mailbox passwords are encrypted with <Code>WIKIHUB_MAIL_ENCRYPTION_KEY</Code>, or,
+          when that is blank, with a key derived from <Code>WIKIHUB_SECRET_KEY</Code>. If that
+          value changes, the stored passwords cannot be read: the mailboxes then show{" "}
+          <strong>Needs new password</strong> and each owner enters theirs again. The backend
+          and the worker must use the same value.
+        </Callout>
+      </>
+    ),
+  },
+  {
     id: "safe-operation",
     title: "Safe Operation & System Troubleshooting",
     category: "Administration",
@@ -2591,11 +2860,14 @@ export const sectionsEn: HelpSection[] = [
 
         <Callout variant="note" title="SET EXPECTATIONS: WHAT WIKIHUB DOESN'T DO YET">
           Three things people often go looking for don&apos;t exist in this build, so
-          it&apos;s worth knowing before you go hunting: there is no e-mail invite flow
-          (accounts are created directly - see <em>Managing Users &amp; Groups</em>), no
-          notification system (no bell icon, no page-watch/@-mention alerts - the
-          closest things are the Home activity feed and Recently visited/worked on), and
-          no in-app audit-log viewer (admin actions and impersonation are logged
+          it&apos;s worth knowing before you go hunting: there is no automatic invite
+          e-mail (accounts are created directly - see <em>Managing Users &amp; Groups</em>;
+          someone who can&apos;t sign in can send a request from the sign-in page instead,
+          and an administrator can answer it from Requests by creating the account and
+          e-mailing the sign-in details, see <em>Administrator Mail &amp; Requests</em>), no page-watch or @-mention alerts
+          (the bell tells you about changes to your own access and account - for page
+          activity the closest things are the Home activity feed and Recently
+          visited/worked on), and no in-app audit-log viewer (admin actions and impersonation are logged
           server-side, but there is nowhere in the UI to browse that log yet).
         </Callout>
       </>

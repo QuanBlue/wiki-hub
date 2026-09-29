@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 export function AppMain({
   children,
   hasBanner = false,
+  banner,
   contentClassName,
   disableSidebarOffset = false,
   fullWidth = false,
@@ -20,6 +21,9 @@ export function AppMain({
   children: React.ReactNode;
   /** Reserve room for the fixed impersonation bar so it covers no content. */
   hasBanner?: boolean;
+  /** A strip shown across the top of the content, under the top bar. Part of
+   * the flow, so it pushes the page down instead of covering it. */
+  banner?: React.ReactNode;
   contentClassName?: string;
   disableSidebarOffset?: boolean;
   fullWidth?: boolean;
@@ -40,6 +44,7 @@ export function AppMain({
         } as CSSProperties
       }
     >
+      {banner}
       <div
         className={cn(
           fullWidth ? "w-full px-6 py-8 sm:px-10 sm:py-10" : "max-w-content mx-auto w-full px-5 py-8 sm:px-8 sm:py-10",

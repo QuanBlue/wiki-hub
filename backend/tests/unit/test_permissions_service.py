@@ -31,7 +31,13 @@ def svc() -> PermissionService:
 
 
 def user(**values):
-    defaults = {"id": uuid.uuid4(), "is_superuser": False, "is_active": True, "username": "u"}
+    defaults = {
+        "id": uuid.uuid4(),
+        "is_superuser": False,
+        "is_active": True,
+        "username": "u",
+        "full_name": "",
+    }
     defaults.update(values)
     return SimpleNamespace(**defaults)
 
@@ -238,7 +244,7 @@ async def test_page_restriction_listing_and_missing_space() -> None:
 async def test_group_members_and_global_permissions() -> None:
     service = svc()
     actor = user(is_superuser=True)
-    group = SimpleNamespace(id=uuid.uuid4(), owner_id=uuid.uuid4())
+    group = SimpleNamespace(id=uuid.uuid4(), owner_id=uuid.uuid4(), name="Ops")
     target = user()
     service.session.get = AsyncMock(return_value=target)
     service.session.scalar = AsyncMock(return_value=None)
@@ -277,7 +283,7 @@ async def test_group_members_and_global_permissions() -> None:
 async def test_space_and_page_permission_assignments() -> None:
     service = svc()
     actor = user(is_superuser=True)
-    space = SimpleNamespace(id=uuid.uuid4(), visibility=SpaceVisibility.open)
+    space = SimpleNamespace(id=uuid.uuid4(), visibility=SpaceVisibility.open, name="Docs", key="docs")
     page = SimpleNamespace(id=uuid.uuid4(), space_id=space.id, view_restricted=False)
     principal = SimpleNamespace(id=uuid.uuid4(), is_active=True)
     service.require = AsyncMock()

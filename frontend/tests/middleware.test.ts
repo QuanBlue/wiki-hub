@@ -32,6 +32,20 @@ describe("session middleware", () => {
     expect(response.headers.get("location")).toBeNull();
   });
 
+  it("lets someone who cannot sign in reach the contact-an-administrator page", () => {
+    // Its whole purpose is people with no working account, so it cannot sit
+    // behind the sign-in redirect.
+    const response = middleware(new NextRequest("http://localhost/contact-admin"));
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("keeps the admin mail pages behind sign-in", () => {
+    for (const path of ["/admin/mail", "/admin/inbox"]) {
+      const response = middleware(new NextRequest(`http://localhost${path}`));
+      expect(response.headers.get("location")).toContain("/login");
+    }
+  });
+
   it("still redirects an unauthenticated request to a real page", () => {
     const request = new NextRequest("http://localhost/spaces");
     const response = middleware(request);

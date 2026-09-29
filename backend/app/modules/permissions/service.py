@@ -98,6 +98,7 @@ from app.models.restriction import (
 )
 from app.models.space import Space, SpaceMember, SpaceOwner, SpaceRole, SpaceVisibility
 from app.models.user import User
+from app.modules.notifications.service import notify
 from app.schemas.permission import GroupCreate, GroupUpdate
 
 ALL_SPACE_PERMISSIONS = frozenset(Permission)
@@ -356,11 +357,34 @@ class PermissionService:
             if candidate is None or not candidate.is_active:
                 raise NotFoundError(f"User {owner_id} not found.")
             users.append(candidate)
+        previous_owner_ids = set(
+            await self.session.scalars(
+                select(SpaceOwner.user_id).where(SpaceOwner.space_id == space.id)
+            )
+        )
         await self.session.execute(delete(SpaceOwner).where(SpaceOwner.space_id == space.id))
         self.session.add_all(
             SpaceOwner(space_id=space.id, user_id=owner_id) for owner_id in unique_ids
         )
         await self.session.flush()
+        for owner_id in unique_ids:
+            if owner_id not in previous_owner_ids:
+                await notify(
+                    self.session,
+                    owner_id,
+                    "space_owner_added",
+                    params={"space": space.name},
+                    link=f"/spaces/{space.key}",
+                    actor=actor,
+                )
+        for owner_id in previous_owner_ids - set(unique_ids):
+            await notify(
+                self.session,
+                owner_id,
+                "space_owner_removed",
+                params={"space": space.name},
+                actor=actor,
+            )
         users.sort(key=lambda u: u.username)
         return users
 
@@ -852,6 +876,13 @@ class PermissionService:
         )
         if present and member is None:
             self.session.add(GroupMember(group_id=group.id, user_id=user_id))
+            await notify(
+                self.session,
+                user_id,
+                "group_member_added",
+                params={"group": group.name},
+                actor=actor,
+            )
         elif not present and member is not None:
             if group.owner_id == user_id:
                 raise ConflictError(
@@ -859,6 +890,13 @@ class PermissionService:
                     code="group_owner_required",
                 )
             await self.session.delete(member)
+            await notify(
+                self.session,
+                user_id,
+                "group_member_removed",
+                params={"group": group.name},
+                actor=actor,
+            )
         await self.session.flush()
 
     async def set_group_global_permission(
@@ -906,9 +944,12 @@ class PermissionService:
         key = {"space_id": space.id, "permission": permission}
         key["group_id" if group else "user_id"] = principal_id
         row = await self.session.scalar(select(model).filter_by(**key))
+        event: str | None = None
         if present and row is None:
             self.session.add(model(**key))
+            event = "space_permission_granted"
         elif not present and row is not None:
+            event = "space_permission_revoked"
             if permission is Permission.admin and not await self._has_space_admin(
                 space, excluding=key
             ):
@@ -941,6 +982,15 @@ class PermissionService:
             if view_row is None:
                 self.session.add(model(**view_key))
                 await self.session.flush()
+        if event and not group:
+            await notify(
+                self.session,
+                principal_id,
+                event,
+                params={"space": space.name, "permission": permission.value},
+                link=f"/spaces/{space.key}" if event.endswith("granted") else None,
+                actor=actor,
+            )
 
     async def _has_other_space_permissions(
         self,

@@ -6,6 +6,7 @@ Every model must be imported here: Alembic's autogenerate walks
 
 from __future__ import annotations
 
+from app.models.admin_mail import AdminMailbox, AdminRequest, AdminRequestRecipient
 from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction, AuditLog
 from app.models.backup_job import AutomatedBackupSettings, BackupArchive, BackupJob
@@ -13,6 +14,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.document_import import DocumentImportItem, DocumentImportJob
 from app.models.draft import PageDraft
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
+from app.models.notification import Notification
 from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.permission import (
     GlobalPermission,
@@ -47,6 +49,9 @@ from app.models.user_page_label import UserPageLabel
 
 __all__ = [
     "SINGLETON_ID",
+    "AdminMailbox",
+    "AdminRequest",
+    "AdminRequestRecipient",
     "AuditAction",
     "AuditLog",
     "AutomatedBackupSettings",
@@ -65,6 +70,7 @@ __all__ = [
     "PageAttachment",
     "PageDraft",
     "PageGroupRestriction",
+    "Notification",
     "PageLike",
     "PageRestrictionPermission",
     "PageRevision",
