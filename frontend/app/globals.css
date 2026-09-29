@@ -610,6 +610,9 @@
      nothing to override here. */
 
   --danger: #fca5a5;
+  /* --danger is a light pink here, so the light theme's white foreground would
+     sit on it at about 2:1. Dark text, as --primary-foreground does. */
+  --danger-foreground: #0f172a;
   --scrollbar-thumb: #4b5563;
   --scrollbar-thumb-hover: #6b7280;
 }
@@ -1273,7 +1276,7 @@
  */
 html[data-export="true"] .ProseMirror .column-resize-handle,
 html[data-export="true"] .ProseMirror-gapcursor,
-html[data-export="true"] [data-sonner-toaster] {
+html[data-export="true"] .wh-toaster {
   display: none !important;
 }
 
@@ -1324,5 +1327,304 @@ html[data-export="true"] [data-sonner-toaster] {
   }
   thead {
     display: table-header-group;
+  }
+}
+
+/* --- Toasts ---------------------------------------------------------------
+ * One look for every notification the app raises (components/ui/toaster.tsx,
+ * fed by sonner's toast()): a card on the surface, tinted and edged in the
+ * colour of what it says so a success, a note, a caution and an error can be
+ * told apart at a glance. Everything reads the semantic tokens, so light and
+ * dark follow the theme; nothing here is a raw brand colour.
+ *
+ * Two layouts, switched by [data-expanded] on .wh-toaster:
+ *  - at rest: a compact stack - the newest toast in full, older ones peeking
+ *    out above it, each a little smaller;
+ *  - hovered / focused: one vertical column, newest at the bottom, nothing
+ *    overlapping, so every message can be read in full.
+ * Each toast runs its own countdown (see the component): hovering one pauses
+ * only that one, and the bar under its text stops with it.
+ */
+.wh-toaster {
+  position: fixed;
+  right: 6px;
+  bottom: 6px;
+  z-index: 999999999;
+  width: min(404px, 100vw - 12px);
+  padding: 10px;
+  box-sizing: border-box;
+  pointer-events: none;
+  --width: 384px;
+}
+.wh-toaster-list {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wh-toaster[data-expanded="true"] {
+  max-height: calc(100vh - 12px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+}
+/* Both layouts are the same absolutely positioned toasts; only the variables
+ * the component sets (--y lift, --s scale, --h height) differ, so moving
+ * between stacked and expanded is one smooth transition instead of a jump. */
+.wh-toaster-list {
+  transition: height 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wh-toast {
+  --toast-tone: var(--border-strong, var(--border));
+  --toast-bg: var(--surface);
+  --toast-border: var(--border);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: calc(100 - var(--i));
+  box-sizing: border-box;
+  height: var(--h, auto);
+  color: var(--foreground);
+  background: var(--toast-bg);
+  border: 1px solid var(--toast-border);
+  border-radius: 12px;
+  box-shadow:
+    0 12px 32px -10px rgb(15 23 42 / 0.28),
+    0 2px 6px rgb(15 23 42 / 0.08);
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  transform-origin: 50% 100%;
+  transform: translateY(calc(var(--y, 0px) * -1)) scale(var(--s, 1));
+  animation: wh-toast-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition:
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms ease,
+    translate 200ms cubic-bezier(0.4, 0, 1, 1),
+    box-shadow 200ms ease;
+}
+.wh-toast:hover {
+  box-shadow:
+    0 16px 36px -10px rgb(15 23 42 / 0.34),
+    0 3px 8px rgb(15 23 42 / 0.1);
+}
+.wh-toast-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 18px;
+  font-size: 14px;
+  line-height: 20px;
+}
+/* Stacked: older toasts are clipped to the front one's height and their
+ * content fades out, fading back in as the column opens. */
+.wh-toast[data-front="false"] {
+  overflow: hidden;
+}
+.wh-toaster[data-expanded="true"] .wh-toast[data-front="false"] {
+  overflow: visible;
+}
+.wh-toast > * {
+  transition: opacity 240ms ease;
+}
+.wh-toaster[data-expanded="false"] .wh-toast[data-front="false"] > * {
+  opacity: 0;
+}
+.wh-toaster[data-expanded="false"] .wh-toast[data-hidden="true"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The tinted card and edge tell the four kinds apart, plus the icon and the
+ * countdown bar in the same tone. */
+.wh-toast[data-type="success"] {
+  --toast-tone: var(--wh-success);
+  --toast-bg: color-mix(in oklab, var(--wh-success) 9%, var(--surface));
+  --toast-border: color-mix(in oklab, var(--wh-success) 32%, var(--surface));
+}
+.wh-toast[data-type="info"] {
+  --toast-tone: var(--primary);
+  --toast-bg: color-mix(in oklab, var(--primary) 8%, var(--surface));
+  --toast-border: color-mix(in oklab, var(--primary) 30%, var(--surface));
+}
+.wh-toast[data-type="warning"] {
+  --toast-tone: var(--wh-warning);
+  --toast-bg: color-mix(in oklab, var(--wh-warning) 11%, var(--surface));
+  --toast-border: color-mix(in oklab, var(--wh-warning) 34%, var(--surface));
+}
+.wh-toast[data-type="error"] {
+  --toast-tone: var(--danger);
+  --toast-bg: color-mix(in oklab, var(--danger) 9%, var(--surface));
+  --toast-border: color-mix(in oklab, var(--danger) 32%, var(--surface));
+}
+
+.wh-toast-icon {
+  display: flex;
+  flex: none;
+  margin-top: 1px;
+  color: var(--toast-tone);
+}
+.wh-toast-icon[data-spin] svg {
+  animation: wh-toast-spin 900ms linear infinite;
+}
+.wh-toast-content {
+  flex: 1;
+  min-width: 0;
+}
+.wh-toast-body {
+  flex: 1;
+  min-width: 0;
+}
+.wh-toast-title {
+  font-weight: 400;
+  color: var(--foreground);
+}
+.wh-toast-description {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+/* Emphasis within a toast's own text (see lib/rich-text.tsx): a name or value
+ * worth reading first stands out from the rest of the sentence instead of
+ * needing "smart quotes" around it. */
+.wh-toast strong {
+  font-weight: 700;
+  color: var(--foreground);
+}
+.wh-toast em {
+  font-style: italic;
+}
+.wh-toast code {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family:
+    SFMono-Regular,
+    Consolas,
+    "Liberation Mono",
+    Menlo,
+    monospace;
+  font-size: 0.85em;
+  color: var(--foreground);
+}
+
+.wh-toast-button {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  transition:
+    filter 150ms,
+    transform 150ms,
+    background-color 150ms;
+}
+.wh-toast-button:hover {
+  filter: brightness(1.08);
+}
+.wh-toast-button:active {
+  transform: scale(0.97);
+}
+.wh-toast-button[data-variant="cancel"] {
+  background: var(--surface-sunken);
+  color: var(--foreground);
+}
+.wh-toast-button[data-variant="cancel"]:hover {
+  background: var(--surface-hover);
+  filter: none;
+}
+.wh-toast-button:focus-visible,
+.wh-toast-close:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.wh-toast-close {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-35%, -35%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  width: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    background-color 150ms,
+    color 150ms;
+}
+.wh-toast-close:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.wh-toast-close:active {
+  background: var(--surface-sunken);
+}
+
+/* The countdown bar: shrinks from full width to nothing over the toast's own
+ * lifetime and is paused/resumed by the same flag as the timer, so it always
+ * shows the time genuinely left. */
+.wh-toast-bar {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 8px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--toast-tone);
+  opacity: 0.45;
+  transform-origin: left center;
+  animation: wh-toast-countdown var(--toast-duration) linear forwards;
+}
+
+/* Leaving: slides off to the right and fades. `translate` composes with the
+ * stack's own `transform`. */
+.wh-toast[data-leaving="true"] {
+  opacity: 0;
+  translate: calc(100% + 1.5rem) 0;
+  pointer-events: none;
+}
+
+@keyframes wh-toast-in {
+  from {
+    opacity: 0;
+    translate: 0 16px;
+  }
+}
+@keyframes wh-toast-countdown {
+  to {
+    transform: scaleX(0);
+  }
+}
+@keyframes wh-toast-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wh-toast {
+    animation: none;
+    transition: none;
+  }
+  .wh-toast-bar {
+    display: none;
+  }
+}
+@media print {
+  .wh-toaster {
+    display: none;
   }
 }

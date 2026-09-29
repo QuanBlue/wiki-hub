@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import {
+  NoMailboxEmailNotice,
+  notifySpaceAccess,
+  useCanEmailAccounts,
+} from "@/components/admin/account-email-option";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -88,6 +93,7 @@ function navigationTargetOf(event: MouseEvent): URL | null {
 
 export function SpaceAccessPanel({ space, groups, users, initialAssignments }: { space: Space; groups: Group[]; users: User[]; initialAssignments: SpacePermissionAssignment[] }) {
   const router = useRouter();
+  const canEmailAccounts = useCanEmailAccounts();
   const [visibility, setVisibility] = useState(space.visibility);
   const [assignments, setAssignments] = useState(initialAssignments);
   const [visibilityPending, setVisibilityPending] = useState(false);
@@ -321,7 +327,30 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
         if (now !== committedSet.has(permission)) await applyUserPermission(user, permission, now);
       }
       const viewNow = draftSet.has("view");
-      if (viewNow !== committedSet.has("view")) await applyUserPermission(user, "view", viewNow);
+      const viewWas = committedSet.has("view");
+      if (viewNow !== viewWas) {
+        await applyUserPermission(user, "view", viewNow);
+        // View is the floor every other permission sits on (see
+        // `applyPermissionChange`), so gaining or losing it is exactly
+        // "added to" or "removed from" the space from this person's point of
+        // view - the signal worth emailing them about, not every individual
+        // checkbox. Not awaited: several people can change in one save, and
+        // nothing here should make that save wait on a mail round trip per
+        // person.
+        if (canEmailAccounts) {
+          void notifySpaceAccess(user.id, space.key, viewNow).then((outcome) => {
+            if (outcome?.email_sent) {
+              toast.success(
+                viewNow
+                  ? `Told ${user.email} they now have access to "${space.name}".`
+                  : `Told ${user.email} their access to "${space.name}" was removed.`,
+              );
+            } else {
+              toast.error(`Could not email ${user.email} about this change.`);
+            }
+          });
+        }
+      }
     }
   }
 
@@ -464,6 +493,13 @@ export function SpaceAccessPanel({ space, groups, users, initialAssignments }: {
           )}
         </div>
       </div>
+      {userEditing && !canEmailAccounts ? (
+        <div className="border-border border-b px-4 py-2">
+          <NoMailboxEmailNotice>
+            tell anyone added or removed here yourself.
+          </NoMailboxEmailNotice>
+        </div>
+      ) : null}
       <table className="w-full min-w-190 text-sm"><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><th className="px-4 py-3 font-medium">User</th>{PERMISSIONS.map(([, label]) => <th key={label} className="px-2 py-3 text-center font-medium">{label}</th>)}<th className="px-2 py-3 text-center font-medium"><span className="sr-only">Remove</span></th></tr></thead><tbody>{users.map((user) => <tr key={user.id} className="border-border hover:bg-surface-hover border-b last:border-0"><td className="px-4 py-3 font-medium">{user.full_name || user.username} <span className="text-muted-foreground">@{user.username}</span></td>{PERMISSIONS.map(([permission, label]) => { const viewLocked = permission === "view"; return <td key={permission} className="px-2 py-3 text-center"><input className="accent-primary size-4 cursor-pointer rounded border-border focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" type="checkbox" aria-label={`${user.username}: ${label}`} title={viewLocked ? "View is the baseline access every grant here includes - remove the person entirely to revoke it." : undefined} checked={userHasPermission(user, permission)} disabled={!userEditing || viewLocked} onChange={(event) => setUserDraftPermission(user.id, permission, event.target.checked)} /></td>; })}<td className="px-2 py-3 text-center">{userEditing ? <button type="button" aria-label={`Remove ${user.username} from this space`} title="Remove" className="text-muted-foreground hover:text-danger hover:bg-danger-bg focus-visible:ring-ring inline-flex cursor-pointer rounded p-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none" onClick={() => clearUserDraft(user.id)}><Trash2 className="size-3.5" /></button> : null}</td></tr>)}</tbody></table>
     </div>
 

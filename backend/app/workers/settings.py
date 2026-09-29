@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine
 from app.workers.tasks import (
+    check_admin_mailboxes,
     ping,
     reap_backup_jobs,
     schedule_automated_backup,
@@ -76,6 +77,10 @@ class WorkerSettings:
         # when a worker dies without restarting (so `on_startup` never runs).
         cron(reap_backup_jobs, second=0, run_at_startup=False),
         cron(schedule_automated_backup, second=10, run_at_startup=False),
+        # Hourly. Mailbox passwords expire on the mail provider's schedule, so
+        # this is what turns "a request silently failed to arrive" into a
+        # banner in front of the mailbox's owner.
+        cron(check_admin_mailboxes, minute=0, second=20, run_at_startup=False),
     ]
     redis_settings = redis_settings()
     on_startup = startup

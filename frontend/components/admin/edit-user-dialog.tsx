@@ -24,6 +24,13 @@ import {
 } from "react";
 import { toast } from "sonner";
 
+import {
+  AccountEmailNotice,
+  NoMailboxEmailNotice,
+  notifyAccountEmail,
+  notifyAdminGranted,
+  useCanEmailAccounts,
+} from "@/components/admin/account-email-option";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -506,6 +513,7 @@ export function EditUserDialog({
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const canEmailAccounts = useCanEmailAccounts();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   // The row prop passed in is the People directory's own list data, which
@@ -631,10 +639,26 @@ export function EditUserDialog({
    * now imply each other. Turning admin ON promotes the Role, force-enables
    * every permission below, and snapshots whatever the overrides were a
    * moment ago; turning it OFF demotes the Role and restores those
-   * overrides exactly (falling back to the account's actually-saved
-   * overrides if this session never captured a snapshot - e.g. the dialog
-   * opened on an existing Administrator being demoted without ever
-   * toggling admin on first).
+   * overrides exactly - *when there is a snapshot to restore*.
+   *
+   * There often is not one: the far more common path is opening the dialog
+   * on an account that was already an Administrator (Role and the
+   * `system_admin` override both already saved as such - most likely by an
+   * earlier promotion through this very toggle, which sets both at once)
+   * and demoting it without ever having switched admin on first in this
+   * session. Falling back to those already-saved overrides there - as if
+   * nothing about them needed to change - was the bug this comment used to
+   * describe: `system_admin` being enabled by an earlier save already made
+   * `overrides` equal `initialOverrides`, and identical values look
+   * unchanged, so the request never carried a "turn it back off" for
+   * anyone - Role alone flipped, the override didn't, and the account read
+   * right back out of Save as an effective admin regardless. `system_admin`
+   * specifically is cleared to "inherit" on that fallback path instead - the
+   * one override the toggle promises is tied to Role - so demoting one
+   * reliably demotes the other. The other three permissions this toggle
+   * also force-enables are not what makes an account an effective admin, so
+   * whatever they were saved as is left for the administrator to revisit on
+   * the Global access tab if that matters here.
    */
   function applyAdminToggle(
     enable: boolean,
@@ -650,7 +674,8 @@ export function EditUserDialog({
       );
     } else {
       setRole("member");
-      const restored = preAdminOverrides ?? initialOverrides;
+      const restored =
+        preAdminOverrides ?? { ...initialOverrides, system_admin: "inherit" as const };
       setOverrides(
         finalSystemAdminChoice
           ? { ...restored, system_admin: finalSystemAdminChoice }
@@ -720,9 +745,29 @@ export function EditUserDialog({
           new_password: password,
         });
       }
-      toast.success(`Changes saved for ${user.username}.`);
+      toast.success(`Changes saved for **${user.username}**.`);
       onOpenChange(false);
       router.refresh();
+      // Automatic, not opt-in: an administrator with a working mailbox never
+      // has to remember to tick anything for this.
+      if (changingPassword && canEmailAccounts) {
+        const outcome = await notifyAccountEmail("reset", user.id, password);
+        if (outcome?.email_sent) {
+          toast.success(`New password emailed to \`${user.email}\`.`);
+        } else {
+          toast.error(
+            `Could not email the new password to \`${user.email}\`. Share it another way.`,
+          );
+        }
+      }
+      if (roleChanged && role === "admin" && canEmailAccounts) {
+        const outcome = await notifyAdminGranted(user.id);
+        if (outcome?.email_sent) {
+          toast.success(`Told \`${user.email}\` they're now an administrator.`);
+        } else {
+          toast.error(`Could not email \`${user.email}\` about the new role.`);
+        }
+      }
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Could not save these changes.",
@@ -877,6 +922,15 @@ export function EditUserDialog({
                         see the Global access tab.
                       </p>
                     ) : null}
+                    {isAdminDraft && initialRole !== "admin" ? (
+                      canEmailAccounts ? (
+                        <AccountEmailNotice mode="admin" />
+                      ) : (
+                        <NoMailboxEmailNotice>
+                          tell {user.username} yourself that they&apos;re now an administrator.
+                        </NoMailboxEmailNotice>
+                      )
+                    ) : null}
                   </div>
 
                   <div className="space-y-1.5">
@@ -982,6 +1036,16 @@ export function EditUserDialog({
                     aria-invalid={mismatch || undefined}
                   />
                 </div>
+
+                {changingPassword ? (
+                  canEmailAccounts ? (
+                    <AccountEmailNotice mode="reset" />
+                  ) : (
+                    <NoMailboxEmailNotice>
+                      share the new password with {user.username} yourself.
+                    </NoMailboxEmailNotice>
+                  )
+                ) : null}
 
                 <ul className="space-y-1" aria-live="polite">
                   {rules.map((rule) => (

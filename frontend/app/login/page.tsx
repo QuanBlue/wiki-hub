@@ -3,8 +3,8 @@ import { Suspense } from "react";
 
 import { FolderTree, History, Search, ShieldCheck } from "lucide-react";
 
-import { LoginForm } from "@/components/auth/login-form";
-import { LogoMark, Wordmark } from "@/components/brand/logo";
+import { AuthPanels } from "@/components/auth/auth-panels";
+import { Wordmark } from "@/components/brand/logo";
 import { SITE_NAME } from "@/lib/env";
 import { getServerLocale } from "@/lib/i18n/server";
 
@@ -14,7 +14,12 @@ export const metadata: Metadata = { title: "Sign in" };
 // copy follows the locale cookie.
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const { view } = await searchParams;
   const { t } = await getServerLocale();
 
   const highlights = [
@@ -112,26 +117,13 @@ export default async function LoginPage() {
             <Wordmark siteName={SITE_NAME} className="text-base" />
           </div>
 
-          <div className="mb-7 flex flex-col items-center text-center lg:items-start lg:text-left">
-            <div className="bg-primary-subtle text-primary hidden size-10 items-center justify-center rounded-lg lg:flex">
-              <LogoMark className="size-5" />
-            </div>
-            <h2 className="mt-4 text-2xl font-semibold tracking-tight">
-              {t("auth.welcomeBack")}
-            </h2>
-            <p className="text-muted-foreground mt-1.5 text-sm">
-              {t("auth.signInToContinue", { siteName: SITE_NAME })}
-            </p>
-          </div>
-
           {/* useSearchParams needs a Suspense boundary during prerender. */}
           <Suspense fallback={null}>
-            <LoginForm />
+            <AuthPanels
+              siteName={SITE_NAME}
+              initialView={view === "contact" ? "contact" : "login"}
+            />
           </Suspense>
-
-          <p className="text-muted-foreground mt-8 text-center text-xs">
-            {t("auth.troubleSigningIn")}
-          </p>
         </div>
       </section>
     </main>

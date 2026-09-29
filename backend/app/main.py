@@ -33,6 +33,11 @@ TAGS_METADATA = [
     {"name": "auth", "description": "Authentication and session management."},
     {"name": "users", "description": "User accounts."},
     {"name": "groups", "description": "User groups."},
+    {
+        "name": "admin-mail",
+        "description": "Administrator mailboxes, the request inbox and the public contact form.",
+    },
+    {"name": "notifications", "description": "A person's own in-app notifications."},
     {"name": "roles", "description": "Roles and permission assignments."},
     {"name": "spaces", "description": "Top-level documentation areas."},
     {"name": "pages", "description": "Hierarchical documentation pages."},

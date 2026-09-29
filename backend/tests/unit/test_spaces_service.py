@@ -134,7 +134,7 @@ async def test_space_create_update_archive_delete_and_favourites() -> None:
 @pytest.mark.asyncio
 async def test_membership_updates_and_last_admin_guards() -> None:
     service = make_service()
-    actor = SimpleNamespace(id=uuid.uuid4())
+    actor = SimpleNamespace(id=uuid.uuid4(), username="alice", full_name="Alice")
     target = SimpleNamespace(id=uuid.uuid4(), username="bob", full_name="Bob")
     current = space()
     service.users.get = AsyncMock(return_value=target)

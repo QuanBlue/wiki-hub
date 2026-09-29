@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,13 @@ function useParamWriter() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Without this, every write - one per debounced keystroke while
+  // searching - re-suspends the `<Suspense>` these controls sit in (it needs
+  // one for `useSearchParams`) until the new server-rendered page streams
+  // back in, blanking the search box and filters for a moment each time:
+  // exactly the flicker this was reported for. Marking the navigation as a
+  // transition keeps the current UI on screen while the next one loads.
+  const [, startTransition] = useTransition();
 
   return useCallback(
     (updates: Record<string, string | null>) => {
@@ -45,7 +52,9 @@ function useParamWriter() {
       // Any filter change invalidates the current page.
       if (!("offset" in updates)) next.delete("offset");
       const qs = next.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname);
+      startTransition(() => {
+        router.push(qs ? `${pathname}?${qs}` : pathname);
+      });
     },
     [router, pathname, searchParams],
   );

@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import {
+  AccountEmailNotice,
+  notifyAccountEmail,
+  useCanEmailAccounts,
+} from "@/components/admin/account-email-option";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -28,7 +33,24 @@ type UsernameCheck = "idle" | "checking" | "available" | "taken" | "error";
 
 export function CreateUserDialog({
   viewerIsSystemAdmin,
+  open: controlledOpen,
+  onOpenChange,
+  initial,
+  onCreated,
 }: {
+  /** Controlled mode: the caller decides when the dialog is open and no
+   * "Create user" button is rendered - used to open it from an Inbox request. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Starting values for the form. Read when the dialog mounts, so render it
+   * only while it is wanted. */
+  initial?: {
+    firstName?: string;
+    lastName?: string;
+    username?: string;
+    email?: string;
+  };
+  onCreated?: (user: User) => void;
   /** Whether the signed-in viewer is a System Administrator themselves
    * (`is_superuser`, or the `system_admin` global permission). `manage_users`
    * alone - whether from a Role, a group, or an override - lets someone
@@ -40,14 +62,25 @@ export function CreateUserDialog({
   viewerIsSystemAdmin: boolean;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
+  const [internalOpen, setInternalOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    setInternalOpen(next);
+    onOpenChange?.(next);
+  };
+  const [firstName, setFirstName] = useState(initial?.firstName ?? "");
+  const [lastName, setLastName] = useState(initial?.lastName ?? "");
+  const [username, setUsername] = useState(initial?.username ?? "");
+  const [email, setEmail] = useState(initial?.email ?? "");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("member");
-  const [usernameCheck, setUsernameCheck] = useState<UsernameCheck>("idle");
+  const canEmailAccounts = useCanEmailAccounts();
+  // A prefilled username (from an Inbox request) is checked as soon as the
+  // dialog mounts, so it starts as "checking" rather than blank.
+  const [usernameCheck, setUsernameCheck] = useState<UsernameCheck>(
+    USERNAME_PATTERN.test(initial?.username?.trim() ?? "") ? "checking" : "idle",
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -62,8 +95,7 @@ export function CreateUserDialog({
     const normalized = username.trim();
     if (!normalized || !USERNAME_PATTERN.test(normalized)) {
       return;
-    }
-    let active = true;
+    }    let active = true;
     const timer = window.setTimeout(() => {
       void api
         .get<Page<User>>(
@@ -114,6 +146,19 @@ export function CreateUserDialog({
       setOpen(false);
       reset();
       router.refresh();
+      onCreated?.(created);
+      // Automatic, not opt-in: an administrator with a working mailbox never
+      // has to remember to tick anything for this.
+      if (canEmailAccounts) {
+        const outcome = await notifyAccountEmail("created", created.id, password);
+        if (outcome?.email_sent) {
+          toast.success(`Sign-in details emailed to ${created.email}.`);
+        } else {
+          toast.error(
+            `Could not email the sign-in details to ${created.email}. Share the password another way.`,
+          );
+        }
+      }
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Could not create the user.",
@@ -127,10 +172,12 @@ export function CreateUserDialog({
 
   return (
     <>
-      <Button variant="primary" onClick={() => setOpen(true)}>
-        <UserPlus />
-        Create user
-      </Button>
+      {controlled ? null : (
+        <Button variant="primary" onClick={() => setOpen(true)}>
+          <UserPlus />
+          Create user
+        </Button>
+      )}
       <Dialog
         open={open}
         onOpenChange={(next) => {
@@ -146,8 +193,9 @@ export function CreateUserDialog({
           <div className="bg-primary-subtle text-primary mb-5 flex items-start gap-3 rounded-md px-3 py-2.5">
             <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
             <p className="text-xs leading-5">
-              Share the temporary password securely. WikiHub does not send
-              invitation e-mails.
+              {canEmailAccounts
+                ? "WikiHub will email the sign-in details to them automatically. Share the password yourself too if they need it sooner."
+                : "Share the temporary password securely. WikiHub does not send invitation e-mails."}
             </p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
@@ -276,6 +324,7 @@ export function CreateUserDialog({
                     ● number or symbol
                   </span>
                 </div>
+                <AccountEmailNotice mode="created" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="new-role">Role</Label>

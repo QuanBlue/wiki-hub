@@ -25,7 +25,7 @@ const ACCESS_COOKIE_NAME = "wikihub_access";
  * the module docstring above); this entry just keeps the UX guard from
  * bouncing that request to /login before it ever gets there.
  */
-const PUBLIC_PATHS = ["/login", "/print"];
+const PUBLIC_PATHS = ["/login", "/print", "/contact-admin"];
 
 /** API requests must reach the backend, including unauthenticated login calls. */
 export function isApiRequestPath(pathname: string): boolean {

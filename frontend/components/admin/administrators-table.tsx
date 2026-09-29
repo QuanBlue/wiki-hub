@@ -52,8 +52,21 @@ export function AdministratorsTable({
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [target, setTarget] = useState<AdminAccount | null>(null);
+  // Mirrored from the `admins` prop rather than read directly, so a
+  // successful demote can drop the row the instant the server confirms it -
+  // `router.refresh()` re-renders this table from fresh server data too, but
+  // not always in time for the very next paint, which read as the button
+  // "not taking" until clicked again. Re-synced during render whenever the
+  // prop changes (a real navigation, or that same refresh landing), so this
+  // never drifts from the server for long.
+  const [rows, setRows] = useState(admins);
+  const [syncedFrom, setSyncedFrom] = useState(admins);
+  if (admins !== syncedFrom) {
+    setSyncedFrom(admins);
+    setRows(admins);
+  }
 
-  const isLastAdmin = admins.length <= 1;
+  const isLastAdmin = rows.length <= 1;
 
   async function demote(account: AdminAccount) {
     setPendingId(account.id);
@@ -65,8 +78,9 @@ export function AdministratorsTable({
           global_permission_overrides: { system_admin: false },
         });
       }
-      toast.success(`${account.username} is no longer a system administrator.`);
+      toast.success(`**${account.username}** is no longer a system administrator.`);
       setTarget(null);
+      setRows((current) => current.filter((item) => item.id !== account.id));
       router.refresh();
     } catch (error) {
       toast.error(
@@ -77,7 +91,7 @@ export function AdministratorsTable({
     }
   }
 
-  if (admins.length === 0) {
+  if (rows.length === 0) {
     return (
       <div className="px-4 py-12 text-center">
         <ShieldAlert className="text-danger mx-auto size-7" />
@@ -102,7 +116,7 @@ export function AdministratorsTable({
             </tr>
           </thead>
           <tbody>
-            {admins.map((account) => {
+            {rows.map((account) => {
               const isSelf = account.id === meId;
               // Only the protected super administrator may act on another
               // *Administrator* (Role: Administrator, not just a group/

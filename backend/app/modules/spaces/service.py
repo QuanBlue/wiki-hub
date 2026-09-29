@@ -26,6 +26,7 @@ from app.models.page import WikiPage
 from app.models.permission import Group, Permission, SpaceGroupPermission, SpaceUserPermission
 from app.models.space import Space, SpaceMember, SpaceOwner, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
+from app.modules.notifications.service import notify
 from app.modules.permissions.service import ROLE_PERMISSIONS, PermissionService
 from app.repositories.space import SpaceRepository
 from app.repositories.user import UserRepository
@@ -443,6 +444,7 @@ class SpaceService:
                 "administrator before changing this member.",
                 code="last_space_admin",
             )
+        previous_role = member.role if member is not None else None
         if member is None:
             member = SpaceMember(space_id=space.id, user_id=user_id, role=role)
             self.session.add(member)
@@ -463,6 +465,15 @@ class SpaceService:
             )
 
         await self.session.flush()
+        if previous_role is None or previous_role != role:
+            await notify(
+                self.session,
+                target.id,
+                "space_member_added" if previous_role is None else "space_role_changed",
+                params={"space": space.name, "role": role.value},
+                link=f"/spaces/{space.key}",
+                actor=actor,
+            )
         return SpaceMemberRead(
             user_id=target.id, username=target.username, full_name=target.full_name, role=role
         )
@@ -499,6 +510,13 @@ class SpaceService:
             )
         )
         await self.session.flush()
+        await notify(
+            self.session,
+            user_id,
+            "space_member_removed",
+            params={"space": space.name},
+            actor=actor,
+        )
         # This user now has zero space access, direct or otherwise - any
         # page-level restriction naming them in this space is dead weight.
         await self.permissions._purge_page_restrictions_for_removed_principal(

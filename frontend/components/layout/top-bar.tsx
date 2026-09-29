@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Wordmark } from "@/components/brand/logo";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { SearchModal } from "@/components/layout/search-modal";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
@@ -72,6 +73,7 @@ export function TopBar({ siteName: propSiteName, user }: { siteName?: string; us
               <BookOpen className="size-4" aria-hidden />
             </Link>
           </Button>
+          <NotificationBell />
           <ThemeToggle />
           <LanguageToggle />
           <UserMenu user={user} />
