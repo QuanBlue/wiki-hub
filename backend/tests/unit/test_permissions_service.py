@@ -27,6 +27,8 @@ def svc() -> PermissionService:
     service.session.flush = AsyncMock()
     service.session.delete = AsyncMock()
     service.session.add = Mock()
+    # Take the full per-page restriction path unless a test opts out.
+    service._space_has_page_restrictions = AsyncMock(return_value=True)
     return service
 
 
@@ -159,22 +161,25 @@ async def test_page_visibility_and_restriction_helpers() -> None:
     service.is_system_admin = AsyncMock(return_value=False)
     service.effective_permissions = AsyncMock(return_value={Permission.view, Permission.add})
     service._principal_permission_denied = AsyncMock(return_value=False)
-    service._page_view_restricted_flag = AsyncMock(return_value=False)
+    service.session.execute = AsyncMock(return_value=SimpleNamespace(all=lambda: []))
+    service._view_restricted_flags = AsyncMock(return_value={page.id: False})
     service._restriction_rows_exist = AsyncMock(return_value=False)
     service._principal_has_restriction = AsyncMock(return_value=False)
     assert await service.can_view_page(page, actor) is True
     assert await service.can_edit_page(page, actor) is True
     assert await service.page_view_is_restricted(page) is False
 
-    service._page_view_restricted_flag = AsyncMock(return_value=True)
+    service._view_restricted_flags = AsyncMock(return_value={page.id: True})
     assert await service.page_view_is_restricted(page) is True
 
     # can_edit_page's own fallback still checks edit rows directly - it has
     # no separate "Restricted" flag of its own, only the page's view one.
+    service.can_view_page = AsyncMock(return_value=True)
     service._restriction_rows_exist = AsyncMock(return_value=True)
     assert await service.can_edit_page(page, actor) is False
     service._principal_has_restriction = AsyncMock(return_value=True)
     assert await service.can_edit_page(page, actor) is True
+    del service.can_view_page
 
     service.effective_permissions = AsyncMock(
         return_value={Permission.view, Permission.restrictions}
@@ -451,7 +456,8 @@ async def test_page_restriction_principal_and_visibility_branches() -> None:
     assert await service.can_view_page(page, actor)
     service.effective_permissions = AsyncMock(return_value={Permission.view})
     service._principal_permission_denied = AsyncMock(return_value=False)
-    service._page_view_restricted_flag = AsyncMock(return_value=False)
+    service.session.execute = AsyncMock(return_value=SimpleNamespace(all=lambda: []))
+    service._view_restricted_flags = AsyncMock(return_value={page.id: False})
     service._restriction_rows_exist = AsyncMock(return_value=False)
     service._principal_has_restriction = AsyncMock(return_value=False)
     assert not await service.can_edit_page(page, actor)
