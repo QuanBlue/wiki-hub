@@ -791,7 +791,17 @@
     }
   }
 
+  /* Top-of-viewport page transition bar (see navigation-progress.tsx). */
+  .nav-progress-bar {
+    animation: wh-progress-indeterminate 1s ease-in-out infinite;
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .nav-progress-bar {
+      animation: none;
+      width: 100%;
+    }
+
     .loading-shimmer {
       animation: none;
     }
@@ -1627,4 +1637,35 @@ html[data-export="true"] .wh-toaster {
   .wh-toaster {
     display: none;
   }
+}
+
+/* Top bar painted in the theme colour. The header itself keeps the real
+   tokens (so bg-primary is the theme colour); everything inside is re-pointed
+   so ghost buttons, the wordmark, avatar and search field read as
+   "on primary" without each one needing its own variant. Popovers are
+   portalled to <body>, so menus keep the normal palette. */
+.topbar-on-primary {
+  --tb-bg: var(--primary);
+  --tb-fg: var(--primary-foreground);
+  background-color: var(--tb-bg);
+}
+
+/* In dark mode --primary is a light tint made for text on dark surfaces; as a
+   whole bar it glares, so use a deep shade of the theme colour instead. */
+.dark .topbar-on-primary {
+  --tb-bg: var(--wh-brand-800);
+  --tb-fg: var(--wh-neutral-0);
+}
+
+.topbar-on-primary > .topbar-inner {
+  --foreground: var(--tb-fg);
+  --muted-foreground: color-mix(in oklab, var(--tb-fg) 86%, transparent);
+  --surface-hover: color-mix(in oklab, var(--tb-fg) 16%, transparent);
+  --surface-selected: color-mix(in oklab, var(--tb-fg) 26%, transparent);
+  --border: color-mix(in oklab, var(--tb-fg) 30%, transparent);
+  --border-strong: color-mix(in oklab, var(--tb-fg) 50%, transparent);
+  --ring: var(--tb-fg);
+  --primary: var(--tb-fg);
+  --primary-foreground: var(--tb-bg);
+  color: var(--tb-fg);
 }
