@@ -2,6 +2,7 @@ import { AppMain } from "@/components/layout/app-main";
 import { ImpersonationBanner } from "@/components/layout/impersonation-banner";
 import { MailboxPasswordBanner } from "@/components/layout/mailbox-password-banner";
 import { MailSummaryProvider } from "@/components/layout/mail-summary-provider";
+import { NavigationProgressProvider } from "@/components/layout/navigation-progress";
 import { NotificationsProvider } from "@/components/layout/notifications-provider";
 import { Sidebar } from "@/components/layout/sidebar";
 import { SidebarProvider } from "@/components/layout/sidebar-context";
@@ -65,6 +66,7 @@ export async function AppShell({
     >
       <NotificationsProvider initial={notificationSummary}>
       <MailSummaryProvider initial={mailSummary} poll={isSystemAdmin}>
+      <NavigationProgressProvider>
       <div className="bg-background min-h-screen">
         <TopBar siteName={siteName} user={user} />
         {hideSidebar ? null : (
@@ -91,6 +93,7 @@ export async function AppShell({
           />
         ) : null}
       </div>
+      </NavigationProgressProvider>
       </MailSummaryProvider>
       </NotificationsProvider>
     </SidebarProvider>

@@ -2,9 +2,9 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { FileText, Grid2X2, Loader2, Search, X } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useNavigate } from "@/components/layout/navigation-progress";
 import { Badge } from "@/components/ui/badge";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { api } from "@/lib/api-client";
@@ -50,7 +50,7 @@ export function SearchModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const themeSettings = useThemeSettings();
   const { t } = useTranslation();
   const siteName = themeSettings?.siteName || "WikiHub";
@@ -140,14 +140,14 @@ export function SearchModal({
     (item: SearchItem) => {
       onOpenChange(false);
       if (item.kind === "space") {
-        router.push(`/spaces/${encodeURIComponent(item.data.key)}`);
+        navigate(`/spaces/${encodeURIComponent(item.data.key)}`);
       } else {
-        router.push(
+        navigate(
           `/spaces/${encodeURIComponent(item.data.space_key)}/pages/${encodeURIComponent(item.data.slug)}`,
         );
       }
     },
-    [onOpenChange, router],
+    [onOpenChange, navigate],
   );
 
   // Keyboard navigation inside search results

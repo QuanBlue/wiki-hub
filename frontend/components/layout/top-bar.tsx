@@ -31,8 +31,8 @@ export function TopBar({ siteName: propSiteName, user }: { siteName?: string; us
   const searchHint = searchBindings[0] ? formatBinding(searchBindings[0]) : null;
 
   return (
-    <header className="h-topbar border-border bg-surface fixed inset-x-0 top-0 z-30 border-b">
-      <div className="flex h-full items-center gap-3 px-4">
+    <header className="h-topbar topbar-on-primary fixed inset-x-0 top-0 z-30">
+      <div className="topbar-inner flex h-full items-center gap-3 px-4">
         <SidebarToggle />
 
         <Link
@@ -47,7 +47,7 @@ export function TopBar({ siteName: propSiteName, user }: { siteName?: string; us
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="border-border bg-surface-sunken text-muted-foreground hover:bg-surface-hover hover:border-border-strong active:bg-surface-selected flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-left transition-colors duration-150"
+            className="border-border bg-surface-hover text-muted-foreground hover:bg-surface-selected hover:border-border-strong active:bg-surface-selected flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-left transition-colors duration-150"
           >
             <Search className="size-4 shrink-0" />
             <span className="truncate text-xs">
