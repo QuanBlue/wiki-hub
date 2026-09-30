@@ -43,7 +43,7 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, event, func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
@@ -116,9 +116,40 @@ ROLE_PERMISSIONS: dict[SpaceRole, frozenset[Permission]] = {
 OPEN_SPACE_PERMISSIONS = ALL_SPACE_PERMISSIONS - {Permission.admin, Permission.restrictions}
 
 
+_CACHE_KEY = "wikihub_permission_cache"
+
+
+def _request_cache(session: Any) -> dict[Any, Any] | None:
+    """A memo shared by every `PermissionService` on one session.
+
+    Permission checks are re-asked constantly inside a single request (once per
+    page in a tree listing, again for each flag on the same page), and for an
+    ordinary user each ask is several queries - a system administrator
+    short-circuits before any of them, which is why only non-admins felt it.
+    Any flush, commit or rollback on the session drops the memo, so a check can
+    never outlive a write made through it. Sessions that aren't real
+    SQLAlchemy sessions (unit-test mocks) simply get no caching."""
+    info = getattr(session, "info", None)
+    sync_session = getattr(session, "sync_session", None)
+    if not isinstance(info, dict) or sync_session is None:
+        return None
+    cache = info.get(_CACHE_KEY)
+    if cache is None:
+        cache = {}
+        info[_CACHE_KEY] = cache
+        for name in ("after_flush", "after_commit", "after_rollback"):
+            event.listen(sync_session, name, lambda *_a, _c=cache: _c.clear())
+    return cache
+
+
 class PermissionService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    @property
+    def _memo(self) -> dict[Any, Any]:
+        cache = _request_cache(self.session)
+        return cache if cache is not None else {}
 
     async def _user_permission_overrides(self, user: User) -> dict[GlobalPermission, bool]:
         """This user's own grant/deny rows, keyed by permission.
@@ -166,6 +197,10 @@ class PermissionService:
         """Return the effective global capabilities for the current user."""
         if user.is_superuser:
             return list(GlobalPermission)
+        memo = self._memo
+        key = ("global", user.id)
+        if key in memo:
+            return list(memo[key])
         from_groups = set(await self.group_derived_global_permissions(user))
         # A user-level override beats whichever way the groups voted: it adds
         # a permission no group grants, or withdraws one a group does.
@@ -174,9 +209,17 @@ class PermissionService:
                 from_groups.add(permission)
             else:
                 from_groups.discard(permission)
+        memo[key] = frozenset(from_groups)
         return list(from_groups)
 
     async def effective_permissions(self, space: Space, user: User) -> set[Permission]:
+        memo = self._memo
+        key = ("space", space.id, user.id, space.visibility, user.is_superuser)
+        if key not in memo:
+            memo[key] = frozenset(await self._compute_effective_permissions(space, user))
+        return set(memo[key])
+
+    async def _compute_effective_permissions(self, space: Space, user: User) -> set[Permission]:
         if await self.is_system_admin(user):
             return set(ALL_SPACE_PERMISSIONS)
         if await self.is_space_owner(space, user):
@@ -278,13 +321,17 @@ class PermissionService:
         # practice, because a system administrator always does.
         if user.is_superuser:
             return True
-        return (
-            await self.session.scalar(
-                select(SpaceOwner.user_id).where(
-                    SpaceOwner.space_id == space.id, SpaceOwner.user_id == user.id
+        memo = self._memo
+        key = ("owner", space.id, user.id)
+        if key not in memo:
+            memo[key] = (
+                await self.session.scalar(
+                    select(SpaceOwner.user_id).where(
+                        SpaceOwner.space_id == space.id, SpaceOwner.user_id == user.id
+                    )
                 )
-            )
-        ) is not None
+            ) is not None
+        return memo[key]
 
     async def _list_system_admins(self) -> list[User]:
         """Every active superuser - the always-on fallback `list_space_owners`
@@ -1199,10 +1246,11 @@ class PermissionService:
         answers "is this page restricted", not "may this user read it" -
         callers wanting the latter want :meth:`can_view_page`.
         """
-        for ancestor in await self._page_chain(page):
-            if await self._page_view_restricted_flag(ancestor.id):
-                return True
-        return False
+        if not await self._space_has_page_restrictions(page.space_id):
+            return False
+        chain = await self._page_chain(page)
+        flags = await self._view_restricted_flags([ancestor.id for ancestor in chain])
+        return any(flags.values())
 
     async def _page_view_restricted_flag(self, page_id: uuid.UUID) -> bool:
         """An explicit, freshly-queried read of one page's own flag - not an
@@ -1226,25 +1274,131 @@ class PermissionService:
         )
         _safe_set_committed_value(page, "view_restricted", value)
 
+    async def _view_restricted_flags(self, page_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, bool]:
+        """Freshly-queried `view_restricted` for many pages in one round trip."""
+        rows = await self.session.execute(
+            select(WikiPage.id, WikiPage.view_restricted).where(WikiPage.id.in_(list(page_ids)))
+        )
+        return {page_id: bool(flag) for page_id, flag in rows}
+
+    async def _space_has_page_restrictions(self, space_id: uuid.UUID) -> bool:
+        """Whether any page in this space is Restricted or carries a
+        per-principal allow/deny row. Most spaces have none, and then a page's
+        access is exactly its space's - which lets every per-page check skip
+        its restriction queries entirely."""
+        memo = self._memo
+        key = ("space-restrictions", space_id)
+        if key not in memo:
+            flagged = await self.session.scalar(
+                select(WikiPage.id)
+                .where(WikiPage.space_id == space_id, WikiPage.view_restricted.is_(True))
+                .limit(1)
+            )
+            has_rows = flagged is not None
+            if not has_rows:
+                for model in (PageUserRestriction, PageGroupRestriction):
+                    row = await self.session.scalar(
+                        select(model.page_id)
+                        .join(WikiPage, WikiPage.id == model.page_id)
+                        .where(WikiPage.space_id == space_id)
+                        .limit(1)
+                    )
+                    if row is not None:
+                        has_rows = True
+                        break
+            memo[key] = has_rows
+        return memo[key]
+
     async def can_view_page(self, page: WikiPage, user: User) -> bool:
         if await self.is_system_admin(user):
             return True
+        memo = self._memo
+        key = ("view", page.id, page.parent_id, user.id)
+        if key not in memo:
+            memo[key] = await self._can_view_page_uncached(page, user)
+        return memo[key]
+
+    async def _can_view_page_uncached(self, page: WikiPage, user: User) -> bool:
         space = await self.session.get(Space, page.space_id)
-        if space is None or Permission.view not in await self.effective_permissions(space, user):
+        if space is None:
             return False
-        if Permission.admin in await self.effective_permissions(space, user):
+        space_permissions = await self.effective_permissions(space, user)
+        if Permission.view not in space_permissions:
+            return False
+        if Permission.admin in space_permissions:
             return True
-        for ancestor in await self._page_chain(page):
-            if await self._principal_permission_denied(
-                ancestor.id, user, PageRestrictionPermission.view
-            ):
-                return False
-            principal_is_allowed = await self._principal_has_restriction(
-                ancestor.id, user, PageRestrictionPermission.view
+        if not await self._space_has_page_restrictions(space.id):
+            return True
+        # The whole ancestor chain is checked in a fixed handful of queries
+        # rather than several per ancestor.
+        chain_ids = [ancestor.id for ancestor in await self._page_chain(page)]
+        view = PageRestrictionPermission.view
+        user_denied = dict(
+            (
+                await self.session.execute(
+                    select(PageUserRestriction.page_id, PageUserRestriction.denied).where(
+                        PageUserRestriction.page_id.in_(chain_ids),
+                        PageUserRestriction.user_id == user.id,
+                        PageUserRestriction.permission == view,
+                    )
+                )
+            ).all()
+        )
+        group_denied_rows = (
+            await self.session.execute(
+                select(PageGroupRestriction.page_id, PageGroupRestriction.denied)
+                .join(GroupMember, GroupMember.group_id == PageGroupRestriction.group_id)
+                .join(Group, Group.id == GroupMember.group_id)
+                .where(
+                    PageGroupRestriction.page_id.in_(chain_ids),
+                    PageGroupRestriction.permission == view,
+                    GroupMember.user_id == user.id,
+                    Group.is_active.is_(True),
+                )
             )
-            if await self._page_view_restricted_flag(ancestor.id) and not principal_is_allowed:
+        ).all()
+        group_denied: set[uuid.UUID] = {page_id for page_id, denied in group_denied_rows if denied}
+        for ancestor_id in chain_ids:
+            if ancestor_id in user_denied:
+                if user_denied[ancestor_id]:
+                    return False
+            elif ancestor_id in group_denied:
                 return False
-        return True
+
+        restricted_ids = [
+            page_id
+            for page_id, flag in (await self._view_restricted_flags(chain_ids)).items()
+            if flag
+        ]
+        if not restricted_ids:
+            return True
+        allowed_permissions = (PageRestrictionPermission.view, PageRestrictionPermission.edit)
+        allowed_direct = set(
+            await self.session.scalars(
+                select(PageUserRestriction.page_id).where(
+                    PageUserRestriction.page_id.in_(restricted_ids),
+                    PageUserRestriction.user_id == user.id,
+                    PageUserRestriction.permission.in_(allowed_permissions),
+                    PageUserRestriction.denied.is_(False),
+                )
+            )
+        )
+        allowed_via_group = set(
+            await self.session.scalars(
+                select(PageGroupRestriction.page_id)
+                .join(GroupMember, GroupMember.group_id == PageGroupRestriction.group_id)
+                .join(Group, Group.id == GroupMember.group_id)
+                .where(
+                    PageGroupRestriction.page_id.in_(restricted_ids),
+                    PageGroupRestriction.permission.in_(allowed_permissions),
+                    PageGroupRestriction.denied.is_(False),
+                    GroupMember.user_id == user.id,
+                    Group.is_active.is_(True),
+                )
+            )
+        )
+        allowed = allowed_direct | allowed_via_group
+        return all(page_id in allowed for page_id in restricted_ids)
 
     async def can_edit_page(self, page: WikiPage, user: User) -> bool:
         if not await self.can_view_page(page, user):
@@ -1254,6 +1408,8 @@ class PermissionService:
         if space is None or Permission.add not in permissions:
             return False
         if Permission.admin in permissions:
+            return True
+        if not await self._space_has_page_restrictions(space.id):
             return True
         if await self._principal_permission_denied(page.id, user, PageRestrictionPermission.edit):
             return False
