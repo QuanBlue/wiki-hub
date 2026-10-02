@@ -130,14 +130,23 @@ const fontClasses = [
   jetbrainsMono.variable,
 ].join(" ");
 
-export const metadata: Metadata = {
-  title: {
-    default: SITE_NAME,
-    template: `%s · ${SITE_NAME}`,
-  },
-  description: "Self-hosted internal documentation for teams.",
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  let siteName = SITE_NAME;
+  try {
+    const meta = await serverGet<InstanceInfo>("/api/v1/meta");
+    if (meta?.site_name) siteName = meta.site_name;
+  } catch {
+    // Backend unreachable during SSR: fall back to the environment default.
+  }
+  return {
+    title: {
+      default: siteName,
+      template: `%s · ${siteName}`,
+    },
+    description: "Self-hosted internal documentation for teams.",
+    robots: { index: false, follow: false },
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",
