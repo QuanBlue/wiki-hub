@@ -27,8 +27,14 @@ import {
   InputRule,
   wrappingInputRule,
 } from "@tiptap/core";
-import { NodeSelection, Plugin, TextSelection } from "@tiptap/pm/state";
-import { Fragment, Slice } from "@tiptap/pm/model";
+import {
+  NodeSelection,
+  Plugin,
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from "@tiptap/pm/state";
+import { Fragment, Slice, type NodeType } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import { dropPoint } from "@tiptap/pm/transform";
 import { TableMap } from "@tiptap/pm/tables";
@@ -146,6 +152,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  CODE_THEMES,
+  DEFAULT_CODE_THEME,
+  normaliseCodeTheme,
+} from "@/lib/code-themes";
 import { api, ApiError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/i18n/format";
 import { translate } from "@/lib/i18n/core";
@@ -1121,6 +1132,19 @@ const TableRowResize = Extension.create({
 /** Language picker order: `CODE_LANGUAGES` insertion order, computed once. */
 const CODE_LANGUAGE_ENTRIES = Object.entries(CODE_LANGUAGES);
 
+/** Tiny "Aa" chip painted with a theme's own surface and text colours. */
+function CodeThemeSwatch({ theme }: { theme: string }) {
+  return (
+    <span
+      aria-hidden
+      data-code-theme={normaliseCodeTheme(theme) ?? undefined}
+      className="wikihub-code border-code-border bg-code-bg inline-flex size-6 shrink-0 items-center justify-center rounded border font-mono text-[10px] leading-none font-semibold"
+    >
+      A<span className="text-code-highlight">a</span>
+    </span>
+  );
+}
+
 /**
  * Static rendition of a code block for the details modal - the same
  * header/gutter/colours as the real `.wikihub-code` block, but built from
@@ -1130,18 +1154,23 @@ const CODE_LANGUAGE_ENTRIES = Object.entries(CODE_LANGUAGES);
 function CodeBlockPreview({
   caption,
   languageLabel,
+  theme,
   lines,
   tokenLines,
 }: {
   caption: string;
   languageLabel: string;
+  theme: string | null;
   lines: number[];
   tokenLines: CodeToken[][];
 }) {
   const showHeader = Boolean(caption) || Boolean(languageLabel);
 
   return (
-    <div className="wikihub-code border-code-border bg-code-bg flex h-full flex-col overflow-hidden rounded-md border">
+    <div
+      data-code-theme={theme ?? undefined}
+      className="wikihub-code border-code-border bg-code-bg flex h-full flex-col overflow-hidden rounded-md border"
+    >
       {showHeader ? (
         <div className="border-code-border bg-code-inset flex h-9 shrink-0 items-center justify-between gap-2 border-b px-3">
           {caption ? (
@@ -1191,6 +1220,187 @@ function CodeBlockPreview({
   );
 }
 
+/**
+ * Filterable language list for the code block details modal. Rendered inline
+ * rather than in a portaled menu so the filter input keeps focus while the
+ * arrow keys move through the list - a Radix menu would take focus (and its
+ * own typeahead) away from the input. Arrow keys move the selection itself, so
+ * the modal's live preview follows along.
+ */
+function LanguagePicker({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const filterLanguages = (text: string) => {
+    const needle = text.trim().toLowerCase();
+    if (!needle) return CODE_LANGUAGE_ENTRIES;
+    return CODE_LANGUAGE_ENTRIES.filter(
+      ([key, label]) =>
+        label.toLowerCase().includes(needle) ||
+        key.toLowerCase().includes(needle),
+    );
+  };
+  const matches = useMemo(() => filterLanguages(query), [query]);
+
+  useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [value, matches, open]);
+
+  function updateQuery(next: string) {
+    setQuery(next);
+    const next_matches = filterLanguages(next);
+    // Keep the current choice if it still matches; otherwise jump to the top
+    // result so Save picks what the filter is showing.
+    if (
+      next_matches.length > 0 &&
+      !next_matches.some(([key]) => key === value)
+    )
+      onChange(next_matches[0][0]);
+  }
+
+  function closeList() {
+    setOpen(false);
+    setQuery("");
+    triggerRef.current?.focus();
+  }
+
+  function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      closeList();
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    if (matches.length === 0) return;
+    const current = matches.findIndex(([key]) => key === value);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    const next =
+      current === -1
+        ? step === 1
+          ? 0
+          : matches.length - 1
+        : (current + step + matches.length) % matches.length;
+    onChange(matches[next][0]);
+  }
+
+  const selected = matches.find(([key]) => key === value)?.[0];
+  return (
+    <div
+      className="relative"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOpen(false);
+          setQuery("");
+        }
+      }}
+    >
+      <button
+        ref={triggerRef}
+        id={id}
+        type="button"
+        aria-label={t("editor.codeLanguageAria")}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        // While open the list closes on blur; keeping focus in the filter on
+        // mousedown lets this click toggle it shut instead of reopening it.
+        onMouseDown={(event) => {
+          if (open) event.preventDefault();
+        }}
+        onClick={() => (open ? closeList() : setOpen(true))}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+        className={cn(
+          inputClassName,
+          "flex cursor-pointer items-center justify-between gap-2 text-left",
+        )}
+      >
+        <span className="truncate">{CODE_LANGUAGES[value] ?? value}</span>
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            "text-muted-foreground size-4 shrink-0 transition-transform duration-150",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+      {open ? (
+        <div className="border-border bg-surface absolute top-full right-0 left-0 z-20 mt-1 space-y-1 rounded-lg border p-1 shadow-lg">
+          <Input
+            role="combobox"
+            aria-label={t("editor.searchLanguage")}
+            aria-expanded
+            aria-controls={`${id}-list`}
+            aria-activedescendant={
+              selected ? `${id}-opt-${selected}` : undefined
+            }
+            value={query}
+            onChange={(event) => updateQuery(event.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={t("editor.searchLanguage")}
+            autoComplete="off"
+            autoFocus
+          />
+          <div
+            ref={listRef}
+            id={`${id}-list`}
+            role="listbox"
+            className="max-h-56 overflow-y-auto overscroll-contain"
+          >
+            {matches.length === 0 ? (
+              <div className="text-muted-foreground px-2.5 py-2 text-sm">
+                {t("editor.noLanguageMatch")}
+              </div>
+            ) : (
+              matches.map(([key, label]) => (
+                <div
+                  key={key}
+                  id={`${id}-opt-${key}`}
+                  role="option"
+                  aria-selected={key === value}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    onChange(key);
+                    closeList();
+                  }}
+                  className={cn(
+                    "hover:bg-surface-hover relative flex cursor-pointer items-center rounded-md py-2 pr-8 pl-2.5 text-sm transition-colors duration-150",
+                    key === value && "bg-surface-selected",
+                  )}
+                >
+                  {label}
+                  {key === value ? (
+                    <Check
+                      aria-hidden
+                      className="text-primary absolute right-2.5 size-4"
+                    />
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CodeBlockWithLines({
   editor,
   node,
@@ -1216,17 +1426,24 @@ function CodeBlockWithLines({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [captionDraft, setCaptionDraft] = useState(caption);
   const [languageDraft, setLanguageDraft] = useState(language || "plaintext");
+  const theme = normaliseCodeTheme(node.attrs.codeTheme);
+  const [themeDraft, setThemeDraft] = useState(theme ?? DEFAULT_CODE_THEME);
   const { t } = useTranslation();
 
   function openDetails() {
     setCaptionDraft(caption);
     setLanguageDraft(language || "plaintext");
+    setThemeDraft(theme ?? DEFAULT_CODE_THEME);
     setDetailsOpen(true);
   }
 
   function saveDetails() {
     const trimmed = captionDraft.trim();
-    updateAttributes({ caption: trimmed || null, language: languageDraft });
+    updateAttributes({
+      caption: trimmed || null,
+      language: languageDraft,
+      codeTheme: normaliseCodeTheme(themeDraft),
+    });
     setDetailsOpen(false);
   }
 
@@ -1242,7 +1459,10 @@ function CodeBlockWithLines({
   );
 
   return (
-    <NodeViewWrapper className="wikihub-code group border-code-border bg-code-bg relative my-4 flex flex-col overflow-hidden rounded-md border">
+    <NodeViewWrapper
+      data-code-theme={theme ?? undefined}
+      className="wikihub-code group border-code-border bg-code-bg relative my-4 flex flex-col overflow-hidden rounded-md border"
+    >
       {showHeader ? (
         <div
           contentEditable={false}
@@ -1303,7 +1523,10 @@ function CodeBlockWithLines({
             <div className="flex flex-col gap-6 sm:flex-row">
               <div className="space-y-5 sm:w-56 sm:shrink-0">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium" htmlFor="code-caption">
+                  <label
+                    className="block text-sm font-medium"
+                    htmlFor="code-caption"
+                  >
                     {t("editor.title")}
                   </label>
                   <Input
@@ -1316,27 +1539,49 @@ function CodeBlockWithLines({
                 </div>
                 <div className="space-y-2">
                   <label
-                    className="text-sm font-medium"
+                    className="block text-sm font-medium"
                     htmlFor="code-language"
                   >
                     {t("editor.language")}
                   </label>
-                  <Select
+                  <LanguagePicker
+                    id="code-language"
                     value={languageDraft}
-                    onValueChange={setLanguageDraft}
+                    onChange={setLanguageDraft}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label
+                    className="block text-sm font-medium"
+                    htmlFor="code-theme"
                   >
+                    {t("editor.codeTheme")}
+                  </label>
+                  <Select value={themeDraft} onValueChange={setThemeDraft}>
                     <SelectTrigger
-                      id="code-language"
-                      aria-label={t("editor.codeLanguageAria")}
+                      id="code-theme"
+                      aria-label={t("editor.codeTheme")}
                     >
                       <SelectValue>
-                        {CODE_LANGUAGES[languageDraft] ?? languageDraft}
+                        <span className="flex items-center gap-2">
+                          <CodeThemeSwatch theme={themeDraft} />
+                          {CODE_THEMES.find((x) => x.key === themeDraft)
+                            ?.label ?? themeDraft}
+                        </span>
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="max-h-72 overflow-y-auto">
-                      {CODE_LANGUAGE_ENTRIES.map(([key, label]) => (
-                        <SelectItem key={key} value={key}>
-                          {label}
+                    <SelectContent className="max-h-72">
+                      {CODE_THEMES.map((option) => (
+                        <SelectItem key={option.key} value={option.key}>
+                          <span className="flex min-w-0 items-center gap-2">
+                            <CodeThemeSwatch theme={option.key} />
+                            <span className="truncate">{option.label}</span>
+                            <span className="text-muted-foreground ml-auto shrink-0 pr-1 text-xs">
+                              {option.mode === "dark"
+                                ? t("editor.themeDark")
+                                : t("editor.themeLight")}
+                            </span>
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1344,13 +1589,14 @@ function CodeBlockWithLines({
                 </div>
               </div>
               <div className="flex min-w-0 flex-1 flex-col gap-2">
-                <span className="text-sm font-medium">Preview</span>
+                <span className="block text-sm font-medium">Preview</span>
                 <div className="h-[28rem]">
                   <CodeBlockPreview
                     caption={captionDraft.trim()}
                     languageLabel={
                       CODE_LANGUAGES[languageDraft] ?? languageDraft
                     }
+                    theme={normaliseCodeTheme(themeDraft)}
                     lines={lines}
                     tokenLines={previewTokenLines}
                   />
@@ -2872,6 +3118,18 @@ const CustomCodeBlock = CodeBlockLowlight.extend({
         renderHTML: (attributes: { caption?: string | null }) =>
           attributes.caption ? { "data-caption": attributes.caption } : {},
       },
+      // Colour theme, as a key from lib/code-themes. Null (the default
+      // Monokai Pro look) writes nothing, so untouched blocks serialise as
+      // they always have.
+      codeTheme: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          normaliseCodeTheme(element.getAttribute("data-code-theme")),
+        renderHTML: (attributes: { codeTheme?: string | null }) => {
+          const theme = normaliseCodeTheme(attributes.codeTheme);
+          return theme ? { "data-code-theme": theme } : {};
+        },
+      },
     };
   },
   addNodeView() {
@@ -2895,9 +3153,145 @@ const CustomCodeBlock = CodeBlockLowlight.extend({
         }
         return false;
       },
+      // Tab / Shift-Tab indent and outdent the selected lines (or just the
+      // caret's line) by two spaces, like a code editor, instead of moving
+      // keyboard focus out of the block. Outside a code block they return
+      // false so lists and table cells keep their own Tab behaviour.
+      Tab: () => this.editor.commands.command(({ state, dispatch }) =>
+        shiftCodeBlockIndent(state, dispatch, this.type, "indent"),
+      ),
+      "Shift-Tab": () => this.editor.commands.command(({ state, dispatch }) =>
+        shiftCodeBlockIndent(state, dispatch, this.type, "outdent"),
+      ),
     };
   },
 });
+
+const MAX_BLOCK_INDENT = 8;
+const BLOCK_INDENT_REM = 2;
+const INDENTABLE_TYPES = ["paragraph", "heading"];
+
+/**
+ * Tab / Shift-Tab indent paragraphs and headings by whole steps, stored as a
+ * left margin so the reader and exports show it too. Deliberately the last in
+ * line (low priority): code blocks, list items and table cells handle Tab
+ * themselves first. Whatever reaches this handler is swallowed even when there
+ * is nothing to indent, so Tab never throws keyboard focus out of the page body.
+ */
+const BlockIndent = Extension.create({
+  name: "blockIndent",
+  priority: 10,
+  addGlobalAttributes() {
+    return [
+      {
+        types: INDENTABLE_TYPES,
+        attributes: {
+          indent: {
+            default: 0,
+            parseHTML: (element) => {
+              const match = /^(\d+(?:\.\d+)?)rem$/.exec(
+                element.style.marginLeft,
+              );
+              if (!match) return 0;
+              const level = Math.round(Number(match[1]) / BLOCK_INDENT_REM);
+              return Math.min(Math.max(level, 0), MAX_BLOCK_INDENT);
+            },
+            renderHTML: (attributes: { indent?: number }) =>
+              attributes.indent
+                ? {
+                    style: `margin-left: ${attributes.indent * BLOCK_INDENT_REM}rem`,
+                  }
+                : {},
+          },
+        },
+      },
+    ];
+  },
+  addKeyboardShortcuts() {
+    const shift = (delta: 1 | -1) => () =>
+      this.editor.commands.command(({ state, tr, dispatch }) => {
+        const { $from } = state.selection;
+        for (let depth = $from.depth; depth > 0; depth -= 1) {
+          const name = $from.node(depth).type.name;
+          // Lists and tables own Tab; just keep focus in the editor.
+          if (name === "listItem" || name === "tableCell" || name === "tableHeader")
+            return true;
+        }
+        if (!dispatch) return true;
+        state.doc.nodesBetween(
+          state.selection.from,
+          state.selection.to,
+          (node, pos) => {
+            if (!INDENTABLE_TYPES.includes(node.type.name)) return;
+            const current = Number(node.attrs.indent) || 0;
+            const next = Math.min(
+              Math.max(current + delta, 0),
+              MAX_BLOCK_INDENT,
+            );
+            if (next !== current)
+              tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: next });
+          },
+        );
+        if (tr.docChanged) dispatch(tr.scrollIntoView());
+        return true;
+      });
+    return { Tab: shift(1), "Shift-Tab": shift(-1) };
+  },
+});
+
+const CODE_INDENT = "  ";
+
+function shiftCodeBlockIndent(
+  state: EditorState,
+  dispatch: ((tr: Transaction) => void) | undefined,
+  codeBlockType: NodeType,
+  direction: "indent" | "outdent",
+): boolean {
+  const { $from, $to, empty } = state.selection;
+  if ($from.parent.type !== codeBlockType || $to.parent !== $from.parent)
+    return false;
+  if (!dispatch) return true;
+
+  const blockStart = $from.start();
+  const text = $from.parent.textContent;
+  const fromOffset = $from.parentOffset;
+  const toOffset = $to.parentOffset;
+
+  // A bare caret with Tab inserts the indent where it stands, so Tab can
+  // still be used to space out a line; every other case works on whole lines.
+  if (empty && direction === "indent") {
+    dispatch(state.tr.insertText(CODE_INDENT, $from.pos).scrollIntoView());
+    return true;
+  }
+
+  const lineStarts: number[] = [];
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    const lineEnd = offset + line.length;
+    // A selection ending at the very start of a line does not include it.
+    const touched =
+      lineEnd >= fromOffset &&
+      offset <= toOffset &&
+      !(offset === toOffset && toOffset > fromOffset);
+    if (touched) lineStarts.push(offset);
+    offset = lineEnd + 1;
+  }
+
+  const tr = state.tr;
+  // Last line first, so earlier positions stay valid as text is edited.
+  for (const start of [...lineStarts].reverse()) {
+    const pos = blockStart + start;
+    if (direction === "indent") {
+      tr.insertText(CODE_INDENT, pos);
+      continue;
+    }
+    const leading = text.slice(start).match(/^( {1,2}|\t)/);
+    if (leading) tr.delete(pos, pos + leading[0].length);
+  }
+  if (!tr.docChanged) return true;
+  dispatch(tr.scrollIntoView());
+  return true;
+}
 
 /**
  * A code block (or any node that isn't a paragraph) sitting first in the
@@ -3622,6 +4016,7 @@ function buildEditorExtensions({
   TextStyleMark,
   UnderlineMark,
   TextAlign.configure({ types: ["heading", "paragraph"] }),
+  BlockIndent,
   Table.configure({
     resizable: false,
     cellMinWidth: TABLE_CELL_MIN_WIDTH,
@@ -3855,8 +4250,8 @@ const editorClassName =
   "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-0 [&_li[data-checked]]:flex [&_li[data-checked]]:items-start [&_li[data-checked]]:gap-2 [&_li[data-checked]>label]:mt-1 [&_li[data-checked]>label]:flex-shrink-0 [&_li[data-checked]>div]:min-w-0 [&_li[data-checked]>div]:flex-1 " +
   "[&_li[data-checked]>label>input[type=checkbox]]:accent-primary [&_li[data-checked]>label>input[type=checkbox]]:size-4 [&_li[data-checked]>label>input[type=checkbox]]:cursor-pointer [&_li[data-checked]>label>input[type=checkbox]]:rounded " +
   "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
-  "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
-  "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
+  "[&_code]:rounded [&_code]:bg-inline-code-bg [&_code]:text-inline-code [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
+  "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:text-[inherit] [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
   "[&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-md " +
   // Table rhythm (margin, cell minimum width, padding, and line-height) is
   // kept identical to readerClassName below so rows have the same height in
@@ -3881,8 +4276,8 @@ export const readerClassName =
   "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-0 [&_li[data-checked]]:flex [&_li[data-checked]]:items-start [&_li[data-checked]]:gap-2 [&_li[data-checked]>label]:mt-1 [&_li[data-checked]>label]:flex-shrink-0 [&_li[data-checked]>div]:min-w-0 [&_li[data-checked]>div]:flex-1 " +
   "[&_li[data-checked]>label>input[type=checkbox]]:accent-primary [&_li[data-checked]>label>input[type=checkbox]]:size-4 [&_li[data-checked]>label>input[type=checkbox]]:rounded [&_li[data-checked]>label>input[type=checkbox]]:pointer-events-none " +
   "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
-  "[&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
-  "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
+  "[&_code]:rounded [&_code]:bg-inline-code-bg [&_code]:text-inline-code [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
+  "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:text-[inherit] [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
   "[&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-[42rem] [&_img]:rounded-md " +
   // Tables are persisted with their column widths in `colwidth` attributes.
   // Fixed layout makes the reader honour those widths instead of allowing an
@@ -6190,6 +6585,29 @@ export function RichTextEditor({
     content: normalizedContent,
     editorProps: {
       attributes: { class: editorClassName },
+      handlePaste(view, event) {
+        // A screenshot or copied image arrives as a file on the clipboard with
+        // no text. Route it through the toolbar's upload path so it is stored
+        // as an attachment rather than inlined or dropped. Rich content that
+        // merely carries an image alongside text (Word, Excel) keeps ProseMirror's
+        // default HTML paste.
+        const data = event.clipboardData;
+        if (!data) return false;
+        const images = Array.from(data.files).filter((file) =>
+          file.type.startsWith("image/"),
+        );
+        if (images.length === 0) return false;
+        const html = data.getData("text/html");
+        const hasText =
+          data.getData("text/plain").trim() !== "" &&
+          !/^\s*(<[^>]+>\s*)*<img\b[^>]*>\s*(<[^>]+>\s*)*$/i.test(html);
+        if (hasText) return false;
+        event.preventDefault();
+        view.dom.dispatchEvent(
+          new CustomEvent<File[]>("wikihub:editor-files", { detail: images }),
+        );
+        return true;
+      },
       handleDrop(view, event) {
         // Tiptap's default node view `stopEvent` hides `dragstart` from
         // ProseMirror whenever the drag begins on a child of the wrapper - the

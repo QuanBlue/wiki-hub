@@ -25,6 +25,7 @@ import {
   Pin,
   RectangleHorizontal,
   RefreshCw,
+  Save,
   Share2,
   Star,
   Tag,
@@ -847,6 +848,12 @@ export function SpaceWorkspace({
   const [titleDraft, setTitleDraft] = useState("");
   const [savePending, setSavePending] = useState(false);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
+  const [draftNowPending, setDraftNowPending] = useState(false);
+  // Content (HTML or Markdown, whichever mode is active) last stored as a
+  // draft this session. Drafts hold no title, so only content is compared.
+  const [draftSavedContent, setDraftSavedContent] = useState<string | null>(
+    null,
+  );
   const [autoSaveStatus, setAutoSaveStatus] = useState<
     "idle" | "saving" | "saved"
   >("idle");
@@ -1038,6 +1045,14 @@ export function SpaceWorkspace({
         ? markdownDraft !== pageEditBaseline.current.markdown
         : draftContent !== pageEditBaseline.current.html));
   pageEditDirtyRef.current = pageEditDirty;
+  const currentEditContent = editMode === "markdown" ? markdownDraft : draftContent;
+  // Enabled only while there is content the stored draft does not already have.
+  const draftDirty =
+    pageEditDirty &&
+    (editMode === "markdown"
+      ? markdownDraft !== pageEditBaseline.current.markdown
+      : draftContent !== pageEditBaseline.current.html) &&
+    currentEditContent !== draftSavedContent;
   const overviewEditDirty =
     overviewEditing && overviewDraft !== overviewEditBaseline.current;
   const hasUnsavedChanges = pageEditDirty || overviewEditDirty;
@@ -1186,18 +1201,22 @@ export function SpaceWorkspace({
     } = latestPageDraft.current;
     if (!page || !pageEditDirtyRef.current) return true;
 
+    const savedContent = mode === "markdown" ? markdownSource : htmlDraft;
     const request = savePageDraft(
       space.key,
       page.slug,
       {
-        content: mode === "markdown" ? markdownSource : htmlDraft,
+        content: savedContent,
         content_format: formatForMode(mode),
         edit_mode: mode,
         base_updated_at: page.updated_at,
       },
       { keepalive },
     )
-      .then(() => true)
+      .then(() => {
+        setDraftSavedContent(savedContent);
+        return true;
+      })
       .catch(() => false);
     draftSaveInFlight.current = request;
     try {
@@ -1333,6 +1352,31 @@ export function SpaceWorkspace({
       setDiscardDraftPending(false);
     }
   }
+
+  async function saveDraftNow(): Promise<boolean> {
+    if (draftNowPending) return false;
+    setDraftNowPending(true);
+    try {
+      const saved = await persistDraft();
+      if (saved) toast.success(t("workspace.draftSaved"));
+      else toast.error(t("workspace.draftSaveError"));
+      return saved;
+    } finally {
+      setDraftNowPending(false);
+    }
+  }
+
+  // Cancel dialog: keep the edits as a draft, then close the editor. A failed
+  // save keeps the dialog open so nothing is lost.
+  async function saveDraftAndCancel() {
+    if (draftDirty && !(await saveDraftNow())) return;
+    setCancelEditPending(false);
+    cancelEditing();
+  }
+
+  useEffect(() => {
+    setDraftSavedContent(null);
+  }, [editing, currentPage?.slug]);
 
   function markAutoSaveStatus(status: "idle" | "saving" | "saved") {
     if (autoSaveResetTimer.current !== null) {
@@ -2103,6 +2147,20 @@ export function SpaceWorkspace({
                       : autoSaveEnabled
                         ? t("workspace.autoSaveOn")
                         : t("workspace.autoSave")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    title={t("workspace.saveDraftTitle")}
+                    onClick={() => void saveDraftNow()}
+                    disabled={savePending || draftNowPending || !draftDirty}
+                    className="border-warning/50 bg-warning-bg text-warning [&:not(:disabled)]:hover:border-warning/70 [&:not(:disabled)]:hover:bg-[color:color-mix(in_oklab,var(--wh-warning)_12%,var(--surface))] active:bg-[color:color-mix(in_oklab,var(--wh-warning)_20%,var(--surface))] disabled:border-border disabled:bg-surface-hover disabled:text-muted-foreground"
+                  >
+                    <Save />
+                    {draftNowPending
+                      ? t("workspace.savingDraft")
+                      : t("workspace.saveDraft")}
                   </Button>
                   <Button
                     type="submit"
@@ -2889,7 +2947,14 @@ export function SpaceWorkspace({
                 : t("workspace.leaveWithoutSaving")
             }
             onSecondary={leaveWithoutSaving}
-            pending={savePending}
+            tertiaryLabel={
+              cancelEditPending && pageEditDirty
+                ? t("workspace.saveDraftAndLeave")
+                : undefined
+            }
+            onTertiary={() => void saveDraftAndCancel()}
+            dismissOnOutsideClick={!(savePending || draftNowPending)}
+            pending={savePending || draftNowPending}
             onConfirm={() => void saveBeforeLeave()}
           />
 

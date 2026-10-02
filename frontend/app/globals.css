@@ -567,6 +567,10 @@
   --danger-foreground: #ffffff;
   --scrollbar-thumb: var(--wh-neutral-400);
   --scrollbar-thumb-hover: var(--wh-neutral-500);
+  /* Inline `code` in prose: red text on a slightly darker chip so it stands
+     out from body text. */
+  --inline-code-fg: #c4271c;
+  --inline-code-bg: var(--wh-neutral-100);
 
   /* --- layout metrics (8px grid) --- */
   --wh-topbar-height: 3.5rem; /* 56px */
@@ -615,6 +619,8 @@
   --danger-foreground: #0f172a;
   --scrollbar-thumb: #4b5563;
   --scrollbar-thumb-hover: #6b7280;
+  --inline-code-fg: #ff9a92;
+  --inline-code-bg: #2c3243;
 }
 
 /* Expose the tokens to Tailwind utilities (bg-surface, text-muted-foreground, ...) */
@@ -645,6 +651,8 @@
   --color-info: var(--wh-info);
   --color-info-bg: var(--wh-info-bg);
   --color-danger-bg: var(--wh-danger-bg);
+  --color-inline-code: var(--inline-code-fg);
+  --color-inline-code-bg: var(--inline-code-bg);
 
   /* Code block chrome (background/border/default text) - fixed dark, see
      the --wh-code-* comment in :root for why this doesn't vary by theme. */
@@ -1072,6 +1080,145 @@
 
   .wikihub-code :is(.hljs-meta, .hljs-doctag, .hljs-deletion) {
     color: var(--wh-code-meta);
+  }
+
+  /* Per-block code themes (see lib/code-themes.ts). Each one only re-declares
+     the --wh-code-* palette on the block itself, so everything above and every
+     bg-code-* / text-code-* utility follows along. The unmarked default is the
+     Monokai Pro palette from :root. */
+  .wikihub-code[data-code-theme="github-dark"] {
+    --wh-code-bg: #0d1117;
+    --wh-code-bg-inset: #161b22;
+    --wh-code-border: #30363d;
+    --wh-code-fg: #e6edf3;
+    --wh-code-comment: #8b949e;
+    --wh-code-keyword: #ff7b72;
+    --wh-code-string: #a5d6ff;
+    --wh-code-number: #79c0ff;
+    --wh-code-function: #d2a8ff;
+    --wh-code-type: #ffa657;
+    --wh-code-variable: #e6edf3;
+    --wh-code-meta: #7ee787;
+  }
+
+  .wikihub-code[data-code-theme="one-dark"] {
+    --wh-code-bg: #282c34;
+    --wh-code-bg-inset: #21252b;
+    --wh-code-border: #3e4451;
+    --wh-code-fg: #abb2bf;
+    --wh-code-comment: #7f848e;
+    --wh-code-keyword: #c678dd;
+    --wh-code-string: #98c379;
+    --wh-code-number: #d19a66;
+    --wh-code-function: #61afef;
+    --wh-code-type: #e5c07b;
+    --wh-code-variable: #e06c75;
+    --wh-code-meta: #56b6c2;
+  }
+
+  .wikihub-code[data-code-theme="dracula"] {
+    --wh-code-bg: #282a36;
+    --wh-code-bg-inset: #21222c;
+    --wh-code-border: #44475a;
+    --wh-code-fg: #f8f8f2;
+    --wh-code-comment: #6272a4;
+    --wh-code-keyword: #ff79c6;
+    --wh-code-string: #f1fa8c;
+    --wh-code-number: #bd93f9;
+    --wh-code-function: #50fa7b;
+    --wh-code-type: #8be9fd;
+    --wh-code-variable: #f8f8f2;
+    --wh-code-meta: #ffb86c;
+  }
+
+  .wikihub-code[data-code-theme="nord"] {
+    --wh-code-bg: #2e3440;
+    --wh-code-bg-inset: #272c36;
+    --wh-code-border: #434c5e;
+    --wh-code-fg: #d8dee9;
+    --wh-code-comment: #7b88a1;
+    --wh-code-keyword: #81a1c1;
+    --wh-code-string: #a3be8c;
+    --wh-code-number: #b48ead;
+    --wh-code-function: #88c0d0;
+    --wh-code-type: #8fbcbb;
+    --wh-code-variable: #d8dee9;
+    --wh-code-meta: #d08770;
+  }
+
+  .wikihub-code[data-code-theme="solarized-dark"] {
+    --wh-code-bg: #002b36;
+    --wh-code-bg-inset: #073642;
+    --wh-code-border: #124a59;
+    --wh-code-fg: #93a1a1;
+    --wh-code-comment: #657b83;
+    --wh-code-keyword: #859900;
+    --wh-code-string: #2aa198;
+    --wh-code-number: #d33682;
+    --wh-code-function: #268bd2;
+    --wh-code-type: #b58900;
+    --wh-code-variable: #93a1a1;
+    --wh-code-meta: #cb4b16;
+  }
+
+  .wikihub-code[data-code-theme="github-light"] {
+    --wh-code-bg: #ffffff;
+    --wh-code-bg-inset: #f6f8fa;
+    --wh-code-border: #d0d7de;
+    --wh-code-fg: #24292f;
+    --wh-code-comment: #6e7781;
+    --wh-code-keyword: #cf222e;
+    --wh-code-string: #0a3069;
+    --wh-code-number: #0550ae;
+    --wh-code-function: #8250df;
+    --wh-code-type: #953800;
+    --wh-code-variable: #24292f;
+    --wh-code-meta: #116329;
+  }
+
+  .wikihub-code[data-code-theme="one-light"] {
+    --wh-code-bg: #fafafa;
+    --wh-code-bg-inset: #f0f0f1;
+    --wh-code-border: #dbdbdc;
+    --wh-code-fg: #383a42;
+    --wh-code-comment: #8a8b91;
+    --wh-code-keyword: #a626a4;
+    --wh-code-string: #50a14f;
+    --wh-code-number: #986801;
+    --wh-code-function: #4078f2;
+    --wh-code-type: #c18401;
+    --wh-code-variable: #e45649;
+    --wh-code-meta: #0184bc;
+  }
+
+  .wikihub-code[data-code-theme="solarized-light"] {
+    --wh-code-bg: #fdf6e3;
+    --wh-code-bg-inset: #eee8d5;
+    --wh-code-border: #ddd6c1;
+    --wh-code-fg: #586e75;
+    --wh-code-comment: #8a9a9a;
+    --wh-code-keyword: #859900;
+    --wh-code-string: #2aa198;
+    --wh-code-number: #d33682;
+    --wh-code-function: #268bd2;
+    --wh-code-type: #b58900;
+    --wh-code-variable: #586e75;
+    --wh-code-meta: #cb4b16;
+  }
+
+  .wikihub-code[data-code-theme="gruvbox-light"] {
+    --wh-code-bg: #fbf1c7;
+    --wh-code-bg-inset: #ebdbb2;
+    --wh-code-border: #d5c4a1;
+    --wh-code-fg: #3c3836;
+    --wh-code-comment: #7c6f64;
+    --wh-code-keyword: #9d0006;
+    --wh-code-string: #79740e;
+    --wh-code-number: #8f3f71;
+    --wh-code-function: #427b58;
+    --wh-code-type: #b57614;
+    --wh-code-variable: #3c3836;
+    --wh-code-meta: #af3a03;
   }
 
   /* Confluence imported content & macro styles */
