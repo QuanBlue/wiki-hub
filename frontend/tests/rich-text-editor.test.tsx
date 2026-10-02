@@ -1045,10 +1045,10 @@ describe("RichTextEditor code blocks", () => {
     const titleInput = await screen.findByLabelText("Title");
     await user.clear(titleInput);
     await user.type(titleInput, "deploy.sh");
-    await user.click(screen.getByRole("button", { name: "Code language" }));
     await user.click(
-      await screen.findByRole("menuitemradio", { name: "Python" }),
+      await screen.findByRole("button", { name: "Code language" }),
     );
+    await user.click(await screen.findByRole("option", { name: "Python" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -1076,16 +1076,161 @@ describe("RichTextEditor code blocks", () => {
     // reflect the in-progress choice, not what is actually stored yet.
     expect(screen.queryByText("def", { selector: ".hljs-keyword" })).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Code language" }));
     await user.click(
-      await screen.findByRole("menuitemradio", { name: "Python" }),
+      await screen.findByRole("button", { name: "Code language" }),
     );
+    await user.click(await screen.findByRole("option", { name: "Python" }));
 
     expect(
       await screen.findByText("def", { selector: ".hljs-keyword" }),
     ).toBeInTheDocument();
     // Nothing has been saved yet.
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("saves a chosen code theme with the block and writes nothing for the default", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content='<pre data-code-theme="dracula"><code class="language-bash">echo hi</code></pre>'
+        onChange={onChange}
+      />,
+    );
+
+    // A stored theme survives the round trip into the editor's own markup.
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-code-theme="dracula"]'),
+      ).not.toBeNull(),
+    );
+
+    await openCodeBlockDetails(user);
+    await user.click(await screen.findByRole("button", { name: "Theme" }));
+    await user.click(
+      await screen.findByRole("menuitemradio", { name: /GitHub Light/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.stringContaining('data-code-theme="github-light"'),
+      ),
+    );
+
+    await openCodeBlockDetails(user);
+    await user.click(await screen.findByRole("button", { name: "Theme" }));
+    await user.click(
+      await screen.findByRole("menuitemradio", { name: /Monokai Pro/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.not.stringContaining("data-code-theme"),
+      ),
+    );
+  });
+
+  it("indents and outdents code with Tab and Shift+Tab instead of leaving the block", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RichTextEditor
+        content="<pre><code>run()</code></pre>"
+        onChange={onChange}
+      />,
+    );
+
+    // The caret starts at the top of the document, which is inside this block.
+    // jsdom cannot hit-test a click into the editor, so key events go straight
+    // to ProseMirror's contenteditable.
+    const code = await screen.findByText("run()");
+    const surface = code.closest(".ProseMirror") as HTMLElement;
+    fireEvent.keyDown(surface, { key: "Tab", code: "Tab", keyCode: 9 });
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.stringContaining("<code>  run()</code>"),
+      ),
+    );
+    fireEvent.keyDown(surface, {
+      key: "Tab",
+      code: "Tab",
+      keyCode: 9,
+      shiftKey: true,
+    });
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.stringContaining("<code>run()</code>"),
+      ),
+    );
+  });
+
+  it("indents a paragraph with Tab, outdents with Shift+Tab, and keeps the indent in the HTML", async () => {
+    const onChange = vi.fn();
+    render(<RichTextEditor content="<p>hello</p>" onChange={onChange} />);
+
+    const surface = (await screen.findByText("hello")).closest(
+      ".ProseMirror",
+    ) as HTMLElement;
+    fireEvent.keyDown(surface, { key: "Tab", code: "Tab", keyCode: 9 });
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.stringContaining("margin-left: 2rem"),
+      ),
+    );
+    fireEvent.keyDown(surface, {
+      key: "Tab",
+      code: "Tab",
+      keyCode: 9,
+      shiftKey: true,
+    });
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.not.stringContaining("margin-left"),
+      ),
+    );
+  });
+
+  it("filters the language list and moves the selection with the arrow keys", async () => {
+    const user = userEvent.setup();
+    render(
+      <RichTextEditor
+        content='<pre><code class="language-bash">echo hi</code></pre>'
+        onChange={vi.fn()}
+      />,
+    );
+
+    await openCodeBlockDetails(user);
+    // Collapsed by default: only the current language shows, no filter or list.
+    const trigger = await screen.findByRole("button", {
+      name: "Code language",
+    });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    await user.click(trigger);
+    const filter = await screen.findByRole("combobox");
+    await user.type(filter, "pyth");
+    expect(screen.queryByRole("option", { name: "Bash" })).toBeNull();
+    expect(screen.getByRole("option", { name: "Python" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    await user.clear(filter);
+    await user.type(filter, "{ArrowDown}");
+    const options = screen.getAllByRole("option");
+    const selectedIndex = options.findIndex(
+      (option) => option.getAttribute("aria-selected") === "true",
+    );
+    expect(options[selectedIndex]).not.toHaveTextContent("Python");
+    await user.type(filter, "{ArrowUp}");
+    expect(
+      screen
+        .getAllByRole("option")
+        .findIndex((o) => o.getAttribute("aria-selected") === "true"),
+    ).toBe(selectedIndex - 1);
+
+    await user.clear(filter);
+    await user.type(filter, "zzzz");
+    expect(screen.getByText("No matching language")).toBeInTheDocument();
   });
 
   it("discards the draft without saving when the details modal is cancelled", async () => {

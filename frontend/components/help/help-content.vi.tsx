@@ -699,12 +699,12 @@ export const sectionsVi: HelpSection[] = [
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Code>/code</Code></td>
                 <td className="p-2.5 font-medium">Khối code</td>
-                <td className="p-2.5">Khối code tô màu cú pháp kèm bộ chọn ngôn ngữ.</td>
+                <td className="p-2.5">Khối code tô màu cú pháp kèm bộ chọn ngôn ngữ có ô lọc (dùng mũi tên lên/xuống để chọn) và mười giao diện màu sáng/tối, chọn riêng cho từng khối trong tùy chọn của khối. Trong trình soạn thảo, nút <strong>Lưu nháp</strong> giữ chỉnh sửa thành bản nháp riêng mà không thêm phiên bản vào lịch sử trang. Trong khối code, Tab / Shift+Tab thụt vào / thụt ra các dòng đang chọn. Ngoài khối code, Tab / Shift+Tab thụt lề đoạn văn và tiêu đề.</td>
               </tr>
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Code>/image</Code></td>
                 <td className="p-2.5 font-medium">Tải ảnh lên</td>
-                <td className="p-2.5">Tải ảnh lên với tay cầm chỉnh cỡ ở góc & chú thích.</td>
+                <td className="p-2.5">Tải ảnh lên với tay cầm chỉnh cỡ ở góc & chú thích. Bạn cũng có thể dán ảnh chụp màn hình hoặc ảnh đã sao chép trực tiếp vào trang bằng Ctrl+V.</td>
               </tr>
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Code>/attachment</Code></td>

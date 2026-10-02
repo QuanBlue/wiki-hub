@@ -669,12 +669,12 @@ export const sectionsEn: HelpSection[] = [
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Code>/code</Code></td>
                 <td className="p-2.5 font-medium">Code Block</td>
-                <td className="p-2.5">Syntax-highlighted code block with language picker.</td>
+                <td className="p-2.5">Syntax-highlighted code block with a filterable language picker (use the up/down arrow keys to choose) and ten colour themes, light and dark, set per block from the block's options. In the editor, <strong>Save draft</strong> keeps your edits as a private draft without adding a version to the page history. Inside a code block, Tab / Shift+Tab indent / outdent the selected lines. Outside one, Tab / Shift+Tab indent paragraphs and headings.</td>
               </tr>
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Code>/image</Code></td>
                 <td className="p-2.5 font-medium">Image Upload</td>
-                <td className="p-2.5">Upload image with corner resize handles &amp; captions.</td>
+                <td className="p-2.5">Upload image with corner resize handles &amp; captions. You can also paste a screenshot or copied image straight into the page with Ctrl+V.</td>
               </tr>
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Code>/attachment</Code></td>

@@ -24,6 +24,9 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   secondaryLabel,
   onSecondary,
+  tertiaryLabel,
+  onTertiary,
+  dismissOnOutsideClick = false,
   destructive = false,
   pending = false,
   onConfirm,
@@ -36,6 +39,11 @@ export function ConfirmDialog({
   cancelLabel?: string;
   secondaryLabel?: string;
   onSecondary?: () => void;
+  /** An extra middle action, drawn in the warning tone (e.g. "Save draft and leave"). */
+  tertiaryLabel?: string;
+  onTertiary?: () => void;
+  /** Treat a click on the backdrop as the cancel action. Off by default. */
+  dismissOnOutsideClick?: boolean;
   destructive?: boolean;
   pending?: boolean;
   onConfirm: () => void;
@@ -43,10 +51,17 @@ export function ConfirmDialog({
   return (
     <AlertDialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialogPrimitive.Portal>
-        <AlertDialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
+        <AlertDialogPrimitive.Overlay
+          className="fixed inset-0 z-50 bg-black/50"
+          // Opt-in: for prompts whose cancel action is a harmless "stay",
+          // clicking the backdrop is the same as choosing it.
+          onClick={dismissOnOutsideClick ? () => onOpenChange(false) : undefined}
+        />
         <AlertDialogPrimitive.Content
           className={cn(
-            "border-border bg-surface fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem)] max-w-md",
+            "border-border bg-surface fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem)]",
+            // Four actions need more room than two, or the row wraps.
+            tertiaryLabel && onTertiary ? "max-w-xl" : "max-w-md",
             "-translate-x-1/2 -translate-y-1/2 rounded-lg border p-5 shadow-lg",
           )}
         >
@@ -57,7 +72,7 @@ export function ConfirmDialog({
             {description}
           </AlertDialogPrimitive.Description>
 
-          <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <div className="mt-5 flex flex-wrap items-center justify-end gap-2 [&>button]:whitespace-nowrap">
             {secondaryLabel && onSecondary ? (
               <AlertDialogPrimitive.Action
                 disabled={pending}
@@ -65,7 +80,12 @@ export function ConfirmDialog({
                   event.preventDefault();
                   onSecondary();
                 }}
-                className={cn(buttonVariants({ variant: "ghost" }))}
+                // The "leave" escape hatch sits apart on the left; the
+                // remaining actions group on the right.
+                className={cn(
+                  buttonVariants({ variant: "ghost" }),
+                  tertiaryLabel && onTertiary && "sm:mr-auto",
+                )}
               >
                 {secondaryLabel}
               </AlertDialogPrimitive.Action>
@@ -76,6 +96,25 @@ export function ConfirmDialog({
             >
               {cancelLabel}
             </AlertDialogPrimitive.Cancel>
+            {tertiaryLabel && onTertiary ? (
+              <AlertDialogPrimitive.Action
+                disabled={pending}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onTertiary();
+                }}
+                className={cn(
+                  buttonVariants({ variant: "secondary" }),
+                  "border-warning/50 bg-warning-bg text-warning",
+                  // Same modifier chain as the secondary variant's own hover
+                  // rules, otherwise those win on specificity and it goes grey.
+                  "[&:not(:disabled)]:hover:border-warning/70 [&:not(:disabled)]:hover:bg-[color:color-mix(in_oklab,var(--wh-warning)_12%,var(--surface))]",
+                  "active:bg-[color:color-mix(in_oklab,var(--wh-warning)_20%,var(--surface))]",
+                )}
+              >
+                {tertiaryLabel}
+              </AlertDialogPrimitive.Action>
+            ) : null}
             <AlertDialogPrimitive.Action
               disabled={pending}
               onClick={(event) => {
