@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -148,6 +149,21 @@ export function ThemeColorProvider({
     () => getPresetOrCustomPalette(themeColor),
     [themeColor],
   );
+
+  // Keep the browser tab title in step with the workspace name: swap the old
+  // name for the new one whether it is the whole title or the "· name" suffix.
+  const previousSiteNameRef = useRef(siteName);
+  useEffect(() => {
+    const previous = previousSiteNameRef.current;
+    previousSiteNameRef.current = siteName;
+    if (previous === siteName || typeof document === "undefined") return;
+    const title = document.title;
+    if (title === previous) {
+      document.title = siteName;
+    } else if (title.endsWith(` · ${previous}`)) {
+      document.title = `${title.slice(0, -previous.length)}${siteName}`;
+    }
+  }, [siteName]);
 
   // Sync state if props change from server
   useEffect(() => {

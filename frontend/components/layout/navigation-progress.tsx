@@ -61,12 +61,20 @@ export function NavigationProgressProvider({ children }: { children: React.React
         aria-label="Loading page"
         aria-hidden={!pending}
         className={
-          "pointer-events-none fixed inset-x-0 top-0 z-[70] h-0.5 overflow-hidden transition-opacity duration-200 " +
+          "pointer-events-none fixed inset-x-0 top-[calc(var(--wh-topbar-height)-4px)] z-[70] h-1 overflow-hidden bg-[color-mix(in_oklab,var(--wh-neutral-0)_25%,transparent)] transition-opacity duration-200 " +
           (pending ? "opacity-100" : "opacity-0")
         }
       >
-        <div className="nav-progress-bar bg-primary absolute inset-y-0 w-2/5 rounded-full" />
+        <div className="nav-progress-bar absolute inset-y-0 w-1/2 rounded-full bg-[var(--wh-neutral-0)] shadow-[0_0_12px_2px_var(--wh-neutral-0)]" />
       </div>
+      {/* Soften the outgoing page so the switch reads as a page transition. */}
+      <div
+        aria-hidden
+        className={
+          "bg-background/50 pointer-events-none fixed inset-x-0 top-(--wh-topbar-height) bottom-0 z-[25] transition-opacity duration-300 " +
+          (pending ? "opacity-100" : "opacity-0")
+        }
+      />
       {children}
     </NavigationProgressContext.Provider>
   );
