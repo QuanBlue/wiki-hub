@@ -25,6 +25,7 @@ from app.core.exceptions import AuthenticationError, BadRequestError
 from app.models.attachment import PageAttachment
 from app.models.backup_job import BackupJob
 from app.models.draft import PageDraft
+from app.models.issue import Issue, IssueAttachment, IssueNote
 from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.permission import (
     GlobalPermission,
@@ -85,6 +86,9 @@ async def _count(session: AsyncSession, model: type) -> int:
 async def _wipe(session: AsyncSession) -> None:
     """Empty the instance, child tables first."""
     for table in (
+        "issue_attachments",
+        "issue_notes",
+        "issues",
         "page_group_restrictions",
         "page_user_restrictions",
         "page_likes",
@@ -1516,3 +1520,249 @@ class TestRunBackupJobPersistsOutput:
         await session.refresh(job)
         assert job.status == "complete"
         assert job.heartbeat_at is not None
+
+
+# ---------------------------------------------------------------------------
+# Issues are part of the instance, so they must survive a backup and a restore.
+# ---------------------------------------------------------------------------
+
+
+def _fake_storage(objects: dict[str, bytes]) -> ObjectStorage:
+    async def get(key: str) -> bytes:
+        return objects[key]
+
+    async def put(key: str, data: object, **_kwargs: object) -> None:
+        objects[key] = data.read() if hasattr(data, "read") else data  # type: ignore[assignment,union-attr]
+
+    async def delete(key: str) -> None:
+        objects.pop(key, None)
+
+    return cast(ObjectStorage, SimpleNamespace(get=get, put=put, delete=delete))
+
+
+async def _seed_issue(session: AsyncSession, seeded: dict[str, object]) -> Issue:
+    """Alice reported an issue Bob took and closed, with a note and a screenshot."""
+    alice: User = seeded["alice"]  # type: ignore[assignment]
+    bob: User = seeded["bob"]  # type: ignore[assignment]
+    admin: User = seeded["admin"]  # type: ignore[assignment]
+    closed_at = datetime(2026, 10, 2, 8, 30, tzinfo=UTC)
+    issue = Issue(
+        reporter_id=alice.id,
+        title="Page will not save",
+        description="I click **save** and nothing happens.",
+        status="done",
+        assignee_id=bob.id,
+        labels=["bug", "question"],
+        page_url="/spaces/ENG",
+        resolved_at=closed_at,
+    )
+    issue.created_at = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
+    issue.updated_at = closed_at
+    session.add(issue)
+    await session.flush()
+    internal = IssueNote(issue_id=issue.id, author_id=bob.id, body="Reproduced on staging.")
+    internal.created_at = datetime(2026, 10, 1, 10, 0, tzinfo=UTC)
+    public = IssueNote(
+        issue_id=issue.id, author_id=admin.id, body="Fixed in the next release.", public=True
+    )
+    public.created_at = closed_at
+    session.add_all([internal, public])
+    session.add(
+        IssueAttachment(
+            issue_id=issue.id,
+            filename="shot.png",
+            content_type="image/png",
+            object_key=f"issues/{issue.id}/source/shot.png",
+            size_bytes=9,
+        )
+    )
+    await session.flush()
+    return issue
+
+
+class TestIssues:
+    async def test_document_export_carries_issues_with_notes(self, session: AsyncSession) -> None:
+        seeded = await _seed_instance(session)
+        issue = await _seed_issue(session, seeded)
+
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+
+        assert doc.wikihub_backup.counts["issues"] == 1
+        [entry] = doc.issues
+        assert entry.id == issue.id
+        assert (entry.reporter_username, entry.assignee_username) == ("alice", "bob")
+        assert entry.labels == ["bug", "question"]
+        assert entry.status == "done" and entry.resolved_at is not None
+        assert [(n.author_username, n.public) for n in entry.notes] == [
+            ("bob", False),
+            ("admin", True),
+        ]
+
+    async def test_a_backup_scoped_to_some_spaces_still_carries_every_issue(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_instance(session)
+        await _seed_issue(session, seeded)
+
+        doc = await BackupService(session, actor=seeded["admin"]).export_document(  # type: ignore[arg-type]
+            space_keys=["ENG"]
+        )
+
+        assert [issue.title for issue in doc.issues] == ["Page will not save"]
+        assert doc.wikihub_backup.counts["issues"] == 1
+
+    async def test_full_zip_round_trip_restores_issue_notes_and_screenshot(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        seeded = await _seed_instance(session)
+        issue = await _seed_issue(session, seeded)
+        issue_id = issue.id
+        objects = {f"issues/{issue_id}/source/shot.png": b"png-bytes"}
+        storage = _fake_storage(objects)
+        archive = str(tmp_path / "issues.zip")
+
+        manifest = await BackupService(session, actor=seeded["admin"]).export_full_package(  # type: ignore[arg-type]
+            archive, storage
+        )
+        assert manifest["counts"]["issues"] == 1
+        assert manifest["counts"]["issue_attachments"] == 1
+        assert any(e["path"].startswith("objects/issue-attachments/") for e in manifest["entries"])
+
+        await _wipe(session)
+        objects.clear()
+        report = await BackupService(session).restore_full_package(archive, storage, dry_run=False)
+
+        assert report.created["issue"] == 1
+        assert report.created["issue_note"] == 2
+        assert report.created["issue_attachment"] == 1
+        restored = (await session.execute(select(Issue))).scalar_one()
+        # Same id, text, labels, status and timestamps as before.
+        assert restored.id == issue_id
+        assert restored.title == "Page will not save"
+        assert restored.description == "I click **save** and nothing happens."
+        assert restored.labels == ["bug", "question"]
+        assert restored.status == "done"
+        assert restored.page_url == "/spaces/ENG"
+        assert restored.created_at == datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
+        assert restored.resolved_at == datetime(2026, 10, 2, 8, 30, tzinfo=UTC)
+        users = AuthService(session).users
+        alice, bob = await users.get_by_username("alice"), await users.get_by_username("bob")
+        assert alice is not None and bob is not None
+        assert (restored.reporter_id, restored.assignee_id) == (alice.id, bob.id)
+        notes = list(
+            (await session.execute(select(IssueNote).order_by(IssueNote.created_at))).scalars()
+        )
+        assert [(n.body, n.public) for n in notes] == [
+            ("Reproduced on staging.", False),
+            ("Fixed in the next release.", True),
+        ]
+        shot = (await session.execute(select(IssueAttachment))).scalar_one()
+        assert shot.issue_id == restored.id and shot.filename == "shot.png"
+        assert objects[shot.object_key] == b"png-bytes"
+
+    async def test_restoring_twice_does_not_duplicate_issues_or_screenshots(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        seeded = await _seed_instance(session)
+        issue = await _seed_issue(session, seeded)
+        objects = {f"issues/{issue.id}/source/shot.png": b"png-bytes"}
+        storage = _fake_storage(objects)
+        archive = str(tmp_path / "twice.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(  # type: ignore[arg-type]
+            archive, storage
+        )
+
+        # Everything is already here: the issue is skipped, and so is its file.
+        report = await BackupService(session).restore_full_package(archive, storage, dry_run=False)
+
+        assert report.skipped["issue"] == 1
+        assert "issue" not in report.created
+        assert "issue_attachment" not in report.created
+        assert await _count(session, Issue) == 1
+        assert await _count(session, IssueAttachment) == 1
+        assert await _count(session, IssueNote) == 2
+
+    async def test_dry_run_predicts_issues_and_writes_nothing(self, session: AsyncSession) -> None:
+        seeded = await _seed_instance(session)
+        await _seed_issue(session, seeded)
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        await _wipe(session)
+
+        preview = await BackupService(session).import_document(doc, dry_run=True)
+        assert await _count(session, Issue) == 0
+        applied = await BackupService(session).import_document(doc, dry_run=False)
+
+        assert preview.created == applied.created
+        assert applied.created["issue"] == 1
+        assert await _count(session, Issue) == 1
+
+    async def test_an_issue_whose_reporter_is_missing_is_skipped_and_reported(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_instance(session)
+        await _seed_issue(session, seeded)
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        await _wipe(session)
+        # Users are restored from the document, so remove the reporter from it.
+        doc = doc.model_copy(update={"users": [u for u in doc.users if u.username != "alice"]})
+
+        report = await BackupService(session).import_document(doc, dry_run=False)
+
+        assert report.skipped["issue"] == 1
+        assert any(e.kind == "issue" and e.reason == "missing_reporter" for e in report.entries)
+        assert await _count(session, Issue) == 0
+
+    async def test_unknown_labels_and_status_are_cleaned_on_restore(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_instance(session)
+        await _seed_issue(session, seeded)
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        await _wipe(session)
+        doc.issues[0].labels = ["bug", "wontfix", "made-up"]
+        doc.issues[0].status = "exploded"
+
+        await BackupService(session).import_document(doc, dry_run=False)
+
+        restored = (await session.execute(select(Issue))).scalar_one()
+        assert restored.labels == ["bug"]
+        assert restored.status == "open"
+
+    async def test_old_backups_without_issues_still_restore(self, session: AsyncSession) -> None:
+        seeded = await _seed_instance(session)
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        payload = json.loads(doc.model_dump_json())
+        payload.pop("issues")
+        await _wipe(session)
+
+        report = await BackupService(session).import_document(
+            BackupDocument.model_validate(payload), dry_run=False
+        )
+
+        assert report.created["user"] == 3
+        assert "issue" not in report.created
+
+    async def test_a_tampered_issue_screenshot_is_rejected_before_anything_is_written(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        seeded = await _seed_instance(session)
+        issue = await _seed_issue(session, seeded)
+        objects = {f"issues/{issue.id}/source/shot.png": b"png-bytes"}
+        storage = _fake_storage(objects)
+        archive = tmp_path / "tamper.zip"
+        await BackupService(session, actor=seeded["admin"]).export_full_package(  # type: ignore[arg-type]
+            str(archive), storage
+        )
+        # Replace the screenshot's bytes inside the archive: the checksum no longer matches.
+        broken = tmp_path / "broken.zip"
+        with zipfile.ZipFile(archive) as source, zipfile.ZipFile(broken, "w") as target:
+            for item in source.infolist():
+                data = source.read(item.filename)
+                if item.filename.startswith("objects/issue-attachments/"):
+                    data = b"tampered!"
+                target.writestr(item.filename, data)
+        await _wipe(session)
+
+        with pytest.raises(BadRequestError):
+            await BackupService(session).restore_full_package(str(broken), storage, dry_run=False)
+        assert await _count(session, Issue) == 0

@@ -239,6 +239,47 @@ class BackupUserPageLabel(BaseModel):
     name: str
 
 
+class BackupIssueNote(BaseModel):
+    #: ``None`` when the author's account no longer exists.
+    author_username: str | None = None
+    body: str
+    public: bool = False
+    created_at: datetime | None = None
+
+
+class BackupIssueAttachment(BaseModel):
+    """A screenshot on an issue. The bytes travel in the full ZIP only."""
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    filename: str
+    content_type: str
+    object_path: str
+    sha256: str
+    size_bytes: int
+
+
+class BackupIssue(BaseModel):
+    """A reported issue with its notes and screenshots.
+
+    Issues belong to the instance, not to a space, so every export carries all
+    of them - like users and groups, they are never scoped by ``space_keys``.
+    """
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    reporter_username: str
+    title: str
+    description: str = ""
+    status: str = "open"
+    assignee_username: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    page_url: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    resolved_at: datetime | None = None
+    notes: list[BackupIssueNote] = Field(default_factory=list)
+    attachments: list[BackupIssueAttachment] = Field(default_factory=list)
+
+
 class BackupSiteSettings(BaseModel):
     site_name: str | None = None
     max_upload_size_mb: int | None = None
@@ -281,6 +322,7 @@ class BackupDocument(BaseModel):
     user_page_labels: list[BackupUserPageLabel] = Field(default_factory=list)
     attachments: list[BackupAttachment] = Field(default_factory=list)
     avatars: list[BackupAvatar] = Field(default_factory=list)
+    issues: list[BackupIssue] = Field(default_factory=list)
     site_settings: BackupSiteSettings | None = None
 
 

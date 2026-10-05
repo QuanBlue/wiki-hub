@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Bug,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -58,7 +59,7 @@ interface NavItem {
    * `manage_users`/`manage_groups` each unlock exactly one section, and why
    * `create_space` unlocks none of them).
    */
-  extraGlobalPermission?: "manage_users" | "manage_groups";
+  extraGlobalPermission?: "manage_users" | "manage_groups" | "manage_issues";
   /** Only shown to an account linked to an active administrator mailbox: the
    * Inbox holds their requests, and means nothing to anyone else. */
   requiresMailbox?: boolean;
@@ -109,6 +110,13 @@ const ADMIN_NAV: NavItem[] = [
     labelKey: "nav.spaces",
     icon: FolderCog,
     permission: "settings",
+  },
+  {
+    href: "/admin/issues",
+    labelKey: "nav.issues",
+    icon: Bug,
+    permission: "settings",
+    extraGlobalPermission: "manage_issues",
   },
   {
     href: "/admin/settings",

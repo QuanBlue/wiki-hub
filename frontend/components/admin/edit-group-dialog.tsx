@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Bug,
   Check,
   ChevronDown,
   Crown,
@@ -90,6 +91,12 @@ const PERMISSION_CONFIG: Record<
     label: "Manage groups",
     description: "Allows creating, updating, assigning members, and managing user groups.",
     icon: FolderKanban,
+  },
+  manage_issues: {
+    label: "Manage issues",
+    description:
+      "Allows seeing every reported issue and taking one on. Only the person who took an issue, or a super administrator, can change its status.",
+    icon: Bug,
   },
   system_admin: {
     label: "System administrator",

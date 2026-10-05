@@ -206,12 +206,14 @@ class AuthService:
         q: str | None = None,
         status: str | None = None,
         role: str | None = None,
+        sort: str | None = None,
+        order: str = "desc",
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[User], int]:
         """Filtered, paginated user listing. Returns ``(page, total)``."""
         users, total = await self.users.search(
-            q=q, status=status, role=role, limit=limit, offset=offset
+            q=q, status=status, role=role, sort=sort, order=order, limit=limit, offset=offset
         )
         return list(users), total
 

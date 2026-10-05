@@ -1515,6 +1515,78 @@ export const sectionsVi: HelpSection[] = [
     ),
   },
   {
+    id: "report-issues",
+    title: "Báo lỗi (Issue)",
+    category: "Account",
+    description:
+      "Báo cho quản trị viên một vấn đề, đính kèm ảnh chụp màn hình và theo dõi tiến trình xử lý.",
+    keywords: ["issue", "lỗi", "báo lỗi", "vấn đề", "ảnh chụp", "góp ý", "manage issues"],
+    body: (
+      <>
+        <p>
+          WikiHub còn mới nên bạn có thể gặp lỗi. Mở <strong>menu tài khoản</strong> (tên bạn, góc
+          trên bên phải) và chọn <strong>Báo lỗi</strong>. Nhập tiêu đề, mô tả bạn đang làm gì và
+          điều gì đã sai, kèm ảnh chụp màn hình nếu có: bấm <strong>Thêm ảnh</strong> hoặc dán ảnh
+          trực tiếp bằng <strong>Ctrl+V</strong>. Tối đa năm ảnh PNG, JPEG, GIF hoặc WebP, mỗi ảnh
+          5 MB. Dùng <strong>Nhãn</strong> để gắn <em>bug</em>, <em>question</em>,{" "}
+          <em>enhancement</em>... giúp tìm lại dễ hơn.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Theo dõi báo cáo của bạn:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            <strong>Issue của tôi</strong> (cũng nằm trong menu tài khoản) liệt kê mọi issue bạn đã
+            báo, kèm trạng thái - <em>Mới</em>, <em>Đang xử lý</em> hoặc <em>Hoàn thành</em> - và
+            người đã tiếp nhận.
+          </li>
+          <li>
+            Bạn nhận thông báo khi có quản trị viên tiếp nhận hoặc được giao issue, và khi issue
+            được đóng - kèm một <strong>email</strong> khi đóng. Nếu quản trị viên để lại ghi chú
+            khi đóng, bạn đọc được ngay dưới issue và nó được trích trong email. Chỉ bạn và những
+            người quản lý issue mới xem được issue của bạn.
+          </li>
+        </ul>
+
+        <p className="mt-3 font-semibold text-foreground">Dành cho người quản lý issue:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Superuser, system administrator và người được cấp quyền <strong>Manage issues</strong>{" "}
+            (Quản trị &gt; Nhóm, hoặc Global access của từng người dùng) thấy mục{" "}
+            <strong>Quản trị &gt; Issue</strong> và được báo khi có issue mới.
+          </li>
+          <li>
+            Mỗi khi có người báo issue, tất cả những ai quản lý issue đều được báo qua thông báo
+            và email.
+          </li>
+          <li>
+            Tick một hoặc nhiều issue trong danh sách (ô trên cùng tick cả trang) để đổi cùng lúc:{" "}
+            <strong>Đánh dấu là</strong> mở, mở lại hoặc hoàn thành, và <strong>Giao cho</strong>{" "}
+            giao cho ai đó - chỉ superuser mới giao issue cho người khác được. Issue nào bạn không
+            được đổi sẽ bị bỏ qua và được đếm, không làm dừng phần còn lại.
+          </li>
+          <li>
+            Chọn chế độ xem ở bên trái - <strong>Issue</strong>, <strong>Giao cho tôi</strong> hoặc{" "}
+            <strong>Tôi tạo</strong> - chuyển giữa <strong>Đang mở</strong> và{" "}
+            <strong>Đã đóng</strong>, và lọc theo người báo, người tiếp nhận, <strong>nhãn</strong> (chọn nhiều nhãn thì issue phải
+            có đủ; hoặc chọn <em>Không có nhãn</em>) hoặc thứ tự. Ô tìm
+            kiếm chỉ tìm trong tiêu đề và mô tả, và bôi xanh phần khớp.
+          </li>
+          <li>
+            Mở một issue rồi chọn <strong>Tiếp nhận</strong> để gắn tên bạn vào. Issue sẽ chuyển
+            sang đang xử lý. Dùng <strong>Thêm ghi chú</strong> cho ghi chú chỉ quản lý thấy. Khi bấm{" "}
+            <strong>Hoàn thành</strong>, ô <strong>ghi chú khi đóng</strong> hiện ra cho nội dung
+            người báo sẽ đọc; xác nhận để đóng issue.
+          </li>
+          <li>
+            Chỉ người đã tiếp nhận issue, hoặc <strong>superuser</strong>, mới đánh dấu{" "}
+            <strong>hoàn thành</strong>, mở lại hay đổi trạng thái. System administrator chưa tiếp
+            nhận chỉ xem được, không đóng được.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "language-switching",
     title: "Chuyển đổi ngôn ngữ giao diện",
     category: "Account",
@@ -1592,7 +1664,7 @@ export const sectionsVi: HelpSection[] = [
       <>
         <p>
           Phím tắt của WikiHub là mặc định, không phải quy tắc cố định. Mở{" "}
-          <strong>Your account</strong> từ menu hồ sơ và chọn{" "}
+          <strong>Tài khoản</strong> từ menu hồ sơ và chọn{" "}
           <strong>Keyboard shortcuts</strong> để thay đổi bất kỳ phím nào.
         </p>
 
@@ -1715,6 +1787,12 @@ export const sectionsVi: HelpSection[] = [
           Quản trị viên có thể tuỳ chỉnh hoàn toàn nhận diện trực quan của
           WikiHub trong <strong>Administration &gt; Settings &gt; Theme &amp;
           Branding</strong>.
+        </p>
+        <p className="mt-2 text-sm">
+          Danh sách <strong>Page Typography &amp; Font Family</strong> xếp các phông gần giống nhau
+          vào cùng nhóm. Lọc theo loại - <em>Tất cả</em>, <em>Sans-Serif</em>,{" "}
+          <em>Geometric Sans</em> hoặc <em>Serif</em> - và bấm <strong>Hiện thêm</strong> để xem
+          toàn bộ phông trong nhóm (<strong>Thu gọn</strong> đưa về ba dòng).
         </p>
 
         <Screenshot
@@ -2220,6 +2298,13 @@ export const sectionsVi: HelpSection[] = [
             Active / Disabled), cùng tìm kiếm và bộ lọc Status/Role.
           </li>
           <li>
+            Cột <strong>Đăng nhập lần cuối</strong> cho biết mỗi người đăng nhập lần cuối
+            khi nào, kèm trạng thái: <Code>Đang online</Code> (có hoạt động trong 5 phút
+            gần nhất), <Code>Offline</Code> hoặc <Code>Chưa từng đăng nhập</Code>. Bấm vào
+            tiêu đề cột để sắp xếp theo lần đăng nhập cuối (mới nhất trước, bấm lần nữa để
+            đảo ngược); tài khoản chưa từng đăng nhập luôn nằm cuối danh sách.
+          </li>
+          <li>
             <strong>Create user</strong>: tên/họ, tên đăng nhập (kiểm tra tính khả
             dụng khi gõ), e-mail, mật khẩu với danh sách kiểm tra độ mạnh trực
             tiếp (8+ ký tự, chữ hoa & chữ thường, một số hoặc ký hiệu), và vai trò{" "}
@@ -2631,7 +2716,12 @@ export const sectionsVi: HelpSection[] = [
             <strong>Export WikiHub Backup</strong>: một tệp <Code>.zip</Code> gốc,
             có thể khôi phục, gồm space, trang, phiên bản, tệp đính kèm, người
             dùng, và nhóm - giới hạn theo <strong>All spaces</strong> hoặc một
-            tập con đã chọn qua <strong>Select spaces to export</strong>.
+            tập con đã chọn qua <strong>Select spaces to export</strong>. Bản sao
+            lưu cũng mang theo mọi <strong>issue</strong> đã báo - nhãn, trạng thái,
+            người tiếp nhận, ghi chú và ảnh chụp màn hình - và khi khôi phục sẽ đưa
+            lại đúng ngày giờ cũ; issue đã có sẵn thì được bỏ qua, không bị nhân đôi.
+            Issue thuộc về cả workspace nên bản sao lưu giới hạn theo space sẽ không
+            có chúng.
           </li>
           <li>
             <strong>Export Confluence Backup</strong>: một kho lưu trữ XML cho

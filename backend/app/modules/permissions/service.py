@@ -43,7 +43,7 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, event, func, select
+from sqlalchemy import delete, event, func, or_, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
@@ -456,6 +456,52 @@ class PermissionService:
         # and the Edit User modal both need to show *that*, not the expanded
         # form), so the shortcut lives here instead.
         return GlobalPermission.system_admin in permissions or permission in permissions
+
+    async def can_triage_issues(self, user: User) -> bool:
+        """Whether ``user`` may see every issue and claim it: a superuser, a
+        system administrator, or anyone holding `manage_issues` (which
+        `has_global` already extends to `system_admin`)."""
+        return await self.has_global(user, GlobalPermission.manage_issues)
+
+    async def list_issue_triagers(self) -> list[User]:
+        """Every active account that may triage issues, for new-issue alerts.
+
+        Candidates are gathered in SQL (superusers, members of an active group
+        granting `manage_issues` or `system_admin`, and anyone with an enabling
+        override), then each is confirmed through `can_triage_issues` so a
+        user-level *deny* override is honoured exactly as it is everywhere
+        else."""
+        granting = (GlobalPermission.manage_issues, GlobalPermission.system_admin)
+        via_group = (
+            select(GroupMember.user_id)
+            .join(
+                GroupGlobalPermission,
+                GroupGlobalPermission.group_id == GroupMember.group_id,
+            )
+            .join(Group, Group.id == GroupMember.group_id)
+            .where(Group.is_active.is_(True), GroupGlobalPermission.permission.in_(granting))
+        )
+        via_override = select(UserGlobalPermissionOverride.user_id).where(
+            UserGlobalPermissionOverride.enabled.is_(True),
+            UserGlobalPermissionOverride.permission.in_(granting),
+        )
+        candidates = list(
+            (
+                await self.session.scalars(
+                    select(User)
+                    .where(
+                        User.is_active.is_(True),
+                        or_(
+                            User.is_superuser.is_(True),
+                            User.id.in_(via_group),
+                            User.id.in_(via_override),
+                        ),
+                    )
+                    .order_by(User.username)
+                )
+            ).all()
+        )
+        return [user for user in candidates if await self.can_triage_issues(user)]
 
     async def require_global(self, user: User, permission: GlobalPermission) -> None:
         if not await self.has_global(user, permission):

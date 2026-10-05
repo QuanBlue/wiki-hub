@@ -68,6 +68,26 @@ from app.schemas.pagination import Page
 from app.services.audit import AuditService, ClientInfo
 from app.services.site_settings import SiteSettingsService
 
+#: Top-level names reserved for local or documentation use: no mail server will
+#: ever accept a message for them, so sending only earns a bounce.
+_UNROUTABLE_TLDS = {"local", "localhost", "invalid", "test", "example", "internal", "lan", "home"}
+
+
+def is_deliverable_address(address: str | None) -> bool:
+    """Whether mail to ``address`` can reach anyone, going by its domain alone.
+
+    An account created with a placeholder address (``admin@wikihub.local``) is
+    fine to sign in with but cannot receive mail; writing to it makes the
+    receiving server bounce the message back to the sending mailbox.
+    """
+    if not address or "@" not in address:
+        return False
+    domain = address.rsplit("@", 1)[1].strip().lower().rstrip(".")
+    if "." not in domain:
+        return False
+    return domain.rsplit(".", 1)[1] not in _UNROUTABLE_TLDS
+
+
 logger = get_logger(__name__)
 
 #: Fields whose change is worth showing in the audit trail. The password is
@@ -265,8 +285,7 @@ class AdminMailService:
         if self.actor.is_protected:
             return
         raise PermissionDeniedError(
-            "Only this mailbox's own account or the built-in super "
-            "administrator can change it.",
+            "Only this mailbox's own account or the built-in super administrator can change it.",
             code="mailbox_peer_admin_protected",
         )
 
@@ -687,7 +706,9 @@ class AdminMailService:
             )
         # A send is as good a health check as the hourly one.
         self._apply(mailbox, outcome)
-        return AccountEmailResult(email_sent=outcome.ok, email_error=None if outcome.ok else outcome.error)
+        return AccountEmailResult(
+            email_sent=outcome.ok, email_error=None if outcome.ok else outcome.error
+        )
 
     async def send_account_email(
         self, actor: User, *, to_user: User, password: str, created: bool, login_url: str | None
@@ -708,7 +729,9 @@ class AdminMailService:
             login_url=login_url or public_link("/login"),
             signature=signature,
         )
-        subject_line = "Your account has been created" if created else "Your password has been reset"
+        subject_line = (
+            "Your account has been created" if created else "Your password has been reset"
+        )
         result = await self._deliver(
             mailbox,
             subject=f"[{site_name}] {subject_line}",
@@ -757,6 +780,111 @@ class AdminMailService:
         )
         return result
 
+    async def send_issue_created_email(
+        self,
+        *,
+        reporter: User,
+        issue_id: uuid.UUID,
+        issue_title: str,
+        description: str,
+        recipients: list[User],
+    ) -> int:
+        """Email everyone who manages issues that one was just reported.
+
+        The reporter is an ordinary user with no mailbox of their own, so this
+        sends from any administrator mailbox that is connected right now - and
+        is signed as the workspace, not as a person. Returns how many were
+        sent; zero when nobody has an email address or no mailbox works, which
+        is not an error: the bell still told them.
+        """
+        targets = [
+            user
+            for user in recipients
+            if is_deliverable_address(user.email) and user.id != reporter.id
+        ]
+        if not targets:
+            return 0
+        pool = await self.repo.working_mailboxes()
+        if not pool:
+            logger.info("issue_created_email_skipped", reason="no_working_mailbox")
+            return 0
+        mailbox = secrets.choice(pool)
+        effective = await SiteSettingsService(self.session).get_effective()
+        brand = Brand.from_settings(
+            effective.site_name,
+            getattr(effective, "theme_color", None),
+            custom_logo_url=getattr(effective, "custom_logo_url", None),
+        )
+        reporter_name = " ".join((reporter.full_name or reporter.username).split())
+
+        async def send(user: User) -> bool:
+            text, html = email_templates.issue_created(
+                brand,
+                name=user.full_name or user.username,
+                username=user.username,
+                reporter=reporter_name,
+                issue_title=issue_title,
+                description=description,
+                issue_url=public_link(f"/admin/issues?issue={issue_id}"),
+            )
+            result = await self._deliver(
+                mailbox,
+                subject=f"[{effective.site_name}] New issue: {issue_title}",
+                text=text,
+                html=html,
+                to=user.email,
+                reply_to=reporter.email,
+            )
+            return result.email_sent
+
+        outcomes = await asyncio.gather(*(send(user) for user in targets), return_exceptions=True)
+        sent = sum(1 for outcome in outcomes if outcome is True)
+        logger.info("issue_created_email_sent", recipients=len(targets), sent=sent)
+        return sent
+
+    async def send_issue_closed_email(
+        self,
+        actor: User,
+        *,
+        to_user: User,
+        issue_title: str,
+        taken_by: str | None,
+        note: str | None,
+    ) -> AccountEmailResult:
+        """Email the person who reported an issue that it has been closed - by
+        whoever closed it (``actor``), from their mailbox where they have one
+        and from the pool otherwise. Same sender rule as every other mail here
+        - see `_resolve_sender`."""
+        mailbox, own = await self._resolve_sender(actor)
+        site_name, brand, signature = await self._brand_and_signature(actor, mailbox, own=own)
+        closed_by = " ".join((actor.full_name or actor.username).split())
+        text, html = email_templates.issue_closed(
+            brand,
+            name=to_user.full_name or to_user.username,
+            username=to_user.username,
+            issue_title=issue_title,
+            closed_by=closed_by,
+            taken_by=taken_by,
+            note=note,
+            issues_url=public_link("/issues"),
+            signature=signature,
+        )
+        result = await self._deliver(
+            mailbox,
+            subject=f"[{site_name}] Your issue was closed: {issue_title}",
+            text=text,
+            html=html,
+            to=to_user.email,
+            reply_to=None if own else actor.email,
+        )
+        logger.info(
+            "issue_closed_email_sent",
+            username=to_user.username,
+            emailed=result.email_sent,
+            via_pool=not own,
+        )
+        return result
+
     async def send_space_access_email(
         self,
         actor: User,
@@ -780,7 +908,9 @@ class AdminMailService:
             signature=signature,
         )
         subject_line = (
-            f'You were added to "{space_name}"' if added else f'You were removed from "{space_name}"'
+            f'You were added to "{space_name}"'
+            if added
+            else f'You were removed from "{space_name}"'
         )
         result = await self._deliver(
             mailbox,

@@ -1,6 +1,13 @@
 "use client";
 
-import { ChevronDown, LogOut, Undo2, UserRound } from "lucide-react";
+import {
+  Bug,
+  ChevronDown,
+  ListChecks,
+  LogOut,
+  Undo2,
+  UserRound,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -13,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ReportIssueDialog } from "@/components/issues/report-issue-dialog";
 import { SwitchAccountMenu } from "@/components/layout/switch-account-dialog";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -36,6 +44,7 @@ export function UserMenu({ user }: { user: Me }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [open, setOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const { t, apiErrorText } = useTranslation();
 
   const displayName = user.full_name || user.username;
@@ -103,7 +112,7 @@ export function UserMenu({ user }: { user: Me }) {
 
       <DropdownMenuContent
         align="end"
-        className="w-72"
+        className="w-60"
         onPointerDownOutside={(e) => {
           const target = e.target as HTMLElement;
           if (
@@ -130,10 +139,27 @@ export function UserMenu({ user }: { user: Me }) {
 
         <DropdownMenuSeparator />
 
-        <DropdownMenuItem asChild>
+        <DropdownMenuItem asChild className="text-foreground">
           <Link href="/account">
             <UserRound />
             {t("userMenu.yourAccount")}
+          </Link>
+        </DropdownMenuItem>
+
+        {/* Reporting problems is its own group, apart from the account. */}
+        <DropdownMenuSeparator />
+
+        <DropdownMenuItem
+          className="text-foreground"
+          onSelect={() => setReportOpen(true)}
+        >
+          <Bug />
+          {t("userMenu.reportIssue")}
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="text-foreground">
+          <Link href="/issues">
+            <ListChecks />
+            {t("userMenu.myIssues")}
           </Link>
         </DropdownMenuItem>
 
@@ -144,6 +170,7 @@ export function UserMenu({ user }: { user: Me }) {
         */}
         {impersonator ? (
           <DropdownMenuItem
+            className="text-foreground"
             disabled={pending}
             onSelect={() => void returnToSelf()}
           >
@@ -165,6 +192,8 @@ export function UserMenu({ user }: { user: Me }) {
           {t("userMenu.signOut")}
         </DropdownMenuItem>
       </DropdownMenuContent>
+      {/* A sibling of the content, so it outlives the menu closing. */}
+      <ReportIssueDialog open={reportOpen} onOpenChange={setReportOpen} />
     </DropdownMenu>
   );
 }

@@ -436,6 +436,7 @@ function FolderRowWrapper({
 const KIND_ORDER: StorageObject["kind"][] = [
   "page_attachment",
   "avatar",
+  "issue_attachment",
   "import_archive",
   "document_import",
   "backup_archive",
@@ -446,6 +447,7 @@ const KIND_ORDER: StorageObject["kind"][] = [
 const KIND_META: Record<StorageObject["kind"], { label: string; icon: typeof FileText }> = {
   page_attachment: { label: "Page files", icon: FileText },
   avatar: { label: "Avatars", icon: UserRound },
+  issue_attachment: { label: "Issue screenshots", icon: FileImage },
   import_archive: { label: "Confluence imports", icon: FileArchive },
   document_import: { label: "Document imports", icon: FileText },
   // The two halves of full backup: the archive an admin uploaded to restore

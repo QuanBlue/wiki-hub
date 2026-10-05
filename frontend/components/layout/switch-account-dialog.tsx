@@ -122,10 +122,16 @@ export function SwitchAccountMenu({
           {currentUser.avatar_url ? null : initials(currentUser)}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">
+          <span
+            className="block truncate text-sm font-semibold"
+            title={currentUser.full_name || currentUser.username}
+          >
             {currentUser.full_name || currentUser.username}
           </span>
-          <span className="text-muted-foreground block truncate text-xs">
+          <span
+            className="text-muted-foreground block truncate text-xs"
+            title={`@${currentUser.username}`}
+          >
             @{currentUser.username}
           </span>
         </span>

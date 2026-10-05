@@ -16,7 +16,7 @@ export interface ThemeColorPreset {
   };
 }
 
-export const THEME_COLOR_PRESETS: ThemeColorPreset[] = [
+const PRESET_DEFINITIONS: ThemeColorPreset[] = [
   {
     id: "blue",
     name: "WikiHub Blue",
@@ -153,7 +153,157 @@ export const THEME_COLOR_PRESETS: ThemeColorPreset[] = [
       900: "#0f172a",
     },
   },
+  {
+    id: "sky",
+    name: "Sky Blue",
+    primary: "#0284c7",
+    palette: {
+      50: "#f0f9ff",
+      100: "#e0f2fe",
+      200: "#bae6fd",
+      300: "#7dd3fc",
+      400: "#38bdf8",
+      500: "#0ea5e9",
+      600: "#0284c7",
+      700: "#0369a1",
+      800: "#075985",
+      900: "#0c4a6e",
+    },
+  },
+  {
+    id: "cyan",
+    name: "Fresh Cyan",
+    primary: "#0891b2",
+    palette: {
+      50: "#ecfeff",
+      100: "#cffafe",
+      200: "#a5f3fc",
+      300: "#67e8f9",
+      400: "#22d3ee",
+      500: "#06b6d4",
+      600: "#0891b2",
+      700: "#0e7490",
+      800: "#155e75",
+      900: "#164e63",
+    },
+  },
+  {
+    id: "orange",
+    name: "Sunset Orange",
+    primary: "#ea580c",
+    palette: {
+      50: "#fff7ed",
+      100: "#ffedd5",
+      200: "#fed7aa",
+      300: "#fdba74",
+      400: "#fb923c",
+      500: "#f97316",
+      600: "#ea580c",
+      700: "#c2410c",
+      800: "#9a3412",
+      900: "#7c2d12",
+    },
+  },
+  {
+    id: "red",
+    name: "Signal Red",
+    primary: "#dc2626",
+    palette: {
+      50: "#fef2f2",
+      100: "#fee2e2",
+      200: "#fecaca",
+      300: "#fca5a5",
+      400: "#f87171",
+      500: "#ef4444",
+      600: "#dc2626",
+      700: "#b91c1c",
+      800: "#991b1b",
+      900: "#7f1d1d",
+    },
+  },
+  {
+    id: "pink",
+    name: "Blossom Pink",
+    primary: "#db2777",
+    palette: {
+      50: "#fdf2f8",
+      100: "#fce7f3",
+      200: "#fbcfe8",
+      300: "#f9a8d4",
+      400: "#f472b6",
+      500: "#ec4899",
+      600: "#db2777",
+      700: "#be185d",
+      800: "#9d174d",
+      900: "#831843",
+    },
+  },
+  {
+    id: "fuchsia",
+    name: "Vivid Fuchsia",
+    primary: "#c026d3",
+    palette: {
+      50: "#fdf4ff",
+      100: "#fae8ff",
+      200: "#f5d0fe",
+      300: "#f0abfc",
+      400: "#e879f9",
+      500: "#d946ef",
+      600: "#c026d3",
+      700: "#a21caf",
+      800: "#86198f",
+      900: "#701a75",
+    },
+  },
+  {
+    id: "lime",
+    name: "Forest Lime",
+    primary: "#65a30d",
+    palette: {
+      50: "#f7fee7",
+      100: "#ecfccb",
+      200: "#d9f99d",
+      300: "#bef264",
+      400: "#a3e635",
+      500: "#84cc16",
+      600: "#65a30d",
+      700: "#4d7c0f",
+      800: "#3f6212",
+      900: "#365314",
+    },
+  },
+  {
+    id: "stone",
+    name: "Warm Stone",
+    primary: "#57534e",
+    palette: {
+      50: "#fafaf9",
+      100: "#f5f5f4",
+      200: "#e7e5e4",
+      300: "#d6d3d1",
+      400: "#a8a29e",
+      500: "#78716c",
+      600: "#57534e",
+      700: "#44403c",
+      800: "#292524",
+      900: "#1c1917",
+    },
+  },
 ];
+
+/**
+ * Display order: blue first (it is the fallback), then around the colour wheel
+ * so similar hues sit next to each other, then the neutrals.
+ */
+const PRESET_ORDER = [
+  "blue", "indigo", "violet", "fuchsia", "pink", "rose", "red", "orange",
+  "amber", "lime", "emerald", "teal", "cyan", "sky", "slate", "stone",
+];
+
+export const THEME_COLOR_PRESETS: ThemeColorPreset[] = [
+  ...PRESET_ORDER.map((id) => PRESET_DEFINITIONS.find((p) => p.id === id)),
+  ...PRESET_DEFINITIONS.filter((p) => !PRESET_ORDER.includes(p.id)),
+].filter((p): p is ThemeColorPreset => Boolean(p));
 
 export interface LogoIconPreset {
   id: string;

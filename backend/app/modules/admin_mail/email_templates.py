@@ -622,3 +622,75 @@ def space_access_changed(
             footer=f"This message was sent by a {brand.site_name} administrator.",
         ),
     )
+
+
+def issue_closed(
+    brand: Brand,
+    *,
+    name: str,
+    username: str,
+    issue_title: str,
+    closed_by: str,
+    taken_by: str | None,
+    note: str | None,
+    issues_url: str | None,
+    signature: Signature,
+) -> tuple[str, str]:
+    """Tells the person who reported an issue that it has been dealt with."""
+    greeting = f"Hello {' '.join(name.split()) or username},"
+    intro = f'{closed_by} has closed the issue you reported: "{issue_title}".'
+    rows = [Row("Issue", issue_title), Row("Closed by", closed_by)]
+    if taken_by and taken_by != closed_by:
+        rows.append(Row("Taken by", taken_by))
+    return render(
+        brand,
+        EmailContent(
+            preheader=intro,
+            title="Your issue was closed",
+            paragraphs=[f"{greeting} {intro[0].lower()}{intro[1:]}"],
+            rows=rows,
+            quote_label=f"Note from {closed_by}" if note else None,
+            quote=note or None,
+            button=("View my issues", issues_url) if issues_url else None,
+            closing="If this did not fix it, report the issue again and mention this one.",
+            signature=signature,
+            footer=f"This message was sent by a {brand.site_name} administrator.",
+        ),
+    )
+
+
+def issue_created(
+    brand: Brand,
+    *,
+    name: str,
+    username: str,
+    reporter: str,
+    issue_title: str,
+    description: str,
+    issue_url: str | None,
+) -> tuple[str, str]:
+    """Tells someone who manages issues that a new one was reported."""
+    greeting = f"Hello {' '.join(name.split()) or username},"
+    excerpt = " ".join(description.split())
+    if len(excerpt) > 400:
+        excerpt = excerpt[:400].rstrip() + "..."
+    return render(
+        brand,
+        EmailContent(
+            preheader=f'{reporter} reported "{issue_title}".',
+            title=f"New issue from {reporter}",
+            title_highlight=reporter,
+            paragraphs=[f"{greeting} a new issue was reported in {brand.site_name}."],
+            rows=[Row("Issue", issue_title), Row("Reported by", reporter)],
+            quote_label="Description" if excerpt else None,
+            quote=excerpt or None,
+            button=("Open issue", issue_url) if issue_url else None,
+            closing="Take it to put your name on it, then mark it done when it is fixed.",
+            signature=Signature(
+                name=f"{brand.site_name} notifications",
+                title="Sent automatically when an issue is reported",
+                url=issue_url.split("/admin/issues", 1)[0] if issue_url else None,
+            ),
+            footer=f"You are receiving this because you can manage {brand.site_name} issues.",
+        ),
+    )

@@ -1,4 +1,4 @@
-import { KeyRound, ShieldCheck, UserCheck, UserRound, UserX, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, KeyRound, ShieldCheck, UserCheck, UserRound, UserX, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -8,11 +8,13 @@ import { BulkDeleteBar, BulkSelectionProvider, SelectionCell, SelectionColumn, S
 import { CreateUserDialog } from "@/components/admin/create-user-dialog";
 import { ListFilters, PaginationControls } from "@/components/admin/list-controls";
 import { PermissionOverridesSummary, PermissionOverridesTable } from "@/components/admin/permission-overrides-table";
+import { RefreshButton } from "@/components/admin/refresh-button";
 import { SummaryMetrics } from "@/components/admin/summary-metrics";
 import { UserRowActions } from "@/components/admin/user-row-actions";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
+import { formatDateTime } from "@/lib/i18n/format";
 import { listAdministrators, listPermissionOverrideUsers, listUsers } from "@/lib/admin";
 import { getCurrentUser } from "@/lib/auth";
 import { getServerLocale } from "@/lib/i18n/server";
@@ -24,7 +26,9 @@ export const dynamic = "force-dynamic";
 // list becomes unwieldy.
 const PAGE_SIZE = 10;
 const USER_PAGE_SIZES = [10, 25, 50, 100] as const;
-const COLUMN_WIDTHS = ["26%", "20%", "24%", "10%", "10%", "10%"];
+const SORT_KEYS = ["username", "email", "groups", "role", "status", "last_login"] as const;
+type SortKey = (typeof SORT_KEYS)[number];
+const COLUMN_WIDTHS = ["20%", "18%", "27%", "7%", "8%", "12%", "8%"];
 
 function ColumnWidths() {
   return (
@@ -83,6 +87,8 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
   const q = single("q");
   const status = single("status");
   const role = single("role");
+  const sort = SORT_KEYS.find((key) => key === single("sort"));
+  const order = single("order") === "asc" ? "asc" : "desc";
   const offset = Number.parseInt(single("offset") || "0", 10) || 0;
   const requestedLimit = Number.parseInt(single("limit") || String(PAGE_SIZE), 10);
   const limit = USER_PAGE_SIZES.includes(requestedLimit as 10 | 25 | 50 | 100)
@@ -117,7 +123,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
 
   const [page, totalStat, adminStat, activeStat, disabledStat, admins, overrideUsers] =
     await Promise.all([
-      listUsers({ q, status, role, limit, offset }),
+      listUsers({ q, status, role, sort, order, limit, offset }),
       listUsers({ limit: 1 }),
       listUsers({ role: "admin", limit: 1 }),
       listUsers({ status: "active", limit: 1 }),
@@ -141,6 +147,24 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
   // (protected/self/peer-admin can't be bulk-selected) - "select all" must
   // match it exactly, or it would try to select rows whose checkbox doesn't
   // exist.
+  // Header links: first click sorts a column in its natural direction (newest
+  // sign-in first, everything else A-Z), then each click toggles it.
+  const sortHref = (key: SortKey) => {
+    const next = new URLSearchParams({ tab: "people" });
+    if (q) next.set("q", q);
+    if (status) next.set("status", status);
+    if (role) next.set("role", role);
+    if (limit !== PAGE_SIZE) next.set("limit", String(limit));
+    next.set("sort", key);
+    const natural = key === "last_login" ? "desc" : "asc";
+    next.set("order", sort === key ? (order === "asc" ? "desc" : "asc") : natural);
+    return `?${next.toString()}`;
+  };
+  const sortHeader = (key: SortKey, label: string) => {
+    const active = sort === key;
+    const Icon = !active ? ArrowUpDown : order === "asc" ? ArrowUp : ArrowDown;
+    return <th className="px-4 py-3 font-medium" aria-sort={active ? (order === "asc" ? "ascending" : "descending") : undefined}><Link href={sortHref(key)} title={`${t("adminUsers.sortBy")}: ${label}`} className={cn("hover:text-foreground focus-visible:ring-ring -mx-1 inline-flex cursor-pointer items-center gap-1 rounded px-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none", active && "text-foreground")}>{label}<Icon className="size-3.5" /></Link></th>;
+  };
   const selectableUserIds = page.items
     .filter((user) => !user.is_protected && me?.id !== user.id && !peerAdminBlocked(user))
     .map((user) => user.id);
@@ -221,6 +245,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
                 { name: "status", label: t("adminUsers.statusLabel"), value: status, options: [{ value: "active", label: t("adminUsers.active") }, { value: "disabled", label: t("adminUsers.disabled") }] },
                 { name: "role", label: t("adminUsers.roleLabel"), value: role, options: [{ value: "admin", label: t("adminUsers.roleAdministrator") }, { value: "member", label: t("adminUsers.roleMember") }] },
               ]} /></Suspense>
+              <RefreshButton label={t("adminUsers.refresh")} />
               <SelectModeButton />
             </div>
           </div>
@@ -230,7 +255,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
             confirmNote={t("adminUsers.bulkDeleteNote")}
           />
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] table-fixed text-sm"><ColumnWidths /><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><SelectionHeaderCell ids={selectableUserIds} /><th className="px-4 py-3 font-medium">{t("adminUsers.columnUser")}</th><th className="px-4 py-3 font-medium">{t("adminUsers.columnEmail")}</th><th className="px-4 py-3 font-medium">{t("adminUsers.columnGroups")}</th><th className="px-4 py-3 font-medium">{t("adminUsers.columnRole")}</th><th className="px-4 py-3 font-medium">{t("adminUsers.columnStatus")}</th><th className="px-4 py-3 text-right font-medium">{t("adminUsers.columnActions")}</th></tr></thead><tbody>{page.items.length === 0 ? <tr><td colSpan={7} className="px-4 py-12 text-center"><UserRound className="text-muted-foreground mx-auto size-7" /><p className="mt-3 font-medium">{t("adminUsers.noUsersFound")}</p><p className="text-muted-foreground mt-1 text-sm">{t("adminUsers.tryChangingFilters")}</p></td></tr> : page.items.map((user) => <tr key={user.id} className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0">
+            <table className="w-full min-w-[820px] table-fixed text-sm"><ColumnWidths /><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><SelectionHeaderCell ids={selectableUserIds} />{sortHeader("username", t("adminUsers.columnUser"))}{sortHeader("email", t("adminUsers.columnEmail"))}{sortHeader("groups", t("adminUsers.columnGroups"))}{sortHeader("role", t("adminUsers.columnRole"))}{sortHeader("status", t("adminUsers.columnStatus"))}{sortHeader("last_login", t("adminUsers.columnLastLogin"))}<th className="px-4 py-3 text-right font-medium">{t("adminUsers.columnActions")}</th></tr></thead><tbody>{page.items.length === 0 ? <tr><td colSpan={8} className="px-4 py-12 text-center"><UserRound className="text-muted-foreground mx-auto size-7" /><p className="mt-3 font-medium">{t("adminUsers.noUsersFound")}</p><p className="text-muted-foreground mt-1 text-sm">{t("adminUsers.tryChangingFilters")}</p></td></tr> : page.items.map((user) => <tr key={user.id} className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0">
               <SelectionCell
                 id={user.id}
                 disabled={user.is_protected || me?.id === user.id || peerAdminBlocked(user)}
@@ -241,6 +266,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
               <td className="px-4 py-3">{user.groups.length ? <div className="flex flex-wrap gap-1">{user.groups.map((group) => <Badge key={group} variant="neutral" title={group} className="max-w-full truncate">{group}</Badge>)}</div> : <span className="text-muted-foreground">—</span>}</td>
               <td className="px-4 py-3"><Badge variant={user.is_superuser || user.is_effective_admin ? "info" : "neutral"} title={!user.is_superuser && user.is_effective_admin ? t("adminUsers.notSetDirectlyTitle") : undefined}>{user.is_superuser || user.is_effective_admin ? t("adminUsers.adminBadge") : t("adminUsers.roleMember")}</Badge></td>
               <td className="px-4 py-3"><Badge variant={user.is_active ? "success" : "warning"}>{user.is_active ? t("adminUsers.active") : t("adminUsers.disabled")}</Badge></td>
+              <td className="px-4 py-3"><div className="flex items-center gap-1.5 text-xs font-medium"><span aria-hidden className={cn("size-2 shrink-0 rounded-full", user.is_online ? "bg-online" : user.last_login_at ? "bg-muted-foreground/50" : "border-muted-foreground border")} />{user.is_online ? t("adminUsers.presenceOnline") : user.last_login_at ? t("adminUsers.presenceOffline") : t("adminUsers.presenceNever")}</div>{user.last_login_at ? <p className="text-muted-foreground mt-0.5 truncate text-xs" title={formatDateTime(user.last_login_at, locale)}>{formatDateTime(user.last_login_at, locale)}</p> : null}</td>
               <td className="px-4 py-3"><UserRowActions user={user} isSelf={me?.id === user.id} viewerIsProtected={me?.is_protected ?? false} viewerIsSystemAdmin={!!viewerIsSystemAdmin} /></td>
             </tr>)}</tbody></table>
           </div>

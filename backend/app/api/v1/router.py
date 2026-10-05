@@ -18,6 +18,7 @@ from app.api.v1 import (
     document_imports,
     export_render,
     groups,
+    issues,
     meta,
     notifications,
     pages,
@@ -52,6 +53,7 @@ api_router.include_router(storage_admin.router)
 api_router.include_router(admin_mail.router)
 api_router.include_router(admin_mail.public_router)
 api_router.include_router(notifications.router)
+api_router.include_router(issues.router)
 api_router.include_router(export_render.router)
 
 # Registered in later phases:

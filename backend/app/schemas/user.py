@@ -73,6 +73,12 @@ class UserRead(BaseModel):
     is_effective_admin: bool = False
     is_protected: bool
     last_login_at: datetime | None
+    #: Latest request seen on any live, non-impersonated session. Only filled
+    #: in by `list_users`, which is what the People directory's Online column
+    #: reads.
+    last_active_at: datetime | None = None
+    #: Whether `last_active_at` is recent enough to count as signed in right now.
+    is_online: bool = False
     created_at: datetime
     groups: list[str] = Field(default_factory=list)
     #: Only populated by a single-user read (`_read_user`) - same reasoning

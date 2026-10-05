@@ -5,6 +5,8 @@ export interface UserQuery {
   q?: string;
   status?: string;
   role?: string;
+  sort?: string;
+  order?: string;
   limit?: number;
   offset?: number;
 }
@@ -15,6 +17,8 @@ export function listUsers(query: UserQuery = {}): Promise<Page<User>> {
       q: query.q,
       status: query.status,
       role: query.role,
+      sort: query.sort,
+      order: query.order,
       limit: query.limit ?? 25,
       offset: query.offset ?? 0,
     })}`,

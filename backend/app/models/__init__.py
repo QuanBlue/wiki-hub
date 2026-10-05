@@ -14,6 +14,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.document_import import DocumentImportItem, DocumentImportJob
 from app.models.draft import PageDraft
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
+from app.models.issue import Issue, IssueAttachment, IssueNote, IssueStatus
 from app.models.notification import Notification
 from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.permission import (
@@ -65,6 +66,10 @@ __all__ = [
     "GroupGlobalPermission",
     "GroupMember",
     "ImportArchive",
+    "Issue",
+    "IssueAttachment",
+    "IssueNote",
+    "IssueStatus",
     "ImportJob",
     "ImportLog",
     "PageAttachment",

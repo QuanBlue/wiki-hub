@@ -189,4 +189,61 @@ describe("Sidebar permissions gating", () => {
     expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Backup" })).toBeInTheDocument();
   });
+
+  it("shows only Issues in Administration to a member holding manage_issues", () => {
+    const permissions: SidebarPermissions = {
+      home: ["admin", "member"],
+      spaces: ["admin", "member"],
+      favorites: ["admin", "member"],
+      pinned: ["admin", "member"],
+      settings: ["admin"],
+      backups: ["admin"],
+    };
+    const manager = {
+      ...makeUser("member"),
+      global_permissions: ["manage_issues"],
+    } as unknown as Me;
+
+    render(
+      <SidebarProvider initialCollapsed={false} initialSidebarWidth={240}>
+        <Sidebar
+          user={manager}
+          permissions={permissions}
+          favoriteSpaces={[]}
+          pinnedPages={[]}
+        />
+      </SidebarProvider>,
+    );
+
+    expect(screen.getByRole("link", { name: "Issues" })).toHaveAttribute(
+      "href",
+      "/admin/issues",
+    );
+    expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+  });
+
+  it("does not show Issues to an ordinary member", () => {
+    const permissions: SidebarPermissions = {
+      home: ["admin", "member"],
+      spaces: ["admin", "member"],
+      favorites: ["admin", "member"],
+      pinned: ["admin", "member"],
+      settings: ["admin"],
+      backups: ["admin"],
+    };
+
+    render(
+      <SidebarProvider initialCollapsed={false} initialSidebarWidth={240}>
+        <Sidebar
+          user={makeUser("member")}
+          permissions={permissions}
+          favoriteSpaces={[]}
+          pinnedPages={[]}
+        />
+      </SidebarProvider>,
+    );
+
+    expect(screen.queryByRole("link", { name: "Issues" })).not.toBeInTheDocument();
+  });
 });

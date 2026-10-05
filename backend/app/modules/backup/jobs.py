@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import tempfile
 import uuid
 from contextlib import suppress
@@ -34,6 +35,17 @@ from app.modules.backup.service import (
 from app.services.job_log_recovery import pending_log_entries, restore_log_entries
 from app.services.job_logs import concise_error
 from app.services.storage import ObjectStorage
+
+
+def _full_export_filename(space_keys: list[str] | None, created_at: datetime) -> str:
+    """"full" only when every space is in the archive; a scoped export names
+    the spaces it holds (or how many, once that would make the name unwieldy)."""
+    stamp = f"{created_at:%Y%m%d-%H%M%S}"
+    keys = sorted({re.sub(r"[^A-Za-z0-9_-]", "", key) for key in space_keys or []} - {""})
+    if not keys:
+        return f"wikihub-full-backup-{stamp}.zip"
+    label = "+".join(keys) if len(keys) <= 3 else f"{len(keys)}-spaces"
+    return f"wikihub-backup-{label}-{stamp}.zip"
 
 
 def _open_for_read(path: str) -> BinaryIO:
@@ -435,7 +447,7 @@ async def run_backup_job(session: AsyncSession, storage: ObjectStorage, job_id: 
             job_counters = {
                 str(key): int(value) for key, value in manifest.get("counts", {}).items()
             }
-            filename = f"wikihub-full-backup-{job.created_at:%Y%m%d-%H%M%S}.zip"
+            filename = _full_export_filename(job.space_keys, job.created_at)
         elif job.kind == "confluence_export":
             spaces_query = select(Space).order_by(Space.key)
             if job.space_keys:

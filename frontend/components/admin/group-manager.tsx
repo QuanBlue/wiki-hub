@@ -40,6 +40,7 @@ const PERMISSIONS = [
   ["create_space", "Create spaces"],
   ["manage_users", "Manage users"],
   ["manage_groups", "Manage groups"],
+  ["manage_issues", "Manage issues"],
   ["system_admin", "System admin"],
 ] as const;
 

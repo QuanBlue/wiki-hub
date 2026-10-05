@@ -1340,7 +1340,7 @@ export const sectionsEn: HelpSection[] = [
     body: (
       <>
         <p>
-          Manage your personal account preferences under <strong>Your account</strong>{" "}
+          Manage your personal account preferences under <strong>Account</strong>{" "}
           from the profile menu.
         </p>
 
@@ -1440,6 +1440,80 @@ export const sectionsEn: HelpSection[] = [
     ),
   },
   {
+    id: "report-issues",
+    title: "Reporting Issues",
+    category: "Account",
+    description:
+      "Tell the administrators about a problem, attach screenshots, and follow what happens to it.",
+    keywords: ["issue", "bug", "report", "problem", "screenshot", "feedback", "manage issues"],
+    body: (
+      <>
+        <p>
+          WikiHub is new, so you may hit a problem. Open your <strong>account menu</strong> (your
+          name, top right) and choose <strong>Report issue</strong>. Give it a title, say what
+          you were doing and what went wrong, and add screenshots if you can: use{" "}
+          <strong>Add image</strong>, or simply paste a screenshot with <strong>Ctrl+V</strong>.
+          Up to five PNG, JPEG, GIF or WebP images of 5 MB each. Use <strong>Labels</strong> to
+          tag it - <em>bug</em>, <em>question</em>, <em>enhancement</em> and so on - so it is easy
+          to find later.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Following your report:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            <strong>My issues</strong> (also in the account menu) lists everything you reported,
+            with its status - <em>Open</em>, <em>In progress</em> or <em>Done</em> - and who took it.
+          </li>
+          <li>
+            You get a notification when an administrator takes or is given your issue, and when it
+            is closed - and an <strong>email</strong> too when it is closed. If the administrator
+            left a closing note, you can read it under the issue and it is quoted in the email.
+            Only you and the people who manage issues can see your issue.
+          </li>
+        </ul>
+
+        <p className="mt-3 font-semibold text-foreground">For people who manage issues:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Superusers, system administrators and anyone given the{" "}
+            <strong>Manage issues</strong> permission (Administration &gt; Groups, or a user&apos;s
+            Global access) see <strong>Administration &gt; Issues</strong> and are told when a new
+            one arrives.
+          </li>
+          <li>
+            Whenever someone reports an issue, everyone who can manage issues is told by
+            notification and by email.
+          </li>
+          <li>
+            Tick one or more issues in the list (the box at the top ticks the whole page) to
+            change them together: <strong>Mark as</strong> opens, reopens or completes them, and{" "}
+            <strong>Assign</strong> hands them to someone - only a superuser can give an issue to
+            another person. Anything you are not allowed to change is skipped and counted, not a
+            reason to stop the rest.
+          </li>
+          <li>
+            Pick a view on the left - <strong>Issues</strong>, <strong>Assigned to me</strong> or{" "}
+            <strong>Created by me</strong> - switch between <strong>Open</strong> and{" "}
+            <strong>Closed</strong>, and narrow by author, assignee, <strong>label</strong> (tick
+            several to require all of them, or pick <em>No labels</em>) or order. The search box
+            looks in titles and descriptions only, and marks in blue what matched.
+          </li>
+          <li>
+            Open an issue and choose <strong>Take it</strong> to put your name on it. It then
+            counts as in progress. Use <strong>Add note</strong> for notes only managers see. When you press{" "}
+            <strong>Mark done</strong>, a <strong>closing note</strong> box appears for what the
+            reporter should read; confirm to close the issue.
+          </li>
+          <li>
+            Only the person who took an issue, or a <strong>superuser</strong>, can mark it{" "}
+            <strong>done</strong>, reopen it or otherwise change its status. A system
+            administrator who has not taken it can read it, not close it.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "language-switching",
     title: "Switching the Interface Language",
     category: "Account",
@@ -1509,7 +1583,7 @@ export const sectionsEn: HelpSection[] = [
       <>
         <p>
           WikiHub&apos;s shortcuts are defaults, not fixed rules. Open{" "}
-          <strong>Your account</strong> from the profile menu and choose{" "}
+          <strong>Account</strong> from the profile menu and choose{" "}
           <strong>Keyboard shortcuts</strong> to change any of them.
         </p>
 
@@ -1619,6 +1693,12 @@ export const sectionsEn: HelpSection[] = [
         <p>
           Administrators can fully customize WikiHub&apos;s visual identity under{" "}
           <strong>Administration &gt; Settings &gt; Theme &amp; Branding</strong>.
+        </p>
+        <p className="mt-2 text-sm">
+          The <strong>Page Typography &amp; Font Family</strong> list keeps similar typefaces
+          together. Filter it by type - <em>All</em>, <em>Sans-Serif</em>,{" "}
+          <em>Geometric Sans</em> or <em>Serif</em> - and use <strong>Show more</strong> to see
+          every font in the group (<strong>Show less</strong> folds it back to three rows).
         </p>
 
         <Screenshot
@@ -2090,6 +2170,13 @@ export const sectionsEn: HelpSection[] = [
             Active / Disabled), with search and Status/Role filters.
           </li>
           <li>
+            The <strong>Last sign-in</strong> column shows when each person last signed
+            in, with a presence marker: <Code>Online</Code> (active in the last 5
+            minutes), <Code>Offline</Code>, or <Code>Never signed in</Code>. Click the
+            column header to sort by last sign-in (newest first, click again for oldest
+            first); accounts that never signed in always stay at the bottom.
+          </li>
+          <li>
             <strong>Create user</strong>: first/last name, username (checked for
             availability as you type), e-mail, a password with a live strength
             checklist (8+ characters, upper &amp; lower case, a number or symbol), and a
@@ -2476,7 +2563,11 @@ export const sectionsEn: HelpSection[] = [
             <strong>Export WikiHub Backup</strong>: a native, restorable{" "}
             <Code>.zip</Code> of spaces, pages, revisions, attachments, users, and
             groups - scoped to <strong>All spaces</strong> or a picked subset via{" "}
-            <strong>Select spaces to export</strong>.
+            <strong>Select spaces to export</strong>. It also carries every reported{" "}
+            <strong>issue</strong> - its labels, status, assignee, notes and screenshots - and
+            restoring puts them back with the same dates; an issue that already exists is
+            skipped, never duplicated. Issues belong to the whole workspace, so a backup scoped
+            to some spaces leaves them out.
           </li>
           <li>
             <strong>Export Confluence Backup</strong>: an XML archive for Atlassian

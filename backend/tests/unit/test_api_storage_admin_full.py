@@ -19,6 +19,7 @@ from app.core.exceptions import BadRequestError, NotFoundError, ServiceUnavailab
 def test_storage_kind():
     assert storage_kind("attachments/1.txt") == "page_attachment"
     assert storage_kind("avatars/user.png") == "avatar"
+    assert storage_kind("issues/abc/def/shot.png") == "issue_attachment"
     assert storage_kind("imports/confluence/a.zip") == "import_archive"
     assert storage_kind("imports/documents/job/item/a.docx") == "document_import"
     assert storage_kind("backups/imports/id/a.zip") == "backup_archive"

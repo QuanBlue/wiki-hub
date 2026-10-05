@@ -11,7 +11,7 @@ import { SITE_NAME } from "@/lib/env";
  * This only checks that the visitor holds *some* administrative global
  * permission - `system_admin` (full access to every section) or one of the
  * two narrower ones that each unlock exactly one section, `manage_users`
- * (Users) or `manage_groups` (Groups). `create_space` is deliberately not
+ * (Users), `manage_groups` (Groups) or `manage_issues` (Issues). `create_space` is deliberately not
  * one of them: it only lets someone create new spaces from the regular
  * Spaces directory (see `app/spaces/page.tsx`), not administer every
  * existing one - Administration > Spaces stays a `system_admin`-only, full
@@ -41,7 +41,8 @@ export default async function AdminLayout({
     user.is_superuser ||
     user.global_permissions.includes("system_admin") ||
     user.global_permissions.includes("manage_users") ||
-    user.global_permissions.includes("manage_groups");
+    user.global_permissions.includes("manage_groups") ||
+    user.global_permissions.includes("manage_issues");
 
   if (!hasAdminAccess) {
     return (

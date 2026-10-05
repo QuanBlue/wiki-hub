@@ -13,6 +13,7 @@ layer so they hold for any future caller:
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, UploadFile, status
@@ -70,6 +71,8 @@ AVATAR_EXTENSIONS = {
     "image/webp": "webp",
 }
 MAX_AVATAR_BYTES = 5 * 1024 * 1024
+#: A session that made a request within this window counts as online.
+ONLINE_WINDOW = timedelta(minutes=5)
 
 
 def get_storage() -> ObjectStorage:
@@ -506,6 +509,8 @@ async def list_users(
     ),
     status_filter: Literal["active", "disabled"] | None = Query(default=None, alias="status"),
     role: Literal["admin", "member"] | None = Query(default=None),
+    sort: Literal["username", "email", "groups", "role", "status", "last_login"] | None = Query(default=None),
+    order: Literal["asc", "desc"] = Query(default="desc"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> Page[UserRead]:
@@ -517,9 +522,28 @@ async def list_users(
         user, [GlobalPermission.manage_users, GlobalPermission.manage_groups]
     )
     users, total = await service.search_users(
-        q=q, status=status_filter, role=role, limit=limit, offset=offset
+        q=q, status=status_filter, role=role, sort=sort, order=order, limit=limit, offset=offset
     )
     group_names: dict[uuid.UUID, list[str]] = {item.id: [] for item in users}
+    last_active: dict[uuid.UUID, datetime] = {}
+    if users:
+        # Impersonated sessions are an administrator acting as the user, not
+        # the user themself, so they never count as that user being around.
+        last_active = dict(
+            (
+                await session.execute(
+                    select(UserSession.user_id, func.max(UserSession.last_seen_at))
+                    .where(
+                        UserSession.user_id.in_(group_names),
+                        UserSession.revoked_at.is_(None),
+                        UserSession.expires_at > datetime.now(UTC),
+                        UserSession.impersonator_id.is_(None),
+                    )
+                    .group_by(UserSession.user_id)
+                )
+            ).all()
+        )
+    online_cutoff = datetime.now(UTC) - ONLINE_WINDOW
     # One bulk query for *every* effective admin in the workspace, same as
     # the Administrators tab uses - reading `is_effective_admin` per row via
     # `PermissionService.is_system_admin(item)` instead would mean one extra
@@ -545,6 +569,8 @@ async def list_users(
             update={
                 "groups": group_names[item.id],
                 "is_effective_admin": item.id in admin_ids,
+                "last_active_at": last_active.get(item.id),
+                "is_online": item.id in last_active and last_active[item.id] >= online_cutoff,
             }
         )
         for item in users
