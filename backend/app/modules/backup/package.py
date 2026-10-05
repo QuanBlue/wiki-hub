@@ -336,6 +336,18 @@ def scan_full_backup(path: str, *, max_size_bytes: int | None = None) -> Scanned
                     "Backup binary metadata does not match its manifest entry.",
                     code="backup_checksum_failed",
                 )
+        for issue in document.issues:
+            for shot in issue.attachments:
+                declared = entries.get(shot.object_path)
+                if (
+                    declared is None
+                    or declared.sha256 != shot.sha256
+                    or declared.size_bytes != shot.size_bytes
+                ):
+                    raise BadRequestError(
+                        "Backup binary metadata does not match its manifest entry.",
+                        code="backup_checksum_failed",
+                    )
         for avatar in document.avatars:
             declared = entries.get(avatar.object_path)
             if (

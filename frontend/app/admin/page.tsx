@@ -21,5 +21,8 @@ export default async function AdminIndexPage() {
   if (user?.global_permissions.includes("manage_groups")) {
     redirect("/admin/groups");
   }
+  if (user?.global_permissions.includes("manage_issues")) {
+    redirect("/admin/issues");
+  }
   redirect("/admin/users");
 }

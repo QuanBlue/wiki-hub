@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestError
 from app.models.attachment import PageAttachment
+from app.models.issue import Issue, IssueAttachment, IssueNote
 from app.models.permission import (
     Group,
     GroupGlobalPermission,
@@ -113,7 +114,7 @@ def _mock_site_settings(service):
 _EMPTY_SMALL_TABLES = (
     SpaceMember, SpaceOwner, SpaceFavorite, Group, GroupMember, GroupGlobalPermission,
     SpaceUserPermission, SpaceGroupPermission, PageUserRestriction,
-    PageGroupRestriction,
+    PageGroupRestriction, Issue, IssueNote, IssueAttachment,
 )
 
 def make_export_full_package_router(

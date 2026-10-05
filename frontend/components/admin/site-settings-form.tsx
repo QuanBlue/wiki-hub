@@ -8,7 +8,6 @@ import {
   Check,
   CheckSquare,
   ChevronDown,
-  ChevronRight,
   Clock,
   Code2,
   Compass,
@@ -83,6 +82,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FontPicker } from "@/components/admin/font-picker";
 import { FontSpecimenModal } from "@/components/admin/font-specimen-modal";
 import { api, ApiError } from "@/lib/api-client";
 import {
@@ -561,12 +561,11 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               id="appearance-settings"
               role="tabpanel"
               className={cn(
-                "border-border bg-surface rounded-xl border shadow-sm",
                 activeTab !== "appearance" && "hidden",
               )}
             >
               {/* Sticky Header with Action & Save Buttons - Flush with TopBar */}
-              <div className="border-border bg-surface/98 backdrop-blur-md sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b -mt-px -mx-px px-6 py-3.5 rounded-t-xl transition-all shadow-xs">
+              <div className="border-border bg-surface/98 backdrop-blur-md sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b py-3.5 transition-all">
                 <div className="flex items-center gap-2.5">
                   <Palette className="text-primary size-5 shrink-0" />
                   <div>
@@ -634,7 +633,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                 </div>
               </div>
 
-              <div className="p-6 space-y-6">
+              <div className="pt-6 space-y-6">
                 {/* Theme Color Palettes */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -647,7 +646,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                   Select a curated color palette or specify a custom brand color.
                 </p>
 
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
                   {THEME_COLOR_PRESETS.map((preset) => {
                     const isSelected = !isCustomHex && themeColor === preset.id;
                     return (
@@ -656,7 +655,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                         type="button"
                         onClick={() => handleColorPresetSelect(preset.id)}
                         className={cn(
-                          "hover:border-border-strong relative flex cursor-pointer items-center gap-2.5 rounded-lg border p-2.5 text-left transition-all duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                          "hover:border-border-strong relative flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-all duration-150 focus-visible:ring-2 focus-visible:outline-none",
                           isSelected
                             ? "border-primary ring-primary/20 bg-surface-selected ring-2"
                             : "border-border bg-surface",
@@ -845,74 +844,11 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                     {inheritedTag(settings.overrides.default_font !== null)}
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {FONT_PRESETS.map((preset) => {
-                      const isSelected = defaultFont === preset.id;
-                      return (
-                        <div
-                          key={preset.id}
-                          onClick={() => setDefaultFont(preset.id)}
-                          className={cn(
-                            "relative flex flex-col justify-between rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring select-none",
-                            isSelected
-                              ? "border-primary ring-2 ring-primary/20 bg-surface-selected/80 shadow-xs"
-                              : "border-border bg-surface hover:border-border-strong hover:bg-surface-hover/60",
-                          )}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              setDefaultFont(preset.id);
-                            }
-                          }}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span
-                                className="text-foreground text-sm font-semibold truncate"
-                                style={{ fontFamily: preset.cssFamily }}
-                              >
-                                {preset.name}
-                              </span>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSpecimenModalFont(preset);
-                                  }}
-                                  className="p-1 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
-                                  title={`Inspect ${preset.name} specimen`}
-                                  aria-label={`Inspect ${preset.name} font specimen`}
-                                >
-                                  <Eye className="size-3.5" />
-                                </button>
-                                <span className="text-[10px] uppercase font-medium tracking-wider px-1.5 py-0.5 rounded-full bg-surface-sunken border border-border/60 text-muted-foreground">
-                                  {preset.category}
-                                </span>
-                                {isSelected ? (
-                                  <span className="flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xs">
-                                    <Check className="size-2.5 stroke-[3]" />
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-                            <p className="text-muted-foreground text-[11px] mt-1 line-clamp-2 leading-relaxed">
-                              {preset.description}
-                            </p>
-                          </div>
-
-                          <div
-                            className="mt-3 pt-2.5 border-t border-border/50 text-foreground/90 text-xs font-normal truncate"
-                            style={{ fontFamily: preset.cssFamily }}
-                          >
-                            {preset.sampleQuote}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <FontPicker
+                    value={defaultFont}
+                    onChange={setDefaultFont}
+                    onInspect={setSpecimenModalFont}
+                  />
                   <p className="text-muted-foreground text-[11px] flex items-center gap-1.5 pt-1">
                     <Info className="size-3.5 text-primary shrink-0" />
                     Code blocks, inline code, and syntax highlighting strictly retain monospace typography (JetBrains Mono).
@@ -927,12 +863,11 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               id="general-settings"
               role="tabpanel"
               className={cn(
-                "border-border bg-surface rounded-xl border shadow-sm",
                 activeTab !== "general" && "hidden",
               )}
             >
               {/* Sticky Header with Action & Save Buttons */}
-              <div className="border-border bg-surface/98 backdrop-blur-md sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b -mt-px -mx-px px-6 py-3.5 rounded-t-xl transition-all shadow-xs">
+              <div className="border-border bg-surface/98 backdrop-blur-md sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b py-3.5 transition-all">
                 <div className="flex items-center gap-2.5">
                   <SlidersHorizontal className="text-primary size-5 shrink-0" />
                   <div>
@@ -983,7 +918,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                 </div>
               </div>
 
-              <div className="p-6 space-y-6">
+              <div className="pt-6 space-y-6">
                 {/* Section 1: Workspace Identity */}
                 <div className="border-border bg-surface-sunken/40 rounded-xl border p-5 sm:p-6 space-y-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1247,12 +1182,11 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               id="sidebar-settings"
               role="tabpanel"
               className={cn(
-                "border-border bg-surface rounded-xl border shadow-sm",
                 activeTab !== "sidebar" && "hidden",
               )}
             >
               {/* Sticky Header with Action & Save Buttons */}
-              <div className="border-border bg-surface/98 backdrop-blur-md sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b -mt-px -mx-px px-6 py-3.5 rounded-t-xl transition-all shadow-xs">
+              <div className="border-border bg-surface/98 backdrop-blur-md sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b py-3.5 transition-all">
                 <div className="flex items-center gap-2.5">
                   <ShieldCheck className="text-primary size-5 shrink-0" />
                   <div>
@@ -1309,7 +1243,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                 </div>
               </div>
 
-              <div className="p-6 space-y-6">
+              <div className="pt-6 space-y-6">
                 <div className="border-border bg-surface rounded-xl border divide-y divide-border overflow-hidden shadow-sm">
                   {/* Table Column Headers */}
                   <div className="bg-surface-sunken/80 px-4 sm:px-5 py-2.5 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1617,14 +1551,14 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                   <SelectTrigger className="h-7 text-xs w-32 bg-surface px-2">
                     <SelectValue>{getFontPreset(defaultFont).name}</SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="w-48">
+                  <SelectContent className="w-64">
                     {FONT_PRESETS.map((preset) => (
                       <SelectItem key={preset.id} value={preset.id}>
-                        <div className="flex items-center justify-between gap-2 py-0.5 w-full">
-                          <span className="text-xs" style={{ fontFamily: preset.cssFamily }}>
+                        <div className="flex items-center justify-between gap-3 py-0.5 w-full">
+                          <span className="text-xs whitespace-nowrap" style={{ fontFamily: preset.cssFamily }}>
                             {preset.name}
                           </span>
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">
                             {preset.category}
                           </span>
                         </div>
@@ -1662,10 +1596,13 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           <div
             className={cn(
               "flex-1 min-h-0 rounded-xl border border-border shadow-inner flex flex-col overflow-hidden text-sm transition-colors duration-150 relative",
-              previewDarkMode ? "dark bg-neutral-950 text-neutral-100" : "bg-white text-neutral-900",
+              "bg-background text-foreground",
+              previewDarkMode && "dark",
             )}
             style={
               {
+                "--primary-foreground": "#ffffff",
+                "--wh-brand-800": previewPalette[800],
                 "--primary": previewDarkMode
                   ? previewPalette[400]
                   : previewPalette[600],
@@ -1687,79 +1624,113 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
             }
           >
               {/* Mock Shell TopBar - Matches Real WikiHub TopBar (Image 2) */}
+              {/* Same classes as components/layout/top-bar.tsx: the bar is filled
+                  with the theme colour. Colours are pinned inline so a light
+                  preview inside a dark app (or vice versa) cannot pick up the
+                  page's own `.dark .topbar-on-primary` rule. */}
               <div
-                className={cn(
-                  "shrink-0 flex items-center gap-3 px-4 py-2 border-b transition-colors shadow-xs z-20",
-                  previewDarkMode
-                    ? "bg-neutral-900 border-neutral-800"
-                    : "bg-surface border-border",
-                )}
+                className="h-topbar topbar-on-primary relative z-20 shrink-0"
+                style={
+                  {
+                    "--tb-bg": previewDarkMode ? previewPalette[800] : previewPalette[600],
+                    "--tb-fg": "#ffffff",
+                  } as CSSProperties
+                }
               >
-                {/* Left: Sidebar Toggle + Wordmark */}
-                <div className="flex items-center gap-2.5 shrink-0">
-                  <button
+                <div className="topbar-inner flex h-full items-center gap-3 px-4">
+                  <Button
                     type="button"
-                    onClick={() => toast.info("Sidebar toggle clicked in preview")}
-                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-hover cursor-pointer"
+                    variant="ghost"
+                    size="icon"
                     title="Toggle navigation"
+                    aria-label="Toggle navigation"
+                    onClick={() => toast.info("Sidebar toggle clicked in preview")}
                   >
-                    <PanelLeft className="size-4" />
-                  </button>
-                  <Wordmark
-                    siteName={effectiveDisplayName}
-                    icon={logoIcon}
-                    customLogoUrl={customLogoUrl}
-                    className="text-sm font-semibold"
-                  />
-                </div>
+                    <PanelLeft className="size-4" aria-hidden />
+                  </Button>
+                  <span className="hover:bg-surface-hover active:bg-surface-selected rounded-md px-1 py-1 transition-colors duration-150">
+                    <Wordmark
+                      siteName={effectiveDisplayName}
+                      icon={logoIcon}
+                      customLogoUrl={customLogoUrl}
+                    />
+                  </span>
 
-                {/* Center: Global Search Bar */}
-                <div className="mx-auto w-full max-w-md hidden sm:block">
-                  <div
-                    className={cn(
-                      "flex items-center gap-2 rounded-md px-2.5 h-8 text-xs border w-full transition-colors cursor-pointer",
-                      previewDarkMode
-                        ? "bg-neutral-800/80 border-neutral-700 text-neutral-300 hover:border-neutral-600"
-                        : "bg-surface-sunken border-border text-muted-foreground hover:border-border-strong hover:bg-surface-hover",
-                    )}
-                  >
-                    <Search className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate">Search {effectiveDisplayName}</span>
-                    <kbd className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded border border-border bg-surface text-muted-foreground">
-                      ⌘K
-                    </kbd>
-                  </div>
-                </div>
-
-                {/* Right: Theme Toggle + User Menu */}
-                <div className="flex items-center gap-2 ml-auto shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewDarkMode((prev) => !prev)}
-                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-hover cursor-pointer"
-                    title="Toggle dark mode in preview"
-                  >
-                    {previewDarkMode ? (
-                      <Moon className="size-4 text-indigo-400" />
-                    ) : (
-                      <Sun className="size-4 text-amber-500" />
-                    )}
-                  </button>
-
-                  <div
-                    onClick={() => toast.info("User menu in preview")}
-                    className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-surface-hover cursor-pointer transition-colors"
-                  >
-                    <span
-                      className="size-7 rounded-full flex items-center justify-center text-xs font-semibold text-white shadow-2xs shrink-0"
-                      style={{ backgroundColor: previewPalette[600] }}
+                  <div className="mx-auto hidden w-full min-w-0 max-w-md sm:block">
+                    <button
+                      type="button"
+                      onClick={() => toast.info("Search in preview")}
+                      className="border-border bg-surface-hover text-muted-foreground hover:bg-surface-selected hover:border-border-strong active:bg-surface-selected flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-left transition-colors duration-150"
                     >
-                      WA
-                    </span>
-                    <span className="text-xs text-foreground font-normal hidden md:inline truncate max-w-32">
-                      WikiHub Administrator
-                    </span>
-                    <ChevronDown className="size-3 text-muted-foreground hidden md:inline" />
+                      <Search className="size-4 shrink-0" />
+                      <span className="truncate text-xs">Search {effectiveDisplayName}</span>
+                      <kbd className="border-border ml-auto hidden rounded border px-1.5 py-0.5 font-mono text-[10px] sm:inline">
+                        Ctrl K
+                      </kbd>
+                    </button>
+                  </div>
+
+                  <div className="ml-auto flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title="Help"
+                      aria-label="Help"
+                      onClick={() => toast.info("Help in preview")}
+                    >
+                      <BookOpen className="size-4" aria-hidden />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title="Notifications"
+                      aria-label="Notifications"
+                      onClick={() => toast.info("Notifications in preview")}
+                    >
+                      <Bell className="size-4" aria-hidden />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title={previewDarkMode ? "Switch to light preview" : "Switch to dark preview"}
+                      aria-label="Toggle dark mode in preview"
+                      onClick={() => setPreviewDarkMode((prev) => !prev)}
+                    >
+                      {previewDarkMode ? (
+                        <Moon className="size-4" aria-hidden />
+                      ) : (
+                        <Sun className="size-4" aria-hidden />
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title="Language"
+                      aria-label="Language"
+                      onClick={() => toast.info("Language in preview")}
+                    >
+                      <Globe className="size-4" aria-hidden />
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => toast.info("User menu in preview")}
+                      className="hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex cursor-pointer items-center gap-2 rounded-md py-1 pr-1.5 pl-1 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      <span
+                        aria-hidden
+                        className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                      >
+                        WA
+                      </span>
+                      <span className="hidden max-w-40 truncate sm:inline">
+                        WikiHub Administrator
+                      </span>
+                      <ChevronDown aria-hidden className="text-muted-foreground size-4 shrink-0" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1767,119 +1738,102 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
               {/* Mock Workspace Body: Split-Pane with Independent Content Scroll */}
               <div className="flex-1 min-h-0 flex overflow-hidden">
                 {/* Mock Space Sidebar - Authentic to User's Space Sidebar (Image 1) */}
-                <div
-                  className={cn(
-                    "w-56 shrink-0 border-r flex flex-col justify-between text-xs select-none overflow-hidden",
-                    previewDarkMode
-                      ? "bg-neutral-900/70 border-neutral-800"
-                      : "bg-surface-sunken border-neutral-200",
-                  )}
-                >
-                  {/* Space Top Info + Page Tree Scroll Viewport */}
-                  <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-5">
-                    {/* Space Avatar & Metadata */}
+                <div className="border-border bg-surface-sunken flex w-64 shrink-0 select-none flex-col overflow-hidden border-r">
+                  <div className="flex shrink-0 flex-col px-5 py-4">
                     <div className="flex items-start gap-3">
-                      <div
-                        className="size-12 rounded-lg flex items-center justify-center font-bold text-2xl shadow-2xs shrink-0"
-                        style={{
-                          backgroundColor: previewDarkMode
-                            ? `color-mix(in oklab, ${previewPalette[500]} 25%, transparent)`
-                            : previewPalette[50],
-                          color: previewDarkMode
-                            ? previewPalette[300]
-                            : previewPalette[700],
-                        }}
+                      <span
+                        aria-hidden
+                        className="bg-primary-subtle text-primary flex size-12 shrink-0 items-center justify-center rounded-md text-xl font-semibold"
                       >
                         Q
-                      </div>
-                      <div className="min-w-0 flex-1 pt-0.5">
-                        <div className="font-semibold text-sm text-foreground truncate">
-                          quantest
-                        </div>
-                        <div className="text-[11px] text-muted-foreground uppercase tracking-wide mt-0.5">
-                          QUANTEST
-                        </div>
+                      </span>
+                      <div className="min-w-0 flex-1 pt-1">
+                        <span className="block truncate text-sm font-semibold">quantest</span>
+                        <p className="text-muted-foreground mt-0.5 truncate text-xs">QUANTEST</p>
                       </div>
                       <button
                         type="button"
                         onClick={() => toast.info("Favorited space in preview")}
-                        className="size-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer pt-0.5"
+                        aria-label="Add to favourites"
                         title="Add to favourites"
+                        className="text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                       >
                         <Star className="size-4" />
                       </button>
                     </div>
 
-                    {/* Page Tree Section Header */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-1">
-                        <span>PAGE TREE</span>
-                        <button
-                          type="button"
-                          onClick={() => toast.info("New page clicked in space sidebar")}
-                          className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer font-normal"
-                        >
-                          <FilePlus className="size-3.5" />
-                          <span>New</span>
-                        </button>
-                      </div>
-
-                      {/* Hierarchical Page Tree */}
-                      <div className="space-y-1">
-                        {/* Folder add */}
-                        <div
-                          onClick={() => toast.info("Clicked folder 'add' in preview")}
-                          className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-foreground hover:bg-surface-hover cursor-pointer transition-colors"
-                        >
-                          <Folder className="size-4 text-muted-foreground shrink-0" />
-                          <span className="truncate">add</span>
-                        </div>
-
-                        {/* Folder dd */}
-                        <div className="space-y-1">
-                          <div
-                            onClick={() => toast.info("Clicked folder 'dd' in preview")}
-                            className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-foreground hover:bg-surface-hover cursor-pointer transition-colors"
-                          >
-                            <Folder className="size-4 text-muted-foreground shrink-0" />
-                            <span className="truncate">dd</span>
-                          </div>
-
-                          {/* Sub-page active 'ddd' */}
-                          <div className="pl-4">
-                            <div
-                              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium cursor-pointer"
-                              style={{
-                                backgroundColor: previewDarkMode
-                                  ? `color-mix(in oklab, ${previewPalette[500]} 25%, transparent)`
-                                  : previewPalette[50],
-                                color: previewDarkMode
-                                  ? previewPalette[300]
-                                  : previewPalette[700],
-                              }}
-                            >
-                              <FileText className="size-4 shrink-0" style={{ color: previewDarkMode ? previewPalette[300] : previewPalette[700] }} />
-                              <span className="truncate">ddd</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Sibling page 'ddd' */}
-                        <div
-                          onClick={() => toast.info("Clicked page 'ddd' in preview")}
-                          className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-foreground hover:bg-surface-hover cursor-pointer transition-colors"
-                        >
-                          <FileText className="size-4 text-muted-foreground shrink-0" />
-                          <span className="truncate">ddd</span>
-                        </div>
-                      </div>
+                    <div className="mt-6 flex items-center justify-between gap-2 px-2">
+                      <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                        Page tree
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title="New page"
+                        aria-label="New page"
+                        onClick={() => toast.info("New page clicked in space sidebar")}
+                      >
+                        <FilePlus />
+                      </Button>
                     </div>
+                  </div>
+
+                  <div className="wh-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+                    <ul className="mt-2 space-y-0.5">
+                      {(
+                        [
+                          { label: "add", folder: true, depth: 0, active: false },
+                          { label: "dd", folder: true, depth: 0, active: false },
+                          { label: "ddd", folder: false, depth: 1, active: true },
+                          { label: "ddd", folder: false, depth: 0, active: false },
+                        ] as const
+                      ).map((node, index) => {
+                        const Icon = node.folder ? Folder : FileText;
+                        return (
+                          <li key={index} style={{ paddingLeft: node.depth * 16 }}>
+                            <button
+                              type="button"
+                              onClick={() => toast.info(`Clicked '${node.label}' in preview`)}
+                              aria-current={node.active ? "page" : undefined}
+                              className={cn(
+                                "focus-visible:ring-ring flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                                node.active
+                                  ? "bg-surface-selected text-primary font-medium"
+                                  : "text-foreground hover:bg-surface-hover active:bg-surface-selected",
+                              )}
+                            >
+                              <Icon
+                                className={cn(
+                                  "size-4 shrink-0",
+                                  !node.active && "text-muted-foreground",
+                                )}
+                              />
+                              <span className="truncate">{node.label}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+
+                  <div className="border-border shrink-0 border-t p-3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:bg-surface-selected! hover:text-foreground! h-8 w-full cursor-pointer justify-start gap-2 text-xs"
+                      onClick={() => toast.info("Edit space in preview")}
+                    >
+                      <Pencil className="size-3.5" />
+                      Edit space
+                    </Button>
                   </div>
                 </div>
 
                 {/* Mock Space Page Content (Full Rich Documentation Measure with Independent Scroll & Dynamic Page Font) */}
                 <div
-                  className="flex-1 overflow-y-auto p-6 space-y-6"
+                  className="wh-scroll min-w-0 flex-1 overflow-y-auto px-8 pb-5 space-y-6"
                   style={
                     {
                       fontFamily: getFontFamilyCss(defaultFont),
@@ -1887,63 +1841,63 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                     } as CSSProperties
                   }
                 >
-                  {/* Space Header & Top Actions */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4 border-border/70">
-                    <div>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <span className="hover:underline cursor-pointer">Spaces</span>
-                        <ChevronRight className="size-3" />
-                        <span className="hover:underline cursor-pointer">Core Engineering</span>
-                        <ChevronRight className="size-3" />
-                        <span className="font-medium text-foreground">Architecture</span>
-                      </div>
-                      <h1
-                        className="text-2xl sm:text-3xl font-bold tracking-tight mt-1 text-foreground"
-                        style={{ fontFamily: getFontFamilyCss(defaultFont) }}
-                      >
-                        System Architecture &amp; Engineering Handbook 2026
-                      </h1>
-                    </div>
+                  {/* Breadcrumb row with page actions, as in the real page header */}
+                  <div className="-mx-8 flex flex-wrap items-center justify-between gap-3 px-8 py-5">
+                    <nav aria-label="Breadcrumb" className="min-w-0 flex-1 overflow-hidden text-sm">
+                      <ol className="flex min-w-0 items-center whitespace-nowrap">
+                        <li className="shrink-0">
+                          <span className="text-primary cursor-pointer rounded hover:underline">Spaces</span>
+                        </li>
+                        <li className="flex min-w-0 items-center">
+                          <span className="text-muted-foreground mx-2 shrink-0">/</span>
+                          <span className="text-primary cursor-pointer truncate rounded hover:underline">Core Engineering</span>
+                        </li>
+                        <li className="flex min-w-0 items-center">
+                          <span className="text-muted-foreground mx-2 shrink-0">/</span>
+                          <span className="text-muted-foreground truncate">Architecture</span>
+                        </li>
+                      </ol>
+                    </nav>
 
-                    <div className="flex items-center gap-2">
-                      <button
+                    <div className="flex flex-nowrap items-center gap-1">
+                      <Button
                         type="button"
+                        variant="primary"
+                        size="sm"
                         onClick={() => toast.info("Edit page action triggered in preview")}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white shadow-xs transition-all hover:brightness-110 active:scale-95 cursor-pointer"
-                        style={{ backgroundColor: previewPalette[600] }}
                       >
-                        <FileText className="size-3.5" />
-                        <span>Edit Page</span>
-                      </button>
-
-                      <button
+                        <Pencil />
+                        Edit
+                      </Button>
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon"
+                        title="Share"
+                        aria-label="Share"
                         onClick={() => toast.info("Share link copied")}
-                        className="p-1.5 rounded-md border border-border hover:bg-neutral-200/50 dark:hover:bg-neutral-800 text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-                        title="Share document"
                       >
-                        <Share2 className="size-3.5" />
-                      </button>
-
-                      <button
+                        <Share2 />
+                      </Button>
+                      <Button
                         type="button"
-                        onClick={() => toast.info("Starred document")}
-                        className="p-1.5 rounded-md border border-border hover:bg-neutral-200/50 dark:hover:bg-neutral-800 text-amber-500 cursor-pointer transition-colors"
-                        title="Star page"
-                      >
-                        <Star className="size-3.5 fill-amber-500" />
-                      </button>
-
-                      <button
-                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title="Export"
+                        aria-label="Export"
                         onClick={() => toast.info("Export dialog opened")}
-                        className="p-1.5 rounded-md border border-border hover:bg-neutral-200/50 dark:hover:bg-neutral-800 text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-                        title="Export document"
                       >
-                        <Download className="size-3.5" />
-                      </button>
+                        <Download />
+                      </Button>
                     </div>
                   </div>
+
+                  <h1
+                    className="text-foreground text-3xl font-semibold tracking-normal"
+                    style={{ fontFamily: getFontFamilyCss(defaultFont) }}
+                  >
+                    System Architecture &amp; Engineering Handbook 2026
+                  </h1>
 
                   {/* Author Meta Row & Tags */}
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground pb-2 border-b border-border/50">
@@ -2200,9 +2154,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                       <div
                         className={cn(
                           "p-4 rounded-xl border space-y-3",
-                          previewDarkMode
-                            ? "bg-neutral-900/60 border-neutral-800"
-                            : "bg-neutral-50/80 border-neutral-200",
+                          "bg-surface-sunken border-border",
                         )}
                       >
                         <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
@@ -2273,7 +2225,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                           <button
                             type="button"
                             onClick={() => toast.info("Secondary button clicked")}
-                            className="px-3 py-1.5 rounded-md text-xs font-medium border border-border cursor-pointer transition-all duration-150 active:scale-95 hover:bg-neutral-200/50 dark:hover:bg-neutral-800"
+                            className="px-3 py-1.5 rounded-md text-xs font-medium border border-border cursor-pointer transition-all duration-150 active:scale-95 hover:bg-surface-hover"
                           >
                             Outline
                           </button>
@@ -2284,9 +2236,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                       <div
                         className={cn(
                           "p-4 rounded-xl border space-y-3",
-                          previewDarkMode
-                            ? "bg-neutral-900/60 border-neutral-800"
-                            : "bg-neutral-50/80 border-neutral-200",
+                          "bg-surface-sunken border-border",
                         )}
                       >
                         <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">

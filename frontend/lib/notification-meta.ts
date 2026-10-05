@@ -1,5 +1,6 @@
 import {
   Bell,
+  Bug,
   Inbox,
   KeyRound,
   LayoutGrid,
@@ -39,6 +40,11 @@ const KINDS: Record<string, KindMeta> = {
   global_permissions_changed: { icon: ShieldCheck, tone: "info" },
   account_enabled: { icon: UserCheck, tone: "success" },
   admin_request: { icon: Inbox, tone: "info" },
+  issue_created: { icon: Bug, tone: "warning" },
+  issue_claimed: { icon: Bug, tone: "info" },
+  issue_assigned: { icon: Bug, tone: "info" },
+  issue_assigned_reporter: { icon: Bug, tone: "info" },
+  issue_done: { icon: Bug, tone: "success" },
 };
 
 const FALLBACK: KindMeta = { icon: Bell, tone: "info" };
@@ -68,6 +74,7 @@ export function describeNotification(t: Translate, item: AppNotification): strin
     space: p.space ?? "",
     group: p.group ?? "",
     name: p.name ?? "",
+    title: p.title ?? "",
     role: word(t, "role", p.role),
     permission: word(t, "permission", p.permission),
     type: word(t, "requestType", p.type),

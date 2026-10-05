@@ -64,6 +64,8 @@ def storage_kind(key: str) -> str:
         return "page_attachment"
     if key.startswith("avatars/"):
         return "avatar"
+    if key.startswith("issues/"):
+        return "issue_attachment"
     if key.startswith("imports/confluence/"):
         return "import_archive"
     if key.startswith("imports/documents/"):

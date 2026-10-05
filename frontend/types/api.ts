@@ -138,6 +138,9 @@ export interface User {
   /** The built-in administrator: immutable and undeletable through the API. */
   is_protected: boolean;
   last_login_at: string | null;
+  /** Only filled in by the People directory list (`GET /users`). */
+  last_active_at?: string | null;
+  is_online?: boolean;
   created_at: string;
   groups: string[];
   /** Only populated by a single-user fetch (`GET /users/{id}`), never by the
@@ -282,7 +285,11 @@ export type SpacePermission =
   | "move"
   | "admin";
 export type GlobalPermission =
-  "create_space" | "manage_users" | "manage_groups" | "system_admin";
+  "create_space"
+  | "manage_users"
+  | "manage_groups"
+  | "manage_issues"
+  | "system_admin";
 export interface GlobalPermissionOverride {
   permission: GlobalPermission;
   enabled: boolean;
@@ -841,6 +848,7 @@ export interface StorageObject {
   kind:
     | "page_attachment"
     | "avatar"
+    | "issue_attachment"
     | "import_archive"
     | "document_import"
     | "backup_archive"
@@ -932,4 +940,57 @@ export interface DocumentImportJob {
   created_at: string;
   updated_at: string;
   items: DocumentImportItem[];
+}
+
+export type IssueStatus = "open" | "in_progress" | "done";
+export interface IssuePerson {
+  id: string;
+  username: string;
+  full_name: string;
+}
+export interface IssueAttachment {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  content_url: string;
+}
+export interface IssueNote {
+  id: string;
+  author: IssuePerson | null;
+  body: string;
+  /** Shown to the reporter too (the closing note); otherwise managers only. */
+  public: boolean;
+  created_at: string;
+}
+export interface Issue {
+  id: string;
+  title: string;
+  description: string;
+  status: IssueStatus;
+  page_url: string | null;
+  /** Label slugs; see `lib/issue-labels.ts`. */
+  labels: string[];
+  reporter: IssuePerson;
+  assignee: IssuePerson | null;
+  attachments: IssueAttachment[];
+  notes: IssueNote[];
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  /** Computed by the server for the requesting user. */
+  can_claim: boolean;
+  can_set_status: boolean;
+  /** Only on the response to closing: was the reporter emailed? */
+  email?: "sent" | "failed" | "skipped" | null;
+}
+export interface IssueBulkResult {
+  updated: number;
+  failed: { id: string; reason: string }[];
+  emailed: number;
+}
+export interface IssueCounts {
+  open: number;
+  in_progress: number;
+  done: number;
 }

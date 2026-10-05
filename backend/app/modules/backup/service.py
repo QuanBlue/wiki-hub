@@ -36,6 +36,7 @@ from app.core.logging import get_logger
 from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction
 from app.models.draft import PageDraft
+from app.models.issue import Issue, IssueAttachment, IssueNote, IssueStatus
 from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.permission import (
     Group,
@@ -51,6 +52,7 @@ from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceOwner, Spac
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
 from app.models.user_tag import UserTag
+from app.modules.issues.labels import ISSUE_LABELS
 from app.modules.backup.package import (
     DOCUMENT_PATH,
     FULL_BACKUP_FORMAT,
@@ -72,6 +74,9 @@ from app.schemas.backup import (
     BackupGroup,
     BackupGroupGlobalPermission,
     BackupGroupMember,
+    BackupIssue,
+    BackupIssueAttachment,
+    BackupIssueNote,
     BackupMeta,
     BackupPage,
     BackupPageDraft,
@@ -387,6 +392,58 @@ class BackupService:
         )
 
     # -- export ------------------------------------------------------------
+    async def _issue_entries(
+        self, users_by_id: Mapping[UUID, User]
+    ) -> tuple[list[BackupIssue], dict[UUID, list[IssueAttachment]]]:
+        """Every issue with its notes, ready to serialise, plus its screenshot
+        rows keyed by issue (the bytes are added by the full-package export)."""
+        issues = list(
+            (await self.session.execute(select(Issue).order_by(Issue.created_at, Issue.id))).scalars()
+        )
+        notes_by_issue: dict[UUID, list[IssueNote]] = {}
+        for note in (
+            await self.session.execute(select(IssueNote).order_by(IssueNote.created_at, IssueNote.id))
+        ).scalars():
+            notes_by_issue.setdefault(note.issue_id, []).append(note)
+        shots_by_issue: dict[UUID, list[IssueAttachment]] = {}
+        for shot in (
+            await self.session.execute(
+                select(IssueAttachment).order_by(IssueAttachment.created_at, IssueAttachment.id)
+            )
+        ).scalars():
+            shots_by_issue.setdefault(shot.issue_id, []).append(shot)
+
+        def name_of(user_id: UUID | None) -> str | None:
+            return users_by_id[user_id].username if user_id in users_by_id else None
+
+        entries = [
+            BackupIssue(
+                id=issue.id,
+                reporter_username=users_by_id[issue.reporter_id].username,
+                title=issue.title,
+                description=issue.description,
+                status=issue.status,
+                assignee_username=name_of(issue.assignee_id),
+                labels=list(issue.labels or []),
+                page_url=issue.page_url,
+                created_at=issue.created_at,
+                updated_at=issue.updated_at,
+                resolved_at=issue.resolved_at,
+                notes=[
+                    BackupIssueNote(
+                        author_username=name_of(note.author_id),
+                        body=note.body,
+                        public=note.public,
+                        created_at=note.created_at,
+                    )
+                    for note in notes_by_issue.get(issue.id, [])
+                ],
+            )
+            for issue in issues
+            if issue.reporter_id in users_by_id
+        ]
+        return entries, shots_by_issue
+
     async def export_document(
         self, *, include_credentials: bool = False, space_keys: list[str] | None = None
     ) -> BackupDocument:
@@ -444,6 +501,10 @@ class BackupService:
             (await self.session.execute(select(PageGroupRestriction))).scalars()
         )
         overrides = (await self.site_settings.read()).overrides
+        # Issues belong to the instance, not a space, but like users and groups
+        # they are exported whatever spaces the backup is scoped to - leaving
+        # them out of a scoped backup silently dropped them on restore.
+        doc_issues = (await self._issue_entries(users_by_id))[0]
 
         doc_users = []
         for user in users:
@@ -663,6 +724,7 @@ class BackupService:
                     "user_tags": len(doc_tags), "user_page_labels": len(doc_page_labels),
                     "page_restrictions": len(doc_page_user_restrictions)
                     + len(doc_page_group_restrictions),
+                    "issues": len(doc_issues),
                 },
             ),
             users=doc_users,
@@ -682,6 +744,7 @@ class BackupService:
             page_group_restrictions=doc_page_group_restrictions,
             page_pins=doc_pins, page_drafts=doc_drafts,
             user_tags=doc_tags, user_page_labels=doc_page_labels,
+            issues=doc_issues,
             site_settings=BackupSiteSettings(**overrides.model_dump()),
         )
 
@@ -798,6 +861,7 @@ class BackupService:
         )
         overrides = (await self.site_settings.read()).overrides
         effective = await self.site_settings.get_effective()
+        doc_issues, issue_shots = await self._issue_entries(users_by_id)
 
         def _page_space_key(page_id: UUID) -> str | None:
             entry = pages_index.get(page_id)
@@ -877,7 +941,13 @@ class BackupService:
             for row in page_group_restrictions if row.page_id in pages_index and row.group_id in groups_by_id and _page_space_key(row.page_id)
         ]
 
-        total_items = len(attachments) + len(avatar_users) + len(pages_index) + revisions_total
+        total_items = (
+            len(attachments)
+            + len(avatar_users)
+            + len(pages_index)
+            + revisions_total
+            + sum(len(rows) for rows in issue_shots.values())
+        )
         processed_items = 0
 
         async def _report_progress() -> None:
@@ -926,6 +996,7 @@ class BackupService:
                     "user_tags": len(doc_tags),
                     "user_page_labels": len(doc_page_labels),
                     "page_restrictions": len(doc_page_user_restrictions) + len(doc_page_group_restrictions),
+                    "issues": len(doc_issues),
                 },
             ),
             users=doc_users, spaces=doc_spaces, space_members=doc_members, space_owners=doc_owners, space_favorites=doc_favorites,
@@ -934,6 +1005,7 @@ class BackupService:
             pages=[], page_revisions=[],
             page_likes=doc_likes, page_user_restrictions=doc_page_user_restrictions, page_group_restrictions=doc_page_group_restrictions,
             page_pins=doc_pins, page_drafts=doc_drafts, user_tags=doc_tags, user_page_labels=doc_page_labels,
+            issues=doc_issues,
             site_settings=BackupSiteSettings(**overrides.model_dump()),
         )
 
@@ -985,8 +1057,33 @@ class BackupService:
                 del data
                 await _report_progress()
 
+            issue_screenshots = 0
+            for issue_entry in document.issues:
+                for shot in issue_shots.get(issue_entry.id, []):
+                    data = await storage.get(shot.object_key)
+                    digest = hashlib.sha256(data).hexdigest()
+                    object_path = f"objects/issue-attachments/{digest}"
+                    issue_entry.attachments.append(
+                        BackupIssueAttachment(
+                            id=shot.id,
+                            filename=shot.filename,
+                            content_type=shot.content_type,
+                            object_path=object_path,
+                            sha256=digest,
+                            size_bytes=len(data),
+                        )
+                    )
+                    _write_once(archive, object_path, digest, data)
+                    issue_screenshots += 1
+                    del data
+                    await _report_progress()
+
             document.wikihub_backup.counts.update(
-                {"attachments": len(document.attachments), "avatars": len(document.avatars)}
+                {
+                    "attachments": len(document.attachments),
+                    "avatars": len(document.avatars),
+                    "issue_attachments": issue_screenshots,
+                }
             )
 
             # `document.pages`/`.page_revisions` are still `[]` here - splice
@@ -1151,6 +1248,7 @@ class BackupService:
                         (len(scanned.document.pages), "page"),
                         (len(scanned.document.attachments), "attachment"),
                         (len(scanned.document.avatars), "avatar"),
+                        (len(scanned.document.issues), "issue"),
                     )
                 )
                 + ".",
@@ -1161,7 +1259,8 @@ class BackupService:
                 counters={
                     "items_processed": 0,
                     "items_total": len(scanned.document.attachments)
-                    + len(scanned.document.avatars),
+                    + len(scanned.document.avatars)
+                    + sum(len(issue.attachments) for issue in scanned.document.issues),
                 },
             )
         requested_overwrites = {
@@ -1217,6 +1316,9 @@ class BackupService:
                 await self.session.execute(delete(WikiPage).where(WikiPage.id.in_(page_ids)))
                 await self.session.flush()
         existing_users = set((await self.session.execute(select(User.username))).scalars())
+        # Issues that were here before this restore: their screenshots are left
+        # alone, only those of issues the restore creates are copied in.
+        existing_issue_ids = set((await self.session.execute(select(Issue.id))).scalars())
         # Normalized the same way `_apply` creates spaces (key.strip().upper())
         # and `SpaceRepository.get_by_key` looks them up - the archive's
         # `page_space_key` carries whatever case the source space had, which
@@ -1266,7 +1368,11 @@ class BackupService:
         # actually landed on - the input to the relink pass below.
         restored_pages: dict[UUID, WikiPage] = {}
         attachment_ids_by_page: dict[UUID, dict[str, UUID]] = {}
-        total_items = len(scanned.document.attachments) + len(scanned.document.avatars)
+        total_items = (
+            len(scanned.document.attachments)
+            + len(scanned.document.avatars)
+            + sum(len(issue.attachments) for issue in scanned.document.issues)
+        )
         processed_items = 0
         # One line for the whole file-copying phase, rewritten as it advances.
         # A line per attachment would be the honest per-item log, and would
@@ -1392,6 +1498,37 @@ class BackupService:
                     user.avatar_content_type = avatar.content_type
                     user.avatar_url = f"/api/v1/users/{user.id}/avatar"
                     result.created["avatar"] = result.created.get("avatar", 0) + 1
+                for issue_entry in scanned.document.issues:
+                    restored_issue = (
+                        await self._find_issue(issue_entry) if issue_entry.attachments else None
+                    )
+                    for shot in issue_entry.attachments:
+                        await _report_progress()
+                        if restored_issue is None or restored_issue.id in existing_issue_ids:
+                            continue
+                        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", shot.filename)[:200]
+                        shot_id = (
+                            shot.id
+                            if await self.session.get(IssueAttachment, shot.id) is None
+                            else uuid4()
+                        )
+                        key = f"issues/{restored_issue.id}/{shot_id}/{safe_name}"
+                        with archive.open(shot.object_path) as source:
+                            await storage.put(key, source, content_type=shot.content_type)
+                        created_object_keys.append(key)
+                        self.session.add(
+                            IssueAttachment(
+                                id=shot_id,
+                                issue_id=restored_issue.id,
+                                filename=shot.filename[:255],
+                                content_type=shot.content_type,
+                                object_key=key,
+                                size_bytes=shot.size_bytes,
+                            )
+                        )
+                        result.created["issue_attachment"] = (
+                            result.created.get("issue_attachment", 0) + 1
+                        )
 
             # Repair attachment links in the content just restored. Runs after
             # every attachment exists so a page's links can be resolved
@@ -1532,6 +1669,26 @@ class BackupService:
         )
         return result
 
+    async def _find_issue(self, entry: BackupIssue) -> Issue | None:
+        """The local issue this backup entry already is, if any: the same id, or
+        the same reporter, title and creation time (the id may have been taken
+        by something else when it was first restored)."""
+        found = await self.session.get(Issue, entry.id)
+        if found is not None:
+            return found
+        reporter = await self.users.get_by_username(entry.reporter_username)
+        if reporter is None or entry.created_at is None:
+            return None
+        return (
+            await self.session.execute(
+                select(Issue).where(
+                    Issue.reporter_id == reporter.id,
+                    Issue.title == entry.title.strip()[:200],
+                    Issue.created_at == entry.created_at,
+                )
+            )
+        ).scalar_one_or_none()
+
     async def _apply(
         self,
         doc: BackupDocument,
@@ -1594,6 +1751,65 @@ class BackupService:
             if not user_entry.password_hash:
                 no_password.append(username)
             report.add("user", username, "created")
+
+        # --- issues -------------------------------------------------------
+        for issue_entry in doc.issues:
+            issue_label = issue_entry.title
+            issue_reporter = await self.users.get_by_username(issue_entry.reporter_username)
+            if issue_reporter is None:
+                report.add("issue", issue_label, "skipped", "missing_reporter")
+                continue
+            if await self._find_issue(issue_entry) is not None:
+                report.add("issue", issue_label, "skipped", "already_exists")
+                continue
+            issue_assignee = (
+                await self.users.get_by_username(issue_entry.assignee_username)
+                if issue_entry.assignee_username
+                else None
+            )
+            issue_status = (
+                issue_entry.status
+                if issue_entry.status in {state.value for state in IssueStatus}
+                else IssueStatus.open.value
+            )
+            restored_issue = Issue(
+                reporter_id=issue_reporter.id,
+                title=issue_entry.title.strip()[:200] or "(untitled)",
+                description=issue_entry.description,
+                status=issue_status,
+                assignee_id=issue_assignee.id if issue_assignee else None,
+                labels=[label for label in ISSUE_LABELS if label in issue_entry.labels],
+                page_url=issue_entry.page_url,
+                resolved_at=issue_entry.resolved_at,
+            )
+            # Same idiom as spaces: keep the original timestamps and, when it is
+            # free, the original id, so links and notifications still line up.
+            if issue_entry.created_at:
+                restored_issue.created_at = issue_entry.created_at
+            if issue_entry.updated_at:
+                restored_issue.updated_at = issue_entry.updated_at
+            if await self.session.get(Issue, issue_entry.id) is None:
+                restored_issue.id = issue_entry.id
+            self.session.add(restored_issue)
+            await self.session.flush()
+            for note_entry in issue_entry.notes:
+                note_author = (
+                    await self.users.get_by_username(note_entry.author_username)
+                    if note_entry.author_username
+                    else None
+                )
+                restored_note = IssueNote(
+                    issue_id=restored_issue.id,
+                    author_id=note_author.id if note_author else None,
+                    body=note_entry.body,
+                    public=note_entry.public,
+                )
+                if note_entry.created_at:
+                    restored_note.created_at = note_entry.created_at
+                self.session.add(restored_note)
+                report.created["issue_note"] = report.created.get("issue_note", 0) + 1
+            await self.session.flush()
+            report.add("issue", issue_label, "created")
 
         # --- spaces -------------------------------------------------------
         for space_entry in doc.spaces:

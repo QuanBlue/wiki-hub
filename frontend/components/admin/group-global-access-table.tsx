@@ -11,6 +11,7 @@ const PERMISSION_LABEL: Record<string, string> = {
   create_space: "Create spaces",
   manage_users: "Manage users",
   manage_groups: "Manage groups",
+  manage_issues: "Manage issues",
   system_admin: "System admin",
 };
 

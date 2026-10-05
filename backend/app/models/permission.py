@@ -28,6 +28,7 @@ class GlobalPermission(StrEnum):
     create_space = "create_space"
     manage_users = "manage_users"
     manage_groups = "manage_groups"
+    manage_issues = "manage_issues"
     system_admin = "system_admin"
 
 

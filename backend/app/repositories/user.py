@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.permission import Group, GroupMember
 from app.models.user import User
 from app.repositories.filters import ilike_contains
 
@@ -69,6 +70,8 @@ class UserRepository:
         q: str | None = None,
         status: str | None = None,
         role: str | None = None,
+        sort: str | None = None,
+        order: str = "desc",
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[Sequence[User], int]:
@@ -100,10 +103,36 @@ class UserRepository:
                 await self.session.execute(select(func.count()).select_from(stmt.subquery()))
             ).scalar_one()
         )
+        ordering: list = [User.username, User.id]
+        asc = order == "asc"
+        if sort == "last_login":
+            # Accounts that never signed in always sink to the bottom, whichever
+            # direction is chosen - NULL placement differs between databases.
+            direction = User.last_login_at.asc() if asc else User.last_login_at.desc()
+            ordering = [User.last_login_at.is_(None), direction, *ordering]
+        elif sort is not None:
+            if sort == "groups":
+                # First active group alphabetically; users with none sort last.
+                key = (
+                    select(func.min(Group.name))
+                    .join(GroupMember, GroupMember.group_id == Group.id)
+                    .where(GroupMember.user_id == User.id, Group.is_active.is_(True))
+                    .correlate(User)
+                    .scalar_subquery()
+                )
+                ordering = [key.is_(None), key.asc() if asc else key.desc(), *ordering]
+            else:
+                column = {
+                    "username": func.lower(User.username),
+                    "email": func.lower(User.email),
+                    "role": User.is_superuser,
+                    "status": User.is_active,
+                }[sort]
+                ordering = [column.asc() if asc else column.desc(), *ordering]
         page = (
             (
                 await self.session.execute(
-                    stmt.order_by(User.username, User.id).limit(limit).offset(offset)
+                    stmt.order_by(*ordering).limit(limit).offset(offset)
                 )
             )
             .scalars()

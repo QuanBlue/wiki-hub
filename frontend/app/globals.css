@@ -509,6 +509,7 @@
   /* --- status --- */
   --wh-success: #1f7a4d;
   --wh-success-bg: #e6f5ed;
+  --wh-online: #34c77b;
   --wh-warning: #9a6100;
   --wh-warning-bg: #fdf3e0;
   --wh-danger: #b3261e;
@@ -603,6 +604,7 @@
 
   --wh-success: #5eead4;
   --wh-success-bg: color-mix(in oklab, #0f766e 24%, transparent);
+  --wh-online: #5eead4;
   --wh-warning: #fde047;
   --wh-warning-bg: color-mix(in oklab, #854d0e 26%, transparent);
   --wh-danger: #fca5a5;
@@ -646,6 +648,7 @@
   --color-danger-foreground: var(--danger-foreground);
   --color-success: var(--wh-success);
   --color-success-bg: var(--wh-success-bg);
+  --color-online: var(--wh-online);
   --color-warning: var(--wh-warning);
   --color-warning-bg: var(--wh-warning-bg);
   --color-info: var(--wh-info);

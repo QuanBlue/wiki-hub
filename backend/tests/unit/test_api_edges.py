@@ -377,9 +377,14 @@ async def test_user_administration_endpoint_wrappers(monkeypatch: pytest.MonkeyP
     )
     assert (await users.list_users(actor, session, service, limit=50, offset=0)).total == 0
     service.search_users = AsyncMock(return_value=([target], 1))
-    session.execute = AsyncMock(return_value=[(target.id, "engineering")])
+    class _Rows(list):
+        def all(self):
+            return []  # no live sessions -> never online
+
+    session.execute = AsyncMock(return_value=_Rows([(target.id, "engineering")]))
     page = await users.list_users(actor, session, service, limit=50, offset=0)
     assert page.items[0].groups == ["engineering"]
+    assert page.items[0].is_online is False and page.items[0].last_active_at is None
     # `_read_user`'s override lookup calls `.all()` on the `execute()`
     # result, unlike `list_users`'s own group-batch query above (which just
     # iterates it directly) - a plain list stands in for a real `Result` for

@@ -14,6 +14,18 @@ import {
   Merriweather,
   Playfair_Display,
   JetBrains_Mono,
+  Lato,
+  Noto_Sans,
+  Work_Sans,
+  DM_Sans,
+  IBM_Plex_Sans,
+  Manrope,
+  Rubik,
+  Raleway,
+  Source_Serif_4,
+  Noto_Serif,
+  PT_Serif,
+  Crimson_Pro,
 } from "next/font/google";
 import Script from "next/script";
 import type { CSSProperties } from "react";
@@ -114,6 +126,81 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const lato = Lato({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400","700"],
+  variable: "--font-lato",
+  display: "swap",
+});
+
+const notoSans = Noto_Sans({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-noto-sans",
+  display: "swap",
+});
+
+const workSans = Work_Sans({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-work-sans",
+  display: "swap",
+});
+
+const dMSans = DM_Sans({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-dm-sans",
+  display: "swap",
+});
+
+const iBMPlexSans = IBM_Plex_Sans({
+  subsets: ["latin", "vietnamese"],
+  weight: ["400","500","600","700"],
+  variable: "--font-ibm-plex-sans",
+  display: "swap",
+});
+
+const manrope = Manrope({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-manrope",
+  display: "swap",
+});
+
+const rubik = Rubik({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-rubik",
+  display: "swap",
+});
+
+const raleway = Raleway({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-raleway",
+  display: "swap",
+});
+
+const sourceSerif4 = Source_Serif_4({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-source-serif-4",
+  display: "swap",
+});
+
+const notoSerif = Noto_Serif({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-noto-serif",
+  display: "swap",
+});
+
+const pTSerif = PT_Serif({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400","700"],
+  variable: "--font-pt-serif",
+  display: "swap",
+});
+
+const crimsonPro = Crimson_Pro({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-crimson-pro",
+  display: "swap",
+});
+
 const fontClasses = [
   inter.variable,
   roboto.variable,
@@ -127,6 +214,18 @@ const fontClasses = [
   lora.variable,
   merriweather.variable,
   playfairDisplay.variable,
+  lato.variable,
+  notoSans.variable,
+  workSans.variable,
+  dMSans.variable,
+  iBMPlexSans.variable,
+  manrope.variable,
+  rubik.variable,
+  raleway.variable,
+  sourceSerif4.variable,
+  notoSerif.variable,
+  pTSerif.variable,
+  crimsonPro.variable,
   jetbrainsMono.variable,
 ].join(" ");
 

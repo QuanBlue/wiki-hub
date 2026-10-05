@@ -1941,25 +1941,22 @@ export function SpaceWorkspace({
               </nav>
             </div>
 
-            {/* Sidebar Footer: Edit Space button, disabled (with a tooltip
-                explaining why) rather than hidden for anyone who isn't this
-                space's Owner or Admin - so the click a viewer already made
-                lands on an explanation instead of a control that was just
-                never there. */}
-            <div className="border-border border-t p-3 shrink-0">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start gap-2 text-muted-foreground not-disabled:hover:bg-surface-selected! not-disabled:hover:text-foreground! cursor-pointer text-xs h-8"
-                onClick={() => setEditSpaceModalOpen(true)}
-                disabled={!canAdmin}
-                title={canAdmin ? undefined : t("spaces.editOnlyOwnerAdmin")}
-              >
-                <Pencil className="size-3.5" />
-                {t("spaces.edit")}
-              </Button>
-            </div>
+            {/* Sidebar Footer: Edit Space button, shown only to this
+                space's Owner or Admin. */}
+            {canAdmin ? (
+              <div className="border-border border-t p-3 shrink-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start gap-2 text-muted-foreground hover:bg-surface-selected! hover:text-foreground! cursor-pointer text-xs h-8"
+                  onClick={() => setEditSpaceModalOpen(true)}
+                >
+                  <Pencil className="size-3.5" />
+                  {t("spaces.edit")}
+                </Button>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {!collapsed ? (

@@ -98,7 +98,15 @@ _ITALIC_TOKENS: Final = {"Comment", "Documentation", "CommentVar"}
 #: bundled with every Windows install instead - a sans-serif preset becomes
 #: Arial, a serif preset becomes Times New Roman - so the document looks
 #: intentional rather than however Word happened to fall back.
-_SERIF_FONT_PRESETS: Final = {"lora", "merriweather", "playfair-display"}
+_SERIF_FONT_PRESETS: Final = {
+    "lora",
+    "merriweather",
+    "playfair-display",
+    "source-serif-4",
+    "noto-serif",
+    "pt-serif",
+    "crimson-pro",
+}
 _DOCX_BODY_FONT_SANS_SERIF: Final = "Arial"
 _DOCX_BODY_FONT_SERIF: Final = "Times New Roman"
 #: The one monospace font every Windows install has, matching the code

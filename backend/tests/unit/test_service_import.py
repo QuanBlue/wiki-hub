@@ -45,6 +45,7 @@ async def test_restore_full_package(service: BackupService):
     mock_scanned.document.wikihub_backup.includes_credentials = False
     mock_scanned.document.attachments = []
     mock_scanned.document.avatars = []
+    mock_scanned.document.issues = []
     
     with patch("app.modules.backup.service.scan_full_backup", return_value=mock_scanned), \
          patch("app.modules.backup.service.zipfile.ZipFile"), \
@@ -85,6 +86,7 @@ async def test_restore_full_package_dry_run(service: BackupService):
     mock_storage = AsyncMock()
     mock_scanned = Mock()
     mock_scanned.document.spaces = []
+    mock_scanned.document.issues = []
     mock_scanned.document.wikihub_backup.version = 1
     mock_scanned.document.wikihub_backup.includes_credentials = False
     

@@ -2,7 +2,7 @@
 
 import { Building2, Loader2, UserRound } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,11 +29,14 @@ export function UserProfileTrigger({
   fullName,
   variant = "name",
   className,
+  openOnHover = false,
 }: {
   username: string;
   fullName?: string | null;
   variant?: "name" | "avatar";
   className?: string;
+  /** Also open the card when the pointer rests on the name (and close it after leaving). */
+  openOnHover?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<PublicUser | null>(null);
@@ -41,6 +44,22 @@ export function UserProfileTrigger({
   const [loadError, setLoadError] = useState(false);
   const { t } = useTranslation();
   const label = fullName || username;
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function hoverTo(next: boolean) {
+    if (!openOnHover) return;
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(
+      () => handleOpenChange(next),
+      next ? 250 : 150,
+    );
+  }
+  useEffect(
+    () => () => {
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    },
+    [],
+  );
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
@@ -74,6 +93,8 @@ export function UserProfileTrigger({
         {variant === "avatar" ? (
           <button
             type="button"
+            onMouseEnter={() => hoverTo(true)}
+            onMouseLeave={() => hoverTo(false)}
             aria-label={t("userProfile.profileSummaryAria", { name: label })}
             className={cn(
               "bg-primary-subtle text-primary hover:bg-surface-selected focus-visible:ring-ring flex shrink-0 cursor-pointer items-center justify-center rounded-full font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
@@ -87,6 +108,8 @@ export function UserProfileTrigger({
         ) : (
           <button
             type="button"
+            onMouseEnter={() => hoverTo(true)}
+            onMouseLeave={() => hoverTo(false)}
             className={cn(
               "text-primary hover:text-primary-hover focus-visible:ring-ring cursor-pointer rounded-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
               className,
@@ -97,7 +120,12 @@ export function UserProfileTrigger({
         )}
       </PopoverTrigger>
 
-      <PopoverContent align="start" className="w-72 p-4">
+      <PopoverContent
+        align="start"
+        className="w-72 p-4"
+        onMouseEnter={() => hoverTo(true)}
+        onMouseLeave={() => hoverTo(false)}
+      >
         {loading ? (
           <div className="text-muted-foreground flex items-center justify-center gap-2 py-5 text-sm">
             <Loader2 className="text-primary size-4 animate-spin" aria-hidden />
