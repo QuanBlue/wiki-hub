@@ -1,5 +1,7 @@
+import type { LanguageFn } from "highlight.js";
 import { common, createLowlight } from "lowlight";
 import apache from "highlight.js/lib/languages/apache";
+import bash from "highlight.js/lib/languages/bash";
 import dart from "highlight.js/lib/languages/dart";
 import dockerfile from "highlight.js/lib/languages/dockerfile";
 import elixir from "highlight.js/lib/languages/elixir";
@@ -15,6 +17,67 @@ import scala from "highlight.js/lib/languages/scala";
  * (infra config, mobile, functional) to be worth the extra weight.
  */
 export const lowlight = createLowlight(common);
+
+/**
+ * Commands highlight.js's bash grammar does not know (its list stops at shell
+ * builtins and GNU coreutils), so `mount`/`grep`/`systemctl` stayed plain white
+ * next to a coloured `sync`. They take the same `built_in` colour as the rest.
+ * Deliberately leaves out words that are also everyday arguments or prose
+ * (`top`, `free`, `file`, `more`, `at`) to avoid colouring them by accident.
+ */
+const EXTRA_SHELL_COMMANDS = [
+  // storage / mounting
+  "mount", "umount", "fdisk", "parted", "mkfs", "fsck", "lsblk", "blkid",
+  "swapon", "swapoff", "losetup", "findmnt", "lsof", "mkswap", "e2fsck",
+  // accounts / auth
+  "passwd", "usermod", "useradd", "userdel", "groupadd", "groupdel", "su",
+  "chpasswd", "visudo", "openssl", "gpasswd", "chage",
+  // text / search
+  "grep", "egrep", "fgrep", "sed", "awk", "find", "xargs", "diff", "patch",
+  "less", "vim", "vi", "nano", "tree", "locate", "rg",
+  // archive / transfer
+  "tar", "gzip", "gunzip", "zip", "unzip", "bzip2", "xz", "zcat", "curl",
+  "wget", "scp", "sftp", "rsync", "ssh", "ssh-keygen", "ssh-copy-id",
+  // services / packages
+  "systemctl", "journalctl", "service", "apt", "apt-get", "dpkg", "yum",
+  "dnf", "rpm", "snap", "pacman", "apk", "pip", "pip3", "npm", "npx", "yarn",
+  "pnpm", "make", "cmake", "gcc", "git", "docker", "docker-compose",
+  "kubectl", "helm", "terraform", "ansible", "python", "python3", "node",
+  // processes / system
+  "ps", "pgrep", "pkill", "killall", "nohup", "crontab", "reboot", "shutdown",
+  "poweroff", "halt", "dmesg", "lsmod", "modprobe", "hostnamectl",
+  "timedatectl", "ulimit", "lscpu", "lsusb", "lspci", "uname", "free",
+  // networking
+  "ip", "ifconfig", "ping", "traceroute", "netstat", "ss", "nslookup", "dig",
+  "iptables", "ufw", "firewall-cmd", "nmcli", "nc", "ncat", "telnet", "host",
+  "hostname",
+  // misc
+  "man", "clear", "history", "chattr", "lsattr", "setfacl", "getfacl", "ldd",
+  "strace", "screen", "tmux", "watch", "which", "whereis", "file", "tput",
+].filter((word) => !["free", "file"].includes(word));
+
+type BashMode = { className?: string; begin?: RegExp };
+
+/** hljs bash plus the commands above, and `-f` / `--flag` options. */
+const bashWithCommands: LanguageFn = (hljs) => {
+  const language = bash(hljs);
+  const keywords = language.keywords as { built_in: string[] };
+  keywords.built_in.push(...EXTRA_SHELL_COMMANDS);
+  // An option is a dash-word that starts a whitespace-separated argument;
+  // the look-behind keeps `a-b` and `--` inside words/paths untouched.
+  const option: BashMode = {
+    className: "params",
+    begin: /(?<=\s)--?[a-zA-Z][\w-]*/,
+  };
+  (language.contains as BashMode[]).splice(
+    (language.contains as BashMode[]).length - 1,
+    0,
+    option,
+  );
+  return language;
+};
+
+lowlight.register({ bash: bashWithCommands });
 lowlight.register({
   apache,
   dart,
