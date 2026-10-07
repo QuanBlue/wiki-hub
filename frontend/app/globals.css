@@ -921,20 +921,20 @@
     position: absolute;
     z-index: 50;
     top: 0;
-    right: -8px;
+    right: -4px;
     bottom: 0;
-    width: 16px;
+    width: 8px;
     cursor: col-resize !important;
     content: "";
     opacity: 0;
     background: linear-gradient(
       to right,
-      transparent 6px,
-      color-mix(in srgb, var(--primary) 35%, transparent) 6px,
-      var(--primary) 7px,
-      var(--primary) 9px,
-      color-mix(in srgb, var(--primary) 35%, transparent) 9px,
-      transparent 10px
+      transparent 2px,
+      color-mix(in srgb, var(--primary) 35%, transparent) 2px,
+      var(--primary) 3px,
+      var(--primary) 5px,
+      color-mix(in srgb, var(--primary) 35%, transparent) 5px,
+      transparent 6px
     );
     transition: opacity 120ms ease;
   }
@@ -957,9 +957,9 @@
     position: absolute;
     z-index: 50;
     right: 0;
-    bottom: -8px;
+    bottom: -3px;
     left: 0;
-    height: 16px;
+    height: 6px;
     cursor: row-resize !important;
     content: "";
   }
@@ -1083,6 +1083,47 @@
 
   .wikihub-code :is(.hljs-meta, .hljs-doctag, .hljs-deletion) {
     color: var(--wh-code-meta);
+  }
+
+  /* CSS / Less / SCSS selectors: `.class` and `#id` read as types, `:hover` and
+     `[attr]` as keywords, so a stylesheet is not mostly uncoloured. */
+  .wikihub-code :is(.hljs-selector-class, .hljs-selector-id) {
+    color: var(--wh-code-type);
+  }
+
+  .wikihub-code :is(.hljs-selector-pseudo, .hljs-selector-attr) {
+    color: var(--wh-code-keyword);
+  }
+
+  /* Bold inline code: plain `bolder` (700) barely separates from the regular
+     weight in the monospace face, so push it to the heaviest weight it ships. */
+  :is(.ProseMirror, .wikihub-reader) :is(strong, b) code,
+  :is(.ProseMirror, .wikihub-reader) code :is(strong, b) {
+    font-weight: 800;
+  }
+
+  /* Markdown inline markup. */
+  .wikihub-code .hljs-strong {
+    font-weight: 700;
+  }
+
+  .wikihub-code .hljs-emphasis {
+    font-style: italic;
+  }
+
+  .wikihub-code .hljs-code {
+    color: var(--wh-code-string);
+  }
+
+  .wikihub-code .hljs-link {
+    color: var(--wh-code-function);
+    text-decoration: underline;
+  }
+
+  /* `${x}` / `#{x}` interpolation inside a string goes back to the plain
+     colour instead of inheriting the string's. Nested tokens still win. */
+  .wikihub-code .hljs-subst {
+    color: var(--wh-code-fg);
   }
 
   /* Per-block code themes (see lib/code-themes.ts). Each one only re-declares

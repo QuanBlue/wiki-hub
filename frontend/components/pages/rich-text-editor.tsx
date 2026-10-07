@@ -19,6 +19,7 @@ import { ListItem, TaskList, TaskItem } from "@tiptap/extension-list";
 // its input rule can be re-keyed from "> " to Notion's '" ' - everything
 // else (schema, commands, keyboard shortcuts) stays the stock extension.
 import Blockquote from "@tiptap/extension-blockquote";
+import Code from "@tiptap/extension-code";
 import {
   Extension,
   Node as TiptapNode,
@@ -34,7 +35,7 @@ import {
   type EditorState,
   type Transaction,
 } from "@tiptap/pm/state";
-import { Fragment, Slice, type NodeType } from "@tiptap/pm/model";
+import { Fragment, Slice, type Node as PMNode, type NodeType } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import { dropPoint } from "@tiptap/pm/transform";
 import { TableMap } from "@tiptap/pm/tables";
@@ -642,8 +643,10 @@ const TableRowWithHeight = TableRow.extend({
   },
 });
 
-const TABLE_ROW_RESIZE_ZONE = 8;
-const TABLE_COLUMN_RESIZE_ZONE = 8;
+// Keep these grab zones thin: a wide band along every cell edge swallows the
+// mousedown of a text-selection drag and turns it into a row/column resize.
+const TABLE_ROW_RESIZE_ZONE = 3;
+const TABLE_COLUMN_RESIZE_ZONE = 4;
 const TABLE_CELL_MIN_WIDTH = 96;
 const TABLE_ROW_MIN_HEIGHT = 32;
 
@@ -3184,7 +3187,7 @@ const BlockIndent = Extension.create({
   addGlobalAttributes() {
     return [
       {
-        types: INDENTABLE_TYPES,
+        types: [...INDENTABLE_TYPES, "blockquote"],
         attributes: {
           indent: {
             default: 0,
@@ -3210,7 +3213,70 @@ const BlockIndent = Extension.create({
   addKeyboardShortcuts() {
     const shift = (delta: 1 | -1) => () =>
       this.editor.commands.command(({ state, tr, dispatch }) => {
-        const { $from } = state.selection;
+        const { $from, $to } = state.selection;
+
+        // Tab on content sitting right under a quote (same level as the quote)
+        // pulls it into that quote. A list only gets here when it cannot sink
+        // any further, i.e. its first item is selected.
+        if (delta === 1 && $from.depth > 0 && $to.depth > 0) {
+          const start = $from.index(0);
+          const previous = start > 0 ? state.doc.child(start - 1) : null;
+          const topName = state.doc.child(start).type.name;
+          if (
+            previous?.type.name === "blockquote" &&
+            ["paragraph", "heading", "bulletList", "orderedList", "taskList"].includes(
+              topName,
+            )
+          ) {
+            if (!dispatch) return true;
+            const rangeStart = $from.before(1);
+            const rangeEnd = $to.after(1);
+            const quoteEnd = rangeStart - 1;
+            tr.insert(quoteEnd, state.doc.slice(rangeStart, rangeEnd).content);
+            tr.delete(tr.mapping.map(rangeStart), tr.mapping.map(rangeEnd));
+            tr.setSelection(
+              TextSelection.create(
+                tr.doc,
+                quoteEnd + ($from.pos - rangeStart),
+                quoteEnd + ($to.pos - rangeStart),
+              ),
+            );
+            dispatch(tr.scrollIntoView());
+            return true;
+          }
+        }
+
+        // Shift-Tab on the last, un-indented line of a top-level quote lets it
+        // back out below the quote (the reverse of the above).
+        if (
+          delta === -1 &&
+          $from.depth === 2 &&
+          $from.sameParent($to) &&
+          $from.node(1).type.name === "blockquote" &&
+          $from.parent.isTextblock &&
+          !Number($from.parent.attrs.indent) &&
+          $from.index(1) > 0 &&
+          $from.index(1) === $from.node(1).childCount - 1
+        ) {
+          if (!dispatch) return true;
+          const nodeStart = $from.before(2);
+          const nodeEnd = $from.after(2);
+          const quoteEnd = $from.after(1);
+          const moved = $from.parent;
+          tr.insert(quoteEnd, moved);
+          tr.delete(nodeStart, nodeEnd);
+          const newStart = quoteEnd - (nodeEnd - nodeStart);
+          tr.setSelection(
+            TextSelection.create(
+              tr.doc,
+              newStart + ($from.pos - nodeStart),
+              newStart + ($to.pos - nodeStart),
+            ),
+          );
+          dispatch(tr.scrollIntoView());
+          return true;
+        }
+
         for (let depth = $from.depth; depth > 0; depth -= 1) {
           const name = $from.node(depth).type.name;
           // Lists and tables own Tab; just keep focus in the editor.
@@ -3218,26 +3284,83 @@ const BlockIndent = Extension.create({
             return true;
         }
         if (!dispatch) return true;
+        // A quote's first line indents the quote itself, not its paragraph, so
+        // the vertical bar moves together with the text.
+        const targets = new Map<number, PMNode>();
         state.doc.nodesBetween(
           state.selection.from,
           state.selection.to,
           (node, pos) => {
             if (!INDENTABLE_TYPES.includes(node.type.name)) return;
-            const current = Number(node.attrs.indent) || 0;
-            const next = Math.min(
-              Math.max(current + delta, 0),
-              MAX_BLOCK_INDENT,
-            );
-            if (next !== current)
-              tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: next });
+            const $pos = state.doc.resolve(pos);
+            for (let depth = $pos.depth; depth > 0; depth -= 1) {
+              if ($pos.node(depth).type.name === "blockquote") {
+                // The bar sits where the quote's first line sits: only that
+                // line moves the quote. Later lines indent on their own.
+                if ($pos.index(depth) === 0) {
+                  targets.set($pos.before(depth), $pos.node(depth));
+                  return;
+                }
+                break;
+              }
+            }
+            targets.set(pos, node);
           },
         );
+        targets.forEach((node, pos) => {
+          const current = Number(node.attrs.indent) || 0;
+          const next = Math.min(Math.max(current + delta, 0), MAX_BLOCK_INDENT);
+          if (next !== current)
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: next });
+        });
         if (tr.docChanged) dispatch(tr.scrollIntoView());
         return true;
       });
     return { Tab: shift(1), "Shift-Tab": shift(-1) };
   },
 });
+
+/**
+ * Triple-click inside a table cell selects that line's text straight away.
+ * prosemirror-tables otherwise answers a triple-click by selecting the whole
+ * cell first, so the cell flashed highlighted before the line selection
+ * landed. Runs ahead of the table plugin (priority) and claims the click.
+ */
+const TableCellTripleClick = Extension.create({
+  name: "tableCellTripleClick",
+  priority: 1000,
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          handleTripleClick(view, pos) {
+            const $pos = view.state.doc.resolve(pos);
+            if (!$pos.parent.isTextblock) return false;
+            let inCell = false;
+            for (let depth = $pos.depth; depth > 0; depth -= 1) {
+              const name = $pos.node(depth).type.name;
+              if (name === "tableCell" || name === "tableHeader") {
+                inCell = true;
+                break;
+              }
+            }
+            if (!inCell) return false;
+            view.dispatch(
+              view.state.tr.setSelection(
+                TextSelection.create(view.state.doc, $pos.start(), $pos.end()),
+              ),
+            );
+            return true;
+          },
+        },
+      }),
+    ];
+  },
+});
+
+// The stock Code mark has `excludes: "_"`, which forbids every other mark on
+// the same text. Clearing it lets inline code be bold, italic, linked, etc.
+const InlineCode = Code.extend({ excludes: "" });
 
 const CODE_INDENT = "  ";
 
@@ -3976,6 +4099,8 @@ function buildEditorExtensions({
     heading: false,
     codeBlock: false,
     blockquote: false,
+    // Replaced by InlineCode below, which lets bold/italic/etc. combine with it.
+    code: false,
     listItem: false,
     // Replaced by UnderlineMark below, which controls the mark's nesting order.
     underline: false,
@@ -3984,6 +4109,7 @@ function buildEditorExtensions({
     // a caret in globals.css; the colour comes from there too.
     dropcursor: { class: "wikihub-dropcursor", width: 2, color: false },
   }),
+  InlineCode,
   HeadingWithId.configure({ levels: [...headingLevels] }),
   CustomCodeBlock.configure({
     lowlight,
@@ -4017,6 +4143,7 @@ function buildEditorExtensions({
   UnderlineMark,
   TextAlign.configure({ types: ["heading", "paragraph"] }),
   BlockIndent,
+  TableCellTripleClick,
   Table.configure({
     resizable: false,
     cellMinWidth: TABLE_CELL_MIN_WIDTH,
@@ -4249,7 +4376,7 @@ const editorClassName =
   // claim the rest of the row like every other flex-text-column in this app.
   "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-0 [&_li[data-checked]]:flex [&_li[data-checked]]:items-start [&_li[data-checked]]:gap-2 [&_li[data-checked]>label]:mt-1 [&_li[data-checked]>label]:flex-shrink-0 [&_li[data-checked]>div]:min-w-0 [&_li[data-checked]>div]:flex-1 " +
   "[&_li[data-checked]>label>input[type=checkbox]]:accent-primary [&_li[data-checked]>label>input[type=checkbox]]:size-4 [&_li[data-checked]>label>input[type=checkbox]]:cursor-pointer [&_li[data-checked]>label>input[type=checkbox]]:rounded " +
-  "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
+  "[&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
   "[&_code]:rounded [&_code]:bg-inline-code-bg [&_code]:text-inline-code [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
   "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:text-[inherit] [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
   "[&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-md " +
@@ -4275,7 +4402,7 @@ export const readerClassName =
   "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-0.5 " +
   "[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:pl-0 [&_li[data-checked]]:flex [&_li[data-checked]]:items-start [&_li[data-checked]]:gap-2 [&_li[data-checked]>label]:mt-1 [&_li[data-checked]>label]:flex-shrink-0 [&_li[data-checked]>div]:min-w-0 [&_li[data-checked]>div]:flex-1 " +
   "[&_li[data-checked]>label>input[type=checkbox]]:accent-primary [&_li[data-checked]>label>input[type=checkbox]]:size-4 [&_li[data-checked]>label>input[type=checkbox]]:rounded [&_li[data-checked]>label>input[type=checkbox]]:pointer-events-none " +
-  "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
+  "[&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
   "[&_code]:rounded [&_code]:bg-inline-code-bg [&_code]:text-inline-code [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs " +
   "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-sunken [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-5 [&_pre_code]:bg-transparent [&_pre_code]:text-[inherit] [&_pre_code]:p-0 [&_pre_code]:whitespace-pre " +
   "[&_img]:my-3 [&_img]:block [&_img]:h-auto [&_img]:max-w-[42rem] [&_img]:rounded-md " +

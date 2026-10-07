@@ -735,8 +735,8 @@ describe("RichTextEditor tables", () => {
       configurable: true,
       value: () => ({ top: 20, bottom: 60, height: 40 }),
     });
-    fireEvent.mouseDown(cell, { button: 0, clientY: 56 });
-    fireEvent.mouseMove(window, { clientY: 92 });
+    fireEvent.mouseDown(cell, { button: 0, clientY: 58 });
+    fireEvent.mouseMove(window, { clientY: 94 });
     expect(row).toHaveStyle({ height: "76px" });
     fireEvent.mouseUp(window);
 
