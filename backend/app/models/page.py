@@ -69,6 +69,13 @@ class WikiPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     view_restricted: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Whether this page follows its ancestors' restrictions (the default).
+    # Turned off, the page starts its own access from a copy of what it
+    # inherited and nothing above it applies any more - see
+    # `PermissionService._page_chain` and `set_page_inheritance`.
+    inherit_restrictions: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
 
     space: Mapped[Space] = relationship()
     parent: Mapped[WikiPage | None] = relationship(

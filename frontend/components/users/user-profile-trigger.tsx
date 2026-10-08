@@ -111,7 +111,7 @@ export function UserProfileTrigger({
             onMouseEnter={() => hoverTo(true)}
             onMouseLeave={() => hoverTo(false)}
             className={cn(
-              "text-primary hover:text-primary-hover focus-visible:ring-ring cursor-pointer rounded-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+              "text-primary hover:text-primary-hover underline-offset-2 hover:underline focus-visible:ring-ring cursor-pointer rounded-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
               className,
             )}
           >

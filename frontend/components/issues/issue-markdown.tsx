@@ -14,13 +14,47 @@ import { cn } from "@/lib/utils";
 const INLINE =
   /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[[^\]\n]+\]\(https?:\/\/[^)\s]+\))|(_[^_\n]+_)/g;
 
-function inline(text: string, keyPrefix: string): ReactNode[] {
+const MENTION = /(@[A-Za-z0-9][A-Za-z0-9_.-]*)/g;
+
+/** Wrap the ``@name`` tokens that name a known person; leave other text alone. */
+function withMentions(
+  text: string,
+  keyPrefix: string,
+  mentions: ReadonlySet<string>,
+): ReactNode[] {
+  return text.split(MENTION).map((part, index) => {
+    const name = part.startsWith("@") ? part.slice(1).replace(/[.-]+$/, "") : "";
+    if (!name || !mentions.has(name.toLowerCase())) return part;
+    const trailing = part.slice(1 + name.length);
+    return (
+      <span key={`${keyPrefix}-m${index}`}>
+        <span className="bg-primary-subtle text-primary rounded px-1 font-medium">
+          @{name}
+        </span>
+        {trailing}
+      </span>
+    );
+  });
+}
+
+function inline(
+  text: string,
+  keyPrefix: string,
+  mentions?: ReadonlySet<string>,
+): ReactNode[] {
   const nodes: ReactNode[] = [];
   let last = 0;
   let index = 0;
+  const pushText = (chunk: string) => {
+    if (mentions && mentions.size > 0 && chunk.includes("@")) {
+      nodes.push(...withMentions(chunk, `${keyPrefix}-t${index++}`, mentions));
+    } else {
+      nodes.push(chunk);
+    }
+  };
   for (const match of text.matchAll(INLINE)) {
     const at = match.index ?? 0;
-    if (at > last) nodes.push(text.slice(last, at));
+    if (at > last) pushText(text.slice(last, at));
     const token = match[0];
     const key = `${keyPrefix}-${index++}`;
     if (match[1]) {
@@ -52,7 +86,7 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
     }
     last = at + token.length;
   }
-  if (last < text.length) nodes.push(text.slice(last));
+  if (last < text.length) pushText(text.slice(last));
   return nodes;
 }
 
@@ -61,10 +95,16 @@ const BLOCK_START = /^(```|#{1,3}\s|>\s?|[-*]\s|\d+\.\s)/;
 export function IssueMarkdown({
   source,
   className,
+  mentions,
 }: {
   source: string;
   className?: string;
+  /** Usernames whose ``@name`` should be highlighted (compared case-insensitively). */
+  mentions?: readonly string[];
 }) {
+  const mentionSet: ReadonlySet<string> = new Set(
+    (mentions ?? []).map((name) => name.toLowerCase()),
+  );
   const lines = source.replaceAll("\r\n", "\n").split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -108,7 +148,7 @@ export function IssueMarkdown({
             level === 1 ? "text-lg" : level === 2 ? "text-base" : "text-sm",
           )}
         >
-          {inline(heading[2], `h${key}`)}
+          {inline(heading[2], `h${key}`, mentionSet)}
         </Tag>,
       );
       i += 1;
@@ -127,7 +167,7 @@ export function IssueMarkdown({
           className="border-border text-muted-foreground my-2 border-l-2 pl-3"
         >
           {quoted.map((text, n) => (
-            <p key={n}>{inline(text, `q${key}-${n}`)}</p>
+            <p key={n}>{inline(text, `q${key}-${n}`, mentionSet)}</p>
           ))}
         </blockquote>,
       );
@@ -149,7 +189,7 @@ export function IssueMarkdown({
               className="accent-primary mt-1"
               aria-label={text}
             />
-            <span>{inline(text, `t${i}`)}</span>
+            <span>{inline(text, `t${i}`, mentionSet)}</span>
           </li>,
         );
         i += 1;
@@ -166,7 +206,7 @@ export function IssueMarkdown({
       const items: ReactNode[] = [];
       while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
         items.push(
-          <li key={i}>{inline(lines[i].replace(/^[-*]\s+/, ""), `u${i}`)}</li>,
+          <li key={i}>{inline(lines[i].replace(/^[-*]\s+/, ""), `u${i}`, mentionSet)}</li>,
         );
         i += 1;
       }
@@ -182,7 +222,7 @@ export function IssueMarkdown({
       const items: ReactNode[] = [];
       while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
         items.push(
-          <li key={i}>{inline(lines[i].replace(/^\d+\.\s+/, ""), `o${i}`)}</li>,
+          <li key={i}>{inline(lines[i].replace(/^\d+\.\s+/, ""), `o${i}`, mentionSet)}</li>,
         );
         i += 1;
       }
@@ -210,7 +250,7 @@ export function IssueMarkdown({
         {paragraph.map((text, n) => (
           <span key={n}>
             {n > 0 ? <br /> : null}
-            {inline(text, `p${key}-${n}`)}
+            {inline(text, `p${key}-${n}`, mentionSet)}
           </span>
         ))}
       </p>,

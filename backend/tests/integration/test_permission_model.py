@@ -727,7 +727,12 @@ async def test_group_lifecycle_owner_permissions_and_page_restrictions(
     )
 
     space = await SpaceService(session).create(
-        SpaceCreate(key=f"RESTR{uuid.uuid4().hex[:5]}", name="Restrictions"), owner
+        SpaceCreate(
+            key=f"RESTR{uuid.uuid4().hex[:5]}",
+            name="Restrictions",
+            visibility=SpaceVisibility.restricted,
+        ),
+        owner,
     )
     page = await PageService(session).create(space, PageCreate(title="Restricted"), owner)
     # A principal must have space access before it can be named in a page

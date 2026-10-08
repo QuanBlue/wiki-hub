@@ -26,16 +26,19 @@ from app.models.attachment import PageAttachment
 from app.models.backup_job import BackupJob
 from app.models.draft import PageDraft
 from app.models.issue import Issue, IssueAttachment, IssueNote
+from app.models.comment import CommentLike, PageComment
 from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.permission import (
     GlobalPermission,
     Group,
     GroupGlobalPermission,
     GroupMember,
+    GroupOwner,
     Permission,
     SpaceGroupPermission,
+    UserGlobalPermissionOverride,
 )
-from app.models.restriction import PageGroupRestriction, PageRestrictionPermission
+from app.models.restriction import PageGroupRestriction, PageRestrictionPermission, PageUserRestriction
 from app.models.revision import PageRevision
 from app.models.space import Space, SpaceOwner, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
@@ -44,9 +47,11 @@ from app.models.user_tag import UserTag
 from app.modules.auth.service import AuthService
 from app.modules.backup.jobs import create_export_job, reap_abandoned_export_jobs, run_backup_job
 from app.modules.backup.service import STALE_JOB_AFTER, STALE_RESTORE_JOB_AFTER, BackupService
+from app.modules.pages.service import PageService
 from app.modules.permissions.service import PermissionService
 from app.modules.spaces.service import SpaceService
 from app.schemas.backup import BACKUP_VERSION, BackupDocument, BackupSpaceOwner
+from app.schemas.page import PageCreate
 from app.schemas.space import SpaceCreate
 from app.schemas.user import UserCreate
 from app.services.storage import ObjectStorage
@@ -956,6 +961,116 @@ class TestRoundTrip:
         restored_owners = await PermissionService(session).list_space_owners(restored_space)
         assert {owner.username for owner in restored_owners} == {"alice", "bob"}
 
+    async def _restriction_fixture(self, session: AsyncSession):
+        """A restricted parent, a child with its own list (still inheriting)
+        and a child that stopped inheriting - plus a per-user block."""
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        bob: User = seeded["bob"]  # type: ignore[assignment]
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        pages = PageService(session)
+        parent = await pages.create(space, PageCreate(title="Locked parent"), alice)
+        child = await pages.create(space, PageCreate(title="Own list", parent_id=parent.id), alice)
+        loose = await pages.create(space, PageCreate(title="Loose", parent_id=parent.id), alice)
+        permissions = PermissionService(session)
+        edit = PageRestrictionPermission.edit
+        await permissions.set_page_restriction(parent, alice.id, edit, alice, group=False, present=True)
+        await permissions.set_page_restriction(child, bob.id, edit, alice, group=False, present=True)
+        await permissions.set_page_inheritance(loose, alice, inherit=False)
+        await session.flush()
+        return seeded
+
+    async def _assert_restrictions_restored(self, session: AsyncSession) -> None:
+        pages = {
+            page.slug: page for page in (await session.execute(select(WikiPage))).scalars()
+        }
+        assert pages["locked-parent"].view_restricted is True
+        assert pages["own-list"].view_restricted is True  # its own list, not Open
+        assert pages["own-list"].inherit_restrictions is True
+        assert pages["loose"].inherit_restrictions is False
+        users = {
+            user.username: user for user in (await session.execute(select(User))).scalars()
+        }
+        bob_page = pages["own-list"]
+        permissions = PermissionService(session)
+        assert await permissions.can_edit_page(bob_page, users["bob"])  # the own list is honoured
+
+    async def test_page_restrictions_keep_their_switches_and_blocks_through_a_restore(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await self._restriction_fixture(session)
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        assert {p.slug: p.view_restricted for p in doc.pages}["own-list"] is True
+        assert {p.slug: p.inherit_restrictions for p in doc.pages}["loose"] is False
+
+        await _wipe(session)
+        await BackupService(session).import_document(doc, dry_run=False)
+        await self._assert_restrictions_restored(session)
+
+    async def test_blocks_are_not_restored_as_grants(self, session: AsyncSession) -> None:
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        bob: User = seeded["bob"]  # type: ignore[assignment]
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        page = await PageService(session).create(space, PageCreate(title="Blocked page"), alice)
+        session.add(
+            PageUserRestriction(
+                page_id=page.id,
+                user_id=bob.id,
+                permission=PageRestrictionPermission.view,
+                denied=True,
+            )
+        )
+        await session.flush()
+
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        assert [(r.username, r.denied) for r in doc.page_user_restrictions] == [("bob", True)]
+
+        await _wipe(session)
+        await BackupService(session).import_document(doc, dry_run=False)
+        row = (await session.execute(select(PageUserRestriction))).scalar_one()
+        assert row.denied is True
+        restored_page = (await session.execute(select(WikiPage))).scalars().all()[-1]
+        assert restored_page.view_restricted is False  # a block does not close the page
+
+    async def test_full_zip_keeps_page_restriction_switches(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        seeded = await self._restriction_fixture(session)
+        storage = cast(
+            ObjectStorage,
+            SimpleNamespace(get=AsyncMock(), put=AsyncMock(), delete=AsyncMock()),
+        )
+        archive = str(tmp_path / "restrictions.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
+        await _wipe(session)
+
+        await BackupService(session).restore_full_package(archive, storage, dry_run=False)
+        await self._assert_restrictions_restored(session)
+
+    async def test_an_archive_without_the_restricted_flag_still_comes_back_closed(
+        self, session: AsyncSession
+    ) -> None:
+        """Archives written before `view_restricted` was exported have the
+        allow-list rows but no switch; the page must not come back Open."""
+        seeded = await self._restriction_fixture(session)
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        for entry in doc.pages:
+            entry.view_restricted = None
+
+        await _wipe(session)
+        await BackupService(session).import_document(doc, dry_run=False)
+
+        flags = {
+            page.slug: page.view_restricted
+            for page in (await session.execute(select(WikiPage))).scalars()
+        }
+        assert flags["locked-parent"] is True
+        assert flags["own-list"] is True
+        # `loose` stopped inheriting with a copy of the parent's list, so it too
+        # carries allow-list rows and must come back closed.
+        assert flags["loose"] is True
+
     async def test_owner_rows_that_cannot_be_restored_are_reported_not_fatal(
         self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1143,6 +1258,59 @@ class TestRoundTrip:
         ).scalar_one()
         assert page_label.name == "needs-review"
         assert page_label.user_id == restored_bob.id
+
+    async def test_restores_the_comment_tree_with_likes_and_is_idempotent(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        bob: User = seeded["bob"]  # type: ignore[assignment]
+        space: Space = seeded["space"]  # type: ignore[assignment]
+
+        page = WikiPage(
+            space_id=space.id, title="Runbook", slug="runbook", content="<p>x</p>",
+            created_by_id=alice.id, updated_by_id=alice.id,
+        )
+        session.add(page)
+        await session.flush()
+        root = PageComment(
+            page_id=page.id, author_id=alice.id, body="root", mentions=["bob"],
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        session.add(root)
+        await session.flush()
+        reply = PageComment(
+            page_id=page.id, parent_id=root.id, author_id=bob.id, body="reply",
+            created_at=datetime(2026, 1, 2, tzinfo=UTC),
+        )
+        session.add(reply)
+        await session.flush()
+        session.add(CommentLike(comment_id=reply.id, user_id=alice.id))
+        await session.flush()
+        root_id, reply_id = root.id, reply.id
+
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        assert doc.wikihub_backup.counts["page_comments"] == 2
+        scoped = await BackupService(session).export_document(space_keys=["NOPE"])
+        assert scoped.page_comments == []
+
+        await _wipe(session)
+        report = await BackupService(session).import_document(doc, dry_run=False)
+        assert report.created["page_comment"] == 2
+
+        restored = {
+            row.id: row for row in (await session.execute(select(PageComment))).scalars()
+        }
+        assert set(restored) == {root_id, reply_id}
+        assert restored[reply_id].parent_id == root_id
+        assert restored[root_id].mentions == ["bob"]
+        assert restored[reply_id].created_at == datetime(2026, 1, 2, tzinfo=UTC)
+        assert await _count(session, CommentLike) == 1
+
+        again = await BackupService(session).import_document(doc, dry_run=False)
+        assert again.created.get("page_comment", 0) == 0
+        assert await _count(session, PageComment) == 2
+        assert await _count(session, CommentLike) == 1
 
     async def test_credentials_survive_when_exported(self, session: AsyncSession) -> None:
         seeded = await _seed_instance(session)
@@ -1766,3 +1934,173 @@ class TestIssues:
         with pytest.raises(BadRequestError):
             await BackupService(session).restore_full_package(str(broken), storage, dry_run=False)
         assert await _count(session, Issue) == 0
+
+
+# --- comments and every kind of permission, through both backup paths --------
+
+
+async def _seed_permissions_and_discussion(session: AsyncSession) -> dict[str, object]:
+    """One of everything a restore must bring back for access and discussion:
+    a Restricted space with direct, group and owner grants; a group with two
+    owners and a global permission; a user's own global-permission overrides
+    (one grant, one denial); a page restricted to a group with a per-user
+    block, a child following it and a child that stopped inheriting; a
+    comment thread with a like, and a page like."""
+    seeded = await _seed_instance(session)
+    alice: User = seeded["alice"]  # type: ignore[assignment]
+    bob: User = seeded["bob"]  # type: ignore[assignment]
+    carol = await AuthService(session).create_user(
+        UserCreate(username="carol", email="carol@example.com", full_name="Carol", password="carol-pass-1")
+    )
+    permissions = PermissionService(session)
+
+    space = await SpaceService(session).create(
+        SpaceCreate(key="SEC", name="Secured", visibility=SpaceVisibility.restricted), alice
+    )
+    team = Group(name="team-sec", description="Security", owner_id=alice.id)
+    session.add(team)
+    await session.flush()
+    session.add_all(
+        [
+            GroupOwner(group_id=team.id, user_id=alice.id),
+            GroupOwner(group_id=team.id, user_id=bob.id),
+            GroupMember(group_id=team.id, user_id=carol.id),
+            GroupGlobalPermission(group_id=team.id, permission=GlobalPermission.manage_groups),
+            UserGlobalPermissionOverride(
+                user_id=bob.id, permission=GlobalPermission.manage_users, enabled=True
+            ),
+            UserGlobalPermissionOverride(
+                user_id=carol.id, permission=GlobalPermission.manage_groups, enabled=False
+            ),
+        ]
+    )
+    await session.flush()
+    await permissions.set_space_permission(space, team.id, Permission.add, alice, group=True, present=True)
+    await permissions.set_space_permission(space, bob.id, Permission.view, alice, group=False, present=True)
+    await permissions.set_space_owners(space, [alice.id], alice)
+
+    pages = PageService(session)
+    locked = await pages.create(space, PageCreate(title="Locked"), alice)
+    follows = await pages.create(space, PageCreate(title="Follows", parent_id=locked.id), alice)
+    loose = await pages.create(space, PageCreate(title="Loose", parent_id=locked.id), alice)
+    view = PageRestrictionPermission.view
+    await permissions.set_page_restriction(
+        locked, team.id, PageRestrictionPermission.edit, alice, group=True, present=True
+    )
+    await permissions.set_page_restriction(locked, bob.id, view, alice, group=False, present=True)
+    await permissions.set_page_permission_denial(locked, carol.id, view, alice, group=False, denied=True)
+    await permissions.set_page_inheritance(loose, alice, inherit=False)
+
+    root = PageComment(page_id=follows.id, author_id=alice.id, body="root @bob", mentions=["bob"])
+    session.add(root)
+    await session.flush()
+    reply = PageComment(page_id=follows.id, parent_id=root.id, author_id=bob.id, body="reply")
+    session.add(reply)
+    await session.flush()
+    session.add_all(
+        [
+            CommentLike(comment_id=reply.id, user_id=alice.id),
+            PageLike(page_id=follows.id, user_id=bob.id),
+        ]
+    )
+    await session.flush()
+    return {**seeded, "carol": carol}
+
+
+async def _assert_permissions_and_discussion(session: AsyncSession) -> None:
+    session.expunge_all()
+    users = {u.username: u for u in (await session.execute(select(User))).scalars()}
+    alice, bob, carol = users["alice"], users["bob"], users["carol"]
+    permissions = PermissionService(session)
+
+    team = (await session.execute(select(Group).where(Group.name == "team-sec"))).scalar_one()
+    owner_ids = set(
+        (await session.execute(select(GroupOwner.user_id).where(GroupOwner.group_id == team.id))).scalars()
+    )
+    assert owner_ids == {alice.id, bob.id}
+    assert await permissions.has_global(carol, GlobalPermission.manage_groups) is False  # denial kept
+    assert await permissions.has_global(bob, GlobalPermission.manage_users) is True  # grant kept
+
+    space = await SpaceService(session).get_by_key("SEC")
+    assert space.visibility is SpaceVisibility.restricted
+    assert {o.username for o in await permissions.list_space_owners(space)} == {"alice"}
+    assert Permission.add in await permissions.effective_permissions(space, carol)  # via the group
+    assert Permission.add not in await permissions.effective_permissions(space, bob)  # direct View only
+
+    pages = {p.slug: p for p in (await session.execute(select(WikiPage))).scalars()}
+    locked, follows, loose = pages["locked"], pages["follows"], pages["loose"]
+    assert locked.view_restricted is True and loose.inherit_restrictions is False
+    # Same effective access as before the backup.
+    assert await permissions.can_view_page(follows, bob)
+    assert not await permissions.can_edit_page(follows, bob)
+    assert not await permissions.can_view_page(locked, carol)  # the block survives
+    assert await permissions.can_edit_page(follows, alice)
+
+    comments = list((await session.execute(select(PageComment))).scalars())
+    assert len(comments) == 2
+    replies = [c for c in comments if c.parent_id is not None]
+    assert len(replies) == 1 and replies[0].body == "reply"
+    assert await _count(session, CommentLike) == 1
+    assert await _count(session, PageLike) == 1
+
+
+class TestPermissionsAndCommentsRoundTrip:
+    async def test_document_restore_keeps_every_permission_and_comment(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_permissions_and_discussion(session)
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        assert {g.name: sorted(g.owner_usernames) for g in doc.groups}["team-sec"] == ["alice", "bob"]
+        assert {(o.username, o.permission.value, o.enabled) for o in doc.user_global_permission_overrides} == {
+            ("bob", "manage_users", True),
+            ("carol", "manage_groups", False),
+        }
+
+        await _wipe(session)
+        report = await BackupService(session).import_document(doc, dry_run=False)
+        assert report.created["user_global_permission_override"] == 2
+        await _assert_permissions_and_discussion(session)
+
+        # Restoring again over the result changes nothing.
+        again = await BackupService(session).import_document(doc, dry_run=False)
+        assert again.created.get("user_global_permission_override", 0) == 0
+        assert again.created.get("page_comment", 0) == 0
+        await _assert_permissions_and_discussion(session)
+
+    async def test_full_zip_restore_keeps_every_permission_and_comment(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        seeded = await _seed_permissions_and_discussion(session)
+        storage = cast(
+            ObjectStorage,
+            SimpleNamespace(get=AsyncMock(), put=AsyncMock(), delete=AsyncMock()),
+        )
+        archive = str(tmp_path / "permissions.zip")
+        await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
+        await _wipe(session)
+
+        await BackupService(session).restore_full_package(archive, storage, dry_run=False)
+        await _assert_permissions_and_discussion(session)
+
+    async def test_an_older_archive_without_owner_list_keeps_the_primary_owner(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_permissions_and_discussion(session)
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        for group in doc.groups:
+            group.owner_usernames = []
+        doc.user_global_permission_overrides = []
+
+        await _wipe(session)
+        await BackupService(session).import_document(doc, dry_run=False)
+        team = (await session.execute(select(Group).where(Group.name == "team-sec"))).scalar_one()
+        owner_names = set(
+            (
+                await session.execute(
+                    select(User.username)
+                    .join(GroupOwner, GroupOwner.user_id == User.id)
+                    .where(GroupOwner.group_id == team.id)
+                )
+            ).scalars()
+        )
+        assert owner_names == {"alice"}

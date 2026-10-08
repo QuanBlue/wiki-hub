@@ -31,9 +31,12 @@ import {
   Tag,
   ThumbsUp,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { LikersPopover } from "@/components/comments/likers-popover";
+import { PageComments, type CommentsUser } from "@/components/comments/page-comments";
 import { useRouter } from "next/navigation";
 import {
   useEffect,
@@ -787,6 +790,7 @@ export function SpaceWorkspace({
   canEdit,
   canExport,
   canManageRestrictions,
+  currentUser,
 }: {
   space: Space;
   pages: WikiPage[];
@@ -797,6 +801,8 @@ export function SpaceWorkspace({
   canEdit: boolean;
   canExport: boolean;
   canManageRestrictions: boolean;
+  /** Who is reading; enables the comments section under a page. */
+  currentUser?: CommentsUser;
 }) {
   const router = useRouter();
   const spaceSidebarScrollRef = useRef<HTMLDivElement>(null);
@@ -831,6 +837,48 @@ export function SpaceWorkspace({
     [currentPage, space.visibility],
   );
   const [viewFullWidth, setViewFullWidth] = useState(true);
+  // Who can actually read what is on screen - the page after its own and
+  // inherited restrictions, or the space - rather than the old explicit
+  // member list, which an Open space (everyone has access) left at 1.
+  const [audience, setAudience] = useState<{ users: number; groups: number; everyone: boolean } | null>(null);
+  const audienceUrl = currentPage
+    ? `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/audience`
+    : `/api/v1/spaces/${encodeURIComponent(space.key)}/audience`;
+  const audienceKey = `${audienceUrl}|${currentPage?.is_restricted ?? ""}|${currentPage?.own_restricted ?? ""}|${currentPage?.inherit_restrictions ?? ""}`;
+  useEffect(() => {
+    let active = true;
+    api
+      .get<{ users: number; groups: number; everyone: boolean }>(audienceUrl)
+      .then((next) => {
+        if (active) setAudience(next);
+      })
+      .catch(() => {
+        if (active) setAudience(null);
+      });
+    return () => {
+      active = false;
+    };
+    // Re-count when the page or its access settings change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audienceKey]);
+  // Where `PageComments` portals its composer - see the sticky slot at the
+  // end of the article.
+  const [composerSlot, setComposerSlot] = useState<HTMLDivElement | null>(null);
+  // Publish the pinned comment box's height so fixed controls (the
+  // scroll-to-top button) can sit above it instead of on top of it.
+  useEffect(() => {
+    if (!composerSlot) return;
+    const root = document.documentElement;
+    const publish = () =>
+      root.style.setProperty("--wh-bottom-dock", `${composerSlot.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(composerSlot);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--wh-bottom-dock");
+    };
+  }, [composerSlot]);
   const [likeStatus, setLikeStatus] = useState<PageLikeStatus>({
     liked_by_me: false,
     like_count: 0,
@@ -1188,9 +1236,11 @@ export function SpaceWorkspace({
   async function persistDraft({
     keepalive = false,
   }: { keepalive?: boolean } = {}): Promise<boolean> {
-    const previousRequest = draftSaveInFlight.current;
-    if (previousRequest) {
-      await previousRequest;
+    // A loop, not a single await: two callers waiting on the same request
+    // would otherwise both wake and send in parallel (the debounce timer and
+    // the Save draft button, say).
+    while (draftSaveInFlight.current) {
+      await draftSaveInFlight.current;
     }
 
     const {
@@ -2845,7 +2895,12 @@ export function SpaceWorkspace({
                 <h1 className="text-foreground text-3xl font-semibold tracking-normal wikihub-page-header">
                   {title}
                 </h1>
-                <p className="text-muted-foreground mt-2 text-xs">
+                {/* Metadata on the left, labels on the right of the same line
+                    (wrapping below it on narrow screens). The page's Like
+                    lives with the discussion, beside the comment count - see
+                    `PageComments`' header. */}
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                <p className="text-muted-foreground text-xs">
                   {t("workspace.createdByPrefix")}{" "}
                   {author ? (
                     <UserProfileTrigger username={author} />
@@ -2867,31 +2922,9 @@ export function SpaceWorkspace({
                     </>
                   ) : null}
                 </p>
-
-                <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={toggleLiked}
-                    disabled={!currentPage || likePending}
-                    aria-pressed={liked}
-                    className={cn(
-                      "hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
-                      liked
-                        ? "text-primary"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <ThumbsUp
-                      className={cn("size-4", liked && "fill-current")}
-                    />
-                    {liked ? t("workspace.liked") : t("workspace.like")}
-                    {likeStatus.like_count > 0
-                      ? `(${likeStatus.like_count})`
-                      : null}
-                  </button>
                   <span className="text-muted-foreground flex items-center gap-1 text-xs">
                     {pageLabels.length ? pageLabels.map((label) => label.name).join(", ") : t("workspace.noLabels")}
-                    <button type="button" onClick={() => setLabelsDialogOpen(true)} className="hover:text-foreground focus-visible:ring-ring rounded-sm focus-visible:ring-2 focus-visible:outline-none" aria-label={t("workspace.manageLabelsAria")} title={t("workspace.manageLabelsAria")}><Tag className="size-3.5" /></button>
+                    <button type="button" onClick={() => setLabelsDialogOpen(true)} className="hover:bg-surface-hover hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex size-6 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none" aria-label={t("workspace.manageLabelsAria")} title={t("workspace.manageLabelsAria")}><Tag className="size-3.5" /></button>
                   </span>
                 </div>
 
@@ -2911,6 +2944,53 @@ export function SpaceWorkspace({
                     </div>
                   )}
                 </div>
+
+                {currentUser && currentPage ? (
+                  <PageComments
+                    spaceKey={space.key}
+                    pageSlug={currentPage.slug}
+                    currentUser={currentUser}
+                    composerContainer={composerSlot}
+                    headerStart={
+                      <span className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={toggleLiked}
+                          disabled={likePending}
+                          aria-pressed={liked}
+                          aria-label={t(liked ? "workspace.unlikePageAria" : "workspace.likePageAria", {
+                            count: likeStatus.like_count,
+                          })}
+                          title={liked ? t("workspace.liked") : t("workspace.like")}
+                          className={cn(
+                            "focus-visible:ring-ring flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
+                            liked
+                              ? "text-primary hover:bg-primary-subtle active:bg-surface-selected"
+                              : "text-muted-foreground hover:bg-primary-subtle hover:text-primary active:bg-surface-selected",
+                          )}
+                        >
+                          <ThumbsUp className={cn("size-4.5", liked && "fill-current")} aria-hidden />
+                        </button>
+                        {/* The count opens who liked the page; the thumb toggles your own like. */}
+                        <LikersPopover
+                          url={`/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/likes`}
+                          count={likeStatus.like_count}
+                          className={cn("px-0.5 text-sm", liked ? "text-primary" : "text-muted-foreground hover:text-foreground")}
+                        />
+                      </span>
+                    }
+                  />
+                ) : null}
+                {/* The comment box is portalled in here: a direct child of
+                    the article, so `sticky bottom-0` keeps it on screen for
+                    the whole page, not just while the comments are in view
+                    (sticky is confined to its parent's box). */}
+                {currentUser && currentPage ? (
+                  <div
+                    ref={setComposerSlot}
+                    className="bg-background/95 border-border sticky bottom-0 z-20 mt-3 border-t pt-3 pb-3 backdrop-blur-sm"
+                  />
+                ) : null}
               </>
             )}
           </article>
@@ -3068,12 +3148,22 @@ export function SpaceWorkspace({
             onConfirm={() => void deletePage()}
           />
 
-          {members.length > 0 ? (
-            <div className="border-border mt-12 border-t pt-4">
-              <p className="text-muted-foreground text-xs">
-                {members.length === 1
-                  ? t("workspace.membersInSpaceOne", { count: members.length })
-                  : t("workspace.membersInSpaceMany", { count: members.length })}
+          {audience ? (
+            // Right under the pinned comment box when there is one (which
+            // already draws the rule above it), spaced off the content otherwise.
+            <div className={cn(composerSlot ? "pt-1" : "border-border mt-12 border-t pt-4")}>
+              <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                <Users className="size-3.5" aria-hidden />
+                {audience.everyone
+                  ? t(currentPage ? "workspace.audiencePageEveryone" : "workspace.audienceSpaceEveryone")
+                  : t(currentPage ? "workspace.audiencePage" : "workspace.audienceSpace", {
+                  users: t(audience.users === 1 ? "workspace.audienceUsersOne" : "workspace.audienceUsersMany", {
+                    count: audience.users,
+                  }),
+                  groups: t(audience.groups === 1 ? "workspace.audienceGroupsOne" : "workspace.audienceGroupsMany", {
+                    count: audience.groups,
+                  }),
+                })}
               </p>
             </div>
           ) : null}

@@ -39,7 +39,7 @@ async def _user(session: AsyncSession, prefix: str) -> User:
     )
 
 
-async def test_view_restrictions_inherit_to_children_but_edit_does_not(
+async def test_view_and_edit_restrictions_inherit_to_children(
     session: AsyncSession,
 ) -> None:
     # Restricted, not the SpaceCreate default of Open - the final assertion
@@ -70,11 +70,30 @@ async def test_view_restrictions_inherit_to_children_but_edit_does_not(
     assert not await permissions.can_view_page(child, editor)
     assert await permissions.can_view_page(parent, owner)
 
+    # View-only on the parent: the child, with no restrictions of its own,
+    # follows the parent - viewable but not editable.
+    assert not await permissions.can_edit_page(parent, viewer)
+    assert not await permissions.can_edit_page(child, viewer)
+
+    # Edit on the parent reaches the child without a separate grant there.
+    await permissions.set_page_restriction(
+        parent, viewer.id, PageRestrictionPermission.edit, owner, group=False, present=True
+    )
+    assert await permissions.can_edit_page(parent, viewer)
+    assert await permissions.can_edit_page(child, viewer)
+    assert not await permissions.can_edit_page(child, editor)
+
+    # A child can still narrow further on its own: an Edit allow-list there
+    # that leaves this user out takes Edit away on the child only.
+    await permissions.set_page_restriction(
+        child, owner.id, PageRestrictionPermission.edit, owner, group=False, present=True
+    )
+    assert await permissions.can_edit_page(parent, viewer)
+    assert not await permissions.can_edit_page(child, viewer)
     await permissions.set_page_restriction(
         child, viewer.id, PageRestrictionPermission.edit, owner, group=False, present=True
     )
     assert await permissions.can_edit_page(child, viewer)
-    assert not await permissions.can_edit_page(child, editor)
 
     # Edit restriction cannot grant the container's Add capability.
     await spaces.set_member(space, owner, viewer.id, SpaceRole.viewer)
@@ -311,7 +330,10 @@ async def test_restriction_pickers_only_offer_principals_with_space_access(
     member = await _user(session, "member")
     outsider = await _user(session, "outsider")
     spaces = SpaceService(session)
-    space = await spaces.create(SpaceCreate(key="ACCPICK", name="Access pickers"), owner)
+    space = await spaces.create(
+        SpaceCreate(key="ACCPICK", name="Access pickers", visibility=SpaceVisibility.restricted),
+        owner,
+    )
     await spaces.set_member(space, owner, member.id, SpaceRole.viewer)
     group = Group(name=_username("has-access"), description="", owner_id=owner.id)
     outside_group = Group(name=_username("no-access"), description="", owner_id=owner.id)
@@ -378,6 +400,75 @@ async def test_restriction_pickers_only_offer_principals_with_space_access(
     )
 
 
+async def test_open_space_lets_every_user_and_group_be_named_on_a_page(
+    session: AsyncSession,
+) -> None:
+    """An Open space already lets every signed-in user in, so nobody there is
+    "not added to space" - every active user and group is pickable and the
+    write path accepts them without a space permission row."""
+    owner = await _user(session, "owner")
+    outsider = await _user(session, "outsider")
+    spaces = SpaceService(session)
+    space = await spaces.create(SpaceCreate(key=_username("OPN").upper()[:10], name="Open"), owner)
+    group = Group(name=_username("any-group"), description="", owner_id=owner.id)
+    session.add(group)
+    await session.flush()
+    permissions = PermissionService(session)
+
+    user_flags = {
+        u.id: has_access
+        for u, has_access in await permissions.list_users_for_page_restriction_picker(space)
+    }
+    assert user_flags[outsider.id] is True
+    group_flags = {
+        g.id: has_access
+        for g, has_access in await permissions.list_groups_for_page_restriction_picker(space)
+    }
+    assert group_flags[group.id] is True
+
+    page = await PageService(session).create(space, PageCreate(title="Open page"), owner)
+    await permissions.set_page_restriction(
+        page, outsider.id, PageRestrictionPermission.view, owner, group=False, present=True
+    )
+    await permissions.set_page_restriction(
+        page, group.id, PageRestrictionPermission.view, owner, group=True, present=True
+    )
+    assert await permissions.can_view_page(page, outsider)
+
+
+async def test_child_roster_reflects_access_inherited_from_restricted_parent(
+    session: AsyncSession,
+) -> None:
+    owner = await _user(session, "owner")
+    allowed = await _user(session, "allowed")
+    other = await _user(session, "other")
+    spaces = SpaceService(session)
+    space = await spaces.create(SpaceCreate(key=_username("INH").upper()[:10], name="Inherit"), owner)
+    pages = PageService(session)
+    parent = await pages.create(space, PageCreate(title="Locked parent"), owner)
+    child = await pages.create(space, PageCreate(title="Child", parent_id=parent.id), owner)
+    permissions = PermissionService(session)
+    await permissions.set_page_restriction(
+        parent, allowed.id, PageRestrictionPermission.view, owner, group=False, present=True
+    )
+
+    ancestor = await permissions.nearest_restricting_ancestor(child)
+    assert ancestor is not None and ancestor.id == parent.id
+    assert await permissions.nearest_restricting_ancestor(parent) is None
+
+    roster = {
+        account.id: (view, edit, view_locked, inherited)
+        for account, view, edit, view_locked, _edit_locked, inherited in (
+            await permissions.list_page_access_roster_users(child, space)
+        )
+    }
+    # Can view the parent, not edit it -> same on the child, Edit inherited away.
+    assert roster[allowed.id] == (True, False, False, True)
+    # Not on the parent's list at all -> locked out of the child too.
+    assert roster[other.id] == (False, False, True, True)
+    assert roster[owner.id][:2] == (True, True)
+
+
 async def test_roster_locks_both_boxes_for_a_space_admin_but_only_edit_for_a_viewer(
     session: AsyncSession,
 ) -> None:
@@ -413,7 +504,7 @@ async def test_roster_locks_both_boxes_for_a_space_admin_but_only_edit_for_a_vie
 
     users_by_username = {
         user.username: (view, edit, view_locked, edit_locked)
-        for user, view, edit, view_locked, edit_locked in await permissions.list_page_access_roster_users(
+        for user, view, edit, view_locked, edit_locked, _inherited in await permissions.list_page_access_roster_users(
             page, space
         )
     }
@@ -422,7 +513,7 @@ async def test_roster_locks_both_boxes_for_a_space_admin_but_only_edit_for_a_vie
 
     groups_by_name = {
         g.name: (view, edit, view_locked, edit_locked)
-        for g, view, edit, view_locked, edit_locked in await permissions.list_page_access_roster_groups(
+        for g, view, edit, view_locked, edit_locked, _inherited in await permissions.list_page_access_roster_groups(
             page, space
         )
     }
@@ -435,7 +526,7 @@ async def test_removing_a_users_last_space_permission_purges_their_page_restrict
     owner = await _user(session, "owner")
     member = await _user(session, "member")
     spaces = SpaceService(session)
-    space = await spaces.create(SpaceCreate(key="PURGEU", name="Purge on removal"), owner)
+    space = await spaces.create(SpaceCreate(key="PURGEU", name="Purge on removal", visibility=SpaceVisibility.restricted), owner)
     permissions = PermissionService(session)
     await permissions.set_space_permission(
         space, member.id, Permission.view, owner, group=False, present=True
@@ -464,7 +555,7 @@ async def test_removing_a_groups_last_space_permission_purges_its_page_restricti
     owner = await _user(session, "owner")
     member = await _user(session, "member")
     spaces = SpaceService(session)
-    space = await spaces.create(SpaceCreate(key="PURGEG", name="Purge group on removal"), owner)
+    space = await spaces.create(SpaceCreate(key="PURGEG", name="Purge group on removal", visibility=SpaceVisibility.restricted), owner)
     group = Group(name=_username("team"), description="", owner_id=owner.id)
     session.add(group)
     await session.flush()
@@ -496,7 +587,7 @@ async def test_removing_a_member_via_the_legacy_endpoint_purges_their_page_restr
     owner = await _user(session, "owner")
     member = await _user(session, "member")
     spaces = SpaceService(session)
-    space = await spaces.create(SpaceCreate(key="PURGEM", name="Purge via member removal"), owner)
+    space = await spaces.create(SpaceCreate(key="PURGEM", name="Purge via member removal", visibility=SpaceVisibility.restricted), owner)
     await spaces.set_member(space, owner, member.id, SpaceRole.viewer)
 
     permissions = PermissionService(session)
@@ -509,3 +600,135 @@ async def test_removing_a_member_via_the_legacy_endpoint_purges_their_page_restr
     await spaces.remove_member(space, owner, member.id)
     rows = await permissions.list_page_restrictions(page, owner)
     assert not any(row["principal_id"] == member.id for row in rows)
+
+
+async def test_child_can_stop_inheriting_starting_from_a_copy_of_its_parents_access(
+    session: AsyncSession,
+) -> None:
+    owner = await _user(session, "owner")
+    allowed = await _user(session, "allowed")
+    other = await _user(session, "other")
+    spaces = SpaceService(session)
+    space = await spaces.create(SpaceCreate(key=_username("BRK").upper()[:10], name="Break"), owner)
+    pages = PageService(session)
+    parent = await pages.create(space, PageCreate(title="Locked parent"), owner)
+    child = await pages.create(space, PageCreate(title="Child", parent_id=parent.id), owner)
+    grandchild = await pages.create(
+        space, PageCreate(title="Grandchild", parent_id=child.id), owner
+    )
+    permissions = PermissionService(session)
+    await permissions.set_page_restriction(
+        parent, allowed.id, PageRestrictionPermission.edit, owner, group=False, present=True
+    )
+    assert not await permissions.can_view_page(child, other)
+
+    # Turning inheritance off copies the parent's list - nothing changes yet.
+    await permissions.set_page_inheritance(child, owner, inherit=False)
+    assert child.inherit_restrictions is False
+    assert await permissions.page_view_is_restricted(child)
+    assert await permissions.nearest_restricting_ancestor(child) is None
+    assert await permissions.can_view_page(child, allowed)
+    assert await permissions.can_edit_page(child, allowed)
+    assert not await permissions.can_view_page(child, other)
+    assert {row["principal_id"] for row in await permissions.list_page_restrictions(child, owner)} == {
+        allowed.id
+    }
+
+    # Now the child can let in someone the parent never did, and its own
+    # children follow the child, not the grandparent.
+    await permissions.set_page_restriction(
+        child, other.id, PageRestrictionPermission.view, owner, group=False, present=True
+    )
+    assert await permissions.can_view_page(child, other)
+    assert await permissions.can_view_page(grandchild, other)
+    assert not await permissions.can_view_page(parent, other)
+
+    # Inheriting again drops the child's own settings and follows the parent.
+    await permissions.set_page_inheritance(child, owner, inherit=True)
+    assert child.inherit_restrictions is True
+    assert await permissions.list_page_restrictions(child, owner) == []
+    assert not await permissions.can_view_page(child, other)
+    assert await permissions.can_view_page(child, allowed)
+
+    with pytest.raises(BadRequestError):
+        await permissions.set_page_inheritance(parent, owner, inherit=False)
+
+
+
+async def test_a_childs_own_restricted_list_decides_for_itself_even_while_inheriting(
+    session: AsyncSession,
+) -> None:
+    """"Restricted (own list)" must mean what it says: whoever the child's own
+    list names can use the page, whatever the parent's list says - and the
+    reverse, the parent's people are not let in just because the parent
+    lists them. The parent itself is untouched."""
+    owner = await _user(session, "owner")
+    parents_editor = await _user(session, "pareditor")
+    childs_editor = await _user(session, "kideditor")
+    spaces = SpaceService(session)
+    space = await spaces.create(SpaceCreate(key=_username("OWN").upper()[:10], name="Own"), owner)
+    pages = PageService(session)
+    parent = await pages.create(space, PageCreate(title="Closed parent"), owner)
+    child = await pages.create(space, PageCreate(title="Child", parent_id=parent.id), owner)
+    grandchild = await pages.create(
+        space, PageCreate(title="Grandchild", parent_id=child.id), owner
+    )
+    permissions = PermissionService(session)
+    edit = PageRestrictionPermission.edit
+    await permissions.set_page_restriction(
+        parent, parents_editor.id, edit, owner, group=False, present=True
+    )
+    # Until the child has its own list it follows the parent.
+    assert await permissions.can_edit_page(child, parents_editor)
+    assert not await permissions.can_view_page(child, childs_editor)
+
+    # Own list: "kideditor" (never on the parent's list) can view and edit it.
+    await permissions.set_page_restriction(
+        child, childs_editor.id, edit, owner, group=False, present=True
+    )
+    assert child.inherit_restrictions is True  # still inheriting - no toggle needed
+    assert await permissions.can_view_page(child, childs_editor)
+    assert await permissions.can_edit_page(child, childs_editor)
+    assert await permissions.can_edit_page(grandchild, childs_editor)
+    # The parent's own list does not leak into a page that has its own.
+    assert not await permissions.can_view_page(child, parents_editor)
+    assert not await permissions.can_edit_page(grandchild, parents_editor)
+    # And the child's list grants nothing on the parent.
+    assert not await permissions.can_view_page(parent, childs_editor)
+    assert await permissions.can_edit_page(parent, parents_editor)
+
+
+async def test_audience_counts_who_can_actually_read_a_page(session: AsyncSession) -> None:
+    owner = await _user(session, "owner")
+    allowed = await _user(session, "allowed")
+    await _user(session, "outsider")
+    spaces = SpaceService(session)
+    space = await spaces.create(SpaceCreate(key=_username("AUD").upper()[:10], name="Audience"), owner)
+    pages = PageService(session)
+    parent = await pages.create(space, PageCreate(title="Locked"), owner)
+    child = await pages.create(space, PageCreate(title="Child", parent_id=parent.id), owner)
+    open_page = await pages.create(space, PageCreate(title="Open"), owner)
+    group = Group(name=_username("aud-group"), description="", owner_id=owner.id)
+    session.add(group)
+    await session.flush()
+    permissions = PermissionService(session)
+
+    everyone_users, everyone_groups, everyone = await permissions.space_audience(space)
+    assert everyone
+    # Open space: every active user and group.
+    assert everyone_users >= 3 and everyone_groups >= 1
+
+    await permissions.set_page_restriction(
+        parent, allowed.id, PageRestrictionPermission.view, owner, group=False, present=True
+    )
+    # Only the listed user, plus anyone who bypasses restrictions (the
+    # owner); the child inherits that; an unrestricted page keeps everyone.
+    parent_users, parent_groups, parent_everyone = await permissions.page_audience(parent, space)
+    assert not parent_everyone
+    assert parent_groups == 0 and 2 <= parent_users < everyone_users
+    assert await permissions.page_audience(child, space) == (parent_users, parent_groups, False)
+    assert await permissions.page_audience(open_page, space) == (
+        everyone_users,
+        everyone_groups,
+        True,
+    )

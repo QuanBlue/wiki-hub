@@ -54,6 +54,7 @@ async def test_draft_lifecycle_and_conflict_flag() -> None:
         )[-1]
     )
     service.session.flush = AsyncMock()
+    service.session.refresh = AsyncMock()
 
     payload = PageDraftUpsert(
         content="<p>Draft</p>",

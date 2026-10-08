@@ -140,6 +140,56 @@ async def read_issue(issue_id: uuid.UUID, user: CurrentUser, session: DbSession)
     return await IssueService(session, user).read(issue_id)
 
 
+@router.get(
+    "/{issue_id}/export/docx",
+    response_class=Response,
+    summary="Download an issue as a Word document",
+)
+async def export_issue_docx(
+    issue_id: uuid.UUID,
+    user: CurrentUser,
+    session: DbSession,
+    storage: StorageDep,
+    lang: Literal["en", "vi"] = "en",
+) -> Response:
+    content, filename = await IssueService(session, user).export_docx(
+        storage, [issue_id], lang=lang
+    )
+    return _docx_response(content, filename)
+
+
+@router.get(
+    "/export/docx",
+    response_class=Response,
+    summary="Download several issues as one Word document",
+)
+async def export_issues_docx(
+    user: CurrentUser,
+    session: DbSession,
+    storage: StorageDep,
+    ids: Annotated[list[uuid.UUID], Query(min_length=1, max_length=100)],
+    lang: Literal["en", "vi"] = "en",
+) -> Response:
+    """A GET with repeated ``ids`` so the browser can download it as a plain
+    link, the same way a single issue (or a page) is exported. Issues the
+    caller may not see are left out."""
+    content, filename = await IssueService(session, user).export_docx(
+        storage, ids, lang=lang
+    )
+    return _docx_response(content, filename)
+
+
+def _docx_response(content: bytes, filename: str) -> Response:
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @router.post("/{issue_id}/claim", response_model=IssueRead, summary="Take an issue")
 async def claim_issue(issue_id: uuid.UUID, user: CurrentUser, session: DbSession) -> IssueRead:
     return await IssueService(session, user).claim(issue_id)

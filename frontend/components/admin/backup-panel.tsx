@@ -85,6 +85,10 @@ import type {
 type UploadStats = TransferStats;
 type HashStats = TransferStats;
 
+/** The Confluence Data Center export only partly works, so it is switched off for now
+ * (the card reads "Incoming"). Flip this to bring it back. */
+const CONFLUENCE_EXPORT_AVAILABLE = false;
+
 type PortableBackupJob = {
   id: string;
   kind: "full_export" | "confluence_export" | "full_import";
@@ -1749,6 +1753,7 @@ export function BackupPanel() {
     kind: "full_export" | "confluence_export",
   ) {
     if (isDownloading) return;
+    if (kind === "confluence_export" && !CONFLUENCE_EXPORT_AVAILABLE) return;
     setIsDownloading(true);
     try {
       // apiFetch JSON.stringifies `body` itself - passing an already-stringified
@@ -4136,7 +4141,7 @@ export function BackupPanel() {
                     color: "hsl(38 92% 50%)",
                   }}
                 >
-                  Migration
+                  Incoming
                 </span>
               </div>
 
@@ -4148,6 +4153,10 @@ export function BackupPanel() {
                   hand content off to a Confluence instance
                 </span>{" "}
                 — it cannot be used to restore WikiHub.
+                <span className="text-foreground mt-1.5 block font-medium">
+                  Coming soon: this export is switched off for now while it is
+                  finished.
+                </span>
               </p>
 
               <div className="mt-auto space-y-2 pt-4">
@@ -4161,7 +4170,11 @@ export function BackupPanel() {
                   // out from under a WikiHub export that has nothing to do
                   // with it (or, once one starts, an in-flight Confluence
                   // export of its own).
-                  disabled={isDownloading || isPortableJobRunning}
+                  disabled={
+                    !CONFLUENCE_EXPORT_AVAILABLE ||
+                    isDownloading ||
+                    isPortableJobRunning
+                  }
                 >
                   <SelectTrigger
                     aria-label="Confluence Data Center target version"
@@ -4179,6 +4192,7 @@ export function BackupPanel() {
                   variant="primary"
                   className="w-full"
                   disabled={
+                    !CONFLUENCE_EXPORT_AVAILABLE ||
                     isDownloading ||
                     isPortableJobRunning ||
                     !confluenceExportProfile
@@ -4191,7 +4205,11 @@ export function BackupPanel() {
                   ) : (
                     <ArrowUpFromLine />
                   )}
-                  {isConfluenceExportRunning ? "Exporting…" : "Export DC XML"}
+                  {!CONFLUENCE_EXPORT_AVAILABLE
+                    ? "Coming soon"
+                    : isConfluenceExportRunning
+                      ? "Exporting…"
+                      : "Export DC XML"}
                 </Button>
               </div>
             </div>

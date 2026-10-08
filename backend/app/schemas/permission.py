@@ -159,6 +159,10 @@ class PageViewModeUpdate(BaseModel):
     restricted: bool
 
 
+class PageInheritanceUpdate(BaseModel):
+    inherit: bool
+
+
 class PageAccessRosterUser(BaseModel):
     """One row of the Open-page access roster: a user with space access,
     their current View/Edit state on this specific page pre-reflected
@@ -175,6 +179,9 @@ class PageAccessRosterUser(BaseModel):
     edit: bool
     view_locked: bool
     edit_locked: bool
+    # True when an ancestor page's restrictions, not this page's own, are
+    # what currently withhold View or Edit - the child inherits them.
+    inherited: bool = False
 
 
 class PageAccessRosterGroup(BaseModel):
@@ -184,3 +191,4 @@ class PageAccessRosterGroup(BaseModel):
     edit: bool
     view_locked: bool
     edit_locked: bool
+    inherited: bool = False

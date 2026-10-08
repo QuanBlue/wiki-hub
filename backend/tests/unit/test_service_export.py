@@ -14,13 +14,16 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestError
 from app.models.attachment import PageAttachment
+from app.models.comment import CommentLike, PageComment
 from app.models.issue import Issue, IssueAttachment, IssueNote
 from app.models.permission import (
     Group,
     GroupGlobalPermission,
     GroupMember,
+    GroupOwner,
     SpaceGroupPermission,
     SpaceUserPermission,
+    UserGlobalPermissionOverride,
 )
 from app.models.draft import PageDraft
 from app.models.restriction import PageGroupRestriction, PageUserRestriction
@@ -113,8 +116,9 @@ def _mock_site_settings(service):
 
 _EMPTY_SMALL_TABLES = (
     SpaceMember, SpaceOwner, SpaceFavorite, Group, GroupMember, GroupGlobalPermission,
+    GroupOwner, UserGlobalPermissionOverride,
     SpaceUserPermission, SpaceGroupPermission, PageUserRestriction,
-    PageGroupRestriction, Issue, IssueNote, IssueAttachment,
+    PageGroupRestriction, Issue, IssueNote, IssueAttachment, PageComment, CommentLike,
 )
 
 def make_export_full_package_router(
@@ -344,6 +348,7 @@ def _make_export_fixtures():
     page_content_row = SimpleNamespace(
         id=page_id, slug="page-1-slug", title="Page 1", content="hello", content_format="html",
         parent_id=None, created_by_id=None, updated_by_id=None, created_by_label=None, updated_by_label=None,
+        view_restricted=False, inherit_restrictions=True,
         created_at=None, updated_at=None,
     )
     attachments = [
@@ -437,6 +442,7 @@ async def test_export_package_streams_pages_and_revisions_correctly(
     page_content_row = SimpleNamespace(
         id=page_id, slug="page-1-slug", title="Page One", content="<p>hi</p>", content_format="html",
         parent_id=None, created_by_id=None, updated_by_id=None, created_by_label=None, updated_by_label=None,
+        view_restricted=False, inherit_restrictions=True,
         created_at=None, updated_at=None,
     )
     revision_rows = [
@@ -536,11 +542,13 @@ async def test_export_document(service: BackupService):
         make_result([]),  # 6. Group
         make_result([]),  # 7. GroupMember
         make_result([]),  # 8. GroupGlobalPermission
-        make_result([]),  # 9. SpaceUserPermission
-        make_result([]),  # 10. SpaceGroupPermission
-        make_result([page]),  # 11. WikiPage
-        make_result([]),  # 12. PageRevision
-        make_result([]),  # 13. PageLike
+        make_result([]),  # 9. GroupOwner
+        make_result([]),  # 10. UserGlobalPermissionOverride
+        make_result([]),  # 11. SpaceUserPermission
+        make_result([]),  # 12. SpaceGroupPermission
+        make_result([page]),  # 13. WikiPage
+        make_result([]),  # 14. PageRevision
+        make_result([]),  # 15. PageLike
         # Not modeled: UserPagePin, PageDraft, UserTag, UserPageLabel,
         # PageUserRestriction, PageGroupRestriction - once this list is
         # exhausted, `side_effect`'s fallback returns an empty result for

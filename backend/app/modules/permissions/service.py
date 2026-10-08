@@ -1168,10 +1168,16 @@ class PermissionService:
         return user_admin is not None or group_admin is not None
 
     async def _page_chain(self, page: WikiPage) -> list[WikiPage]:
+        """The pages whose restrictions apply to ``page``, root-most first,
+        ending with ``page`` itself. The climb stops at the first page that
+        no longer inherits (``inherit_restrictions`` off) - that page keeps
+        its own settings, but nothing above it reaches it or its children."""
         chain: list[WikiPage] = []
         current: WikiPage | None = page
         while current is not None:
             chain.append(current)
+            if not getattr(current, "inherit_restrictions", True):
+                break
             current = (
                 await self.session.get(WikiPage, current.parent_id) if current.parent_id else None
             )
@@ -1298,6 +1304,80 @@ class PermissionService:
         flags = await self._view_restricted_flags([ancestor.id for ancestor in chain])
         return any(flags.values())
 
+    async def nearest_restricting_ancestor(self, page: WikiPage) -> WikiPage | None:
+        """The closest ancestor (excluding ``page`` itself) whose own
+        restrictions - Restricted mode, an Edit allow-list, or a per-principal
+        block - flow down to this page. ``None`` when the page inherits
+        nothing, which is what lets the page-access dialog tell "this page is
+        restricted by its own setting" apart from "this page follows its
+        parent"."""
+        if page.parent_id is None or not await self._space_has_page_restrictions(page.space_id):
+            return None
+        ancestors = (await self._page_chain(page))[:-1]
+        if not ancestors:
+            return None
+        ids = [ancestor.id for ancestor in ancestors]
+        flagged = {
+            page_id for page_id, flag in (await self._view_restricted_flags(ids)).items() if flag
+        }
+        for model in (PageUserRestriction, PageGroupRestriction):
+            flagged.update(
+                await self.session.scalars(
+                    select(model.page_id).where(
+                        model.page_id.in_(ids),
+                        or_(
+                            model.denied.is_(True),
+                            model.permission == PageRestrictionPermission.edit,
+                        ),
+                    )
+                )
+            )
+        for ancestor in reversed(ancestors):
+            if ancestor.id in flagged:
+                return ancestor
+        return None
+
+    async def _group_inherited_access(
+        self, ancestor_ids: Sequence[uuid.UUID], group_id: uuid.UUID
+    ) -> tuple[bool, bool]:
+        """(view, edit) this group still holds after every ancestor's
+        restrictions - the group-as-principal counterpart to calling
+        `can_view_page`/`can_edit_page` on the parent for a user."""
+        if not ancestor_ids:
+            return True, True
+        rows = (
+            await self.session.execute(
+                select(
+                    PageGroupRestriction.page_id,
+                    PageGroupRestriction.permission,
+                    PageGroupRestriction.denied,
+                ).where(
+                    PageGroupRestriction.page_id.in_(list(ancestor_ids)),
+                    PageGroupRestriction.group_id == group_id,
+                )
+            )
+        ).all()
+        own = {(row.page_id, row.permission): row.denied for row in rows}
+        flags = await self._view_restricted_flags(ancestor_ids)
+        view = edit = True
+        for ancestor_id in ancestor_ids:
+            view_row = own.get((ancestor_id, PageRestrictionPermission.view))
+            edit_row = own.get((ancestor_id, PageRestrictionPermission.edit))
+            if view_row is True:
+                view = False
+            if edit_row is True:
+                edit = False
+            if flags.get(ancestor_id):
+                if view_row is not False and edit_row is not False:
+                    view = False
+                if edit_row is not False:
+                    edit = False
+            elif await self._restriction_rows_exist(
+                ancestor_id, PageRestrictionPermission.edit
+            ) and edit_row is not False:
+                edit = False
+        return view, view and edit
+
     async def _page_view_restricted_flag(self, page_id: uuid.UUID) -> bool:
         """An explicit, freshly-queried read of one page's own flag - not an
         attribute access on whatever `WikiPage` instance a caller happens to
@@ -1411,11 +1491,12 @@ class PermissionService:
             elif ancestor_id in group_denied:
                 return False
 
-        restricted_ids = [
-            page_id
-            for page_id, flag in (await self._view_restricted_flags(chain_ids)).items()
-            if flag
-        ]
+        # A page with its own Restricted list is the authority from there down:
+        # only the nearest Restricted page in the chain decides who may read,
+        # so a child's own list can let in someone its parent's never did
+        # (blocks above still apply - they were checked just before).
+        flags = await self._view_restricted_flags(chain_ids)
+        restricted_ids = [page_id for page_id in chain_ids if flags.get(page_id)][-1:]
         if not restricted_ids:
             return True
         allowed_permissions = (PageRestrictionPermission.view, PageRestrictionPermission.edit)
@@ -1457,22 +1538,40 @@ class PermissionService:
             return True
         if not await self._space_has_page_restrictions(space.id):
             return True
-        if await self._principal_permission_denied(page.id, user, PageRestrictionPermission.edit):
-            return False
-        # Once this page is closed to a named list of viewers - its own rows
-        # or an inherited ancestor's - ambient space Edit no longer carries
-        # through automatically: a plain space editor who only reaches the
-        # page via the View allow-list (same as an explicit Edit allow-list)
-        # needs their own Edit grant on it. Without this, checking someone's
-        # View box but leaving Edit unchecked in the page-access dialog did
-        # nothing for anyone who already held Edit at the space level - the
-        # per-page restriction was decorative for them.
-        if await self._restriction_rows_exist(
-            page.id, PageRestrictionPermission.edit
-        ) or await self.page_view_is_restricted(page):
-            return await self._principal_has_restriction(
-                page.id, user, PageRestrictionPermission.edit
-            )
+        edit = PageRestrictionPermission.edit
+        # Edit inherits down the tree the same way View does
+        # (`_can_view_page_uncached`): every page in the ancestor chain that
+        # is closed to a named list - Restricted, or carrying its own Edit
+        # allow-list - must also list this user for Edit, and a block on any
+        # ancestor reaches every descendant. A child page with no
+        # restrictions of its own therefore follows its parent's list
+        # instead of demanding a separate grant on itself, which used to
+        # leave such a child editable by nobody but admins.
+        #
+        # Once a page is closed to a named list of viewers, ambient space
+        # Edit no longer carries through automatically: a plain space editor
+        # who only reaches the page via the View allow-list needs their own
+        # Edit grant on it. Without this, checking someone's View box but
+        # leaving Edit unchecked in the page-access dialog did nothing for
+        # anyone who already held Edit at the space level.
+        chain_ids = [ancestor.id for ancestor in await self._page_chain(page)]
+        for ancestor_id in chain_ids:
+            if await self._principal_permission_denied(ancestor_id, user, edit):
+                return False
+        restricted_flags = await self._view_restricted_flags(chain_ids)
+        # Same rule as View: a page with its own Restricted list answers for
+        # itself and everything below it, so allow-lists above that page (a
+        # Restricted parent's, its Edit list) are not asked again.
+        nearest_own_list = max(
+            (index for index, page_id in enumerate(chain_ids) if restricted_flags.get(page_id)),
+            default=0,
+        )
+        for ancestor_id in chain_ids[nearest_own_list:]:
+            if restricted_flags.get(ancestor_id) or await self._restriction_rows_exist(
+                ancestor_id, edit
+            ):
+                if not await self._principal_has_restriction(ancestor_id, user, edit):
+                    return False
         return True
 
     async def require_page_restriction_admin(self, page: WikiPage, user: User) -> None:
@@ -1586,6 +1685,100 @@ class PermissionService:
         await self._set_page_view_restricted(page, restricted)
         await self.session.flush()
 
+    async def set_page_inheritance(self, page: WikiPage, actor: User, *, inherit: bool) -> None:
+        """Turns a child page's "inherit the parent's access" on or off.
+
+        Off: the page stops following its ancestors (see `_page_chain`), so
+        it first gets a copy of what it was inheriting - the nearest
+        Restricted ancestor's allow-list (View and Edit) and every block
+        along the chain - put into Restricted mode if that ancestor was.
+        Access is therefore unchanged at the moment of the switch; from then
+        on the page's own settings are the only ones that apply, and can be
+        widened or narrowed freely.
+
+        On: the page follows its parent again, so its own settings - the
+        copy, and anything customised since - are cleared."""
+        await self.require_page_restriction_admin(page, actor)
+        if page.parent_id is None:
+            raise BadRequestError(
+                "Only a child page can inherit access from a parent.", code="no_parent_page"
+            )
+        currently = bool(getattr(page, "inherit_restrictions", True))
+        if inherit == currently:
+            return
+
+        if inherit:
+            await self.session.execute(
+                delete(PageUserRestriction).where(PageUserRestriction.page_id == page.id)
+            )
+            await self.session.execute(
+                delete(PageGroupRestriction).where(PageGroupRestriction.page_id == page.id)
+            )
+            await self._set_page_view_restricted(page, False)
+        else:
+            ancestors = (await self._page_chain(page))[:-1]
+            ancestor_ids = [ancestor.id for ancestor in ancestors]
+            flags = await self._view_restricted_flags(ancestor_ids) if ancestor_ids else {}
+            nearest_restricted = next(
+                (ancestor.id for ancestor in reversed(ancestors) if flags.get(ancestor.id)), None
+            )
+            for model, column in (
+                (PageUserRestriction, "user_id"),
+                (PageGroupRestriction, "group_id"),
+            ):
+                principal = getattr(model, column)
+                existing = {
+                    (row_principal, permission)
+                    for row_principal, permission in (
+                        await self.session.execute(
+                            select(principal, model.permission).where(model.page_id == page.id)
+                        )
+                    ).all()
+                }
+                source: list[tuple[uuid.UUID, PageRestrictionPermission, bool]] = []
+                if ancestor_ids:
+                    source += (
+                        await self.session.execute(
+                            select(principal, model.permission, model.denied).where(
+                                model.page_id.in_(ancestor_ids), model.denied.is_(True)
+                            )
+                        )
+                    ).all()
+                if nearest_restricted is not None:
+                    source += (
+                        await self.session.execute(
+                            select(principal, model.permission, model.denied).where(
+                                model.page_id == nearest_restricted, model.denied.is_(False)
+                            )
+                        )
+                    ).all()
+                for principal_id, permission, denied in source:
+                    if (principal_id, permission) in existing:
+                        continue
+                    existing.add((principal_id, permission))
+                    self.session.add(
+                        model(
+                            page_id=page.id,
+                            permission=permission,
+                            denied=denied,
+                            **{column: principal_id},
+                        )
+                    )
+            if nearest_restricted is not None and not page.view_restricted:
+                await self._set_page_view_restricted(page, True)
+
+        await self.session.execute(
+            sa_update(WikiPage)
+            .where(WikiPage.id == page.id)
+            .values(inherit_restrictions=inherit, updated_at=WikiPage.updated_at)
+        )
+        _safe_set_committed_value(page, "inherit_restrictions", inherit)
+        await self.session.flush()
+        # Only bulk UPDATE/DELETE statements may have run above, and a flush
+        # with no pending ORM changes fires no `after_flush` - so drop the
+        # per-session permission memo by hand rather than serve stale answers.
+        self._memo.clear()
+
     async def reset_page_access(self, page: WikiPage, actor: User) -> None:
         """Wipes whichever configuration the page's *current* mode actually
         uses, back to that mode's own default - the deliberate, confirmed
@@ -1657,6 +1850,12 @@ class PermissionService:
     async def _has_space_access(
         self, space_id: uuid.UUID, principal_id: uuid.UUID, *, group: bool
     ) -> bool:
+        # An Open space lets every signed-in user in (`OPEN_SPACE_PERMISSIONS`),
+        # so every user and group already has space access there - no
+        # explicit permission row is needed to be named on a page.
+        space = await self.session.get(Space, space_id)
+        if getattr(space, "visibility", None) is SpaceVisibility.open:
+            return True
         model = SpaceGroupPermission if group else SpaceUserPermission
         principal_column = model.group_id if group else model.user_id
         return (
@@ -1677,7 +1876,18 @@ class PermissionService:
         hold several permission rows on the same space (one join match
         each), and `User` carries a plain `json` column that Postgres has no
         equality operator for, so `SELECT DISTINCT` over the full entity
-        fails outright."""
+        fails outright.
+
+        An Open space grants every signed-in user access, so there every
+        active user is eligible."""
+        if space.visibility is SpaceVisibility.open:
+            return list(
+                (
+                    await self.session.execute(
+                        select(User).where(User.is_active.is_(True)).order_by(User.username)
+                    )
+                ).scalars()
+            )
         return list(
             (
                 await self.session.execute(
@@ -1696,6 +1906,16 @@ class PermissionService:
         )
 
     async def list_groups_with_space_access(self, space: Space) -> list[Group]:
+        if space.visibility is SpaceVisibility.open:
+            # Same as users: an Open space already lets every member of every
+            # group in, so every active group is eligible.
+            return list(
+                (
+                    await self.session.execute(
+                        select(Group).where(Group.is_active.is_(True)).order_by(Group.name)
+                    )
+                ).scalars()
+            )
         return list(
             (
                 await self.session.execute(
@@ -1712,6 +1932,50 @@ class PermissionService:
                 )
             ).scalars()
         )
+
+    async def space_audience(self, space: Space) -> tuple[int, int, bool]:
+        """How many users and groups have access to the space, and whether
+        that is everyone - an Open space lets every active user and group in
+        (see `list_users_with_space_access`)."""
+        users = await self.list_users_with_space_access(space)
+        groups = await self.list_groups_with_space_access(space)
+        return len(users), len(groups), space.visibility is SpaceVisibility.open
+
+    async def page_audience(self, page: WikiPage, space: Space) -> tuple[int, int, bool]:
+        """How many of the space's users and groups can actually read this
+        page, after its own restrictions and everything it inherits. When the
+        space has no page restrictions at all - the common case - that is
+        simply the space's own audience, with no per-person checks. The
+        flag is true when that is everyone: an Open space and nothing on the
+        page's chain narrowing it."""
+        everyone = space.visibility is SpaceVisibility.open
+        users = await self.list_users_with_space_access(space)
+        groups = await self.list_groups_with_space_access(space)
+        if not await self._space_has_page_restrictions(space.id):
+            return len(users), len(groups), everyone
+        chain_ids = [ancestor.id for ancestor in await self._page_chain(page)]
+        # Restrictions elsewhere in the space don't touch a page whose own
+        # chain has none - skip the per-person checks for it as well.
+        restricted = any((await self._view_restricted_flags(chain_ids)).values())
+        if not restricted:
+            for model in (PageUserRestriction, PageGroupRestriction):
+                if await self.session.scalar(
+                    select(model.page_id).where(model.page_id.in_(chain_ids)).limit(1)
+                ):
+                    restricted = True
+                    break
+        if not restricted:
+            return len(users), len(groups), everyone
+        user_count = 0
+        for user in users:
+            if await self.can_view_page(page, user):
+                user_count += 1
+        group_count = 0
+        for group in groups:
+            view, _edit = await self._group_inherited_access(chain_ids, group.id)
+            if view:
+                group_count += 1
+        return user_count, group_count, False
 
     async def list_users_for_page_restriction_picker(
         self, space: Space
@@ -1756,7 +2020,7 @@ class PermissionService:
 
     async def list_page_access_roster_users(
         self, page: WikiPage, space: Space
-    ) -> list[tuple[User, bool, bool, bool, bool]]:
+    ) -> list[tuple[User, bool, bool, bool, bool, bool]]:
         """Every user with space access, paired with their *current*
         View/Edit access to this page and whether each is locked. This is
         the Open-page counterpart to the Restricted allow-list table: rather
@@ -1776,7 +2040,13 @@ class PermissionService:
         for anyone lacking space Add/Edit outright, or currently without
         View - restricting a page only ever narrows who edits among people
         the space already lets edit, it never grants editing beyond that
-        (matches `can_edit_page`); and nobody edits what they can't view."""
+        (matches `can_edit_page`); and nobody edits what they can't view.
+
+        The trailing flag marks a row narrowed by an ancestor's restrictions
+        rather than this page's own: a child page inherits its parent's
+        access, so whoever can't view (or edit) the parent can't here either,
+        and that box is locked - only the ancestor's own dialog can change
+        it."""
         users = await self.list_users_with_space_access(space)
         if not users:
             return []
@@ -1821,22 +2091,50 @@ class PermissionService:
             flags = group_denied_flags.get((user_id, permission))
             return any(flags) if flags else False
 
-        result: list[tuple[User, bool, bool, bool, bool]] = []
+        parent = (
+            await self.session.get(WikiPage, page.parent_id)
+            if await self.nearest_restricting_ancestor(page) is not None
+            else None
+        )
+        result: list[tuple[User, bool, bool, bool, bool, bool]] = []
         for user in users:
             perms = await self.effective_permissions(space, user)
             if Permission.admin in perms:
-                result.append((user, True, True, True, True))
+                result.append((user, True, True, True, True, False))
                 continue
             base_view = Permission.view in perms
             base_edit = Permission.add in perms
-            view = base_view and not denied_for(user.id, PageRestrictionPermission.view)
-            edit = base_edit and view and not denied_for(user.id, PageRestrictionPermission.edit)
-            result.append((user, view, edit, False, not base_edit or not view))
+            inherited_view = inherited_edit = True
+            if parent is not None:
+                inherited_view = await self.can_view_page(parent, user)
+                inherited_edit = inherited_view and await self.can_edit_page(parent, user)
+            view = (
+                base_view
+                and inherited_view
+                and not denied_for(user.id, PageRestrictionPermission.view)
+            )
+            edit = (
+                base_edit
+                and view
+                and inherited_edit
+                and not denied_for(user.id, PageRestrictionPermission.edit)
+            )
+            inherited = (base_view and not inherited_view) or (base_edit and not inherited_edit)
+            result.append(
+                (
+                    user,
+                    view,
+                    edit,
+                    base_view and not inherited_view,
+                    not base_edit or not view or not inherited_edit,
+                    inherited,
+                )
+            )
         return result
 
     async def list_page_access_roster_groups(
         self, page: WikiPage, space: Space
-    ) -> list[tuple[Group, bool, bool, bool, bool]]:
+    ) -> list[tuple[Group, bool, bool, bool, bool, bool]]:
         """The group-level counterpart to `list_page_access_roster_users` -
         a group's own space grant decides its base View/Edit, since a page
         restriction targets the group as a principal in its own right, not
@@ -1871,21 +2169,45 @@ class PermissionService:
         ).all()
         denied_map = {(row.group_id, row.permission): row.denied for row in own_rows}
 
-        result: list[tuple[Group, bool, bool, bool, bool]] = []
+        ancestor_ids: list[uuid.UUID] = []
+        if await self.nearest_restricting_ancestor(page) is not None:
+            ancestor_ids = [ancestor.id for ancestor in (await self._page_chain(page))[:-1]]
+
+        result: list[tuple[Group, bool, bool, bool, bool, bool]] = []
         for group in groups:
-            perms = space_perms.get(group.id, set())
+            perms = set(space_perms.get(group.id, set()))
+            if space.visibility is SpaceVisibility.open:
+                perms |= OPEN_SPACE_PERMISSIONS
             if Permission.admin in perms:
-                result.append((group, True, True, True, True))
+                result.append((group, True, True, True, True, False))
                 continue
             base_view = Permission.view in perms
             base_edit = Permission.add in perms
-            view = base_view and not denied_map.get((group.id, PageRestrictionPermission.view), False)
+            inherited_view, inherited_edit = await self._group_inherited_access(
+                ancestor_ids, group.id
+            )
+            view = (
+                base_view
+                and inherited_view
+                and not denied_map.get((group.id, PageRestrictionPermission.view), False)
+            )
             edit = (
                 base_edit
                 and view
+                and inherited_edit
                 and not denied_map.get((group.id, PageRestrictionPermission.edit), False)
             )
-            result.append((group, view, edit, False, not base_edit or not view))
+            inherited = (base_view and not inherited_view) or (base_edit and not inherited_edit)
+            result.append(
+                (
+                    group,
+                    view,
+                    edit,
+                    base_view and not inherited_view,
+                    not base_edit or not view or not inherited_edit,
+                    inherited,
+                )
+            )
         return result
 
     async def list_page_restrictions(self, page: WikiPage, actor: User) -> list[dict[str, object]]:

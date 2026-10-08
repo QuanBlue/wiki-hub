@@ -583,6 +583,8 @@ export interface PageAccessRosterUser {
   edit: boolean;
   view_locked: boolean;
   edit_locked: boolean;
+  /** View/Edit is withheld by an ancestor page's restrictions, not this page's. */
+  inherited?: boolean;
 }
 
 export interface PageAccessRosterGroup {
@@ -592,6 +594,7 @@ export interface PageAccessRosterGroup {
   edit: boolean;
   view_locked: boolean;
   edit_locked: boolean;
+  inherited?: boolean;
 }
 
 export interface GroupMember {
@@ -635,6 +638,15 @@ export interface WikiPage {
   can_delete?: boolean;
   /** A view restriction on this page or an ancestor narrows who may read it. */
   is_restricted?: boolean;
+  /** This page's own General-access setting, ignoring anything inherited. */
+  own_restricted?: boolean;
+  /** The nearest ancestor whose restrictions this page inherits, if any. */
+  restricted_ancestor_title?: string | null;
+  restricted_ancestor_slug?: string | null;
+  /** An ancestor is Restricted, so this page is too even while its own setting is Open. */
+  inherits_view_restriction?: boolean;
+  /** Whether this child page follows its parent's access at all (default true). */
+  inherit_restrictions?: boolean;
 }
 
 export type DependencyStatus = "ok" | "error" | "timeout";
@@ -993,4 +1005,37 @@ export interface IssueCounts {
   open: number;
   in_progress: number;
   done: number;
+}
+
+export interface CommentAuthor {
+  id: string;
+  username: string;
+  full_name: string;
+  avatar_url: string | null;
+}
+
+export interface PageComment {
+  id: string;
+  parent_id: string | null;
+  body: string;
+  author: CommentAuthor | null;
+  created_at: string;
+  edited_at: string | null;
+  like_count: number;
+  liked_by_me: boolean;
+  /** Usernames @mentioned in the body who can see the page. */
+  mentions: string[];
+  can_edit: boolean;
+  can_delete: boolean;
+}
+
+export interface CommentLikeStatus {
+  liked_by_me: boolean;
+  like_count: number;
+}
+
+export interface MentionCandidate {
+  username: string;
+  full_name: string;
+  avatar_url: string | null;
 }

@@ -237,7 +237,7 @@ async def test_blocking_a_principal_with_an_allow_list_row_turns_it_into_a_block
 
     roster = {
         account.id: view
-        for account, view, _edit, _view_locked, _edit_locked in (
+        for account, view, _edit, _view_locked, _edit_locked, _inherited in (
             await permissions.list_page_access_roster_users(page, space)
         )
     }
@@ -267,7 +267,7 @@ async def test_rosters_reflect_direct_and_group_blocks(session: AsyncSession) ->
 
     users = {
         account.id: (view, edit, view_locked, edit_locked)
-        for account, view, edit, view_locked, edit_locked in (
+        for account, view, edit, view_locked, edit_locked, _inherited in (
             await permissions.list_page_access_roster_users(page, space)
         )
     }
@@ -278,7 +278,7 @@ async def test_rosters_reflect_direct_and_group_blocks(session: AsyncSession) ->
 
     groups = {
         found.id: (view, edit, view_locked, edit_locked)
-        for found, view, edit, view_locked, edit_locked in (
+        for found, view, edit, view_locked, edit_locked, _inherited in (
             await permissions.list_page_access_roster_groups(page, space)
         )
     }

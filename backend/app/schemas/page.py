@@ -37,6 +37,17 @@ class PageRead(BaseModel):
     # True when a view restriction on this page or an ancestor narrows who may
     # read it. Independent of the space's own visibility.
     is_restricted: bool = False
+    # This page's own General-access setting, separate from anything it
+    # inherits - `is_restricted` above also counts an ancestor's.
+    own_restricted: bool = False
+    # The nearest ancestor whose restrictions flow down to this page, if any.
+    restricted_ancestor_title: str | None = None
+    restricted_ancestor_slug: str | None = None
+    # An ancestor is in Restricted mode, so this page is closed to that
+    # ancestor's list even while its own setting is Open.
+    inherits_view_restriction: bool = False
+    # Whether this page follows its parent's access at all (child pages only).
+    inherit_restrictions: bool = True
 
 
 class PageRecentItem(BaseModel):
@@ -54,6 +65,15 @@ class PageRecentItem(BaseModel):
 class PageLikeRead(BaseModel):
     liked_by_me: bool
     like_count: int
+
+
+class LikerRead(BaseModel):
+    """Someone who liked a page or a comment, for the "who liked this" list."""
+
+    id: uuid.UUID
+    username: str
+    full_name: str
+    avatar_url: str | None = None
 
 
 class PageCreate(BaseModel):

@@ -21,7 +21,7 @@ import html
 import json
 import re
 import zipfile
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, NamedTuple
 from uuid import UUID, uuid4
@@ -35,6 +35,8 @@ from app.core.exceptions import BadRequestError
 from app.core.logging import get_logger
 from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction
+from app.models.backup_job import BackupJob, BackupJobLog
+from app.models.comment import CommentLike, PageComment
 from app.models.draft import PageDraft
 from app.models.issue import Issue, IssueAttachment, IssueNote, IssueStatus
 from app.models.page import PageLike, UserPagePin, WikiPage
@@ -42,17 +44,17 @@ from app.models.permission import (
     Group,
     GroupGlobalPermission,
     GroupMember,
+    GroupOwner,
     SpaceGroupPermission,
     SpaceUserPermission,
+    UserGlobalPermissionOverride,
 )
-from app.models.backup_job import BackupJob, BackupJobLog
 from app.models.restriction import PageGroupRestriction, PageUserRestriction
 from app.models.revision import PageRevision
 from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceOwner, SpaceStatus
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
 from app.models.user_tag import UserTag
-from app.modules.issues.labels import ISSUE_LABELS
 from app.modules.backup.package import (
     DOCUMENT_PATH,
     FULL_BACKUP_FORMAT,
@@ -61,6 +63,7 @@ from app.modules.backup.package import (
     ScannedPackage,
     scan_full_backup,
 )
+from app.modules.issues.labels import ISSUE_LABELS
 from app.modules.permissions.service import ROLE_PERMISSIONS
 from app.repositories.space import SpaceRepository
 from app.repositories.user import UserRepository
@@ -79,6 +82,7 @@ from app.schemas.backup import (
     BackupIssueNote,
     BackupMeta,
     BackupPage,
+    BackupPageComment,
     BackupPageDraft,
     BackupPageGroupRestriction,
     BackupPageLike,
@@ -93,6 +97,7 @@ from app.schemas.backup import (
     BackupSpaceOwner,
     BackupSpaceUserPermission,
     BackupUser,
+    BackupUserGlobalPermissionOverride,
     BackupUserPageLabel,
     BackupUserTag,
     ImportEntry,
@@ -373,6 +378,77 @@ class _ReportBuilder:
             self.truncated = True
 
 
+def _parents_first(
+    items: Sequence[Any],
+    key: Callable[[Any], UUID],
+    parent: Callable[[Any], UUID | None],
+) -> list[Any]:
+    """``items`` reordered so every parent comes before its replies, keeping
+    the given order otherwise. Ordering by time alone cannot promise that:
+    a reply written in the same transaction as its parent (an import, a
+    script) shares its timestamp, and a tie broken by random UUID put the
+    reply first - which a restore then skipped as "missing parent"."""
+    by_id = {key(item): item for item in items}
+    placed: set[UUID] = set()
+    ordered: list[Any] = []
+    for start in items:
+        # Walk up to the oldest unplaced ancestor, then place downward.
+        chain: list[Any] = []
+        current: Any = start
+        while current is not None and key(current) not in placed:
+            chain.append(current)
+            parent_id = parent(current)
+            current = by_id.get(parent_id) if parent_id is not None else None
+            if current is not None and any(key(current) == key(seen) for seen in chain):
+                break  # a cycle cannot happen, but must not loop forever
+        for item in reversed(chain):
+            if key(item) not in placed:
+                placed.add(key(item))
+                ordered.append(item)
+    return ordered
+
+
+def _comment_entries(
+    comments: Sequence[PageComment],
+    likes: Sequence[CommentLike],
+    page_ref: Callable[[UUID], tuple[str, str] | None],
+    users_by_id: dict[UUID, User],
+) -> list[BackupPageComment]:
+    """Backup rows for the comments whose page is part of this backup.
+
+    ``comments`` must already be oldest first, so a restore meets every parent
+    before its replies. A reply whose parent was filtered out (it cannot be:
+    both live on the same page) is dropped with it.
+    """
+    comments = _parents_first(comments, lambda c: c.id, lambda c: c.parent_id)
+    likers: dict[UUID, list[str]] = {}
+    for like in likes:
+        user = users_by_id.get(like.user_id)
+        if user is not None:
+            likers.setdefault(like.comment_id, []).append(user.username)
+    entries: list[BackupPageComment] = []
+    for comment in comments:
+        ref = page_ref(comment.page_id)
+        if ref is None:
+            continue
+        author = users_by_id.get(comment.author_id) if comment.author_id else None
+        entries.append(
+            BackupPageComment(
+                id=comment.id,
+                parent_id=comment.parent_id,
+                page_space_key=ref[0],
+                page_slug=ref[1],
+                author_username=author.username if author else None,
+                body=comment.body,
+                created_at=comment.created_at,
+                edited_at=comment.edited_at,
+                mentions=list(comment.mentions or []),
+                liked_by=sorted(likers.get(comment.id, [])),
+            )
+        )
+    return entries
+
+
 class BackupService:
     def __init__(
         self,
@@ -444,6 +520,17 @@ class BackupService:
         ]
         return entries, shots_by_issue
 
+    async def _load_comments(self) -> tuple[list[PageComment], list[CommentLike]]:
+        comments = list(
+            (
+                await self.session.execute(
+                    select(PageComment).order_by(PageComment.created_at, PageComment.id)
+                )
+            ).scalars()
+        )
+        likes = list((await self.session.execute(select(CommentLike))).scalars())
+        return comments, likes
+
     async def export_document(
         self, *, include_credentials: bool = False, space_keys: list[str] | None = None
     ) -> BackupDocument:
@@ -481,6 +568,10 @@ class BackupService:
         group_permissions = list(
             (await self.session.execute(select(GroupGlobalPermission))).scalars()
         )
+        group_owner_rows = list((await self.session.execute(select(GroupOwner))).scalars())
+        permission_overrides = list(
+            (await self.session.execute(select(UserGlobalPermissionOverride))).scalars()
+        )
         space_user_permissions = list(
             (await self.session.execute(select(SpaceUserPermission))).scalars()
         )
@@ -490,6 +581,7 @@ class BackupService:
         pages = list((await self.session.execute(select(WikiPage))).scalars())
         revisions = list((await self.session.execute(select(PageRevision))).scalars())
         likes = list((await self.session.execute(select(PageLike))).scalars())
+        comments, comment_likes = await self._load_comments()
         pins = list((await self.session.execute(select(UserPagePin))).scalars())
         drafts = list((await self.session.execute(select(PageDraft))).scalars())
         user_tags = list((await self.session.execute(select(UserTag))).scalars())
@@ -569,6 +661,12 @@ class BackupService:
         ]
         groups_by_id = {group.id: group for group in groups}
         pages_by_id = {page.id: page for page in pages}
+        group_owner_names: dict[UUID, list[str]] = {}
+        for row in group_owner_rows:
+            if row.user_id in users_by_id:
+                group_owner_names.setdefault(row.group_id, []).append(
+                    users_by_id[row.user_id].username
+                )
         doc_groups = [
             BackupGroup(
                 id=group.id,
@@ -576,9 +674,19 @@ class BackupService:
                 description=group.description,
                 owner_username=users_by_id[group.owner_id].username,
                 is_active=group.is_active,
+                owner_usernames=sorted(group_owner_names.get(group.id, [])),
             )
             for group in groups
             if group.owner_id in users_by_id
+        ]
+        doc_permission_overrides = [
+            BackupUserGlobalPermissionOverride(
+                username=users_by_id[row.user_id].username,
+                permission=row.permission,
+                enabled=row.enabled,
+            )
+            for row in permission_overrides
+            if row.user_id in users_by_id
         ]
         doc_group_members = [
             BackupGroupMember(
@@ -639,6 +747,8 @@ class BackupService:
                 updated_by_label=page.updated_by_label,
                 created_at=page.created_at,
                 updated_at=page.updated_at,
+                view_restricted=bool(page.view_restricted),
+                inherit_restrictions=bool(page.inherit_restrictions),
             )
             for page in pages
             if page.space_id in spaces_by_id
@@ -672,6 +782,16 @@ class BackupService:
             and row.user_id in users_by_id
             and pages_by_id[row.page_id].space_id in spaces_by_id
         ]
+        doc_comments = _comment_entries(
+            comments,
+            comment_likes,
+            lambda page_id: (
+                (spaces_by_id[pages_by_id[page_id].space_id].key, pages_by_id[page_id].slug)
+                if page_id in pages_by_id and pages_by_id[page_id].space_id in spaces_by_id
+                else None
+            ),
+            users_by_id,
+        )
         doc_pins = [BackupPagePin(page_space_key=spaces_by_id[pages_by_id[row.page_id].space_id].key, page_slug=pages_by_id[row.page_id].slug, username=users_by_id[row.user_id].username) for row in pins if row.page_id in pages_by_id and row.user_id in users_by_id and pages_by_id[row.page_id].space_id in spaces_by_id]
         doc_drafts = [BackupPageDraft(page_space_key=spaces_by_id[pages_by_id[row.page_id].space_id].key, page_slug=pages_by_id[row.page_id].slug, username=users_by_id[row.user_id].username, content=row.content, content_format=row.content_format, edit_mode=row.edit_mode, base_updated_at=row.base_updated_at) for row in drafts if row.page_id in pages_by_id and row.user_id in users_by_id and pages_by_id[row.page_id].space_id in spaces_by_id]
         doc_tags = [BackupUserTag(username=users_by_id[row.user_id].username, name=row.name) for row in user_tags if row.user_id in users_by_id]
@@ -682,6 +802,7 @@ class BackupService:
                 page_slug=pages_by_id[row.page_id].slug,
                 username=users_by_id[row.user_id].username,
                 permission=row.permission,
+                denied=bool(row.denied),
             )
             for row in page_user_restrictions
             if row.page_id in pages_by_id
@@ -694,6 +815,7 @@ class BackupService:
                 page_slug=pages_by_id[row.page_id].slug,
                 group_name=groups_by_id[row.group_id].name,
                 permission=row.permission,
+                denied=bool(row.denied),
             )
             for row in page_group_restrictions
             if row.page_id in pages_by_id
@@ -717,9 +839,11 @@ class BackupService:
                     "space_owners": len(doc_owners),
                     "space_favorites": len(doc_favorites),
                     "groups": len(doc_groups),
+                    "user_global_permission_overrides": len(doc_permission_overrides),
                     "pages": len(doc_pages),
                     "page_revisions": len(doc_revisions),
                     "page_likes": len(doc_likes),
+"page_comments": len(doc_comments),
                     "page_pins": len(doc_pins), "page_drafts": len(doc_drafts),
                     "user_tags": len(doc_tags), "user_page_labels": len(doc_page_labels),
                     "page_restrictions": len(doc_page_user_restrictions)
@@ -735,11 +859,12 @@ class BackupService:
             groups=doc_groups,
             group_members=doc_group_members,
             group_global_permissions=doc_group_permissions,
+            user_global_permission_overrides=doc_permission_overrides,
             space_user_permissions=doc_space_user_permissions,
             space_group_permissions=doc_space_group_permissions,
             pages=doc_pages,
             page_revisions=doc_revisions,
-            page_likes=doc_likes,
+            page_likes=doc_likes, page_comments=doc_comments,
             page_user_restrictions=doc_page_user_restrictions,
             page_group_restrictions=doc_page_group_restrictions,
             page_pins=doc_pins, page_drafts=doc_drafts,
@@ -821,6 +946,10 @@ class BackupService:
         group_permissions = list(
             (await self.session.execute(select(GroupGlobalPermission))).scalars()
         )
+        group_owner_rows = list((await self.session.execute(select(GroupOwner))).scalars())
+        permission_overrides = list(
+            (await self.session.execute(select(UserGlobalPermissionOverride))).scalars()
+        )
         space_user_permissions = list(
             (await self.session.execute(select(SpaceUserPermission))).scalars()
         )
@@ -849,6 +978,7 @@ class BackupService:
 
         attachments = list((await self.session.execute(select(PageAttachment))).scalars())
         likes = list((await self.session.execute(select(PageLike))).scalars())
+        comments, comment_likes = await self._load_comments()
         pins = list((await self.session.execute(select(UserPagePin))).scalars())
         drafts = list((await self.session.execute(select(PageDraft))).scalars())
         user_tags = list((await self.session.execute(select(UserTag))).scalars())
@@ -895,9 +1025,19 @@ class BackupService:
             BackupSpaceFavorite(username=users_by_id[f.user_id].username, space_key=spaces_by_id[f.space_id].key)
             for f in favorites if f.space_id in spaces_by_id and f.user_id in users_by_id
         ]
+        group_owner_names: dict[UUID, list[str]] = {}
+        for row in group_owner_rows:
+            if row.user_id in users_by_id:
+                group_owner_names.setdefault(row.group_id, []).append(
+                    users_by_id[row.user_id].username
+                )
         doc_groups = [
-            BackupGroup(id=g.id, name=g.name, description=g.description, owner_username=users_by_id[g.owner_id].username, is_active=g.is_active)
+            BackupGroup(id=g.id, name=g.name, description=g.description, owner_username=users_by_id[g.owner_id].username, is_active=g.is_active, owner_usernames=sorted(group_owner_names.get(g.id, [])))
             for g in groups if g.owner_id in users_by_id
+        ]
+        doc_permission_overrides = [
+            BackupUserGlobalPermissionOverride(username=users_by_id[row.user_id].username, permission=row.permission, enabled=row.enabled)
+            for row in permission_overrides if row.user_id in users_by_id
         ]
         doc_group_members = [
             BackupGroupMember(group_name=groups_by_id[row.group_id].name, username=users_by_id[row.user_id].username)
@@ -919,6 +1059,12 @@ class BackupService:
             BackupPageLike(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username)
             for row in likes if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
         ]
+
+        def _comment_page_ref(page_id: UUID) -> tuple[str, str] | None:
+            space_key = _page_space_key(page_id) if page_id in pages_index else None
+            return (space_key, pages_index[page_id].slug) if space_key else None
+
+        doc_comments = _comment_entries(comments, comment_likes, _comment_page_ref, users_by_id)
         doc_pins = [
             BackupPagePin(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username)
             for row in pins if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
@@ -933,11 +1079,11 @@ class BackupService:
             for row in user_page_labels if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
         ]
         doc_page_user_restrictions = [
-            BackupPageUserRestriction(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username, permission=row.permission)
+            BackupPageUserRestriction(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username, permission=row.permission, denied=bool(row.denied))
             for row in page_user_restrictions if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
         ]
         doc_page_group_restrictions = [
-            BackupPageGroupRestriction(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, group_name=groups_by_id[row.group_id].name, permission=row.permission)
+            BackupPageGroupRestriction(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, group_name=groups_by_id[row.group_id].name, permission=row.permission, denied=bool(row.denied))
             for row in page_group_restrictions if row.page_id in pages_index and row.group_id in groups_by_id and _page_space_key(row.page_id)
         ]
 
@@ -988,9 +1134,11 @@ class BackupService:
                     "space_owners": len(doc_owners),
                     "space_favorites": len(doc_favorites),
                     "groups": len(doc_groups),
+                    "user_global_permission_overrides": len(doc_permission_overrides),
                     "pages": len(pages_index),
                     "page_revisions": revisions_total,
                     "page_likes": len(doc_likes),
+"page_comments": len(doc_comments),
                     "page_pins": len(doc_pins),
                     "page_drafts": len(doc_drafts),
                     "user_tags": len(doc_tags),
@@ -1000,10 +1148,10 @@ class BackupService:
                 },
             ),
             users=doc_users, spaces=doc_spaces, space_members=doc_members, space_owners=doc_owners, space_favorites=doc_favorites,
-            groups=doc_groups, group_members=doc_group_members, group_global_permissions=doc_group_permissions,
+            groups=doc_groups, group_members=doc_group_members, group_global_permissions=doc_group_permissions, user_global_permission_overrides=doc_permission_overrides,
             space_user_permissions=doc_space_user_permissions, space_group_permissions=doc_space_group_permissions,
             pages=[], page_revisions=[],
-            page_likes=doc_likes, page_user_restrictions=doc_page_user_restrictions, page_group_restrictions=doc_page_group_restrictions,
+            page_likes=doc_likes, page_comments=doc_comments, page_user_restrictions=doc_page_user_restrictions, page_group_restrictions=doc_page_group_restrictions,
             page_pins=doc_pins, page_drafts=doc_drafts, user_tags=doc_tags, user_page_labels=doc_page_labels,
             issues=doc_issues,
             site_settings=BackupSiteSettings(**overrides.model_dump()),
@@ -1113,6 +1261,7 @@ class BackupService:
                                     WikiPage.content_format, WikiPage.parent_id, WikiPage.created_by_id,
                                     WikiPage.updated_by_id, WikiPage.created_by_label, WikiPage.updated_by_label,
                                     WikiPage.created_at, WikiPage.updated_at,
+                                    WikiPage.view_restricted, WikiPage.inherit_restrictions,
                                 ).where(WikiPage.id.in_(batch_ids))
                             )
                         ).all()
@@ -1130,6 +1279,8 @@ class BackupService:
                             updated_by_username=users_by_id[row.updated_by_id].username if row.updated_by_id in users_by_id else None,
                             created_by_label=row.created_by_label, updated_by_label=row.updated_by_label,
                             created_at=row.created_at, updated_at=row.updated_at,
+                            view_restricted=bool(row.view_restricted),
+                            inherit_restrictions=bool(row.inherit_restrictions),
                         )
                         if not first:
                             writer.write(",")
@@ -1972,6 +2123,19 @@ class BackupService:
                 group.id = group_entry.id
             self.session.add(group)
             await self.session.flush()
+            # `GroupOwner` is what the app lists and manages owners by (the
+            # API falls back to `owner_id` only when it is empty), so a
+            # restored group gets a row for its primary owner and each extra
+            # owner the archive names - same as creating one in the app.
+            owner_ids = [owner.id]
+            for extra_name in group_entry.owner_usernames:
+                extra_owner = await self.users.get_by_username(extra_name)
+                if extra_owner is not None and extra_owner.id not in owner_ids:
+                    owner_ids.append(extra_owner.id)
+            self.session.add_all(
+                GroupOwner(group_id=group.id, user_id=owner_id) for owner_id in owner_ids
+            )
+            await self.session.flush()
             report.add("group", label, "created")
 
         for group_member_entry in doc.group_members:
@@ -2020,6 +2184,32 @@ class BackupService:
             )
             await self.session.flush()
             report.add("group_global_permission", label, "created")
+
+        for override_entry in doc.user_global_permission_overrides:
+            label = f"{override_entry.username}/{override_entry.permission.value}"
+            override_user = await self.users.get_by_username(override_entry.username)
+            if override_user is None:
+                report.add("user_global_permission_override", label, "skipped", "missing_user")
+                continue
+            if (
+                await self.session.get(
+                    UserGlobalPermissionOverride, (override_user.id, override_entry.permission)
+                )
+                is not None
+            ):
+                # The target's own setting wins - same "skip, never
+                # overwrite" rule as every other row here.
+                report.add("user_global_permission_override", label, "skipped", "already_set")
+                continue
+            self.session.add(
+                UserGlobalPermissionOverride(
+                    user_id=override_user.id,
+                    permission=override_entry.permission,
+                    enabled=override_entry.enabled,
+                )
+            )
+            await self.session.flush()
+            report.add("user_global_permission_override", label, "created")
 
         for space_user_permission_entry in doc.space_user_permissions:
             label = "/".join(
@@ -2126,6 +2316,8 @@ class BackupService:
                 updated_by_id=updater.id if updater else None,
                 created_by_label=page_entry.created_by_label,
                 updated_by_label=page_entry.updated_by_label,
+                view_restricted=bool(page_entry.view_restricted),
+                inherit_restrictions=page_entry.inherit_restrictions,
             )
             # Otherwise the row's created_at/updated_at default to "now" and
             # every restored page reads as edited at restore time instead of
@@ -2241,6 +2433,55 @@ class BackupService:
             await self.session.flush()
             report.add("page_like", label, "created")
 
+        # Comments: parents before replies (the backup lists them oldest first),
+        # keeping their ids so a re-run is a no-op and replies stay attached.
+        for comment_entry in _parents_first(
+            doc.page_comments, lambda entry: entry.id, lambda entry: entry.parent_id
+        ):
+            label = f"{comment_entry.page_space_key}/{comment_entry.page_slug}/{comment_entry.id}"
+            comment_page = await page_by_reference(
+                comment_entry.page_space_key, comment_entry.page_slug
+            )
+            if comment_page is None:
+                report.add("page_comment", label, "skipped", "missing_reference")
+                continue
+            if comment_entry.parent_id is not None and (
+                await self.session.get(PageComment, comment_entry.parent_id)
+            ) is None:
+                report.add("page_comment", label, "skipped", "missing_parent")
+                continue
+            comment_row = await self.session.get(PageComment, comment_entry.id)
+            if comment_row is None:
+                comment_author = (
+                    await self.users.get_by_username(comment_entry.author_username)
+                    if comment_entry.author_username
+                    else None
+                )
+                values: dict[str, object] = {
+                    "id": comment_entry.id,
+                    "page_id": comment_page.id,
+                    "parent_id": comment_entry.parent_id,
+                    "author_id": comment_author.id if comment_author else None,
+                    "body": comment_entry.body,
+                    "edited_at": comment_entry.edited_at,
+                    "mentions": list(comment_entry.mentions),
+                }
+                if comment_entry.created_at is not None:
+                    values["created_at"] = comment_entry.created_at
+                comment_row = PageComment(**values)
+                self.session.add(comment_row)
+                await self.session.flush()
+                report.add("page_comment", label, "created")
+            else:
+                report.add("page_comment", label, "skipped", "already_exists")
+            for liker_name in comment_entry.liked_by:
+                liker = await self.users.get_by_username(liker_name)
+                if liker is None:
+                    continue
+                if await self.session.get(CommentLike, (comment_row.id, liker.id)) is None:
+                    self.session.add(CommentLike(comment_id=comment_row.id, user_id=liker.id))
+            await self.session.flush()
+
         for entry in doc.page_pins:
             page = await page_by_reference(entry.page_space_key, entry.page_slug)
             user = await self.users.get_by_username(entry.username)
@@ -2323,6 +2564,7 @@ class BackupService:
                     page_id=restricted_page.id,
                     user_id=restricted_user.id,
                     permission=user_restriction_entry.permission,
+                    denied=user_restriction_entry.denied,
                 )
             )
             await self.session.flush()
@@ -2361,10 +2603,35 @@ class BackupService:
                     page_id=restricted_page.id,
                     group_id=restricted_group.id,
                     permission=group_restriction_entry.permission,
+                    denied=group_restriction_entry.denied,
                 )
             )
             await self.session.flush()
             report.add("page_group_restriction", label, "created")
+
+        # Archives written before `view_restricted` was exported carry the
+        # allow-list rows but not the switch that makes them count, so a page
+        # restored from one would come back Open to everyone. Infer Restricted
+        # from the rows for exactly those pages (an explicit flag is never
+        # overridden).
+        legacy_refs = {
+            (entry.space_key.strip().upper(), entry.slug.strip())
+            for entry in doc.pages
+            if entry.view_restricted is None
+        } & created_page_refs
+        if legacy_refs:
+            allow_rows = [
+                (entry.page_space_key, entry.page_slug)
+                for entry in (*doc.page_user_restrictions, *doc.page_group_restrictions)
+                if not entry.denied
+            ]
+            for space_key, slug in dict.fromkeys(allow_rows):
+                if (space_key.strip().upper(), slug.strip()) not in legacy_refs:
+                    continue
+                legacy_page = await page_by_reference(space_key, slug)
+                if legacy_page is not None and not legacy_page.view_restricted:
+                    legacy_page.view_restricted = True
+            await self.session.flush()
 
         # --- settings -----------------------------------------------------
         if doc.site_settings is not None:

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
+import { InfoTip } from "@/components/ui/info-tip";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
@@ -72,6 +73,8 @@ type RosterRow = {
   edit: boolean;
   viewLocked: boolean;
   editLocked: boolean;
+  /** Withheld by an ancestor page's restrictions, not this page's own. */
+  inherited: boolean;
 };
 
 function groupByPrincipal(rows: Restriction[], type: "user" | "group"): PrincipalRow[] {
@@ -122,7 +125,27 @@ export function PageRestrictionsDialog({
   // Restricted allow-list can sit dormant while the page is Open (and come
   // right back when switched back) instead of being wiped every time. See
   // the backend's `PermissionService` module docstring.
-  const [isViewRestricted, setIsViewRestricted] = useState(page.is_restricted ?? false);
+  // `own_restricted`, not `is_restricted`: the latter is also true for a
+  // child of a Restricted page, which would open this dialog in Restricted
+  // mode with an empty allow-list of its own instead of showing that the
+  // page simply follows its parent.
+  const ownRestricted = page.own_restricted ?? page.is_restricted ?? false;
+  const hasParent = Boolean(page.parent_id);
+  // Whether this child page follows its parent's access at all. Kept as
+  // local state so the dialog reflects a toggle at once, before the
+  // refreshed page props arrive.
+  const [inherits, setInherits] = useState(page.inherit_restrictions ?? true);
+  const [confirmInheritOpen, setConfirmInheritOpen] = useState(false);
+  // An own list being drafted under a Restricted parent - applied only on
+  // Save (see `chooseMode`). `null` when not drafting.
+  const [ownDraft, setOwnDraft] = useState<PrincipalRow[] | null>(null);
+  const inheritedFrom = inherits ? (page.restricted_ancestor_title ?? null) : null;
+  // A Restricted ancestor closes this page too, whatever its own setting -
+  // so General access must read "Restricted (inherited)" rather than Open.
+  const inheritsRestriction = Boolean(page.inherits_view_restriction && inheritedFrom);
+  const [isViewRestricted, setIsViewRestricted] = useState(ownRestricted);
+  // Following the parent's list, not one of this page's own.
+  const inheritedOnly = inheritsRestriction && !isViewRestricted;
   const [rows, setRows] = useState<Restriction[]>([]);
   const [availableUsers, setAvailableUsers] = useState<PageRestrictionUserOption[]>([]);
   const [availableGroups, setAvailableGroups] = useState<PageRestrictionGroupOption[]>([]);
@@ -180,6 +203,10 @@ export function PageRestrictionsDialog({
   const assignedGroupIds = new Set(groupRows.map((row) => row.id));
   const assignedUserIds = new Set(userRows.map((row) => row.id));
 
+  // Following a Restricted parent, the roster lists only who that parent
+  // lets in - everyone else is shut out there, not here, and listing them
+  // all as locked rows would read as this page being Open.
+  const keepRosterRow = (row: RosterRow) => !(inheritedOnly && row.inherited && row.viewLocked);
   const rosterUserRows: RosterRow[] = rosterUsers
     .map((user) => ({
       id: user.id,
@@ -188,7 +215,9 @@ export function PageRestrictionsDialog({
       edit: user.edit,
       viewLocked: user.view_locked,
       editLocked: user.edit_locked,
+      inherited: user.inherited ?? false,
     }))
+    .filter(keepRosterRow)
     .sort((a, b) => a.name.localeCompare(b.name));
   const rosterGroupRows: RosterRow[] = rosterGroups
     .map((group) => ({
@@ -198,14 +227,18 @@ export function PageRestrictionsDialog({
       edit: group.edit,
       viewLocked: group.view_locked,
       editLocked: group.edit_locked,
+      inherited: group.inherited ?? false,
     }))
+    .filter(keepRosterRow)
     .sort((a, b) => a.name.localeCompare(b.name));
 
   useEffect(() => {
     if (!open) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset to the page's own value each time the dialog (re)opens
-    setIsViewRestricted(page.is_restricted ?? false);
-  }, [open, page.is_restricted]);
+    setIsViewRestricted(ownRestricted);
+    setInherits(page.inherit_restrictions ?? true);
+    setOwnDraft(null);
+  }, [open, ownRestricted, page.inherit_restrictions]);
 
   useEffect(() => {
     if (!open) return;
@@ -341,6 +374,103 @@ export function PageRestrictionsDialog({
       if (permission === "view") router.refresh();
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : t("restrictions.accessUpdateError"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  /** Turning inheritance off copies the parent's access into this page on
+   * the backend, so the page becomes Restricted with that list if the
+   * parent was - nobody's access changes at the moment of the switch.
+   * Turning it back on clears this page's own settings (confirmed first). */
+  async function setInheritance(next: boolean) {
+    setPending(true);
+    try {
+      await api.patch(`${pagePath}/restrictions/inherit`, { inherit: next });
+      setInherits(next);
+      setIsViewRestricted(next ? false : isViewRestricted || inheritsRestriction);
+      setConfirmInheritOpen(false);
+      setReloadNonce((value) => value + 1);
+      router.refresh();
+      toast.success(next ? t("restrictions.inheritOnToast") : t("restrictions.inheritOffToast"));
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : t("restrictions.accessUpdateError"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  /** "Restricted (own list)" picked under a Restricted parent. With no own
+   * list yet, nothing is applied straight away: a draft table opens,
+   * pre-filled with who the parent lets in, and only Save turns it into
+   * this page's list - an empty switch would otherwise lock everyone but
+   * admins out the moment it was clicked. An existing own list is simply
+   * switched back on. */
+  async function chooseMode(value: string) {
+    const restricted = value === "restricted";
+    if (!restricted) {
+      setOwnDraft(null);
+      if (isViewRestricted) await setMode(false);
+      return;
+    }
+    if (isViewRestricted || ownDraft) return;
+    if (!inheritsRestriction) {
+      await setMode(true);
+      return;
+    }
+    setPending(true);
+    try {
+      const existing = await api.get<Restriction[]>(`${pagePath}/restrictions`);
+      if (existing.length > 0) {
+        setPending(false);
+        await setMode(true);
+        return;
+      }
+      const draft = (
+        [
+          ...rosterGroupRows.map((row) => ({ ...row, type: "group" as const })),
+          ...rosterUserRows.map((row) => ({ ...row, type: "user" as const })),
+        ] as (RosterRow & { type: "user" | "group" })[]
+      )
+        .filter((row) => row.view)
+        .map((row) => ({ type: row.type, id: row.id, name: row.name, view: true, edit: row.edit }));
+      setOwnDraft(draft);
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : t("restrictions.loadError"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function updateDraft(row: PrincipalRow, field: "view" | "edit", checked: boolean) {
+    setOwnDraft((current) =>
+      (current ?? []).map((item) => {
+        if (item.id !== row.id || item.type !== row.type) return item;
+        // Edit is useless without View: ticking Edit ticks View, and
+        // unticking View unticks Edit - same rule the backend applies.
+        if (field === "edit") return { ...item, edit: checked, view: checked ? true : item.view };
+        return { ...item, view: checked, edit: checked ? item.edit : false };
+      }),
+    );
+  }
+
+  async function saveOwnDraft() {
+    if (!ownDraft) return;
+    setPending(true);
+    try {
+      await api.patch(`${pagePath}/restrictions/mode`, { restricted: true });
+      for (const row of ownDraft) {
+        if (!row.view) continue;
+        // Edit implies View on the backend, so one call covers both.
+        await api.put(pathFor(row.type, row.id, row.edit ? "edit" : "view"));
+      }
+      setOwnDraft(null);
+      setIsViewRestricted(true);
+      setReloadNonce((value) => value + 1);
+      router.refresh();
+      toast.success(t("restrictions.ownListSaved"));
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : t("restrictions.updateError"));
     } finally {
       setPending(false);
     }
@@ -527,6 +657,84 @@ export function PageRestrictionsDialog({
     );
   }
 
+  /** The not-yet-saved own list: everyone the parent lets in, pre-ticked
+   * with their current access, editable freely until Save applies it. */
+  function renderOwnDraft(draft: PrincipalRow[]) {
+    const checkbox =
+      "accent-primary size-3.5 cursor-pointer rounded border-border disabled:cursor-not-allowed disabled:opacity-40";
+    return (
+      <div className="border-border bg-surface overflow-hidden rounded-lg border shadow-xs">
+        <div className="border-border bg-surface-sunken/40 border-b p-3">
+          <p className="text-muted-foreground text-xs">
+            {t("restrictions.ownDraftHint", { title: inheritedFrom ?? "" })}
+          </p>
+        </div>
+        <div className="max-h-72 overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
+                <th className="px-3 py-2 font-medium">{t("restrictions.principalLabel")}</th>
+                <th className="px-1.5 py-2 text-center font-medium">{t("restrictions.columnView")}</th>
+                <th className="px-1.5 py-2 text-center font-medium">{t("restrictions.columnEdit")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {draft.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="text-muted-foreground p-4 text-center text-xs">
+                    {t("restrictions.ownDraftEmpty")}
+                  </td>
+                </tr>
+              ) : (
+                draft.map((row) => (
+                  <tr key={`${row.type}-${row.id}`} className="hover:bg-surface-hover transition-colors">
+                    <td className="text-foreground px-3 py-2 font-medium">
+                      {row.name}
+                      {row.type === "group" ? (
+                        <Badge variant="neutral" className="text-muted-foreground ml-2 px-1.5 py-0 text-[10px] font-normal">
+                          {t("restrictions.groupLabel")}
+                        </Badge>
+                      ) : null}
+                    </td>
+                    <td className="px-1.5 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        className={checkbox}
+                        aria-label={t("restrictions.canViewAria", { name: row.name })}
+                        checked={row.view}
+                        disabled={pending}
+                        onChange={(event) => updateDraft(row, "view", event.target.checked)}
+                      />
+                    </td>
+                    <td className="px-1.5 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        className={checkbox}
+                        aria-label={t("restrictions.canEditAria", { name: row.name })}
+                        checked={row.edit}
+                        disabled={pending}
+                        onChange={(event) => updateDraft(row, "edit", event.target.checked)}
+                      />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-border flex items-center justify-end gap-2 border-t p-3">
+          <Button type="button" variant="ghost" size="sm" onClick={() => setOwnDraft(null)} disabled={pending}>
+            {t("common.cancel")}
+          </Button>
+          <Button type="button" variant="primary" size="sm" onClick={() => void saveOwnDraft()} disabled={pending}>
+            {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+            {t("restrictions.saveOwnList")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   function renderRosterTable(
     kind: "group" | "user",
     label: string,
@@ -544,7 +752,15 @@ export function PageRestrictionsDialog({
             everyone eligible), so unlocking only ever swaps the button. */}
         <div className="border-border bg-surface-sunken/40 flex items-center justify-between gap-2 border-b p-3">
           <p className="text-muted-foreground flex-1 text-xs">
-            {locked
+            {inheritedOnly
+              ? t("restrictions.rosterInheritedReadOnly", {
+                  kind:
+                    kind === "user"
+                      ? t("restrictions.usersNoun")
+                      : t("restrictions.groupsNoun"),
+                  title: inheritedFrom ?? "",
+                })
+              : locked
               ? t("restrictions.rosterLocked", {
                   kind:
                     kind === "user"
@@ -558,17 +774,22 @@ export function PageRestrictionsDialog({
                       : t("restrictions.groupsNoun"),
                 })}
           </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="shrink-0 text-xs"
-            onClick={() => setLocked(!locked)}
-            disabled={pending}
-          >
-            {locked ? <Pencil className="size-3.5" /> : <Check className="size-3.5" />}
-            {locked ? t("restrictions.edit") : t("restrictions.done")}
-          </Button>
+          {/* Inherit parent is a read-only view of the parent's access -
+              customising this page is what "Restricted (own list)" is for,
+              so there is nothing to unlock here. */}
+          {inheritedOnly ? null : (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="shrink-0 text-xs"
+              onClick={() => setLocked(!locked)}
+              disabled={pending}
+            >
+              {locked ? <Pencil className="size-3.5" /> : <Check className="size-3.5" />}
+              {locked ? t("restrictions.edit") : t("restrictions.done")}
+            </Button>
+          )}
         </div>
         <div className="max-h-60 overflow-y-auto">
           <table className="w-full text-xs">
@@ -598,17 +819,24 @@ export function PageRestrictionsDialog({
                         className="accent-primary size-3.5 cursor-pointer rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label={t("restrictions.canViewAria", { name: row.name })}
                         checked={row.view}
-                        disabled={locked || pending || row.viewLocked}
-                        title={row.viewLocked ? t(ADMIN_BYPASS_KEY) : undefined}
+                        disabled={inheritedOnly || locked || pending || row.viewLocked}
+                        title={
+                          row.viewLocked
+                            ? row.inherited
+                              ? t("restrictions.inheritedTitle", { title: inheritedFrom ?? "" })
+                              : t(ADMIN_BYPASS_KEY)
+                            : inheritedOnly
+                              ? t("restrictions.viewFollowsParentTitle", { title: inheritedFrom ?? "" })
+                              : undefined
+                        }
                         onChange={(event) => void setBlocked(kind, row.id, "view", !event.target.checked)}
                       />
                     </td>
                     <td className="px-1.5 py-2 text-center">
-                      {/* Read-only here: Edit always follows View under Open
-                          access (there is no separate "editor demoted to
-                          viewer" block any more - see `set_page_permission_denial`
-                          / `can_edit_page`, which already require View
-                          first) - blocking View above is the only lever. */}
+                      {/* Read-only: under Open access Edit follows View
+                          (blocking View is the only lever - see
+                          `can_edit_page`); under Inherit parent both come
+                          from the parent page. */}
                       <input
                         type="checkbox"
                         className="accent-primary size-3.5 cursor-pointer rounded border-border disabled:cursor-not-allowed disabled:opacity-40"
@@ -616,11 +844,15 @@ export function PageRestrictionsDialog({
                         checked={row.edit}
                         disabled
                         title={
-                          row.viewLocked
+                          row.viewLocked && !row.inherited
                             ? t(ADMIN_BYPASS_KEY)
-                            : row.editLocked
-                              ? t("restrictions.roleNoEditTitle")
-                              : t("restrictions.editFollowsViewTitle")
+                            : row.inherited && row.editLocked
+                              ? t("restrictions.inheritedTitle", { title: inheritedFrom ?? "" })
+                              : row.editLocked
+                                ? t("restrictions.roleNoEditTitle")
+                                : inheritedOnly
+                                  ? t("restrictions.editFollowsParentTitle", { title: inheritedFrom ?? "" })
+                                  : t("restrictions.editFollowsViewTitle")
                         }
                       />
                     </td>
@@ -674,10 +906,49 @@ export function PageRestrictionsDialog({
             keeps whatever per-principal blocks it last had, so flipping
             back and forth is free - Reset (below) is the deliberate,
             confirmed way to actually clear the mode you're currently in. */}
+        {hasParent ? (
+          <div className="border-border bg-surface mb-3 flex items-center justify-between gap-3 rounded-lg border p-3.5 shadow-xs">
+            <div>
+              <h4 className="text-foreground flex items-center gap-1.5 text-xs font-semibold">
+                {t("restrictions.inheritLabel")}
+                {inheritedFrom ? (
+                  <InfoTip>
+                    <span className="block max-w-72">
+                      {t("restrictions.inheritedBanner", { title: inheritedFrom })}
+                    </span>
+                  </InfoTip>
+                ) : null}
+              </h4>
+              <p className="text-muted-foreground mt-0.5 text-[11px]">
+                {inherits ? t("restrictions.inheritOnHint") : t("restrictions.inheritOffHint")}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={inherits}
+              aria-label={t("restrictions.inheritLabel")}
+              disabled={pending || loading}
+              onClick={() =>
+                inherits ? void setInheritance(false) : setConfirmInheritOpen(true)
+              }
+              className={`focus-visible:ring-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out hover:opacity-90 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+                inherits ? "bg-primary" : "bg-muted-foreground/30"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block size-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out ${
+                  inherits ? "translate-x-4" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+        ) : null}
+
         <div className="border-border bg-surface flex items-center justify-between gap-3 rounded-lg border p-3.5 shadow-xs">
           <div>
             <h4 className="text-foreground flex items-center gap-1.5 text-xs font-semibold">
-              {isViewRestricted ? (
+              {isViewRestricted || inheritsRestriction ? (
                 <LockKeyhole className="text-muted-foreground size-3.5" />
               ) : (
                 <Globe2 className="text-primary size-3.5" />
@@ -685,28 +956,60 @@ export function PageRestrictionsDialog({
               {t("restrictions.generalAccess")}
             </h4>
             <p className="text-muted-foreground mt-0.5 text-[11px]">
-              {t("restrictions.generalAccessHint")}
+              {inheritsRestriction
+                ? t("restrictions.generalAccessInheritedHint", { title: inheritedFrom ?? "" })
+                : t("restrictions.generalAccessHint")}
             </p>
           </div>
+          {/* Under a Restricted ancestor this page can never be Open, so the
+              page's own "Open" setting is offered as what it really means
+              there - following the parent's list - and "Restricted" as
+              narrowing further with a list of its own. */}
+          <div className="flex shrink-0 items-center gap-1.5">
+          {inheritsRestriction ? (
+            <InfoTip>
+              <span className="block max-w-72 space-y-1">
+                <span className="block">
+                  <strong>{t("restrictions.modeInherited")}</strong>: {t("restrictions.modeInheritedTip", { title: inheritedFrom ?? "" })}
+                </span>
+                <span className="block">
+                  <strong>{t("restrictions.modeRestrictedOwn")}</strong>: {t("restrictions.modeRestrictedOwnTip")}
+                </span>
+              </span>
+            </InfoTip>
+          ) : null}
           <Select
-            value={isViewRestricted ? "restricted" : "open"}
-            onValueChange={(value) => void setMode(value === "restricted")}
+            value={isViewRestricted || ownDraft ? "restricted" : "open"}
+            onValueChange={(value) => void chooseMode(value)}
             disabled={pending || loading}
           >
-            <SelectTrigger className="h-8 w-36 bg-background text-xs">
+            <SelectTrigger
+              className={`h-8 bg-background text-xs ${inheritsRestriction ? "w-52" : "w-36"}`}
+            >
               <SelectValue>
-                {isViewRestricted
-                  ? t("restrictions.modeRestricted")
-                  : t("restrictions.modeOpen")}
+                {isViewRestricted || ownDraft
+                  ? inheritsRestriction
+                    ? t("restrictions.modeRestrictedOwn")
+                    : t("restrictions.modeRestricted")
+                  : inheritsRestriction
+                    ? t("restrictions.modeInherited")
+                    : t("restrictions.modeOpen")}
               </SelectValue>
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="open">{t("restrictions.modeOpen")}</SelectItem>
-              <SelectItem value="restricted">
-                {t("restrictions.modeRestricted")}
+            {/* Sized to its labels rather than the trigger: "Restricted (own
+                list)" is longer than the trigger is wide and would wrap. */}
+            <SelectContent align="end" className="w-auto">
+              <SelectItem value="open" className="whitespace-nowrap">
+                {inheritsRestriction ? t("restrictions.modeInherited") : t("restrictions.modeOpen")}
+              </SelectItem>
+              <SelectItem value="restricted" className="whitespace-nowrap">
+                {inheritsRestriction
+                  ? t("restrictions.modeRestrictedOwn")
+                  : t("restrictions.modeRestricted")}
               </SelectItem>
             </SelectContent>
           </Select>
+          </div>
         </div>
 
         {loading ? (
@@ -715,7 +1018,9 @@ export function PageRestrictionsDialog({
           </div>
         ) : (
           <div className="mt-3 space-y-3">
-            {isViewRestricted ? (
+            {ownDraft ? (
+              renderOwnDraft(ownDraft)
+            ) : isViewRestricted ? (
               <>
                 {/* Anyone the space itself hasn't granted access to still
                     shows up in the search below, greyed out with "Not
@@ -789,6 +1094,17 @@ export function PageRestrictionsDialog({
         destructive
         pending={pending}
         onConfirm={() => void resetAccess()}
+      />
+
+      <ConfirmDialog
+        open={confirmInheritOpen}
+        onOpenChange={setConfirmInheritOpen}
+        title={t("restrictions.inheritConfirmTitle")}
+        description={t("restrictions.inheritConfirmDescription", { title: page.title })}
+        confirmLabel={t("restrictions.inheritConfirm")}
+        destructive
+        pending={pending}
+        onConfirm={() => void setInheritance(true)}
       />
     </Dialog>
   );

@@ -358,16 +358,19 @@ export const sectionsEn: HelpSection[] = [
 
         <Screenshot
           src="/help/page-engagement-row.png"
-          alt="The top of a page: breadcrumb, title, Create/Edit/Save for later/Pin page/Share buttons, and a Like button below the title"
+          alt="The top of a page: breadcrumb, title, Create/Edit/Save for later/Pin page/Share buttons, and page metadata with labels on the same line"
           caption="Create/Edit/Save for later/Pin page/Share along the top, Like just below the title."
         />
 
         <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
-            <strong>Like</strong>: click <Code>Like</Code> to flag a page as useful. The
-            count is visible to everyone and the button switches to{" "}
-            <Code>Liked</Code> for you - a lightweight signal for what actually gets
-            read, not a moderation tool.
+            <strong>Like</strong>: click the thumbs-up above the comments, beside the
+            comment count, to flag a page as useful. The count is visible to everyone and
+            the icon fills in blue once you have liked it - a lightweight signal for what
+            actually gets read, not a moderation tool. Click the <strong>number</strong> beside
+            the thumb to see who liked the page. Clicking the speech-bubble count next to it
+            jumps to the comment box, which stays pinned to the bottom of the screen while you
+            read so you can comment from anywhere on the page.
           </li>
           <li>
             <strong>Save for later</strong>: click the star{" "}
@@ -404,11 +407,40 @@ export const sectionsEn: HelpSection[] = [
               </li>
               <li>
                 <strong>Restricted</strong> instead starts from an empty allow-list you
-                build up by searching and adding specific people or groups - view
-                restrictions inherit down to child pages, and anyone not added
-                cannot see the page at all, regardless of their space role.
+                build up by searching and adding specific people or groups - anyone
+                not added cannot see the page at all, regardless of their space role.
               </li>
             </ul>
+            <Callout variant="tip" title="Child pages inherit their parent's access">
+              View and Edit restrictions flow down to every child page. A child with no
+              restrictions of its own follows its parent: whoever can view or edit the
+              parent can do the same on the child, and nobody else can. Opening{" "}
+              <em>Page access</em> on such a child shows General access as{" "}
+              <Code>Inherit parent</Code>, names the parent, and lists only the
+              people the parent lets in, read-only - View and Edit both follow the parent.
+              Pick <Code>Restricted (own list)</Code> to give this page a list of its own - the
+              first time, a draft table pre-filled from the parent opens, and nothing applies
+              until you press <Code>Save list</Code>. From then on that list decides for the page
+              (and its children): people on it can view and edit it even if the parent never let
+              them in, and people only on the parent&apos;s list do not get in. Blocks set on
+              pages above still apply.
+            </Callout>
+            <Callout variant="tip" title="Stop inheriting to customise a child page">
+              Every child page has an <strong>Inherit permissions from parent page</strong>{" "}
+              switch, on by default. Turn it off and the page copies its parent&apos;s
+              access first - nobody gains or loses anything at that moment - then keeps
+              its own settings: add people the parent never allowed, or remove some. Its
+              own children follow it, not the pages above it. Turning the switch back on
+              (confirmed first) clears the page&apos;s own settings and follows the parent
+              again.
+            </Callout>
+            <Callout variant="tip" title="Who can read this page?">
+              The line at the very bottom of every page answers it: for example{" "}
+              <Code>11 users and 1 group can view this page</Code>, counted after the
+              page&apos;s own restrictions and everything it inherits. When nothing narrows
+              an Open space it reads <Code>All users and all groups can view this page</Code>.
+              The Space overview shows the same for the space itself.
+            </Callout>
             <Callout variant="tip" title="Both tables open read-only">
               Neither table&apos;s checkboxes can be clicked until you press its own{" "}
               <Code>Edit</Code> button - a stray click cannot change anyone&apos;s
@@ -429,7 +461,9 @@ export const sectionsEn: HelpSection[] = [
               out at the space door would do nothing but confuse. Anyone else you
               search for still shows up, greyed out and marked{" "}
               <Code>Not added to space</Code>; add them under the space&apos;s own{" "}
-              <em>Access &amp; Permissions</em> first, then come back here. If someone
+              <em>Access &amp; Permissions</em> first, then come back here. In an{" "}
+              <strong>Open</strong> space everyone already has access, so every user and
+              group can be picked straight away. If someone
               is later removed from the space entirely, any page-level restriction or
               block naming them is cleaned up automatically.
             </Callout>
@@ -443,6 +477,95 @@ export const sectionsEn: HelpSection[] = [
           opposite - a page stays <Code>Open</Code>, but one person should not see it
           (a manager reviewing feedback about themselves) - so just their own View is
           unchecked instead.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "page-comments",
+    title: "Comments, replies & likes",
+    category: "Workspace",
+    description:
+      "Discuss a page under its content: reply in a thread, like a comment, and mention a teammate.",
+    keywords: [
+      "comment",
+      "comments",
+      "reply",
+      "thread",
+      "like",
+      "mention",
+      "@",
+      "discussion",
+      "feedback",
+    ],
+    body: (
+      <>
+        <p>
+          Every page has a <strong>Comments</strong> section below its content (it is hidden
+          while you edit the page). Anyone who can <em>view</em> the page can comment, reply and
+          like - you do not need edit access.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Writing and replying:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Type in the box and press <Kbd>Enter</Kbd> (or <strong>Comment</strong>) to send;{" "}
+            <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> starts a new line. Plain text works, and so do <code>**bold**</code>,{" "}
+            <code>_italic_</code>, <code>`code`</code> and links.
+          </li>
+          <li>
+            Choose <strong>Reply</strong> under a comment to answer it. Replies sit under the
+            comment they answer, as a tree; a comment with replies shows{" "}
+            <strong>View N replies</strong> to open them and <strong>Hide replies</strong> to fold
+            them again. Deep threads stop indenting after a few levels so they stay readable. A long
+            comment (a pasted log, say) shows its first few lines with a blue <strong>See more</strong>{" "}
+            that opens the rest.
+          </li>
+          <li>
+            Type <strong>@</strong> and a name to <strong>mention</strong> someone: pick them with
+            the arrow keys and <Kbd>Enter</Kbd>, or click. Only people who can see the page are
+            offered, and they get a notification.
+          </li>
+        </ul>
+
+        <p className="mt-3 font-semibold text-foreground">Liking, editing and deleting:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Click <strong>Like</strong> under a comment to like it (it turns blue); click it again
+            to take the like back. Once a comment has likes, a blue thumbs-up badge with the count
+            sits at the end of that row - click it to see who liked it. The comment&apos;s author is
+            notified once.
+          </li>
+          <li>
+            Hover a comment and open its <strong>⋯</strong> menu (always visible on touch screens)
+            to <strong>Edit</strong> your own comment - it then shows <em>edited</em>.
+          </li>
+          <li>
+            The same menu has <strong>Delete</strong> for your own comments. Space owners, space administrators
+            and system administrators can delete anyone&apos;s. Deleting a comment also deletes
+            all of its replies, and WikiHub asks you to confirm first.
+          </li>
+        </ul>
+
+        <p className="mt-3 font-semibold text-foreground">Sorting and filtering:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Once a page has more than one comment, a menu at the end of the like / comment row
+            (it reads <strong>Oldest</strong> to start with) orders the discussion by{" "}
+            <strong>Oldest</strong>, <strong>Newest</strong> or <strong>Most liked</strong> - likes
+            count across the whole thread. Each choice says what it shows.
+          </li>
+          <li>
+            The same menu narrows to <strong>Mentions me</strong> or <strong>My comments</strong>,
+            each with its count. A thread is kept whole when any comment in it matches, and the
+            matching replies open automatically. Pick an order again to see everything.
+          </li>
+        </ul>
+
+        <p className="mt-3 text-sm">
+          You are notified when someone replies to your comment, mentions you, likes your comment,
+          or comments on a page you created - open the <strong>notification bell</strong> and the
+          link takes you straight to that comment. Comments are included in backups and restores.
         </p>
       </>
     ),
@@ -669,7 +792,7 @@ export const sectionsEn: HelpSection[] = [
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Code>/code</Code></td>
                 <td className="p-2.5 font-medium">Code Block</td>
-                <td className="p-2.5">Syntax-highlighted code block with a filterable language picker (use the up/down arrow keys to choose) and ten colour themes, light and dark, set per block from the block's options. In the editor, <strong>Save draft</strong> keeps your edits as a private draft without adding a version to the page history. Inside a code block, Tab / Shift+Tab indent / outdent the selected lines. Outside one, Tab / Shift+Tab indent paragraphs and headings.</td>
+                <td className="p-2.5">Syntax-highlighted code block with a filterable language picker (use the up/down arrow keys to choose) and ten colour themes, light and dark, set per block from the block&apos;s options. In the editor, <strong>Save draft</strong> keeps your edits as a private draft without adding a version to the page history. Inside a code block, Tab / Shift+Tab indent / outdent the selected lines. Outside one, Tab / Shift+Tab indent paragraphs and headings.</td>
               </tr>
               <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Code>/image</Code></td>
@@ -1508,6 +1631,16 @@ export const sectionsEn: HelpSection[] = [
             Only the person who took an issue, or a <strong>superuser</strong>, can mark it{" "}
             <strong>done</strong>, reopen it or otherwise change its status. A system
             administrator who has not taken it can read it, not close it.
+          </li>
+          <li>
+            To hand an issue to someone outside WikiHub, press <strong>Export Word</strong> - in
+            the issue window, or next to each issue on <em>My issues</em>. The <Code>.docx</Code>{" "}
+            holds the title, a details table (status, labels, reporter, assignee, dates, page
+            link), the description, every screenshot embedded in the file, and the notes shared
+            with the reporter. Internal notes are never included. The document&apos;s labels follow
+            your interface language. To send several at once, tick them in the list and press{" "}
+            <strong>Export Word</strong> in the selection bar: you get one file with a summary
+            table first, then a numbered chapter per issue.
           </li>
         </ul>
       </>
@@ -2570,10 +2703,20 @@ export const sectionsEn: HelpSection[] = [
             to some spaces leaves them out.
           </li>
           <li>
+            Access and discussion come back exactly as they were: space visibility, owners and
+            every per-user / per-group permission; groups with all their owners, members and
+            global permissions, and each person&apos;s own global-permission overrides; each
+            page&apos;s Open/Restricted setting, whether it inherits from its parent, its
+            allow-list and its blocks; and every comment and reply with its likes, plus page
+            likes. Rows that already exist on the target are skipped, never overwritten.
+          </li>
+          <li>
             <strong>Export Confluence Backup</strong>: an XML archive for Atlassian
             Confluence Data Center&apos;s own restore tooling, targeting{" "}
             <strong>Data Center 8.x</strong> or <strong>9.x</strong>. This one is a
-            one-way hand-off - it cannot be used to restore WikiHub itself.
+            one-way hand-off - it cannot be used to restore WikiHub itself.{" "}
+            <strong>Incoming:</strong> this export is switched off for now (the card reads
+            &ldquo;Coming soon&rdquo;) while it is finished.
           </li>
         </ul>
 

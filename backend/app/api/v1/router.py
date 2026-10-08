@@ -14,6 +14,7 @@ from app.api.v1 import (
     audit_logs,
     auth,
     backup,
+    comments,
     confluence_import,
     document_imports,
     export_render,
@@ -40,6 +41,7 @@ api_router.include_router(spaces.router)
 api_router.include_router(pages.router)
 api_router.include_router(pages.standalone_router)
 api_router.include_router(revisions.router)
+api_router.include_router(comments.router)
 api_router.include_router(search.router)
 api_router.include_router(attachments.router)
 api_router.include_router(attachments.upload_router)
@@ -58,4 +60,4 @@ api_router.include_router(export_render.router)
 
 # Registered in later phases:
 #   groups, roles, revisions,
-#   comments, attachments, search, imports, exports
+#   attachments, search, imports, exports

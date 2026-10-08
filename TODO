@@ -1,5 +1,3 @@
-- cho tích hợp với mail để gửi mail thông báo (đổi password, có người yêu cầu quyền truy cập vào space/page, bị disable,...)
-
 AI (sáng kiến)
 - RAG chatbot hỏi-đáp tri thức nội bộ, trả lời kèm trích dẫn link trang nguồn (pgvector + arq embedding job + LLM)
 - semantic search hybrid (full-text + vector)
@@ -8,11 +6,3 @@ AI (sáng kiến)
 - tự gắn nhãn & gợi ý trang liên quan khi tạo/sửa trang
 - phát hiện nội dung lỗi thời (quét định kỳ, gắn cờ trang lâu không cập nhật nhưng nhiều lượt xem)
 
-
-Tính năng issue
-Vì đây là 1 ứng dụng mới nên có thể sẽ có nhiều issue nên thêm tính năng này để người dùng nếu gặp vấn đề thì có thể để lại issue để người quản trị tiếp nhận và update 
-- trong các trang admin thêm 1 trang open issue để người quản trị tiếp nhận, trong này cho phép xem issue, tiếp nhận (gắn nhãn người tiếp nhận) và chuyển trạng thái hoàn thành (chỉ account được gán nhãn hoặc supper admin mới có quyền update trạng thái)
-- trong các acc khác thì có nút create issue để thông báo lỗi, mô tả lỗi 
-
-
-Tinh nang comment
