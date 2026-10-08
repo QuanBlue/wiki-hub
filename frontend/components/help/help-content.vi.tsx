@@ -380,10 +380,13 @@ export const sectionsVi: HelpSection[] = [
 
         <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
-            <strong>Like</strong>: nhấn <Code>Like</Code> để đánh dấu một trang là
-            hữu ích. Số lượt thích hiển thị cho mọi người và nút chuyển thành{" "}
-            <Code>Liked</Code> đối với bạn - một tín hiệu nhẹ nhàng cho biết nội
-            dung nào thực sự được đọc, không phải công cụ kiểm duyệt.
+            <strong>Like</strong>: nhấn biểu tượng ngón tay cái phía trên phần bình luận,
+            cạnh số bình luận, để đánh dấu một trang là hữu ích. Số lượt thích hiển thị cho
+            mọi người và biểu tượng tô xanh khi bạn đã thích - một tín hiệu nhẹ nhàng cho biết
+            nội dung nào thực sự được đọc, không phải công cụ kiểm duyệt. Nhấn vào{" "}
+            <strong>con số</strong> cạnh ngón tay cái để xem ai đã thích trang. Nhấn vào số bình
+            luận bên cạnh để nhảy tới ô viết bình luận - ô này luôn dính ở đáy màn hình khi bạn
+            đọc, nên có thể bình luận từ bất kỳ đâu trên trang.
           </li>
           <li>
             <strong>Save for later</strong>: nhấn nút ngôi sao{" "}
@@ -422,11 +425,39 @@ export const sectionsVi: HelpSection[] = [
               <li>
                 <strong>Restricted</strong> thay vào đó bắt đầu từ một danh sách
                 cho phép trống, bạn tự xây dựng bằng cách tìm và thêm người hoặc
-                nhóm cụ thể - giới hạn xem sẽ kế thừa xuống các trang con, và bất
-                kỳ ai không được thêm vào sẽ không thể thấy trang này, bất kể vai
-                trò của họ trong space.
+                nhóm cụ thể - bất kỳ ai không được thêm vào sẽ không thể thấy
+                trang này, bất kể vai trò của họ trong space.
               </li>
             </ul>
+            <Callout variant="tip" title="Trang con kế thừa quyền của trang cha">
+              Giới hạn View và Edit áp dụng xuống mọi trang con. Trang con không có
+              giới hạn riêng sẽ đi theo trang cha: ai xem hoặc sửa được trang cha thì
+              cũng xem hoặc sửa được trang con, ngoài ra không ai khác. Mở{" "}
+              <em>Page access</em> trên trang con như vậy sẽ thấy General access là{" "}
+              <Code>Kế thừa page cha</Code>, kèm tên trang cha, và chỉ liệt kê những người
+              trang cha cho phép, chỉ để xem - quyền Xem và Sửa đều theo trang cha.
+              Chọn <Code>Hạn chế (danh sách riêng)</Code> để cho page này danh sách của
+              riêng nó - lần đầu sẽ mở bảng nháp điền sẵn từ trang cha, chỉ áp dụng khi bạn
+              bấm <Code>Lưu danh sách</Code>. Từ đó danh sách này quyết định cho page (và các
+              trang con của nó): người có trong đó xem và sửa được dù trang cha chưa từng cho
+              họ vào, còn người chỉ có trong danh sách của trang cha thì không vào được. Các
+              chặn riêng đặt trên các trang phía trên vẫn áp dụng.
+            </Callout>
+            <Callout variant="tip" title="Tắt kế thừa để tùy chỉnh trang con">
+              Mọi trang con đều có công tắc <strong>Kế thừa phân quyền từ page cha</strong>,
+              mặc định bật. Tắt đi thì trang sẽ sao chép quyền của trang cha trước - lúc
+              đó không ai được thêm hay mất quyền - rồi giữ thiết lập riêng: thêm người mà
+              trang cha chưa cho phép, hoặc bớt người. Các trang con của nó sẽ theo nó,
+              không theo các trang phía trên. Bật lại công tắc (có xác nhận) sẽ xóa thiết
+              lập riêng và theo lại trang cha.
+            </Callout>
+            <Callout variant="tip" title="Ai đọc được page này?">
+              Dòng ở cuối mỗi page trả lời câu hỏi đó, ví dụ{" "}
+              <Code>11 người dùng và 1 nhóm xem được page này</Code>, đã tính cả giới hạn
+              riêng của page lẫn phần kế thừa. Khi space Open và không có gì giới hạn, dòng
+              này hiện <Code>Tất cả người dùng và tất cả nhóm xem được page này</Code>. Trang
+              tổng quan của space hiện thông tin tương tự cho cả space.
+            </Callout>
             <Callout variant="tip" title="Cả hai bảng đều mở ở chế độ chỉ đọc">
               Không bảng nào có thể nhấn được checkbox cho đến khi bạn nhấn nút{" "}
               <Code>Edit</Code> riêng của bảng đó - một cú nhấn nhầm không thể thay
@@ -447,7 +478,8 @@ export const sectionsVi: HelpSection[] = [
               cửa space sẽ chẳng làm được gì ngoài gây nhầm lẫn. Bất kỳ ai khác bạn
               tìm vẫn hiện ra, bị làm mờ và đánh dấu <Code>Not added to space</Code>
               ; hãy thêm họ vào <em>Access &amp; Permissions</em> của space trước,
-              rồi quay lại đây. Nếu ai đó sau này bị xoá khỏi space hoàn toàn, mọi
+              rồi quay lại đây. Trong space <strong>Open</strong>, mọi người đều đã
+              có quyền truy cập nên mọi người dùng và nhóm đều chọn được ngay. Nếu ai đó sau này bị xoá khỏi space hoàn toàn, mọi
               giới hạn hoặc chặn ở cấp trang nhắc đến họ sẽ được dọn dẹp tự động.
             </Callout>
           </li>
@@ -460,6 +492,96 @@ export const sectionsVi: HelpSection[] = [
           Hoặc ngược lại - một trang vẫn <Code>Open</Code>, nhưng một người không
           nên thấy nó (một quản lý đang xem phản hồi về chính họ) - nên chỉ cần bỏ
           đánh dấu View của riêng người đó.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "page-comments",
+    title: "Bình luận, phản hồi & lượt thích",
+    category: "Workspace",
+    description:
+      "Thảo luận ngay dưới nội dung trang: phản hồi theo chuỗi, thích một bình luận và nhắc đến đồng nghiệp.",
+    keywords: [
+      "comment",
+      "bình luận",
+      "reply",
+      "phản hồi",
+      "trả lời",
+      "like",
+      "thích",
+      "mention",
+      "nhắc",
+      "@",
+      "thảo luận",
+    ],
+    body: (
+      <>
+        <p>
+          Mỗi trang có phần <strong>Bình luận</strong> bên dưới nội dung (phần này ẩn khi bạn đang
+          chỉnh sửa trang). Bất kỳ ai <em>xem được</em> trang đều có thể bình luận, phản hồi và
+          thích - bạn không cần quyền chỉnh sửa.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Viết và phản hồi:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Gõ vào ô rồi nhấn <Kbd>Enter</Kbd> (hoặc bấm <strong>Bình luận</strong>) để gửi;{" "}
+            <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> để xuống dòng. Văn bản thường dùng được, <code>**đậm**</code>, <code>_nghiêng_</code>,{" "}
+            <code>`code`</code> và liên kết cũng vậy.
+          </li>
+          <li>
+            Chọn <strong>Phản hồi</strong> dưới một bình luận để trả lời nó. Các phản hồi nằm dưới
+            bình luận mà chúng trả lời, theo dạng cây; bình luận có phản hồi hiện nút{" "}
+            <strong>Xem N phản hồi</strong> để mở và <strong>Ẩn phản hồi</strong> để gập lại. Chuỗi
+            quá sâu sẽ ngừng thụt vào sau vài cấp để vẫn dễ đọc. Bình luận dài (ví dụ một đoạn log)
+            chỉ hiện vài dòng đầu kèm nút <strong>Xem thêm</strong> màu xanh để mở toàn bộ.
+          </li>
+          <li>
+            Gõ <strong>@</strong> và một cái tên để <strong>nhắc đến</strong> ai đó: chọn bằng phím
+            mũi tên và <Kbd>Enter</Kbd>, hoặc bấm chuột. Chỉ những người xem được trang mới hiện ra,
+            và họ nhận được thông báo.
+          </li>
+        </ul>
+
+        <p className="mt-3 font-semibold text-foreground">Thích, sửa và xoá:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Bấm <strong>Thích</strong> dưới bình luận để thích (chữ chuyển xanh); bấm lại để rút
+            lượt thích. Khi bình luận đã có lượt thích, một huy hiệu ngón tay cái màu xanh kèm con số
+            hiện ở cuối hàng - bấm vào để xem ai đã thích. Tác giả bình luận được báo một lần.
+          </li>
+          <li>
+            Rê chuột vào bình luận rồi mở menu <strong>⋯</strong> (luôn hiện trên màn hình cảm ứng) để{" "}
+            <strong>Sửa</strong> bình luận của mình - sau đó bình luận hiện <em>đã chỉnh sửa</em>.
+          </li>
+          <li>
+            Cũng trong menu đó có <strong>Xoá</strong> cho bình luận của bạn. Chủ sở hữu space, quản trị viên
+            space và quản trị viên hệ thống xoá được bình luận của bất kỳ ai. Xoá một bình luận
+            cũng xoá toàn bộ phản hồi của nó, và WikiHub sẽ hỏi xác nhận trước.
+          </li>
+        </ul>
+
+        <p className="mt-3 font-semibold text-foreground">Sắp xếp và lọc:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Khi page có từ hai bình luận trở lên, một menu ở cuối hàng like / bình luận (ban đầu
+            hiện <strong>Cũ nhất</strong>) cho sắp xếp theo <strong>Cũ nhất</strong>,{" "}
+            <strong>Mới nhất</strong> hoặc <strong>Nhiều like nhất</strong> - số like tính trên cả
+            luồng. Mỗi lựa chọn có mô tả ngắn.
+          </li>
+          <li>
+            Cũng menu đó cho lọc theo <strong>Nhắc tới tôi</strong> hoặc{" "}
+            <strong>Bình luận của tôi</strong>, kèm số lượng. Luồng được giữ nguyên khi có bất kỳ
+            bình luận nào khớp, và các phản hồi khớp tự mở ra. Chọn lại một kiểu sắp xếp để hiện tất cả.
+          </li>
+        </ul>
+
+        <p className="mt-3 text-sm">
+          Bạn được thông báo khi có người phản hồi bình luận của bạn, nhắc đến bạn, thích bình luận
+          của bạn, hoặc bình luận trong một trang do bạn tạo - mở <strong>chuông thông báo</strong>{" "}
+          và liên kết sẽ đưa bạn thẳng đến bình luận đó. Bình luận được đưa vào sao lưu và khôi
+          phục.
         </p>
       </>
     ),
@@ -1581,6 +1703,16 @@ export const sectionsVi: HelpSection[] = [
             Chỉ người đã tiếp nhận issue, hoặc <strong>superuser</strong>, mới đánh dấu{" "}
             <strong>hoàn thành</strong>, mở lại hay đổi trạng thái. System administrator chưa tiếp
             nhận chỉ xem được, không đóng được.
+          </li>
+          <li>
+            Để gửi issue cho người ngoài WikiHub, nhấn <strong>Xuất Word</strong> - trong cửa sổ
+            issue, hoặc cạnh mỗi issue ở trang <em>Issue của tôi</em>. File <Code>.docx</Code> gồm
+            tiêu đề, bảng thông tin (trạng thái, nhãn, người báo, người xử lý, ngày tháng, link
+            trang), mô tả, toàn bộ ảnh chụp màn hình nhúng sẵn trong file, và các ghi chú đã chia
+            sẻ với người báo. Ghi chú nội bộ không bao giờ được đưa vào. Nhãn trong tài liệu theo
+            ngôn ngữ giao diện của bạn. Muốn gửi nhiều issue cùng lúc, tick chọn chúng trong danh
+            sách rồi nhấn <strong>Xuất Word</strong> trên thanh chọn: bạn nhận một file gồm bảng
+            tổng quan, sau đó mỗi issue một chương được đánh số.
           </li>
         </ul>
       </>
@@ -2724,11 +2856,20 @@ export const sectionsVi: HelpSection[] = [
             có chúng.
           </li>
           <li>
+            Phân quyền và thảo luận được khôi phục y nguyên: chế độ Open/Restricted, owner và
+            mọi quyền theo người dùng / nhóm của space; nhóm cùng toàn bộ owner, thành viên và
+            quyền hệ thống, cùng quyền hệ thống ép bật/tắt riêng của từng người; chế độ
+            Open/Restricted của từng page, việc page có kế thừa page cha hay không, danh sách
+            cho phép và các lượt chặn; mọi bình luận, phản hồi kèm lượt thích, và lượt thích
+            page. Dữ liệu đã có sẵn ở nơi khôi phục được bỏ qua, không bị ghi đè.
+          </li>
+          <li>
             <strong>Export Confluence Backup</strong>: một kho lưu trữ XML cho
             công cụ khôi phục riêng của Atlassian Confluence Data Center, nhắm
             đến <strong>Data Center 8.x</strong> hoặc <strong>9.x</strong>. Đây
             là một sự chuyển giao một chiều - nó không thể dùng để khôi phục lại
-            chính WikiHub.
+            chính WikiHub. <strong>Sắp ra mắt:</strong> tính năng export này tạm
+            thời bị tắt (thẻ hiển thị &ldquo;Coming soon&rdquo;) cho đến khi hoàn thiện.
           </li>
         </ul>
 

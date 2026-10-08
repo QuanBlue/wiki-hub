@@ -59,7 +59,9 @@ export function ScrollToTop() {
       variant="secondary"
       size="icon"
       className={cn(
-        "fixed bottom-8 right-8 z-50 rounded-full shadow-md transition-all duration-300",
+        // Lifted above anything docked to the bottom of the screen (the
+        // pinned comment box publishes its height as --wh-bottom-dock).
+        "fixed right-8 bottom-[calc(2rem+var(--wh-bottom-dock,0px))] z-50 rounded-full shadow-md transition-all duration-300",
         isVisible
           ? "opacity-100 translate-y-0"
           : "opacity-0 translate-y-4 pointer-events-none",

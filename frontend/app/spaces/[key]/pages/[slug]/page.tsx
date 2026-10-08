@@ -91,6 +91,12 @@ export default async function WikiPageView({ params }: Params) {
           user.is_superuser ||
           space.my_permissions?.includes("restrictions") === true
         }
+        currentUser={{
+          id: user.id,
+          username: user.username,
+          full_name: user.full_name,
+          avatar_url: user.avatar_url ?? null,
+        }}
       />
     </>
   );

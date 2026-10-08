@@ -24,6 +24,15 @@ def _check_name_start(value: str) -> str:
     return value
 
 
+class AudienceRead(BaseModel):
+    """How many users and groups can read a space or one of its pages."""
+
+    users: int
+    groups: int
+    # Everyone can read it - an Open space, with nothing narrowing the page.
+    everyone: bool = False
+
+
 class SpaceMemberRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

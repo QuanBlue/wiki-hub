@@ -4,7 +4,9 @@ import {
   Inbox,
   KeyRound,
   LayoutGrid,
+  MessageSquare,
   ShieldCheck,
+  ThumbsUp,
   UserCheck,
   Users,
   type LucideIcon,
@@ -45,6 +47,10 @@ const KINDS: Record<string, KindMeta> = {
   issue_assigned: { icon: Bug, tone: "info" },
   issue_assigned_reporter: { icon: Bug, tone: "info" },
   issue_done: { icon: Bug, tone: "success" },
+  comment_reply: { icon: MessageSquare, tone: "info" },
+  comment_mention: { icon: MessageSquare, tone: "info" },
+  comment_liked: { icon: ThumbsUp, tone: "info" },
+  page_comment: { icon: MessageSquare, tone: "info" },
 };
 
 const FALLBACK: KindMeta = { icon: Bell, tone: "info" };

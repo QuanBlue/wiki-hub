@@ -22,6 +22,7 @@ from app.modules.permissions.service import PermissionService
 from app.modules.spaces.service import SpaceService
 from app.schemas.permission import EffectivePermissionsRead, GroupRead, SpacePermissionRead
 from app.schemas.space import (
+    AudienceRead,
     SpaceCreate,
     SpaceMemberRead,
     SpaceMemberUpsert,
@@ -167,6 +168,16 @@ async def remove_favorite(key: str, user: CurrentUser, service: SpaceServiceDep)
 
 
 # -- membership --------------------------------------------------------------
+@router.get(
+    "/{key}/audience", response_model=AudienceRead, summary="How many users and groups can read it"
+)
+async def space_audience(key: str, user: CurrentUser, service: SpaceServiceDep) -> AudienceRead:
+    space = await service.get_by_key(key)
+    await service.require_view(space, user)
+    users, groups, everyone = await service.permissions.space_audience(space)
+    return AudienceRead(users=users, groups=groups, everyone=everyone)
+
+
 @router.get("/{key}/members", response_model=list[SpaceMemberRead], summary="List members")
 async def list_members(
     key: str, user: CurrentUser, service: SpaceServiceDep

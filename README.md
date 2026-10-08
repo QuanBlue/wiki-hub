@@ -104,7 +104,14 @@ unformatted text.
   commands, tables, code blocks, callouts, toggles, and a raw Markdown/HTML source
   mode you can switch into at any time.
 - **Full revision history** — every save is an immutable snapshot with a visual
-  diff and one-click restore that never destroys later history.
+  diff and one-click restore that never destroys later history. Unsaved edits
+  are kept as a per-user **draft** (auto-saved, or with *Save draft*) that is
+  offered back the next time you open the editor.
+- **Page comments** — threaded replies, `@mentions` with notifications, likes
+  (click a count to see who liked a page or comment), inline edit and
+  delete-with-replies. Sort or narrow a discussion (*Oldest*, *Newest*, *Most
+  liked*, *Mentions me*, *My comments*); the comment box stays pinned to the
+  bottom of the screen, and `Enter` sends while `Shift`+`Enter` breaks the line.
 - **Attachments & Office editing** — images, video (with subtitles, audio tracks,
   and Picture-in-Picture), PDFs, and in-place editing of Word/Excel/PowerPoint via
   an embedded ONLYOFFICE Document Server.
@@ -115,7 +122,12 @@ unformatted text.
   whole instance, packaged as an offline-browsable ZIP.
 - **Fine-grained access control** — Open or Restricted spaces, per-user/per-group
   permission grants, page-level allow-lists, and an Effective Permissions view
-  that resolves exactly what any one person can do.
+  that resolves exactly what any one person can do. In an Open space every user
+  and group can be named on a page. Child pages **inherit** their parent's View
+  and Edit access by default; switch inheritance off to start from a copy of the
+  parent's access and customise it, or keep inheriting and narrow further with a
+  page's own list. The foot of every page says how many users and groups can
+  actually read it (or *all*, when nothing narrows it).
 - **Full-text search** — one `Ctrl`/`⌘`+`K` search across every space and page you
   have permission to see.
 - **Theming & branding** — curated color palettes or a custom hex color, logo
@@ -124,7 +136,15 @@ unformatted text.
   interface instantly, no reload; the choice is remembered per browser.
 - **Admin backup & restore** — scheduled, resumable WikiHub backups with password
   hash handling called out explicitly, plus safety checks against uploading the
-  wrong archive type.
+  wrong archive type. A backup carries access and discussion in full: space and
+  page permissions (allow-lists, blocks, Open/Restricted and inheritance
+  switches), groups with every owner, per-user global-permission overrides, and
+  all comments, replies and likes.
+- **Issue tracker** — anyone reports a problem (with screenshots and labels);
+  issue managers claim, assign, note and close it, one at a time or in bulk.
+  **Export Word** turns one issue, or every ticked issue in one file with a
+  summary table, into a themed `.docx` to hand to whoever will fix it — internal
+  notes are never included.
 
 ## 🏗️ Architecture
 
@@ -333,7 +353,14 @@ in-app **Help** center for day-to-day usage.
 
 Export a single page, a page subtree, a whole Space or the entire instance to
 **Markdown** or **HTML**, packaged as a ZIP with assets and rewritten relative
-links so the archive works offline.
+links so the archive works offline. A single page also exports to **PDF**,
+**HTML** or **Word** (`.docx`, with a native, updatable table of contents when
+the page has one).
+
+Issues export to **Word** too, from the issue window or for every issue ticked in
+the list at once: a report in WikiHub's own palette with the status and labels,
+a details table, the description, embedded screenshots and the notes shared with
+the reporter.
 
 A dedicated `docs/export.md` guide is not written yet — see the in-app
 **Help** center for day-to-day usage.
@@ -422,7 +449,6 @@ What's genuinely still open:
 
 | Item | Status |
 |---|---|
-| Page comments | Not built |
 | In-app audit log viewer | Not built — admin actions are already logged server-side, there is just no UI to browse that log yet |
 | CI pipeline | Not set up — `make check` runs everything a CI job would, just not automatically on push |
 | Kubernetes manifests / Helm chart | Not written — only the Dockerfiles in [`deploy/docker/`](deploy/docker) exist today |

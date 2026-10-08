@@ -31,6 +31,7 @@ import json
 import re
 import tempfile
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any, Final
 
 from docx import Document
@@ -438,15 +439,19 @@ def _insert_toc_field(paragraph: Any) -> None:
     end._r.append(_field_char("end"))
 
 
-def _insert_native_toc_fields(document: Any) -> None:
+def _insert_native_toc_fields(document: Any) -> bool:
     """Replace every paragraph carrying export_content.py's
     ``WORD_TOC_FIELD_MARKER`` with a real TOC field - see
     ``_mark_table_of_contents_for_word`` for why Word gets the native
     mechanism instead of the custom-rendered outline PDF/HTML use.
+    Returns whether any TOC field was inserted.
     """
+    inserted = False
     for paragraph in document.paragraphs:
         if paragraph.text == WORD_TOC_FIELD_MARKER:
             _insert_toc_field(paragraph)
+            inserted = True
+    return inserted
 
 
 def _auto_update_fields_on_open(document: Any) -> None:
@@ -455,6 +460,11 @@ def _auto_update_fields_on_open(document: Any) -> None:
     page-number footer below) would show only their placeholder/stale text
     until a reader manually right-clicks "Update Field". Ticking this is
     exactly what happens when a person inserts a TOC through Word's own UI.
+
+    Only set when a TOC field exists: the flag makes Word ask "This document
+    contains fields that may refer to other files. Do you want to update the
+    fields?" on every open, which reads as an error. The footer's PAGE /
+    NUMPAGES fields need no help - Word recomputes those on every layout.
     """
     settings_element = document.settings.element
     if settings_element.find(qn("w:updateFields")) is not None:
@@ -484,7 +494,12 @@ def _add_page_number_footer(document: Any) -> None:
 
 
 async def html_to_docx(
-    html: str, theme: dict[str, str], *, title: str, font_id: str | None = None
+    html: str,
+    theme: dict[str, str],
+    *,
+    title: str,
+    font_id: str | None = None,
+    post_process: Callable[[Any], None] | None = None,
 ) -> bytes:
     """Convert a simplified, semantically-marked-up HTML fragment to a
     ``.docx``, themed from ``theme`` (see ``DOCX_CAPTURE_JS``).
@@ -496,6 +511,10 @@ async def html_to_docx(
     fallback stack (``"Inter, -apple-system, ..."``), not a single font name
     ``w:rFonts`` could use, and its first entry is a web font Word does not
     have anyway. See ``_docx_body_font``.
+
+    ``post_process`` runs last, on the python-docx ``Document``, for a caller
+    that lays out its own kind of document (the issue report) on top of
+    this pipeline's defaults.
     """
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -551,9 +570,12 @@ async def html_to_docx(
         document = Document(str(output_path))
         _apply_named_styles(document, theme)
         _set_document_font(document, body_font=_docx_body_font(font_id), mono_font=_DOCX_MONO_FONT)
-        _insert_native_toc_fields(document)
+        has_toc = _insert_native_toc_fields(document)
         _add_page_number_footer(document)
-        _auto_update_fields_on_open(document)
+        if has_toc:
+            _auto_update_fields_on_open(document)
+        if post_process is not None:
+            post_process(document)
 
         result_stream = io.BytesIO()
         document.save(result_stream)

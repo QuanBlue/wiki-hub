@@ -12,12 +12,13 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from bs4 import BeautifulSoup
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
 from app.models.draft import PageDraft
-from app.models.page import INVALID_IMPORT_ACTOR_LABEL, WikiPage
+from app.models.page import INVALID_IMPORT_ACTOR_LABEL, PageLike, WikiPage
 from app.models.permission import Permission
 from app.models.revision import PageRevision
 from app.models.space import Space, SpaceStatus
@@ -28,6 +29,7 @@ from app.repositories.page import PageRepository
 from app.repositories.revision import PageRevisionRepository
 from app.schemas.draft import PageDraftRead, PageDraftUpsert
 from app.schemas.page import (
+    LikerRead,
     PageCreate,
     PageLikeRead,
     PageMove,
@@ -116,6 +118,19 @@ class PageService:
             Permission.delete_own in space_permissions and page.created_by_id == user.id
         )
         result.is_restricted = await self.spaces.permissions.page_view_is_restricted(page)
+        result.own_restricted = bool(getattr(page, "view_restricted", False))
+        result.inherit_restrictions = bool(getattr(page, "inherit_restrictions", True))
+        ancestor = await self.spaces.permissions.nearest_restricting_ancestor(page)
+        if ancestor is not None:
+            result.restricted_ancestor_title = ancestor.title
+            result.restricted_ancestor_slug = ancestor.slug
+            # The ancestor may only carry blocks or an Edit list; this asks
+            # whether one is actually in Restricted (view) mode.
+            parent = await self.session.get(WikiPage, page.parent_id)
+            result.inherits_view_restriction = (
+                parent is not None
+                and await self.spaces.permissions.page_view_is_restricted(parent)
+            )
         return result
 
     def to_read_many(self, pages: Sequence[WikiPage]) -> list[PageRead]:
@@ -143,6 +158,24 @@ class PageService:
             liked_by_me=await self.pages.is_liked(page.id, user.id),
             like_count=await self.pages.like_count(page.id),
         )
+
+    async def likers(self, page: WikiPage) -> list[LikerRead]:
+        """Everyone who liked the page, by name - likes carry no timestamp."""
+        users = (
+            await self.session.scalars(
+                select(User)
+                .join(PageLike, PageLike.user_id == User.id)
+                .where(PageLike.page_id == page.id)
+                .order_by(func.lower(User.full_name), func.lower(User.username))
+            )
+        ).all()
+        return [
+            LikerRead(
+                id=user.id, username=user.username, full_name=user.full_name,
+                avatar_url=user.avatar_url,
+            )
+            for user in users
+        ]
 
     async def set_like(self, page: WikiPage, user: User, liked: bool) -> PageLikeRead:
         await self.pages.set_like(page.id, user.id, liked)
@@ -247,6 +280,14 @@ class PageService:
         draft.edit_mode = payload.edit_mode
         draft.base_updated_at = payload.base_updated_at
         await self.session.flush()
+        # Overwriting an existing draft is an UPDATE, and `updated_at`'s
+        # `onupdate=func.now()` is computed by the database - SQLAlchemy
+        # expires the attribute instead of fetching it back, so reading it
+        # below would lazy-load outside the async context (MissingGreenlet,
+        # a 500). Only the very first save - an INSERT, whose server
+        # defaults come back via RETURNING - escaped it, which is why saving
+        # a draft failed "sometimes": every save after the first one.
+        await self.session.refresh(draft)
         return PageDraftRead(
             id=draft.id,
             page_id=draft.page_id,

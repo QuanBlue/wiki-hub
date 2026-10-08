@@ -34,6 +34,7 @@ import { Highlight } from "@/components/issues/highlight";
 import { LabelChip } from "@/components/issues/label-chip";
 import { LabelPicker } from "@/components/issues/label-picker";
 import { IssueMarkdown } from "@/components/issues/issue-markdown";
+import { IssueExportButton } from "@/components/issues/issue-export-button";
 import { IssueScreenshots } from "@/components/issues/issue-screenshots";
 import {
   IssueStatusBadge,
@@ -766,6 +767,12 @@ export function IssuesList({ openId }: { openId?: string }) {
                       )
                     }
                   />
+                  <IssueExportButton
+                    issueIds={chosenIds}
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                  />
                   <Button
                     type="button"
                     variant="ghost"
@@ -1255,6 +1262,9 @@ export function IssuesList({ openId }: { openId?: string }) {
                   </Button>
                 </Hint>
               )}
+              {closingFor !== selected.id ? (
+                <IssueExportButton issueIds={[selected.id]} />
+              ) : null}
               {selected.can_claim && closingFor !== selected.id ? (
                 <Hint label={t("adminIssues.claimHelp")}>
                   <Button

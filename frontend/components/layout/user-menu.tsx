@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ListChecks,
   LogOut,
-  Undo2,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -49,18 +48,6 @@ export function UserMenu({ user }: { user: Me }) {
 
   const displayName = user.full_name || user.username;
   const impersonator = user.impersonator;
-
-  async function returnToSelf() {
-    setPending(true);
-    try {
-      await api.delete<unknown>("/api/v1/auth/impersonate");
-      router.replace("/");
-      router.refresh();
-    } catch (error) {
-      toast.error(apiErrorText(error, "userMenu.returnToSelfError"));
-      setPending(false);
-    }
-  }
 
   async function signOut() {
     setPending(true);
@@ -162,22 +149,6 @@ export function UserMenu({ user }: { user: Me }) {
             {t("userMenu.myIssues")}
           </Link>
         </DropdownMenuItem>
-
-        {/*
-          Two mutually exclusive states. While impersonating, the only account
-          move offered is the way back: the backend refuses to nest, so a
-          "switch again" entry could only ever fail.
-        */}
-        {impersonator ? (
-          <DropdownMenuItem
-            className="text-foreground"
-            disabled={pending}
-            onSelect={() => void returnToSelf()}
-          >
-            <Undo2 />
-            {t("userMenu.returnTo", { username: impersonator.username })}
-          </DropdownMenuItem>
-        ) : null}
 
         <DropdownMenuSeparator />
 

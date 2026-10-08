@@ -519,7 +519,9 @@ describe("BackupPanel native export scope", () => {
     expect(
       screen.getByRole("button", { name: /confluence data center target version/i }),
     ).toBeDisabled();
-    expect(screen.getByRole("button", { name: /export dc xml/i })).toBeDisabled();
+    // The Confluence export is switched off for now ("Incoming"), so its
+    // button reads "Coming soon" - and stays disabled either way.
+    expect(screen.getByRole("button", { name: /coming soon/i })).toBeDisabled();
   });
 
   it("auto-downloads and re-enables the trigger once the job completes", async () => {

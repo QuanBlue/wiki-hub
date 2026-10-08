@@ -266,3 +266,35 @@ class TestDeletePage:
 
         with pytest.raises(PermissionDeniedError):
             await service.delete(space, page, viewer)
+
+
+class TestDrafts:
+    async def test_saving_a_draft_repeatedly_overwrites_it(self, session: AsyncSession) -> None:
+        """Every save after the first is an UPDATE whose `updated_at` the
+        database computes - reading it back used to lazy-load outside the
+        async context and 500, so only the first save of a draft worked."""
+        from app.schemas.draft import PageDraftUpsert
+
+        owner = await _make_user(session)
+        space = await SpaceService(session).create(
+            SpaceCreate(key=_uniq("DR").upper()[:10], name="Drafts"), owner
+        )
+        service = PageService(session)
+        page = await service.create(space, PageCreate(title="Draft me"), owner)
+
+        for index in range(3):
+            saved = await service.save_draft(
+                page,
+                owner,
+                PageDraftUpsert(
+                    content=f"<p>draft {index}</p>",
+                    content_format="html",
+                    edit_mode="normal",
+                    base_updated_at=page.updated_at,
+                ),
+            )
+            assert saved.content == f"<p>draft {index}</p>"
+            assert saved.updated_at is not None
+
+        loaded = await service.get_draft(page, owner)
+        assert loaded is not None and loaded.content == "<p>draft 2</p>"

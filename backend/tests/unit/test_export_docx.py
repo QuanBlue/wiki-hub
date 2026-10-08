@@ -245,7 +245,7 @@ class TestNativeTocField:
         document = Document()
         document.add_paragraph(export_docx.WORD_TOC_FIELD_MARKER)
 
-        export_docx._insert_native_toc_fields(document)
+        assert export_docx._insert_native_toc_fields(document) is True
 
         paragraph = document.paragraphs[0]
         field_chars = [
@@ -277,7 +277,9 @@ class TestNativeTocField:
         document = Document()
         document.add_paragraph("Ordinary text.")
 
-        export_docx._insert_native_toc_fields(document)
+        # No TOC means no "update the fields?" prompt on open - see
+        # `_auto_update_fields_on_open`, which html_to_docx only calls then.
+        assert export_docx._insert_native_toc_fields(document) is False
 
         assert document.paragraphs[0].text == "Ordinary text."
 

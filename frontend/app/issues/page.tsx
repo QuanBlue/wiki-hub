@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { IssueExportButton } from "@/components/issues/issue-export-button";
 import { IssueMarkdown } from "@/components/issues/issue-markdown";
 import { LabelChip } from "@/components/issues/label-chip";
 import { IssueScreenshots } from "@/components/issues/issue-screenshots";
@@ -69,7 +70,10 @@ export default async function MyIssuesPage({
                   <h2 className="min-w-0 font-semibold break-words">
                     {issue.title}
                   </h2>
-                  <IssueStatusBadge status={issue.status} />
+                  <div className="flex items-center gap-2">
+                    <IssueExportButton issueIds={[issue.id]} size="sm" />
+                    <IssueStatusBadge status={issue.status} />
+                  </div>
                 </div>
                 {issue.labels.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">

@@ -18,6 +18,7 @@ from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
 from app.schemas.draft import PageDraftRead, PageDraftUpsert
 from app.schemas.page import (
+    LikerRead,
     PageCreate,
     PageLikeRead,
     PageMove,
@@ -25,15 +26,17 @@ from app.schemas.page import (
     PageRecentItem,
     PageUpdate,
 )
+from app.schemas.page_label import PageLabelCreate, PageLabelRead
 from app.schemas.permission import (
     PageAccessRosterGroup,
     PageAccessRosterUser,
+    PageInheritanceUpdate,
     PageRestrictionGroupOption,
     PageRestrictionRead,
     PageRestrictionUserOption,
     PageViewModeUpdate,
 )
-from app.schemas.page_label import PageLabelCreate, PageLabelRead
+from app.schemas.space import AudienceRead
 
 router = APIRouter(prefix="/spaces/{key}/pages", tags=["pages"])
 standalone_router = APIRouter(prefix="/pages", tags=["pages"])
@@ -199,6 +202,39 @@ async def get_page_like(
     page = await page_service.get_by_slug(space, slug)
     await page_service.require_page_view(page, user)
     return await page_service.like_status(page, user)
+
+
+@router.get(
+    "/{slug}/audience", response_model=AudienceRead, summary="How many users and groups can read it"
+)
+async def get_page_audience(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> AudienceRead:
+    space = await space_service.get_by_key(key)
+    await space_service.require_view(space, user)
+    page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, user)
+    users, groups, everyone = await space_service.permissions.page_audience(page, space)
+    return AudienceRead(users=users, groups=groups, everyone=everyone)
+
+
+@router.get("/{slug}/likes", response_model=list[LikerRead], summary="Who liked a page")
+async def get_page_likers(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> list[LikerRead]:
+    space = await space_service.get_by_key(key)
+    await space_service.require_view(space, user)
+    page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, user)
+    return await page_service.likers(page)
 
 
 @router.put("/{slug}/like", response_model=PageLikeRead, summary="Like a page")
@@ -565,8 +601,9 @@ async def list_page_access_roster_users(
             edit=edit,
             view_locked=view_locked,
             edit_locked=edit_locked,
+            inherited=inherited,
         )
-        for item, view, edit, view_locked, edit_locked in roster
+        for item, view, edit, view_locked, edit_locked, inherited in roster
     ]
 
 
@@ -588,9 +625,15 @@ async def list_page_access_roster_groups(
     roster = await space_service.permissions.list_page_access_roster_groups(page, space)
     return [
         PageAccessRosterGroup(
-            id=item.id, name=item.name, view=view, edit=edit, view_locked=view_locked, edit_locked=edit_locked
+            id=item.id,
+            name=item.name,
+            view=view,
+            edit=edit,
+            view_locked=view_locked,
+            edit_locked=edit_locked,
+            inherited=inherited,
         )
-        for item, view, edit, view_locked, edit_locked in roster
+        for item, view, edit, view_locked, edit_locked, inherited in roster
     ]
 
 
@@ -609,6 +652,23 @@ async def set_page_view_mode(
 ) -> None:
     page = await page_service.get_by_slug(await space_service.get_by_key(key), slug)
     await space_service.permissions.set_page_view_mode(page, actor, restricted=payload.restricted)
+
+
+@router.patch(
+    "/{slug}/restrictions/inherit",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Turn inheriting the parent page's access on or off for a child page",
+)
+async def set_page_inheritance(
+    key: str,
+    slug: str,
+    payload: PageInheritanceUpdate,
+    actor: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    page = await page_service.get_by_slug(await space_service.get_by_key(key), slug)
+    await space_service.permissions.set_page_inheritance(page, actor, inherit=payload.inherit)
 
 
 @router.post(

@@ -113,6 +113,10 @@ class BackupGroup(BaseModel):
     description: str = ""
     owner_username: str
     is_active: bool = True
+    # Every owner, ``owner_username`` included - a group may have several
+    # (`GroupOwner`); archives from before this field restore with just the
+    # primary owner, which is what they always held.
+    owner_usernames: list[str] = Field(default_factory=list)
 
 
 class BackupGroupMember(BaseModel):
@@ -123,6 +127,15 @@ class BackupGroupMember(BaseModel):
 class BackupGroupGlobalPermission(BaseModel):
     group_name: str
     permission: GlobalPermission
+
+
+class BackupUserGlobalPermissionOverride(BaseModel):
+    """A user's own grant (``enabled``) or denial of one global permission,
+    overriding whatever their groups say - see `UserGlobalPermissionOverride`."""
+
+    username: str
+    permission: GlobalPermission
+    enabled: bool
 
 
 class BackupSpaceUserPermission(BaseModel):
@@ -153,6 +166,12 @@ class BackupPage(BaseModel):
     #: just fall back to restore-time timestamps, same as `BackupSpace`.
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    #: This page's own General access is Restricted (its allow-list rows below
+    #: only count while this is on). ``None`` marks an archive written before the
+    #: flag was exported - restore then infers it from the page's allow-list rows.
+    view_restricted: bool | None = None
+    #: Off when the page stopped following its parent's access.
+    inherit_restrictions: bool = True
 
 
 class BackupPageRevision(BaseModel):
@@ -172,11 +191,28 @@ class BackupPageLike(BaseModel):
     username: str
 
 
+class BackupPageComment(BaseModel):
+    """One comment; ``id`` / ``parent_id`` carry the reply tree, ``liked_by`` its likes."""
+
+    id: uuid.UUID
+    parent_id: uuid.UUID | None = None
+    page_space_key: str
+    page_slug: str
+    author_username: str | None = None
+    body: str
+    created_at: datetime | None = None
+    edited_at: datetime | None = None
+    mentions: list[str] = Field(default_factory=list)
+    liked_by: list[str] = Field(default_factory=list)
+
+
 class BackupPageUserRestriction(BaseModel):
     page_space_key: str
     page_slug: str
     username: str
     permission: PageRestrictionPermission
+    #: An explicit block rather than an allow-list grant.
+    denied: bool = False
 
 
 class BackupPageGroupRestriction(BaseModel):
@@ -184,6 +220,7 @@ class BackupPageGroupRestriction(BaseModel):
     page_slug: str
     group_name: str
     permission: PageRestrictionPermission
+    denied: bool = False
 
 
 class BackupAttachment(BaseModel):
@@ -309,11 +346,15 @@ class BackupDocument(BaseModel):
     groups: list[BackupGroup] = Field(default_factory=list)
     group_members: list[BackupGroupMember] = Field(default_factory=list)
     group_global_permissions: list[BackupGroupGlobalPermission] = Field(default_factory=list)
+    user_global_permission_overrides: list[BackupUserGlobalPermissionOverride] = Field(
+        default_factory=list
+    )
     space_user_permissions: list[BackupSpaceUserPermission] = Field(default_factory=list)
     space_group_permissions: list[BackupSpaceGroupPermission] = Field(default_factory=list)
     pages: list[BackupPage] = Field(default_factory=list)
     page_revisions: list[BackupPageRevision] = Field(default_factory=list)
     page_likes: list[BackupPageLike] = Field(default_factory=list)
+    page_comments: list[BackupPageComment] = Field(default_factory=list)
     page_user_restrictions: list[BackupPageUserRestriction] = Field(default_factory=list)
     page_group_restrictions: list[BackupPageGroupRestriction] = Field(default_factory=list)
     page_pins: list[BackupPagePin] = Field(default_factory=list)

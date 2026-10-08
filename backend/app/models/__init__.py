@@ -11,6 +11,7 @@ from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction, AuditLog
 from app.models.backup_job import AutomatedBackupSettings, BackupArchive, BackupJob
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.comment import CommentLike, PageComment
 from app.models.document_import import DocumentImportItem, DocumentImportJob
 from app.models.draft import PageDraft
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
@@ -59,6 +60,7 @@ __all__ = [
     "BackupArchive",
     "BackupJob",
     "Base",
+    "CommentLike",
     "DocumentImportItem",
     "DocumentImportJob",
     "GlobalPermission",
@@ -73,6 +75,7 @@ __all__ = [
     "ImportJob",
     "ImportLog",
     "PageAttachment",
+    "PageComment",
     "PageDraft",
     "PageGroupRestriction",
     "Notification",

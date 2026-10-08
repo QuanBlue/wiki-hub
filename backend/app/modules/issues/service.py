@@ -181,6 +181,44 @@ class IssueService:
         issue = await self.get_visible(issue_id)
         return (await self._render([issue], triager=await self.is_triager()))[0]
 
+    async def export_docx(
+        self, storage: ObjectStorage, issue_ids: list[uuid.UUID], *, lang: str = "en"
+    ) -> tuple[bytes, str]:
+        """One or more issues as a single Word document, in the order given
+        (see ``app.modules.issues.export``). Returns the bytes and a filename.
+
+        An issue the caller may not see is left out, never named - same as
+        reading it. Not found only when none of them is visible."""
+        from app.modules.issues.export import issues_to_docx, load_issue_images
+
+        triager = await self.is_triager()
+        visible: list[Issue] = []
+        for issue_id in dict.fromkeys(issue_ids):
+            issue = await self.session.get(Issue, issue_id)
+            if issue is not None and (issue.reporter_id == self.user.id or triager):
+                visible.append(issue)
+        if not visible:
+            raise NotFoundError("Issue not found.", code="issue_not_found")
+
+        rendered = await self._render(visible, triager=triager)
+        rows = (
+            await self.session.scalars(
+                select(IssueAttachment)
+                .where(IssueAttachment.issue_id.in_([issue.id for issue in visible]))
+                .order_by(IssueAttachment.created_at)
+            )
+        ).all()
+        by_issue: dict[uuid.UUID, list[tuple[str, str, str]]] = {}
+        for row in rows:
+            by_issue.setdefault(row.issue_id, []).append(
+                (row.filename, row.content_type, row.object_key)
+            )
+        documents = [
+            (issue, await load_issue_images(storage, by_issue.get(issue.id, [])))
+            for issue in rendered
+        ]
+        return await issues_to_docx(documents, lang="vi" if lang == "vi" else "en")
+
     async def list_mine(self, *, limit: int, offset: int) -> Page[IssueRead]:
         query = select(Issue).where(Issue.reporter_id == self.user.id)
         return await self._page(query, limit=limit, offset=offset)
