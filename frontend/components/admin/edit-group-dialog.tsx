@@ -389,11 +389,9 @@ export function EditGroupDialog({
     }
   }
 
+  // Only offered while there is more than one owner (see the owner badges),
+  // so a group can never be left without one.
   function handleRemoveOwner(userId: string) {
-    if (ownerIds.length <= 1) {
-      toast.error("Group must have at least one owner.");
-      return;
-    }
     setOwnerIds((current) => current.filter((id) => id !== userId));
   }
 
@@ -419,11 +417,8 @@ export function EditGroupDialog({
   }
 
   async function handleSaveAll() {
+    // Save is disabled without changes, a name, or an owner.
     if (!name.trim() || ownerIds.length === 0 || !group) return;
-    if (!hasChanges) {
-      onOpenChange(false);
-      return;
-    }
     setPending(true);
     setError(null);
     try {

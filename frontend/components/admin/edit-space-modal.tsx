@@ -162,7 +162,7 @@ function PermissionColGroup({ visibility }: { visibility: "open" | "restricted" 
  * - Checking anything other than View checks View along with it - every
  *   other permission is meaningless without it, so there's no such thing as
  *   a principal who can e.g. Add but not View.
- * - View can never be unchecked through this matrix at all - it's the
+ * - View is never unchecked here - its box is disabled, since it's the
  *   floor every grant here sits on (the lowest role is Viewer, never
  *   "nothing"); dropping it is only ever done by removing the principal's
  *   row entirely (the trash icon), not by unchecking one box. */
@@ -174,10 +174,6 @@ function nextPermissionsFor(
   if (enabled) {
     if (permission === "admin") return [...ALL_PERMISSION_KEYS];
     return Array.from(new Set([...current, permission, "view"]));
-  }
-
-  if (permission === "view") {
-    return current;
   }
 
   const hadEverything = ALL_PERMISSION_KEYS.every((p) => current.includes(p));
@@ -617,7 +613,9 @@ function EditSpaceModalContent({
       // everything" diff has to clear the siblings first - issuing every
       // removal in one `Promise.all` would race those two requests against
       // each other and could hit that guard depending on which lands first.
-      const viewRemovals: Promise<unknown>[] = [];
+      // Held as thunks, not promises: calling `api.delete` already sends the
+      // request, so they must not be called until the first batch is done.
+      const viewRemovals: (() => Promise<unknown>)[] = [];
 
       // Diffs to add
       for (const [key, currentPerms] of currentMap.entries()) {
@@ -642,13 +640,14 @@ function EditSpaceModalContent({
           if (!currentPerms.has(perm)) {
             const endpoint = principal_type === "group" ? "groups" : "users";
             const path = `/api/v1/spaces/${encodeURIComponent(space.key)}/permissions/${endpoint}/${principal_id}/${perm}`;
-            (perm === "view" ? viewRemovals : requests).push(api.delete(path));
+            if (perm === "view") viewRemovals.push(() => api.delete(path));
+            else requests.push(api.delete(path));
           }
         }
       }
 
       await Promise.all(requests);
-      await Promise.all(viewRemovals);
+      await Promise.all(viewRemovals.map((remove) => remove()));
       toast.success("Space access & permissions saved.");
       setInitialAssignments(assignments);
       setGroupsLocked(true);

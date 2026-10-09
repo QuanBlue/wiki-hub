@@ -155,13 +155,16 @@ if [[ $RUN_BACKEND -eq 1 ]]; then
     docker compose ps --status running --services 2>/dev/null | grep -qx backend \
         || die "The backend container is not running. Please start the stack first using 'make run'."
         
-    # Check/install pytest in the container
-    if ! docker compose exec -T backend python -c "import pytest" 2>/dev/null; then
+    # Check/install the test dependencies in the container. Every module is
+    # checked, not just pytest: a dev dependency added later (aiosmtpd, for
+    # the admin-mail tests) was otherwise never installed into a container
+    # that already had pytest, and its test modules failed to import.
+    if ! docker compose exec -T backend python -c "import pytest, pytest_asyncio, pytest_cov, httpx, faker, aiosmtpd" 2>/dev/null; then
         step "Installing test runner dependencies in the backend container..."
         docker compose exec -T --user root backend python -m ensurepip
-        docker compose exec -T --user root backend python -m pip install pytest pytest-asyncio pytest-cov httpx faker
+        docker compose exec -T --user root backend python -m pip install pytest pytest-asyncio pytest-cov httpx faker aiosmtpd
     fi
-    ok "pytest is installed in container"
+    ok "test dependencies are installed in container"
 fi
 
 if [[ $RUN_FRONTEND -eq 1 ]]; then

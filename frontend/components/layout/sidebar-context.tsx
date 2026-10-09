@@ -55,14 +55,6 @@ const collapsedStore = {
     }
     return document.documentElement.dataset.whSidebarCollapsed === "true";
   },
-  // The server cannot know the preference; render expanded and let the first
-  // client render correct it.
-  getServerSnapshot(): boolean {
-    if (typeof document !== "undefined") {
-      return document.documentElement.dataset.whSidebarCollapsed === "true";
-    }
-    return false;
-  },
   set(value: boolean): void {
     try {
       window.localStorage.setItem(STORAGE_KEY, String(value));
@@ -105,9 +97,6 @@ const widthStore = {
     if (Number.isFinite(preloaded)) {
       return Math.min(MAX_SIDEBAR_WIDTH, Math.max(0, preloaded));
     }
-    return DEFAULT_SIDEBAR_WIDTH;
-  },
-  getServerSnapshot(): number {
     return DEFAULT_SIDEBAR_WIDTH;
   },
   set(value: number): void {

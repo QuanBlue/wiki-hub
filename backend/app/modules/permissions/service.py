@@ -1378,15 +1378,6 @@ class PermissionService:
                 edit = False
         return view, view and edit
 
-    async def _page_view_restricted_flag(self, page_id: uuid.UUID) -> bool:
-        """An explicit, freshly-queried read of one page's own flag - not an
-        attribute access on whatever `WikiPage` instance a caller happens to
-        be holding, which for a page fetched earlier in the same unit of
-        work can be an identity-map hit with this column not yet loaded."""
-        return bool(
-            await self.session.scalar(select(WikiPage.view_restricted).where(WikiPage.id == page_id))
-        )
-
     async def _set_page_view_restricted(self, page: WikiPage, value: bool) -> None:
         """A targeted UPDATE of just this one column, not the usual
         attribute-assignment-then-flush path: that would also fire

@@ -516,9 +516,6 @@ const spaceSidebarWidthStore = {
     if (Number.isFinite(preloaded)) return clampWidth(preloaded);
     return DEFAULT_SIDEBAR_WIDTH;
   },
-  getServerSnapshot(): number {
-    return DEFAULT_SIDEBAR_WIDTH;
-  },
   set(value: number): void {
     const width = clampWidth(value);
     try {
@@ -548,13 +545,11 @@ function formatDateAndTime(
   t: (key: string, vars?: Record<string, string | number>) => string,
   locale: "en" | "vi",
 ): string {
+  // Throws on an unparseable value, so past this line the timestamp is valid.
   const date = formatDate(value, locale);
   // Imports can provide a date without a clock value. Do not invent one in
   // the page metadata; normal WikiHub timestamps include an ISO time portion.
   if (!/[T\s]\d{2}:\d{2}/.test(value)) return date;
-
-  const timestamp = new Date(value);
-  if (Number.isNaN(timestamp.getTime())) return date;
   return t("workspace.lastModifiedAt", {
     date,
     time: formatTime(value, locale),
@@ -996,15 +991,11 @@ export function SpaceWorkspace({
     const container = mainContainerRef.current;
 
     const handleScroll = (e: Event) => {
+      // Listened to on the window and on the main column (which scrolls on
+      // desktop) - read whichever one this event came from.
       const target = e.currentTarget;
       const currentScrollY =
-        target === window
-          ? window.scrollY
-          : target instanceof HTMLElement
-            ? target.scrollTop
-            : container
-              ? container.scrollTop
-              : window.scrollY;
+        target instanceof HTMLElement ? target.scrollTop : window.scrollY;
 
       // Hysteresis logic: sticky when scrolled down past 200px, relative when near top (<= 5px)
       if (currentScrollY > 200) {
@@ -1499,9 +1490,7 @@ export function SpaceWorkspace({
 
   useEffect(() => {
     if (!editing || !pageEditDirty || !currentPage) return;
-    if (draftSaveTimer.current !== null) {
-      window.clearTimeout(draftSaveTimer.current);
-    }
+    // Any earlier timer was already cleared by this effect's cleanup below.
     draftSaveTimer.current = window.setTimeout(() => {
       void persistDraft();
       draftSaveTimer.current = null;

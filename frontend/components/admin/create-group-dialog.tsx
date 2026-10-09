@@ -288,7 +288,11 @@ export function CreateGroupDialog({
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  // Same as closing with Esc or the X: start fresh next time.
+                  setOpen(false);
+                  reset();
+                }}
                 disabled={pending}
               >
                 Cancel

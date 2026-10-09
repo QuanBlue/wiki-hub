@@ -52,20 +52,15 @@ function committedPermissions(
 
 /** Mutates a draft permission set in place for one checkbox click, mirroring
  * the backend's `set_space_permission` rule that every other permission is
- * useless without View: checking anything else pulls View along with it, and
- * View itself can never be unchecked through this matrix - it's the floor
- * every grant sits on (the UI also disables that checkbox entirely - see
- * `viewLocked` below - this is just the matching guard against the change
- * still reaching state some other way). Clearing a principal's access
- * entirely is only ever done by dropping their whole row (`clearGroupDraft`/
- * `clearUserDraft`), not by unchecking View. */
+ * useless without View: checking anything else pulls View along with it.
+ * View itself is never unchecked here - its checkbox is disabled (see
+ * `viewLocked` below), since it's the floor every grant sits on. Clearing a
+ * principal's access entirely is only ever done by dropping their whole row
+ * (`clearGroupDraft`/`clearUserDraft`). */
 function applyPermissionChange(set: Set<SpacePermission>, permission: SpacePermission, enabled: boolean): void {
   if (enabled) {
     set.add(permission);
     set.add("view");
-    return;
-  }
-  if (permission === "view") {
     return;
   }
   set.delete(permission);

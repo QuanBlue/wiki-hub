@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import NotFoundError, PermissionDeniedError
 from app.models.comment import CommentLike, PageComment
 from app.models.notification import Notification
+from app.models.restriction import PageRestrictionPermission
 from app.models.space import Space, SpaceVisibility
 from app.models.user import User
 from app.modules.auth.service import AuthService
@@ -71,12 +72,8 @@ class TestTree:
         owner, _, slug = await _setup(session)
         service = CommentService(session, owner)
         root = await service.create("CMT", slug, CommentCreate(body="root"))
-        reply = await service.create(
-            "CMT", slug, CommentCreate(body="reply", parent_id=root.id)
-        )
-        deeper = await service.create(
-            "CMT", slug, CommentCreate(body="deeper", parent_id=reply.id)
-        )
+        reply = await service.create("CMT", slug, CommentCreate(body="reply", parent_id=root.id))
+        deeper = await service.create("CMT", slug, CommentCreate(body="deeper", parent_id=reply.id))
 
         listed = await service.list_comments("CMT", slug)
 
@@ -136,9 +133,7 @@ class TestEditAndDelete:
     ) -> None:
         owner, _, slug = await _setup(session)
         member = await _user(session)
-        comment = await CommentService(session, owner).create(
-            "CMT", slug, CommentCreate(body="x")
-        )
+        comment = await CommentService(session, owner).create("CMT", slug, CommentCreate(body="x"))
 
         with pytest.raises(PermissionDeniedError):
             await CommentService(session, member).delete("CMT", slug, comment.id)
@@ -157,9 +152,7 @@ class TestEditAndDelete:
 
 
 class TestLikes:
-    async def test_like_is_idempotent_and_counted_per_person(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_like_is_idempotent_and_counted_per_person(self, session: AsyncSession) -> None:
         owner, _, slug = await _setup(session)
         fan = await _user(session)
         comment = await CommentService(session, owner).create(
@@ -255,9 +248,7 @@ class TestMentionsAndNotifications:
 
         assert await _kinds(session, alice) == ["comment_mention"]
 
-    async def test_reply_like_and_page_comment_notifications(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_reply_like_and_page_comment_notifications(self, session: AsyncSession) -> None:
         owner, _, slug = await _setup(session)
         bob = await _user(session)
         carol = await _user(session)
@@ -274,9 +265,7 @@ class TestMentionsAndNotifications:
         await CommentService(session, carol).set_like("CMT", slug, root.id, True)
         assert await _kinds(session, bob) == ["comment_liked", "comment_reply"]
 
-    async def test_nobody_is_notified_about_their_own_activity(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_nobody_is_notified_about_their_own_activity(self, session: AsyncSession) -> None:
         owner, _, slug = await _setup(session)
         service = CommentService(session, owner)
         root = await service.create("CMT", slug, CommentCreate(body="mine"))
@@ -294,3 +283,88 @@ class TestMentionsAndNotifications:
         found = await CommentService(session, owner).mentionable("CMT", slug, "zalice")
 
         assert [person.username for person in found] == [alice.username]
+
+
+class TestEdges:
+    async def test_a_system_administrator_moderates_any_comment(
+        self, session: AsyncSession
+    ) -> None:
+        _owner, _, slug = await _setup(session)
+        author = await _user(session)
+        admin = await _user(session)
+        admin.is_superuser = True
+        await session.flush()
+        comment = await CommentService(session, author).create(
+            "CMT", slug, CommentCreate(body="spam")
+        )
+
+        await CommentService(session, admin).delete("CMT", slug, comment.id)
+
+        assert await session.get(PageComment, comment.id) is None
+
+    async def test_mention_suggestions_are_capped_and_skip_people_who_cannot_see(
+        self, session: AsyncSession
+    ) -> None:
+        owner, space, slug = await _setup(session)
+        prefix = unique("crowd")
+        for index in range(10):
+            await _user(session, f"{prefix}{index:02d}")
+        page = await PageService(session).get_by_slug(space, slug)
+        # Only the last few may read the page, so the first are skipped.
+        allowed = [
+            (await AuthService(session).users.get_by_username(f"{prefix}{index:02d}"))
+            for index in range(2, 10)
+        ]
+        permissions = SpaceService(session).permissions
+        for person in allowed:
+            await permissions.set_page_restriction(
+                page, person.id, PageRestrictionPermission.view, owner, group=False, present=True
+            )
+
+        found = await CommentService(session, owner).mentionable("CMT", slug, prefix)
+
+        assert [person.username for person in found] == [
+            f"{prefix}{index:02d}" for index in range(2, 10)
+        ]
+
+    async def test_inactive_people_and_people_who_lost_access_are_not_told(
+        self, session: AsyncSession
+    ) -> None:
+        owner, space, slug = await _setup(session)
+        gone, locked_out, replier = await _user(session), await _user(session), await _user(session)
+        first = await CommentService(session, gone).create("CMT", slug, CommentCreate(body="a"))
+        second = await CommentService(session, locked_out).create(
+            "CMT", slug, CommentCreate(body="b")
+        )
+        gone.is_active = False
+        page = await PageService(session).get_by_slug(space, slug)
+        await SpaceService(session).permissions.set_page_restriction(
+            page, replier.id, PageRestrictionPermission.view, owner, group=False, present=True
+        )
+
+        for parent in (first, second):
+            await CommentService(session, replier).create(
+                "CMT", slug, CommentCreate(body="reply", parent_id=parent.id)
+            )
+
+        assert await _kinds(session, gone) == []
+        assert await _kinds(session, locked_out) == []
+
+    async def test_an_edit_that_changes_nothing_is_a_no_op(self, session: AsyncSession) -> None:
+        owner, _, slug = await _setup(session)
+        service = CommentService(session, owner)
+        comment = await service.create("CMT", slug, CommentCreate(body="same"))
+
+        unchanged = await service.update("CMT", slug, comment.id, CommentUpdate(body="same"))
+
+        assert unchanged.edited_at is None
+
+    async def test_a_mention_added_by_an_edit_is_notified(self, session: AsyncSession) -> None:
+        owner, _, slug = await _setup(session)
+        alice = await _user(session, unique("alice"))
+        service = CommentService(session, owner)
+        comment = await service.create("CMT", slug, CommentCreate(body="no one yet"))
+
+        await service.update("CMT", slug, comment.id, CommentUpdate(body=f"@{alice.username}"))
+
+        assert await _kinds(session, alice) == ["comment_mention"]

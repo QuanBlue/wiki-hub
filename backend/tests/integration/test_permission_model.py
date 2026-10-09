@@ -812,12 +812,12 @@ async def test_list_users_is_reachable_by_a_manage_groups_only_admin(
 
     service = AuthService(session)
     page = await list_users(
-        member, session, service, q=None, status_filter=None, role=None, limit=50, offset=0
+        member, session, service, q=None, status_filter=None, role=None, sort=None, order="desc", limit=50, offset=0
     )
     assert page.total >= 2  # at least owner and member exist
 
     outsider = await _user(session, "outsider")
     with pytest.raises(PermissionDeniedError):
         await list_users(
-            outsider, session, service, q=None, status_filter=None, role=None, limit=50, offset=0
+            outsider, session, service, q=None, status_filter=None, role=None, sort=None, order="desc", limit=50, offset=0
         )

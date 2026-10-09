@@ -22,10 +22,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   FAVORITE_SIDEBAR_STORAGE_KEY,
+  PINNED_SIDEBAR_STORAGE_KEY,
   SIDEBAR_SHORTCUT_LIMIT,
   useSidebarShortcuts,
 } from "@/lib/sidebar-shortcuts";
-import type { Space } from "@/types/api";
+import type { Space, UserPinnedPageItem } from "@/types/api";
 
 function space(id: string): Space {
   return { id, key: id.toUpperCase(), name: `Space ${id}` } as Space;
@@ -198,5 +199,53 @@ describe("useSidebarShortcuts favourites", () => {
     await waitFor(() =>
       expect(result.current.sidebarFavoriteIds).toEqual(["a", "c"]),
     );
+  });
+});
+
+describe("useSidebarShortcuts edge cases", () => {
+  function pin(id: string): UserPinnedPageItem {
+    return { id } as UserPinnedPageItem;
+  }
+
+  it("treats an unreadable stored selection as never customized", async () => {
+    window.localStorage.setItem(FAVORITE_SIDEBAR_STORAGE_KEY, "{not json");
+    const { result } = renderHook(() => useSidebarShortcuts(["a", "b"].map(space), []));
+
+    await waitFor(() => expect(result.current.sidebarFavoriteIds).toEqual(["a", "b"]));
+  });
+
+  it("tops up pinned pages the same way as favourites", async () => {
+    window.localStorage.setItem(PINNED_SIDEBAR_STORAGE_KEY, JSON.stringify(["p1"]));
+    const { result, rerender } = renderHook(
+      ({ pins }) => useSidebarShortcuts([], pins),
+      { initialProps: { pins: [pin("p1"), pin("p2")] } },
+    );
+    await waitFor(() => expect(result.current.sidebarPinnedIds).toEqual(["p1"]));
+
+    rerender({ pins: [pin("p1"), pin("p2"), pin("p3")] });
+
+    await waitFor(() => expect(result.current.sidebarPinnedIds).toEqual(["p1", "p3"]));
+    expect(JSON.parse(window.localStorage.getItem(PINNED_SIDEBAR_STORAGE_KEY) ?? "[]")).toEqual([
+      "p1",
+      "p3",
+    ]);
+  });
+
+  it("adds a shortcut while under the limit and refuses one past it", async () => {
+    const ids = ["a", "b", "c", "d", "e", "f"];
+    window.localStorage.setItem(FAVORITE_SIDEBAR_STORAGE_KEY, JSON.stringify(["a"]));
+    window.localStorage.setItem(
+      "wikihub:sidebar-favourite-space-seen-ids",
+      JSON.stringify(ids),
+    );
+    const { result } = renderHook(() => useSidebarShortcuts(ids.map(space), []));
+    await waitFor(() => expect(result.current.sidebarFavoriteIds).toEqual(["a"]));
+
+    for (const id of ["b", "c", "d", "e", "f"]) {
+      act(() => result.current.toggleSidebarShortcut("favorites", id));
+    }
+
+    expect(result.current.sidebarFavoriteIds).toHaveLength(SIDEBAR_SHORTCUT_LIMIT);
+    expect(result.current.sidebarFavoriteIds).not.toContain("f");
   });
 });

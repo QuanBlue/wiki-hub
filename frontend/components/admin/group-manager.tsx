@@ -110,12 +110,9 @@ export function GroupManager({
     (group) => group.global_permissions.length > 0,
   );
 
+  // Default system groups never get here: their Delete buttons (in both the
+  // directory and the Global access table) and bulk-select boxes are disabled.
   async function removeGroup(group: Group) {
-    if (isDefaultGroup(group)) {
-      toast.error("Default system groups cannot be deleted.");
-      setDeleteTarget(null);
-      return;
-    }
     setDeletePending(true);
     try {
       await api.delete("/api/v1/groups/" + group.id);
@@ -129,6 +126,12 @@ export function GroupManager({
       setDeletePending(false);
       setDeleteTarget(null);
     }
+  }
+
+  function addGroup(group: Group) {
+    setGroups((current) =>
+      [...current, group].sort((left, right) => left.name.localeCompare(right.name)),
+    );
   }
 
   function handleGroupUpdated(updated: Group) {
@@ -189,13 +192,7 @@ export function GroupManager({
         </nav>
         <CreateGroupDialog
           users={users}
-          onCreated={(group) =>
-            setGroups((current) =>
-              [...current, group].sort((left, right) =>
-                left.name.localeCompare(right.name),
-              ),
-            )
-          }
+          onCreated={addGroup}
         />
       </div>
 
@@ -276,13 +273,7 @@ export function GroupManager({
         {groups.length === 0 ? (
           <EmptyGroups
             users={users}
-            onCreated={(group) =>
-              setGroups((current) =>
-                [...current, group].sort((left, right) =>
-                  left.name.localeCompare(right.name),
-                ),
-              )
-            }
+            onCreated={addGroup}
           />
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">

@@ -40,8 +40,6 @@ import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type {
   PageRevisionDiff,
-  PageRevisionDiffLine,
-  PageRevisionDiffSegment,
   PageRevisionItem,
 } from "@/types/api";
 
@@ -56,31 +54,6 @@ function RevisionAuthor({
   const label = fullName || username || t("history.systemAuthor");
   if (!username || username === "system") return <>{label}</>;
   return <UserProfileTrigger username={username} fullName={fullName} />;
-}
-
-function DiffLine({
-  line,
-  side,
-}: {
-  line: PageRevisionDiffLine;
-  side: "old" | "new";
-}) {
-  const segments = side === "old" ? line.old_segments : line.new_segments;
-  const lineNumber = side === "old" ? line.old_line_number : line.new_line_number;
-  const text = side === "old" ? line.old_text : line.new_text;
-  return (
-    <div className={cn("grid grid-cols-[2.5rem_minmax(0,1fr)] whitespace-pre-wrap px-2 py-0.5", side === "old" ? "bg-danger-bg" : "bg-success-bg")}>
-      <span className="select-none pr-2 text-right text-muted-foreground/60">{lineNumber ?? ""}</span>
-      <span>
-        {segments.map((segment: PageRevisionDiffSegment, index: number) => (
-          <span key={`${segment.operation}-${index}`} className={cn(segment.operation === "add" && "bg-success-bg text-success", segment.operation === "delete" && "bg-danger-bg text-danger line-through")}>
-            {segment.text}
-          </span>
-        ))}
-        {segments.length === 0 ? text : null}
-      </span>
-    </div>
-  );
 }
 
 function attachmentKey(link: Element): string | null {
@@ -236,9 +209,6 @@ function HighlightedRevisionContent({
     [comparisonRevision?.content, diff, revision.content, side],
   );
 
-  if (revision.content_format !== "html") {
-    return <div className="whitespace-pre-wrap">{revision.content}</div>;
-  }
   return (
     <div
       className={cn(
@@ -285,10 +255,9 @@ export function PageHistoryModal({
   const { t, locale } = useTranslation();
 
   const syncPanelScroll = useCallback((side: "old" | "new", event: UIEvent<HTMLDivElement>) => {
-    if (syncingScrollRef.current) return;
     const source = event.currentTarget;
     const target = side === "old" ? newContentRef.current : oldContentRef.current;
-    if (!target) return;
+    if (syncingScrollRef.current || !target) return;
 
     const sourceMax = source.scrollHeight - source.clientHeight;
     const targetMax = target.scrollHeight - target.clientHeight;
@@ -546,44 +515,42 @@ export function PageHistoryModal({
                     <Loader2 className="mr-2 size-5 animate-spin text-primary" />
                     {t("history.calculating")}
                   </div>
-                ) : Boolean(diffData) ? (
+                ) : diffData && selectedFromRev && selectedToRev ? (
                   <div className="grid min-h-0 flex-1 grid-cols-2 gap-4">
                     {/* Left: Version From */}
                     <div className="border-border bg-surface-sunken flex min-h-0 flex-col overflow-hidden rounded-lg border p-3">
                       <div className="text-muted-foreground mb-3 border-b border-border pb-2 font-sans text-xs">
                         <div className="flex items-center justify-between gap-3">
                           <p className="font-semibold text-foreground">
-                            v{diffData!.from_version}: {diffData!.from_title}
+                            v{diffData.from_version}: {diffData.from_title}
                           </p>
                           <div className="text-danger flex items-center gap-2 text-sm font-semibold">
                             <CircleMinus className="size-4" />
                             <span>
-                              {diffData!.deleted_count === 1
-                                ? t("history.removalsOne", { count: diffData!.deleted_count })
-                                : t("history.removalsMany", { count: diffData!.deleted_count })}
+                              {diffData.deleted_count === 1
+                                ? t("history.removalsOne", { count: diffData.deleted_count })
+                                : t("history.removalsMany", { count: diffData.deleted_count })}
                             </span>
                           </div>
                         </div>
-                        {selectedFromRev ? (
-                          <p className="mt-1">
-                            <RevisionAuthor
-                              username={selectedFromRev.created_by_username}
-                              fullName={selectedFromRev.created_by_full_name}
-                            />
-                            <span className="mx-1">·</span>
-                            {formatDateTime(selectedFromRev.created_at, locale)}
-                          </p>
-                        ) : null}
+                        <p className="mt-1">
+                          <RevisionAuthor
+                            username={selectedFromRev.created_by_username}
+                            fullName={selectedFromRev.created_by_full_name}
+                          />
+                          <span className="mx-1">·</span>
+                          {formatDateTime(selectedFromRev.created_at, locale)}
+                        </p>
                       </div>
                       <div
                         ref={oldContentRef}
                         onScroll={(event) => syncPanelScroll("old", event)}
                         className="font-sans min-h-0 flex-1 overflow-y-auto rounded-md bg-surface p-4 text-sm leading-relaxed"
                       >
-                        {selectedFromRev?.content_format === "html" ? (
-                          <HighlightedRevisionContent revision={selectedFromRev} comparisonRevision={selectedToRev} diff={diffData!} side="old" />
+                        {selectedFromRev.content_format === "html" ? (
+                          <HighlightedRevisionContent revision={selectedFromRev} comparisonRevision={selectedToRev} diff={diffData} side="old" />
                         ) : (
-                          <div className="whitespace-pre-wrap">{selectedFromRev?.content}</div>
+                          <div className="whitespace-pre-wrap">{selectedFromRev.content}</div>
                         )}
                       </div>
                     </div>
@@ -593,80 +560,37 @@ export function PageHistoryModal({
                       <div className="text-muted-foreground mb-3 border-b border-border pb-2 font-sans text-xs">
                         <div className="flex items-center justify-between gap-3">
                           <p className="font-semibold text-foreground">
-                            v{diffData!.to_version}: {diffData!.to_title}
+                            v{diffData.to_version}: {diffData.to_title}
                           </p>
                           <div className="text-success flex items-center gap-2 text-sm font-semibold">
                             <CirclePlus className="size-4" />
                             <span>
-                              {diffData!.added_count === 1
-                                ? t("history.additionsOne", { count: diffData!.added_count })
-                                : t("history.additionsMany", { count: diffData!.added_count })}
+                              {diffData.added_count === 1
+                                ? t("history.additionsOne", { count: diffData.added_count })
+                                : t("history.additionsMany", { count: diffData.added_count })}
                             </span>
                           </div>
                         </div>
-                        {selectedToRev ? (
-                          <p className="mt-1">
-                            <RevisionAuthor
-                              username={selectedToRev.created_by_username}
-                              fullName={selectedToRev.created_by_full_name}
-                            />
-                            <span className="mx-1">·</span>
-                            {formatDateTime(selectedToRev.created_at, locale)}
-                          </p>
-                        ) : null}
+                        <p className="mt-1">
+                          <RevisionAuthor
+                            username={selectedToRev.created_by_username}
+                            fullName={selectedToRev.created_by_full_name}
+                          />
+                          <span className="mx-1">·</span>
+                          {formatDateTime(selectedToRev.created_at, locale)}
+                        </p>
                       </div>
                       <div
                         ref={newContentRef}
                         onScroll={(event) => syncPanelScroll("new", event)}
                         className="font-sans min-h-0 flex-1 overflow-y-auto rounded-md bg-surface p-4 text-sm leading-relaxed"
                       >
-                        {selectedToRev?.content_format === "html" ? (
-                          <HighlightedRevisionContent revision={selectedToRev} comparisonRevision={selectedFromRev} diff={diffData!} side="new" />
+                        {selectedToRev.content_format === "html" ? (
+                          <HighlightedRevisionContent revision={selectedToRev} comparisonRevision={selectedFromRev} diff={diffData} side="new" />
                         ) : (
-                          <div className="whitespace-pre-wrap">{selectedToRev?.content}</div>
+                          <div className="whitespace-pre-wrap">{selectedToRev.content}</div>
                         )}
                       </div>
-                    </div>
-                  </div>
-                ) : diffData ? (
-                  /* Inline View */
-                  <div className="space-y-3 max-w-4xl mx-auto">
-                    {diffData.title_changed ? (
-                      <div className="border-warning/30 bg-warning-bg text-warning rounded-lg border p-3 font-sans text-xs">
-                        <strong>{t("history.titleChanged")}</strong> &ldquo;{diffData.from_title}&rdquo; → &ldquo;<strong className="text-foreground">{diffData.to_title}</strong>&rdquo;
-                      </div>
-                    ) : null}
-
-                    <div className="border-border bg-surface-sunken overflow-hidden rounded-lg border">
-                      {diffData.lines.length > 0
-                        ? diffData.lines.map((line, index) => (
-                            <div key={index}>
-                              {line.operation === "delete" || line.operation === "replace" ? (
-                                <DiffLine line={line} side="old" />
-                              ) : null}
-                              {line.operation === "add" || line.operation === "equal" || line.operation === "replace" ? (
-                                <DiffLine line={line} side="new" />
-                              ) : null}
-                            </div>
-                          ))
-                        : diffData.chunks.map((chunk, index) => (
-                            <div
-                              key={index}
-                              className={cn(
-                                "px-4 py-1.5 whitespace-pre-wrap border-l-3 transition-colors",
-                                chunk.operation === "add"
-                                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500 font-medium"
-                                  : chunk.operation === "delete"
-                                    ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500 line-through opacity-80"
-                                    : "border-transparent text-muted-foreground",
-                              )}
-                            >
-                              <span className="select-none font-mono text-muted-foreground/60 mr-3">
-                                {chunk.operation === "add" ? "+" : chunk.operation === "delete" ? "-" : " "}
-                              </span>
-                              {chunk.text}
-                            </div>
-                          ))}
                     </div>
                   </div>
                 ) : (

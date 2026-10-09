@@ -9,7 +9,7 @@ import pytest
 
 from app.core.exceptions import BadRequestError
 from app.models.space import SpaceRole
-from app.modules.backup.service import BackupService, _ReportBuilder
+from app.modules.backup.service import BackupService, _parents_first, _ReportBuilder
 from app.schemas.backup import (
     BackupDocument,
     BackupMeta,
@@ -292,3 +292,12 @@ async def test_apply_creates_space_and_new_site_settings() -> None:
     await svc._apply(incoming, report, [])
     assert report.created == {"space": 1, "site_settings": 1}
     svc.site_settings.update.assert_awaited_once()
+
+
+def test_parents_first_survives_a_cycle_it_should_never_see() -> None:
+    first, second = uuid4(), uuid4()
+    items = [(first, second), (second, first)]
+
+    ordered = _parents_first(items, lambda item: item[0], lambda item: item[1])
+
+    assert sorted(ordered) == sorted(items)
