@@ -1627,6 +1627,7 @@ export const vi: Dictionary = {
     more: "Thao tác khác",
     deleteConfirm: "Xoá",
     mentionNoResults: "Không có ai để nhắc đến",
+    mentionNoAccess: "Không có quyền xem trang này",
     shortcutHint: "Enter để gửi, Shift+Enter để xuống dòng",
   },
   issues: {

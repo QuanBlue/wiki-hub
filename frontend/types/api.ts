@@ -1042,4 +1042,6 @@ export interface MentionCandidate {
   username: string;
   full_name: string;
   avatar_url: string | null;
+  /** False for someone who cannot open this page - shown disabled. */
+  can_view: boolean;
 }

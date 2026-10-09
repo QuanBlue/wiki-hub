@@ -60,3 +60,6 @@ class MentionCandidate(BaseModel):
     username: str
     full_name: str
     avatar_url: str | None = None
+    # False for someone who cannot open this page (a restricted space or
+    # page): the picker shows them disabled instead of hiding them silently.
+    can_view: bool = True

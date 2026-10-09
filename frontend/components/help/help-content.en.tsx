@@ -523,8 +523,10 @@ export const sectionsEn: HelpSection[] = [
           </li>
           <li>
             Type <strong>@</strong> and a name to <strong>mention</strong> someone: pick them with
-            the arrow keys and <Kbd>Enter</Kbd>, or click. Only people who can see the page are
-            offered, and they get a notification.
+            the arrow keys and <Kbd>Enter</Kbd>, or click. They get a notification. On a
+            restricted space or page, people who can&apos;t open it are still listed but greyed out
+            with a lock and <em>No access to this page</em> - they can&apos;t be picked until someone
+            grants them access.
           </li>
         </ul>
 
@@ -564,8 +566,10 @@ export const sectionsEn: HelpSection[] = [
 
         <p className="mt-3 text-sm">
           You are notified when someone replies to your comment, mentions you, likes your comment,
-          or comments on a page you created - open the <strong>notification bell</strong> and the
-          link takes you straight to that comment. Comments are included in backups and restores.
+          or comments on a page you created - click it in the <strong>notification bell</strong>{" "}
+          and WikiHub opens the page, expands the thread if the comment is a reply, scrolls it into
+          the middle of the screen and highlights it for a moment. This works even if you are
+          already on that page. Comments are included in backups and restores.
         </p>
       </>
     ),

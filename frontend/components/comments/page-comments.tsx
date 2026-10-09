@@ -35,6 +35,54 @@ export interface CommentsUser {
   avatar_url: string | null;
 }
 
+const COMMENT_HASH = /^#comment-([0-9a-f-]{36})$/i;
+
+/**
+ * Scrolls the element with ``id`` to the middle of the screen and keeps it
+ * there while the page above it settles - images, embeds and highlighted code
+ * load after the comments and would otherwise push it out of view. Stops once
+ * the reader scrolls or types, or after a few seconds. Returns a cleanup.
+ */
+function keepInView(id: string): () => void {
+  let released = false;
+  const align = () => {
+    if (released) return;
+    // A hidden tab (link opened in the background) never runs a smooth
+    // scroll's animation, so jump there instead.
+    const behavior = document.visibilityState === "hidden" ? "instant" : "smooth";
+    document.getElementById(id)?.scrollIntoView({ block: "center", behavior });
+  };
+  const observer = new ResizeObserver(align);
+  // Let React render the opened replies first; a reply is not in the DOM
+  // until its thread is expanded.
+  const first = window.setTimeout(() => {
+    align();
+    // Content above the comment growing grows one of its ancestors.
+    for (
+      let node = document.getElementById(id)?.parentElement ?? null;
+      node && node !== document.documentElement;
+      node = node.parentElement
+    ) {
+      observer.observe(node);
+    }
+  }, 50);
+  const release = () => {
+    released = true;
+    window.clearTimeout(first);
+    window.clearTimeout(timeout);
+    observer.disconnect();
+    for (const name of READER_INPUT) window.removeEventListener(name, release, true);
+  };
+  const timeout = window.setTimeout(release, 3000);
+  for (const name of READER_INPUT) {
+    window.addEventListener(name, release, { capture: true, passive: true });
+  }
+  return release;
+}
+
+/** Input that means the reader has taken over scrolling. */
+const READER_INPUT = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+
 /** Ids of every ancestor of ``id`` (so a linked reply can be revealed). */
 function ancestorsOf(comments: readonly PageComment[], id: string): string[] {
   const byId = new Map(comments.map((comment) => [comment.id, comment]));
@@ -105,28 +153,48 @@ export function PageComments({
     };
   }, [base]);
 
-  // Open and scroll to a comment named in the URL hash, once they are loaded.
+  // The comment a ``#comment-<id>`` link names (a mention or reply
+  // notification). Read on arrival, when the page changes under a mounted
+  // thread, and on every ``hashchange`` - the notification bell fires one when
+  // the link points at the page already open. ``seq`` makes a second click on
+  // the same link scroll again.
+  const [linked, setLinked] = useState<{ id: string; seq: number } | null>(null);
   useEffect(() => {
-    if (!comments) return;
-    const match = /^#comment-([0-9a-f-]{36})$/i.exec(window.location.hash);
-    if (!match || !comments.some((comment) => comment.id === match[1])) return;
-    const target = match[1];
+    const read = () => {
+      const match = COMMENT_HASH.exec(window.location.hash);
+      setLinked((current) =>
+        match ? { id: match[1].toLowerCase(), seq: (current?.seq ?? 0) + 1 } : null,
+      );
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, [base]);
+
+  // Open the path to the linked comment, make sure the current view shows
+  // it, and scroll it into the middle of the screen - once the comments are in.
+  useEffect(() => {
+    if (!comments || !linked) return;
+    const target = comments.find((comment) => comment.id === linked.id);
+    if (!target) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reveal the linked comment
-    setExpanded((current) => new Set([...current, ...ancestorsOf(comments, target)]));
-    setHighlightId(target);
-    const timer = setTimeout(() => {
-      document
-        .getElementById(`comment-${target}`)
-        ?.scrollIntoView({ block: "center", behavior: "smooth" });
-    }, 50);
+    setExpanded((current) => new Set([...current, ...ancestorsOf(comments, target.id)]));
+    setView((current) =>
+      commentMatches(target, viewToQuery(current, currentUser.username).filter)
+        ? current
+        : "oldest",
+    );
+    setHighlightId(target.id);
+    const release = keepInView(`comment-${target.id}`);
     const fade = setTimeout(() => setHighlightId(null), 4000);
     return () => {
-      clearTimeout(timer);
+      release();
       clearTimeout(fade);
     };
-    // Only on first load of a page's comments, not after every like.
+    // Only when the comments first load or a new link arrives, not after
+    // every like or reply.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comments === null]);
+  }, [linked, comments === null]);
 
   const tree = useMemo(() => buildCommentTree(comments ?? []), [comments]);
   const total = comments?.length ?? 0;
