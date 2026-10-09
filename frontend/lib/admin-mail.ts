@@ -4,6 +4,7 @@ import type { AdminAccount, AdminMailbox, MailSummary } from "@/types/api";
 /** What an account without an administrator mailbox sees. */
 export const NO_MAILBOX: MailSummary = {
   has_mailbox: false,
+  has_inbox: false,
   mailbox_id: null,
   mailbox_email: null,
   health_status: null,

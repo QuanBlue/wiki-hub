@@ -49,8 +49,6 @@ interface NavItem {
   /** Dictionary key under `nav.*`, resolved at render time. */
   labelKey: string;
   icon: LucideIcon;
-  /** Sections that only become reachable in a later phase. */
-  disabled?: boolean;
   /**
    * A narrower global permission that also unlocks this one item, on top of
    * whatever `permission`'s role-based check already allows - e.g. Users
@@ -62,7 +60,8 @@ interface NavItem {
   extraGlobalPermission?: "manage_users" | "manage_groups" | "manage_issues";
   /** Only shown to an account linked to an active administrator mailbox: the
    * Inbox holds their requests, and means nothing to anyone else. */
-  requiresMailbox?: boolean;
+  /** Only for accounts that have the shared Requests inbox. */
+  requiresInbox?: boolean;
   /** Draws a thin rule above this item, to start a new group in the list. */
   startsGroup?: boolean;
 }
@@ -77,7 +76,7 @@ const OVERVIEW_NAV: NavItem[] = [
     labelKey: "nav.inbox",
     icon: Inbox,
     permission: "home",
-    requiresMailbox: true,
+    requiresInbox: true,
   },
 ];
 
@@ -180,22 +179,7 @@ function NavLink({
     active
       ? "bg-surface-selected text-primary font-medium"
       : "text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected",
-    // A disabled item must not pretend to be interactive.
-    item.disabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
   );
-
-  if (item.disabled) {
-    return (
-      <span
-        className={className}
-        aria-disabled
-        title={t("nav.availableLater")}
-      >
-        <item.icon className="size-4 shrink-0" />
-        {!collapsed && label}
-      </span>
-    );
-  }
 
   return (
     <Link
@@ -495,12 +479,12 @@ export function Sidebar({
   const { summary: mail } = useMailSummary();
   const overviewItems = OVERVIEW_NAV.filter(
     (item) =>
-      (!item.requiresMailbox || mail.has_mailbox) &&
+      (!item.requiresInbox || mail.has_inbox) &&
       (permissions[item.permission] ?? ["admin", "member"]).includes(role),
   );
   const adminItems = ADMIN_NAV.filter(
     (item) =>
-      (!item.requiresMailbox || mail.has_mailbox) &&
+      (!item.requiresInbox || mail.has_inbox) &&
       ((permissions[item.permission] ?? ["admin"]).includes(role) ||
         (item.extraGlobalPermission &&
           user.global_permissions.includes(item.extraGlobalPermission))),

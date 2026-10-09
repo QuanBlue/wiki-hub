@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
-from app.models.admin_mail import AdminRequest, AdminRequestRecipient
+from app.models.admin_mail import AdminMailbox, AdminRequest, AdminRequestRecipient, MailHealth
 from app.models.permission import GlobalPermission
 from app.models.user import User
 from app.modules.admin_mail import email_templates, smtp
@@ -96,7 +96,7 @@ class RequestActionService:
     # --- looking things up -------------------------------------------------
 
     async def _load(self, request_id: uuid.UUID) -> tuple[AdminRequest, AdminRequestRecipient]:
-        await self.mail._require_mailbox(self.actor)
+        await self.mail._require_inbox(self.actor)
         row = await self.mail.repo.get_inbox_item(self.actor.id, request_id)
         if row is None:
             raise NotFoundError("Request not found.", code="request_not_found")
@@ -128,10 +128,22 @@ class RequestActionService:
 
     async def _matched_account(self, request: AdminRequest) -> User | None:
         """The existing account a request is about. A password reset may name it
-        by username; an account request has only the address to go on."""
+        by username; an account request has only the address to go on.
+
+        People often type their email into the sign-in page's "username" box,
+        so a username that matches no account is tried as an email too, and
+        then the request's own address - otherwise a reset for an account that
+        plainly exists would be offered as "create a new account" (which then
+        fails on the taken address)."""
         username = (request.requester_username or "").strip()
         if request.kind == "password_reset" and username:
-            return await self.auth.users.get_by_username(username)
+            by_username = await self.auth.users.get_by_username(username)
+            if by_username is not None:
+                return by_username
+            if "@" in username:
+                by_typed_email = await self.auth.users.get_by_email(username)
+                if by_typed_email is not None:
+                    return by_typed_email
         return await self.auth.users.get_by_email(request.requester_email)
 
     # --- what can be done --------------------------------------------------
@@ -289,7 +301,14 @@ class RequestActionService:
         login_url: str | None,
         to: str,
     ) -> AutoActionResult:
-        mailbox = await self.mail._require_mailbox(self.actor)
+        # Any administrator can handle a request, mailbox or not: the details
+        # go out through their own mailbox, else one of the shared pool. With
+        # no mailbox anywhere the account is still created / reset and the
+        # password is handed back instead (see below).
+        try:
+            mailbox: AdminMailbox | None = (await self.mail._resolve_sender(self.actor))[0]
+        except PermissionDeniedError:
+            mailbox = None
         effective = await SiteSettingsService(self.session).get_effective()
         site_name = effective.site_name
         brand = Brand.from_settings(
@@ -298,10 +317,13 @@ class RequestActionService:
             custom_logo_url=getattr(effective, "custom_logo_url", None),
         )
         # Closes the message the way the administrator would: their own name.
+        own_mailbox = mailbox is not None and mailbox.user_id == self.actor.id
         signature = Signature(
-            name=mailbox.display_name or self.actor.full_name or self.actor.username,
+            name=(mailbox.display_name if own_mailbox and mailbox else None)
+            or self.actor.full_name
+            or self.actor.username,
             title=f"Administrator, {site_name}",
-            email=mailbox.email,
+            email=mailbox.email if own_mailbox and mailbox else None,
             url=public_link(""),
         )
         text, html = email_templates.account_details(
@@ -318,27 +340,35 @@ class RequestActionService:
         subject_line = (
             "Your account has been created" if created else "Your password has been reset"
         )
-        try:
-            config = self.mail._config(mailbox)
-        except CredentialUnreadableError:
-            outcome = self.mail._unreadable()
-        else:
-            outcome = await smtp.send(
-                config,
-                subject=f"[{site_name}] {subject_line}",
-                body=text,
-                html=html,
-                to=to,
-                timeout_seconds=settings.mail_send_timeout_seconds,
+        if mailbox is None:
+            outcome = smtp.SmtpOutcome(
+                ok=False,
+                health=MailHealth.unknown,
+                error="No administrator mailbox is set up to send this from.",
             )
-        # A send is as good a health check as the hourly one.
-        self.mail._apply(mailbox, outcome)
+        else:
+            try:
+                config = self.mail._config(mailbox)
+            except CredentialUnreadableError:
+                outcome = self.mail._unreadable()
+            else:
+                outcome = await smtp.send(
+                    config,
+                    subject=f"[{site_name}] {subject_line}",
+                    body=text,
+                    html=html,
+                    to=to,
+                    timeout_seconds=settings.mail_send_timeout_seconds,
+                )
+            # A send is as good a health check as the hourly one.
+            self.mail._apply(mailbox, outcome)
 
         # Handled, so it is resolved (and, obviously, read) for everyone.
         now = _now()
         request.resolved_at = now
         request.resolved_by_id = self.actor.id
         recipient.read_at = recipient.read_at or now
+        await self.mail.clear_request_notifications_for_everyone(request.id)
         await self.session.flush()
 
         logger.info(
@@ -348,7 +378,7 @@ class RequestActionService:
             emailed=outcome.ok,
         )
         return AutoActionResult(
-            item=self.mail._item(recipient, request),
+            item=await self.mail.item_with_delivery(recipient, request),
             username=user.username,
             emailed_to=to,
             email_sent=outcome.ok,

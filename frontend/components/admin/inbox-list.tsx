@@ -365,12 +365,18 @@ export function InboxList({ openId }: { openId?: string }) {
                     <td className="px-4 py-2">
                       <Badge
                         variant={
-                          item.delivery_status === "sent" ? "success" : "danger"
+                          item.delivery_status === "sent"
+                            ? "success"
+                            : item.delivery_status === "none"
+                              ? "neutral"
+                              : "danger"
                         }
                       >
                         {item.delivery_status === "sent"
                           ? t("adminInbox.emailSent")
-                          : t("adminInbox.emailFailed")}
+                          : item.delivery_status === "none"
+                            ? t("adminInbox.emailNone")
+                            : t("adminInbox.emailFailed")}
                       </Badge>
                     </td>
                     <td className="px-4 py-2 text-right">
@@ -522,11 +528,15 @@ export function InboxList({ openId }: { openId?: string }) {
                 "mt-4 rounded-md border px-3 py-2 text-xs",
                 selected.delivery_status === "sent"
                   ? "border-success/30 bg-success-bg text-success"
-                  : "border-danger/30 bg-danger-bg text-danger",
+                  : selected.delivery_status === "none"
+                    ? "border-border bg-surface-sunken text-muted-foreground"
+                    : "border-danger/30 bg-danger-bg text-danger",
               )}
             >
               {selected.delivery_status === "sent" ? (
                 t("adminInbox.deliverySent", { email: selected.mailbox_email })
+              ) : selected.delivery_status === "none" ? (
+                t("adminInbox.deliveryNone")
               ) : (
                 <>
                   <p className="font-semibold">

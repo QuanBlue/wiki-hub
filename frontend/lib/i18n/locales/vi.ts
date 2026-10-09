@@ -1853,6 +1853,7 @@ export const vi: Dictionary = {
     unread: "Chưa đọc",
     resolved: "Đã xử lý",
     emailSent: "Đã gửi mail",
+    emailNone: "Chỉ trong app",
     emailFailed: "Chưa gửi được mail",
     viewDetails: "Xem chi tiết",
     detailsTitle: "Yêu cầu từ {name}",
@@ -1863,6 +1864,8 @@ export const vi: Dictionary = {
     fieldMessage: "Nội dung",
     unverifiedEmail: "Do người dùng tự nhập - chưa được xác minh.",
     deliverySent: "Đã gửi mail tới {email}.",
+    deliveryNone:
+      "Chưa gửi email - lúc đó không có hộp thư admin nào nhận yêu cầu. Mọi quản trị viên đã được báo trong WikiHub.",
     deliveryFailed: "Không gửi được mail tới {email}.",
     actionsTitle: "Xử lý yêu cầu này",
     actionsResolved: "Yêu cầu này đã được xử lý.",
@@ -1966,7 +1969,7 @@ export const vi: Dictionary = {
     deliveryProblemBody:
       "Yêu cầu của bạn đã được ghi lại, nhưng mail gửi tới quản trị viên chưa thành công. Vui lòng báo trực tiếp cho quản trị viên để họ kiểm tra.",
     noMailboxBody:
-      "Yêu cầu của bạn đã được ghi lại, nhưng chưa có hộp thư quản trị nào được thiết lập. Vui lòng báo trực tiếp cho quản trị viên.",
+      "Yêu cầu của bạn đã được ghi lại và quản trị viên đã được báo trong WikiHub, nhưng chưa gửi được email vì chưa có hộp thư quản trị nào được thiết lập. Nếu gấp, hãy báo trực tiếp cho quản trị viên.",
     sendAnother: "Gửi yêu cầu khác",
     rateLimited: "Bạn gửi quá nhiều yêu cầu. Vui lòng chờ một lúc rồi thử lại.",
     error: "Không thể gửi yêu cầu. Hãy thử lại.",

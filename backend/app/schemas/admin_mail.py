@@ -95,6 +95,9 @@ class MailSummary(BaseModel):
     how many are unread, and whether the banner should nag."""
 
     has_mailbox: bool
+    #: Whether the Requests page and its bell count apply - every active
+    #: system administrator, mailbox or not.
+    has_inbox: bool = False
     mailbox_id: uuid.UUID | None = None
     mailbox_email: str | None = None
     health_status: MailHealthName | None = None
@@ -120,7 +123,7 @@ class InboxItem(BaseModel):
     read_at: datetime | None = None
     resolved_at: datetime | None = None
     #: What happened to the email sent to *this* account's mailbox.
-    delivery_status: Literal["sent", "failed"]
+    delivery_status: Literal["sent", "failed", "none"]
     delivery_error: str | None = None
     mailbox_email: str
 

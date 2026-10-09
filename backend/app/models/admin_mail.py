@@ -64,6 +64,10 @@ class RequestKind(StrEnum):
 class DeliveryStatus(StrEnum):
     sent = "sent"
     failed = "failed"
+    #: An administrator with no mailbox of their own: told in the app, not
+    #: emailed. Every system administrator gets a row (see
+    #: `AdminMailService.submit_request`), so this is the common case.
+    none = "none"
 
 
 class AdminMailbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):

@@ -294,7 +294,7 @@ export function NotificationBell() {
           )}
         </div>
 
-        {mail.has_mailbox ? (
+        {mail.has_inbox ? (
           <Link
             href="/admin/inbox"
             onClick={() => setOpen(false)}

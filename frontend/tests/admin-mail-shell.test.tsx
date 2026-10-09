@@ -32,6 +32,7 @@ const NONE: MailSummary = {
 
 const WORKING: MailSummary = {
   has_mailbox: true,
+  has_inbox: true,
   mailbox_id: "mb-1",
   mailbox_email: "ops@example.test",
   health_status: "ok",
@@ -154,7 +155,7 @@ function renderSidebar(summary: MailSummary) {
 }
 
 describe("Sidebar mail entries", () => {
-  it("hides Requests from an administrator whose account has no mailbox", () => {
+  it("hides Requests from an account that is not a system administrator", () => {
     renderSidebar(NONE);
 
     expect(screen.queryByRole("link", { name: /^Requests/ })).toBeNull();
@@ -192,6 +193,15 @@ describe("Sidebar mail entries", () => {
       li.className.includes("border-t"),
     );
     expect(ruled.map((li) => li.textContent)).toEqual(["Settings"]);
+  });
+
+  it("shows Requests to an administrator with no mailbox of their own", () => {
+    renderSidebar({ ...NONE, has_inbox: true, unread_count: 2 });
+
+    expect(screen.getByRole("link", { name: "Requests (2)" })).toHaveAttribute(
+      "href",
+      "/admin/inbox",
+    );
   });
 
   it("shows Requests, with the unread count, to the owner of a mailbox", () => {

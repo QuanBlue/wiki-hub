@@ -10,15 +10,20 @@ Requires ``WIKIHUB_TEST_DATABASE_URL``; skipped otherwise.
 from __future__ import annotations
 
 import re
+import uuid
+from datetime import UTC, datetime
 from email import message_from_bytes
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BadRequestError
+from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.core.security import verify_password
+from app.models.admin_mail import AdminRequest
 from app.models.user import User
 from app.modules.admin_mail.actions import RequestActionService, generate_password
+from app.modules.admin_mail.crypto import CredentialUnreadableError
 from app.modules.admin_mail.service import AdminMailService
 from app.modules.auth.service import AuthService
 from app.schemas.user import UserCreate
@@ -320,6 +325,36 @@ class TestResetPassword:
         assert victim.password_hash == old_hash
         assert smtp_server.envelopes == []
 
+    async def test_an_email_typed_as_the_username_finds_the_account_to_reset(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+    ) -> None:
+        """People type their address into the sign-in page's username box. That
+        must still find their account and offer a reset - not "create an
+        account", which then fails on the taken address."""
+        admin, actions = await _setup(session, smtp_server)
+        member = await _member(session)
+        request_id = await _submit(
+            session,
+            admin,
+            kind="password_reset",
+            requester_email=member.email,
+            requester_username=member.email.upper(),
+        )
+        smtp_server.envelopes.clear()
+
+        preview = await actions.preview(request_id)
+
+        assert preview.auto_action == "reset_password"
+        assert preview.matched_account is not None
+        assert preview.matched_account.username == member.username
+        assert preview.auto_allowed is True
+        result = await actions.reset_password(request_id, login_url=None)
+        assert result.email_sent is True
+        (envelope,) = smtp_server.envelopes
+        assert envelope.rcpt_tos == [member.email]
+
     async def test_a_password_reset_for_no_known_account_offers_to_create_one(
         self,
         session: AsyncSession,
@@ -371,3 +406,119 @@ class TestResetPassword:
             blocked[label] = (await actions.preview(request_id)).auto_blocked
 
         assert blocked == {"disabled": "account_inactive", "peer": "peer_admin"}
+
+
+class TestEdges:
+    async def test_an_unknown_request_is_not_found(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+    ) -> None:
+        _admin_user, actions = await _setup(session, smtp_server)
+        with pytest.raises(NotFoundError):
+            await actions.preview(uuid.uuid4())
+
+    @pytest.mark.parametrize(
+        ("name", "email", "expected"),
+        [
+            # A two-letter address falls back to the name...
+            ("Jo Ann", "jo@example.org", "jo.ann"),
+            # ...and a name too short as well is padded out.
+            ("Bo", "b@example.org", "bouser"),
+        ],
+    )
+    async def test_a_short_address_borrows_the_name_for_a_username(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+        name: str,
+        email: str,
+        expected: str,
+    ) -> None:
+        admin, actions = await _setup(session, smtp_server)
+        request_id = await _submit(session, admin, requester_name=name, requester_email=email)
+
+        assert (await actions.preview(request_id)).suggested_username == expected
+
+    async def test_running_out_of_usernames_is_refused(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+    ) -> None:
+        admin, actions = await _setup(session, smtp_server)
+        request_id = await _submit(session, admin, requester_email="zed@example.org")
+        taken = await _member(session)
+
+        with (
+            patch.object(actions.auth.users, "get_by_username", AsyncMock(return_value=taken)),
+            patch.object(actions.auth.users, "get_by_email", AsyncMock(return_value=None)),
+            pytest.raises(BadRequestError) as caught,
+        ):
+            await actions.preview(request_id)
+
+        assert caught.value.code == "auto_no_username"
+
+    async def test_an_address_that_is_not_one_cannot_get_an_account(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+    ) -> None:
+        admin, actions = await _setup(session, smtp_server)
+        request_id = await _submit(session, admin, requester_email="erin@example.org")
+        # The form validates the address; a row from before that check need not.
+        request = await session.get(AdminRequest, uuid.UUID(str(request_id)))
+        assert request is not None
+        request.requester_email = "erin at example dot org"
+        await session.flush()
+
+        assert (await actions.preview(request_id)).auto_blocked == "email_invalid"
+
+        request.resolved_at = datetime.now(UTC)
+        await session.flush()
+        assert (await actions.preview(request_id)).auto_blocked == "already_resolved"
+
+    async def test_the_protected_account_is_left_to_a_person(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+    ) -> None:
+        admin, actions = await _setup(session, smtp_server)
+        protected = await _member(session)
+        protected.is_protected = True
+        await session.flush()
+        request_id = await _submit(session, admin, requester_email=protected.email)
+
+        assert (await actions.preview(request_id)).auto_blocked == "account_protected"
+
+    async def test_with_no_mailbox_to_send_from_the_password_is_handed_back(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+    ) -> None:
+        admin, actions = await _setup(session, smtp_server)
+        request_id = await _submit(session, admin, requester_email="fay@example.org")
+
+        with patch.object(
+            actions.mail, "_resolve_sender", AsyncMock(side_effect=PermissionDeniedError("none"))
+        ):
+            result = await actions.create_account(request_id, login_url=None)
+
+        assert result.email_sent is False
+        assert result.email_error == "No administrator mailbox is set up to send this from."
+        assert result.password is not None
+
+    async def test_an_unreadable_mailbox_password_is_reported_not_raised(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+    ) -> None:
+        admin, actions = await _setup(session, smtp_server)
+        request_id = await _submit(session, admin, requester_email="gus@example.org")
+
+        with patch.object(
+            actions.mail, "_config", Mock(side_effect=CredentialUnreadableError("key rotated"))
+        ):
+            result = await actions.create_account(request_id, login_url=None)
+
+        assert result.email_sent is False
+        assert result.password is not None
