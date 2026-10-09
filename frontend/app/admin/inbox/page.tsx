@@ -33,11 +33,12 @@ export default async function AdminInboxPage({
         </p>
       </header>
 
-      {summary.has_mailbox ? (
+      {summary.has_inbox ? (
         <InboxList openId={openId} />
       ) : (
-        // Only an account linked to a mailbox has an Inbox; the sidebar hides
-        // the link for everyone else, so this is only reached by typing the URL.
+        // Every system administrator has the Requests page (mailbox or not);
+        // the sidebar hides the link for everyone else, so this is only
+        // reached by typing the URL.
         <div className="border-border bg-surface rounded-xl border p-6 shadow-sm">
           <p className="font-semibold">{t("adminInbox.noMailboxTitle")}</p>
           <p className="text-muted-foreground mt-1 max-w-xl text-sm">

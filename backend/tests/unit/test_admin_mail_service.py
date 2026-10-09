@@ -97,6 +97,9 @@ def svc(monkeypatch: pytest.MonkeyPatch) -> AdminMailService:
     # Bulk updates (clearing a request's bell notification, "mark all read"):
     # no rows to report back, since nothing here inspects the result.
     session.execute = AsyncMock()
+    # Row lookups (requests this admin has no Inbox row for yet, delivery
+    # overviews): nothing to find unless a test says otherwise.
+    session.scalars = AsyncMock(return_value=[])
     # The built-in super administrator by default: most of these tests are
     # about mailbox behaviour (passwords, reconnection, audit trails), not
     # about who may touch someone else's mailbox - see `TestMailboxOwnership`
@@ -126,6 +129,8 @@ def svc(monkeypatch: pytest.MonkeyPatch) -> AdminMailService:
         ),
     )
     service.is_admin = admin_check  # type: ignore[attr-defined]
+    # Both query the database directly; covered by the integration tests.
+    service._system_administrators = AsyncMock(return_value=[])  # type: ignore[method-assign]
     return service
 
 
@@ -603,17 +608,32 @@ class TestMailboxOwnership:
 
 
 class TestInbox:
-    async def test_an_account_without_a_mailbox_has_no_inbox_and_no_error_on_the_summary(
+    async def test_an_account_that_is_not_an_administrator_has_no_inbox(
         self, svc: AdminMailService
     ) -> None:
         user = _user()
+        svc.is_admin.return_value = False  # type: ignore[attr-defined]
+
+        summary = await svc.summary(user)
+
+        assert summary.has_mailbox is False and summary.has_inbox is False
+        with pytest.raises(PermissionDeniedError) as caught:
+            await svc.list_inbox(user, status="all", limit=20, offset=0)
+        assert caught.value.code == "no_admin_inbox"
+
+    async def test_an_administrator_without_a_mailbox_still_has_the_inbox(
+        self, svc: AdminMailService
+    ) -> None:
+        """Requests are shared by every system administrator - a mailbox only
+        decides where the email goes."""
+        user = _user()
+        svc.repo.unread_count.return_value = 2
 
         summary = await svc.summary(user)
 
         assert summary.has_mailbox is False
-        with pytest.raises(PermissionDeniedError) as caught:
-            await svc.list_inbox(user, status="all", limit=20, offset=0)
-        assert caught.value.code == "no_admin_mailbox"
+        assert summary.has_inbox is True
+        assert summary.unread_count == 2
 
     async def test_a_switched_off_mailbox_hides_the_inbox_too(self, svc: AdminMailService) -> None:
         user = _user()

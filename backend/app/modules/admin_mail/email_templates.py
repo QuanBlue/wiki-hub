@@ -316,6 +316,14 @@ def _render_html(brand: Brand, content: EmailContent) -> str:
             f'border-radius:8px;background:{brand.primary};'
             f'border:1px solid {brand.dark};">{_e(label)}</a></td></tr></table>'
         )
+        # Plain-text fallback right under it: some webmail clients drop the
+        # whole button table, leaving nothing to click.
+        parts.append(
+            f'<p style="margin:-6px 0 14px;font-family:{_FONT};font-size:12px;'
+            f'line-height:18px;color:{_MUTED};word-break:break-all;">'
+            f'Button not showing? <a href="{_e(url)}" style="color:{brand.primary};">'
+            f"{_e(url)}</a></p>"
+        )
     if content.closing:
         parts.append(
             f'<p style="margin:0 0 4px;font-family:{_FONT};font-size:12px;line-height:18px;'
@@ -513,7 +521,7 @@ def request_notification(
             ],
             quote_label="Message",
             quote=message or "(No message was written.)",
-            button=("Open Requests", inbox_url) if inbox_url else None,
+            button=("Open this request", inbox_url) if inbox_url else None,
             closing="Reply to this email to answer them directly.",
             signature=Signature(
                 name=f"{brand.site_name} notifications",

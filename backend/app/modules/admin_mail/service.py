@@ -21,6 +21,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +42,13 @@ from app.models.admin_mail import (
 )
 from app.models.audit import AuditAction
 from app.models.notification import Notification
+from app.models.permission import (
+    GlobalPermission,
+    Group,
+    GroupGlobalPermission,
+    GroupMember,
+    UserGlobalPermissionOverride,
+)
 from app.models.user import User
 from app.modules.admin_mail import email_templates, smtp
 from app.modules.admin_mail.crypto import (
@@ -500,6 +508,42 @@ class AdminMailService:
 
     # --- a user asking for help (public) ---------------------------------
 
+    async def _system_administrators(self) -> list[User]:
+        """Every active account that is a system administrator - a superuser,
+        or granted `system_admin` by a group or its own override (and not
+        denied it by an override)."""
+        candidate_ids = set(
+            await self.session.scalars(
+                select(User.id).where(User.is_active.is_(True), User.is_superuser.is_(True))
+            )
+        )
+        candidate_ids |= set(
+            await self.session.scalars(
+                select(GroupMember.user_id)
+                .join(Group, Group.id == GroupMember.group_id)
+                .join(GroupGlobalPermission, GroupGlobalPermission.group_id == Group.id)
+                .where(
+                    Group.is_active.is_(True),
+                    GroupGlobalPermission.permission == GlobalPermission.system_admin,
+                )
+            )
+        )
+        candidate_ids |= set(
+            await self.session.scalars(
+                select(UserGlobalPermissionOverride.user_id).where(
+                    UserGlobalPermissionOverride.permission == GlobalPermission.system_admin,
+                    UserGlobalPermissionOverride.enabled.is_(True),
+                )
+            )
+        )
+        permissions = PermissionService(self.session)
+        admins: list[User] = []
+        for user_id in candidate_ids:
+            user = await self.session.get(User, user_id)
+            if user is not None and user.is_active and await permissions.is_system_admin(user):
+                admins.append(user)
+        return admins
+
     async def submit_request(self, payload: ContactAdminCreate, *, client_ip: str | None) -> str:
         """Store the request, then email every active mailbox. Returns
         ``sent``, ``failed`` or ``no_mailbox``."""
@@ -518,30 +562,36 @@ class AdminMailService:
         self.repo.add(request)
         await self.session.flush()
 
+        # Every system administrator sees every request and any of them can
+        # handle it - whoever gets there first. Mailboxes only decide where
+        # the email goes, not who may see or act on the request.
         mailboxes = await self.repo.active_mailboxes()
-        if not mailboxes:
-            return "no_mailbox"
-
-        recipients = {
-            mailbox.id: AdminRequestRecipient(
+        mailbox_by_user = {mailbox.user_id: mailbox for mailbox in mailboxes}
+        audience = {admin.id for admin in await self._system_administrators()}
+        audience |= set(mailbox_by_user)
+        rows: dict[uuid.UUID, AdminRequestRecipient] = {}
+        for user_id in audience:
+            mailbox = mailbox_by_user.get(user_id)
+            rows[user_id] = AdminRequestRecipient(
                 request_id=request.id,
-                user_id=mailbox.user_id,
-                mailbox_email=mailbox.email,
-                delivery_status=DeliveryStatus.failed.value,
+                user_id=user_id,
+                mailbox_email=mailbox.email if mailbox else "",
+                delivery_status=(
+                    DeliveryStatus.failed.value if mailbox else DeliveryStatus.none.value
+                ),
             )
-            for mailbox in mailboxes
-        }
-        for recipient in recipients.values():
-            self.repo.add(recipient)
-            # And a line in each administrator's bell, so they hear about it in
-            # the app whether or not the email gets through.
+            self.repo.add(rows[user_id])
             await notify(
                 self.session,
-                recipient.user_id,
+                user_id,
                 "admin_request",
                 params={"name": request.requester_name, "type": request.kind},
                 link=f"/admin/inbox?request={request.id}",
             )
+        await self.session.flush()
+        if not mailboxes:
+            return "no_mailbox"
+        recipients = {mailbox.id: rows[mailbox.user_id] for mailbox in mailboxes}
 
         effective = await SiteSettingsService(self.session).get_effective()
         site_name = effective.site_name
@@ -599,18 +649,71 @@ class AdminMailService:
             username=request.requester_username,
             message=request.message,
             received_at=_now(),
-            inbox_url=public_link("/admin/inbox"),
+            # Straight to this request (the Inbox opens it from `?request=`),
+            # so the administrator lands on the reset / create actions.
+            inbox_url=public_link(f"/admin/inbox?request={request.id}"),
         )
 
-    # --- the inbox (accounts linked to an active mailbox) ------------------
+    # --- the inbox (every system administrator) ----------------------------
 
-    async def _require_mailbox(self, user: User) -> AdminMailbox:
-        found = await self.repo.get_mailbox_for_user(user.id)
-        if found is None or not found[0].is_enabled or not user.is_active:
+    async def _require_inbox(self, user: User) -> None:
+        """Requests are shared by every active system administrator: any of
+        them may read and handle one. Also gives this account a row for any
+        request it has none for yet (it became an administrator later), so
+        the Inbox - which reads per-account rows for unread state - lists
+        everything."""
+        if not user.is_active or not await PermissionService(self.session).is_system_admin(user):
             raise PermissionDeniedError(
-                "This account has no active administrator mailbox.", code="no_admin_mailbox"
+                "Only system administrators can see requests.", code="no_admin_inbox"
             )
-        return found[0]
+        await self._backfill_inbox(user)
+
+    async def _backfill_inbox(self, user: User) -> None:
+        """Give an administrator a row (unread state) for every request they
+        have none for yet - they became an administrator after it arrived."""
+        addressed = select(AdminRequestRecipient.request_id).where(
+            AdminRequestRecipient.user_id == user.id
+        )
+        missing = list(
+            await self.session.scalars(
+                select(AdminRequest.id).where(AdminRequest.id.not_in(addressed))
+            )
+        )
+        for request_id in missing:
+            self.repo.add(
+                AdminRequestRecipient(
+                    request_id=request_id,
+                    user_id=user.id,
+                    mailbox_email="",
+                    delivery_status=DeliveryStatus.none.value,
+                )
+            )
+        if missing:
+            await self.session.flush()
+
+    async def _delivery_overview(
+        self, request_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, AdminRequestRecipient]:
+        """For each request, the row that best says whether it was emailed:
+        a delivered one if any mailbox got it, else a failed attempt. Shown on
+        every administrator's view, since most have no mailbox of their own."""
+        if not request_ids:
+            return {}
+        rows = await self.session.scalars(
+            select(AdminRequestRecipient).where(
+                AdminRequestRecipient.request_id.in_(request_ids),
+                AdminRequestRecipient.delivery_status != DeliveryStatus.none.value,
+            )
+        )
+        best: dict[uuid.UUID, AdminRequestRecipient] = {}
+        for row in rows:
+            current = best.get(row.request_id)
+            if current is None or (
+                row.delivery_status == DeliveryStatus.sent.value
+                and current.delivery_status != DeliveryStatus.sent.value
+            ):
+                best[row.request_id] = row
+        return best
 
     async def _resolve_sender(self, actor: User) -> tuple[AdminMailbox, bool]:
         """The mailbox to send `actor`'s account mail from, and whether it is
@@ -937,18 +1040,26 @@ class AdminMailService:
         return any(box.user_id != user.id for box in await self.repo.working_mailboxes())
 
     async def summary(self, user: User) -> MailSummary:
+        has_inbox = user.is_active and await PermissionService(self.session).is_system_admin(user)
+        inbox_fields: dict[str, object] = {"has_inbox": has_inbox}
+        if has_inbox:
+            # So the sidebar/bell count is right before the page is opened.
+            await self._backfill_inbox(user)
+            inbox_fields["unread_count"] = await self.repo.unread_count(user.id)
+            inbox_fields["latest_request_at"] = await self.repo.latest_request_at(user.id)
         found = await self.repo.get_mailbox_for_user(user.id)
         if found is None or not user.is_active:
             return MailSummary(
                 has_mailbox=False,
                 can_send_account_mail=user.is_active and await self._pool_has_candidate(user),
+                **inbox_fields,
             )
         mailbox = found[0]
         # A connected mailbox can send account mail whether or not it also
         # receives requests - see `_require_sendable_mailbox`. `has_mailbox`
         # itself stays tied to "Receive requests": it gates the Inbox and bell,
         # which a mailbox that opted out of requests has nothing to show in.
-        has_inbox = mailbox.is_enabled
+        receives = mailbox.is_enabled
         # `_resolve_sender` accepts this mailbox outright, whatever its
         # health - but the summary only promises "will actually work" when
         # it is genuinely connected, falling back to "some pool mailbox will
@@ -956,18 +1067,25 @@ class AdminMailService:
         # broken mailbox of the account's own will be the one sending.
         own_ok = mailbox.health_status == "ok"
         return MailSummary(
-            has_mailbox=has_inbox,
-            mailbox_id=mailbox.id if has_inbox else None,
+            has_mailbox=receives,
+            mailbox_id=mailbox.id if receives else None,
             mailbox_email=mailbox.email,
             health_status=mailbox.health_status,
             health_error=mailbox.health_error,
-            unread_count=await self.repo.unread_count(user.id) if has_inbox else 0,
-            latest_request_at=await self.repo.latest_request_at(user.id) if has_inbox else None,
             can_send_account_mail=own_ok or await self._pool_has_candidate(user),
+            **inbox_fields,
         )
 
     @staticmethod
-    def _item(recipient: AdminRequestRecipient, request: AdminRequest) -> InboxItem:
+    def _item(
+        recipient: AdminRequestRecipient,
+        request: AdminRequest,
+        delivery: AdminRequestRecipient | None = None,
+    ) -> InboxItem:
+        # Whether it was emailed is a fact about the request, not about this
+        # administrator - most have no mailbox and their own row says "none".
+        shown = delivery if recipient.delivery_status == DeliveryStatus.none.value else None
+        source = shown or recipient
         return InboxItem(
             id=request.id,
             kind=request.kind,
@@ -978,13 +1096,13 @@ class AdminMailService:
             created_at=request.created_at,
             read_at=recipient.read_at,
             resolved_at=request.resolved_at,
-            delivery_status=recipient.delivery_status,
-            delivery_error=recipient.delivery_error,
-            mailbox_email=recipient.mailbox_email,
+            delivery_status=source.delivery_status,
+            delivery_error=source.delivery_error,
+            mailbox_email=source.mailbox_email,
         )
 
     async def inbox_counts(self, user: User, *, kind: str | None = None) -> InboxCounts:
-        await self._require_mailbox(user)
+        await self._require_inbox(user)
         return InboxCounts(**await self.repo.inbox_counts(user.id, kind=kind))
 
     async def list_inbox(
@@ -996,28 +1114,38 @@ class AdminMailService:
         offset: int,
         kind: str | None = None,
     ) -> Page[InboxItem]:
-        await self._require_mailbox(user)
+        await self._require_inbox(user)
         rows, total = await self.repo.list_inbox(
             user.id, status=status, limit=limit, offset=offset, kind=kind
         )
+        overview = await self._delivery_overview([request.id for _, request in rows])
         return Page.of(
-            [self._item(recipient, request) for recipient, request in rows],
+            [
+                self._item(recipient, request, overview.get(request.id))
+                for recipient, request in rows
+            ],
             total,
             limit=limit,
             offset=offset,
         )
 
     async def get_inbox_item(self, user: User, request_id: uuid.UUID) -> InboxItem:
-        await self._require_mailbox(user)
+        await self._require_inbox(user)
         row = await self.repo.get_inbox_item(user.id, request_id)
         if row is None:
             raise NotFoundError("Request not found.", code="request_not_found")
-        return self._item(*row)
+        return await self.item_with_delivery(*row)
+
+    async def item_with_delivery(
+        self, recipient: AdminRequestRecipient, request: AdminRequest
+    ) -> InboxItem:
+        overview = await self._delivery_overview([request.id])
+        return self._item(recipient, request, overview.get(request.id))
 
     async def update_inbox_item(
         self, user: User, request_id: uuid.UUID, payload: InboxUpdate
     ) -> InboxItem:
-        await self._require_mailbox(user)
+        await self._require_inbox(user)
         row = await self.repo.get_inbox_item(user.id, request_id)
         if row is None:
             raise NotFoundError("Request not found.", code="request_not_found")
@@ -1039,11 +1167,14 @@ class AdminMailService:
         # administrator actually opened it from.
         if was_unread and recipient.read_at is not None:
             await self._clear_request_notification(user.id, request.id)
+        if payload.resolved is True:
+            # Handled by someone: nobody else needs nudging about it.
+            await self.clear_request_notifications_for_everyone(request.id)
         await self.session.flush()
-        return self._item(recipient, request)
+        return await self.item_with_delivery(recipient, request)
 
     async def mark_all_read(self, user: User) -> None:
-        await self._require_mailbox(user)
+        await self._require_inbox(user)
         await self.repo.mark_all_read(user.id, _now())
         # Every admin-request notification this account had is now stale too -
         # otherwise the bell would keep counting requests the Inbox no longer
@@ -1053,6 +1184,17 @@ class AdminMailService:
             .where(
                 Notification.user_id == user.id,
                 Notification.kind == "admin_request",
+                Notification.read_at.is_(None),
+            )
+            .values(read_at=_now())
+        )
+
+    async def clear_request_notifications_for_everyone(self, request_id: uuid.UUID) -> None:
+        await self.session.execute(
+            sa_update(Notification)
+            .where(
+                Notification.kind == "admin_request",
+                Notification.link == f"/admin/inbox?request={request_id}",
                 Notification.read_at.is_(None),
             )
             .values(read_at=_now())

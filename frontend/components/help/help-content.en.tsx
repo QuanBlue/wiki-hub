@@ -1528,7 +1528,7 @@ export const sectionsEn: HelpSection[] = [
           <li>Being added to or removed from a group.</li>
           <li>An administrator resetting your password.</li>
           <li>Your workspace role or permissions being changed, or your account being switched back on.</li>
-          <li>For administrators with a mailbox: a new request from the sign-in page.</li>
+          <li>For System Administrators: every new request from the sign-in page.</li>
         </ul>
         <p className="mt-2 text-sm">
           Something you do yourself does not notify you. Notifications are shown in your own
@@ -2879,9 +2879,19 @@ export const sectionsEn: HelpSection[] = [
           Someone who has no account yet, or has forgotten their password, cannot sign in to
           ask for help. The <strong>Contact an administrator</strong> link on the sign-in page
           gives them a short form (fields marked with a red * are required: name and email; the
-          message is optional). WikiHub saves the request, then e-mails it to your
-          administrator mailboxes and shows it on their <strong>Requests</strong> page.
+          message is optional). WikiHub saves the request, tells{" "}
+          <strong>every System Administrator</strong> in the bell, shows it on everyone&apos;s{" "}
+          <strong>Requests</strong> page, and e-mails it to your administrator mailboxes.
         </p>
+        <Callout variant="tip" title="Shared by all administrators">
+          Every System Administrator sees every request and any of them can handle it -
+          whoever gets there first. A mailbox is not needed to see or act on requests: it only
+          decides where the email goes. Once someone resolves a request it is resolved for
+          everyone, and the others&apos; bell notifications about it clear. With no mailbox set
+          up, requests still arrive in the app, marked <em>In app only</em>; the sign-in
+          details from <em>Create account</em> / <em>Reset password</em> are then handed back
+          on screen to pass on yourself.
+        </Callout>
 
         <p className="mt-3">
           <strong>Set up a mailbox</strong> (System Administrators): open{" "}
@@ -2889,10 +2899,11 @@ export const sectionsEn: HelpSection[] = [
         </p>
         <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
-            <strong>Administrator account</strong>: the account whose Requests page receives the
-            requests. Only System Administrators can be linked, and each account has one
-            mailbox. If that account is disabled, its mailbox stops receiving requests
-            automatically.
+            <strong>Administrator account</strong>: the account this mailbox belongs to - the
+            request emails go to its address and it signs the mail that account sends. Only
+            System Administrators can be linked, and each account has one mailbox. If that
+            account is disabled, its mailbox stops receiving requests automatically. (Every
+            System Administrator sees the requests in the app either way.)
           </li>
           <li>
             <strong>Mailbox address</strong>, <strong>Sender name</strong> and{" "}

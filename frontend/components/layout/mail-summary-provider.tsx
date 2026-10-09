@@ -11,6 +11,7 @@ const POLL_INTERVAL_MS = 15_000;
 
 const EMPTY: MailSummary = {
   has_mailbox: false,
+  has_inbox: false,
   mailbox_id: null,
   mailbox_email: null,
   health_status: null,

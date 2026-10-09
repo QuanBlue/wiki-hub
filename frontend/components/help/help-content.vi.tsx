@@ -1599,7 +1599,7 @@ export const sectionsVi: HelpSection[] = [
           <li>Được thêm vào hoặc bị gỡ khỏi một nhóm.</li>
           <li>Quản trị viên đặt lại mật khẩu của bạn.</li>
           <li>Vai trò hoặc quyền trên workspace của bạn bị thay đổi, hoặc tài khoản được bật lại.</li>
-          <li>Với quản trị viên có hộp thư: có yêu cầu mới từ trang đăng nhập.</li>
+          <li>Với Quản trị hệ thống: mọi yêu cầu mới từ trang đăng nhập.</li>
         </ul>
         <p className="mt-2 text-sm">
           Việc chính bạn làm không tạo thông báo cho bạn. Thông báo hiển thị bằng ngôn ngữ của
@@ -3035,9 +3035,19 @@ export const sectionsVi: HelpSection[] = [
           Người chưa có tài khoản, hoặc quên mật khẩu, không thể đăng nhập để nhờ giúp đỡ.
           Liên kết <strong>Liên hệ quản trị viên</strong> trên trang đăng nhập cho họ một biểu
           mẫu ngắn (các ô có dấu * đỏ là bắt buộc: tên và email; nội dung không bắt buộc).
-          WikiHub lưu yêu cầu, sau đó gửi mail tới các hộp thư quản trị của bạn và
-          hiển thị nó ở trang <strong>Yêu cầu</strong> của họ.
+          WikiHub lưu yêu cầu, báo trên chuông cho <strong>mọi Quản trị hệ thống</strong>,
+          hiển thị ở trang <strong>Yêu cầu</strong> của tất cả họ, và gửi mail tới các hộp thư
+          quản trị.
         </p>
+        <Callout variant="tip" title="Dùng chung cho mọi quản trị viên">
+          Mọi Quản trị hệ thống đều thấy mọi yêu cầu và ai cũng có thể xử lý - ai thấy trước
+          thì xử lý trước. Không cần hộp thư để xem hay xử lý yêu cầu: hộp thư chỉ quyết định
+          email được gửi đi đâu. Khi một người đã xử lý xong, yêu cầu được đánh dấu đã giải
+          quyết với tất cả, và thông báo trên chuông của những người khác tự tắt. Nếu chưa có
+          hộp thư nào, yêu cầu vẫn đến trong app với nhãn <em>Chỉ trong app</em>; thông tin
+          đăng nhập từ <em>Tạo tài khoản</em> / <em>Đặt lại mật khẩu</em> khi đó được hiện trên
+          màn hình để bạn tự chuyển cho người dùng.
+        </Callout>
 
         <p className="mt-3">
           <strong>Thiết lập hộp thư</strong> (Quản trị viên hệ thống): mở{" "}
@@ -3046,9 +3056,11 @@ export const sectionsVi: HelpSection[] = [
         </p>
         <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
-            <strong>Tài khoản quản trị</strong>: tài khoản có trang Yêu cầu nhận các yêu cầu. Chỉ
-            có thể gắn với Quản trị viên hệ thống, và mỗi tài khoản có một hộp thư. Nếu tài
-            khoản đó bị vô hiệu hóa, hộp thư của nó tự động ngừng nhận yêu cầu.
+            <strong>Tài khoản quản trị</strong>: tài khoản sở hữu hộp thư này - email yêu cầu
+            được gửi tới địa chỉ của nó và nó ký tên trên mail tài khoản đó gửi đi. Chỉ có thể
+            gắn với Quản trị viên hệ thống, và mỗi tài khoản có một hộp thư. Nếu tài khoản đó bị
+            vô hiệu hóa, hộp thư của nó tự động ngừng nhận yêu cầu. (Dù vậy mọi Quản trị hệ thống
+            vẫn thấy các yêu cầu trong app.)
           </li>
           <li>
             <strong>Địa chỉ hộp thư</strong>, <strong>Tên người gửi</strong> và{" "}

@@ -351,6 +351,9 @@ export interface MailboxTestResult {
  * many requests are unread, and whether the password banner should show. */
 export interface MailSummary {
   has_mailbox: boolean;
+  /** Requests page and its bell count - every active system administrator,
+   * whether or not they have a mailbox of their own. */
+  has_inbox?: boolean;
   mailbox_id: string | null;
   mailbox_email: string | null;
   health_status: MailHealth | null;
@@ -383,7 +386,8 @@ export interface InboxItem {
   read_at: string | null;
   resolved_at: string | null;
   /** The email sent to *this* account's mailbox. */
-  delivery_status: "sent" | "failed";
+  /** `none`: no mailbox received it, so it was only shown in the app. */
+  delivery_status: "sent" | "failed" | "none";
   delivery_error: string | null;
   mailbox_email: string;
 }

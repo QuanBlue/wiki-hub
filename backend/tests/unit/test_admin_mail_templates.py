@@ -74,7 +74,7 @@ class TestRequestNotification:
         assert "as typed, not verified" in html
         assert "Best regards," in html and "Acme Docs notifications" in html
         assert 'href="https://wiki.example.test/admin/inbox"' in html
-        assert ">Open Requests<" in html
+        assert ">Open this request<" in html
         # The plain-text alternative has no colour to speak of - just the words.
         assert text.startswith("New account request from Thanh Quân\n")
 
@@ -108,7 +108,7 @@ class TestRequestNotification:
         assert "Email: quan@example.org (as typed, not verified)" in text
         assert "Username: -" in text
         assert "Please create an account.\nThank you!" in text
-        assert "Open Requests: https://wiki.example.test/admin/inbox" in text
+        assert "Open this request: https://wiki.example.test/admin/inbox" in text
         assert "Best regards," in text
         assert "28 Sep 2026, 14:30 UTC" in text
 
@@ -126,7 +126,7 @@ class TestRequestNotification:
     def test_without_a_public_address_there_is_no_link_and_no_dead_button(self) -> None:
         text, html = _notification(inbox_url=None)
 
-        assert "Open Requests" not in html
+        assert "Open this request" not in html
         assert "http" not in text
         assert "Reply to this email to answer them directly." in text
 
@@ -243,3 +243,64 @@ class TestSimpleLook:
 
         assert "text-transform:uppercase" not in html
         assert "ACCOUNT REQUEST" not in text
+
+
+class TestRemainingBranches:
+    def test_a_colour_that_is_not_six_hex_digits_falls_back_to_the_default(self) -> None:
+        assert Brand.from_settings("WikiHub", "#12345").primary == Brand().primary
+
+    def test_a_custom_logo_replaces_the_monogram(self) -> None:
+        brand = Brand.from_settings(
+            "WikiHub", None, custom_logo_url="https://wiki.example.test/logo.png"
+        )
+        _text, html = templates.render(
+            brand, templates.EmailContent(preheader="Hi", title="Hello", paragraphs=["Body"])
+        )
+
+        assert '<img src="https://wiki.example.test/logo.png"' in html
+
+    def test_a_message_without_a_signature_has_no_signature_block(self) -> None:
+        unsigned = templates.render(
+            Brand(), templates.EmailContent(preheader="Hi", title="Hello", paragraphs=["Body"])
+        )
+        signed = templates.render(
+            Brand(),
+            templates.EmailContent(
+                preheader="Hi",
+                title="Hello",
+                paragraphs=["Body"],
+                signature=Signature(name="Ops", title="Administrator"),
+            ),
+        )
+
+        assert "Ops" not in unsigned[1]
+        assert "Ops" in signed[1]
+
+    def test_closing_names_who_took_the_issue_when_someone_else_closed_it(self) -> None:
+        text, _html = templates.issue_closed(
+            Brand(),
+            name="Alice",
+            username="alice",
+            issue_title="Save fails",
+            closed_by="Bob",
+            taken_by="Carol",
+            note=None,
+            issues_url=None,
+            signature=Signature(name="Bob", title="Administrator"),
+        )
+
+        assert "Taken by" in text and "Carol" in text
+
+    def test_a_long_description_is_cut_short_in_the_new_issue_email(self) -> None:
+        text, _html = templates.issue_created(
+            Brand(),
+            name="Dan",
+            username="dan",
+            reporter="Alice",
+            issue_title="Save fails",
+            description="word " * 200,
+            issue_url=None,
+        )
+
+        assert "word word..." in text
+        assert ("word " * 100) not in text

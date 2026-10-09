@@ -1844,6 +1844,7 @@ export const en = {
     resolved: "Resolved",
     emailSent: "Emailed",
     emailFailed: "Not emailed",
+    emailNone: "In app only",
     viewDetails: "View details",
     detailsTitle: "Request from {name}",
     fieldName: "Name",
@@ -1854,6 +1855,8 @@ export const en = {
     unverifiedEmail: "As typed - not verified.",
     deliverySent: "Emailed to {email}.",
     deliveryFailed: "Could not email {email}.",
+    deliveryNone:
+      "Not emailed - no administrator mailbox was receiving requests. Every administrator was told in WikiHub instead.",
     actionsTitle: "Handle this request",
     actionsResolved: "This request has been resolved.",
     actionsLoadError: "Could not check what can be done for this request.",
@@ -1957,7 +1960,7 @@ export const en = {
     deliveryProblemBody:
       "Your request was recorded, but the email to the administrators didn't go through. Please tell your administrator directly so they can check it.",
     noMailboxBody:
-      "Your request was recorded, but no administrator mailbox is set up yet. Please tell your administrator directly.",
+      "Your request was recorded and the administrators have been notified in WikiHub, but it could not be emailed because no administrator mailbox is set up yet. If it is urgent, tell your administrator directly.",
     sendAnother: "Send another request",
     rateLimited: "Too many requests. Please wait a while and try again.",
     error: "Could not send your request. Try again.",

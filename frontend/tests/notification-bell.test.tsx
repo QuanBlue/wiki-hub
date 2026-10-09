@@ -179,7 +179,7 @@ describe("the bell", () => {
     expect(await screen.findByText("You're all caught up")).toBeInTheDocument();
   });
 
-  it("only offers Requests to someone who has a mailbox", async () => {
+  it("only offers Requests to someone who has the Requests inbox", async () => {
     const user = userEvent.setup();
     const { unmount } = mount([note()]);
     await user.click(screen.getByRole("button", { name: /Notifications/ }));
@@ -188,7 +188,8 @@ describe("the bell", () => {
     unmount();
 
     mount([note()], {
-      mail: { ...NO_MAILBOX, has_mailbox: true, mailbox_id: "mb-1", mailbox_email: "a@b.test" },
+      // Any system administrator - a mailbox of their own is not needed.
+      mail: { ...NO_MAILBOX, has_inbox: true },
     });
     await user.click(screen.getByRole("button", { name: /Notifications/ }));
     expect(await screen.findByRole("link", { name: "Open Requests" })).toHaveAttribute(
