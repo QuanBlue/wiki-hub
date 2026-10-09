@@ -25,6 +25,7 @@ from app.api.v1 import (
     pages,
     revisions,
     search,
+    shares,
     site_settings,
     spaces,
     storage_admin,
@@ -42,6 +43,7 @@ api_router.include_router(pages.router)
 api_router.include_router(pages.standalone_router)
 api_router.include_router(revisions.router)
 api_router.include_router(comments.router)
+api_router.include_router(shares.router)
 api_router.include_router(search.router)
 api_router.include_router(attachments.router)
 api_router.include_router(attachments.upload_router)

@@ -106,6 +106,7 @@ export function PageComments({
   pageSlug,
   currentUser,
   headerStart,
+  headerEnd,
   composerContainer,
 }: {
   spaceKey: string;
@@ -114,6 +115,8 @@ export function PageComments({
   /** Shown first in the header row, before the comment count - the page's
    * own Like button. */
   headerStart?: ReactNode;
+  /** Shown after the comment count - the page's share count. */
+  headerEnd?: ReactNode;
   /** Where to render the new-comment box instead of under the thread - a
    * sticky slot that keeps it in view while reading the page. */
   composerContainer?: HTMLElement | null;
@@ -405,6 +408,7 @@ export function PageComments({
           <MessageCircle className="size-4.5" aria-hidden />
           {total}
         </button>
+        {headerEnd}
       </div>
         {showViewMenu ? (
           <CommentViewMenu view={view} onViewChange={changeView} counts={viewCounts} />

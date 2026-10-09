@@ -51,6 +51,7 @@ from app.models.permission import (
 )
 from app.models.restriction import PageGroupRestriction, PageUserRestriction
 from app.models.revision import PageRevision
+from app.models.share import PageShare
 from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceOwner, SpaceStatus
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
@@ -88,6 +89,7 @@ from app.schemas.backup import (
     BackupPageLike,
     BackupPagePin,
     BackupPageRevision,
+    BackupPageShare,
     BackupPageUserRestriction,
     BackupSiteSettings,
     BackupSpace,
@@ -449,6 +451,32 @@ def _comment_entries(
     return entries
 
 
+def _share_entries(
+    shares: Sequence[PageShare],
+    page_ref: Callable[[UUID], tuple[str, str] | None],
+    users_by_id: dict[UUID, User],
+) -> list[BackupPageShare]:
+    """Backup rows for the shares whose page and recipient are part of this backup."""
+    entries: list[BackupPageShare] = []
+    for share in sorted(shares, key=lambda row: (row.created_at, row.id)):
+        ref = page_ref(share.page_id)
+        recipient = users_by_id.get(share.recipient_id)
+        if ref is None or recipient is None:
+            continue
+        sharer = users_by_id.get(share.shared_by_id) if share.shared_by_id else None
+        entries.append(
+            BackupPageShare(
+                id=share.id,
+                page_space_key=ref[0],
+                page_slug=ref[1],
+                recipient_username=recipient.username,
+                shared_by_username=sharer.username if sharer else None,
+                created_at=share.created_at,
+            )
+        )
+    return entries
+
+
 class BackupService:
     def __init__(
         self,
@@ -582,6 +610,7 @@ class BackupService:
         revisions = list((await self.session.execute(select(PageRevision))).scalars())
         likes = list((await self.session.execute(select(PageLike))).scalars())
         comments, comment_likes = await self._load_comments()
+        shares = list((await self.session.execute(select(PageShare))).scalars())
         pins = list((await self.session.execute(select(UserPagePin))).scalars())
         drafts = list((await self.session.execute(select(PageDraft))).scalars())
         user_tags = list((await self.session.execute(select(UserTag))).scalars())
@@ -782,16 +811,13 @@ class BackupService:
             and row.user_id in users_by_id
             and pages_by_id[row.page_id].space_id in spaces_by_id
         ]
-        doc_comments = _comment_entries(
-            comments,
-            comment_likes,
-            lambda page_id: (
-                (spaces_by_id[pages_by_id[page_id].space_id].key, pages_by_id[page_id].slug)
-                if page_id in pages_by_id and pages_by_id[page_id].space_id in spaces_by_id
-                else None
-            ),
-            users_by_id,
-        )
+        def _full_page_ref(page_id: UUID) -> tuple[str, str] | None:
+            if page_id in pages_by_id and pages_by_id[page_id].space_id in spaces_by_id:
+                return (spaces_by_id[pages_by_id[page_id].space_id].key, pages_by_id[page_id].slug)
+            return None
+
+        doc_comments = _comment_entries(comments, comment_likes, _full_page_ref, users_by_id)
+        doc_shares = _share_entries(shares, _full_page_ref, users_by_id)
         doc_pins = [BackupPagePin(page_space_key=spaces_by_id[pages_by_id[row.page_id].space_id].key, page_slug=pages_by_id[row.page_id].slug, username=users_by_id[row.user_id].username) for row in pins if row.page_id in pages_by_id and row.user_id in users_by_id and pages_by_id[row.page_id].space_id in spaces_by_id]
         doc_drafts = [BackupPageDraft(page_space_key=spaces_by_id[pages_by_id[row.page_id].space_id].key, page_slug=pages_by_id[row.page_id].slug, username=users_by_id[row.user_id].username, content=row.content, content_format=row.content_format, edit_mode=row.edit_mode, base_updated_at=row.base_updated_at) for row in drafts if row.page_id in pages_by_id and row.user_id in users_by_id and pages_by_id[row.page_id].space_id in spaces_by_id]
         doc_tags = [BackupUserTag(username=users_by_id[row.user_id].username, name=row.name) for row in user_tags if row.user_id in users_by_id]
@@ -844,6 +870,7 @@ class BackupService:
                     "page_revisions": len(doc_revisions),
                     "page_likes": len(doc_likes),
 "page_comments": len(doc_comments),
+                    "page_shares": len(doc_shares),
                     "page_pins": len(doc_pins), "page_drafts": len(doc_drafts),
                     "user_tags": len(doc_tags), "user_page_labels": len(doc_page_labels),
                     "page_restrictions": len(doc_page_user_restrictions)
@@ -864,7 +891,7 @@ class BackupService:
             space_group_permissions=doc_space_group_permissions,
             pages=doc_pages,
             page_revisions=doc_revisions,
-            page_likes=doc_likes, page_comments=doc_comments,
+            page_likes=doc_likes, page_comments=doc_comments, page_shares=doc_shares,
             page_user_restrictions=doc_page_user_restrictions,
             page_group_restrictions=doc_page_group_restrictions,
             page_pins=doc_pins, page_drafts=doc_drafts,
@@ -979,6 +1006,7 @@ class BackupService:
         attachments = list((await self.session.execute(select(PageAttachment))).scalars())
         likes = list((await self.session.execute(select(PageLike))).scalars())
         comments, comment_likes = await self._load_comments()
+        shares = list((await self.session.execute(select(PageShare))).scalars())
         pins = list((await self.session.execute(select(UserPagePin))).scalars())
         drafts = list((await self.session.execute(select(PageDraft))).scalars())
         user_tags = list((await self.session.execute(select(UserTag))).scalars())
@@ -1065,6 +1093,7 @@ class BackupService:
             return (space_key, pages_index[page_id].slug) if space_key else None
 
         doc_comments = _comment_entries(comments, comment_likes, _comment_page_ref, users_by_id)
+        doc_shares = _share_entries(shares, _comment_page_ref, users_by_id)
         doc_pins = [
             BackupPagePin(page_space_key=_page_space_key(row.page_id), page_slug=pages_index[row.page_id].slug, username=users_by_id[row.user_id].username)
             for row in pins if row.page_id in pages_index and row.user_id in users_by_id and _page_space_key(row.page_id)
@@ -1139,6 +1168,7 @@ class BackupService:
                     "page_revisions": revisions_total,
                     "page_likes": len(doc_likes),
 "page_comments": len(doc_comments),
+                    "page_shares": len(doc_shares),
                     "page_pins": len(doc_pins),
                     "page_drafts": len(doc_drafts),
                     "user_tags": len(doc_tags),
@@ -1151,7 +1181,7 @@ class BackupService:
             groups=doc_groups, group_members=doc_group_members, group_global_permissions=doc_group_permissions, user_global_permission_overrides=doc_permission_overrides,
             space_user_permissions=doc_space_user_permissions, space_group_permissions=doc_space_group_permissions,
             pages=[], page_revisions=[],
-            page_likes=doc_likes, page_comments=doc_comments, page_user_restrictions=doc_page_user_restrictions, page_group_restrictions=doc_page_group_restrictions,
+            page_likes=doc_likes, page_comments=doc_comments, page_shares=doc_shares, page_user_restrictions=doc_page_user_restrictions, page_group_restrictions=doc_page_group_restrictions,
             page_pins=doc_pins, page_drafts=doc_drafts, user_tags=doc_tags, user_page_labels=doc_page_labels,
             issues=doc_issues,
             site_settings=BackupSiteSettings(**overrides.model_dump()),
@@ -2481,6 +2511,35 @@ class BackupService:
                 if await self.session.get(CommentLike, (comment_row.id, liker.id)) is None:
                     self.session.add(CommentLike(comment_id=comment_row.id, user_id=liker.id))
             await self.session.flush()
+
+        # Shares keep their ids, so restoring the same backup twice does not
+        # double the share count.
+        for share_entry in doc.page_shares:
+            label = f"{share_entry.page_space_key}/{share_entry.page_slug}/{share_entry.id}"
+            shared_page = await page_by_reference(share_entry.page_space_key, share_entry.page_slug)
+            recipient = await self.users.get_by_username(share_entry.recipient_username)
+            if shared_page is None or recipient is None:
+                report.add("page_share", label, "skipped", "missing_reference")
+                continue
+            if await self.session.get(PageShare, share_entry.id) is not None:
+                report.add("page_share", label, "skipped", "already_exists")
+                continue
+            sharer = (
+                await self.users.get_by_username(share_entry.shared_by_username)
+                if share_entry.shared_by_username
+                else None
+            )
+            share_values: dict[str, object] = {
+                "id": share_entry.id,
+                "page_id": shared_page.id,
+                "recipient_id": recipient.id,
+                "shared_by_id": sharer.id if sharer else None,
+            }
+            if share_entry.created_at is not None:
+                share_values["created_at"] = share_entry.created_at
+            self.session.add(PageShare(**share_values))
+            await self.session.flush()
+            report.add("page_share", label, "created")
 
         for entry in doc.page_pins:
             page = await page_by_reference(entry.page_space_key, entry.page_slug)

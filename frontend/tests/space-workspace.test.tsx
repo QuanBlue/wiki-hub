@@ -124,7 +124,17 @@ vi.mock("@/components/comments/likers-popover", () => ({
   LikersPopover: ({ count }: { count: number }) => <span data-testid="like-count">{count}</span>,
 }));
 vi.mock("@/components/comments/page-comments", () => ({
-  PageComments: ({ headerStart }: { headerStart: React.ReactNode }) => <section aria-label="Comments">{headerStart}</section>,
+  PageComments: ({ headerStart, headerEnd }: { headerStart: React.ReactNode; headerEnd: React.ReactNode }) => (
+    <section aria-label="Comments">{headerStart}{headerEnd}</section>
+  ),
+}));
+vi.mock("@/components/pages/share-page-dialog", () => ({
+  SharePageDialog: (props: { open: boolean; onShared: (count: number) => void; onCopyLink: () => void }) =>
+    props.open ? (
+      <div role="dialog" aria-label="Share with people">
+        <button type="button" onClick={() => props.onShared(5)}>Send share</button>
+      </div>
+    ) : null,
 }));
 
 const mocked = vi.mocked(api);
@@ -217,6 +227,7 @@ function serve(extra: Record<string, unknown> = {}) {
     }
     if (path.endsWith("/audience")) return { users: 1, groups: 2, everyone: false };
     if (path.endsWith("/like")) return { liked_by_me: false, like_count: 4 };
+    if (path.endsWith("/shares")) return { share_count: 3 };
     if (path === "/api/v1/users/me/pins") return [];
     throw new Error(`unexpected ${path}`);
   });
@@ -572,18 +583,43 @@ describe("SpaceWorkspace page view", () => {
 
     writeText.mockResolvedValueOnce();
     await actor.click(screen.getByRole("button", { name: "Share" }));
+    await actor.click(screen.getByRole("menuitem", { name: "Copy link" }));
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Page link copied to clipboard."));
 
     writeText.mockRejectedValueOnce(new Error("denied"));
     document.execCommand = vi.fn().mockReturnValue(true);
     await actor.click(screen.getByRole("button", { name: "Share" }));
+    await actor.click(screen.getByRole("menuitem", { name: "Copy link" }));
     await waitFor(() => expect(document.execCommand).toHaveBeenCalledWith("copy"));
 
     writeText.mockRejectedValueOnce(new Error("denied"));
     document.execCommand = vi.fn().mockReturnValue(false);
     await openMenu(actor, 1);
-    await actor.click(screen.getByRole("menuitem", { name: "Share" }));
+    await actor.click(screen.getByRole("menuitem", { name: "Copy link" }));
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("Could not copy the page link."));
+  });
+
+  it("shares with people from the Share menu and the count under the page", async () => {
+    const { actor } = renderWorkspace({ currentPage: GUIDES });
+    const count = await screen.findByRole("button", { name: "Shared 3 times - share with people" });
+
+    await actor.click(screen.getByRole("button", { name: "Share" }));
+    await actor.click(screen.getByRole("menuitem", { name: "Share with people…" }));
+    await actor.click(screen.getByRole("button", { name: "Send share" }));
+    expect(count).toHaveAccessibleName("Shared 5 times - share with people");
+
+    await actor.click(count);
+    expect(screen.getByRole("dialog", { name: "Share with people" })).toBeInTheDocument();
+  });
+
+  it("only copies the link on a space overview, which has no page to send", async () => {
+    const { actor } = renderWorkspace();
+    vi.spyOn(navigator.clipboard, "writeText").mockResolvedValueOnce();
+
+    await actor.click(screen.getByRole("button", { name: "Share" }));
+
+    expect(screen.queryByRole("menuitem", { name: "Share with people…" })).not.toBeInTheDocument();
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Page link copied to clipboard."));
   });
 
   it("exports the page in each format from both menus", async () => {

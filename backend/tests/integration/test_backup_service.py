@@ -41,6 +41,7 @@ from app.models.permission import (
 )
 from app.models.restriction import PageGroupRestriction, PageRestrictionPermission, PageUserRestriction
 from app.models.revision import PageRevision
+from app.models.share import PageShare
 from app.models.space import Space, SpaceOwner, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
@@ -1312,6 +1313,47 @@ class TestRoundTrip:
         assert again.created.get("page_comment", 0) == 0
         assert await _count(session, PageComment) == 2
         assert await _count(session, CommentLike) == 1
+
+    async def test_restores_page_shares_once_and_keeps_a_removed_sharer_share(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        bob: User = seeded["bob"]  # type: ignore[assignment]
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        page = WikiPage(
+            space_id=space.id, title="Runbook", slug="runbook", content="<p>x</p>",
+            created_by_id=alice.id, updated_by_id=alice.id,
+        )
+        session.add(page)
+        await session.flush()
+        shared = PageShare(
+            page_id=page.id, shared_by_id=alice.id, recipient_id=bob.id,
+            created_at=datetime(2026, 1, 3, tzinfo=UTC),
+        )
+        orphan = PageShare(page_id=page.id, shared_by_id=None, recipient_id=bob.id)
+        session.add_all([shared, orphan])
+        await session.flush()
+        shared_id = shared.id
+
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        assert doc.wikihub_backup.counts["page_shares"] == 2
+        scoped = await BackupService(session).export_document(space_keys=[space.key])
+        assert len(scoped.page_shares) == 2
+        elsewhere = await BackupService(session).export_document(space_keys=["NOPE"])
+        assert elsewhere.page_shares == []
+
+        await _wipe(session)
+        report = await BackupService(session).import_document(doc, dry_run=False)
+        assert report.created["page_share"] == 2
+        restored = await session.get(PageShare, shared_id)
+        assert restored is not None
+        assert restored.created_at == datetime(2026, 1, 3, tzinfo=UTC)
+        assert {row.shared_by_id is None for row in (await session.execute(select(PageShare))).scalars()} == {True, False}
+
+        again = await BackupService(session).import_document(doc, dry_run=False)
+        assert again.created.get("page_share", 0) == 0
+        assert await _count(session, PageShare) == 2
 
     async def test_credentials_survive_when_exported(self, session: AsyncSession) -> None:
         seeded = await _seed_instance(session)

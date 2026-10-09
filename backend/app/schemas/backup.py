@@ -206,6 +206,18 @@ class BackupPageComment(BaseModel):
     liked_by: list[str] = Field(default_factory=list)
 
 
+class BackupPageShare(BaseModel):
+    """One share of a page with a person; ``id`` makes a re-run restore a no-op."""
+
+    id: uuid.UUID
+    page_space_key: str
+    page_slug: str
+    recipient_username: str
+    #: None once the sharer's account is gone - the share still counts.
+    shared_by_username: str | None = None
+    created_at: datetime | None = None
+
+
 class BackupPageUserRestriction(BaseModel):
     page_space_key: str
     page_slug: str
@@ -355,6 +367,7 @@ class BackupDocument(BaseModel):
     page_revisions: list[BackupPageRevision] = Field(default_factory=list)
     page_likes: list[BackupPageLike] = Field(default_factory=list)
     page_comments: list[BackupPageComment] = Field(default_factory=list)
+    page_shares: list[BackupPageShare] = Field(default_factory=list)
     page_user_restrictions: list[BackupPageUserRestriction] = Field(default_factory=list)
     page_group_restrictions: list[BackupPageGroupRestriction] = Field(default_factory=list)
     page_pins: list[BackupPagePin] = Field(default_factory=list)

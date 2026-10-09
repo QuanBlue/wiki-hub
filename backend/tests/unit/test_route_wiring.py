@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from app.api.v1 import comments, notifications, pages, spaces
+from app.api.v1 import comments, notifications, pages, shares, spaces
 from app.workers import tasks
 
 
@@ -93,6 +93,23 @@ async def test_comment_routes_delegate_to_the_service() -> None:
     assert await comments.comment_likers("ENG", "home", comment_id, service) == "likers"
     assert await comments.like_comment("ENG", "home", comment_id, service) is True
     assert await comments.unlike_comment("ENG", "home", comment_id, service) is False
+
+
+async def test_share_routes_delegate_to_the_service() -> None:
+    session, user = Mock(), Mock()
+    with patch.object(shares, "ShareService") as service_class:
+        shares.get_share_service(session, user)
+    service_class.assert_called_once_with(session, user)
+
+    service, payload = Mock(), Mock()
+    for name in ("summary", "candidates", "share"):
+        setattr(service, name, AsyncMock(return_value=name))
+
+    assert await shares.share_summary("ENG", "home", service) == "summary"
+    assert await shares.share_candidates("ENG", "home", service, q="al") == "candidates"
+    service.candidates.assert_awaited_once_with("ENG", "home", "al")
+    assert await shares.share_page("ENG", "home", payload, service) == "share"
+    service.share.assert_awaited_once_with("ENG", "home", payload)
 
 
 async def test_notification_routes_delegate_to_the_service() -> None:

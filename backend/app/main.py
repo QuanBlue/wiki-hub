@@ -43,6 +43,7 @@ TAGS_METADATA = [
     {"name": "pages", "description": "Hierarchical documentation pages."},
     {"name": "revisions", "description": "Immutable page version history."},
     {"name": "comments", "description": "Page comments."},
+    {"name": "shares", "description": "Sharing a page with people."},
     {"name": "attachments", "description": "Binary files attached to pages."},
     {"name": "search", "description": "Full-text search."},
     {"name": "imports", "description": "Importing content from Confluence and other sources."},

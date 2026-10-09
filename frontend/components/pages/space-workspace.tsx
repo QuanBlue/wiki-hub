@@ -26,6 +26,7 @@ import {
   RectangleHorizontal,
   RefreshCw,
   Save,
+  Link2,
   Share2,
   Star,
   Tag,
@@ -56,6 +57,7 @@ import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { PageLabelsDialog } from "@/components/pages/page-labels-dialog";
 import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialog";
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
+import { SharePageDialog } from "@/components/pages/share-page-dialog";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
 import { ImportPagesDialog } from "@/components/pages/import-pages-dialog";
@@ -104,6 +106,7 @@ import type {
   SpaceMember,
   WikiPage,
   PageLabel,
+  ShareSummary,
 } from "@/types/api";
 import type { CSSProperties } from "react";
 
@@ -879,6 +882,8 @@ export function SpaceWorkspace({
     like_count: 0,
   });
   const [likePending, setLikePending] = useState(false);
+  const [shareCount, setShareCount] = useState(0);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [pinPending, setPinPending] = useState(false);
   const savedPageKeys = useSyncExternalStore(
@@ -1592,6 +1597,24 @@ export function SpaceWorkspace({
       setPinPending(false);
     }
   }
+
+  useEffect(() => {
+    if (!currentPage) return;
+    let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset while the next page's count loads
+    setShareCount(0);
+    void api
+      .get<ShareSummary>(
+        `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/shares`,
+      )
+      .then((summary) => {
+        if (active) setShareCount(summary.share_count);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [currentPage, space.key]);
 
   useEffect(() => {
     if (!currentPage) return;
@@ -2316,15 +2339,41 @@ export function SpaceWorkspace({
                           : t("workspace.pinPage")}
                       </Button>
                     ) : null}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void shareCurrentPage()}
-                    >
-                      <Share2 />
-                      {t("workspace.share")}
-                    </Button>
+                    {currentPage ? (
+                      <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
+                          <Button type="button" variant="ghost" size="sm">
+                            <Share2 />
+                            {t("workspace.share")}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="text-muted-foreground min-w-52 text-sm font-medium"
+                        >
+                          <DropdownMenuItem onSelect={() => void shareCurrentPage()}>
+                            <Link2 />
+                            {t("share.copyLink")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setShareDialogOpen(true)}>
+                            <Users />
+                            {t("share.withPeople")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      // A space overview has no page to send anyone; its
+                      // link is all there is to share.
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void shareCurrentPage()}
+                      >
+                        <Share2 />
+                        {t("workspace.share")}
+                      </Button>
+                    )}
                   </div>
                   {currentPage ? (
                     <DropdownMenu modal={false}>
@@ -2468,9 +2517,15 @@ export function SpaceWorkspace({
                       <DropdownMenuItem
                         onSelect={() => void shareCurrentPage()}
                       >
-                        <Share2 />
-                        {t("workspace.share")}
+                        <Link2 />
+                        {t("share.copyLink")}
                       </DropdownMenuItem>
+                      {currentPage ? (
+                        <DropdownMenuItem onSelect={() => setShareDialogOpen(true)}>
+                          <Share2 />
+                          {t("share.withPeople")}
+                        </DropdownMenuItem>
+                      ) : null}
                       {currentPage && canManageRestrictions ? (
                         <DropdownMenuItem onSelect={() => setPageAccessOpen(true)}>
                           <Lock />
@@ -2968,6 +3023,18 @@ export function SpaceWorkspace({
                         />
                       </span>
                     }
+                    headerEnd={
+                      <button
+                        type="button"
+                        onClick={() => setShareDialogOpen(true)}
+                        aria-label={t("share.countAria", { count: shareCount })}
+                        title={t("share.withPeople")}
+                        className="text-muted-foreground hover:bg-primary-subtle hover:text-primary active:bg-surface-selected focus-visible:ring-ring flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm tabular-nums transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                      >
+                        <Share2 className="size-4.5" aria-hidden />
+                        {shareCount}
+                      </button>
+                    }
                   />
                 ) : null}
                 {/* The comment box is portalled in here: a direct child of
@@ -3078,6 +3145,18 @@ export function SpaceWorkspace({
               members={members}
               open={pageAccessOpen}
               onOpenChange={setPageAccessOpen}
+            />
+          ) : null}
+
+          {currentPage ? (
+            <SharePageDialog
+              spaceKey={space.key}
+              pageSlug={currentPage.slug}
+              pageTitle={currentPage.title}
+              open={shareDialogOpen}
+              onOpenChange={setShareDialogOpen}
+              onCopyLink={() => void shareCurrentPage()}
+              onShared={setShareCount}
             />
           ) : null}
 

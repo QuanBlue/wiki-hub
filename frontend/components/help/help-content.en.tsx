@@ -383,8 +383,17 @@ export const sectionsEn: HelpSection[] = [
             </Callout>
           </li>
           <li>
-            <strong>Share</strong>: click <Code>Share</Code> to copy the page&apos;s
-            direct link to your clipboard, ready to paste into chat or email.
+            <strong>Share</strong>: click <Code>Share</Code> and pick an option.{" "}
+            <Code>Copy link</Code> puts the page&apos;s direct link on your clipboard, ready to
+            paste into chat or email. <Code>Share with people…</Code> opens a picker: search by
+            name or username, pick one or more colleagues, then click <Code>Share</Code> - each
+            of them gets a notification saying you shared the page, and the link opens it.
+            Sharing never grants access: on a restricted space or page, people who can&apos;t
+            open it are listed greyed out with a lock and{" "}
+            <em>No access to this page or space</em>, and can&apos;t be picked. Every person you
+            share with adds one to the share count beside the like and comment counts under the
+            page; click that count to share again. A space overview only has{" "}
+            <Code>Share</Code> to copy its link.
           </li>
           <li>
             <strong>Page access</strong>: on a page you can manage, click{" "}
