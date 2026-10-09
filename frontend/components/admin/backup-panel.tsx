@@ -1487,6 +1487,25 @@ export function BackupPanel() {
     await apiFetch<void>("/api/v1/auth/renew", { method: "POST" });
   }, []);
 
+  // Renews on an interval and again whenever the tab becomes visible (see the
+  // Confluence upload for why). The returned stop function is idempotent and
+  // is also called on unmount, so it never outlives the panel.
+  const uploadRenewalStops = useRef(new Set<() => void>());
+  function startUploadSessionRenewal(runRenewal: () => void): () => void {
+    const timer = window.setInterval(runRenewal, 2 * 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") runRenewal();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    const stop = () => {
+      if (!uploadRenewalStops.current.delete(stop)) return;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+    uploadRenewalStops.current.add(stop);
+    return stop;
+  }
+
   // Keep the administrator's session alive for as long as this backup/restore
   // panel is open. Being on this panel and performing backups, restores, or
   // monitoring jobs is active work, so periodic renewal prevents unexpected
@@ -1625,10 +1644,15 @@ export function BackupPanel() {
   // gone. Bumping both run counters one last time on unmount is what makes
   // "no longer current" true unconditionally, not just on the two buttons
   // that already knew to say so.
+  // The same goes for each upload's session-renewal interval and visibility
+  // listener: the upload's own `finally` only runs once its request settles,
+  // which can be long after this panel (or, in a test, the whole DOM) is gone.
   useEffect(() => {
+    const renewalStops = uploadRenewalStops.current;
     return () => {
       uploadBackupRun.current += 1;
       uploadRestoreRun.current += 1;
+      for (const stop of [...renewalStops]) stop();
     };
   }, []);
 
@@ -2601,8 +2625,7 @@ export function BackupPanel() {
     setConfluenceUploadError(null);
     setConfluenceUploadNotice(null);
     uploadPauseReason.current = null;
-    let sessionRenewalTimer: number | null = null;
-    let visibilityRenewalHandler: (() => void) | null = null;
+    let stopSessionRenewal: (() => void) | null = null;
     let preparingArchive = false;
     if (!saved) {
       setPreparationLogs([]);
@@ -2641,11 +2664,7 @@ export function BackupPanel() {
       });
     try {
       await renewUploadSession();
-      sessionRenewalTimer = window.setInterval(runRenewal, 2 * 60 * 1000);
-      visibilityRenewalHandler = () => {
-        if (document.visibilityState === "visible") runRenewal();
-      };
-      document.addEventListener("visibilitychange", visibilityRenewalHandler);
+      stopSessionRenewal = startUploadSessionRenewal(runRenewal);
       const hashAbortController = new AbortController();
       confluenceHashAbort.current = hashAbortController;
       const hashStartedAt = performance.now();
@@ -2905,12 +2924,7 @@ export function BackupPanel() {
         );
       }
     } finally {
-      if (sessionRenewalTimer !== null) {
-        window.clearInterval(sessionRenewalTimer);
-      }
-      if (visibilityRenewalHandler !== null) {
-        document.removeEventListener("visibilitychange", visibilityRenewalHandler);
-      }
+      stopSessionRenewal?.();
       confluenceUploadRequest.current = null;
       confluenceHashAbort.current = null;
       setHashStats(null);
@@ -3086,8 +3100,7 @@ export function BackupPanel() {
     // fresh restore is a clean slate, so that stale card goes with it.
     setPortableBackupJob(null);
     let reachedScan = false;
-    let sessionRenewalTimer: number | null = null;
-    let visibilityRenewalHandler: (() => void) | null = null;
+    let stopSessionRenewal: (() => void) | null = null;
     const runRenewal = () =>
       void renewUploadSession().catch((renewError) => {
         if (renewError instanceof ApiError && renewError.status === 401) {
@@ -3097,11 +3110,7 @@ export function BackupPanel() {
       });
     try {
       await renewUploadSession().catch(() => {});
-      sessionRenewalTimer = window.setInterval(runRenewal, 2 * 60 * 1000);
-      visibilityRenewalHandler = () => {
-        if (document.visibilityState === "visible") runRenewal();
-      };
-      document.addEventListener("visibilitychange", visibilityRenewalHandler);
+      stopSessionRenewal = startUploadSessionRenewal(runRenewal);
       appendRestorePreparationLog(
         `Selected ${targetFile.name} (${formatBytes(targetFile.size)}).`,
       );
@@ -3328,12 +3337,7 @@ export function BackupPanel() {
           : "Could not upload or scan the backup archive.",
       );
     } finally {
-      if (sessionRenewalTimer !== null) {
-        window.clearInterval(sessionRenewalTimer);
-      }
-      if (visibilityRenewalHandler !== null) {
-        document.removeEventListener("visibilitychange", visibilityRenewalHandler);
-      }
+      stopSessionRenewal?.();
       if (stillCurrent()) {
         restoreUploadActiveRef.current = false;
         setIsHashingBackupArchive(false);

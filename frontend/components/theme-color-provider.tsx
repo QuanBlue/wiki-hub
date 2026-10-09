@@ -42,6 +42,31 @@ const ThemeSettingsContext = createContext<ThemeSettingsContextValue>({
   setCustomLogoUrl: () => {},
 });
 
+type ThemePalette = ReturnType<typeof getPresetOrCustomPalette>;
+
+/** Light and dark pick different shades of the same palette for the accents. */
+function applyPrimaryVariables(root: HTMLElement, palette: ThemePalette) {
+  if (root.classList.contains("dark")) {
+    root.style.setProperty("--primary", palette[400]);
+    root.style.setProperty("--primary-hover", palette[300]);
+    root.style.setProperty(
+      "--primary-subtle",
+      `color-mix(in oklab, ${palette[500]} 18%, transparent)`,
+    );
+    root.style.setProperty(
+      "--surface-selected",
+      `color-mix(in oklab, ${palette[500]} 22%, transparent)`,
+    );
+    root.style.setProperty("--ring", palette[400]);
+  } else {
+    root.style.setProperty("--primary", palette[600]);
+    root.style.setProperty("--primary-hover", palette[700]);
+    root.style.setProperty("--primary-subtle", palette[50]);
+    root.style.setProperty("--surface-selected", palette[50]);
+    root.style.setProperty("--ring", palette[500]);
+  }
+}
+
 export function useThemeSettings() {
   return useContext(ThemeSettingsContext);
 }
@@ -269,54 +294,14 @@ export function ThemeColorProvider({
     root.style.setProperty("--wh-brand-800", palette[800]);
     root.style.setProperty("--wh-brand-900", palette[900]);
 
-    // Apply active primary theme values
-    const isDark = root.classList.contains("dark");
-    if (isDark) {
-      root.style.setProperty("--primary", palette[400]);
-      root.style.setProperty("--primary-hover", palette[300]);
-      root.style.setProperty(
-        "--primary-subtle",
-        `color-mix(in oklab, ${palette[500]} 18%, transparent)`,
-      );
-      root.style.setProperty(
-        "--surface-selected",
-        `color-mix(in oklab, ${palette[500]} 22%, transparent)`,
-      );
-      root.style.setProperty("--ring", palette[400]);
-    } else {
-      root.style.setProperty("--primary", palette[600]);
-      root.style.setProperty("--primary-hover", palette[700]);
-      root.style.setProperty("--primary-subtle", palette[50]);
-      root.style.setProperty("--surface-selected", palette[50]);
-      root.style.setProperty("--ring", palette[500]);
-    }
+    applyPrimaryVariables(root, palette);
   }, [themeColor, palette]);
 
   // Observer to re-apply light/dark variations on dark mode toggle
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      const root = document.documentElement;
       if (themeColor === "blue") return;
-      const isDark = root.classList.contains("dark");
-      if (isDark) {
-        root.style.setProperty("--primary", palette[400]);
-        root.style.setProperty("--primary-hover", palette[300]);
-        root.style.setProperty(
-          "--primary-subtle",
-          `color-mix(in oklab, ${palette[500]} 18%, transparent)`,
-        );
-        root.style.setProperty(
-          "--surface-selected",
-          `color-mix(in oklab, ${palette[500]} 22%, transparent)`,
-        );
-        root.style.setProperty("--ring", palette[400]);
-      } else {
-        root.style.setProperty("--primary", palette[600]);
-        root.style.setProperty("--primary-hover", palette[700]);
-        root.style.setProperty("--primary-subtle", palette[50]);
-        root.style.setProperty("--surface-selected", palette[50]);
-        root.style.setProperty("--ring", palette[500]);
-      }
+      applyPrimaryVariables(document.documentElement, palette);
     });
 
     observer.observe(document.documentElement, {

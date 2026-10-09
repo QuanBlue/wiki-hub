@@ -802,6 +802,12 @@ export function UserProfile({
     }
   }, [nextCursor, user.username]);
 
+  // The person's own paginated feed is on screen under "My activity", and -
+  // on someone else's profile - under the "all" tab, which shows only theirs
+  // (see `visibleItems` below). Infinite scroll has to follow whichever tab
+  // that is, re-attaching when it comes into view.
+  const showsPagedFeed = activeTab === "mine" || (!isOwner && activeTab === "all");
+
   useEffect(() => {
     const node = sentinelRef.current;
     if (!node || !nextCursor) return;
@@ -813,7 +819,7 @@ export function UserProfile({
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [loadMore, nextCursor]);
+  }, [loadMore, nextCursor, showsPagedFeed]);
 
   const displayName = user.full_name || user.username;
   const activityTabs: ActivityTab[] = isOwner
@@ -1544,7 +1550,7 @@ export function UserProfile({
               showActors={isOwner && activeTab === "all"}
             />
           )}
-          {nextCursor && activeTab === "mine" ? (
+          {nextCursor && showsPagedFeed ? (
             <div ref={sentinelRef} className="h-px" aria-hidden />
           ) : null}
           {loading || (allActivityLoading && activeTab === "all") ? (

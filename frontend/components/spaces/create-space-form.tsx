@@ -71,6 +71,7 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
       : isDuplicateName
         ? t("spaces.duplicateName", { name: trimmedName })
         : null;
+  const owner = users.find((user) => user.id === ownerId);
   const normalizedMemberQuery = memberQuery.trim().toLowerCase();
   const filteredUsers = users.filter(
     (user) =>
@@ -122,6 +123,11 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
         ? current.filter((id) => id !== userId)
         : [...current, userId],
     );
+  }
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next && !pending) reset();
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -188,10 +194,7 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
       </Button>
       <Dialog
         open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (!next && !pending) reset();
-        }}
+        onOpenChange={handleOpenChange}
       >
         <DialogContent
           className="max-w-xl"
@@ -314,9 +317,7 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
                       aria-label={t("spaces.ownerAria")}
                     >
                       <SelectValue placeholder={t("spaces.chooseOwner")}>
-                        {users.find((user) => user.id === ownerId)?.full_name ||
-                          users.find((user) => user.id === ownerId)?.username ||
-                          t("spaces.chooseOwner")}
+                        {owner?.full_name || owner?.username || t("spaces.chooseOwner")}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
@@ -419,7 +420,7 @@ export function CreateSpaceForm({ users = [] }: { users?: User[] }) {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => setOpen(false)}
+                onClick={() => handleOpenChange(false)}
                 disabled={pending}
               >
                 {t("common.cancel")}

@@ -2651,6 +2651,8 @@ describe("BackupPanel native restore", () => {
             error: null,
             space_keys: [],
             counters: { items_processed: 5, items_total: 10 },
+            created_at: "2026-08-26T12:00:00Z",
+            updated_at: "2026-08-26T12:00:01Z",
           }],
         }),
       },
@@ -3045,13 +3047,21 @@ describe("BackupPanel automatic backups", () => {
     );
   }
 
+  /** The Edit button lives in the header and renders before the settings
+   * request answers, so finding it alone does not mean the schedule fields
+   * exist yet - wait for the fields, then hand back the button. */
+  async function findEditButton(section: ReturnType<typeof automaticSection>) {
+    await section.findByLabelText(/keep backups/i, {}, { timeout: 4000 });
+    return section.getByRole("button", { name: /^edit$/i });
+  }
+
   it("shows no directory-missing banner when a volume is mounted", async () => {
     mockFetch([automaticSettingsRoute(), automaticJobsRoute(), ...baseRoutes()]);
 
     render(<BackupPanel />);
 
     const section = automaticSection();
-    await section.findByRole("button", { name: /^edit$/i });
+    await findEditButton(section);
     expect(
       section.queryByText(/no backup directory is available/i),
     ).not.toBeInTheDocument();
@@ -3082,7 +3092,7 @@ describe("BackupPanel automatic backups", () => {
     render(<BackupPanel />);
 
     const section = automaticSection();
-    await section.findByRole("button", { name: /^edit$/i });
+    await findEditButton(section);
     expect(section.getByLabelText(/^every$/i)).toBeDisabled();
     expect(section.getByLabelText(/keep backups/i)).toBeDisabled();
     expect(
@@ -3130,7 +3140,7 @@ describe("BackupPanel automatic backups", () => {
     render(<BackupPanel />);
 
     const section = automaticSection();
-    await actor.click(await section.findByRole("button", { name: /^edit$/i }));
+    await actor.click(await findEditButton(section));
 
     const retention = section.getByLabelText(/keep backups/i);
     expect(retention).toBeEnabled();
@@ -3147,7 +3157,7 @@ describe("BackupPanel automatic backups", () => {
 
     await waitFor(() => expect(patches).toHaveLength(1));
     expect(patches[0].retention_count).toBe(45);
-    await section.findByRole("button", { name: /^edit$/i });
+    await findEditButton(section);
     expect(section.getByLabelText(/keep backups/i)).toBeDisabled();
   });
 
@@ -3174,7 +3184,7 @@ describe("BackupPanel automatic backups", () => {
     render(<BackupPanel />);
 
     const section = automaticSection();
-    await actor.click(await section.findByRole("button", { name: /^edit$/i }));
+    await actor.click(await findEditButton(section));
 
     const timezoneTrigger = section.getByLabelText(/^timezone$/i);
     expect(timezoneTrigger).toHaveTextContent("UTC");
@@ -3232,12 +3242,12 @@ describe("BackupPanel automatic backups", () => {
     render(<BackupPanel />);
 
     const section = automaticSection();
-    await actor.click(await section.findByRole("button", { name: /^edit$/i }));
+    await actor.click(await findEditButton(section));
     const retention = section.getByLabelText(/keep backups/i);
     fireEvent.change(retention, { target: { value: "99" } });
     await actor.click(section.getByRole("button", { name: /^cancel$/i }));
 
-    await section.findByRole("button", { name: /^edit$/i });
+    await findEditButton(section);
     expect(section.getByLabelText(/keep backups/i)).toBeDisabled();
     expect(section.getByLabelText(/keep backups/i)).toHaveValue(30);
     expect(patches).toHaveLength(0);

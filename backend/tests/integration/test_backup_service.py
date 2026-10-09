@@ -8,6 +8,7 @@ protected account.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 import zipfile
@@ -2104,3 +2105,81 @@ class TestPermissionsAndCommentsRoundTrip:
             ).scalars()
         )
         assert owner_names == {"alice"}
+
+
+class TestRestoreEdges:
+    async def test_entries_that_point_nowhere_are_skipped_and_reported(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_permissions_and_discussion(session)
+        await _seed_issue(session, seeded)
+        doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        await _wipe(session)
+        root, reply = sorted(doc.page_comments, key=lambda c: c.parent_id is not None)
+        [issue] = doc.issues
+        [override] = doc.user_global_permission_overrides[:1]
+        doc = doc.model_copy(
+            update={
+                "page_comments": [
+                    root.model_copy(update={"liked_by": [*root.liked_by, "ghost"]}),
+                    reply,
+                    reply.model_copy(update={"id": uuid.uuid4(), "parent_id": uuid.uuid4()}),
+                    reply.model_copy(update={"id": uuid.uuid4(), "page_slug": "gone"}),
+                ],
+                "user_global_permission_overrides": [
+                    *doc.user_global_permission_overrides,
+                    override.model_copy(update={"username": "ghost"}),
+                ],
+                # Without a creation time an issue can only be matched by its id.
+                "issues": [issue.model_copy(update={"created_at": None})],
+            }
+        )
+
+        report = await BackupService(session).import_document(doc, dry_run=False)
+
+        reasons = {(e.kind, e.reason) for e in report.entries if e.outcome == "skipped"}
+        assert ("page_comment", "missing_parent") in reasons
+        assert ("page_comment", "missing_reference") in reasons
+        assert ("user_global_permission_override", "missing_user") in reasons
+        assert report.created["page_comment"] == 2
+        # The like from an account the backup does not carry is dropped.
+        assert await _count(session, CommentLike) == 1
+        assert report.created["issue"] == 1
+
+    async def test_an_issue_screenshot_the_manifest_does_not_vouch_for_is_rejected(
+        self, session: AsyncSession, tmp_path: Path
+    ) -> None:
+        seeded = await _seed_instance(session)
+        issue = await _seed_issue(session, seeded)
+        storage = _fake_storage({f"issues/{issue.id}/source/shot.png": b"png-bytes"})
+        archive = tmp_path / "source.zip"
+        await BackupService(session, actor=seeded["admin"]).export_full_package(  # type: ignore[arg-type]
+            str(archive), storage
+        )
+        # Rewrite the workspace data so its screenshot checksum is wrong, and
+        # re-sign that file in the manifest: every file is intact, but the
+        # data no longer agrees with the manifest about the screenshot.
+        forged = tmp_path / "forged.zip"
+        with zipfile.ZipFile(archive) as source, zipfile.ZipFile(forged, "w") as target:
+            document = json.loads(source.read("data/workspace.json"))
+            document["issues"][0]["attachments"][0]["sha256"] = "0" * 64
+            data = json.dumps(document).encode()
+            manifest = json.loads(source.read("manifest.json"))
+            for entry in manifest["entries"]:
+                if entry["path"] == "data/workspace.json":
+                    entry["sha256"] = hashlib.sha256(data).hexdigest()
+                    entry["size_bytes"] = len(data)
+            for item in source.infolist():
+                if item.filename == "data/workspace.json":
+                    target.writestr(item.filename, data)
+                elif item.filename == "manifest.json":
+                    target.writestr(item.filename, json.dumps(manifest))
+                else:
+                    target.writestr(item.filename, source.read(item.filename))
+        await _wipe(session)
+
+        with pytest.raises(BadRequestError) as caught:
+            await BackupService(session).restore_full_package(str(forged), storage, dry_run=False)
+
+        assert caught.value.code == "backup_checksum_failed"
+        assert await _count(session, Issue) == 0

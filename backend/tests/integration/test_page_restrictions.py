@@ -732,3 +732,92 @@ async def test_audience_counts_who_can_actually_read_a_page(session: AsyncSessio
         everyone_groups,
         True,
     )
+
+
+async def test_group_blocks_and_edit_only_lists_flow_down_the_chain(
+    session: AsyncSession,
+) -> None:
+    owner = await _user(session, "owner")
+    member = await _user(session, "member")
+    spaces = SpaceService(session)
+    space = await spaces.create(
+        SpaceCreate(key=_username("CHN").upper()[:10], name="Chains"), owner
+    )
+    blocked_group = Group(name=_username("blocked"), description="", owner_id=owner.id)
+    other_group = Group(name=_username("other"), description="", owner_id=owner.id)
+    session.add_all([blocked_group, other_group])
+    await session.flush()
+    session.add(GroupMember(group_id=blocked_group.id, user_id=member.id))
+    pages = PageService(session)
+    parent = await pages.create(space, PageCreate(title="Parent"), owner)
+    child = await pages.create(space, PageCreate(title="Child", parent_id=parent.id), owner)
+    edit_only = await pages.create(space, PageCreate(title="Edit only"), owner)
+    below = await pages.create(space, PageCreate(title="Below", parent_id=edit_only.id), owner)
+    permissions = PermissionService(session)
+
+    # No page in the space is restricted yet: the space's own audience.
+    assert await permissions.page_audience(child, space) == await permissions.space_audience(
+        space
+    )
+
+    # A block on the parent for a whole group reaches its members on the
+    # child, though neither page is in Restricted mode.
+    await permissions.set_page_permission_denial(
+        parent,
+        blocked_group.id,
+        PageRestrictionPermission.view,
+        owner,
+        group=True,
+        denied=True,
+    )
+    await permissions.set_page_permission_denial(
+        parent,
+        blocked_group.id,
+        PageRestrictionPermission.edit,
+        owner,
+        group=True,
+        denied=True,
+    )
+    assert not await permissions.can_view_page(child, member)
+    assert await permissions._group_inherited_access([parent.id], blocked_group.id) == (
+        False,
+        False,
+    )
+    _users, groups, everyone = await permissions.page_audience(child, space)
+    _space_users, space_groups, _ = await permissions.space_audience(space)
+    assert everyone is False
+    assert groups == space_groups - 1
+    # A page whose own chain carries nothing follows nobody, even though
+    # another page in the space is restricted.
+    assert await permissions.nearest_restricting_ancestor(below) is None
+
+    # An Edit allow-list on a page switched back to Open still keeps Edit
+    # from every group not on it, down the chain.
+    await permissions.set_page_restriction(
+        edit_only, owner.id, PageRestrictionPermission.edit, owner, group=False, present=True
+    )
+    await permissions.set_page_view_mode(edit_only, owner, restricted=False)
+    assert (await permissions.nearest_restricting_ancestor(below)).id == edit_only.id
+    roster = {
+        group.id: (view, edit)
+        for group, view, edit, *_rest in await permissions.list_page_access_roster_groups(
+            below, space
+        )
+    }
+    assert roster[other_group.id] == (True, False)
+
+    # Asking a page to keep inheriting when it already does changes nothing.
+    await permissions.set_page_inheritance(child, owner, inherit=True)
+    assert child.inherit_restrictions is True
+    # Stopping inheritance copies the parent's block, without doubling one
+    # the child already carries for the same group.
+    await permissions.set_page_permission_denial(
+        child,
+        blocked_group.id,
+        PageRestrictionPermission.view,
+        owner,
+        group=True,
+        denied=True,
+    )
+    await permissions.set_page_inheritance(child, owner, inherit=False)
+    assert not await permissions.can_view_page(child, member)

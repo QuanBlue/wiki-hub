@@ -667,10 +667,7 @@ export function EditUserDialog({
    * whatever they were saved as is left for the administrator to revisit on
    * the Global access tab if that matters here.
    */
-  function applyAdminToggle(
-    enable: boolean,
-    finalSystemAdminChoice?: OverrideChoice,
-  ) {
+  function applyAdminToggle(enable: boolean) {
     if (enable) {
       setPreAdminOverrides(overrides);
       setRole("admin");
@@ -681,12 +678,8 @@ export function EditUserDialog({
       );
     } else {
       setRole("member");
-      const restored =
-        preAdminOverrides ?? { ...initialOverrides, system_admin: "inherit" as const };
       setOverrides(
-        finalSystemAdminChoice
-          ? { ...restored, system_admin: finalSystemAdminChoice }
-          : restored,
+        preAdminOverrides ?? { ...initialOverrides, system_admin: "inherit" as const },
       );
       setPreAdminOverrides(null);
     }
@@ -698,10 +691,10 @@ export function EditUserDialog({
     else setRole(value);
   }
 
+  // Only reachable while Role is Member: under Administrator this row is
+  // locked, so turning admin back off always goes through `handleRoleChange`.
   function handleSystemAdminChange(value: OverrideChoice) {
-    const enabling = value === "enabled";
-    if (enabling && role !== "admin") applyAdminToggle(true);
-    else if (!enabling && role === "admin") applyAdminToggle(false, value);
+    if (value === "enabled") applyAdminToggle(true);
     else setOverrides((current) => ({ ...current, system_admin: value }));
   }
 

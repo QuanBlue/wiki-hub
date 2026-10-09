@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   SHORTCUT_ACTIONS,
@@ -10,6 +12,8 @@ import {
   matchesShortcut,
   resetAllShortcuts,
   setBindings,
+  useShortcutBindings,
+  useShortcutOverrides,
 } from "@/lib/keyboard-shortcuts";
 
 /**
@@ -170,5 +174,52 @@ describe("bindingsFor", () => {
     expect(bindingsFor("page.save", {})).toEqual(["Mod+S"]);
     expect(bindingsFor("page.save", { "page.save": ["F2"] })).toEqual(["F2"]);
     expect(bindingsFor("unknown.action", {})).toEqual([]);
+  });
+});
+
+describe("the override store", () => {
+  it("falls back to the defaults when storage cannot be read or written", () => {
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(currentBindings("page.save")).toEqual(["Mod+S"]);
+    getItem.mockRestore();
+
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota");
+    });
+    expect(() => setBindings("page.save", ["F2"])).not.toThrow();
+    setItem.mockRestore();
+  });
+
+  it("uses the defaults outside a browser", () => {
+    vi.stubGlobal("window", undefined);
+    try {
+      expect(currentBindings("page.save")).toEqual(["Mod+S"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("re-renders subscribers when a binding changes, here or in another tab", () => {
+    const { result, unmount } = renderHook(() => useShortcutBindings("page.save"));
+    expect(result.current).toEqual(["Mod+S"]);
+
+    act(() => setBindings("page.save", ["F2"]));
+    expect(result.current).toEqual(["F2"]);
+
+    act(() => {
+      window.localStorage.setItem("wikihub:keyboard-shortcuts", JSON.stringify({}));
+      window.dispatchEvent(new Event("storage"));
+    });
+    expect(result.current).toEqual(["Mod+S"]);
+    unmount();
+  });
+
+  it("renders the defaults on the server", () => {
+    function Probe() {
+      return <>{useShortcutOverrides()["page.save"]?.join() ?? "default"}</>;
+    }
+    expect(renderToString(<Probe />)).toBe("default");
   });
 });

@@ -74,12 +74,21 @@ describe("SwitchAccountMenu popup with search filter", () => {
     const user = userEvent.setup();
     const onSwitched = vi.fn();
 
-    vi.spyOn(api, "get").mockResolvedValueOnce({
-      items: mockUsers,
-      total: 3,
-      limit: 100,
-      offset: 0,
-    } as Page<User>);
+    // The menu searches the backend, so the mock applies `q` the way the
+    // users endpoint does: a substring match on name or username.
+    const getSpy = vi.spyOn(api, "get").mockImplementation(async (url) => {
+      const q = new URL(String(url), "http://test").searchParams
+        .get("q")
+        ?.toLowerCase();
+      const items = q
+        ? mockUsers.filter(
+            (u) =>
+              u.username.toLowerCase().includes(q) ||
+              (u.full_name ?? "").toLowerCase().includes(q),
+          )
+        : mockUsers;
+      return { items, total: items.length, limit: 100, offset: 0 } as Page<User>;
+    });
 
     const postSpy = vi.spyOn(api, "post").mockResolvedValueOnce({});
 
@@ -109,9 +118,15 @@ describe("SwitchAccountMenu popup with search filter", () => {
     // Type filter query "bang"
     await user.type(searchInput, "bang");
 
-    // Only matching user is shown
+    // The debounced search hits the backend with the query, and only the
+    // matching user is shown once it answers.
+    await waitFor(() => {
+      expect(getSpy).toHaveBeenLastCalledWith(
+        expect.stringContaining("q=bang"),
+      );
+      expect(screen.queryByText("Quan Nguyen")).not.toBeInTheDocument();
+    });
     expect(screen.getByText("Bang Hoang")).toBeInTheDocument();
-    expect(screen.queryByText("Quan Nguyen")).not.toBeInTheDocument();
     expect(screen.queryByText("Bao Hoang")).not.toBeInTheDocument();
 
     // Click on matching user to switch
