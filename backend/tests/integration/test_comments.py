@@ -323,8 +323,30 @@ class TestEdges:
 
         found = await CommentService(session, owner).mentionable("CMT", slug, prefix)
 
+        # The eight who can see it fill every slot; the locked-out pair do not
+        # push any of them out.
         assert [person.username for person in found] == [
             f"{prefix}{index:02d}" for index in range(2, 10)
+        ]
+        assert all(person.can_view for person in found)
+
+    async def test_people_who_cannot_see_the_page_are_listed_last_and_disabled(
+        self, session: AsyncSession
+    ) -> None:
+        owner, space, slug = await _setup(session)
+        prefix = unique("gate")
+        outsider = await _user(session, f"{prefix}a")
+        insider = await _user(session, f"{prefix}b")
+        page = await PageService(session).get_by_slug(space, slug)
+        await SpaceService(session).permissions.set_page_restriction(
+            page, insider.id, PageRestrictionPermission.view, owner, group=False, present=True
+        )
+
+        found = await CommentService(session, owner).mentionable("CMT", slug, prefix)
+
+        assert [(person.username, person.can_view) for person in found] == [
+            (insider.username, True),
+            (outsider.username, False),
         ]
 
     async def test_inactive_people_and_people_who_lost_access_are_not_told(

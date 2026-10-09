@@ -539,8 +539,10 @@ export const sectionsVi: HelpSection[] = [
           </li>
           <li>
             Gõ <strong>@</strong> và một cái tên để <strong>nhắc đến</strong> ai đó: chọn bằng phím
-            mũi tên và <Kbd>Enter</Kbd>, hoặc bấm chuột. Chỉ những người xem được trang mới hiện ra,
-            và họ nhận được thông báo.
+            mũi tên và <Kbd>Enter</Kbd>, hoặc bấm chuột. Người được nhắc nhận được thông báo. Với
+            space hoặc trang bị giới hạn, người không có quyền xem vẫn hiện trong danh sách nhưng bị
+            làm mờ, có biểu tượng ổ khoá và dòng <em>Không có quyền xem trang này</em> - không chọn
+            được cho đến khi họ được cấp quyền.
           </li>
         </ul>
 
@@ -579,9 +581,10 @@ export const sectionsVi: HelpSection[] = [
 
         <p className="mt-3 text-sm">
           Bạn được thông báo khi có người phản hồi bình luận của bạn, nhắc đến bạn, thích bình luận
-          của bạn, hoặc bình luận trong một trang do bạn tạo - mở <strong>chuông thông báo</strong>{" "}
-          và liên kết sẽ đưa bạn thẳng đến bình luận đó. Bình luận được đưa vào sao lưu và khôi
-          phục.
+          của bạn, hoặc bình luận trong một trang do bạn tạo - bấm vào thông báo trong{" "}
+          <strong>chuông thông báo</strong>, WikiHub sẽ mở trang, tự mở luồng nếu đó là một phản
+          hồi, cuộn bình luận vào giữa màn hình và làm nổi bật nó trong giây lát. Cách này vẫn hoạt
+          động khi bạn đang ở sẵn trang đó. Bình luận được đưa vào sao lưu và khôi phục.
         </p>
       </>
     ),

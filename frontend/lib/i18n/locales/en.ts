@@ -1617,6 +1617,7 @@ export const en = {
     more: "More actions",
     deleteConfirm: "Delete",
     mentionNoResults: "No one to mention",
+    mentionNoAccess: "No access to this page",
     shortcutHint: "Enter to send, Shift+Enter for a new line",
   },
   issues: {

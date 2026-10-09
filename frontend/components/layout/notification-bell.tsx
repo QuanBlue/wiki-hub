@@ -2,7 +2,13 @@
 
 import { Bell, BellRing, CheckCheck, Inbox } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { useMailSummary } from "@/components/layout/mail-summary-provider";
 import { useNotifications } from "@/components/layout/notifications-provider";
@@ -31,6 +37,34 @@ const MAX_VISIBLE_ROWS = 5;
 /** The count shown on the badge: two digits, then "99+". */
 export function formatBadgeCount(count: number): string {
   return count > 99 ? "99+" : String(count);
+}
+
+/**
+ * A ``…#comment-<id>`` link to the page already open: Next would only swap
+ * the URL (no ``hashchange``), so a second visit - or a reply hidden in a
+ * collapsed thread - would not scroll. Set the hash ourselves and announce it;
+ * the page's comments open the thread and scroll to it. Other links, and
+ * new-tab clicks, navigate as usual.
+ */
+function revealOnSamePage(event: MouseEvent, link: string) {
+  if (event.defaultPrevented || event.button !== 0) return;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const target = new URL(link, window.location.href);
+  if (
+    !target.hash ||
+    target.origin !== window.location.origin ||
+    target.pathname !== window.location.pathname ||
+    target.search !== window.location.search
+  ) {
+    return;
+  }
+  event.preventDefault();
+  // Keep Next's history state so Back still works within the app; the same
+  // link twice does not stack identical history entries.
+  if (target.hash !== window.location.hash) {
+    window.history.pushState(window.history.state, "", target.hash);
+  }
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
 }
 
 const TONE_CLASSES: Record<NotificationTone, string> = {
@@ -271,9 +305,10 @@ export function NotificationBell() {
                       <Link
                         href={item.link}
                         className={rowClass}
-                        onClick={() => {
+                        onClick={(event) => {
                           void markRead(item);
                           setOpen(false);
+                          revealOnSamePage(event, item.link!);
                         }}
                       >
                         {body}

@@ -234,6 +234,52 @@ describe("PageComments", () => {
     expect(mention).toHaveClass("text-primary");
   });
 
+  it("opens and scrolls to a reply linked after the page is already open", async () => {
+    const root = "00000000-0000-4000-8000-000000000001";
+    const reply = "00000000-0000-4000-8000-000000000002";
+    load([
+      comment({ id: root, body: "Root" }),
+      comment({ id: reply, parent_id: root, body: "Hey @alice", mentions: ["alice"] }),
+    ]);
+    renderComments();
+    await screen.findByText("Root");
+    expect(screen.queryByText(/Hey/)).not.toBeInTheDocument();
+    const scroll = vi.mocked(window.Element.prototype.scrollIntoView);
+    scroll.mockClear();
+
+    // What the notification bell does for a link to the open page.
+    window.history.pushState(null, "", `#comment-${reply}`);
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+
+    expect(await screen.findByText(/Hey/)).toBeInTheDocument();
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+    expect(scroll.mock.contexts.at(-1)).toHaveAttribute("id", `comment-${reply}`);
+    window.history.pushState(null, "", window.location.pathname);
+  });
+
+  it("lists people without access to the page as disabled mentions", async () => {
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path === BASE) return listing([]);
+      return [
+        { username: "carol", full_name: "Carol Le", avatar_url: null, can_view: true },
+        { username: "dave", full_name: "Dave Pham", avatar_url: null, can_view: false },
+      ];
+    });
+    renderComments();
+
+    const box = await screen.findByPlaceholderText("Write a comment…");
+    await userEvent.type(box, "hi @");
+    const dave = (await screen.findByText("Dave Pham")).closest("button")!;
+    expect(dave).toHaveAttribute("aria-disabled", "true");
+    expect(dave).toHaveTextContent("No access to this page");
+    await userEvent.click(dave);
+    expect(box).toHaveValue("hi @");
+
+    // The arrow keys skip Dave, so Enter still takes Carol.
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    expect(box).toHaveValue("hi @carol ");
+  });
+
   it("says so when the comments cannot be loaded", async () => {
     vi.mocked(api.get).mockRejectedValue(new Error("nope"));
     renderComments();

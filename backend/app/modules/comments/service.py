@@ -6,7 +6,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, PermissionDeniedError
@@ -16,6 +16,7 @@ from app.models.permission import Permission
 from app.models.space import Space
 from app.models.user import User
 from app.modules.notifications.service import notify
+from app.modules.pages.people import people_for_page
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
 from app.schemas.comment import (
@@ -32,7 +33,6 @@ from app.schemas.pagination import Page
 #: ``@name`` that does not continue a word or an e-mail address.
 _MENTION = re.compile(r"(?<![\w@.])@([A-Za-z0-9][A-Za-z0-9_.-]{0,63})")
 _MAX_MENTIONS = 20
-_MENTION_SUGGESTIONS = 8
 
 
 def extract_mention_names(body: str) -> list[str]:
@@ -141,29 +141,10 @@ class CommentService:
         return Page.of(items, len(items), limit=len(items), offset=0)
 
     async def mentionable(self, key: str, slug: str, query: str) -> list[MentionCandidate]:
-        """People who could be ``@mentioned`` here: active accounts that can see the page."""
+        """Active accounts matching ``query`` for the ``@mention`` picker; see
+        :func:`people_for_page`."""
         _, page = await self._resolve(key, slug)
-        statement = select(User).where(User.is_active.is_(True)).order_by(User.username)
-        term = query.strip().lstrip("@")
-        if term:
-            like = f"%{term.replace('%', '').replace('_', '')}%"
-            statement = statement.where(
-                or_(User.username.ilike(like), User.full_name.ilike(like))
-            )
-        found: list[MentionCandidate] = []
-        for candidate in await self.session.scalars(statement.limit(60)):
-            if not await self.spaces.permissions.can_view_page(page, candidate):
-                continue
-            found.append(
-                MentionCandidate(
-                    username=candidate.username,
-                    full_name=candidate.full_name,
-                    avatar_url=candidate.avatar_url,
-                )
-            )
-            if len(found) >= _MENTION_SUGGESTIONS:
-                break
-        return found
+        return await people_for_page(self.session, self.spaces.permissions, page, query)
 
     # -- writing -----------------------------------------------------------
     async def _resolve_mentions(self, page: WikiPage, body: str) -> list[User]:
