@@ -5,6 +5,7 @@ import {
   KeyRound,
   LayoutGrid,
   MessageSquare,
+  Share2,
   ShieldCheck,
   ThumbsUp,
   UserCheck,
@@ -51,6 +52,7 @@ const KINDS: Record<string, KindMeta> = {
   comment_mention: { icon: MessageSquare, tone: "info" },
   comment_liked: { icon: ThumbsUp, tone: "info" },
   page_comment: { icon: MessageSquare, tone: "info" },
+  page_shared: { icon: Share2, tone: "info" },
 };
 
 const FALLBACK: KindMeta = { icon: Bell, tone: "info" };

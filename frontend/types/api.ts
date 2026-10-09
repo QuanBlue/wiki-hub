@@ -1038,6 +1038,20 @@ export interface CommentLikeStatus {
   like_count: number;
 }
 
+/** ``GET …/pages/{slug}/shares``: how many times the page was shared. */
+export interface ShareSummary {
+  share_count: number;
+}
+
+/** ``POST …/pages/{slug}/shares``: who was told, and who was left out. */
+export interface ShareResult extends ShareSummary {
+  shared: string[];
+  /** Cannot open the page - not told, not counted. */
+  no_access: string[];
+  /** Unknown, deactivated, or the sharer themselves. */
+  not_found: string[];
+}
+
 export interface MentionCandidate {
   username: string;
   full_name: string;

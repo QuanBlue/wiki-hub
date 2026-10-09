@@ -34,6 +34,7 @@ from app.models.restriction import (
     PageUserRestriction,
 )
 from app.models.revision import PageRevision
+from app.models.share import PageShare
 from app.models.site_settings import SINGLETON_ID, SiteSettings
 from app.models.space import (
     Space,
@@ -82,6 +83,7 @@ __all__ = [
     "PageLike",
     "PageRestrictionPermission",
     "PageRevision",
+    "PageShare",
     "PageUserRestriction",
     "Permission",
     "SiteSettings",

@@ -399,8 +399,17 @@ export const sectionsVi: HelpSection[] = [
             </Callout>
           </li>
           <li>
-            <strong>Share</strong>: nhấn <Code>Share</Code> để sao chép liên kết
-            trực tiếp của trang vào clipboard, sẵn sàng dán vào chat hoặc email.
+            <strong>Share</strong>: nhấn <Code>Share</Code> rồi chọn một tuỳ chọn.{" "}
+            <Code>Sao chép liên kết</Code> đưa liên kết trực tiếp của trang vào clipboard, sẵn
+            sàng dán vào chat hoặc email. <Code>Chia sẻ cho người khác…</Code> mở bảng chọn: tìm
+            theo tên hoặc username, chọn một hoặc nhiều đồng nghiệp rồi nhấn{" "}
+            <Code>Chia sẻ</Code> - mỗi người nhận được thông báo rằng bạn đã chia sẻ trang, và
+            bấm vào sẽ mở trang đó. Chia sẻ không cấp thêm quyền: với space hoặc trang bị giới hạn,
+            người không mở được trang vẫn hiện trong danh sách nhưng bị làm mờ, có ổ khoá và dòng{" "}
+            <em>Không có quyền truy cập trang hoặc space này</em>, và không chọn được. Mỗi người
+            được chia sẻ cộng một vào số lượt chia sẻ cạnh số like và bình luận dưới trang; bấm vào
+            con số đó để chia sẻ tiếp. Trang tổng quan của space chỉ có <Code>Share</Code> để sao
+            chép liên kết.
           </li>
           <li>
             <strong>Page access</strong>: trên một trang bạn có thể quản lý, nhấn{" "}

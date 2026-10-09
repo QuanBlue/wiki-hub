@@ -28,6 +28,7 @@ from app.models.permission import (
 from app.models.draft import PageDraft
 from app.models.restriction import PageGroupRestriction, PageUserRestriction
 from app.models.revision import PageRevision
+from app.models.share import PageShare
 from app.models.space import Space, SpaceFavorite, SpaceMember, SpaceOwner, SpaceStatus, SpaceVisibility
 from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.user import User
@@ -119,6 +120,7 @@ _EMPTY_SMALL_TABLES = (
     GroupOwner, UserGlobalPermissionOverride,
     SpaceUserPermission, SpaceGroupPermission, PageUserRestriction,
     PageGroupRestriction, Issue, IssueNote, IssueAttachment, PageComment, CommentLike,
+    PageShare,
 )
 
 def make_export_full_package_router(
