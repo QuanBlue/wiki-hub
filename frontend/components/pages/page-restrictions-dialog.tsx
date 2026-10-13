@@ -290,7 +290,7 @@ export function PageRestrictionsDialog({
       else await api.delete(pathFor(type, id, nextPermission));
       setRows((current) => {
         const name = principalName ?? current.find((row) => row.principal_id === id && row.principal_type === type)?.principal_name ?? id;
-        let next = enabled
+        const next = enabled
           ? [
               ...current.filter(
                 (row) =>
@@ -309,13 +309,6 @@ export function PageRestrictionsDialog({
               },
             ]
           : current.filter((row) => !(row.principal_id === id && row.principal_type === type && row.permission === nextPermission));
-        // Granting Edit implicitly grants View too on the backend (every
-        // other page permission is useless without it, same rule as the
-        // space permission matrix) - mirror that here so the row's View box
-        // reads as checked without waiting on a reload.
-        if (enabled && nextPermission === "edit" && !next.some((row) => row.principal_id === id && row.principal_type === type && row.permission === "view")) {
-          next = [...next, { page_id: page.id, principal_id: id, principal_type: type, principal_name: name, permission: "view" }];
-        }
         return next;
       });
       // Adding the first View grant is how a page becomes Restricted (see

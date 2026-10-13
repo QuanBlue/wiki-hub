@@ -75,3 +75,30 @@ describe("AccountSettings", () => {
     expect(screen.queryByLabelText("Current password")).not.toBeInTheDocument();
   });
 });
+
+describe("AccountSettings - keyboard and shortcuts", () => {
+  it("moves between tabs with the arrow keys, wrapping at both ends", async () => {
+    const actor = userEvent.setup();
+    render(<AccountSettings user={user} />);
+    const tabs = screen.getAllByRole("tab");
+    tabs[0].focus();
+
+    await actor.keyboard("{ArrowDown}");
+    expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+    expect(tabs[1]).toHaveFocus();
+    await actor.keyboard("{ArrowUp}{ArrowUp}");
+    expect(tabs[tabs.length - 1]).toHaveAttribute("aria-selected", "true");
+    await actor.keyboard("{ArrowDown}");
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    // Other keys leave the selection alone.
+    await actor.keyboard("{ArrowRight}");
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("shows the keyboard shortcuts settings", async () => {
+    const actor = userEvent.setup();
+    render(<AccountSettings user={user} />);
+    await actor.click(screen.getByRole("tab", { name: /shortcuts/i }));
+    expect(await screen.findByRole("heading", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+  });
+});

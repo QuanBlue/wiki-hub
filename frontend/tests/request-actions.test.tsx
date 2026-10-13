@@ -448,3 +448,134 @@ describe("generatePassword", () => {
     }
   });
 });
+
+describe("RequestActions - remaining branches", () => {
+  const blocked = (auto_blocked: RequestActionPreview["auto_blocked"], extra: Partial<RequestActionPreview> = {}) =>
+    servePreview({ ...ACCOUNT_OK, auto_allowed: false, auto_blocked, ...extra });
+
+  it.each([
+    ["email_in_use", /already in use|in use|has an account/i],
+    ["email_invalid", /valid|invalid|address/i],
+    ["account_protected", /built-in|protected/i],
+    ["peer_admin", /administrator/i],
+  ] as const)("says why automatic action is blocked (%s)", async (reason, pattern) => {
+    blocked(reason, reason === "email_in_use" ? { email_in_use: true } : {});
+    render(<RequestActions item={item()} onChanged={vi.fn()} />);
+    const auto = await screen.findByRole("button", { name: "Create account automatically" });
+    await waitFor(() => expect(auto.parentElement?.querySelector("p")?.textContent).toMatch(pattern));
+    expect(auto).toBeDisabled();
+  });
+
+  it("explains an email that does not match the account", async () => {
+    servePreview({ ...RESET_OK, auto_allowed: false, auto_blocked: "email_mismatch" });
+    render(<RequestActions item={item({ kind: "password_reset" })} onChanged={vi.fn()} />);
+    expect(await screen.findByText(/bob/)).toBeInTheDocument();
+  });
+
+  it("reports a failed automatic action and lets the administrator close the confirmation", async () => {
+    servePreview(ACCOUNT_OK);
+    vi.mocked(api.post).mockRejectedValue(new Error("smtp down"));
+    const user = userEvent.setup();
+    render(<RequestActions item={item()} onChanged={vi.fn()} />);
+    const auto = await screen.findByRole("button", { name: "Create account automatically" });
+    await waitFor(() => expect(auto).toBeEnabled());
+    await user.click(auto);
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+
+    await user.click(auto);
+    await user.click(await screen.findByRole("button", { name: "Create and email" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  });
+
+  it("explains a failed email for a password reset, and copies details", async () => {
+    servePreview(RESET_OK);
+    vi.mocked(api.post).mockResolvedValue(
+      result({ email_sent: false, email_error: "boom", password: "Zx7kQm2Rt9WpAb4c" }),
+    );
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("no"));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<RequestActions item={item({ kind: "password_reset" })} onChanged={vi.fn()} />);
+    const auto = await screen.findByRole("button", { name: /Reset password automatically/ });
+    await waitFor(() => expect(auto).toBeEnabled());
+    await user.click(auto);
+    await user.click(await screen.findByRole("button", { name: /Reset and email/ }));
+
+    const status = await screen.findByRole("status");
+    await user.click(within(status).getByRole("button", { name: "Show details" }));
+    const copies = within(status).getAllByRole("button", { name: /^Copy /i });
+    await user.click(copies[0]);
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    await user.click(copies[1]);
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  });
+
+  it("reports a failure to mark the request as handled", async () => {
+    servePreview(ACCOUNT_OK);
+    vi.mocked(api.post).mockResolvedValue({ id: "u-new", username: "alice" });
+    vi.mocked(api.patch).mockRejectedValue(new Error("nope"));
+    const user = userEvent.setup();
+    render(<RequestActions item={item()} onChanged={vi.fn()} />);
+    const manual = await screen.findByRole("button", { name: "Create account manually" });
+    await waitFor(() => expect(manual).toBeEnabled());
+    await user.click(manual);
+    const dialog = await screen.findByRole("dialog", { name: "Create a user" });
+    await user.type(within(dialog).getByLabelText("Password"), "Passw0rd-Strong");
+    const create = within(dialog).getByRole("button", { name: /Create\s*user/ });
+    await waitFor(() => expect(create).toBeEnabled());
+    await user.click(create);
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  });
+
+  it("shows a failure setting a chosen password, and closes the dialog", async () => {
+    servePreview({ ...RESET_OK, auto_allowed: false, auto_blocked: "email_mismatch" });
+    vi.mocked(api.post).mockRejectedValue(new Error("weak"));
+    const user = userEvent.setup();
+    render(<RequestActions item={item({ kind: "password_reset" })} onChanged={vi.fn()} />);
+    const manual = await screen.findByRole("button", { name: "Set password manually" });
+    await waitFor(() => expect(manual).toBeEnabled());
+    await user.click(manual);
+    const dialog = await screen.findByRole("dialog", { name: "Set a password for bob" });
+    // Too short: submitting does nothing.
+    await user.type(within(dialog).getByLabelText("New password"), "short{Enter}");
+    expect(api.post).not.toHaveBeenCalled();
+    await user.type(within(dialog).getByLabelText("New password"), "-long-enough-1");
+    await user.click(within(dialog).getByRole("button", { name: "Set password" }));
+    expect(await within(dialog).findByRole("alert")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+});
+
+describe("RequestActions - last gaps", () => {
+  it("leaves the explanation blank when nothing says why automatic action is unavailable", async () => {
+    servePreview({ ...ACCOUNT_OK, auto_allowed: false, auto_blocked: null });
+    render(<RequestActions item={item()} onChanged={vi.fn()} />);
+    const auto = await screen.findByRole("button", { name: "Create account automatically" });
+    await waitFor(() => expect(auto.parentElement?.querySelector("p")?.textContent).toBe(""));
+  });
+
+  it("leaves the name empty when creating an account from a password-reset request", async () => {
+    servePreview({
+      kind: "password_reset",
+      suggested_username: "quannt39",
+      email_in_use: false,
+      matched_account: null,
+      email_matches: false,
+      auto_action: "create_account",
+      auto_allowed: true,
+      auto_blocked: null,
+    });
+    const user = userEvent.setup();
+    render(
+      <RequestActions item={item({ kind: "password_reset", requester_username: "quannt39" })} onChanged={vi.fn()} />,
+    );
+    const manual = await screen.findByRole("button", { name: "Create account manually" });
+    await waitFor(() => expect(manual).toBeEnabled());
+    await user.click(manual);
+    const dialog = await screen.findByRole("dialog", { name: "Create a user" });
+    expect(within(dialog).getByLabelText("First name")).toHaveValue("");
+    expect(within(dialog).getByLabelText("Last name")).toHaveValue("");
+  });
+});

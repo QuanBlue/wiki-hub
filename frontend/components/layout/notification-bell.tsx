@@ -141,14 +141,13 @@ export function NotificationBell() {
 
   async function markRead(item: AppNotification) {
     if (item.read_at) return;
-    setItems((current) =>
-      current
-        ? current.map((row) =>
-            row.id === item.id
-              ? { ...row, read_at: new Date().toISOString() }
-              : row,
-          )
-        : current,
+    setItems(
+      (current) =>
+        current?.map((row) =>
+          row.id === item.id
+            ? { ...row, read_at: new Date().toISOString() }
+            : row,
+        ) ?? null,
     );
     try {
       await api.patch(`/api/v1/notifications/${item.id}`, { read: true });

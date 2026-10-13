@@ -117,11 +117,9 @@ export function CommentComposer({
   /** The next selectable row from ``from`` in ``step`` direction, wrapping;
    * people without access to the page are skipped. */
   function nextSelectable(list: MentionCandidate[], from: number, step: 1 | -1): number {
-    for (let offset = 1; offset <= list.length; offset += 1) {
-      const index = (from + step * offset + list.length * offset) % list.length;
-      if (list[index].can_view) return index;
-    }
-    return from;
+    const wrapped = (offset: number) => (from + step * offset + list.length * offset) % list.length;
+    const offset = Array.from({ length: list.length }, (_, i) => i + 1).find((o) => list[wrapped(o)].can_view);
+    return offset === undefined ? from : wrapped(offset);
   }
 
   function pick(candidate: MentionCandidate) {
