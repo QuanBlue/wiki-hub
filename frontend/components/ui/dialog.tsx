@@ -24,9 +24,11 @@ export const DialogContent = React.forwardRef<
   Omit<React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>, "title"> & {
     title: React.ReactNode;
     description?: string;
+    /** Sits beside the title, e.g. an info button. Not part of the accessible name. */
+    titleAddon?: React.ReactNode;
   }
 >(function DialogContent(
-  { className, children, title, description, ...props },
+  { className, children, title, description, titleAddon, ...props },
   ref,
 ) {
   return (
@@ -51,9 +53,12 @@ export const DialogContent = React.forwardRef<
         {...props}
       >
         <div className="mb-4 pr-6">
-          <DialogPrimitive.Title className="text-base font-semibold">
-            {title}
-          </DialogPrimitive.Title>
+          <div className="flex items-center gap-1.5">
+            <DialogPrimitive.Title className="text-base font-semibold">
+              {title}
+            </DialogPrimitive.Title>
+            {titleAddon}
+          </div>
           {description ? (
             <DialogPrimitive.Description className="text-muted-foreground mt-1 text-sm">
               {description}

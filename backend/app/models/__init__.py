@@ -6,6 +6,8 @@ Every model must be imported here: Alembic's autogenerate walks
 
 from __future__ import annotations
 
+from app.models.ai_connection import AiConnection
+from app.models.ai_skill import AiSkill
 from app.models.admin_mail import AdminMailbox, AdminRequest, AdminRequestRecipient
 from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction, AuditLog
@@ -55,6 +57,8 @@ __all__ = [
     "AdminMailbox",
     "AdminRequest",
     "AdminRequestRecipient",
+    "AiConnection",
+    "AiSkill",
     "AuditAction",
     "AuditLog",
     "AutomatedBackupSettings",

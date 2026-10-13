@@ -28,6 +28,7 @@ import {
   Save,
   Link2,
   Share2,
+  Sparkles,
   Star,
   Tag,
   ThumbsUp,
@@ -57,6 +58,8 @@ import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { PageLabelsDialog } from "@/components/pages/page-labels-dialog";
 import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialog";
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
+import { PageSummaryDialog } from "@/components/pages/page-summary-dialog";
+import { SelectionAssistant } from "@/components/pages/selection-assistant";
 import { SharePageDialog } from "@/components/pages/share-page-dialog";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
@@ -486,8 +489,19 @@ function prettyMarkdownEmbeddedHtml(markdown: string): string {
   );
 }
 
-function MarkdownContent({ content }: { content: string }) {
-  return <RichTextContent content={markdownToHtml(content)} />;
+function MarkdownContent({
+  content,
+  canEditAttachments = false,
+}: {
+  content: string;
+  canEditAttachments?: boolean;
+}) {
+  return (
+    <RichTextContent
+      content={markdownToHtml(content)}
+      canEditAttachments={canEditAttachments}
+    />
+  );
 }
 
 const spaceSidebarWidthStore = {
@@ -883,6 +897,7 @@ export function SpaceWorkspace({
   });
   const [likePending, setLikePending] = useState(false);
   const [shareCount, setShareCount] = useState(0);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [pinPending, setPinPending] = useState(false);
@@ -2311,6 +2326,18 @@ export function SpaceWorkspace({
                         type="button"
                         variant="ghost"
                         size="sm"
+                        onClick={() => setSummaryOpen(true)}
+                        title={t("ai.summarize")}
+                      >
+                        <Sparkles />
+                        {t("ai.button")}
+                      </Button>
+                    ) : null}
+                    {currentPage ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={toggleSavedForLater}
                         aria-pressed={savedForLater}
                       >
@@ -2502,6 +2529,12 @@ export function SpaceWorkspace({
                       align="end"
                       className="text-muted-foreground min-w-48 text-sm font-medium lg:hidden"
                     >
+                      {currentPage ? (
+                        <DropdownMenuItem onSelect={() => setSummaryOpen(true)}>
+                          <Sparkles />
+                          {t("ai.button")}
+                        </DropdownMenuItem>
+                      ) : null}
                       {currentPage ? (
                         <DropdownMenuItem onSelect={toggleSavedForLater}>
                           <Bookmark
@@ -2973,11 +3006,21 @@ export function SpaceWorkspace({
                 </div>
 
                 <div className="mt-8 min-h-64">
+                  <SelectionAssistant
+                    spaceKey={space.key}
+                    pageSlug={currentPage?.slug ?? ""}
+                  >
                   {body ? (
                     currentPage?.content_format === "markdown" ? (
-                      <MarkdownContent content={body} />
+                      <MarkdownContent
+                        content={body}
+                        canEditAttachments={canEdit && space.status === "active"}
+                      />
                     ) : (
-                      <RichTextContent content={body} />
+                      <RichTextContent
+                        content={body}
+                        canEditAttachments={canEdit && space.status === "active"}
+                      />
                     )
                   ) : (
                     <div className="border-border bg-surface-sunken rounded-lg border border-dashed p-6">
@@ -2987,6 +3030,7 @@ export function SpaceWorkspace({
                       </p>
                     </div>
                   )}
+                  </SelectionAssistant>
                 </div>
 
                 {currentUser && currentPage ? (
@@ -3024,16 +3068,18 @@ export function SpaceWorkspace({
                       </span>
                     }
                     headerEnd={
-                      <button
-                        type="button"
-                        onClick={() => setShareDialogOpen(true)}
-                        aria-label={t("share.countAria", { count: shareCount })}
-                        title={t("share.withPeople")}
-                        className="text-muted-foreground hover:bg-primary-subtle hover:text-primary active:bg-surface-selected focus-visible:ring-ring flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm tabular-nums transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                      >
-                        <Share2 className="size-4.5" aria-hidden />
-                        {shareCount}
-                      </button>
+                      <span className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setShareDialogOpen(true)}
+                          aria-label={t("share.countAria", { count: shareCount })}
+                          title={t("share.withPeople")}
+                          className="text-muted-foreground hover:bg-primary-subtle hover:text-primary active:bg-surface-selected focus-visible:ring-ring flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm tabular-nums transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                        >
+                          <Share2 className="size-4.5" aria-hidden />
+                          {shareCount}
+                        </button>
+                      </span>
                     }
                   />
                 ) : null}
@@ -3044,7 +3090,7 @@ export function SpaceWorkspace({
                 {currentUser && currentPage ? (
                   <div
                     ref={setComposerSlot}
-                    className="bg-background/95 border-border sticky bottom-0 z-20 mt-3 border-t pt-3 pb-3 backdrop-blur-sm"
+                    className="bg-background border-border sticky bottom-0 z-20 mt-3 border-t pt-3 pb-3"
                   />
                 ) : null}
               </>
@@ -3145,6 +3191,18 @@ export function SpaceWorkspace({
               members={members}
               open={pageAccessOpen}
               onOpenChange={setPageAccessOpen}
+            />
+          ) : null}
+
+          {currentPage ? (
+            <PageSummaryDialog
+              // A different page starts from a clean slate.
+              key={`${space.key}/${currentPage.slug}`}
+              open={summaryOpen}
+              onOpenChange={setSummaryOpen}
+              spaceKey={space.key}
+              pageSlug={currentPage.slug}
+              pageTitle={currentPage.title}
             />
           ) : null}
 

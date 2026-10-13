@@ -82,6 +82,16 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     cors_origins: CsvList = Field(default_factory=lambda: ["http://localhost:3000"])
     login_rate_limit: str = "10/minute"
+    # --- AI assistant ---
+    # The gateway itself (address, key, model) is managed in Administration > AI
+    # assistant, not here. These only tune how hard WikiHub may lean on it.
+    ai_timeout_seconds: float = 90.0
+    #: Calls in flight at once, across every user of this process.
+    ai_max_concurrency: int = 2
+    #: Per-user ceiling on AI calls.
+    ai_rate_limit: str = "60/hour"
+    #: Characters of page text sent to the model in one call.
+    ai_max_input_chars: int = 24000
     # --- admin mail (public "contact an administrator" form) ---
     # Unauthenticated, and every accepted request sends one email per admin
     # mailbox, so it is throttled per client and again across all clients.

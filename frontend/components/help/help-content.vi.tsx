@@ -412,6 +412,20 @@ export const sectionsVi: HelpSection[] = [
             chép liên kết.
           </li>
           <li>
+            <strong>TL;DR</strong>: nhấn <Code>TL;DR</Code> trên thanh công cụ để xem bản tóm tắt
+            ngắn do AI viết, dạng Markdown (từ khoá in đậm, mã, danh sách), viết bằng cùng ngôn ngữ
+            với trang. Bản tóm tắt được lưu cho đến khi trang thay đổi nên mở lại là có ngay; <Code>Tóm tắt lại</Code> yêu cầu
+            một bản mới. Bản tóm tắt viết bằng ngôn ngữ của chính trang; nút chuyển ở phía trên đổi
+            sang <Code>English</Code> hoặc <Code>Tiếng Việt</Code> (và <Code>Ngôn ngữ trang</Code>{" "}
+            để quay lại). Chuyển ngôn ngữ chỉ dịch bản tóm tắt bạn đã có, nên nhanh và nhẹ cho AI;
+            chỉ khi nhấn <Code>Tóm tắt lại</Code> thì AI mới đọc lại trang và viết bản mới. Địa chỉ web trong bản tóm tắt là link bấm được, và tên một tệp đính kèm
+            của trang sẽ mở tệp đó - để xem, và để sửa nếu bạn có quyền sửa trang. Nút{" "}
+            <Code>i</Code> cạnh tiêu đề nhắc rằng AI có thể bỏ sót chi tiết.
+            AI chỉ đọc các trang bạn vốn đã mở được, và mỗi người chỉ được tạo một số bản tóm tắt
+            mới giới hạn mỗi giờ. Khi quản trị viên chưa kết nối endpoint, hộp thoại sẽ cho biết
+            trợ lý AI chưa được thiết lập.
+          </li>
+          <li>
             <strong>Page access</strong>: trên một trang bạn có thể quản lý, nhấn{" "}
             <Code>Page access</Code> để mở cài đặt <strong>General access</strong>{" "}
             - <Code>Open</Code> hoặc <Code>Restricted</Code> - cùng bảng bên dưới,
@@ -3018,6 +3032,129 @@ export const sectionsVi: HelpSection[] = [
             được nêu tên riêng.
           </li>
         </ul>
+      </>
+    ),
+  },
+  {
+    id: "admin-ai",
+    title: "Trợ lý AI",
+    category: "Administration",
+    description:
+      "Kết nối một endpoint tương thích OpenAI để mọi người tóm tắt trang bằng AI.",
+    keywords: ["ai", "trợ lý", "tóm tắt", "openai", "llm", "model", "endpoint", "api key"],
+    body: (
+      <>
+        <p>
+          <strong>Với mọi người:</strong> mỗi trang có nút <strong>TL;DR</strong> trên thanh công
+          cụ, cạnh Save for later. Nhấn vào để xem bản tóm tắt ngắn dạng Markdown, viết bằng
+          cùng ngôn ngữ với trang. Bản tóm tắt
+          được lưu cho đến khi trang thay đổi nên mở lại là có ngay; <Code>Tóm tắt lại</Code>{" "}
+          yêu cầu một bản mới. AI chỉ đọc các trang bạn vốn đã mở được, và mỗi người chỉ được tạo
+          một số bản tóm tắt mới giới hạn mỗi giờ. Khi quản trị viên chưa kết nối endpoint, hộp
+          thoại sẽ cho biết trợ lý AI chưa được thiết lập.
+        </p>
+        <Screenshot
+          src="/help/ai-tldr.png"
+          alt="Hộp thoại Page summary: nút chuyển ngôn ngữ phía trên và bản tóm tắt Markdown ngắn kèm ghi chú cuối"
+          caption="Hộp thoại TL;DR: bản tóm tắt ngắn, có nút chuyển ngôn ngữ và nút Tóm tắt lại."
+        />
+        <p className="mt-3">
+          <strong>Giải thích hoặc dịch phần đã chọn</strong>: bôi đen một từ, cụm từ hoặc câu
+          trong page đang đọc, một <strong>nút AI</strong> nhỏ sẽ hiện ở cuối phần bôi đen. Bấm vào
+          là phần đó được <strong>giải thích ngay, mặc định bằng tiếng Việt</strong>, dựa trên
+          tiêu đề page và văn bản xung quanh để hiểu đúng nghĩa. Chọn <Code>Dịch</Code> để dịch
+          thay vì giải thích, và dùng menu quả địa cầu trên thẻ để đổi ngôn ngữ giữa{" "}
+          <Code>English</Code> và <Code>Tiếng Việt</Code> - đổi ngôn ngữ sẽ làm lại thao tác đang
+          xem. Câu trả lời được nhớ nên hỏi lại là có ngay, và mỗi lần chọn được tối đa 2.000 ký
+          tự. Nhấn Escape hoặc nút đóng để tắt thẻ.
+        </p>
+        <Screenshot
+          src="/help/ai-selection-button.png"
+          alt="Một câu có vài từ được bôi đen và nút AI tròn nhỏ ở cuối phần bôi đen"
+          caption="Bôi đen chữ, một nút AI nhỏ hiện ở cuối phần bôi đen."
+        />
+        <Screenshot
+          src="/help/ai-selection-explain.png"
+          alt="Thẻ giải thích mở cạnh phần bôi đen, có nút Explain và Translate, menu ngôn ngữ và câu trả lời ngắn"
+          caption="Bấm vào để được giải thích ngay; chuyển sang Dịch hoặc đổi ngôn ngữ ngay trên thẻ này."
+        />
+        <p className="mt-3">
+          <strong>Tạo page bằng AI</strong>: trong <Code>Create page</Code>, bấm{" "}
+          <Code>Viết bằng AI</Code>, mô tả page trong một hai câu rồi bấm <Code>Tạo nội dung</Code>. AI sẽ tìm trước trong wiki các page liên quan bạn đọc được và có thể hỏi vài câu trắc nghiệm - chọn một đáp án, chọn nhiều nếu được phép hoặc tự nhập câu trả lời, hay bấm <Code>Bỏ qua câu hỏi</Code>.
+          WikiHub soạn cả page theo đúng định dạng của mình - tiêu đề, danh sách, checklist, bảng
+          và khối mã - tự điền tiêu đề nếu đang trống và hiện bản xem trước. Dòng ghi chú ở trên
+          cùng cho biết page do AI tạo để người đọc biết cần kiểm tra lại. Chưa có gì được lưu cho
+          đến khi bạn bấm <Code>Create page</Code>; dùng <Code>Tạo lại</Code> để thử lần nữa hoặc{" "}
+          <Code>Bỏ bản nháp</Code> để tự viết, và sau đó vẫn chỉnh sửa page thoải mái. Chỉ người
+          được phép tạo page trong space mới dùng được, và tính chung vào giới hạn mỗi giờ như
+          tóm tắt.
+        </p>
+        <Screenshot
+          src="/help/ai-create-describe.png"
+          alt="Hộp thoại Create page ở tab Write with AI, mô tả nhập bên trái và khung xem trước còn trống bên phải"
+          caption="Create page, tab Write with AI: mô tả page ở bên trái; khung xem trước chờ ở bên phải."
+        />
+        <Screenshot
+          src="/help/ai-create-questions.png"
+          alt="AI hỏi một câu trắc nghiệm ở bên trái, các page tìm thấy trong wiki được liệt kê bên phải"
+          caption="AI tìm trong wiki rồi hỏi vài câu, mỗi lần một câu. Rê chuột vào nút i của lựa chọn để xem chi tiết."
+        />
+        <Screenshot
+          src="/help/ai-create-draft.png"
+          alt="Bản nháp hoàn chỉnh trong khung xem trước, mở đầu bằng ghi chú page do AI tạo, câu trả lời đã được thêm vào mô tả"
+          caption="Bản nháp hiện trong khung xem trước, kèm ghi chú AI ở trên cùng. Câu trả lời được thêm vào mô tả để bạn sửa và Tạo lại."
+        />
+        <p className="mt-3">
+          <strong>Kết nối</strong> (System Administrator): mở{" "}
+          <strong>Administration → Trợ lý AI</strong>. Trang là bảng các kết nối đã lưu - lưu được
+          nhiều kết nối nhưng <strong>mỗi lúc chỉ một kết nối được bật</strong>.
+        </p>
+        <ul>
+          <li>
+            <strong>Thêm OpenAI Compatible</strong> mở một biểu mẫu: <Code>Tên</Code>,{" "}
+            <Code>Địa chỉ endpoint</Code> của dịch vụ tương thích OpenAI bất kỳ, gồm cả đường dẫn
+            phiên bản (ví dụ <Code>https://host/v1</Code>) và <Code>API key</Code>. Khi bạn bấm ra
+            khỏi ô địa chỉ hoặc key, WikiHub tự kiểm tra kết nối và liệt kê các model dịch vụ cung
+            cấp - hoặc bấm <Code>Fetch models</Code>. Chọn model sẽ dùng trong danh sách - model luôn
+            được chọn từ những gì dịch vụ cung cấp, và nút <Code>Lưu</Code> chỉ bật khi kết nối
+            kiểm tra thành công và đã chọn model. Chọn <Code>Đặt làm kết nối đang dùng</Code> để
+            bật ngay.
+          </li>
+          <li>
+            Trong bảng, key luôn được che (ví dụ <Code>sk-adc2****297a</Code>). Key được lưu mã
+            hoá, không hiển thị lại và không nằm trong bản sao lưu. <Code>Sửa</Code> để đổi một
+            kết nối - để trống ô key để giữ key cũ.
+          </li>
+          <li>
+            Nút nguồn đặt một kết nối thành <strong>Đang dùng</strong>; việc này tắt kết nối trước
+            đó. Tắt kết nối đang dùng thì các thao tác AI tắt với mọi người.{" "}
+            <Code>Kiểm tra ngay</Code> thử một kết nối đã lưu và ghi lại là{" "}
+            <strong>Hoạt động</strong> hay <strong>Lỗi</strong>; <Code>Xoá</Code> xoá kết nối sau
+            khi bạn xác nhận.
+          </li>
+        </ul>
+        <p className="mt-3">
+          <strong>Skill</strong>: mở <strong>Quản lý skill</strong> để thấy mỗi skill AI một thẻ -{" "}
+          <strong>Tóm tắt trang (TL;DR)</strong>, <strong>Tạo page bằng AI</strong>,{" "}
+          <strong>Giải thích phần đã chọn</strong> và <strong>Dịch phần đã chọn</strong>. Thẻ chỉ
+          hiện tên, mô tả ngắn và cho biết skill đang dùng nội dung <strong>Mặc định</strong> hay{" "}
+          <strong>Tuỳ chỉnh</strong>; bấm vào thẻ để đọc đầy đủ hướng dẫn, rồi <Code>Sửa</Code>{" "}
+          để chỉnh, bắt đầu từ nội dung hiện tại thay vì viết lại từ đầu. Dùng{" "}
+          <Code>Lưu skill</Code> để áp dụng hoặc <Code>Dùng mặc định</Code> để quay về nội dung có
+          sẵn. WikiHub luôn tự thêm các phần cố định - định dạng câu trả lời, ngôn ngữ đích, quy
+          tắc an toàn và, với page, định dạng trình soạn thảo hiểu được - nên sửa skill không làm
+          hỏng tính năng. Nội dung tóm tắt có sẵn được viết cho người chưa từng xem page (phong
+          cách chuyển thể từ skill mã nguồn mở tldr-skill, Apache-2.0). Hướng dẫn mới áp dụng cho
+          câu trả lời kế tiếp, các bản đã lưu theo hướng dẫn cũ không được dùng lại.
+        </p>
+        <Screenshot
+          src="/help/ai-admin-skills.png"
+          alt="Quản lý skill với bốn thẻ: Tóm tắt trang, Tạo page bằng AI, Giải thích phần đã chọn và Dịch phần đã chọn"
+          caption="Quản lý skill: mỗi tính năng AI một thẻ. Bấm vào thẻ để xem hoặc sửa hướng dẫn."
+        />
+        <Callout variant="tip" title="Nhẹ cho máy chủ">
+          Mô hình chạy ở dịch vụ bạn kết nối, nên WikiHub chỉ gửi yêu cầu khi có người nhấn.
+        </Callout>
       </>
     ),
   },

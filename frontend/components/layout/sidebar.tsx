@@ -17,6 +17,7 @@ import {
   PanelLeft,
   Pin,
   SlidersHorizontal,
+  Sparkles,
   User,
   Users,
   type LucideIcon,
@@ -128,6 +129,12 @@ const ADMIN_NAV: NavItem[] = [
     href: "/admin/mail",
     labelKey: "nav.mail",
     icon: Mail,
+    permission: "settings",
+  },
+  {
+    href: "/admin/ai",
+    labelKey: "nav.ai",
+    icon: Sparkles,
     permission: "settings",
   },
   {
