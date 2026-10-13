@@ -453,12 +453,6 @@ function DraftRow({ draft }: { draft: UserDraftItem }) {
   );
 }
 
-// How close two consecutive updates from the same person need to be to read
-// as one sitting rather than two separate visits. Long enough to absorb a
-// short break, short enough that a stretch of a prolific user's history
-// doesn't swallow everyone else's more recent activity into one block.
-const ACTIVITY_GROUP_GAP_MS = 3 * 60 * 60 * 1000;
-
 function CompactActivityFeed({
   items,
   onViewChange,
@@ -469,23 +463,15 @@ function CompactActivityFeed({
   showActors?: boolean;
 }) {
   const groups = useMemo(() => {
-    // Items arrive sorted newest-first. Only merge an item into the previous
-    // group when it's both the same person *and* close enough in time to the
-    // group's last entry - otherwise a prolific user's older activity would
-    // absorb everyone else's more recent activity into one long block, which
-    // breaks the newest-to-oldest reading order the list is meant to show.
+    // Items arrive sorted newest-first. Merge an item into the previous group
+    // only when it's the same person; as soon as someone else's activity sits
+    // in between, a new group starts, so the newest-to-oldest order holds.
     const result: { key: string; username: string; name: string; items: RecentPageItem[] }[] = [];
     for (const item of items) {
       const username = item.user_username || "system";
       const current = result[result.length - 1];
-      const lastItem = current?.items[current.items.length - 1];
-      const withinGap =
-        lastItem !== undefined &&
-        Math.abs(
-          new Date(item.updated_at).getTime() - new Date(lastItem.updated_at).getTime(),
-        ) <= ACTIVITY_GROUP_GAP_MS;
 
-      if (current && current.username === username && withinGap) {
+      if (current && current.username === username) {
         current.items.push(item);
       } else {
         result.push({

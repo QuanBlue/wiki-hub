@@ -229,9 +229,7 @@ export function PageComments({
   }
 
   const replace = useCallback((updated: PageComment) => {
-    setComments((current) =>
-      current ? current.map((item) => (item.id === updated.id ? updated : item)) : current,
-    );
+    setComments((current) => current?.map((item) => (item.id === updated.id ? updated : item)) ?? null);
   }, []);
 
   const post = useCallback(
@@ -279,13 +277,11 @@ export function PageComments({
           ? await api.delete<CommentLikeStatus>(`${base}/${comment.id}/like`)
           : await api.put<CommentLikeStatus>(`${base}/${comment.id}/like`);
         setComments((current) =>
-          current
-            ? current.map((item) =>
-                item.id === comment.id
-                  ? { ...item, liked_by_me: status.liked_by_me, like_count: status.like_count }
-                  : item,
-              )
-            : current,
+          (current ?? []).map((item) =>
+            item.id === comment.id
+              ? { ...item, liked_by_me: status.liked_by_me, like_count: status.like_count }
+              : item,
+          ),
         );
       } catch (error) {
         toast.error(apiErrorText(error, "comments.likeError"));

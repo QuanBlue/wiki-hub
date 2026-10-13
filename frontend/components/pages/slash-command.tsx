@@ -224,16 +224,13 @@ function isInToggleTitle(editor: Editor) {
 function unwrapToggleTitle(editor: Editor) {
   return editor.commands.command(({ tr, state, dispatch }) => {
     const { $from } = state.selection;
+    // Only called with the cursor in a toggle's title (isInToggleTitle), so
+    // the parent is that title and its parent the toggle, whose first and
+    // last children are the title and the body.
     const toggleDepth = $from.depth - 1;
-    if ($from.parent.type.name !== "toggleSummary" || toggleDepth < 0) {
-      return false;
-    }
     const toggleNode = $from.node(toggleDepth);
-    const summaryNode = toggleNode.firstChild;
-    const contentNode = toggleNode.lastChild;
-    if (toggleNode.type.name !== "toggle" || !summaryNode || !contentNode) {
-      return false;
-    }
+    const summaryNode = toggleNode.firstChild!;
+    const contentNode = toggleNode.lastChild!;
     if (dispatch) {
       const toggleStart = $from.before(toggleDepth);
       const contentIsEmpty =
@@ -971,7 +968,10 @@ export const SlashCommandList = forwardRef<
             </p>
             {groupItems.map((item) => {
               flatIndex += 1;
-              const isSelected = flatIndex === selectedIndex;
+              // Captured per row: `flatIndex` keeps counting after this
+              // render, so the handlers below must not read it later.
+              const index = flatIndex;
+              const isSelected = index === selectedIndex;
               const Icon = item.icon;
               return (
                 <button
@@ -979,14 +979,14 @@ export const SlashCommandList = forwardRef<
                   type="button"
                   role="option"
                   aria-selected={isSelected}
-                  data-index={flatIndex}
+                  data-index={index}
                   // The list never takes DOM focus (see the component doc
                   // comment above) - without this, a click would first blur
                   // the editor, which clears the ProseMirror selection the
                   // Suggestion plugin's deleteRange(range) needs to still be
                   // valid for.
                   onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setSelectedIndex(flatIndex)}
+                  onMouseEnter={() => setSelectedIndex(index)}
                   onClick={() => command(item)}
                   className={cn(
                     "flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left text-sm transition-colors duration-150 focus-visible:outline-none",

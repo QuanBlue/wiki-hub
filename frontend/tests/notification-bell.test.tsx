@@ -291,3 +291,63 @@ describe("formatRelative", () => {
     expect(formatRelative(iso, "en", now)).toBe(expected);
   });
 });
+
+describe("the bell - links on the page already open", () => {
+  const open = async (items: AppNotification[]) => {
+    mount(items);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+    return user;
+  };
+
+  it("reveals a comment on the open page without navigating, once per hash", async () => {
+    const seen = vi.fn();
+    window.addEventListener("hashchange", seen);
+    const push = vi.spyOn(window.history, "pushState");
+    const user = await open([note({ link: `${window.location.pathname}#comment-9` })]);
+
+    const link = await screen.findByRole("link", { name: /added you to the space/ });
+    await user.click(link);
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(window.location.hash).toBe("#comment-9");
+    expect(seen).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => expect(screen.queryByRole("link", { name: /added you to the space/ })).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+    await user.click(await screen.findByRole("link", { name: /added you to the space/ }));
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveBeenCalledTimes(2);
+    window.removeEventListener("hashchange", seen);
+    window.history.replaceState(null, "", window.location.pathname);
+  });
+
+  it("lets modified clicks and other pages navigate normally", async () => {
+    const push = vi.spyOn(window.history, "pushState").mockImplementation(() => {});
+    const user = await open([
+      note({ id: "a", link: `${window.location.pathname}#comment-1` }),
+      note({ id: "b", link: "/elsewhere#x" }),
+      note({ id: "c", link: `${window.location.pathname}` }),
+    ]);
+    const links = await screen.findAllByRole("link");
+    await user.keyboard("{Control>}");
+    await user.click(links[0]);
+    await user.keyboard("{/Control}");
+    await user.click(links[1]);
+    await user.click(links[2]);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("caps a long list at a few rows' height", async () => {
+    const rect = (top: number, bottom: number) => ({ top, bottom }) as DOMRect;
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      return this.tagName === "UL" || this.getAttribute("role") === "list" ? rect(0, 10) : rect(0, 40);
+    };
+    try {
+      await open(Array.from({ length: 12 }, (_, i) => note({ id: `n-${i}` })));
+      await screen.findAllByRole("link");
+    } finally {
+      Element.prototype.getBoundingClientRect = original;
+    }
+  });
+});

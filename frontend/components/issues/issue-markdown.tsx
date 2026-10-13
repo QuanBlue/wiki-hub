@@ -239,12 +239,6 @@ export function IssueMarkdown({
       paragraph.push(lines[i]);
       i += 1;
     }
-    // A line that merely looks like a block start but did not match one above
-    // (e.g. "#hashtag") still has to be consumed, or the loop would stall.
-    if (paragraph.length === 0) {
-      paragraph.push(lines[i]);
-      i += 1;
-    }
     blocks.push(
       <p key={key++} className="my-2">
         {paragraph.map((text, n) => (

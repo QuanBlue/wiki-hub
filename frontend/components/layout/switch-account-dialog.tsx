@@ -165,6 +165,11 @@ export function SwitchAccountMenu({
                 e.preventDefault();
                 setTimeout(() => searchInputRef.current?.focus(), 50);
               }}
+              // Escape first clears a search in progress; Radix would otherwise
+              // close the whole popup on the same key press.
+              onEscapeKeyDown={(e) => {
+                if (searchQuery) e.preventDefault();
+              }}
             >
               {/* Header */}
               <div className="flex items-center justify-between border-b border-border/80 bg-surface-sunken/60 px-3.5 py-2.5">
@@ -202,13 +207,9 @@ export function SwitchAccountMenu({
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => {
                       e.stopPropagation();
-                      if (e.key === "Escape") {
-                        if (searchQuery) {
-                          setSearchQuery("");
-                          e.preventDefault();
-                        } else {
-                          setExpanded(false);
-                        }
+                      if (e.key === "Escape" && searchQuery) {
+                        setSearchQuery("");
+                        e.preventDefault();
                       }
                     }}
                     placeholder={t("switchAccount.searchPlaceholder")}

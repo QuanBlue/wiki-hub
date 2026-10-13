@@ -140,3 +140,64 @@ describe("SwitchAccountMenu popup with search filter", () => {
     });
   });
 });
+
+describe("SwitchAccountMenu - edge cases", () => {
+  const page = (items: User[]) => ({ items, total: items.length, limit: 100, offset: 0 }) as Page<User>;
+
+  async function openMenu(current: Me = mockCurrentUser) {
+    const user = userEvent.setup();
+    render(<SwitchAccountMenu currentUser={current} canSwitch onSwitched={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: /switch account/i }));
+    return user;
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shows the current user's picture instead of initials", () => {
+    render(
+      <SwitchAccountMenu currentUser={{ ...mockCurrentUser, avatar_url: "/me.png" }} canSwitch={false} onSwitched={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button", { name: /switch account/i })).not.toBeInTheDocument();
+  });
+
+  it("reports when accounts cannot be loaded", async () => {
+    vi.spyOn(api, "get").mockRejectedValue(new Error("x"));
+    await openMenu();
+    expect(await screen.findByText(/could not load accounts/i)).toBeInTheDocument();
+  });
+
+  it("says there are no other accounts, and offers to clear a search with no match", async () => {
+    vi.spyOn(api, "get").mockResolvedValue(page([]));
+    const user = await openMenu();
+    expect(await screen.findByText(/no other active accounts/i)).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText(/filter by name/i), "zzz");
+    expect(await screen.findByText(/no matching accounts/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /clear search/i, hidden: true }));
+    expect(screen.getByPlaceholderText(/filter by name/i)).toHaveValue("");
+  });
+
+  it("uses Escape to clear the search first, then to close", async () => {
+    vi.spyOn(api, "get").mockResolvedValue(page(mockUsers));
+    const user = await openMenu();
+    const search = await screen.findByPlaceholderText(/filter by name/i);
+    await user.type(search, "ba");
+    await user.keyboard("{Escape}");
+    // The popup stays open with an empty search...
+    expect(screen.getByPlaceholderText(/filter by name/i)).toHaveValue("");
+    // ...and the next Escape closes it.
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByPlaceholderText(/filter by name/i)).not.toBeInTheDocument());
+  });
+
+  it("shows users' pictures and reports a failed switch", async () => {
+    vi.spyOn(api, "get").mockResolvedValue(page([{ ...mockUsers[0], avatar_url: "/q.png" } as User, mockUsers[1]]));
+    vi.spyOn(api, "post").mockRejectedValueOnce(new Error("denied"));
+    const user = await openMenu();
+    await user.click(await screen.findByText("Bang Hoang"));
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect(await screen.findByText("Bang Hoang")).toBeEnabled?.();
+  });
+});

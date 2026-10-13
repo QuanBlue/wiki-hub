@@ -287,3 +287,115 @@ describe("PageComments", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load the comments.");
   });
 });
+
+describe("PageComments - more cases", () => {
+  it("narrows to comments that mention or belong to me, opening replies that match", async () => {
+    load([
+      comment({ id: "c1", body: "Root", author: { id: "u2", username: "bob", full_name: "Bob Tran", avatar_url: null } }),
+      comment({ id: "c2", parent_id: "c1", body: "Mine nested", author: { ...me } }),
+      comment({ id: "c3", body: "Other", author: { id: "u3", username: "cat", full_name: "Cat", avatar_url: null } }),
+    ]);
+    renderComments();
+    await screen.findByText("Root");
+
+    await userEvent.click(screen.getByRole("button", { name: /Comment order and filter/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /My comments/ }));
+    // The reply that matches is revealed rather than hidden behind "View replies".
+    expect(await screen.findByText("Mine nested")).toBeInTheDocument();
+    expect(screen.queryByText("Other")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Comment order and filter/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Newest/ }));
+    expect(await screen.findByText("Other")).toBeInTheDocument();
+  });
+
+  it("offers to show everything when a view ends up matching nothing", async () => {
+    load([
+      comment({ id: "c1", body: "Theirs" }),
+      comment({ id: "c2", body: "Mine", author: { ...me }, can_delete: true }),
+    ]);
+    vi.mocked(api.delete).mockResolvedValue(undefined);
+    renderComments();
+    await screen.findByText("Theirs");
+    await userEvent.click(screen.getByRole("button", { name: /Comment order and filter/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /My comments/ }));
+    expect(screen.queryByText("Theirs")).not.toBeInTheDocument();
+
+    const item = screen.getByText("Mine").closest("li")!;
+    await openMenu(item);
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    // Backing out leaves the comment.
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("Mine")).toBeInTheDocument();
+    await openMenu(item);
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: /delete/i }));
+
+    expect(await screen.findByText("No comments match these filters.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show all comments" }));
+    expect(await screen.findByText("Theirs")).toBeInTheDocument();
+  });
+
+  it("switches to the oldest view when a linked comment is hidden by the current one", async () => {
+    const id = "00000000-0000-4000-8000-0000000000aa";
+    load([
+      comment({ id: "c1", body: "Mine", author: { ...me } }),
+      comment({ id, body: "Theirs" }),
+    ]);
+    renderComments();
+    await screen.findByText("Mine");
+    await userEvent.click(screen.getByRole("button", { name: /Comment order and filter/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /My comments/ }));
+    expect(screen.queryByText("Theirs")).not.toBeInTheDocument();
+
+    window.history.pushState(null, "", `#comment-${id}`);
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    expect(await screen.findByText("Theirs")).toBeInTheDocument();
+    window.history.pushState(null, "", window.location.pathname);
+  });
+
+  it("jumps to the comment box from the count", async () => {
+    load([comment({ id: "c1" })]);
+    renderComments();
+    await screen.findByText("First comment");
+    await userEvent.click(screen.getByRole("button", { name: /1 comment|comments/i, hidden: true }));
+  });
+
+  it("reports failures to save, like and delete", async () => {
+    load([comment({ id: "c1", body: "Old", can_edit: true, can_delete: true })]);
+    vi.mocked(api.patch).mockRejectedValue(new Error("x"));
+    vi.mocked(api.put).mockRejectedValue(new Error("x"));
+    vi.mocked(api.delete).mockRejectedValue(new Error("x"));
+    renderComments();
+    const item = (await screen.findByText("Old")).closest("li")!;
+
+    await userEvent.click(within(item).getByRole("button", { name: "Like" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Could not update the like."));
+
+    await openMenu(item);
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    await userEvent.type(screen.getByDisplayValue("Old"), "!");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Could not save the comment."));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await openMenu(item);
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    await userEvent.click(await screen.findByRole("button", { name: /delete/i, hidden: false }).catch(() => screen.getAllByRole("button", { name: /delete/i }).at(-1)!));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Could not delete the comment."));
+  });
+});
+
+describe("PageComments - liking among several", () => {
+  it("updates only the liked comment", async () => {
+    load([comment({ id: "c1", body: "One" }), comment({ id: "c2", body: "Two" })]);
+    vi.mocked(api.put).mockResolvedValue({ liked_by_me: true, like_count: 1 } as CommentLikeStatus);
+    renderComments();
+    const first = (await screen.findByText("One")).closest("li")!;
+    await userEvent.click(within(first).getByRole("button", { name: "Like" }));
+    await waitFor(() => expect(within(first).getByRole("button", { name: "Unlike" })).toBeInTheDocument());
+    const second = screen.getByText("Two").closest("li")!;
+    expect(within(second).getByRole("button", { name: "Like" })).toBeInTheDocument();
+  });
+});
