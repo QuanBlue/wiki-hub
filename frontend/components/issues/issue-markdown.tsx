@@ -12,7 +12,22 @@ import { cn } from "@/lib/utils";
  * paragraph stays a line break, as people expect when typing a report.
  */
 const INLINE =
-  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[[^\]\n]+\]\(https?:\/\/[^)\s]+\))|(_[^_\n]+_)/g;
+  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[[^\]\n]+\]\((?:https?:\/\/[^)\s]+|attachment:[0-9a-fA-F-]{36})\))|(_[^_\n]+_)/g;
+
+/** The same, plus a bare ``https://...`` address (group 5), for text a model wrote. */
+const INLINE_AUTOLINK = new RegExp(
+  INLINE.source + "|(https?:\\/\\/[^\\s<>)\\]]*[^\\s<>)\\].,;:!?])",
+  "g",
+);
+
+type InlineOptions = {
+  /** Usernames whose ``@name`` is highlighted. */
+  mentions?: ReadonlySet<string>;
+  /** Turn a bare ``https://...`` address into a link. */
+  autolink?: boolean;
+  /** Called for ``[name](attachment:<id>)``; without it such a link is plain text. */
+  onOpenAttachment?: (attachmentId: string) => void;
+};
 
 const MENTION = /(@[A-Za-z0-9][A-Za-z0-9_.-]*)/g;
 
@@ -37,11 +52,8 @@ function withMentions(
   });
 }
 
-function inline(
-  text: string,
-  keyPrefix: string,
-  mentions?: ReadonlySet<string>,
-): ReactNode[] {
+function inline(text: string, keyPrefix: string, options: InlineOptions = {}): ReactNode[] {
+  const { mentions, autolink, onOpenAttachment } = options;
   const nodes: ReactNode[] = [];
   let last = 0;
   let index = 0;
@@ -52,7 +64,7 @@ function inline(
       nodes.push(chunk);
     }
   };
-  for (const match of text.matchAll(INLINE)) {
+  for (const match of text.matchAll(autolink ? INLINE_AUTOLINK : INLINE)) {
     const at = match.index ?? 0;
     if (at > last) pushText(text.slice(last, at));
     const token = match[0];
@@ -70,15 +82,47 @@ function inline(
       nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>);
     } else if (match[3]) {
       const split = token.indexOf("](");
+      const label = token.slice(1, split);
+      const href = token.slice(split + 2, -1);
+      if (href.startsWith("attachment:")) {
+        const attachmentId = href.slice("attachment:".length);
+        nodes.push(
+          onOpenAttachment ? (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onOpenAttachment(attachmentId)}
+              className="text-primary hover:text-primary-hover hover:bg-primary-subtle focus-visible:ring-ring cursor-pointer rounded px-0.5 font-medium underline underline-offset-2 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+            >
+              {label}
+            </button>
+          ) : (
+            label
+          ),
+        );
+      } else {
+        nodes.push(
+          <a
+            key={key}
+            href={href}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="text-primary underline underline-offset-2"
+          >
+            {label}
+          </a>,
+        );
+      }
+    } else if (match[5]) {
       nodes.push(
         <a
           key={key}
-          href={token.slice(split + 2, -1)}
+          href={token}
           target="_blank"
           rel="noreferrer noopener"
-          className="text-primary underline underline-offset-2"
+          className="text-primary hover:text-primary-hover [overflow-wrap:anywhere] underline underline-offset-2"
         >
-          {token.slice(1, split)}
+          {token}
         </a>,
       );
     } else {
@@ -96,15 +140,22 @@ export function IssueMarkdown({
   source,
   className,
   mentions,
+  autolink,
+  onOpenAttachment,
 }: {
   source: string;
   className?: string;
   /** Usernames whose ``@name`` should be highlighted (compared case-insensitively). */
   mentions?: readonly string[];
+  /** Make a bare ``https://...`` address a link (for text written by the AI). */
+  autolink?: boolean;
+  /** Makes ``[name](attachment:<id>)`` a button that calls this with the id. */
+  onOpenAttachment?: (attachmentId: string) => void;
 }) {
   const mentionSet: ReadonlySet<string> = new Set(
     (mentions ?? []).map((name) => name.toLowerCase()),
   );
+  const options: InlineOptions = { mentions: mentionSet, autolink, onOpenAttachment };
   const lines = source.replaceAll("\r\n", "\n").split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -148,7 +199,7 @@ export function IssueMarkdown({
             level === 1 ? "text-lg" : level === 2 ? "text-base" : "text-sm",
           )}
         >
-          {inline(heading[2], `h${key}`, mentionSet)}
+          {inline(heading[2], `h${key}`, options)}
         </Tag>,
       );
       i += 1;
@@ -167,7 +218,7 @@ export function IssueMarkdown({
           className="border-border text-muted-foreground my-2 border-l-2 pl-3"
         >
           {quoted.map((text, n) => (
-            <p key={n}>{inline(text, `q${key}-${n}`, mentionSet)}</p>
+            <p key={n}>{inline(text, `q${key}-${n}`, options)}</p>
           ))}
         </blockquote>,
       );
@@ -189,7 +240,7 @@ export function IssueMarkdown({
               className="accent-primary mt-1"
               aria-label={text}
             />
-            <span>{inline(text, `t${i}`, mentionSet)}</span>
+            <span>{inline(text, `t${i}`, options)}</span>
           </li>,
         );
         i += 1;
@@ -206,7 +257,7 @@ export function IssueMarkdown({
       const items: ReactNode[] = [];
       while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
         items.push(
-          <li key={i}>{inline(lines[i].replace(/^[-*]\s+/, ""), `u${i}`, mentionSet)}</li>,
+          <li key={i}>{inline(lines[i].replace(/^[-*]\s+/, ""), `u${i}`, options)}</li>,
         );
         i += 1;
       }
@@ -222,7 +273,7 @@ export function IssueMarkdown({
       const items: ReactNode[] = [];
       while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
         items.push(
-          <li key={i}>{inline(lines[i].replace(/^\d+\.\s+/, ""), `o${i}`, mentionSet)}</li>,
+          <li key={i}>{inline(lines[i].replace(/^\d+\.\s+/, ""), `o${i}`, options)}</li>,
         );
         i += 1;
       }
@@ -244,7 +295,7 @@ export function IssueMarkdown({
         {paragraph.map((text, n) => (
           <span key={n}>
             {n > 0 ? <br /> : null}
-            {inline(text, `p${key}-${n}`, mentionSet)}
+            {inline(text, `p${key}-${n}`, options)}
           </span>
         ))}
       </p>,

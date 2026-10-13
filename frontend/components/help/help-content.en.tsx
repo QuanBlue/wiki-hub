@@ -396,6 +396,21 @@ export const sectionsEn: HelpSection[] = [
             <Code>Share</Code> to copy its link.
           </li>
           <li>
+            <strong>TL;DR</strong>: click <Code>TL;DR</Code> in the toolbar for a short AI
+            summary of the page, written in Markdown (bold key terms, code, lists). The summary is
+            saved until the page changes, so reopening it is instant; <Code>Summarize again</Code>{" "}
+            asks for a fresh one. The summary is in the page&apos;s own language; the switch at the
+            top changes it to <Code>English</Code> or <Code>Tiếng Việt</Code> (and{" "}
+            <Code>Page language</Code> goes back). Switching only translates the summary you already
+            have, which is quick and light on the AI; only <Code>Summarize again</Code> reads the
+            page and writes a new one. Web addresses in the summary are links, and the name of a file
+            attached to the page opens that file - to view it, or to edit it too if you can edit
+            the page. The <Code>i</Code> beside the title says the summary can miss
+            details. It only reads pages you can already open, and each person gets a limited
+            number of new summaries per hour. Until an administrator connects an endpoint it
+            explains that the assistant isn&apos;t set up yet.
+          </li>
+          <li>
             <strong>Page access</strong>: on a page you can manage, click{" "}
             <Code>Page access</Code> to open its <strong>General access</strong> setting -{" "}
             <Code>Open</Code> or <Code>Restricted</Code> - plus the table underneath it,
@@ -2864,6 +2879,132 @@ export const sectionsEn: HelpSection[] = [
             only the first 100 named individually.
           </li>
         </ul>
+      </>
+    ),
+  },
+  {
+    id: "admin-ai",
+    title: "AI assistant",
+    category: "Administration",
+    description:
+      "Connect an OpenAI-compatible endpoint so people can summarize pages with AI.",
+    keywords: ["ai", "assistant", "summary", "summarize", "openai", "llm", "model", "endpoint", "api key"],
+    body: (
+      <>
+        <p>
+          <strong>For everyone:</strong> every page has a <strong>TL;DR</strong> button in its
+          toolbar, next to Save for later. Click it for a short summary written in Markdown. The
+          summary is written in the same language as the page and saved until the page changes, so reopening it is instant;{" "}
+          <Code>Summarize again</Code> asks for a fresh one. It only reads pages you can already
+          open, and each person gets a limited number of new summaries per hour. Until an
+          administrator connects an endpoint, the dialog explains that the assistant isn&apos;t
+          set up yet.
+        </p>
+        <Screenshot
+          src="/help/ai-tldr.png"
+          alt="The Page summary dialog: a language switch above a short Markdown summary with a closing note"
+          caption="The TL;DR dialog: a short summary, with a switch for its language and a Summarize again button."
+        />
+        <p className="mt-3">
+          <strong>Explain or translate a selection</strong>: select a word, phrase or sentence in
+          a page you are reading and a small <strong>AI button</strong> appears at the end of the
+          selection. Click it and the words are <strong>explained straight away, in Vietnamese by
+          default</strong>, using the page title and the surrounding text to pick the right
+          meaning. Use <Code>Translate</Code> instead to translate the words, and the globe menu
+          on the card to switch the language between <Code>English</Code> and{" "}
+          <Code>Tiếng Việt</Code> - changing it redoes the current action. Answers are remembered
+          so asking again is instant, and up to 2,000 characters can be selected at a time.
+          Press Escape or the close button to dismiss the card.
+        </p>
+        <Screenshot
+          src="/help/ai-selection-button.png"
+          alt="A sentence with some words highlighted and a small round AI button at the end of the selection"
+          caption="Select words and a small AI button appears at the end of the selection."
+        />
+        <Screenshot
+          src="/help/ai-selection-explain.png"
+          alt="The explanation card open beside the selection, with Explain and Translate buttons, a language menu and a short answer"
+          caption="Click it to get an explanation straight away; switch to Translate or change the language from the same card."
+        />
+        <p className="mt-3">
+          <strong>Create a page with AI</strong>: in <Code>Create page</Code>, click{" "}
+          <Code>Write with AI</Code>, describe the page in a sentence or two and click{" "}
+          <Code>Generate</Code>. The AI first searches the wiki for related pages you can read and may ask a few multiple-choice questions - pick an option, tick several where allowed or write your own answer, or choose <Code>Skip questions</Code>. WikiHub then drafts the whole page in its own format - headings,
+          lists, checklists, tables and code blocks - fills in the title if it is empty and shows a
+          preview. A notice at the very top says the page was written by AI, so readers know to
+          check it. Nothing is saved until you click <Code>Create page</Code>; use{" "}
+          <Code>Regenerate</Code> for another try or <Code>Discard</Code> to go back to writing it
+          yourself, and edit the page freely afterwards. Only people who may create pages in the
+          space can use it, and it counts toward the same hourly limit as summaries.
+        </p>
+        <Screenshot
+          src="/help/ai-create-describe.png"
+          alt="The Create page dialog on the Write with AI tab, with a description typed on the left and an empty preview on the right"
+          caption="Create page, Write with AI: describe the page on the left; the preview waits on the right."
+        />
+        <Screenshot
+          src="/help/ai-create-questions.png"
+          alt="The AI asking a multiple-choice question on the left while the wiki pages it found are listed on the right"
+          caption="The AI searches the wiki and asks a few questions, one at a time. Hover the i button of an option for the detail."
+        />
+        <Screenshot
+          src="/help/ai-create-draft.png"
+          alt="The finished draft in the preview, starting with a notice that the page was drafted by AI, with the answers added to the description"
+          caption="The draft appears in the preview with an AI notice on top. Your answers are added to the description, so you can edit them and Regenerate."
+        />
+        <p className="mt-3">
+          <strong>Connect it</strong> (System Administrators): open{" "}
+          <strong>Administration → AI assistant</strong>. The page is a table of saved
+          connections - any number can be saved, but <strong>only one is active at a time</strong>.
+        </p>
+        <ul>
+          <li>
+            <strong>Add OpenAI Compatible</strong> opens a form: a <Code>Name</Code>, the{" "}
+            <Code>Endpoint address</Code> of any OpenAI-compatible service including the version
+            path (for example <Code>https://host/v1</Code>) and its <Code>API key</Code>. When you
+            click out of the address or key field WikiHub checks the connection and lists the
+            models the service offers - or click <Code>Fetch models</Code>. Pick the model to use
+            from the list - the model is always chosen from what the service offers, and{" "}
+            <Code>Save</Code> stays off until the connection checks out and a model is picked.
+            Tick <Code>Make this the active connection</Code> to switch it on straight away.
+          </li>
+          <li>
+            In the table, the key is always masked (for example <Code>sk-adc2****297a</Code>). It
+            is stored encrypted, never shown again and not included in backups. <Code>Edit</Code>{" "}
+            changes a connection - leave the key blank to keep it.
+          </li>
+          <li>
+            The power button makes a connection <strong>Active</strong>; doing so switches the
+            previous one off. Switch the active one off and the AI actions are off for everyone.{" "}
+            <Code>Check now</Code> tests a saved connection and records whether it is{" "}
+            <strong>Working</strong> or <strong>Failing</strong>; <Code>Remove</Code> deletes it
+            after you confirm.
+          </li>
+        </ul>
+        <p className="mt-3">
+          <strong>Skills</strong>: open <strong>Skill management</strong> for one card per AI
+          skill - <strong>Page summary (TL;DR)</strong>, <strong>Create page with AI</strong>,{" "}
+          <strong>Explain a selection</strong> and <strong>Translate a selection</strong>. A card
+          shows only the name and a short description plus whether the skill uses the{" "}
+          <strong>Default</strong> wording or a <strong>Custom</strong> one; click it to read the
+          instructions in full, then <Code>Edit</Code> to change them, starting from the current
+          wording rather than from scratch. Use <Code>Save skill</Code> to apply a change or{" "}
+          <Code>Use default</Code> to go back to the built-in wording. WikiHub always adds the
+          fixed parts itself - the answer format, the target language, the safety rules and, for
+          pages, the format the editor understands - so editing a skill cannot break a feature.
+          The built-in summary wording is written for someone who has never seen the page (its
+          style is adapted from the open-source tldr-skill, Apache-2.0). A new instruction
+          applies to the next answer; answers saved under the old one are not reused.
+        </p>
+        <Screenshot
+          src="/help/ai-admin-skills.png"
+          alt="Skill management with four cards: Page summary, Create page with AI, Explain a selection and Translate a selection"
+          caption="Skill management: one card per AI feature. Click a card to read or edit its instructions."
+        />
+        <Callout variant="tip" title="Light on this server">
+          The model runs on the service you connect, so WikiHub only sends a request when
+          someone clicks.
+        </Callout>
       </>
     ),
   },

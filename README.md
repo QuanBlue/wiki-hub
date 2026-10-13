@@ -140,6 +140,31 @@ unformatted text.
   page permissions (allow-lists, blocks, Open/Restricted and inheritance
   switches), groups with every owner, per-user global-permission overrides, and
   all comments, replies and likes.
+- **AI assistant (optional, bring your own endpoint)** — connect any
+  OpenAI-compatible chat service under **Administration → AI assistant**. WikiHub
+  never runs a model itself: every action is an on-demand request to your
+  endpoint, answers are cached, and each person has an hourly limit, so a small
+  server stays light. Until an endpoint is active, every AI control explains that
+  it is not set up. What it does:
+  - **TL;DR** — a toolbar button gives a short Markdown summary of the page,
+    in the page's own language or switched to English / Tiếng Việt (a switch
+    translates the saved summary instead of re-reading the page). File names and
+    links in it are clickable, and attachments open in the viewer on top.
+  - **Create page with AI** — in *Create page*, describe the page and the AI
+    searches the wiki for related pages you can read, asks a few multiple-choice
+    questions (with an info tip per option) to pin down what you want, then drafts
+    the whole page in WikiHub's own format (headings, lists, checklists, tables,
+    code) with an *AI-written* notice at the top. Review it in a side-by-side
+    preview, enlarge it, regenerate or discard — nothing is saved until you
+    create the page.
+  - **Explain or translate a selection** — select words in a page and a small AI
+    button appears at the end of the selection; it explains them in context
+    (Vietnamese by default) or translates them, in English or Tiếng Việt.
+  - **Key and skill management** — keep several connections (keys stored
+    encrypted, shown masked, left out of backups) with exactly one active; check
+    a connection and pick a model from what it offers; and edit the instructions
+    behind each feature as *skills* (summary, create page, explain, translate)
+    with one-click reset to the built-in wording.
 - **Issue tracker** — anyone reports a problem (with screenshots and labels);
   issue managers claim, assign, note and close it, one at a time or in bulk.
   **Export Word** turns one issue, or every ticked issue in one file with a
@@ -418,6 +443,11 @@ make the two packages public under the repository's *Packages* settings.
 - Structured logs pass through a redaction filter, so passwords, tokens, keys
   and cookies never reach a log sink.
 - Security headers and a strict CSP on every API response.
+- AI features send only what an action needs (the page text or the selected words)
+  to the endpoint an administrator connected, only for pages the person can
+  already read. API keys are stored encrypted, shown masked and excluded from
+  backups; page text and file names are treated as data, never as instructions
+  to the model, and AI-drafted HTML goes through the same sanitiser as imports.
 
 ### 🕵️ Account Switching (Impersonation)
 
@@ -454,7 +484,7 @@ What's genuinely still open:
 | Kubernetes manifests / Helm chart | Not written — only the Dockerfiles in [`deploy/docker/`](deploy/docker) exist today |
 | `docs/import-confluence.md`, `docs/export.md`, `docs/deployment.md`, `docs/database.md`, `docs/api.md`, `docs/authentication.md`, `docs/permissions.md` | Not written yet |
 | E-mail notifications (password changes, access requests, deactivation) | Planned |
-| AI-assisted search & authoring (RAG Q&A, hybrid semantic search, auto-summarization, a Tiptap writing assistant, auto-tagging, stale-content detection) | Proposed — see [`TODO`](TODO) |
+| AI-assisted search & authoring — **done:** TL;DR summaries, create page with AI, explain/translate a selection. **Still open:** RAG Q&A with citations, hybrid semantic search, an in-editor writing assistant, auto-tagging, stale-content detection | Partly shipped — see [`TODO`](TODO) |
 
 The live, actively-worked list — including whatever is in progress right
 now — is [`TODO`](TODO).
@@ -468,7 +498,7 @@ now — is [`TODO`](TODO).
 | [`docs/development.md`](docs/development.md) | Day-to-day workflow and conventions |
 | [`docs/design-system.md`](docs/design-system.md) | Visual language and layout tokens |
 | [`docs/user-guide.md`](docs/user-guide.md) | Hướng dẫn sử dụng WikiHub bằng tiếng Việt |
-| [`docs/licensing.md`](docs/licensing.md) | Third-party license obligations (e.g. PyMuPDF/AGPL) |
+| [`docs/licensing.md`](docs/licensing.md) | Third-party license obligations (e.g. PyMuPDF/AGPL, the Apache-2.0 tldr-skill style the TL;DR skill is adapted from) |
 | [`docs/adr/`](docs/adr/) | Architecture decision records |
 
 `database.md`, `api.md`, `authentication.md`, `permissions.md`,

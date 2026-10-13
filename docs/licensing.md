@@ -34,6 +34,17 @@ dependency. If that ever becomes the goal, the options are:
 Revisit this before any distribution decision. Do not remove the dependency
 without also removing `pdf` from `DOCUMENT_IMPORT_EXTENSIONS`.
 
+## tldr-skill (writing style) — Apache-2.0
+
+The default wording of the AI page-summary skill
+(`DEFAULT_SUMMARY_INSTRUCTIONS` in `backend/app/modules/ai/skills.py`) adapts the
+tone and "concrete over abstract, no filler words" rules from the writing guide
+and overview prompt of [UpayanGhosh/tldr-skill](https://github.com/UpayanGhosh/tldr-skill)
+(`repo-tour/references/WRITING_GUIDE.md` and `SECTION_PROMPTS.md`), which is
+Apache-2.0 licensed like WikiHub. Only the style rules are reused, reworded for
+summarising a wiki page; none of its code, scripts or templates are included.
+This note is the attribution Apache-2.0 asks for.
+
 ## Everything else
 
 The remaining backend and frontend dependencies are MIT, BSD, Apache-2.0 or

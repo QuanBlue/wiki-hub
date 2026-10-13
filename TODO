@@ -1,8 +1,12 @@
 AI (sáng kiến)
 - RAG chatbot hỏi-đáp tri thức nội bộ, trả lời kèm trích dẫn link trang nguồn (pgvector + arq embedding job + LLM)
 - semantic search hybrid (full-text + vector)
-- tóm tắt tự động (TL;DR trang dài, tóm tắt cả một Space)
+[x] tóm tắt tự động (TL;DR trang dài, tóm tắt cả một Space)
 - trợ lý soạn thảo trong Tiptap (hoàn thiện câu, sửa ngữ pháp, thuật ngữ nhất quán)
 - tự gắn nhãn & gợi ý trang liên quan khi tạo/sửa trang
 - phát hiện nội dung lỗi thời (quét định kỳ, gắn cờ trang lâu không cập nhật nhưng nhiều lượt xem)
+- Semantic search (tìm kiếm theo ý nghĩa, không chỉ từ khóa)
+ví dụ: ip cua tessel abbott la bao nhiêu? (trả về kết quả liên quan đến IP của Tessel Abbott, không chỉ các trang chứa từ khóa "ip" và "tessel abbott")
 
+[x] Create page su dung AI de tao page moi tu dong sử dung format cua wikihub
+[x]  nếu bôi đen từ, cụm từ, câu,... trong page thì sẽ hiện icon nhỏ bên góc phải cuối chỗ bôi đen sử dụng AI để giải thích nghĩa hoặc dịch

@@ -6981,9 +6981,15 @@ export function RichTextEditor({
 export function RichTextContent({
   content,
   exportMode = false,
+  canEditAttachments = false,
   onReady,
 }: {
   content: string;
+  /**
+   * Whether an Office attachment opened from this page may be edited in place.
+   * The reader has no editing session of its own, so the page says who may.
+   */
+  canEditAttachments?: boolean;
   /**
    * Rendering for a static export snapshot (PDF/HTML/Word), not the live
    * screen. Skips attachment click handling and the details modal - both
@@ -7130,6 +7136,7 @@ export function RichTextContent({
             // never has to reset its own state on the way out.
             key={selectedAttachmentId ?? "none"}
             attachmentId={selectedAttachmentId}
+            canEditOffice={canEditAttachments}
             onClose={() => setSelectedAttachmentId(null)}
           />
           <ImageLightbox
