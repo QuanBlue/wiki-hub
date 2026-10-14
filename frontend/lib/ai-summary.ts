@@ -62,6 +62,11 @@ export type AiStatus = { enabled: boolean; can_configure: boolean };
 // One status lookup per page load, shared by everything that offers AI.
 let statusRequest: Promise<AiStatus> | null = null;
 
+/** Forget what is known about the assistant, so the next look-up asks the server again. */
+export function resetAiStatus(): void {
+  statusRequest = null;
+}
+
 /** Whether the AI assistant is on; a failed lookup counts as off and is retried later. */
 export function aiStatus(): Promise<AiStatus> {
   statusRequest ??= (async () => {
@@ -130,5 +135,23 @@ export function clarifyPage(
   return api.post<PageClarify>(
     `/api/v1/ai/spaces/${encodeURIComponent(spaceKey)}/pages/clarify`,
     body,
+  );
+}
+
+export type SuggestedLabel = { name: string; existing: boolean };
+
+export type PageSuggestions = {
+  labels: SuggestedLabel[];
+  related: RelatedPage[];
+  cached: boolean;
+};
+
+/** Labels worth adding and related pages for a page; remembered until the page changes. */
+export function suggestForPage(
+  spaceKey: string,
+  slug: string,
+): Promise<PageSuggestions> {
+  return api.post<PageSuggestions>(
+    `/api/v1/ai/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(slug)}/suggest`,
   );
 }

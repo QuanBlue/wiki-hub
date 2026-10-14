@@ -20,33 +20,47 @@ from app.core.redis import get_redis
 from app.models.attachment import PageAttachment
 from app.models.page import WikiPage
 from app.models.user import User
+from app.models.user_page_label import UserPageLabel
 from app.modules.ai.client import chat
 from app.modules.ai.config import load_config
 from app.modules.ai.draft_html import draft_to_html, split_title
-from app.modules.ai.page_context import find_related, parse_questions, wiki_context
+from app.modules.ai.page_context import (
+    find_related,
+    parse_questions,
+    parse_suggestions,
+    wiki_context,
+)
 from app.modules.ai.skills import (
     LANGUAGES,
+    assist_system_prompt,
     clarify_system_prompt,
     page_draft_instructions,
     page_draft_system_prompt,
     selection_instructions,
     selection_system_prompt,
+    suggest_system_prompt,
+    suggestions_instructions,
     summary_instructions,
     summary_system_prompt,
     translation_system_prompt,
+    writing_instructions,
 )
 from app.modules.ai.text import page_plain_text
 from app.modules.pages.service import PageService
 from app.modules.permissions.service import PermissionService
 from app.modules.spaces.service import SpaceService
 from app.schemas.ai import (
+    AssistRequest,
+    AssistResult,
     ExplainRequest,
     ExplainResult,
     PageClarify,
     PageDraft,
     PageDraftRequest,
+    PageSuggestions,
     PageSummary,
     RelatedPage,
+    SuggestedLabel,
     SummaryAttachment,
 )
 
@@ -220,6 +234,143 @@ class AIService:
             title=title or payload.title.strip() or payload.prompt.strip()[:80],
             content=draft_to_html(body, payload.lang),
         )
+
+    async def assist_writing(self, key: str, payload: AssistRequest) -> AssistResult:
+        """Fix, continue, rewrite or newly write text in the editor, as a suggestion."""
+        config, space = await self._creator_config(key)
+        text = payload.text.strip()
+        parts: list[str] = []
+        if payload.action == "write":
+            parts += ["<before>", payload.before.strip(), "</before>"]
+            parts += ["<after>", payload.after.strip(), "</after>"]
+        else:
+            parts += ["<text>", text, "</text>"]
+        instruction = payload.instruction.strip()
+        if payload.action == "write" and payload.draft.strip():
+            parts += ["<draft>", payload.draft.strip(), "</draft>"]
+            instruction = f"Revise the draft between <draft> tags as follows: {instruction}"
+        if payload.action in ("edit", "write"):
+            parts += ["<instruction>", instruction, "</instruction>"]
+        if payload.action == "complete" and payload.after.strip():
+            parts += ["<after>", payload.after.strip(), "</after>"]
+        if payload.action == "terms":
+            related = await find_related(self.session, self.user, text, space_id=space.id)
+            parts.append(wiki_context(related, 300))
+        reply = await chat(
+            config,
+            [
+                {
+                    "role": "system",
+                    "content": assist_system_prompt(
+                        payload.action, await writing_instructions(self.session)
+                    ),
+                },
+                {"role": "user", "content": "\n".join(part for part in parts if part)},
+            ],
+            max_tokens=2500 if payload.action == "write" else 1200,
+        )
+        result = reply.strip()
+        if not result:
+            raise ServiceUnavailableError("The AI assistant could not answer.")
+        if payload.action == "write":
+            return AssistResult(
+                result=result, html=draft_to_html(result, notice=False, keep_h1=True)
+            )
+        return AssistResult(result=result)
+
+    async def suggest_for_page(self, key: str, slug: str) -> PageSuggestions:
+        """Labels to add and related pages, for a page the reader can open."""
+        config = await load_config(self.session)
+        if not config.ready:
+            raise ServiceUnavailableError("The AI assistant is not enabled.")
+        page = await self._visible_page(key, slug)
+        mine = list(
+            await self.session.scalars(
+                select(UserPageLabel.name).where(UserPageLabel.user_id == self.user.id)
+            )
+        )
+        on_page = {
+            name.lower()
+            for name in await self.session.scalars(
+                select(UserPageLabel.name).where(
+                    UserPageLabel.user_id == self.user.id, UserPageLabel.page_id == page.id
+                )
+            )
+        }
+        known = sorted(set(mine), key=str.lower)[:60]
+        stamp = page.updated_at.timestamp() if page.updated_at else 0
+        instructions = await suggestions_instructions(self.session)
+        fingerprint = hashlib.sha256(
+            "|".join([instructions, *known, "~", *sorted(on_page)]).encode()
+        ).hexdigest()[:16]
+        cache_key = f"ai:suggest:{page.id}:{stamp}:{self.user.id}:{fingerprint}"
+        redis = get_redis()
+        if cached := await self._read(redis, cache_key):
+            try:
+                return PageSuggestions.model_validate_json(cached).model_copy(
+                    update={"cached": True}
+                )
+            except ValueError:
+                pass
+        text = page_plain_text(page.content, settings.ai_max_input_chars)
+        if len(text) < 40:
+            return PageSuggestions(labels=[], related=[])
+        await rate_limit.enforce(f"ai:{self.user.id}", settings.ai_rate_limit)
+        candidates = [
+            other
+            for other in await find_related(
+                self.session,
+                self.user,
+                f"{page.title} {text[:600]}",
+                space_id=page.space_id,
+                limit=9,
+            )
+            if other.id != page.id
+        ][:8]
+        listing = "\n".join(
+            f"{number}. {other.title} - {page_plain_text(other.content, 160)}"
+            for number, other in enumerate(candidates, start=1)
+        )
+        parts = [
+            f"<title>{page.title}</title>",
+            "<page>",
+            text[:4000],
+            "</page>",
+            "<already_has>" + ", ".join(sorted(on_page)) + "</already_has>",
+            "<authors_labels>" + ", ".join(known) + "</authors_labels>",
+            "<candidates>",
+            listing,
+            "</candidates>",
+        ]
+        reply = await chat(
+            config,
+            [
+                {"role": "system", "content": suggest_system_prompt(instructions)},
+                {"role": "user", "content": "\n".join(parts)},
+            ],
+            max_tokens=600,
+        )
+        names, picked = parse_suggestions(reply, len(candidates))
+        known_lower = {name.lower() for name in known}
+        result = PageSuggestions(
+            labels=[
+                SuggestedLabel(name=name, existing=name.lower() in known_lower)
+                for name in names
+                if name.lower() not in on_page
+            ],
+            related=[
+                RelatedPage(
+                    id=candidates[i].id,
+                    title=candidates[i].title,
+                    slug=candidates[i].slug,
+                    space_key=candidates[i].space.key,
+                    space_name=candidates[i].space.name,
+                )
+                for i in picked
+            ],
+        )
+        await self._write(redis, cache_key, result.model_dump_json())
+        return result
 
     async def explain_selection(
         self, key: str, slug: str, payload: ExplainRequest

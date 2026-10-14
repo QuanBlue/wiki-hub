@@ -60,6 +60,7 @@ import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialo
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
 import { PageSummaryDialog } from "@/components/pages/page-summary-dialog";
 import { SelectionAssistant } from "@/components/pages/selection-assistant";
+import { aiStatus } from "@/lib/ai-summary";
 import { SharePageDialog } from "@/components/pages/share-page-dialog";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
@@ -1843,7 +1844,20 @@ export function SpaceWorkspace({
       pageEditDirtyRef.current = false;
       clearLocalPageDraft(space.key, page.slug);
       setRecoveryDraft(null);
-      if (announce) toast.success(t("workspace.pageSaved", { title: updated.title }));
+      if (announce) {
+        toast.success(t("workspace.pageSaved", { title: updated.title }));
+        // When the assistant is on, offer labels and related pages for what was
+        // just saved - offered, not run: it costs a model call.
+        void aiStatus().then((status) => {
+          if (!status?.enabled) return;
+          toast(t("ai.suggest.toast"), {
+            action: {
+              label: t("ai.suggest.toastAction"),
+              onClick: () => setLabelsDialogOpen(true),
+            },
+          });
+        });
+      }
       if (closeEditor) {
         setEditing(false);
         setPreviewing(false);

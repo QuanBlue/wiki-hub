@@ -17,6 +17,8 @@ from app.schemas.ai import (
     AIStatus,
     AITestRequest,
     AITestResult,
+    AssistRequest,
+    AssistResult,
     ConnectionCreate,
     ConnectionList,
     ConnectionRead,
@@ -26,6 +28,7 @@ from app.schemas.ai import (
     PageClarify,
     PageDraft,
     PageDraftRequest,
+    PageSuggestions,
     PageSummary,
     SkillRead,
     SkillUpdate,
@@ -65,6 +68,24 @@ async def summarize_page(
     ] = None,
 ) -> PageSummary:
     return await service.summarize_page(key, slug, refresh=refresh, lang=lang)
+
+
+@router.post(
+    "/spaces/{key}/pages/{slug}/suggest",
+    response_model=PageSuggestions,
+    summary="Suggest labels and related pages for a page (cached until it changes)",
+)
+async def suggest_for_page(key: str, slug: str, service: AIServiceDep) -> PageSuggestions:
+    return await service.suggest_for_page(key, slug)
+
+
+@router.post(
+    "/spaces/{key}/assist",
+    response_model=AssistResult,
+    summary="Fix grammar, continue a sentence or harmonise terms in text being written",
+)
+async def assist_writing(key: str, payload: AssistRequest, service: AIServiceDep) -> AssistResult:
+    return await service.assist_writing(key, payload)
 
 
 @router.post(
@@ -180,7 +201,9 @@ def get_skill_service(session: DbSession, admin: CurrentSuperuser) -> AISkillSer
 SkillServiceDep = Annotated[AISkillService, Depends(get_skill_service)]
 
 
-SkillName = Literal["summary", "page-draft", "selection-explain", "selection-translate"]
+SkillName = Literal[
+    "summary", "page-draft", "selection-explain", "selection-translate", "writing", "suggestions"
+]
 
 
 @router.get("/skills/{name}", response_model=SkillRead, summary="Read a skill")

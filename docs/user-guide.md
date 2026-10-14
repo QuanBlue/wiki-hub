@@ -39,6 +39,27 @@ spaces, save pages for later, like useful pages, and share a page link with
 people who already have access. Page restrictions can add user/group access
 rules beyond the parent space's permissions.
 
+## AI assistant
+
+When an administrator has connected an AI service (see Administration), the AI
+features appear across WikiHub. Until then each control stays visible and explains
+what is missing. Everything runs on demand against that service, only sees pages
+you can already read, and has an hourly limit per person.
+
+- **TL;DR** - the toolbar button summarizes a page, in its own language or
+  switched to English or Vietnamese.
+- **Create page with AI** - in *Create page*, describe the page. The AI looks for
+  related pages, asks a few multiple-choice questions, and drafts the page with
+  an "AI-written" notice on top. Nothing is saved until you create the page.
+- **Explain or translate a selection** - select words in a page and click the small
+  AI button.
+- **In the editor** - on an empty line press `Ctrl+Space` to have the AI write
+  something and insert it below, or select text to rewrite it, fix grammar,
+  continue a sentence or make terms consistent with the wiki. Suggestions are only
+  applied when you accept them, and earlier versions can be stepped back to.
+- **Labels and related pages** - in a page's labels dialog, *Suggest labels and
+  related pages* proposes labels to add and pages on the same topic.
+
 ## History and PDF export
 
 Every saved page change creates a revision. Open page history to inspect past
@@ -71,6 +92,11 @@ Groups simplify access management. Grant global permissions to a group, then
 use the group when assigning space/page permissions. Administrators can also
 switch into an active user account for support; the application displays a
 banner and records the administrator in the audit trail.
+
+Under **AI assistant**, system administrators connect any OpenAI-compatible service
+(address, API key and a model chosen from what the service offers), keep several
+connections with exactly one active, and edit the instructions ("skills") behind
+each AI feature. Keys are stored encrypted and left out of backups.
 
 Workspace settings control the site name, session duration, upload/archive
 limits, attachment types, and role visibility for sidebar areas. Storage lets

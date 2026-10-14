@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { PageAiSuggestions } from "@/components/pages/page-ai-suggestions";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -24,14 +25,19 @@ export function PageLabelsDialog({ spaceKey, slug, open, onOpenChange, onChange 
     void api.get<PageLabel[]>(path).then((next) => { setLabels(next); onChange(next); }).catch(() => toast.error(t("labels.loadError"))).finally(() => setLoadedPath(path));
   }, [open, path, onChange, t]);
 
-  async function addLabel() {
-    const value = name.trim();
-    if (!value) return;
+  async function addByName(value: string): Promise<boolean> {
     try {
       const next = await api.post<PageLabel>(path, { name: value });
       const all = [...labels, next];
-      setLabels(all); onChange(all); setName("");
-    } catch (error) { toast.error(error instanceof Error ? error.message : t("labels.addError")); }
+      setLabels(all); onChange(all);
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : t("labels.addError")); return false; }
+  }
+
+  async function addLabel() {
+    const value = name.trim();
+    if (!value) return;
+    if (await addByName(value)) setName("");
   }
 
   async function removeLabel(label: PageLabel) {
@@ -45,5 +51,6 @@ export function PageLabelsDialog({ spaceKey, slug, open, onOpenChange, onChange 
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent title={t("labels.title")} description={t("labels.description")}>
     <div className="flex gap-2"><Input value={name} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void addLabel(); }} placeholder={t("labels.addPlaceholder")} maxLength={64} /><Button type="button" onClick={() => void addLabel()} disabled={!name.trim()}><Plus /> {t("labels.add")}</Button></div>
     {loading ? <div className="text-muted-foreground mt-4 flex items-center gap-2 text-sm"><Loader2 className="animate-spin" /> {t("labels.loading")}</div> : <div className="mt-4 flex flex-wrap gap-2">{labels.map((label) => <span key={label.id} className="bg-primary-subtle text-primary inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"><Tag className="size-3" />{label.name}<button type="button" onClick={() => void removeLabel(label)} aria-label={t("labels.removeAria", { name: label.name })} className="hover:bg-primary/10 focus-visible:ring-ring rounded-full p-0.5 focus-visible:ring-2 focus-visible:outline-none"><Trash2 className="size-3" /></button></span>)}{labels.length === 0 && !loading ? <p className="text-muted-foreground text-sm">{t("labels.empty")}</p> : null}</div>}
+    <PageAiSuggestions spaceKey={spaceKey} slug={slug} labelNames={labels.map((label) => label.name)} onAddLabel={addByName} />
   </DialogContent></Dialog>;
 }

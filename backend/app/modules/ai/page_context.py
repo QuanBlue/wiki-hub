@@ -163,3 +163,30 @@ def parse_questions(reply: str) -> list[ClarifyQuestion]:
         if len(questions) == MAX_QUESTIONS:
             break
     return questions
+
+
+def parse_suggestions(reply: str, candidates: int) -> tuple[list[str], list[int]]:
+    """Label names and 0-based candidate indexes from the model's JSON; empty when unusable."""
+    found = re.search(r"\{.*\}", reply, flags=re.S)
+    if not found:
+        return [], []
+    try:
+        data = json.loads(found.group(0))
+    except ValueError:
+        return [], []
+    if not isinstance(data, dict):
+        return [], []
+    labels: list[str] = []
+    for item in data.get("labels") or []:
+        name = " ".join(str(item).split()).strip(" #,.;")[:64]
+        if name and name.lower() not in {label.lower() for label in labels}:
+            labels.append(name)
+    picked: list[int] = []
+    for item in data.get("related") or []:
+        try:
+            index = int(item) - 1
+        except (TypeError, ValueError):
+            continue
+        if 0 <= index < candidates and index not in picked:
+            picked.append(index)
+    return labels[:5], picked[:5]

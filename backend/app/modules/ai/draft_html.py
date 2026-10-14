@@ -88,13 +88,15 @@ def _strip_mark(li: Tag) -> None:
         node.replace_with(_TASK_MARK.sub("", str(node), count=1))
 
 
-def draft_to_html(body: str, lang: str | None = None) -> str:
+def draft_to_html(
+    body: str, lang: str | None = None, *, notice: bool = True, keep_h1: bool = False
+) -> str:
     """The sanitised page HTML: the AI banner, then the drafted body."""
     soup = BeautifulSoup(_markdown.render(body), "html.parser")
     # A leading level-one heading would only repeat the page title.
     first = soup.find(True)
-    if isinstance(first, Tag) and first.name == "h1":
+    if not keep_h1 and isinstance(first, Tag) and first.name == "h1":
         first.decompose()
     _task_lists(soup)
     content = sanitize_imported_html(str(soup))
-    return (ai_notice(lang) + content)[:MAX_PAGE_CONTENT_CHARS]
+    return ((ai_notice(lang) if notice else "") + content)[:MAX_PAGE_CONTENT_CHARS]

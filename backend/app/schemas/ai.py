@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class AIStatus(BaseModel):
@@ -103,6 +103,48 @@ class ExplainRequest(BaseModel):
 
 class ExplainResult(BaseModel):
     result: str
+    cached: bool = False
+
+
+class AssistRequest(BaseModel):
+    #: fix / complete / terms work on the text; edit rewrites it as instructed;
+    #: write makes new content at the caret from an instruction.
+    action: Literal["fix", "complete", "terms", "edit", "write"]
+    #: The selected words (fix, terms, edit) or the text before the cursor (complete).
+    text: str = Field(default="", max_length=4000)
+    #: What the author asked for (edit, write).
+    instruction: str = Field(default="", max_length=1000)
+    #: The content written so far, when the author asks for it to be changed (write).
+    draft: str = Field(default="", max_length=8000)
+    #: Text before and after the caret, so new content fits in (complete, write).
+    before: str = Field(default="", max_length=2000)
+    after: str = Field(default="", max_length=800)
+
+    @model_validator(mode="after")
+    def _needs(self) -> AssistRequest:
+        if self.action in ("fix", "complete", "terms", "edit") and not self.text.strip():
+            raise ValueError("There is no text to work on.")
+        if self.action in ("edit", "write") and not self.instruction.strip():
+            raise ValueError("Say what you want the AI to do.")
+        return self
+
+
+class AssistResult(BaseModel):
+    result: str
+    #: For "write": the same content as editor HTML, ready to insert.
+    html: str | None = None
+
+
+class SuggestedLabel(BaseModel):
+    name: str
+    #: The author already uses this label on another page.
+    existing: bool = False
+
+
+class PageSuggestions(BaseModel):
+    labels: list[SuggestedLabel]
+    related: list[RelatedPage]
+    #: Served from the cache, so it cost no model call.
     cached: bool = False
 
 

@@ -384,7 +384,11 @@ export function SelectionAssistant({
                     aria-live="polite"
                     aria-busy={pending}
                     className={cn(
-                      "bg-surface-sunken wh-scroll mt-2 max-h-64 overflow-y-auto rounded-md px-3 py-2",
+                      "wh-scroll mt-2 max-h-64 overflow-y-auto rounded-md px-3 py-2",
+                      // A failure gets a red ground so it cannot be read as an answer.
+                      !pending && error
+                        ? "border-danger/40 bg-danger-bg border"
+                        : "bg-surface-sunken",
                     )}
                   >
                     {pending ? (

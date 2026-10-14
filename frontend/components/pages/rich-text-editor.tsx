@@ -36,7 +36,7 @@ import {
   type Transaction,
 } from "@tiptap/pm/state";
 import { Fragment, Slice, type Node as PMNode, type NodeType } from "@tiptap/pm/model";
-import type { EditorView } from "@tiptap/pm/view";
+import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { dropPoint } from "@tiptap/pm/transform";
 import { TableMap } from "@tiptap/pm/tables";
 import dynamic from "next/dynamic";
@@ -182,6 +182,7 @@ import {
   toggleListBlock,
   toggleToggleBlock,
 } from "@/components/pages/slash-command";
+import { WritingAssistant } from "@/components/pages/writing-assistant";
 import type { WikiPage } from "@/types/api";
 
 const OfficeAttachmentPreview = dynamic(
@@ -3181,6 +3182,67 @@ const INDENTABLE_TYPES = ["paragraph", "heading"];
  * themselves first. Whatever reaches this handler is swallowed even when there
  * is nothing to indent, so Tab never throws keyboard focus out of the page body.
  */
+/**
+ * The hint on an empty line: how to reach AI and the / menu. It is drawn as a
+ * widget instead of the placeholder's `content: attr(...)` so the keys can be
+ * set in code type, which a single CSS string cannot do. The text comes from the
+ * dictionary with the key names between backticks.
+ */
+function buildEmptyLineHint(): HTMLElement {
+  const locale = document.documentElement.lang === "vi" ? "vi" : "en";
+  const hint = document.createElement("span");
+  hint.className =
+    "pointer-events-none float-left h-0 text-muted-foreground opacity-60 select-none";
+  translate(locale, "editor.aiPlaceholder")
+    .split("`")
+    .forEach((part, index) => {
+      if (index % 2 === 1) {
+        // A span, not <code>: the editor styles <code> in the inline-code red.
+        const key = document.createElement("span");
+        key.className =
+          "bg-surface-sunken rounded px-1 py-0.5 font-mono text-xs";
+        key.textContent = part;
+        hint.appendChild(key);
+      } else {
+        hint.appendChild(document.createTextNode(part));
+      }
+    });
+  return hint;
+}
+
+const EmptyLineHint = Extension.create({
+  name: "emptyLineHint",
+  addProseMirrorPlugins() {
+    const editor = this.editor;
+    return [
+      new Plugin({
+        props: {
+          decorations(state) {
+            if (!editor.isEditable || !state.selection.empty) return null;
+            const { $from } = state.selection;
+            // Only a blank paragraph directly in the page - not in a table cell,
+            // list or callout, where the line already has a job.
+            if (
+              $from.depth !== 1 ||
+              $from.parent.type.name !== "paragraph" ||
+              $from.parent.content.size !== 0
+            ) {
+              return null;
+            }
+            const locale = document.documentElement.lang === "vi" ? "vi" : "en";
+            return DecorationSet.create(state.doc, [
+              Decoration.widget($from.pos, buildEmptyLineHint, {
+                side: -1,
+                key: `empty-line-hint-${locale}`,
+              }),
+            ]);
+          },
+        },
+      }),
+    ];
+  },
+});
+
 const BlockIndent = Extension.create({
   name: "blockIndent",
   priority: 10,
@@ -4090,10 +4152,14 @@ const HeadingWithId = Heading.extend({
  * exports has no session to fetch a normal attachment URL with), so the
  * same guard there just makes every exported image parse into nothing.
  */
+type PlaceholderText = NonNullable<
+  Parameters<typeof Placeholder.configure>[0]
+>["placeholder"];
+
 function buildEditorExtensions({
   allowBase64 = false,
   placeholder,
-}: { allowBase64?: boolean; placeholder?: string } = {}) {
+}: { allowBase64?: boolean; placeholder?: PlaceholderText } = {}) {
   return [
   StarterKit.configure({
     heading: false,
@@ -4143,6 +4209,7 @@ function buildEditorExtensions({
   UnderlineMark,
   TextAlign.configure({ types: ["heading", "paragraph"] }),
   BlockIndent,
+  EmptyLineHint,
   TableCellTripleClick,
   Table.configure({
     resizable: false,
@@ -4358,7 +4425,6 @@ export function linkifyPlainTextUrls(content: string): string {
 const editorClassName =
   "wikihub-editor min-h-[calc(100vh-19rem)] px-5 py-4 text-sm leading-[1.45] outline-none " +
   "[&_p]:my-2 [&_p:first-child]:mt-0 " +
-  "[&_p.is-editor-empty:first-child::before]:text-muted-foreground [&_p.is-editor-empty:first-child::before]:pointer-events-none [&_p.is-editor-empty:first-child::before]:float-left [&_p.is-editor-empty:first-child::before]:h-0 [&_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] " +
   "[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-tight " +
   "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:leading-tight " +
   "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:leading-tight " +
@@ -6704,10 +6770,8 @@ export function RichTextEditor({
   const editor = useEditor({
     immediatelyRender: false,
     extensions: buildEditorExtensions({
-      placeholder: translate(
-        document.documentElement.lang === "vi" ? "vi" : "en",
-        "editor.editorPlaceholder",
-      ),
+      // The empty-line hint is drawn by EmptyLineHint (with the keys in code type).
+      placeholder: "",
     }),
     content: normalizedContent,
     editorProps: {
@@ -6953,6 +7017,9 @@ export function RichTextEditor({
         )}
       />
       <TableActionsMenu editor={editor} />
+      {editor && pageLinkContext ? (
+        <WritingAssistant editor={editor} spaceKey={pageLinkContext.spaceKey} />
+      ) : null}
       <LinkFloatingToolbar
         editor={editor}
         onEditLink={(linkData) =>

@@ -4,7 +4,13 @@ import { Schema } from "@tiptap/pm/model";
 import { EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -32,10 +38,20 @@ describe("SlashCommandList previews", () => {
   it("opens the preview on the left when there is no room on the right", () => {
     const original = Element.prototype.getBoundingClientRect;
     Element.prototype.getBoundingClientRect = () =>
-      ({ right: window.innerWidth + 50, left: 0, top: 0, bottom: 0, width: 0, height: 0 }) as DOMRect;
+      ({
+        right: window.innerWidth + 50,
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 0,
+        height: 0,
+      }) as DOMRect;
     try {
       const { container } = render(
-        <SlashCommandList items={SLASH_COMMAND_ITEMS.slice(0, 2)} command={vi.fn()} />,
+        <SlashCommandList
+          items={SLASH_COMMAND_ITEMS.slice(0, 2)}
+          command={vi.fn()}
+        />,
       );
       expect(container.querySelector(".right-full")).not.toBeNull();
     } finally {
@@ -44,16 +60,31 @@ describe("SlashCommandList previews", () => {
   });
 
   it("copes with the highlighted row disappearing as the list shrinks", () => {
-    const { rerender } = render(<SlashCommandList items={SLASH_COMMAND_ITEMS} command={vi.fn()} />);
+    const { rerender } = render(
+      <SlashCommandList items={SLASH_COMMAND_ITEMS} command={vi.fn()} />,
+    );
     fireEvent.mouseEnter(screen.getAllByRole("option").at(-1)!);
-    rerender(<SlashCommandList items={SLASH_COMMAND_ITEMS.slice(0, 2)} command={vi.fn()} />);
+    rerender(
+      <SlashCommandList
+        items={SLASH_COMMAND_ITEMS.slice(0, 2)}
+        command={vi.fn()}
+      />,
+    );
     expect(screen.getAllByRole("option")).toHaveLength(2);
-    expect(screen.getAllByRole("option")[0]).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByRole("option")[0]).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
   it("runs the command when a row is clicked, without stealing focus", () => {
     const command = vi.fn();
-    render(<SlashCommandList items={SLASH_COMMAND_ITEMS.slice(0, 2)} command={command} />);
+    render(
+      <SlashCommandList
+        items={SLASH_COMMAND_ITEMS.slice(0, 2)}
+        command={command}
+      />,
+    );
     const option = screen.getAllByRole("option")[1];
     const down = fireEvent.mouseDown(option);
     expect(down).toBe(false); // default prevented
@@ -83,7 +114,12 @@ function recordingEditor() {
   const editor = {
     chain: () => chain,
     isActive: () => false,
-    state: { selection: { from: 1, $from: { parent: { type: { name: "paragraph" } } } } },
+    state: {
+      selection: {
+        from: 1,
+        $from: { parent: { type: { name: "paragraph" } } },
+      },
+    },
     commands: { command: () => true },
   } as unknown as Editor;
   return { editor, calls };
@@ -92,7 +128,17 @@ function recordingEditor() {
 describe("slash menu items", () => {
   it("every text-block item drives the editor chain", () => {
     for (const item of SLASH_COMMAND_ITEMS) {
-      if (["image", "attachment", "link-to-page", "create-subpage", "toggle-list"].includes(item.id)) continue;
+      if (
+        [
+          "image",
+          "attachment",
+          "link-to-page",
+          "create-subpage",
+          "toggle-list",
+          "ai-continue",
+        ].includes(item.id)
+      )
+        continue;
       const { editor, calls } = recordingEditor();
       item.run(editor);
       expect(calls.length, item.id).toBeGreaterThan(0);
@@ -108,6 +154,16 @@ describe("slash menu items", () => {
     }
   });
 
+  it("asks the writing assistant to continue the sentence through a window event", () => {
+    const seen = vi.fn();
+    window.addEventListener("wikihub:ai-assist", seen, { once: true });
+    const { editor } = recordingEditor();
+
+    SLASH_COMMAND_ITEMS.find((i) => i.id === "ai-continue")!.run(editor);
+
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
   it("asks the toolbar for files and pages through DOM events", () => {
     const seen: string[] = [];
     for (const name of [
@@ -119,7 +175,12 @@ describe("slash menu items", () => {
       document.addEventListener(name, () => seen.push(name), { once: true });
     }
     const { editor } = recordingEditor();
-    for (const id of ["image", "attachment", "link-to-page", "create-subpage"]) {
+    for (const id of [
+      "image",
+      "attachment",
+      "link-to-page",
+      "create-subpage",
+    ]) {
       SLASH_COMMAND_ITEMS.find((i) => i.id === id)!.run(editor);
     }
     expect(seen).toHaveLength(4);
@@ -132,7 +193,11 @@ const schema = new Schema({
     doc: { content: "block+" },
     paragraph: { group: "block", content: "inline*", toDOM: () => ["p", 0] },
     heading: { group: "block", content: "inline*", toDOM: () => ["h1", 0] },
-    blockquote: { group: "block", content: "paragraph+", toDOM: () => ["blockquote", 0] },
+    blockquote: {
+      group: "block",
+      content: "paragraph+",
+      toDOM: () => ["blockquote", 0],
+    },
     toggle: {
       group: "block",
       content: "toggleSummary toggleContent",
@@ -145,21 +210,35 @@ const schema = new Schema({
   },
 });
 
-const p = (text?: string) => schema.nodes.paragraph.create(null, text ? schema.text(text) : undefined);
+const p = (text?: string) =>
+  schema.nodes.paragraph.create(null, text ? schema.text(text) : undefined);
 const toggle = (title: string, body: ReturnType<typeof p>[]) =>
   schema.nodes.toggle.create({ open: true }, [
-    schema.nodes.toggleSummary.create(null, title ? schema.text(title) : undefined),
+    schema.nodes.toggleSummary.create(
+      null,
+      title ? schema.text(title) : undefined,
+    ),
     schema.nodes.toggleContent.create(null, body),
   ]);
 
-function harness(doc: ReturnType<typeof schema.node>, pos: number, options: { lift?: boolean; active?: string } = {}) {
+function harness(
+  doc: ReturnType<typeof schema.node>,
+  pos: number,
+  options: { lift?: boolean; active?: string } = {},
+) {
   let state = EditorState.create({
     schema,
     doc,
     selection: TextSelection.near(doc.resolve(pos)),
   });
   const log: string[] = [];
-  const runCommand = (fn: (args: { tr: Transaction; state: EditorState; dispatch?: (tr: Transaction) => void }) => boolean) => {
+  const runCommand = (
+    fn: (args: {
+      tr: Transaction;
+      state: EditorState;
+      dispatch?: (tr: Transaction) => void;
+    }) => boolean,
+  ) => {
     const tr = state.tr;
     const ok = fn({ tr, state, dispatch: () => {} });
     state = state.apply(tr);
@@ -183,11 +262,13 @@ function harness(doc: ReturnType<typeof schema.node>, pos: number, options: { li
                 state = state.apply(tr);
                 return true;
               });
-            else if (name === "liftListItem") steps.push(() => options.lift ?? false);
-            else steps.push(() => {
-              log.push(name);
-              return true;
-            });
+            else if (name === "liftListItem")
+              steps.push(() => options.lift ?? false);
+            else
+              steps.push(() => {
+                log.push(name);
+                return true;
+              });
             return chain;
           };
         },
@@ -203,7 +284,13 @@ function harness(doc: ReturnType<typeof schema.node>, pos: number, options: { li
     isActive: (name: string) => name === options.active,
     commands: { command: runCommand },
   } as unknown as Editor;
-  return { editor, log, get state() { return state; } };
+  return {
+    editor,
+    log,
+    get state() {
+      return state;
+    },
+  };
 }
 
 describe("placeCursorInToggleSummary", () => {
@@ -218,7 +305,11 @@ describe("placeCursorInToggleSummary", () => {
   });
 
   it("puts the cursor in the title of the nearest toggle", () => {
-    const doc = schema.node("doc", null, [p("before"), toggle("Title", [p("body")]), toggle("Other", [p()])]);
+    const doc = schema.node("doc", null, [
+      p("before"),
+      toggle("Title", [p("body")]),
+      toggle("Other", [p()]),
+    ]);
     const state = EditorState.create({ schema, doc });
     const tr = state.tr;
     placeCursorInToggleSummary(tr, vi.fn(), 0);
@@ -238,14 +329,18 @@ describe("toggleToggleBlock", () => {
   });
 
   it("inserts a toggle instead when the cursor is not in a paragraph", () => {
-    const doc = schema.node("doc", null, [schema.node("heading", null, [schema.text("Title")])]);
+    const doc = schema.node("doc", null, [
+      schema.node("heading", null, [schema.text("Title")]),
+    ]);
     const h = harness(doc, 3);
     toggleToggleBlock(h.editor);
     expect(h.log.some((entry) => entry.startsWith("insertContent"))).toBe(true);
   });
 
   it("falls back to inserting an empty toggle where a paragraph cannot be converted", () => {
-    const doc = schema.node("doc", null, [schema.node("blockquote", null, [p("quoted")])]);
+    const doc = schema.node("doc", null, [
+      schema.node("blockquote", null, [p("quoted")]),
+    ]);
     const h = harness(doc, 3);
     toggleToggleBlock(h.editor);
     expect(h.log.some((entry) => entry.startsWith("insertContent"))).toBe(true);
@@ -286,7 +381,10 @@ describe("toggleListBlock and insertToggle", () => {
     toggleListBlock(plain.editor, "toggleBulletList");
     expect(plain.log).toContain("toggleBulletList");
 
-    const inToggle = harness(schema.node("doc", null, [toggle("Title", [p("b")])]), 3);
+    const inToggle = harness(
+      schema.node("doc", null, [toggle("Title", [p("b")])]),
+      3,
+    );
     toggleListBlock(inToggle.editor, "toggleOrderedList");
     expect(inToggle.state.doc.firstChild!.type.name).toBe("paragraph");
     expect(inToggle.log).toContain("toggleOrderedList");
@@ -333,22 +431,34 @@ describe("SlashCommand extension", () => {
 
     const list = await screen.findByRole("listbox");
     expect(list).toBeInTheDocument();
-    expect(screen.getAllByRole("option").length).toBe(SLASH_COMMAND_ITEMS.length);
+    expect(screen.getAllByRole("option").length).toBe(
+      SLASH_COMMAND_ITEMS.length,
+    );
     // The faint hint appears while nothing has been typed to filter.
     expect(document.body.textContent).toContain("Type to search");
 
     act(() => {
       e.commands.insertContent("head");
     });
-    await waitFor(() => expect(screen.getAllByRole("option").length).toBeLessThan(SLASH_COMMAND_ITEMS.length));
+    await waitFor(() =>
+      expect(screen.getAllByRole("option").length).toBeLessThan(
+        SLASH_COMMAND_ITEMS.length,
+      ),
+    );
     expect(document.body.textContent).not.toContain("Type to search");
 
     // Enter chooses the highlighted item and removes the typed "/head".
     act(() => {
-      e.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-      e.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      e.view.dom.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+      e.view.dom.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
     });
-    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument(),
+    );
     expect(e.getText().trim()).toBe("");
   });
 
@@ -360,9 +470,13 @@ describe("SlashCommand extension", () => {
     });
     await screen.findByRole("listbox");
     act(() => {
-      e.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      e.view.dom.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
     });
-    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument(),
+    );
     expect(e.getText()).toBe("/");
   });
 
