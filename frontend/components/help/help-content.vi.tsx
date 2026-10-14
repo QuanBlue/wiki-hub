@@ -3040,23 +3040,69 @@ export const sectionsVi: HelpSection[] = [
     title: "Trợ lý AI",
     category: "Administration",
     description:
-      "Kết nối một endpoint tương thích OpenAI để mọi người tóm tắt trang bằng AI.",
-    keywords: ["ai", "trợ lý", "tóm tắt", "openai", "llm", "model", "endpoint", "api key"],
+      "Kết nối một endpoint tương thích OpenAI, rồi tóm tắt, soạn, giải thích và sắp xếp page bằng AI.",
+    keywords: ["ai", "trợ lý", "tóm tắt", "tldr", "dịch", "giải thích", "soạn", "ngữ pháp", "nhãn", "liên quan", "ctrl+space", "openai", "llm", "model", "endpoint", "api key"],
     body: (
       <>
         <p>
           <strong>Với mọi người:</strong> mỗi trang có nút <strong>TL;DR</strong> trên thanh công
-          cụ, cạnh Save for later. Nhấn vào để xem bản tóm tắt ngắn dạng Markdown, viết bằng
-          cùng ngôn ngữ với trang. Bản tóm tắt
-          được lưu cho đến khi trang thay đổi nên mở lại là có ngay; <Code>Tóm tắt lại</Code>{" "}
-          yêu cầu một bản mới. AI chỉ đọc các trang bạn vốn đã mở được, và mỗi người chỉ được tạo
-          một số bản tóm tắt mới giới hạn mỗi giờ. Khi quản trị viên chưa kết nối endpoint, hộp
-          thoại sẽ cho biết trợ lý AI chưa được thiết lập.
+          cụ, cạnh Save for later. Nhấn vào để xem bản tóm tắt ngắn dạng Markdown, viết bằng cùng
+          ngôn ngữ với trang. Nút chuyển ở phía trên đổi sang <Code>English</Code> hoặc{" "}
+          <Code>Tiếng Việt</Code>: việc này dịch bản tóm tắt đã viết thay vì đọc lại cả trang nên
+          nhanh và rẻ. Địa chỉ web trong đó là link, và tên tệp đính kèm mở tệp đó phía trên bản
+          tóm tắt. Bản tóm tắt được lưu cho đến khi trang thay đổi nên mở lại là có ngay;{" "}
+          <Code>Tóm tắt lại</Code> đọc lại trang và viết bản mới. AI chỉ đọc các trang bạn vốn đã
+          mở được, và mỗi người chỉ được gửi một số yêu cầu AI giới hạn mỗi giờ (60 nếu quản trị
+          viên không đặt giới hạn khác).
         </p>
         <Screenshot
           src="/help/ai-tldr.png"
           alt="Hộp thoại Page summary: nút chuyển ngôn ngữ phía trên và bản tóm tắt Markdown ngắn kèm ghi chú cuối"
           caption="Hộp thoại TL;DR: bản tóm tắt ngắn, có nút chuyển ngôn ngữ và nút Tóm tắt lại."
+        />
+        <p className="mt-3">
+          <strong>AI trong trình soạn thảo</strong>: khi đang sửa page, đặt con trỏ ở một dòng
+          trống, dòng gợi ý <em>Nhấn Ctrl+Space để dùng AI hoặc &apos;/&apos; để chọn lệnh</em> sẽ hiện
+          ra. Nhấn <Kbd>Ctrl</Kbd> + <Kbd>Space</Kbd> để mở hộp AI, mô tả điều bạn muốn - một
+          checklist, bảng các lựa chọn, đoạn mở đầu - rồi nhấn <Kbd>Enter</Kbd>. AI viết nội dung,
+          có tính đến văn bản quanh con trỏ, và hiển thị bản đã định dạng trước khi thêm gì vào
+          page. Sau đó <Code>Chèn bên dưới</Code> đưa nội dung vào page (thay cho dòng trống), hoặc{" "}
+          <Code>Chỉnh sửa</Code> để yêu cầu thay đổi - ví dụ <em>ngắn hơn</em> hay{" "}
+          <em>thêm một bảng</em> - bao nhiêu lần tuỳ ý. Mọi phiên bản đều được giữ: các mũi tên ở
+          đầu hộp lùi và tiến giữa chúng, và <Code>Chèn bên dưới</Code> dùng phiên bản đang hiện.
+          Nếu chưa kết nối AI, phím tắt chỉ hiện một thông báo nhỏ và nó biến mất ngay khi bạn gõ
+          tiếp.
+        </p>
+        <Screenshot
+          src="/help/ai-writing-placeholder.png"
+          alt="Một dòng trống trong trình soạn thảo với gợi ý xám Nhấn Ctrl+Space để dùng AI hoặc / để chọn lệnh"
+          caption="Ở dòng trống, trình soạn thảo gợi ý phím tắt AI và menu /."
+        />
+        <Screenshot
+          src="/help/ai-writing-result.png"
+          alt="Checklist do AI tạo hiển thị đã định dạng, với nút Chèn bên dưới và Chỉnh sửa ở dưới"
+          caption="Nội dung AI tạo được hiển thị trước. Chèn bên dưới để thêm vào page; Chỉnh sửa để yêu cầu thay đổi."
+        />
+        <p className="mt-3">
+          <strong>Cải thiện đoạn văn bạn đã viết</strong>: bôi đen chữ trong một đoạn văn, một{" "}
+          <strong>nút AI</strong> nhỏ hiện ở cuối phần bôi đen (hoặc nhấn <Kbd>Ctrl</Kbd> +{" "}
+          <Kbd>Space</Kbd>). Mô tả thay đổi - <em>viết trang trọng hơn</em>,{" "}
+          <em>dịch sang tiếng Anh</em> - hoặc chọn một thao tác nhanh: <Code>Sửa ngữ pháp</Code>{" "}
+          (chính tả, dấu câu và ngữ pháp, giữ nguyên cách diễn đạt), <Code>Thuật ngữ nhất quán</Code>{" "}
+          (dùng đúng thuật ngữ của các page liên quan đã có trong wiki, và dùng một từ cho một khái
+          niệm trong chính đoạn văn) hoặc <Code>Viết tiếp</Code> (hoàn thiện câu; <Code>/</Code> →{" "}
+          <Code>Viết tiếp bằng AI</Code> làm điều tương tự tại con trỏ). Kết quả chỉ là gợi ý: chưa
+          có gì thay đổi cho đến khi bạn bấm <Code>Thay thế</Code> (hoặc <Code>Chèn</Code>), và gợi
+          ý không được áp dụng nếu văn bản đã thay đổi trong lúc chờ. <Code>Chỉnh sửa</Code> xin
+          một phiên bản khác. Chỉ người sửa được space mới dùng được, và gợi ý là văn bản thuần
+          thay cho phần đã bôi đen nên định dạng bên trong (in đậm, liên kết) không được giữ - hãy
+          bôi đen phần nhỏ hơn để giữ định dạng. Quản trị viên chỉnh văn phong chung, như giọng
+          văn hay bảng thuật ngữ, ở <strong>Quản lý skill → Trợ lý soạn thảo</strong>.
+        </p>
+        <Screenshot
+          src="/help/ai-writing-assistant.png"
+          alt="Trình soạn thảo với một câu được bôi đen và hộp AI mở: ô nhập yêu cầu phía trên các thao tác Sửa ngữ pháp, Viết tiếp và Thuật ngữ nhất quán"
+          caption="Bôi đen chữ: mô tả thay đổi, hoặc dùng Sửa ngữ pháp, Viết tiếp, Thuật ngữ nhất quán."
         />
         <p className="mt-3">
           <strong>Giải thích hoặc dịch phần đã chọn</strong>: bôi đen một từ, cụm từ hoặc câu
@@ -3080,14 +3126,20 @@ export const sectionsVi: HelpSection[] = [
         />
         <p className="mt-3">
           <strong>Tạo page bằng AI</strong>: trong <Code>Create page</Code>, bấm{" "}
-          <Code>Viết bằng AI</Code>, mô tả page trong một hai câu rồi bấm <Code>Tạo nội dung</Code>. AI sẽ tìm trước trong wiki các page liên quan bạn đọc được và có thể hỏi vài câu trắc nghiệm - chọn một đáp án, chọn nhiều nếu được phép hoặc tự nhập câu trả lời, hay bấm <Code>Bỏ qua câu hỏi</Code>.
-          WikiHub soạn cả page theo đúng định dạng của mình - tiêu đề, danh sách, checklist, bảng
-          và khối mã - tự điền tiêu đề nếu đang trống và hiện bản xem trước. Dòng ghi chú ở trên
-          cùng cho biết page do AI tạo để người đọc biết cần kiểm tra lại. Chưa có gì được lưu cho
-          đến khi bạn bấm <Code>Create page</Code>; dùng <Code>Tạo lại</Code> để thử lần nữa hoặc{" "}
-          <Code>Bỏ bản nháp</Code> để tự viết, và sau đó vẫn chỉnh sửa page thoải mái. Chỉ người
-          được phép tạo page trong space mới dùng được, và tính chung vào giới hạn mỗi giờ như
-          tóm tắt.
+          <Code>Viết bằng AI</Code> (hoặc sau khi gõ vài chữ ở tab <Code>Tự viết</Code>, bấm{" "}
+          <Code>Nhờ AI soạn</Code> để dùng chúng làm mô tả), mô tả page trong một hai câu rồi bấm{" "}
+          <Code>Tạo nội dung</Code>. AI tìm trước trong wiki các page liên quan bạn đọc được - liệt
+          kê ở bên phải - và có thể hỏi vài câu trắc nghiệm, mỗi lần một câu: chọn một đáp án (rê
+          chuột vào nút <Code>i</Code> của lựa chọn để xem chi tiết), chọn nhiều nếu được phép hoặc
+          tự nhập câu trả lời, hay bấm <Code>Bỏ qua câu hỏi</Code>. Câu trả lời được thêm vào mô tả
+          để bạn thấy và sửa được những gì bản nháp dựa vào. WikiHub soạn cả page theo đúng định
+          dạng của mình - tiêu đề, danh sách, checklist, bảng và khối mã - tự điền tiêu đề nếu đang
+          trống và hiện bản xem trước có thể phóng to. Dòng ghi chú ở trên cùng cho biết page do AI
+          tạo để người đọc biết cần kiểm tra lại. Chưa có gì được lưu cho đến khi bạn bấm{" "}
+          <Code>Create page</Code>; dùng <Code>Tạo lại</Code> để thử lần nữa hoặc{" "}
+          <Code>Bỏ bản nháp</Code> để làm lại, và sau đó vẫn chỉnh sửa page thoải mái. Chỉ người
+          được phép tạo page trong space mới dùng được. Khi chưa kết nối AI, tab này giải thích
+          còn thiếu gì.
         </p>
         <Screenshot
           src="/help/ai-create-describe.png"
@@ -3134,18 +3186,29 @@ export const sectionsVi: HelpSection[] = [
           </li>
         </ul>
         <p className="mt-3">
+          <strong>Nhãn và page liên quan</strong>: mở <strong>Nhãn của page</strong> (nút thẻ dưới
+          tiêu đề) rồi bấm <Code>Gợi ý nhãn và page liên quan</Code>. AI đọc page và đề xuất vài
+          nhãn - ưu tiên các nhãn bạn đã dùng ở page khác, có đánh dấu - cùng danh sách các page
+          cùng chủ đề đã có. Bấm một nhãn để thêm; bấm một page liên quan để mở ở tab mới. Sau khi
+          lưu một lần sửa, một thông báo nhỏ cũng đề nghị việc này. Nhãn vẫn là riêng của tài khoản
+          bạn, AI chỉ thấy các page bạn vốn đọc được, và câu trả lời được nhớ đến khi page thay
+          đổi nên mở lại là có ngay.
+        </p>
+        <p className="mt-3">
           <strong>Skill</strong>: mở <strong>Quản lý skill</strong> để thấy mỗi skill AI một thẻ -{" "}
           <strong>Tóm tắt trang (TL;DR)</strong>, <strong>Tạo page bằng AI</strong>,{" "}
-          <strong>Giải thích phần đã chọn</strong> và <strong>Dịch phần đã chọn</strong>. Thẻ chỉ
-          hiện tên, mô tả ngắn và cho biết skill đang dùng nội dung <strong>Mặc định</strong> hay{" "}
+          <strong>Giải thích phần đã chọn</strong>, <strong>Dịch phần đã chọn</strong>,{" "}
+          <strong>Trợ lý soạn thảo</strong> và <strong>Nhãn và page liên quan</strong>. Thẻ chỉ hiện
+          tên, mô tả ngắn và cho biết skill đang dùng nội dung <strong>Mặc định</strong> hay{" "}
           <strong>Tuỳ chỉnh</strong>; bấm vào thẻ để đọc đầy đủ hướng dẫn, rồi <Code>Sửa</Code>{" "}
           để chỉnh, bắt đầu từ nội dung hiện tại thay vì viết lại từ đầu. Dùng{" "}
           <Code>Lưu skill</Code> để áp dụng hoặc <Code>Dùng mặc định</Code> để quay về nội dung có
-          sẵn. WikiHub luôn tự thêm các phần cố định - định dạng câu trả lời, ngôn ngữ đích, quy
-          tắc an toàn và, với page, định dạng trình soạn thảo hiểu được - nên sửa skill không làm
-          hỏng tính năng. Nội dung tóm tắt có sẵn được viết cho người chưa từng xem page (phong
-          cách chuyển thể từ skill mã nguồn mở tldr-skill, Apache-2.0). Hướng dẫn mới áp dụng cho
-          câu trả lời kế tiếp, các bản đã lưu theo hướng dẫn cũ không được dùng lại.
+          sẵn. Đây là nơi đặt giọng văn, bảng thuật ngữ hay quy ước đặt tên nhãn. WikiHub luôn tự
+          thêm các phần cố định - định dạng câu trả lời, ngôn ngữ đích, quy tắc an toàn và, với
+          page, định dạng trình soạn thảo hiểu được - nên sửa skill không làm hỏng tính năng. Nội
+          dung tóm tắt có sẵn được viết cho người chưa từng xem page (phong cách chuyển thể từ
+          skill mã nguồn mở tldr-skill, Apache-2.0). Hướng dẫn mới áp dụng cho câu trả lời kế
+          tiếp, các bản đã lưu theo hướng dẫn cũ không được dùng lại.
         </p>
         <Screenshot
           src="/help/ai-admin-skills.png"

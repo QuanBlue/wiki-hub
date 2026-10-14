@@ -160,10 +160,25 @@ unformatted text.
   - **Explain or translate a selection** — select words in a page and a small AI
     button appears at the end of the selection; it explains them in context
     (Vietnamese by default) or translates them, in English or Tiếng Việt.
+  - **AI in the editor** — on an empty line press `Ctrl`+`Space` (the editor
+    hints at it, like Notion) and describe what you want; the AI writes it,
+    shows it formatted, and *Insert below* adds it, or *Edit* asks for changes.
+    Select text for a small AI button to rewrite it as instructed, fix grammar,
+    finish a sentence, or make terminology consistent with the related pages
+    already in the wiki. Every answer is a suggestion that is never applied if the
+    text changed meanwhile, and every version of a request is kept so it can be
+    stepped back to.
+  - **Labels and related pages** — from a page's labels dialog, *Suggest labels and
+    related pages* proposes labels (preferring ones you already use) and existing
+    pages on the same topic, one click to add or open, remembered until the page
+    changes.
+  - **Not set up yet?** Every AI control stays visible and explains what is missing:
+    an administrator gets the three steps and a link to the settings, everyone else
+    is told to ask an administrator (the settings link is never shown to them).
   - **Key and skill management** — keep several connections (keys stored
     encrypted, shown masked, left out of backups) with exactly one active; check
     a connection and pick a model from what it offers; and edit the instructions
-    behind each feature as *skills* (summary, create page, explain, translate)
+    behind each feature as *skills* (summary, create page, explain, translate, writing assistant, labels and related pages)
     with one-click reset to the built-in wording.
 - **Issue tracker** — anyone reports a problem (with screenshots and labels);
   issue managers claim, assign, note and close it, one at a time or in bulk.
@@ -484,7 +499,7 @@ What's genuinely still open:
 | Kubernetes manifests / Helm chart | Not written — only the Dockerfiles in [`deploy/docker/`](deploy/docker) exist today |
 | `docs/import-confluence.md`, `docs/export.md`, `docs/deployment.md`, `docs/database.md`, `docs/api.md`, `docs/authentication.md`, `docs/permissions.md` | Not written yet |
 | E-mail notifications (password changes, access requests, deactivation) | Planned |
-| AI-assisted search & authoring — **done:** TL;DR summaries, create page with AI, explain/translate a selection. **Still open:** RAG Q&A with citations, hybrid semantic search, an in-editor writing assistant, auto-tagging, stale-content detection | Partly shipped — see [`TODO`](TODO) |
+| AI-assisted search & authoring — **done:** TL;DR summaries, create page with AI, explain/translate a selection, an in-editor writing assistant, label and related-page suggestions. **Still open:** RAG Q&A with citations, hybrid semantic search, stale-content detection | Partly shipped — see [`TODO`](TODO) |
 
 The live, actively-worked list — including whatever is in progress right
 now — is [`TODO`](TODO).

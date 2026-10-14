@@ -51,7 +51,7 @@ export function getAiPageDraftSkill(): Promise<AiSkill> {
 }
 
 export function getAiSkill(
-  name: "selection-explain" | "selection-translate",
+  name: "selection-explain" | "selection-translate" | "writing" | "suggestions",
 ): Promise<AiSkill> {
   return serverGet<AiSkill>(`/api/v1/ai/skills/${name}`);
 }

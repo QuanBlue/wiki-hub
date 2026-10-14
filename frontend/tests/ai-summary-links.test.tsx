@@ -3,21 +3,29 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { IssueMarkdown } from "@/components/issues/issue-markdown";
-import { linkAttachments, openAttachment, type SummaryAttachment } from "@/lib/ai-summary";
+import {
+  linkAttachments,
+  openAttachment,
+  type SummaryAttachment,
+} from "@/lib/ai-summary";
 
 const ID_A = "11111111-1111-4111-8111-111111111111";
 const ID_B = "22222222-2222-4222-8222-222222222222";
 
 const files: SummaryAttachment[] = [
-  { id: ID_A, filename: "VTS_DevSecOps_CICD_v1.pptx", content_type: "application/vnd.ms-powerpoint" },
+  {
+    id: ID_A,
+    filename: "VTS_DevSecOps_CICD_v1.pptx",
+    content_type: "application/vnd.ms-powerpoint",
+  },
   { id: ID_B, filename: "guide.pdf", content_type: "application/pdf" },
 ];
 
 describe("linkAttachments", () => {
   it("turns a file name in the summary into an attachment link", () => {
-    expect(linkAttachments("See VTS_DevSecOps_CICD_v1.pptx for slides.", files)).toBe(
-      `See [VTS_DevSecOps_CICD_v1.pptx](attachment:${ID_A}) for slides.`,
-    );
+    expect(
+      linkAttachments("See VTS_DevSecOps_CICD_v1.pptx for slides.", files),
+    ).toBe(`See [VTS_DevSecOps_CICD_v1.pptx](attachment:${ID_A}) for slides.`);
   });
 
   it("links a name the model made bold or put in code, dropping the wrapper", () => {
@@ -27,7 +35,10 @@ describe("linkAttachments", () => {
   });
 
   it("links every mention, and leaves other names and paths alone", () => {
-    const out = linkAttachments("guide.pdf, then data_guide.pdf and /files/guide.pdf, guide.pdf.", files);
+    const out = linkAttachments(
+      "guide.pdf, then data_guide.pdf and /files/guide.pdf, guide.pdf.",
+      files,
+    );
 
     expect(out).toBe(
       `[guide.pdf](attachment:${ID_B}), then data_guide.pdf and /files/guide.pdf, [guide.pdf](attachment:${ID_B}).`,
@@ -37,10 +48,16 @@ describe("linkAttachments", () => {
   it("prefers the longer name when one contains another", () => {
     const nested: SummaryAttachment[] = [
       { id: ID_A, filename: "plan.pdf", content_type: "application/pdf" },
-      { id: ID_B, filename: "plan.pdf.bak", content_type: "application/octet-stream" },
+      {
+        id: ID_B,
+        filename: "plan.pdf.bak",
+        content_type: "application/octet-stream",
+      },
     ];
 
-    expect(linkAttachments("plan.pdf.bak", nested)).toBe(`[plan.pdf.bak](attachment:${ID_B})`);
+    expect(linkAttachments("plan.pdf.bak", nested)).toBe(
+      `[plan.pdf.bak](attachment:${ID_B})`,
+    );
   });
 
   it("matches names with regex characters literally and skips ones with brackets", () => {
@@ -68,7 +85,9 @@ describe("openAttachment", () => {
 
     window.removeEventListener("wikihub:open-attachment-modal", heard);
     expect(heard).toHaveBeenCalledTimes(1);
-    expect((heard.mock.calls[0]![0] as CustomEvent).detail).toEqual({ attachmentId: ID_A });
+    expect((heard.mock.calls[0]![0] as CustomEvent).detail).toEqual({
+      attachmentId: ID_A,
+    });
   });
 });
 
@@ -82,9 +101,32 @@ describe("IssueMarkdown links", () => {
     );
 
     const link = screen.getByRole("link");
-    expect(link).toHaveAttribute("href", "http://tailieu.gpdn.net/pages/viewpage.action?pageId=20092480");
+    expect(link).toHaveAttribute(
+      "href",
+      "http://tailieu.gpdn.net/pages/viewpage.action?pageId=20092480",
+    );
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+  });
+
+  it("shows an address with a placeholder as copyable code, not a link, and drops the model's backslashes", () => {
+    const { container } = render(
+      <IssueMarkdown
+        autolink
+        source={
+          "Open http://\<ip-server\>:9090 then Status \> Targets, or http://localhost:9090."
+        }
+      />,
+    );
+
+    const code = container.querySelector("code");
+    expect(code).toHaveTextContent("http://<ip-server>:9090");
+    expect(screen.queryByRole("link", { name: /ip-server/ })).toBeNull();
+    // A real address next to it is still a link.
+    expect(
+      screen.getByRole("link", { name: "http://localhost:9090" }),
+    ).toHaveAttribute("href", "http://localhost:9090");
+    expect(container).toHaveTextContent("Status > Targets");
   });
 
   it("leaves a bare address as plain text unless autolink is on", () => {
@@ -103,11 +145,19 @@ describe("IssueMarkdown links", () => {
     );
 
     expect(screen.getAllByRole("link")).toHaveLength(1);
-    expect(screen.getByRole("link", { name: "the docs" })).toHaveAttribute("href", "https://example.com/docs");
+    expect(screen.getByRole("link", { name: "the docs" })).toHaveAttribute(
+      "href",
+      "https://example.com/docs",
+    );
   });
 
   it("only allows web addresses: a javascript: address stays plain text", () => {
-    render(<IssueMarkdown autolink source="javascript:alert(1) and [x](javascript:alert(1))" />);
+    render(
+      <IssueMarkdown
+        autolink
+        source="javascript:alert(1) and [x](javascript:alert(1))"
+      />,
+    );
 
     expect(screen.queryByRole("link")).toBeNull();
   });
@@ -115,7 +165,10 @@ describe("IssueMarkdown links", () => {
   it("turns an attachment link into a button that reports the id", async () => {
     const onOpen = vi.fn();
     render(
-      <IssueMarkdown source={`Open [guide.pdf](attachment:${ID_B}) now`} onOpenAttachment={onOpen} />,
+      <IssueMarkdown
+        source={`Open [guide.pdf](attachment:${ID_B}) now`}
+        onOpenAttachment={onOpen}
+      />,
     );
 
     await userEvent.click(screen.getByRole("button", { name: "guide.pdf" }));
@@ -125,7 +178,9 @@ describe("IssueMarkdown links", () => {
   });
 
   it("shows just the name when nothing can open attachments", () => {
-    render(<IssueMarkdown source={`Open [guide.pdf](attachment:${ID_B}) now`} />);
+    render(
+      <IssueMarkdown source={`Open [guide.pdf](attachment:${ID_B}) now`} />,
+    );
 
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getByText(/Open guide\.pdf now/)).toBeInTheDocument();

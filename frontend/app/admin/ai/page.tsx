@@ -41,12 +41,16 @@ export default async function AdminAiPage() {
     pageDraftSkill,
     explainSkill,
     translateSkill,
+    writingSkill,
+    suggestionsSkill,
   ] = await Promise.all([
     getAiConnections(),
     getAiSummarySkill(),
     getAiPageDraftSkill(),
     getAiSkill("selection-explain"),
     getAiSkill("selection-translate"),
+    getAiSkill("writing"),
+    getAiSkill("suggestions"),
   ]);
 
   return (
@@ -68,6 +72,8 @@ export default async function AdminAiPage() {
         pageDraftSkill={pageDraftSkill}
         explainSkill={explainSkill}
         translateSkill={translateSkill}
+        writingSkill={writingSkill}
+        suggestionsSkill={suggestionsSkill}
       />
     </div>
   );

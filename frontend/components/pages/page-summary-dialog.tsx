@@ -1,21 +1,23 @@
 "use client";
 
-import { Languages, Loader2, TriangleAlert } from "lucide-react";
+import { Languages, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { AiNotSetUp } from "@/components/pages/ai-not-set-up";
 import { IssueMarkdown } from "@/components/issues/issue-markdown";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { InfoTip } from "@/components/ui/info-tip";
 import {
   aiStatus,
+  resetAiStatus,
   linkAttachments,
   openAttachment,
   type AiStatus,
   type SummaryAttachment,
 } from "@/lib/ai-summary";
-import { api } from "@/lib/api-client";
+import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 
@@ -84,7 +86,11 @@ export function PageSummaryDialog({
         }}
         title={off ? t("ai.notEnabledTitle") : t("ai.title")}
         // The caveat lives behind the "i", so it stays out of the way.
-        titleAddon={off ? null : <InfoTip>{t("ai.description", { title: pageTitle })}</InfoTip>}
+        titleAddon={
+          off ? null : (
+            <InfoTip>{t("ai.description", { title: pageTitle })}</InfoTip>
+          )
+        }
       >
         {/* Mounted only while open, so each opening asks for the summary afresh
             (the server answers from its cache when the page hasn't changed). */}
@@ -93,6 +99,14 @@ export function PageSummaryDialog({
           spaceKey={spaceKey}
           pageSlug={pageSlug}
           onClose={() => onOpenChange(false)}
+          // The assistant was switched off after this page last asked about it.
+          onDisabled={() => {
+            resetAiStatus();
+            setStatus((current) => ({
+              enabled: false,
+              can_configure: current?.can_configure ?? false,
+            }));
+          }}
         />
       </DialogContent>
     </Dialog>
@@ -104,11 +118,13 @@ function SummaryBody({
   spaceKey,
   pageSlug,
   onClose,
+  onDisabled,
 }: {
   status: AiStatus | null;
   spaceKey: string;
   pageSlug: string;
   onClose: () => void;
+  onDisabled: () => void;
 }) {
   const { t, apiErrorText } = useTranslation();
   const [pending, setPending] = useState(true);
@@ -129,7 +145,18 @@ function SummaryBody({
       const base = `/api/v1/ai/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(pageSlug)}/summary`;
       setResult(await api.post<PageSummary>(query ? `${base}?${query}` : base));
     } catch (err) {
-      setError(apiErrorText(err, "ai.failed"));
+      // "Not enabled" means an administrator turned the assistant off (or removed
+      // its connection) since the status was looked up: show the set-up state
+      // instead of an error with live-looking buttons under it.
+      if (
+        err instanceof ApiError &&
+        err.status === 503 &&
+        /not enabled/i.test(err.message)
+      ) {
+        onDisabled();
+      } else {
+        setError(apiErrorText(err, "ai.failed"));
+      }
     } finally {
       setPending(false);
     }
@@ -157,7 +184,10 @@ function SummaryBody({
     <>
       {enabled ? (
         <div className="mb-3 flex items-center gap-2">
-          <Languages className="text-muted-foreground size-4 shrink-0" aria-hidden />
+          <Languages
+            className="text-muted-foreground size-4 shrink-0"
+            aria-hidden
+          />
           <div
             role="radiogroup"
             aria-label={t("ai.languageLabel")}
@@ -187,20 +217,28 @@ function SummaryBody({
           </div>
         </div>
       ) : null}
-      <div aria-live="polite" aria-busy={pending} className="relative min-h-40 text-base">
+      <div
+        aria-live="polite"
+        aria-busy={pending}
+        className="relative min-h-40 text-base"
+      >
         {status !== null && !status.enabled ? (
-          <div
-            role="alert"
-            className="border-warning/40 bg-warning-bg text-foreground flex items-start gap-2 rounded-md border p-3"
-          >
-            <TriangleAlert className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
-            <p>{status.can_configure ? t("ai.notEnabledAdmin") : t("ai.notEnabledBody")}</p>
-          </div>
+          <AiNotSetUp canConfigure={status.can_configure} />
         ) : status === null || (pending && !showingSummary) ? (
-          <p className="text-muted-foreground flex items-center gap-2">
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-            {t("ai.loading")}
-          </p>
+          // The same centred pill as when a summary is being replaced, so the
+          // first load and a language switch look alike.
+          <div className="flex h-56 items-center justify-center">
+            <span
+              role="status"
+              className="border-border bg-surface text-foreground flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium shadow-md"
+            >
+              <Loader2
+                className="text-primary size-4 animate-spin"
+                aria-hidden
+              />
+              {t("ai.loading")}
+            </span>
+          </div>
         ) : error ? (
           <p className="text-danger">{error}</p>
         ) : result?.too_short ? (
@@ -216,7 +254,10 @@ function SummaryBody({
                   role="status"
                   className="border-border bg-surface text-foreground flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium shadow-md"
                 >
-                  <Loader2 className="text-primary size-4 animate-spin" aria-hidden />
+                  <Loader2
+                    className="text-primary size-4 animate-spin"
+                    aria-hidden
+                  />
                   {t("ai.loading")}
                 </span>
               </div>
@@ -232,18 +273,25 @@ function SummaryBody({
               className={cn(
                 "max-h-[60vh] overflow-y-auto pr-1 text-[15px] leading-relaxed transition-[opacity,filter] duration-200",
                 // The old text sinks into the background while the new one loads.
-                pending && "pointer-events-none opacity-30 blur-[1px] select-none",
+                pending &&
+                  "pointer-events-none opacity-30 blur-[1px] select-none",
               )}
             />
             {result.cached ? (
-              <p className="text-muted-foreground mt-3 text-xs">{t("ai.cached")}</p>
+              <p className="text-muted-foreground mt-3 text-xs">
+                {t("ai.cached")}
+              </p>
             ) : null}
           </>
         ) : null}
       </div>
       <DialogFooter>
         {enabled ? (
-          <Button variant="ghost" disabled={pending} onClick={() => void load(true)}>
+          <Button
+            variant="ghost"
+            disabled={pending}
+            onClick={() => void load(true)}
+          >
             {t("ai.regenerate")}
           </Button>
         ) : status?.can_configure ? (

@@ -162,16 +162,55 @@ describe("CreatePageDialog with AI", () => {
     return { Fresh, freshApi: vi.mocked(freshApi) };
   }
 
-  it("offers no AI box while the assistant is off", async () => {
+  it("shows the set-up message in the Write with AI tab while the assistant is off", async () => {
     const { Fresh } = await withAi(false);
     const actor = userEvent.setup();
     render(<Fresh spaceKey="ENG" />);
     const dialog = await openDialog(actor);
 
-    await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+    await actor.click(
+      await within(dialog).findByRole("button", { name: "Write with AI" }),
+    );
+
     expect(
-      within(dialog).queryByRole("button", { name: "Write with AI" }),
+      within(dialog).getByText(/administrator needs to connect an AI service/),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Draft a whole page from a description"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("link", { name: "Open AI settings" }),
     ).toBeNull();
+    expect(
+      within(dialog).queryByLabelText("Describe the page you want"),
+    ).toBeNull();
+    expect(
+      within(dialog).getByRole("button", { name: "Create page" }),
+    ).toBeDisabled();
+
+    await actor.click(within(dialog).getByRole("button", { name: "Write" }));
+    expect(within(dialog).getByLabelText("Content")).toBeInTheDocument();
+  });
+
+  it("offers an administrator the AI settings from that tab", async () => {
+    vi.resetModules();
+    mocked.get.mockResolvedValue({ enabled: false, can_configure: true });
+    const { CreatePageDialog: Fresh } =
+      await import("@/components/pages/create-page-dialog");
+    const actor = userEvent.setup();
+    render(<Fresh spaceKey="ENG" />);
+    const dialog = await openDialog(actor);
+
+    await actor.click(
+      await within(dialog).findByRole("button", { name: "Write with AI" }),
+    );
+
+    expect(
+      within(dialog).getByText("Open Administration → AI assistant"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("link", { name: "Open AI settings" }),
+    ).toHaveAttribute("href", "/admin/ai");
   });
 
   it("drafts a page from a description, fills the title and saves the draft on Create", async () => {

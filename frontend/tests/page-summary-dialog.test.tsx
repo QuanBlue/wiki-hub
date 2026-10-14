@@ -14,8 +14,12 @@ const SUMMARY_URL = "/api/v1/ai/spaces/ENG/pages/runbook/summary";
 async function setup(enabled: boolean, canConfigure = false) {
   vi.resetModules();
   const { api } = await import("@/lib/api-client");
-  const { PageSummaryDialog } = await import("@/components/pages/page-summary-dialog");
-  vi.mocked(api.get).mockResolvedValue({ enabled, can_configure: canConfigure });
+  const { PageSummaryDialog } =
+    await import("@/components/pages/page-summary-dialog");
+  vi.mocked(api.get).mockResolvedValue({
+    enabled,
+    can_configure: canConfigure,
+  });
   const onOpenChange = vi.fn();
   const view = render(
     <PageSummaryDialog
@@ -32,24 +36,59 @@ async function setup(enabled: boolean, canConfigure = false) {
 beforeEach(() => vi.clearAllMocks());
 
 describe("PageSummaryDialog", () => {
-  it("explains that the assistant isn't set up, as a warning, without calling the model", async () => {
+  it("tells an ordinary person what it unlocks and who to ask, with no settings link", async () => {
     const { api } = await setup(false);
 
     expect(
-      await screen.findByRole("heading", { name: "AI assistant isn't set up yet" }),
+      await screen.findByRole("heading", {
+        name: "AI assistant isn't set up yet",
+      }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent(/administrator needs to connect/);
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByText(/administrator needs to connect an AI service/),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("TL;DR summaries of long pages"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Draft a whole page from a description"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Ask your WikiHub administrator to turn it on."),
+    ).toBeInTheDocument();
+    // The steps and the settings button are for administrators only.
+    expect(within(dialog).queryByRole("list", { name: "" })).not.toBeNull(); // the features list
+    expect(
+      within(dialog).queryByText("Open Administration → AI assistant"),
+    ).toBeNull();
     expect(screen.queryByRole("link", { name: "Open AI settings" })).toBeNull();
     expect(api.post).not.toHaveBeenCalled();
   });
 
-  it("sends an administrator to the AI settings when it is off", async () => {
+  it("walks an administrator through turning it on and links to the AI settings", async () => {
     await setup(false, true);
 
-    expect(await screen.findByRole("link", { name: "Open AI settings" })).toHaveAttribute(
-      "href",
-      "/admin/ai",
-    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByText("Open Administration → AI assistant"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        "Add an OpenAI Compatible endpoint and its API key",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Pick a model and make the connection active"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(
+        "Ask your WikiHub administrator to turn it on.",
+      ),
+    ).toBeNull();
+    expect(
+      within(dialog).getByRole("link", { name: "Open AI settings" }),
+    ).toHaveAttribute("href", "/admin/ai");
   });
 
   it("asks for the summary as soon as it opens and renders the Markdown answer", async () => {
@@ -64,9 +103,13 @@ describe("PageSummaryDialog", () => {
     await setup(true);
 
     const dialog = await screen.findByRole("dialog");
-    expect((await within(dialog).findByText("snapshot id")).tagName).toBe("STRONG");
+    expect((await within(dialog).findByText("snapshot id")).tagName).toBe(
+      "STRONG",
+    );
     expect(within(dialog).getByText("mount | grep <id>").tagName).toBe("CODE");
-    expect(within(dialog).getByText("crictl inspect <id>").closest("pre")).not.toBeNull();
+    expect(
+      within(dialog).getByText("crictl inspect <id>").closest("pre"),
+    ).not.toBeNull();
     expect(within(dialog).getAllByRole("listitem")).toHaveLength(2);
     // No backtick or asterisk markup is left on screen.
     expect(dialog.textContent).not.toMatch(/\*\*|`/);
@@ -79,11 +122,16 @@ describe("PageSummaryDialog", () => {
     const { api } = await import("@/lib/api-client");
     const fileId = "11111111-1111-4111-8111-111111111111";
     vi.mocked(api.post).mockResolvedValue({
-      summary: "- Slides are in **VTS_DevSecOps_CICD_v1.pptx**.\n- Other files: other.pdf",
+      summary:
+        "- Slides are in **VTS_DevSecOps_CICD_v1.pptx**.\n- Other files: other.pdf",
       cached: false,
       too_short: false,
       attachments: [
-        { id: fileId, filename: "VTS_DevSecOps_CICD_v1.pptx", content_type: "application/vnd.ms-powerpoint" },
+        {
+          id: fileId,
+          filename: "VTS_DevSecOps_CICD_v1.pptx",
+          content_type: "application/vnd.ms-powerpoint",
+        },
       ],
     });
     const heard = vi.fn();
@@ -91,10 +139,16 @@ describe("PageSummaryDialog", () => {
     const { onOpenChange } = await setup(true);
 
     const dialog = await screen.findByRole("dialog");
-    await userEvent.click(await within(dialog).findByRole("button", { name: "VTS_DevSecOps_CICD_v1.pptx" }));
+    await userEvent.click(
+      await within(dialog).findByRole("button", {
+        name: "VTS_DevSecOps_CICD_v1.pptx",
+      }),
+    );
 
     expect(heard).toHaveBeenCalledTimes(1);
-    expect((heard.mock.calls[0]![0] as CustomEvent).detail).toEqual({ attachmentId: fileId });
+    expect((heard.mock.calls[0]![0] as CustomEvent).detail).toEqual({
+      attachmentId: fileId,
+    });
     // The summary is not closed, so the viewer sits over it.
     expect(onOpenChange).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -105,15 +159,21 @@ describe("PageSummaryDialog", () => {
     vi.resetModules();
     const { api } = await import("@/lib/api-client");
     vi.mocked(api.post).mockResolvedValue({
-      summary: "- Docs: http://tailieu.gpdn.net/pages/viewpage.action?pageId=20092480.",
+      summary:
+        "- Docs: http://tailieu.gpdn.net/pages/viewpage.action?pageId=20092480.",
       cached: false,
       too_short: false,
       attachments: [],
     });
     await setup(true);
 
-    const link = await screen.findByRole("link", { name: /tailieu\.gpdn\.net/ });
-    expect(link).toHaveAttribute("href", "http://tailieu.gpdn.net/pages/viewpage.action?pageId=20092480");
+    const link = await screen.findByRole("link", {
+      name: /tailieu\.gpdn\.net/,
+    });
+    expect(link).toHaveAttribute(
+      "href",
+      "http://tailieu.gpdn.net/pages/viewpage.action?pageId=20092480",
+    );
     expect(link).toHaveAttribute("target", "_blank");
   });
 
@@ -128,23 +188,39 @@ describe("PageSummaryDialog", () => {
     }));
     await setup(true);
 
-    const group = await screen.findByRole("radiogroup", { name: "Summary language" });
-    expect(within(group).getByRole("radio", { name: "Page language" })).toBeChecked();
+    const group = await screen.findByRole("radiogroup", {
+      name: "Summary language",
+    });
+    expect(
+      within(group).getByRole("radio", { name: "Page language" }),
+    ).toBeChecked();
     expect(await screen.findByText("Original")).toBeInTheDocument();
     expect(api.post).toHaveBeenCalledWith(SUMMARY_URL); // no language asked for
 
-    await userEvent.click(within(group).getByRole("radio", { name: "Tiếng Việt" }));
+    await userEvent.click(
+      within(group).getByRole("radio", { name: "Tiếng Việt" }),
+    );
 
     expect(await screen.findByText("Bản tiếng Việt")).toBeInTheDocument();
     expect(api.post).toHaveBeenLastCalledWith(`${SUMMARY_URL}?lang=vi`);
-    expect(within(group).getByRole("radio", { name: "Tiếng Việt" })).toBeChecked();
-    expect(within(group).getByRole("radio", { name: "Page language" })).not.toBeChecked();
+    expect(
+      within(group).getByRole("radio", { name: "Tiếng Việt" }),
+    ).toBeChecked();
+    expect(
+      within(group).getByRole("radio", { name: "Page language" }),
+    ).not.toBeChecked();
 
-    await userEvent.click(within(group).getByRole("radio", { name: "English" }));
-    await waitFor(() => expect(api.post).toHaveBeenLastCalledWith(`${SUMMARY_URL}?lang=en`));
+    await userEvent.click(
+      within(group).getByRole("radio", { name: "English" }),
+    );
+    await waitFor(() =>
+      expect(api.post).toHaveBeenLastCalledWith(`${SUMMARY_URL}?lang=en`),
+    );
 
     // Back to the page's own language asks for no language at all.
-    await userEvent.click(within(group).getByRole("radio", { name: "Page language" }));
+    await userEvent.click(
+      within(group).getByRole("radio", { name: "Page language" }),
+    );
     await waitFor(() => expect(api.post).toHaveBeenLastCalledWith(SUMMARY_URL));
   });
 
@@ -153,8 +229,14 @@ describe("PageSummaryDialog", () => {
     const { api } = await import("@/lib/api-client");
     let finish!: (value: unknown) => void;
     vi.mocked(api.post)
-      .mockResolvedValueOnce({ summary: "- Original", cached: false, too_short: false })
-      .mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)) as never);
+      .mockResolvedValueOnce({
+        summary: "- Original",
+        cached: false,
+        too_short: false,
+      })
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (finish = resolve)) as never,
+      );
     await setup(true);
     await screen.findByText("Original");
 
@@ -163,7 +245,9 @@ describe("PageSummaryDialog", () => {
     // Nothing is swapped for a bare loading line, so the dialog keeps its size.
     expect(screen.getByText("Original")).toBeInTheDocument();
     expect(screen.getByText("Summarizing…")).toBeInTheDocument();
-    expect(screen.getByRole("dialog").querySelector("[aria-busy='true']")).not.toBeNull();
+    expect(
+      screen.getByRole("dialog").querySelector("[aria-busy='true']"),
+    ).not.toBeNull();
 
     finish({ summary: "- Translated", cached: false, too_short: false });
     expect(await screen.findByText("Translated")).toBeInTheDocument();
@@ -174,64 +258,100 @@ describe("PageSummaryDialog", () => {
   it("keeps the chosen language when the summary is asked for again", async () => {
     vi.resetModules();
     const { api } = await import("@/lib/api-client");
-    vi.mocked(api.post).mockResolvedValue({ summary: "- A", cached: false, too_short: false });
+    vi.mocked(api.post).mockResolvedValue({
+      summary: "- A",
+      cached: false,
+      too_short: false,
+    });
     await setup(true);
 
     await screen.findByText("A");
     await userEvent.click(screen.getByRole("radio", { name: "English" }));
-    await waitFor(() => expect(api.post).toHaveBeenLastCalledWith(`${SUMMARY_URL}?lang=en`));
-    await userEvent.click(await screen.findByRole("button", { name: "Summarize again" }));
+    await waitFor(() =>
+      expect(api.post).toHaveBeenLastCalledWith(`${SUMMARY_URL}?lang=en`),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Summarize again" }),
+    );
 
     await waitFor(() =>
-      expect(api.post).toHaveBeenLastCalledWith(`${SUMMARY_URL}?lang=en&refresh=true`),
+      expect(api.post).toHaveBeenLastCalledWith(
+        `${SUMMARY_URL}?lang=en&refresh=true`,
+      ),
     );
   });
 
   it("offers no language switch while the assistant isn't set up", async () => {
     await setup(false);
 
-    await screen.findByRole("heading", { name: "AI assistant isn't set up yet" });
+    await screen.findByRole("heading", {
+      name: "AI assistant isn't set up yet",
+    });
     expect(screen.queryByRole("radiogroup")).toBeNull();
   });
 
   it("keeps the 'can miss details' caveat behind an info button", async () => {
     const { api } = await setup(true);
-    vi.mocked(api.post).mockResolvedValue({ summary: "- A", cached: false, too_short: false });
+    vi.mocked(api.post).mockResolvedValue({
+      summary: "- A",
+      cached: false,
+      too_short: false,
+    });
 
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByText("A");
     expect(within(dialog).queryByText(/It can miss details/)).toBeNull();
-    expect(within(dialog).getAllByRole("button", { name: "More info" })).toHaveLength(1);
+    expect(
+      within(dialog).getAllByRole("button", { name: "More info" }),
+    ).toHaveLength(1);
   });
 
   it("does not pop the info tooltip open just because the dialog opened", async () => {
     const { api } = await setup(true);
-    vi.mocked(api.post).mockResolvedValue({ summary: "- A", cached: false, too_short: false });
+    vi.mocked(api.post).mockResolvedValue({
+      summary: "- A",
+      cached: false,
+      too_short: false,
+    });
 
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByText("A");
 
     expect(screen.queryByRole("tooltip")).toBeNull();
-    expect(within(dialog).getByRole("button", { name: "More info" })).not.toHaveFocus();
+    expect(
+      within(dialog).getByRole("button", { name: "More info" }),
+    ).not.toHaveFocus();
     expect(dialog).toHaveFocus();
   });
 
   it("asks for a fresh summary when told to summarize again", async () => {
     vi.resetModules();
     const { api } = await import("@/lib/api-client");
-    vi.mocked(api.post).mockResolvedValue({ summary: "- A", cached: false, too_short: false });
+    vi.mocked(api.post).mockResolvedValue({
+      summary: "- A",
+      cached: false,
+      too_short: false,
+    });
     await setup(true);
 
     await screen.findByText("A");
-    await userEvent.click(screen.getByRole("button", { name: "Summarize again" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Summarize again" }),
+    );
 
-    await waitFor(() => expect(api.post).toHaveBeenLastCalledWith(`${SUMMARY_URL}?refresh=true`));
+    await waitFor(() =>
+      expect(api.post).toHaveBeenLastCalledWith(`${SUMMARY_URL}?refresh=true`),
+    );
   });
 
   it("explains a page that is too short instead of showing an empty list", async () => {
     vi.resetModules();
     const { api } = await import("@/lib/api-client");
-    vi.mocked(api.post).mockResolvedValue({ summary: "", cached: false, too_short: true });
+    vi.mocked(api.post).mockResolvedValue({
+      summary: "",
+      cached: false,
+      too_short: true,
+    });
     await setup(true);
 
     expect(await screen.findByText(/too little text/)).toBeInTheDocument();
@@ -255,5 +375,49 @@ describe("PageSummaryDialog", () => {
     await userEvent.click(closers[closers.length - 1]!);
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("turns into the set-up message, centred and with no live buttons, when the server says it was switched off", async () => {
+    vi.resetModules();
+    const { api, ApiError } = await import("@/lib/api-client");
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(
+        503,
+        "service_unavailable",
+        "The AI assistant is not enabled.",
+      ),
+    );
+    const { PageSummaryDialog } =
+      await import("@/components/pages/page-summary-dialog");
+    vi.mocked(api.get).mockResolvedValue({
+      enabled: true,
+      can_configure: false,
+    });
+    render(
+      <PageSummaryDialog
+        open
+        onOpenChange={vi.fn()}
+        spaceKey="ENG"
+        pageSlug="runbook"
+        pageTitle="Runbook"
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "AI assistant isn't set up yet",
+      }),
+    ).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByText(/administrator needs to connect an AI service/),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole("radiogroup")).toBeNull();
+    expect(
+      within(dialog).queryByRole("button", { name: "Summarize again" }),
+    ).toBeNull();
+    expect(
+      within(dialog).queryByText("The AI assistant is not enabled."),
+    ).toBeNull();
   });
 });

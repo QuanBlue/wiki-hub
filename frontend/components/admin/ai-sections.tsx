@@ -23,12 +23,16 @@ export function AiSections({
   pageDraftSkill,
   explainSkill,
   translateSkill,
+  writingSkill,
+  suggestionsSkill,
 }: {
   connections: AiConnectionList;
   summarySkill: AiSkill;
   pageDraftSkill?: AiSkill;
   explainSkill?: AiSkill;
   translateSkill?: AiSkill;
+  writingSkill?: AiSkill;
+  suggestionsSkill?: AiSkill;
 }) {
   const { t } = useTranslation();
   const [active, setActive] = useState<SectionId>("keys");
@@ -98,6 +102,8 @@ export function AiSections({
             initialPageDraft={pageDraftSkill}
             initialExplain={explainSkill}
             initialTranslate={translateSkill}
+            initialWriting={writingSkill}
+            initialSuggestions={suggestionsSkill}
           />
         </div>
       </div>

@@ -2887,23 +2887,70 @@ export const sectionsEn: HelpSection[] = [
     title: "AI assistant",
     category: "Administration",
     description:
-      "Connect an OpenAI-compatible endpoint so people can summarize pages with AI.",
-    keywords: ["ai", "assistant", "summary", "summarize", "openai", "llm", "model", "endpoint", "api key"],
+      "Connect an OpenAI-compatible endpoint, then summarize, write, explain and organize pages with AI.",
+    keywords: ["ai", "assistant", "summary", "summarize", "tldr", "translate", "explain", "write", "draft", "grammar", "label", "related", "ctrl+space", "openai", "llm", "model", "endpoint", "api key"],
     body: (
       <>
         <p>
           <strong>For everyone:</strong> every page has a <strong>TL;DR</strong> button in its
-          toolbar, next to Save for later. Click it for a short summary written in Markdown. The
-          summary is written in the same language as the page and saved until the page changes, so reopening it is instant;{" "}
-          <Code>Summarize again</Code> asks for a fresh one. It only reads pages you can already
-          open, and each person gets a limited number of new summaries per hour. Until an
-          administrator connects an endpoint, the dialog explains that the assistant isn&apos;t
-          set up yet.
+          toolbar, next to Save for later. Click it for a short summary written in Markdown, in the
+          page&apos;s own language. The switch at the top changes it to <Code>English</Code> or{" "}
+          <Code>Tiếng Việt</Code>: that translates the summary already written instead of reading
+          the page again, so it is quick and cheap. Web addresses in it are links, and a file&apos;s
+          name opens that file on top of the summary. The summary is saved until the page changes, so
+          reopening it is instant; <Code>Summarize again</Code> reads the page again and writes a
+          fresh one. It only reads pages you can already open, and each person gets a limited
+          number of AI requests per hour (60 unless an administrator sets another limit).
         </p>
         <Screenshot
           src="/help/ai-tldr.png"
           alt="The Page summary dialog: a language switch above a short Markdown summary with a closing note"
           caption="The TL;DR dialog: a short summary, with a switch for its language and a Summarize again button."
+        />
+        <p className="mt-3">
+          <strong>AI in the editor</strong>: while you edit a page, put the caret on an empty line
+          and the hint <em>Press Ctrl+Space for AI or &apos;/&apos; for commands</em> appears. Press{" "}
+          <Kbd>Ctrl</Kbd> + <Kbd>Space</Kbd> to open the AI box, describe what you want - a
+          checklist, a table of options, an introduction - and press <Kbd>Enter</Kbd>. The AI
+          writes it, taking the text around the caret into account, and shows it formatted before
+          anything is added. Then <Code>Insert below</Code> puts it into the page (replacing the
+          empty line), or <Code>Edit</Code> lets you ask for changes - for example{" "}
+          <em>shorter</em> or <em>add a table</em> - as many times as you like. Every version is
+          kept: the arrows at the top of the box step back and forward between them, and{" "}
+          <Code>Insert below</Code> uses the one on screen. If AI is not connected yet, the shortcut
+          shows a small notice that disappears as soon as you carry on typing.
+        </p>
+        <Screenshot
+          src="/help/ai-writing-placeholder.png"
+          alt="An empty line in the editor with the grey hint Press Ctrl+Space for AI or / for commands"
+          caption="On an empty line the editor hints at the AI shortcut and the / menu."
+        />
+        <Screenshot
+          src="/help/ai-writing-result.png"
+          alt="The generated checklist shown formatted, with the Insert below and Edit buttons underneath"
+          caption="The generated content is shown first. Insert below adds it to the page; Edit asks for changes."
+        />
+        <p className="mt-3">
+          <strong>Improve text you already wrote</strong>: select text inside one paragraph and a
+          small <strong>AI button</strong> appears at the end of the selection (or press{" "}
+          <Kbd>Ctrl</Kbd> + <Kbd>Space</Kbd>). Describe the change - <em>make it more formal</em>,{" "}
+          <em>translate to English</em> - or pick a one-click action: <Code>Fix grammar</Code>{" "}
+          (spelling, punctuation and grammar, keeping your wording), <Code>Consistent terms</Code>{" "}
+          (uses the same terms as the related pages already in the wiki, and the same word for the
+          same thing within your text) or <Code>Continue writing</Code> (finishes the sentence;{" "}
+          <Code>/</Code> → <Code>Continue writing with AI</Code> does the same at the caret). The
+          answer is only a suggestion: nothing changes until you click <Code>Replace</Code> (or{" "}
+          <Code>Insert</Code>), and it is not applied if the text changed in the meantime.{" "}
+          <Code>Edit</Code> asks for another version. Only people who can edit the space can use
+          it, and a plain-text suggestion replaces the selected words, so formatting inside the
+          selection (bold, links) is not kept - select a smaller part to protect it.
+          Administrators can set the house style, such as a tone or a glossary, in{" "}
+          <strong>Skill management → Writing assistant</strong>.
+        </p>
+        <Screenshot
+          src="/help/ai-writing-assistant.png"
+          alt="The editor with a sentence selected and the AI box open: a prompt field above the Fix grammar, Continue writing and Consistent terms actions"
+          caption="Select text: describe a change, or use Fix grammar, Continue writing or Consistent terms."
         />
         <p className="mt-3">
           <strong>Explain or translate a selection</strong>: select a word, phrase or sentence in
@@ -2928,14 +2975,21 @@ export const sectionsEn: HelpSection[] = [
         />
         <p className="mt-3">
           <strong>Create a page with AI</strong>: in <Code>Create page</Code>, click{" "}
-          <Code>Write with AI</Code>, describe the page in a sentence or two and click{" "}
-          <Code>Generate</Code>. The AI first searches the wiki for related pages you can read and may ask a few multiple-choice questions - pick an option, tick several where allowed or write your own answer, or choose <Code>Skip questions</Code>. WikiHub then drafts the whole page in its own format - headings,
-          lists, checklists, tables and code blocks - fills in the title if it is empty and shows a
-          preview. A notice at the very top says the page was written by AI, so readers know to
-          check it. Nothing is saved until you click <Code>Create page</Code>; use{" "}
-          <Code>Regenerate</Code> for another try or <Code>Discard</Code> to go back to writing it
-          yourself, and edit the page freely afterwards. Only people who may create pages in the
-          space can use it, and it counts toward the same hourly limit as summaries.
+          <Code>Write with AI</Code> (or, after typing a few words in <Code>Write</Code>,{" "}
+          <Code>Draft it with AI</Code> to use them as the description), describe the page in a
+          sentence or two and click <Code>Generate</Code>. The AI first searches the wiki for
+          related pages you can read - they are listed on the right - and may ask a few
+          multiple-choice questions, one at a time: pick an option (hover its <Code>i</Code> button
+          for the detail), tick several where allowed or write your own answer, or choose{" "}
+          <Code>Skip questions</Code>. Your answers are added to the description so you can see
+          and edit what the draft is built from. WikiHub then drafts the whole page in its own
+          format - headings, lists, checklists, tables and code blocks - fills in the title if it
+          is empty and shows a preview you can enlarge. A notice at the very top says the page was
+          written by AI, so readers know to check it. Nothing is saved until you click{" "}
+          <Code>Create page</Code>; use <Code>Regenerate</Code> for another try or{" "}
+          <Code>Discard</Code> to start over, and edit the page freely afterwards. Only people who
+          may create pages in the space can use it. Until AI is connected, the tab explains what
+          is missing instead.
         </p>
         <Screenshot
           src="/help/ai-create-describe.png"
@@ -2982,19 +3036,31 @@ export const sectionsEn: HelpSection[] = [
           </li>
         </ul>
         <p className="mt-3">
+          <strong>Labels and related pages</strong>: open a page&apos;s <strong>Page labels</strong>{" "}
+          (the tag button under its title) and click <Code>Suggest labels and related pages</Code>.
+          The AI reads the page and proposes a few labels - preferring ones you already use on
+          other pages, which are marked - and lists existing pages that cover the same ground.
+          Click a label to add it; click a related page to open it in a new tab. After you save an
+          edit, a small notice offers the same. Labels stay private to your account, the AI only
+          sees pages you can already read, and the answer is remembered until the page changes, so
+          opening it again is free.
+        </p>
+        <p className="mt-3">
           <strong>Skills</strong>: open <strong>Skill management</strong> for one card per AI
           skill - <strong>Page summary (TL;DR)</strong>, <strong>Create page with AI</strong>,{" "}
-          <strong>Explain a selection</strong> and <strong>Translate a selection</strong>. A card
+          <strong>Explain a selection</strong>, <strong>Translate a selection</strong>,{" "}
+          <strong>Writing assistant</strong> and <strong>Labels and related pages</strong>. A card
           shows only the name and a short description plus whether the skill uses the{" "}
           <strong>Default</strong> wording or a <strong>Custom</strong> one; click it to read the
           instructions in full, then <Code>Edit</Code> to change them, starting from the current
           wording rather than from scratch. Use <Code>Save skill</Code> to apply a change or{" "}
-          <Code>Use default</Code> to go back to the built-in wording. WikiHub always adds the
-          fixed parts itself - the answer format, the target language, the safety rules and, for
-          pages, the format the editor understands - so editing a skill cannot break a feature.
-          The built-in summary wording is written for someone who has never seen the page (its
-          style is adapted from the open-source tldr-skill, Apache-2.0). A new instruction
-          applies to the next answer; answers saved under the old one are not reused.
+          <Code>Use default</Code> to go back to the built-in wording. This is where to put a tone
+          of voice, a glossary of terms or label naming conventions. WikiHub always adds the fixed
+          parts itself - the answer format, the target language, the safety rules and, for pages,
+          the format the editor understands - so editing a skill cannot break a feature. The
+          built-in summary wording is written for someone who has never seen the page (its style
+          is adapted from the open-source tldr-skill, Apache-2.0). A new instruction applies to the
+          next answer; answers saved under the old one are not reused.
         </p>
         <Screenshot
           src="/help/ai-admin-skills.png"

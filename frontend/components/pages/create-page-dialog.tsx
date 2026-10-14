@@ -11,12 +11,14 @@ import {
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { AiClarifyQuestions } from "@/components/pages/ai-clarify-questions";
+import { AiNotSetUp } from "@/components/pages/ai-not-set-up";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import {
   Dialog,
@@ -71,6 +73,10 @@ export function CreatePageDialog({
   // "Write with AI": hidden unless the assistant is on. A draft replaces the
   // plain content box and is only saved when the page is created.
   const [aiOn, setAiOn] = useState(false);
+  // Whether the assistant's availability is known yet. Once it is, the tabs show
+  // either way; "Write with AI" is simply switched off until it is set up.
+  const [aiKnown, setAiKnown] = useState(false);
+  const [canConfigure, setCanConfigure] = useState(false);
   const [zoomed, setZoomed] = useState(false);
   const [mode, setMode] = useState<"write" | "ai">("write");
   const [aiPrompt, setAiPrompt] = useState("");
@@ -85,7 +91,10 @@ export function CreatePageDialog({
     if (!open) return;
     let active = true;
     void aiStatus().then((status) => {
-      if (active) setAiOn(Boolean(status?.enabled));
+      if (!active) return;
+      setAiOn(Boolean(status?.enabled));
+      setCanConfigure(Boolean(status?.can_configure));
+      setAiKnown(true);
     });
     return () => {
       active = false;
@@ -255,7 +264,7 @@ export function CreatePageDialog({
         </Button>
       </DialogTrigger>
       <DialogContent
-        className={aiOn ? "max-w-4xl" : undefined}
+        className={aiKnown ? "max-w-4xl" : undefined}
         title={
           parentPage
             ? t("pageCreate.createChildTitle")
@@ -285,7 +294,7 @@ export function CreatePageDialog({
           </div>
 
           <div className="space-y-3">
-            {aiOn ? (
+            {aiKnown ? (
               <div className="border-border flex gap-1 border-b">
                 {(["write", "ai"] as const).map((value) => (
                   <button
@@ -312,24 +321,31 @@ export function CreatePageDialog({
               </div>
             ) : null}
 
-            {mode === "write" || !aiOn ? (
+            {mode === "ai" && aiKnown && !aiOn ? (
+              // Not connected yet: say so here, as the TL;DR dialog does.
+              <div className="flex items-center justify-center md:h-[22rem] md:overflow-y-auto">
+                <AiNotSetUp canConfigure={canConfigure} layout="split" />
+              </div>
+            ) : mode === "write" || !aiOn ? (
               <div
-                className={cn("flex flex-col gap-2", aiOn && "md:h-[22rem]")}
+                className={cn("flex flex-col gap-2", aiKnown && "md:h-[22rem]")}
               >
-                {aiOn ? null : (
+                {aiKnown ? null : (
                   <Label htmlFor="page-content">
                     {t("pageCreate.contentLabel")}
                   </Label>
                 )}
                 <textarea
                   id="page-content"
-                  aria-label={aiOn ? t("pageCreate.contentLabel") : undefined}
+                  aria-label={
+                    aiKnown ? t("pageCreate.contentLabel") : undefined
+                  }
                   value={content}
                   onChange={(event) => setContent(event.target.value)}
                   className={cn(
                     inputClassName,
                     "min-h-40 flex-1 py-2 leading-6",
-                    aiOn ? "resize-none" : "resize-y",
+                    aiKnown ? "resize-none" : "resize-y",
                   )}
                   placeholder={t("pageCreate.contentPlaceholder")}
                   maxLength={200000}
@@ -562,13 +578,18 @@ export function CreatePageDialog({
           </div>
 
           <DialogFooter>
+            {mode === "ai" && aiKnown && !aiOn && canConfigure ? (
+              <Button asChild variant="secondary">
+                <Link href="/admin/ai">{t("ai.openSettings")}</Link>
+              </Button>
+            ) : null}
             <Button
               type="submit"
               variant="primary"
               disabled={
                 pending ||
                 !title.trim() ||
-                (mode === "ai" && aiOn && (draft === null || aiBusy))
+                (mode === "ai" && (!aiOn || draft === null || aiBusy))
               }
             >
               {pending ? <Loader2 className="animate-spin" /> : <FilePlus2 />}

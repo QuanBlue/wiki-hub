@@ -6,9 +6,11 @@ import {
   FilePlus2,
   Loader2,
   Languages,
+  PenLine,
   Pencil,
   RotateCcw,
   Sparkles,
+  Tags,
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -31,7 +33,12 @@ function effective(skill: AiSkill): string {
 }
 
 type SkillId =
-  "summary" | "page-draft" | "selection-explain" | "selection-translate";
+  | "summary"
+  | "page-draft"
+  | "selection-explain"
+  | "selection-translate"
+  | "writing"
+  | "suggestions";
 
 /** What each card needs to show and save: its URL name, texts and icon. */
 const SKILLS: Array<{
@@ -69,6 +76,20 @@ const SKILLS: Array<{
     shortKey: "adminAi.skillTranslateShort",
     icon: Languages,
   },
+  {
+    id: "writing",
+    titleKey: "adminAi.skillWritingTitle",
+    helpKey: "adminAi.skillWritingHelp",
+    shortKey: "adminAi.skillWritingShort",
+    icon: PenLine,
+  },
+  {
+    id: "suggestions",
+    titleKey: "adminAi.skillSuggestTitle",
+    helpKey: "adminAi.skillSuggestHelp",
+    shortKey: "adminAi.skillSuggestShort",
+    icon: Tags,
+  },
 ];
 
 type Open = { id: SkillId; mode: "view" | "edit" } | null;
@@ -84,11 +105,15 @@ export function AiSkillsPanel({
   initialPageDraft,
   initialExplain,
   initialTranslate,
+  initialWriting,
+  initialSuggestions,
 }: {
   initialSummary: AiSkill;
   initialPageDraft?: AiSkill;
   initialExplain?: AiSkill;
   initialTranslate?: AiSkill;
+  initialWriting?: AiSkill;
+  initialSuggestions?: AiSkill;
 }) {
   const { t } = useTranslation();
   const [skills, setSkills] = useState<Partial<Record<SkillId, AiSkill>>>({
@@ -96,6 +121,8 @@ export function AiSkillsPanel({
     "page-draft": initialPageDraft,
     "selection-explain": initialExplain,
     "selection-translate": initialTranslate,
+    writing: initialWriting,
+    suggestions: initialSuggestions,
   });
   const [open, setOpen] = useState<Open>(null);
   const shown = SKILLS.filter((def) => skills[def.id]);

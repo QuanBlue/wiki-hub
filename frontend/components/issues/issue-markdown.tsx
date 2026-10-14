@@ -16,9 +16,18 @@ const INLINE =
 
 /** The same, plus a bare ``https://...`` address (group 5), for text a model wrote. */
 const INLINE_AUTOLINK = new RegExp(
-  INLINE.source + "|(https?:\\/\\/[^\\s<>)\\]]*[^\\s<>)\\].,;:!?])",
+  INLINE.source +
+    // An address with a <placeholder> in it (group 5) is not a real link,
+    // then a plain address (group 6).
+    "|(https?:\\/\\/[^\\s<>]*<[^\\s<>]+>[^\\s<>)\\]]*[^\\s<>)\\].,;:!?])" +
+    "|(https?:\\/\\/[^\\s<>)\\]]*[^\\s<>)\\].,;:!?])",
   "g",
 );
+
+/** Undo the backslashes a model puts before punctuation (``\<ip\>``, ``\_``). */
+function unescapeMarkdown(text: string): string {
+  return text.replace(/\\([\\<>*_`[\]()#+.!|{}~-])/g, "$1");
+}
 
 type InlineOptions = {
   /** Usernames whose ``@name`` is highlighted. */
@@ -64,6 +73,7 @@ function inline(text: string, keyPrefix: string, options: InlineOptions = {}): R
       nodes.push(chunk);
     }
   };
+  if (autolink) text = unescapeMarkdown(text);
   for (const match of text.matchAll(autolink ? INLINE_AUTOLINK : INLINE)) {
     const at = match.index ?? 0;
     if (at > last) pushText(text.slice(last, at));
@@ -114,6 +124,16 @@ function inline(text: string, keyPrefix: string, options: InlineOptions = {}): R
         );
       }
     } else if (match[5]) {
+      // Something to type or copy, with a part to fill in: not clickable.
+      nodes.push(
+        <code
+          key={key}
+          className="bg-inline-code-bg text-inline-code rounded px-1 py-0.5 font-mono text-xs [overflow-wrap:anywhere]"
+        >
+          {token}
+        </code>,
+      );
+    } else if (match[6]) {
       nodes.push(
         <a
           key={key}
