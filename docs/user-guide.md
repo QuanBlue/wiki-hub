@@ -81,6 +81,8 @@ you can already read, and has an hourly limit per person.
   systems, accounts and people are answered from the wiki only.
   Selecting words in the chat shows the same small AI button as on a page, to explain or
   translate them.
+  Under your own questions are *Copy* and *Edit*: an edited question keeps its earlier
+  versions, and `‹ 1 / 2 ›` switches between them, each with the answers that followed it.
   Earlier messages count as context for a follow-up; the assistant asks when something it
   depends on (such as a city) is missing, reads real weather measurements for a named place, and
   reads the text of the top web pages (public addresses only) so it can quote figures from them.
@@ -126,7 +128,30 @@ banner and records the administrator in the audit trail.
 Under **AI assistant**, system administrators connect any OpenAI-compatible service
 (address, API key and a model chosen from what the service offers), keep several
 connections with exactly one active, and edit the instructions ("skills") behind
-each AI feature. Keys are stored encrypted and left out of backups.
+each AI feature. Keys are stored encrypted and left out of backups. The page has
+four tabs:
+
+- **Key management** - the connections and their keys; one is active.
+- **Semantic search** - where page text is turned into vectors so search can find
+  pages by meaning. Choose the source (the active connection, another endpoint, or a
+  self-hosted Ollama), then an embedding model from one dropdown. For Ollama, *Enable*
+  installs it (a card shows each step, memory and CPU), models marked "not downloaded"
+  are fetched with *Download & use*, and *Disable* removes the container (downloaded
+  models stay until you delete them). *Performance & tuning* holds the numbers: pages
+  indexed per minute, request size, timeouts, how close a match must be, and Ollama's
+  memory, cores and keep-alive. A progress note shows how far indexing has got.
+- **Web search** - off by default. Turn it on so the chat may look up public, technical
+  questions on the internet, and choose the service: the AI gateway's own search (no
+  extra key), Tavily, Brave Search or Serper (each needs its own key; the info buttons
+  explain how they differ). *Test search* tries it before you save. Only a short query,
+  stripped of addresses, e-mails and internal names, leaves WikiHub.
+- **Skill management** - the instructions behind each feature, with one-click reset.
+
+Under **Server**, system administrators see the machine's load, memory, swap, disk and
+uptime and WikiHub's own Docker containers (not other services on the same host) with
+uptime, CPU, memory and health. Click a column header to sort; *Logs* shows a
+container's last lines with credentials hidden. It refreshes every few seconds while
+the page is open and is read-only.
 
 Workspace settings control the site name, session duration, upload/archive
 limits, attachment types, and role visibility for sidebar areas. Storage lets
