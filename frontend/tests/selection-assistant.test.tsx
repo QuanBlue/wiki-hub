@@ -192,3 +192,113 @@ describe("SelectionAssistant", () => {
     );
   });
 });
+
+describe("SelectionAssistant edge cases", () => {
+  async function openCard() {
+    const fresh = await mount();
+    fresh.post.mockResolvedValue({ result: "Giải thích." });
+    await selectParagraph();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Explain or translate with AI" }),
+    );
+    await screen.findByText("Giải thích.");
+    return fresh;
+  }
+
+  async function clearSelection() {
+    await act(async () => {
+      window.getSelection()!.removeAllRanges();
+      document.dispatchEvent(new Event("selectionchange"));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+  }
+
+  it("takes the button away when the selection is cleared", async () => {
+    await mount();
+    await selectParagraph();
+    await screen.findByRole("button", { name: "Explain or translate with AI" });
+
+    await clearSelection();
+
+    expect(screen.queryByRole("button", { name: "Explain or translate with AI" })).toBeNull();
+  });
+
+  it("keeps an open card when the selection is cleared by focus moving into it", async () => {
+    await openCard();
+    screen.getByRole("button", { name: "Translate" }).focus();
+
+    await clearSelection();
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("closes an open card once the selection is gone and focus has left it", async () => {
+    await openCard();
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    await clearSelection();
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("follows the words when the page scrolls", async () => {
+    await mount();
+    await selectParagraph();
+    const button = await screen.findByRole("button", { name: "Explain or translate with AI" });
+    const before = button.style.left;
+
+    Range.prototype.getClientRects = (() => [
+      { ...RECT, right: 220, bottom: 60 },
+    ]) as unknown as () => DOMRectList;
+    await act(async () => {
+      window.dispatchEvent(new Event("scroll"));
+    });
+
+    // The button follows on the next frame, which a loaded machine can delay.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Explain or translate with AI" }).style.left,
+      ).not.toBe(before),
+    );
+  });
+
+  it("stays where it is on scroll when the words have no box to follow", async () => {
+    await mount();
+    await selectParagraph();
+    const button = await screen.findByRole("button", { name: "Explain or translate with AI" });
+    const before = button.style.left;
+
+    Range.prototype.getClientRects = (() => []) as unknown as () => DOMRectList;
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Explain or translate with AI" }).style.left,
+    ).toBe(before);
+  });
+
+  it("falls back to a general message for a failure that carries none", async () => {
+    const fresh = await mount();
+    fresh.post.mockRejectedValue(new Error("offline"));
+    await selectParagraph();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Explain or translate with AI" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not answer/i);
+  });
+
+  it("opens the card above the words when there is no room below", async () => {
+    const original = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 200 });
+    try {
+      await openCard();
+
+      const card = screen.getByRole("dialog");
+      expect(card.style.bottom).not.toBe("");
+    } finally {
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: original });
+    }
+  });
+});

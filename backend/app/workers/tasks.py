@@ -6,12 +6,17 @@ this module must be idempotent: arq re-runs a task if a worker dies mid-job.
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from typing import Any
 
 from app.core.logging import get_logger
+from app.core.redis import get_redis
 from app.db.session import session_scope
 from app.modules.admin_mail.service import AdminMailService
+from app.modules.ai.admin import check_all_connections
+from app.modules.ai import ollama
+from app.modules.ai.config import load_config
 from app.modules.backup.jobs import reap_abandoned_export_jobs
 from app.modules.backup.jobs import run_backup_job as execute_backup_job
 from app.modules.backup.automated import (
@@ -22,6 +27,7 @@ from app.modules.backup.automated import (
 from app.models.backup_job import BackupJob
 from app.modules.document_import.jobs import reap_abandoned_document_imports
 from app.modules.document_import.jobs import run_document_import as execute_document_import
+from app.modules.search.indexer import index_pending
 from app.modules.import_export.service import reap_abandoned_confluence_imports, run_import
 from app.services.storage import get_storage
 
@@ -100,6 +106,19 @@ async def check_admin_mailboxes(ctx: dict[str, Any]) -> None:
         logger.info("admin_mailboxes_checked", checked=summary.checked)
 
 
+async def check_ai_connections(ctx: dict[str, Any]) -> int:
+    """Every five minutes: re-check each saved AI connection.
+
+    Keeps the "Working / Failing" status in Administration honest after a key
+    is revoked or a gateway goes down. Idempotent: it only overwrites the latest
+    status.
+    """
+    async with session_scope() as session:
+        checked = await check_all_connections(session)
+    logger.info("ai_connections_checked", count=checked)
+    return checked
+
+
 async def reap_backup_jobs(ctx: dict[str, Any], *, every_running_job: bool = False) -> None:
     """Close out jobs whose worker died; see `reap_abandoned_export_jobs`.
 
@@ -137,3 +156,54 @@ async def reap_backup_jobs(ctx: dict[str, Any], *, every_running_job: bool = Fal
             count=reaped_confluence,
             on_startup=every_running_job,
         )
+
+
+#: One indexing pass at a time: cron fires every minute, a slow pass must not
+#: be doubled up by the next one (that would embed the same pages twice).
+_SEARCH_INDEX_LOCK = "lock:search_index"
+_SEARCH_INDEX_BUDGET_SECONDS = 50
+
+
+async def index_search_pages(ctx: dict[str, Any]) -> int:
+    """Embed pages that are new or changed since they were last indexed.
+
+    Logs (see ``index_pending`` for the per-pass summary): ``search_index_busy``
+    when the previous pass is still running, ``search_index_crashed`` with the
+    traceback if a pass blew up.
+    """
+    redis = get_redis()
+    if not await redis.set(_SEARCH_INDEX_LOCK, "1", nx=True, ex=_SEARCH_INDEX_BUDGET_SECONDS + 40):
+        logger.info("search_index_busy", detail="previous pass still running; skipped this one")
+        return 0
+    try:
+        async with session_scope() as session:
+            config = await load_config(session)
+
+            async def renew_lock() -> None:
+                # One page can take minutes on a slow CPU; without this the lock
+                # would expire mid-pass and the next minute's pass would start too.
+                await redis.expire(_SEARCH_INDEX_LOCK, _SEARCH_INDEX_BUDGET_SECONDS + 240)
+
+            return await index_pending(
+                session,
+                config,
+                deadline=time.monotonic() + _SEARCH_INDEX_BUDGET_SECONDS,
+                heartbeat=renew_lock,
+            )
+    except Exception:
+        logger.error("search_index_crashed", exc_info=True)
+        raise
+    finally:
+        await redis.delete(_SEARCH_INDEX_LOCK)
+
+
+async def install_ollama(ctx: dict[str, Any], model: str) -> bool:
+    """Install what is missing of the self-hosted Ollama and download ``model``.
+
+    Long-running (the image alone is gigabytes); progress is written to Redis for
+    the admin page. Safe to run again: finished steps are skipped and interrupted
+    downloads resume.
+    """
+    async with session_scope() as session:
+        tuning = (await load_config(session)).tuning
+    return await ollama.install(model, tuning)

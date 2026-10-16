@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
@@ -26,6 +26,8 @@ class FakeXHR {
   static status = 201;
   static responseBody = "";
   static failWith: "error" | null = null;
+  static hold = false;
+  static rawBody: string | null = null;
 
   method = "";
   url = "";
@@ -50,6 +52,7 @@ class FakeXHR {
   send(body: FormData) {
     FakeXHR.last = this;
     this.body = body;
+    if (FakeXHR.hold) return;
     queueMicrotask(() => {
       this.upload.onprogress?.({
         lengthComputable: true,
@@ -61,7 +64,7 @@ class FakeXHR {
         return;
       }
       this.status = FakeXHR.status;
-      this.responseText = FakeXHR.responseBody;
+      this.responseText = FakeXHR.rawBody ?? FakeXHR.responseBody;
       this.onload?.();
     });
   }
@@ -77,6 +80,8 @@ function stubXHR(
   FakeXHR.status = options.status ?? 201;
   FakeXHR.responseBody = JSON.stringify(options.body ?? { id: "job-1", items: [] });
   FakeXHR.failWith = options.fail ?? null;
+  FakeXHR.hold = false;
+  FakeXHR.rawBody = null;
   vi.stubGlobal("XMLHttpRequest", FakeXHR as unknown as typeof XMLHttpRequest);
 }
 
@@ -393,5 +398,207 @@ describe("ImportPagesDialog", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(screen.getByText("a.docx")).toBeInTheDocument();
+  });
+});
+
+describe("ImportPagesDialog edge cases", () => {
+  async function startWith(name = "a.docx") {
+    const { user, onStarted } = await openDialog();
+    await choose([file(name)]);
+    await screen.findByText(name);
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+    return { user, onStarted };
+  }
+
+  it("keeps only the first twenty documents and says so", async () => {
+    stubMeta();
+    stubXHR();
+    await openDialog();
+    await choose(Array.from({ length: 21 }, (_, i) => file(`doc-${i}.docx`)));
+
+    expect(await screen.findByText("doc-19.docx")).toBeInTheDocument();
+    expect(screen.queryByText("doc-20.docx")).toBeNull();
+    expect(toast.error).toHaveBeenCalledWith("Import at most 20 documents at a time.");
+  });
+
+  it("takes files dropped on the drop zone", async () => {
+    stubMeta();
+    stubXHR();
+    await openDialog();
+    const zone = document.querySelector("#import-files")!.parentElement!;
+
+    fireEvent.dragOver(zone);
+    expect(zone.className).toContain("bg-surface-hover");
+    fireEvent.dragLeave(zone);
+    fireEvent.drop(zone, { dataTransfer: { files: [file("dropped.docx")] } });
+    expect(await screen.findByText("dropped.docx")).toBeInTheDocument();
+
+    fireEvent.drop(zone, { dataTransfer: { files: [] } });
+    expect(screen.getAllByText(/\.docx$/)).toHaveLength(1);
+  });
+
+  it("forgets the chosen files when the dialog is closed", async () => {
+    stubMeta();
+    stubXHR();
+    const { user } = await openDialog();
+    await choose([file("a.docx")]);
+    await screen.findByText("a.docx");
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(screen.getByRole("button", { name: /import/i }));
+    await screen.findByRole("dialog");
+
+    expect(screen.queryByText("a.docx")).toBeNull();
+  });
+
+  it("aborts an upload that is still in flight when the dialog is closed, and warns before leaving", async () => {
+    stubMeta();
+    stubXHR();
+    FakeXHR.hold = true;
+    const { user } = await startWith();
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+
+    const leaving = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(leaving);
+    expect(leaving.defaultPrevented).toBe(true);
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("says so when the answer cannot be read", async () => {
+    stubMeta();
+    stubXHR();
+    FakeXHR.rawBody = "<html>";
+    await startWith();
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The server sent a response WikiHub could not read."));
+  });
+
+  it.each([
+    ["a plain detail", { detail: "Plain detail." }, "Plain detail."],
+    ["a top-level message", { message: "Top message." }, "Top message."],
+    ["an unusable message", { detail: { message: 42 } }, "The import could not be started."],
+  ])("explains a refusal that carries %s", async (_label, body, text) => {
+    stubMeta();
+    stubXHR({ status: 400, body });
+    await startWith();
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(text));
+  });
+
+  it("falls back to a general message when the refusal is not JSON", async () => {
+    stubMeta();
+    stubXHR({ status: 502 });
+    FakeXHR.rawBody = "Bad gateway";
+    await startWith();
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The import could not be started."));
+  });
+
+  it("counts several conflicts the server found, and none it did not name", async () => {
+    stubMeta();
+    stubXHR({
+      status: 409,
+      body: {
+        error: {
+          code: "document_import_conflict",
+          message: "Exists.",
+          details: { conflicts: [{ filename: "a.pdf" }, { filename: "b.pdf" }, { other: 1 }] },
+        },
+      },
+    });
+    await startWith("a.pdf");
+
+    expect(await screen.findByText(/2 pages with the same names already exist/)).toBeInTheDocument();
+  });
+
+  it("offers the general conflict wording when the server names no file", async () => {
+    stubMeta();
+    stubXHR({
+      status: 409,
+      body: { error: { code: "document_import_conflict", message: "Exists.", details: {} } },
+    });
+    await startWith("a.pdf");
+
+    expect(await screen.findByRole("heading", { name: "Page already exists" })).toBeInTheDocument();
+  });
+
+  it("closes the dialog and tells the caller when a finished import is dismissed", async () => {
+    stubMeta();
+    stubXHR({
+      body: {
+        id: "job-1",
+        space_key: "ENG",
+        status: "complete",
+        phase: "done",
+        counters: { items_total: 1, items_processed: 1, pages_created: 1, items_failed: 0 },
+        cancel_requested: false,
+        error: null,
+        percent: 100,
+        eta_seconds: 0,
+        items: [],
+      },
+    });
+    const onDismiss = vi.fn();
+    const onFinished = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ImportPagesDialog
+        spaceKey="ENG"
+        onStarted={vi.fn()}
+        onDismiss={onDismiss}
+        onFinished={onFinished}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /import/i }));
+    await screen.findByRole("dialog");
+    await choose([file("a.docx")]);
+    await screen.findByText("a.docx");
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+
+    await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1));
+    const summary = await screen.findAllByRole("dialog");
+    await user.click(within(summary[summary.length - 1]).getByRole("button", { name: /done/i }));
+    await user.click(await screen.findByRole("button", { name: /dismiss/i }));
+
+    expect(onDismiss).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+});
+
+describe("ImportPagesDialog refusals without a message", () => {
+  async function importOne() {
+    const { user } = await openDialog();
+    await choose([file("a.pdf")]);
+    await screen.findByText("a.pdf");
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+  }
+
+  it("uses the general wording when the refusal names nothing", async () => {
+    stubMeta();
+    stubXHR({ status: 400, body: {} });
+    await importOne();
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The import could not be started."));
+  });
+
+  it("speaks of this file when the server reports a conflict without naming it", async () => {
+    stubMeta();
+    stubXHR({
+      status: 409,
+      body: {
+        error: {
+          code: "document_import_conflict",
+          message: "Exists.",
+          details: { conflicts: [{ filename: "" }] },
+        },
+      },
+    });
+    await importOne();
+
+    expect(await screen.findByText(/this file/i)).toBeInTheDocument();
   });
 });

@@ -14,6 +14,7 @@ from app.modules.ai.config import AIConfig
 from app.modules.ai.service import AIService
 from app.modules.ai.skills import assist_system_prompt
 from app.schemas.ai import AssistRequest
+from tests.unit.ai_fakes import fake_chat
 
 
 class Harness:
@@ -51,7 +52,7 @@ class Harness:
                 raise PermissionDeniedError("no")
 
         monkeypatch.setattr(service_module, "load_config", config)
-        monkeypatch.setattr(service_module, "chat", chat)
+        fake_chat(monkeypatch, chat)
         monkeypatch.setattr(service_module, "find_related", related)
         monkeypatch.setattr(service_module, "writing_instructions", instructions)
         monkeypatch.setattr(service_module.rate_limit, "enforce", enforce)
@@ -147,7 +148,7 @@ async def test_writing_at_the_caret_returns_markdown_and_editor_html(
         harness.messages.append(messages)
         return "## Release day\n\n- [ ] Tag the build\n- [ ] Tell the team"
 
-    monkeypatch.setattr(service_module, "chat", chat)
+    fake_chat(monkeypatch, chat)
 
     result = await harness.service.assist_writing(
         "ENG",

@@ -250,10 +250,7 @@ export function ReportIssueDialog({
     <>
       <Dialog
         open={open}
-        onOpenChange={(next) => {
-          if (next) onOpenChange(true);
-          else requestClose();
-        }}
+        onOpenChange={(next) => (next ? onOpenChange(true) : requestClose())}
       >
         <DialogContent title={t("issues.reportTitle")} className="max-w-3xl">
           <form

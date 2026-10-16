@@ -13,6 +13,7 @@ from app.modules.ai.config import AIConfig
 from app.modules.ai.page_context import parse_suggestions
 from app.modules.ai.service import AIService
 from app.modules.ai.skills import suggest_system_prompt
+from tests.unit.ai_fakes import fake_chat
 
 PAGE_TEXT = "Prometheus collects metrics from our services and Grafana draws the dashboards. " * 3
 
@@ -121,7 +122,7 @@ class Harness:
 
         monkeypatch.setattr(service_module, "get_redis", lambda: self.redis)
         monkeypatch.setattr(service_module, "load_config", config)
-        monkeypatch.setattr(service_module, "chat", chat)
+        fake_chat(monkeypatch, chat)
         monkeypatch.setattr(service_module, "find_related", related)
         monkeypatch.setattr(service_module, "suggestions_instructions", instructions)
         monkeypatch.setattr(service_module.rate_limit, "enforce", enforce)
@@ -173,3 +174,16 @@ async def test_a_page_with_almost_no_text_is_not_sent_to_the_model(
 
     assert result.labels == [] and result.related == []
     assert harness.messages == [] and harness.charges == 0
+
+
+async def test_a_damaged_saved_answer_is_asked_for_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    harness = Harness(monkeypatch)
+    await harness.service.suggest_for_page("OPS", "monitoring-basics")
+    harness.again()
+    for key in harness.redis.data:
+        harness.redis.data[key] = "not json"
+
+    result = await harness.service.suggest_for_page("OPS", "monitoring-basics")
+
+    assert result.cached is False
+    assert len(harness.messages) == 2

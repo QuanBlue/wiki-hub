@@ -14,7 +14,10 @@ administrator if your account has been disabled. Single sign-on is displayed as
 an upcoming capability; local email/password sign-in is currently supported.
 
 Use the left navigation for Home, Spaces, and Help. The top-bar search finds
-spaces and pages that you are allowed to access. The app sidebar can be
+spaces and pages that you are allowed to access. It ranks title matches
+first, ignores accents and capitals, tolerates small typos in titles and accepts
+whole questions. When an administrator turns on Semantic search in Administration
+-> AI assistant, it also finds pages by meaning, not only by words. The app sidebar can be
 collapsed, and that preference is remembered in your browser.
 
 ## Spaces
@@ -59,6 +62,12 @@ you can already read, and has an hourly limit per person.
   applied when you accept them, and earlier versions can be stepped back to.
 - **Labels and related pages** - in a page's labels dialog, *Suggest labels and
   related pages* proposes labels to add and pages on the same topic.
+- **Ask AI from search** - type a question in the search box and click *Ask AI*
+  (or press `Ctrl+Enter`). The answer is written only from pages you can open, every
+  statement carries a numbered mark that opens its source page, and passwords, tokens
+  and keys are replaced with `[hidden]`. When the wiki has no answer it says so and
+  lists pages that may help; an answer that cannot be tied to a page is never shown.
+  Asking the same thing again while the pages are unchanged costs no model call.
 
 ## History and PDF export
 
@@ -81,6 +90,11 @@ Open **Your account** from the account menu.
 - **Sessions** lists active browsers. Sign out all other sessions if you do not
   recognise activity, then change your password.
 
+A member's profile also shows a contribution chart - a square per day over the last year,
+darker for busier days, with the other years one click away.
+
+In the activity feed, repeated edits of one page fold into a single row ("Updated 6 times"); click it to list each edit.
+
 ## Administration
 
 Administrators can manage users, groups, spaces, workspace settings, backups,
@@ -102,6 +116,12 @@ Workspace settings control the site name, session duration, upload/archive
 limits, attachment types, and role visibility for sidebar areas. Storage lets
 administrators filter bucket objects, obtain safe download links, preview
 compatible files, and permanently delete unneeded objects.
+
+Under **Statistics**, system administrators see how the workspace is used over
+the last 7, 30 or 90 days: users, edits, page views and recent activity; AI token
+usage per person and per feature; and the most viewed, starred and saved pages
+and spaces. Page views and AI tokens are counted from the day tracking was
+introduced, and token counts depend on the AI service reporting its usage.
 
 ## Backup and restore
 

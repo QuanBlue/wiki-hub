@@ -12,6 +12,7 @@ from app.core.middleware import SecurityHeadersMiddleware
 from app.main import create_app, lifespan
 from app.models.audit import AuditAction
 from app.models.permission import Permission
+from app.modules.ai.config import OFF
 from app.modules.search import service as search_module
 from app.modules.search.service import SearchService, extract_snippet
 from app.services.audit import AuditService, ClientInfo
@@ -60,6 +61,14 @@ async def test_search_returns_visible_spaces_and_pages(monkeypatch: pytest.Monke
         can_view_page=AsyncMock(side_effect=[True, False]),
     )
     monkeypatch.setattr(search_module, "PermissionService", lambda _session: permissions)
+    # Ranking and the AI gateway are covered by the database-backed tests; here
+    # only the visibility filtering of whatever they return is under test.
+    monkeypatch.setattr(search_module, "load_config", AsyncMock(return_value=OFF))
+    monkeypatch.setattr(
+        SearchService,
+        "_keyword_pages",
+        AsyncMock(return_value=search_module._Ranked(ids=["page-1", "page-2"], weights={})),
+    )
 
     result = await SearchService(session).search(" runbook ", SimpleNamespace(id="u"), limit=5)
     assert result.query == "runbook"

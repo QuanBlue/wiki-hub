@@ -5,31 +5,49 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Literal
 
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.deps import CurrentSuperuser, CurrentUser, DbSession
+from app.core.config import settings
+from app.core.exceptions import BadRequestError, ServiceUnavailableError
+from app.modules.ai import ollama
 from app.modules.ai.admin import AIConnectionService
+from app.modules.ai.answer import AnswerService
 from app.modules.ai.config import load_config
+from app.modules.ai.embedding_settings import EmbeddingSettingsService
 from app.modules.ai.service import AIService
 from app.modules.ai.skills import AISkillService
 from app.modules.permissions.service import PermissionService
+from app.modules.search.indexer import index_status
 from app.schemas.ai import (
     AIStatus,
     AITestRequest,
     AITestResult,
+    AnswerRequest,
+    AnswerResult,
     AssistRequest,
     AssistResult,
     ConnectionCreate,
     ConnectionList,
     ConnectionRead,
     ConnectionUpdate,
+    EmbeddingBenchmark,
+    EmbeddingModelsRequest,
+    EmbeddingModelsResult,
+    EmbeddingSettingsRead,
+    EmbeddingSettingsUpdate,
     ExplainRequest,
     ExplainResult,
+    OllamaEnable,
+    OllamaStatus,
     PageClarify,
     PageDraft,
     PageDraftRequest,
     PageSuggestions,
     PageSummary,
+    SearchIndexStatus,
     SkillRead,
     SkillUpdate,
 )
@@ -50,6 +68,18 @@ async def ai_status(user: CurrentUser, session: DbSession) -> AIStatus:
         enabled=(await load_config(session)).ready,
         can_configure=await PermissionService(session).is_system_admin(user),
     )
+
+
+@router.post(
+    "/answer",
+    response_model=AnswerResult,
+    summary="Answer a question from the wiki, citing the pages it came from",
+)
+async def answer_question(
+    payload: AnswerRequest, session: DbSession, user: CurrentUser
+) -> AnswerResult:
+    # A POST body, not a query string: what people ask must not end up in access logs.
+    return await AnswerService(session, user).answer(payload)
 
 
 @router.post(
@@ -122,6 +152,136 @@ def get_connection_service(session: DbSession, admin: CurrentSuperuser) -> AICon
 
 
 ConnectionServiceDep = Annotated[AIConnectionService, Depends(get_connection_service)]
+
+
+@router.get(
+    "/search-index",
+    response_model=SearchIndexStatus,
+    summary="How far semantic-search indexing has got",
+)
+async def search_index_status(session: DbSession, admin: CurrentSuperuser) -> SearchIndexStatus:
+    config = await load_config(session)
+    status_ = await index_status(session, config)
+    return SearchIndexStatus(
+        available=status_.available,
+        enabled=config.embeddings_ready,
+        total=status_.total,
+        indexed=status_.indexed,
+        error=status_.error,
+    )
+
+
+def get_embedding_service(session: DbSession, admin: CurrentSuperuser) -> EmbeddingSettingsService:
+    return EmbeddingSettingsService(session, admin)
+
+
+EmbeddingServiceDep = Annotated[EmbeddingSettingsService, Depends(get_embedding_service)]
+
+
+@router.get(
+    "/embedding",
+    response_model=EmbeddingSettingsRead,
+    summary="Where semantic search gets embeddings",
+)
+async def get_embedding(service: EmbeddingServiceDep) -> EmbeddingSettingsRead:
+    return await service.read()
+
+
+@router.put(
+    "/embedding",
+    response_model=EmbeddingSettingsRead,
+    summary="Choose the embedding source and model (blank model turns semantic search off)",
+)
+async def put_embedding(
+    payload: EmbeddingSettingsUpdate, service: EmbeddingServiceDep
+) -> EmbeddingSettingsRead:
+    return await service.update(payload)
+
+
+@router.post(
+    "/embedding/models",
+    response_model=EmbeddingModelsResult,
+    summary="List the embedding models a source offers",
+)
+async def embedding_models(
+    payload: EmbeddingModelsRequest, service: EmbeddingServiceDep
+) -> EmbeddingModelsResult:
+    return await service.models(payload)
+
+
+@router.post(
+    "/embedding/benchmark",
+    response_model=EmbeddingBenchmark,
+    summary="Time a few passages with the saved embedding source, for tuning",
+)
+async def embedding_benchmark(service: EmbeddingServiceDep) -> EmbeddingBenchmark:
+    return await service.benchmark()
+
+
+async def _ollama_status(session: DbSession) -> OllamaStatus:
+    return OllamaStatus(**await ollama.describe((await load_config(session)).tuning))
+
+
+@router.get("/ollama", response_model=OllamaStatus, summary="State of the self-hosted Ollama")
+async def ollama_status(admin: CurrentSuperuser, session: DbSession) -> OllamaStatus:
+    return await _ollama_status(session)
+
+
+@router.post(
+    "/ollama/enable",
+    response_model=OllamaStatus,
+    summary="Install (if needed), start Ollama and download an embedding model",
+)
+async def ollama_enable(
+    payload: OllamaEnable, admin: CurrentSuperuser, session: DbSession
+) -> OllamaStatus:
+    if payload.model not in ollama.ALLOWED_MODELS:
+        raise BadRequestError("Pick one of the embedding models WikiHub offers.")
+    try:
+        pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        await pool.enqueue_job("install_ollama", payload.model)
+        await pool.aclose()
+    except Exception as exc:
+        raise ServiceUnavailableError(
+            "The background worker queue is unavailable; Ollama was not started."
+        ) from exc
+    # Show "installing" at once instead of waiting for the worker to pick the job up.
+    await ollama.write_progress(
+        ollama.Progress(state="installing", step="image", message="Starting", model=payload.model)
+    )
+    return await _ollama_status(session)
+
+
+@router.post("/ollama/cancel", response_model=OllamaStatus, summary="Cancel an install in progress")
+async def ollama_cancel(admin: CurrentSuperuser, session: DbSession) -> OllamaStatus:
+    await ollama.request_cancel()
+    return await _ollama_status(session)
+
+
+@router.post(
+    "/ollama/disable",
+    response_model=OllamaStatus,
+    summary="Stop and remove the Ollama container (downloaded models stay on disk)",
+)
+async def ollama_disable(admin: CurrentSuperuser, session: DbSession) -> OllamaStatus:
+    try:
+        await ollama.disable()
+    except ollama.OllamaError as exc:
+        raise ServiceUnavailableError(str(exc)) from exc
+    return await _ollama_status(session)
+
+
+@router.delete(
+    "/ollama/models",
+    response_model=OllamaStatus,
+    summary="Delete the downloaded models (Ollama must be disabled)",
+)
+async def ollama_delete_models(admin: CurrentSuperuser, session: DbSession) -> OllamaStatus:
+    try:
+        await ollama.delete_models()
+    except ollama.OllamaError as exc:
+        raise BadRequestError(str(exc)) from exc
+    return await _ollama_status(session)
 
 
 @router.get("/connections", response_model=ConnectionList, summary="List AI connections")

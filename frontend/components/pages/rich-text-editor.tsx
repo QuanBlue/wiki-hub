@@ -35,7 +35,12 @@ import {
   type EditorState,
   type Transaction,
 } from "@tiptap/pm/state";
-import { Fragment, Slice, type Node as PMNode, type NodeType } from "@tiptap/pm/model";
+import {
+  Fragment,
+  Slice,
+  type Node as PMNode,
+  type NodeType,
+} from "@tiptap/pm/model";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { dropPoint } from "@tiptap/pm/transform";
 import { TableMap } from "@tiptap/pm/tables";
@@ -667,17 +672,13 @@ type TableColumnResizeState = {
 
 function tableContextAtCell(view: Editor["view"], cell: HTMLElement) {
   const $position = view.state.doc.resolve(view.posAtDOM(cell, 0));
-  for (let depth = $position.depth; depth > 0; depth -= 1) {
-    const node = $position.node(depth);
-    if (node.type.name === "table") {
-      const start = $position.start(depth);
-      // table > row > cell: the cell sits two levels below the table.
-      const cellOffset =
-        $position.depth >= depth + 2 ? $position.before(depth + 2) - start : -1;
-      return { node, start, cellOffset };
-    }
-  }
-  return null;
+  // A cell always sits inside a table, so the walk up always finds one.
+  let depth = $position.depth;
+  while ($position.node(depth).type.name !== "table") depth -= 1;
+  const start = $position.start(depth);
+  // table > row > cell: the cell sits two levels below the table.
+  const cellOffset = $position.before(depth + 2) - start;
+  return { node: $position.node(depth), start, cellOffset };
 }
 
 function persistTableColumnWidths(
@@ -768,15 +769,9 @@ const TableColumnResize = Extension.create({
       const table = cell?.closest("table") as HTMLTableElement | null;
       if (!cell || !table) return null;
       const context = tableContextAtCell(view, cell);
-      if (!context || context.cellOffset < 0) return null;
       const map = TableMap.get(context.node);
       if (map.width < 2) return null;
-      let rect: ReturnType<TableMap["findCell"]>;
-      try {
-        rect = map.findCell(context.cellOffset);
-      } catch {
-        return null;
-      }
+      const rect = map.findCell(context.cellOffset);
 
       const bounds = cell.getBoundingClientRect();
       const nearLeft = event.clientX - bounds.left <= TABLE_COLUMN_RESIZE_ZONE;
@@ -942,16 +937,9 @@ const TableColumnResize = Extension.create({
 });
 
 function tableRowPosition(view: Editor["view"], row: HTMLTableRowElement) {
-  const domPosition = view.posAtDOM(row, 0);
-  // `posAtDOM(row, 0)` is normally just inside the row; look back over the
-  // table boundary to get the position at which the tableRow node starts.
-  for (let offset = 0; offset <= 3; offset += 1) {
-    const position = Math.max(0, domPosition - offset);
-    if (view.state.doc.nodeAt(position)?.type.name === "tableRow") {
-      return position;
-    }
-  }
-  return null;
+  // `posAtDOM(row, 0)` is just inside the row, so the tableRow node itself
+  // starts one position earlier.
+  return view.posAtDOM(row, 0) - 1;
 }
 
 /** Commits a finished row drag. Called once, on release. */
@@ -1058,7 +1046,6 @@ const TableRowResize = Extension.create({
 
               const upperRow = target.rows[target.upperRowIndex];
               const position = tableRowPosition(view, upperRow);
-              if (position === null) return false;
 
               event.preventDefault();
 
@@ -1168,29 +1155,23 @@ function CodeBlockPreview({
   lines: number[];
   tokenLines: CodeToken[][];
 }) {
-  const showHeader = Boolean(caption) || Boolean(languageLabel);
-
   return (
     <div
       data-code-theme={theme ?? undefined}
       className="wikihub-code border-code-border bg-code-bg flex h-full flex-col overflow-hidden rounded-md border"
     >
-      {showHeader ? (
-        <div className="border-code-border bg-code-inset flex h-9 shrink-0 items-center justify-between gap-2 border-b px-3">
-          {caption ? (
-            <span className="text-code-muted min-w-0 flex-1 truncate font-mono text-xs">
-              {caption}
-            </span>
-          ) : (
-            <span aria-hidden className="flex-1" />
-          )}
-          {languageLabel ? (
-            <span className="text-code-muted shrink-0 font-mono text-xs">
-              {languageLabel}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
+      <div className="border-code-border bg-code-inset flex h-9 shrink-0 items-center justify-between gap-2 border-b px-3">
+        {caption ? (
+          <span className="text-code-muted min-w-0 flex-1 truncate font-mono text-xs">
+            {caption}
+          </span>
+        ) : (
+          <span aria-hidden className="flex-1" />
+        )}
+        <span className="text-code-muted shrink-0 font-mono text-xs">
+          {languageLabel}
+        </span>
+      </div>
       <div className="flex min-h-0 flex-1 overflow-auto">
         <div className="border-code-border bg-code-inset text-code-muted sticky left-0 border-r px-3 py-4 text-right font-mono text-xs !leading-6 select-none">
           {lines.map((line) => (
@@ -1203,18 +1184,11 @@ function CodeBlockPreview({
           <code className="!m-0 !block bg-transparent !p-0 !font-mono !text-xs !leading-6 whitespace-pre">
             {tokenLines.map((tokens, lineIdx) => (
               <div key={lineIdx} className="h-6">
-                {tokens.length ? (
-                  tokens.map((token, tokenIdx) => (
-                    <span
-                      key={tokenIdx}
-                      className={token.className ?? undefined}
-                    >
-                      {token.text}
-                    </span>
-                  ))
-                ) : (
-                  <>&nbsp;</>
-                )}
+                {tokens.map((token, tokenIdx) => (
+                  <span key={tokenIdx} className={token.className ?? undefined}>
+                    {token.text}
+                  </span>
+                ))}
               </div>
             ))}
           </code>
@@ -1267,10 +1241,7 @@ function LanguagePicker({
     const next_matches = filterLanguages(next);
     // Keep the current choice if it still matches; otherwise jump to the top
     // result so Save picks what the filter is showing.
-    if (
-      next_matches.length > 0 &&
-      !next_matches.some(([key]) => key === value)
-    )
+    if (next_matches.length > 0 && !next_matches.some(([key]) => key === value))
       onChange(next_matches[0][0]);
   }
 
@@ -1291,13 +1262,7 @@ function LanguagePicker({
     if (matches.length === 0) return;
     const current = matches.findIndex(([key]) => key === value);
     const step = event.key === "ArrowDown" ? 1 : -1;
-    const next =
-      current === -1
-        ? step === 1
-          ? 0
-          : matches.length - 1
-        : (current + step + matches.length) % matches.length;
-    onChange(matches[next][0]);
+    onChange(matches[(current + step + matches.length) % matches.length][0]);
   }
 
   const selected = matches.find(([key]) => key === value)?.[0];
@@ -1411,10 +1376,7 @@ function CodeBlockWithLines({
   updateAttributes,
   deleteNode,
 }: NodeViewProps) {
-  let text = node.textContent || "";
-  if (text.endsWith("\n")) {
-    text = text.slice(0, -1);
-  }
+  const text = (node.textContent || "").replace(/\n$/, "");
   const lineCount = text.split("\n").length;
   const lines = Array.from({ length: Math.max(1, lineCount) }, (_, i) => i + 1);
   const language: string = node.attrs.language || "";
@@ -1716,7 +1678,9 @@ function ToggleComponent({ node, updateAttributes }: NodeViewProps) {
       <div className="flex items-start gap-1">
         <button
           type="button"
-          aria-label={open ? t("editor.collapseToggle") : t("editor.expandToggle")}
+          aria-label={
+            open ? t("editor.collapseToggle") : t("editor.expandToggle")
+          }
           aria-expanded={open}
           contentEditable={false}
           onMouseDown={(event) => event.preventDefault()}
@@ -1753,6 +1717,11 @@ function normaliseImageAspectRatio(value: unknown): number | null {
   const parsed =
     typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** The width of the editor column an image sits in; a node view is always inside one. */
+function editorWidthAround(element: HTMLElement) {
+  return (element.closest(".ProseMirror") as HTMLElement).clientWidth;
 }
 
 type ImageResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
@@ -1920,10 +1889,9 @@ function ResizableImageComponent({
   // out from this ratio and relative units, so the frame can shrink with its
   // container - a fixed pixel height would keep the frame at its original size
   // and let the page clip whatever no longer fits.
-  const croppedAspectRatio =
-    crop && crop.height > 0
-      ? roundForCss((crop.width / crop.height) * imageAspectRatio)
-      : undefined;
+  const croppedAspectRatio = crop
+    ? roundForCss((crop.width / crop.height) * imageAspectRatio)
+    : undefined;
   const showImageTools =
     canResize && (hovered || resizing || captionOpen || cropOpen);
 
@@ -2000,8 +1968,7 @@ function ResizableImageComponent({
       const start = resizeStart.current;
       const frame = imageFrameRef.current;
       if (!start || !frame) return;
-      const availableWidth =
-        frame.closest(".ProseMirror")?.clientWidth ?? window.innerWidth;
+      const availableWidth = editorWidthAround(frame);
       const pointer = moveEvent as MouseEvent;
       // The editor deliberately exposes only left/right resize bars. Their
       // size must depend solely on X movement; Y movement belongs to neither
@@ -2089,11 +2056,8 @@ function ResizableImageComponent({
     event: React.KeyboardEvent<HTMLButtonElement>,
     handle: ImageResizeHandle,
   ) {
-    const current =
-      imageFrameRef.current?.getBoundingClientRect().width ??
-      croppedDisplayWidth ??
-      displayWidth ??
-      240;
+    const frame = imageFrameRef.current!;
+    const current = frame.getBoundingClientRect().width;
     const adjustment =
       event.key === "ArrowLeft" || event.key === "ArrowUp"
         ? -16
@@ -2102,9 +2066,7 @@ function ResizableImageComponent({
           : 0;
     if (!adjustment) return;
     event.preventDefault();
-    const availableWidth =
-      imageFrameRef.current?.closest(".ProseMirror")?.clientWidth ??
-      window.innerWidth;
+    const availableWidth = editorWidthAround(frame);
     const direction = handle.includes("w") || handle.includes("n") ? -1 : 1;
     setWidth(
       Math.max(80, Math.min(availableWidth, current + adjustment * direction)),
@@ -2128,7 +2090,7 @@ function ResizableImageComponent({
     setCaptionOpen(false);
   }
 
-  function setImageCrop(nextCrop: ImageCrop | null) {
+  function setImageCrop(nextCrop: ImageCrop) {
     // The crop is represented against the original source. Its on-page width
     // must therefore be the selected fraction of the source width, rather
     // than the full source width. Otherwise a narrow crop expands into a tall
@@ -2140,9 +2102,7 @@ function ResizableImageComponent({
           ? displayWidth / crop.width
           : displayWidth
         : (displayWidth ?? measuredWidth);
-    const croppedWidth = nextCrop
-      ? Math.max(80, Math.round(sourceWidth * nextCrop.width))
-      : null;
+    const croppedWidth = Math.max(80, Math.round(sourceWidth * nextCrop.width));
     // The crop preview is the exact canvas the user selected against. Its
     // rendered ratio is more reliable than a previously measured image ratio
     // (which may have been affected by a prior crop or attachment preview).
@@ -2151,12 +2111,12 @@ function ResizableImageComponent({
       previewBounds && previewBounds.width > 0 && previewBounds.height > 0
         ? previewBounds.width / previewBounds.height
         : imageAspectRatio;
-    if (nextCrop) setMeasuredImageAspectRatio(cropCanvasAspectRatio);
+    setMeasuredImageAspectRatio(cropCanvasAspectRatio);
     updateAttributes({
-      crop: nextCrop ? JSON.stringify(nextCrop) : null,
-      width: croppedWidth ?? node.attrs.width,
-      cropWidthFinal: nextCrop ? "true" : null,
-      cropSourceAspectRatio: nextCrop ? String(cropCanvasAspectRatio) : null,
+      crop: JSON.stringify(nextCrop),
+      width: croppedWidth,
+      cropWidthFinal: "true",
+      cropSourceAspectRatio: String(cropCanvasAspectRatio),
       // Re-cropping is allowed. Clearing the legacy lock also lets content
       // cropped with an earlier editor version be adjusted again.
       cropFinal: null,
@@ -2293,9 +2253,7 @@ function ResizableImageComponent({
                 maxWidth: "100%",
                 // The height follows from the ratio, so shrinking keeps both
                 // the proportions and the selected region.
-                aspectRatio: croppedAspectRatio
-                  ? String(croppedAspectRatio)
-                  : undefined,
+                aspectRatio: String(croppedAspectRatio),
               }
             : undefined
         }
@@ -2364,21 +2322,21 @@ function ResizableImageComponent({
               ).map(([value, Icon, labelKey]) => {
                 const label = t(labelKey);
                 return (
-                <button
-                  key={value}
-                  type="button"
-                  aria-label={label}
-                  title={label}
-                  aria-pressed={alignment === value}
-                  onPointerDown={(event) => event.preventDefault()}
-                  onClick={() => setImageAlignment(value)}
-                  className={cn(
-                    "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                    alignment === value && TOGGLE_ON_CLASS,
-                  )}
-                >
-                  <Icon className="size-4" aria-hidden />
-                </button>
+                  <button
+                    key={value}
+                    type="button"
+                    aria-label={label}
+                    title={label}
+                    aria-pressed={alignment === value}
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => setImageAlignment(value)}
+                    className={cn(
+                      "hover:bg-surface-hover focus-visible:ring-ring text-muted-foreground flex size-7 cursor-pointer items-center justify-center rounded transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                      alignment === value && TOGGLE_ON_CLASS,
+                    )}
+                  >
+                    <Icon className="size-4" aria-hidden />
+                  </button>
                 );
               })}
               <span className="bg-border mx-0.5 h-5 w-px" aria-hidden />
@@ -2436,7 +2394,10 @@ function ResizableImageComponent({
             </div>
           </div>
           <Dialog open={captionOpen} onOpenChange={setCaptionOpen}>
-            <DialogContent title={t("editor.imageCaption")} className="max-w-md">
+            <DialogContent
+              title={t("editor.imageCaption")}
+              className="max-w-md"
+            >
               <div className="space-y-2">
                 <label className="text-sm font-medium" htmlFor="image-caption">
                   {t("editor.caption")}
@@ -2800,11 +2761,9 @@ const CustomToggleSummaryNode = TiptapNode.create({
         this.editor.commands.command(({ tr, dispatch, state }) => {
           const { $from } = state.selection;
           if ($from.parent.type.name !== this.name) return false;
+          // A summary only ever sits directly inside its toggle.
           const toggleDepth = $from.depth - 1;
-          if (toggleDepth < 0) return false;
-          const toggleNode = $from.node(toggleDepth);
-          const summaryNode = toggleNode?.firstChild;
-          if (toggleNode?.type.name !== "toggle" || !summaryNode) return false;
+          const summaryNode = $from.node(toggleDepth).firstChild!;
           const toggleStart = $from.before(toggleDepth);
           const contentStart = toggleStart + 1 + summaryNode.nodeSize + 1;
           if (dispatch) {
@@ -2827,21 +2786,17 @@ const CustomToggleSummaryNode = TiptapNode.create({
           if (!empty || $from.parent.type.name !== this.name) return false;
           if ($from.parentOffset !== 0) return false;
           const toggleDepth = $from.depth - 1;
-          if (toggleDepth < 0) return false;
           const toggleNode = $from.node(toggleDepth);
-          if (toggleNode?.type.name !== "toggle") return false;
-          const summaryNode = toggleNode.firstChild;
-          const contentNode = toggleNode.lastChild;
-          if (!summaryNode || !contentNode) return false;
+          const summaryNode = toggleNode.firstChild!;
+          const contentNode = toggleNode.lastChild!;
 
           if (dispatch) {
             const toggleStart = $from.before(toggleDepth);
             const toggleEnd = toggleStart + toggleNode.nodeSize;
             const contentIsEmpty =
-              contentNode.childCount === 0 ||
-              (contentNode.childCount === 1 &&
-                contentNode.firstChild?.isTextblock &&
-                contentNode.firstChild.content.size === 0);
+              contentNode.childCount === 1 &&
+              contentNode.firstChild!.isTextblock &&
+              contentNode.firstChild!.content.size === 0;
             const replacement = Fragment.fromArray([
               state.schema.nodes.paragraph.create(null, summaryNode.content),
               ...(contentIsEmpty ? [] : contentNode.content.content),
@@ -3161,12 +3116,14 @@ const CustomCodeBlock = CodeBlockLowlight.extend({
       // caret's line) by two spaces, like a code editor, instead of moving
       // keyboard focus out of the block. Outside a code block they return
       // false so lists and table cells keep their own Tab behaviour.
-      Tab: () => this.editor.commands.command(({ state, dispatch }) =>
-        shiftCodeBlockIndent(state, dispatch, this.type, "indent"),
-      ),
-      "Shift-Tab": () => this.editor.commands.command(({ state, dispatch }) =>
-        shiftCodeBlockIndent(state, dispatch, this.type, "outdent"),
-      ),
+      Tab: () =>
+        this.editor.commands.command(({ state, dispatch }) =>
+          shiftCodeBlockIndent(state, dispatch, this.type, "indent"),
+        ),
+      "Shift-Tab": () =>
+        this.editor.commands.command(({ state, dispatch }) =>
+          shiftCodeBlockIndent(state, dispatch, this.type, "outdent"),
+        ),
     };
   },
 });
@@ -3286,9 +3243,13 @@ const BlockIndent = Extension.create({
           const topName = state.doc.child(start).type.name;
           if (
             previous?.type.name === "blockquote" &&
-            ["paragraph", "heading", "bulletList", "orderedList", "taskList"].includes(
-              topName,
-            )
+            [
+              "paragraph",
+              "heading",
+              "bulletList",
+              "orderedList",
+              "taskList",
+            ].includes(topName)
           ) {
             if (!dispatch) return true;
             const rangeStart = $from.before(1);
@@ -3342,7 +3303,11 @@ const BlockIndent = Extension.create({
         for (let depth = $from.depth; depth > 0; depth -= 1) {
           const name = $from.node(depth).type.name;
           // Lists and tables own Tab; just keep focus in the editor.
-          if (name === "listItem" || name === "tableCell" || name === "tableHeader")
+          if (
+            name === "listItem" ||
+            name === "tableCell" ||
+            name === "tableHeader"
+          )
             return true;
         }
         if (!dispatch) return true;
@@ -3549,10 +3514,8 @@ export function isAttachmentHref(href: string) {
  * AttachmentTile for why - so the target is read from a data attribute too.
  */
 function attachmentIdFromLink(link: Element) {
-  const target =
-    link.getAttribute("href") ||
-    link.getAttribute("data-attachment-href") ||
-    "";
+  const attr = (name: string) => link.getAttribute(name);
+  const target = attr("href") || attr("data-attachment-href") || "";
   return target.match(/\/api\/v1\/attachments\/([a-f0-9-]{36})/i)?.[1] ?? null;
 }
 /** A trailing ".ext" is what separates a filename from ordinary link prose. */
@@ -3978,12 +3941,9 @@ const AttachmentNode = TiptapNode.create({
             "attachment";
           if (filename.toLowerCase() === "download") {
             const titleVal = el.getAttribute("title");
-            const dataAttVal = el.getAttribute("data-attachment");
             const downloadAttr = el.getAttribute("download");
             if (titleVal && titleVal.toLowerCase() !== "download") {
               filename = titleVal;
-            } else if (dataAttVal && dataAttVal.toLowerCase() !== "download") {
-              filename = dataAttVal;
             } else if (
               downloadAttr &&
               downloadAttr.toLowerCase() !== "download"
@@ -4065,10 +4025,7 @@ const DiffHighlightMark = Mark.create({
   },
 
   parseHTML() {
-    return [
-      { tag: "mark.wh-diff-add" },
-      { tag: "mark.wh-diff-delete" },
-    ];
+    return [{ tag: "mark.wh-diff-add" }, { tag: "mark.wh-diff-delete" }];
   },
 
   renderHTML({ HTMLAttributes }) {
@@ -4109,22 +4066,14 @@ const headingLevels = [1, 2, 3, 4] as const;
 // back off again for a "#..." href, once rendering.
 const AnchorAwareLink = Link.extend({
   renderHTML({ mark, HTMLAttributes }) {
-    const rendered = this.parent?.({ mark, HTMLAttributes }) ?? [
-      "a",
-      HTMLAttributes,
-      0,
+    const rendered = this.parent!({ mark, HTMLAttributes }) as [
+      string,
+      Record<string, unknown>,
+      number,
     ];
-    const href = HTMLAttributes.href ?? "";
-    if (
-      typeof href === "string" &&
-      href.startsWith("#") &&
-      Array.isArray(rendered) &&
-      rendered[1]
-    ) {
-      const { target: _target, rel: _rel, ...attrs } = rendered[1];
-      return ["a", attrs, 0];
-    }
-    return rendered;
+    if (!String(HTMLAttributes.href ?? "").startsWith("#")) return rendered;
+    const { target: _target, rel: _rel, ...attrs } = rendered[1];
+    return ["a", attrs, 0];
   },
 });
 
@@ -4161,70 +4110,68 @@ function buildEditorExtensions({
   placeholder,
 }: { allowBase64?: boolean; placeholder?: PlaceholderText } = {}) {
   return [
-  StarterKit.configure({
-    heading: false,
-    codeBlock: false,
-    blockquote: false,
-    // Replaced by InlineCode below, which lets bold/italic/etc. combine with it.
-    code: false,
-    listItem: false,
-    // Replaced by UnderlineMark below, which controls the mark's nesting order.
-    underline: false,
-    // The stock drop cursor draws a rule across the whole block, which reads
-    // like a horizontal divider rather than an insertion point. Styled down to
-    // a caret in globals.css; the colour comes from there too.
-    dropcursor: { class: "wikihub-dropcursor", width: 2, color: false },
-  }),
-  InlineCode,
-  HeadingWithId.configure({ levels: [...headingLevels] }),
-  CustomCodeBlock.configure({
-    lowlight,
-    // Also read by the LowlightPlugin's decoration pass as the fallback for
-    // any block with a falsy language, so an untouched block stays
-    // monochrome instead of `highlightAuto()` guessing its language.
-    defaultLanguage: "plaintext",
-  }),
-  CustomBlockquote,
-  LeadingParagraph,
-  SlashCommand,
-  CustomCalloutNode,
-  CustomToggleSummaryNode,
-  CustomToggleContentNode,
-  CustomToggleNode,
-  TableOfContentsNode,
-  StyledListItem,
-  TaskList.configure({ HTMLAttributes: { class: "wikihub-task-list" } }),
-  TaskItem.configure({ nested: true }),
-  AnchorAwareLink.configure({
-    openOnClick: false,
-    autolink: true,
-    defaultProtocol: "https",
-  }),
-  DiffHighlightMark,
-  AttachmentNode,
-  ResizableImage.configure({
-    allowBase64,
-  }),
-  TextStyleMark,
-  UnderlineMark,
-  TextAlign.configure({ types: ["heading", "paragraph"] }),
-  BlockIndent,
-  EmptyLineHint,
-  TableCellTripleClick,
-  Table.configure({
-    resizable: false,
-    cellMinWidth: TABLE_CELL_MIN_WIDTH,
-  }),
-  TableRowWithHeight,
-  TableHeaderWithBackground,
-  TableCellWithBackground,
-  TableColumnResize,
-  TableRowResize,
-  Placeholder.configure({
-    placeholder:
-      placeholder ??
-      translate("en", "editor.editorPlaceholder"),
-  }),
+    StarterKit.configure({
+      heading: false,
+      codeBlock: false,
+      blockquote: false,
+      // Replaced by InlineCode below, which lets bold/italic/etc. combine with it.
+      code: false,
+      listItem: false,
+      // Replaced by UnderlineMark below, which controls the mark's nesting order.
+      underline: false,
+      // The stock drop cursor draws a rule across the whole block, which reads
+      // like a horizontal divider rather than an insertion point. Styled down to
+      // a caret in globals.css; the colour comes from there too.
+      dropcursor: { class: "wikihub-dropcursor", width: 2, color: false },
+    }),
+    InlineCode,
+    HeadingWithId.configure({ levels: [...headingLevels] }),
+    CustomCodeBlock.configure({
+      lowlight,
+      // Also read by the LowlightPlugin's decoration pass as the fallback for
+      // any block with a falsy language, so an untouched block stays
+      // monochrome instead of `highlightAuto()` guessing its language.
+      defaultLanguage: "plaintext",
+    }),
+    CustomBlockquote,
+    LeadingParagraph,
+    SlashCommand,
+    CustomCalloutNode,
+    CustomToggleSummaryNode,
+    CustomToggleContentNode,
+    CustomToggleNode,
+    TableOfContentsNode,
+    StyledListItem,
+    TaskList.configure({ HTMLAttributes: { class: "wikihub-task-list" } }),
+    TaskItem.configure({ nested: true }),
+    AnchorAwareLink.configure({
+      openOnClick: false,
+      autolink: true,
+      defaultProtocol: "https",
+    }),
+    DiffHighlightMark,
+    AttachmentNode,
+    ResizableImage.configure({
+      allowBase64,
+    }),
+    TextStyleMark,
+    UnderlineMark,
+    TextAlign.configure({ types: ["heading", "paragraph"] }),
+    BlockIndent,
+    EmptyLineHint,
+    TableCellTripleClick,
+    Table.configure({
+      resizable: false,
+      cellMinWidth: TABLE_CELL_MIN_WIDTH,
+    }),
+    TableRowWithHeight,
+    TableHeaderWithBackground,
+    TableCellWithBackground,
+    TableColumnResize,
+    TableRowResize,
+    Placeholder.configure({
+      placeholder: placeholder ?? translate("en", "editor.editorPlaceholder"),
+    }),
   ];
 }
 
@@ -4477,7 +4424,6 @@ export const readerClassName =
   // unbroken word to redistribute every column after the page is saved.
   "[&_.tableWrapper]:my-3 [&_.tableWrapper]:overflow-x-auto [&_.tableWrapper]:overflow-y-hidden [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_th]:min-w-24 [&_th]:break-words [&_th]:whitespace-normal [&_th]:border [&_th]:border-border [&_th]:bg-surface-sunken [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_th]:leading-[1.45] [&_td]:min-w-24 [&_td]:break-words [&_td]:whitespace-normal [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5 [&_td]:leading-[1.45]";
 
-
 // A toggled-on toolbar control. Hover has to stay blue: the ghost button's own
 // hover swaps in the grey surface and the dark text colour, which made a
 // selected control look deselected the moment the pointer touched it.
@@ -4564,10 +4510,7 @@ function HeadingMenu({ editor }: { editor: Editor | null }) {
           aria-label={t("editor.textStyleAria")}
           title={t("editor.textStyleAria")}
           disabled={!editor}
-          className={cn(
-            "h-8 min-w-14 px-2",
-            currentLevel && TOGGLE_ON_CLASS,
-          )}
+          className={cn("h-8 min-w-14 px-2", currentLevel && TOGGLE_ON_CLASS)}
         >
           {currentLevel ? `H${currentLevel}` : t("editor.textButton")}
           <ChevronDown className="size-3.5" />
@@ -4642,9 +4585,7 @@ function AlignmentMenu({ editor }: { editor: Editor | null }) {
           aria-label={t("editor.textAlignAria")}
           title={t("editor.textAlignAria")}
           disabled={!editor}
-          className={cn(
-            alignment !== "left" && TOGGLE_ON_CLASS,
-          )}
+          className={cn(alignment !== "left" && TOGGLE_ON_CLASS)}
         >
           <Icon />
           <ChevronDown className="sr-only" />
@@ -4842,10 +4783,7 @@ function ColorMenu({
           aria-label={label}
           title={label}
           disabled={!editor}
-          className={cn(
-            "h-8 gap-1.5 px-2",
-            currentValue && TOGGLE_ON_CLASS,
-          )}
+          className={cn("h-8 gap-1.5 px-2", currentValue && TOGGLE_ON_CLASS)}
         >
           <span className="relative flex flex-col items-center">
             <Icon className="size-4" aria-hidden />
@@ -4868,7 +4806,9 @@ function ColorMenu({
             ? t("editor.textColourPaletteAria")
             : t("editor.textHighlightPaletteAria")
         }
-        clearLabel={isText ? t("editor.clearColour") : t("editor.clearHighlight")}
+        clearLabel={
+          isText ? t("editor.clearColour") : t("editor.clearHighlight")
+        }
         customLabel={
           isText ? t("editor.customTextColour") : t("editor.customHighlight")
         }
@@ -5006,14 +4946,12 @@ function TableActionButton({
   editor,
   label,
   onClick,
-  destructive,
   disabled,
   children,
 }: {
   editor: Editor | null;
   label: string;
   onClick: () => void;
-  destructive?: boolean;
   disabled?: boolean;
   children: React.ReactNode;
 }) {
@@ -5026,11 +4964,7 @@ function TableActionButton({
       title={label}
       disabled={disabled || !editor}
       onClick={onClick}
-      className={cn(
-        "h-8 gap-1.5 px-2",
-        destructive &&
-          "text-danger hover:bg-danger-bg hover:text-danger active:bg-danger-bg/85",
-      )}
+      className="h-8 gap-1.5 px-2"
     >
       {children}
       <span>{label}</span>
@@ -5054,8 +4988,7 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
   const maxCols = 10;
 
   function insertTable(rows: number, cols: number) {
-    if (!editor || rows < 1 || cols < 1) return;
-    editor
+    editor!
       .chain()
       .focus()
       .insertTable({ rows, cols, withHeaderRow: true })
@@ -5085,15 +5018,10 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
     }
 
     const { node } = editor.view.domAtPos(editor.state.selection.$from.pos);
-    const table =
-      (node instanceof Element ? node : node.parentElement)?.closest("table") ??
-      null;
-
-    if (!table) {
-      setPosition(null);
-      return;
-    }
-
+    // The selection is in a table, so its DOM node is too.
+    const table = (
+      node instanceof Element ? node : node.parentElement
+    )!.closest("table")!;
     const rect = table.getBoundingClientRect();
     setPosition({
       // Leave enough room for the compact menu while keeping it on-screen.
@@ -5213,7 +5141,10 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
                       key={`${row}-${col}`}
                       type="button"
                       role="gridcell"
-                      aria-label={t("editor.gridSizeAria", { rows: row, cols: col })}
+                      aria-label={t("editor.gridSizeAria", {
+                        rows: row,
+                        cols: col,
+                      })}
                       className={cn(
                         "border-border h-5 w-5 border-r border-b transition-colors duration-100 last:border-r-0",
                         "hover:bg-primary-subtle hover:border-primary focus-visible:ring-ring focus-visible:z-10 focus-visible:ring-2 focus-visible:outline-none",
@@ -5322,36 +5253,29 @@ function LinkFloatingToolbar({
     }, 60);
   }, []);
 
+  // Only subscribed while an editor exists, and this editor is always editable.
   const updateFromSelection = useCallback(() => {
-    if (!editor || !editor.isEditable) {
-      setPosition(null);
-      return;
-    }
-
-    if (!editor.isActive("link")) {
+    const current = editor!;
+    if (!current.isActive("link")) {
       if (!isHoveredRef.current) {
         setPosition(null);
       }
       return;
     }
 
-    const { href, title, target } = editor.getAttributes("link");
-    if (!href) {
-      setPosition(null);
-      return;
-    }
+    const { href, title, target } = current.getAttributes("link");
 
-    const { from, to } = editor.state.selection;
+    const { from, to } = current.state.selection;
     let coords: { left: number; bottom: number } | null = null;
     try {
-      coords = editor.view.coordsAtPos(from);
+      coords = current.view.coordsAtPos(from);
     } catch {
       coords = null;
     }
     if (!coords) return;
 
     const text =
-      from !== to ? editor.state.doc.textBetween(from, to, " ") : String(href);
+      from !== to ? current.state.doc.textBetween(from, to, " ") : String(href);
 
     setPosition({
       left: Math.max(8, Math.min(coords.left, window.innerWidth - 380)),
@@ -5393,24 +5317,16 @@ function LinkFloatingToolbar({
       const text = link.textContent || "";
       const title = link.getAttribute("title") || "";
       const targetAttr = link.getAttribute("target") || "_self";
-      let pos: number | undefined;
-      try {
-        pos = editor.view.posAtDOM(link, 0);
-      } catch {
-        // ignore
-      }
-
-      if (href) {
-        setPosition({
-          left: Math.max(8, Math.min(rect.left, window.innerWidth - 380)),
-          top: rect.bottom + 6,
-          href,
-          text,
-          title,
-          target: targetAttr,
-          pos,
-        });
-      }
+      const pos = editor.view.posAtDOM(link, 0);
+      setPosition({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - 380)),
+        top: rect.bottom + 6,
+        href,
+        text,
+        title,
+        target: targetAttr,
+        pos,
+      });
     };
 
     const handleMouseLeave = (event: MouseEvent) => {
@@ -5514,17 +5430,6 @@ function LinkFloatingToolbar({
     setPosition(null);
   }
 
-  const normalizedHref = position
-    ? position.href.startsWith("http://") ||
-      position.href.startsWith("https://") ||
-      position.href.startsWith("/") ||
-      position.href.startsWith("#") ||
-      position.href.startsWith("mailto:") ||
-      position.href.startsWith("tel:")
-      ? position.href
-      : `https://${position.href}`
-    : "";
-
   return (
     <div
       ref={containerRef}
@@ -5594,13 +5499,7 @@ function LinkFloatingToolbar({
   );
 }
 
-function MoreFormattingMenu({
-  hasActions,
-  children,
-}: {
-  hasActions: boolean;
-  children: React.ReactNode;
-}) {
+function MoreFormattingMenu({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const { t } = useTranslation();
 
@@ -5622,24 +5521,18 @@ function MoreFormattingMenu({
         className="w-auto max-w-[calc(100vw-1rem)] p-1"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        {hasActions ? (
-          <div
-            role="toolbar"
-            aria-label={t("editor.hiddenFormattingAria")}
-            className="flex max-w-56 flex-wrap gap-0.5"
-            onClick={(event) => {
-              if ((event.target as HTMLElement).closest("button")) {
-                setOpen(false);
-              }
-            }}
-          >
-            {children}
-          </div>
-        ) : (
-          <p className="text-muted-foreground px-2 py-1.5 text-xs">
-            {t("editor.allActionsVisible")}
-          </p>
-        )}
+        <div
+          role="toolbar"
+          aria-label={t("editor.hiddenFormattingAria")}
+          className="flex max-w-56 flex-wrap gap-0.5"
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest("button")) {
+              setOpen(false);
+            }
+          }}
+        >
+          {children}
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -6028,9 +5921,7 @@ function RichTextToolbar({
       }
     } catch (error) {
       setUploadError(
-        error instanceof Error
-          ? error.message
-          : t("editor.uploadError"),
+        error instanceof Error ? error.message : t("editor.uploadError"),
       );
     } finally {
       setUploading(false);
@@ -6061,7 +5952,7 @@ function RichTextToolbar({
       );
   });
 
-    return (
+  return (
     <div
       className="border-border bg-surface-sunken top-topbar sticky z-20 flex flex-nowrap items-center gap-1 overflow-hidden rounded-t-md border px-1 py-1 shadow-xs md:top-0 [&>button]:shrink-0"
       role="toolbar"
@@ -6173,7 +6064,9 @@ function RichTextToolbar({
             editor={editor}
             label={t("editor.bulletedList")}
             active={editor?.isActive("bulletList")}
-            onClick={() => editor && toggleListBlock(editor, "toggleBulletList")}
+            onClick={() =>
+              editor && toggleListBlock(editor, "toggleBulletList")
+            }
           >
             <List />
           </ToolbarButton>
@@ -6183,7 +6076,9 @@ function RichTextToolbar({
             editor={editor}
             label={t("editor.numberedList")}
             active={editor?.isActive("orderedList")}
-            onClick={() => editor && toggleListBlock(editor, "toggleOrderedList")}
+            onClick={() =>
+              editor && toggleListBlock(editor, "toggleOrderedList")
+            }
           >
             <ListOrdered />
           </ToolbarButton>
@@ -6240,7 +6135,7 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 8 ? (
           <ToolbarButton
             editor={editor}
-                label={t("editor.addLink")}
+            label={t("editor.addLink")}
             onClick={openLinkDialog}
           >
             <Link2 />
@@ -6249,9 +6144,9 @@ function RichTextToolbar({
         {visibleOverflowActionCount > 9 ? (
           <ToolbarButton
             editor={editor}
-              label={
-                uploading ? t("editor.uploadingImage") : t("editor.insertImage")
-              }
+            label={
+              uploading ? t("editor.uploadingImage") : t("editor.insertImage")
+            }
             disabled={uploading}
             onClick={insertImage}
           >
@@ -6311,10 +6206,14 @@ function RichTextToolbar({
           <Redo2 />
         </ToolbarButton>
         {visibleOverflowActionCount < 11 ? (
-          <MoreFormattingMenu hasActions>
+          <MoreFormattingMenu>
             {visibleOverflowActionCount < 1 ? (
               <OverflowToolbarButton
-                label={wrapText ? t("sourceEditor.unwrapText") : t("sourceEditor.wrapText")}
+                label={
+                  wrapText
+                    ? t("sourceEditor.unwrapText")
+                    : t("sourceEditor.wrapText")
+                }
                 active={wrapText}
                 onClick={onToggleWrap}
               >
@@ -6325,7 +6224,9 @@ function RichTextToolbar({
               <OverflowToolbarButton
                 label={t("editor.bulletedList")}
                 active={editor?.isActive("bulletList")}
-                onClick={() => editor && toggleListBlock(editor, "toggleBulletList")}
+                onClick={() =>
+                  editor && toggleListBlock(editor, "toggleBulletList")
+                }
               >
                 <List />
               </OverflowToolbarButton>
@@ -6345,7 +6246,9 @@ function RichTextToolbar({
               <OverflowToolbarButton
                 label={t("slash.todoListLabel")}
                 active={editor?.isActive("taskList")}
-                onClick={() => editor && toggleListBlock(editor, "toggleTaskList")}
+                onClick={() =>
+                  editor && toggleListBlock(editor, "toggleTaskList")
+                }
               >
                 <ListTodo />
               </OverflowToolbarButton>
@@ -6388,14 +6291,19 @@ function RichTextToolbar({
               </OverflowToolbarButton>
             ) : null}
             {visibleOverflowActionCount < 9 ? (
-              <OverflowToolbarButton             label={t("editor.addLink")} onClick={openLinkDialog}>
+              <OverflowToolbarButton
+                label={t("editor.addLink")}
+                onClick={openLinkDialog}
+              >
                 <Link2 />
               </OverflowToolbarButton>
             ) : null}
             {visibleOverflowActionCount < 10 ? (
               <OverflowToolbarButton
                 label={
-                  uploading ? t("editor.uploadingImage") : t("editor.insertImage")
+                  uploading
+                    ? t("editor.uploadingImage")
+                    : t("editor.insertImage")
                 }
                 disabled={uploading}
                 onClick={insertImage}
@@ -6407,21 +6315,19 @@ function RichTextToolbar({
                 )}
               </OverflowToolbarButton>
             ) : null}
-            {visibleOverflowActionCount < 11 ? (
-              <OverflowToolbarButton
-                label={
-                  uploading ? t("editor.uploadingFile") : t("editor.uploadFile")
-                }
-                disabled={uploading}
-                onClick={insertAttachment}
-              >
-                {uploading ? (
-                  <Paperclip className="animate-pulse" />
-                ) : (
-                  <Paperclip />
-                )}
-              </OverflowToolbarButton>
-            ) : null}
+            <OverflowToolbarButton
+              label={
+                uploading ? t("editor.uploadingFile") : t("editor.uploadFile")
+              }
+              disabled={uploading}
+              onClick={insertAttachment}
+            >
+              {uploading ? (
+                <Paperclip className="animate-pulse" />
+              ) : (
+                <Paperclip />
+              )}
+            </OverflowToolbarButton>
           </MoreFormattingMenu>
         ) : null}
       </div>
@@ -6478,7 +6384,10 @@ function RichTextToolbar({
                 {t("editor.openLinkIn")}
               </label>
               <Select value={linkTarget} onValueChange={setLinkTarget}>
-                <SelectTrigger id="link-target" aria-label={t("editor.openLinkIn")}>
+                <SelectTrigger
+                  id="link-target"
+                  aria-label={t("editor.openLinkIn")}
+                >
                   <SelectValue>
                     {linkTarget === "_blank"
                       ? t("editor.targetBlank")
@@ -6486,8 +6395,12 @@ function RichTextToolbar({
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="_self">{t("editor.targetSelf")}</SelectItem>
-                  <SelectItem value="_blank">{t("editor.targetBlank")}</SelectItem>
+                  <SelectItem value="_self">
+                    {t("editor.targetSelf")}
+                  </SelectItem>
+                  <SelectItem value="_blank">
+                    {t("editor.targetBlank")}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -6539,7 +6452,8 @@ function RichTextToolbar({
             >
               {pagePickerLoading ? (
                 <p className="text-muted-foreground flex items-center gap-2 px-2 py-1.5 text-sm">
-                  <Loader2 className="size-4 animate-spin" /> {t("editor.loadingPages")}
+                  <Loader2 className="size-4 animate-spin" />{" "}
+                  {t("editor.loadingPages")}
                 </p>
               ) : (
                 (() => {
@@ -7251,7 +7165,9 @@ function ImageLightbox({
     startOffsetX: number;
     startOffsetY: number;
   } | null>(null);
-  const viewportRef = useRef<HTMLDivElement>(null);
+  // State rather than a ref: the dialog's content mounts a moment after this
+  // component does, and the wheel listener has to be attached once it exists.
+  const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
 
   // Changing scale from a user gesture (wheel, buttons) also snaps the pan
   // back to centered once fully zoomed out, rather than leaving the image
@@ -7265,15 +7181,14 @@ function ImageLightbox({
   };
 
   useEffect(() => {
-    const el = viewportRef.current;
-    if (!el || !image) return;
+    if (!viewport) return;
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
       applyScale((prev) => prev - event.deltaY * 0.0015);
     };
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => el.removeEventListener("wheel", handleWheel);
-  }, [image]);
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, [viewport]);
 
   const resetZoom = () => {
     setScale(1);
@@ -7345,7 +7260,7 @@ function ImageLightbox({
             >
               <ZoomOut className="size-4" />
             </Button>
-            <span className="w-11 text-center text-xs font-medium tabular-nums text-white/80">
+            <span className="w-11 text-center text-xs font-medium text-white/80 tabular-nums">
               {Math.round(scale * 100)}%
             </span>
             <Button
@@ -7383,7 +7298,7 @@ function ImageLightbox({
           </div>
         </div>
         <div
-          ref={viewportRef}
+          ref={setViewport}
           onClick={closeOnBackdrop}
           className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-4"
         >
@@ -7409,7 +7324,11 @@ function ImageLightbox({
               className={cn(
                 "max-h-full max-w-full touch-none object-contain select-none",
                 !isDragging && "transition-transform duration-100",
-                scale > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "",
+                scale > 1
+                  ? isDragging
+                    ? "cursor-grabbing"
+                    : "cursor-grab"
+                  : "",
               )}
             />
           ) : null}
@@ -7566,7 +7485,6 @@ function AttachmentDetailsModal({
   const [error, setError] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<AttachmentMetadata | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
-  const [textLoading, setTextLoading] = useState(false);
   const [wrapLines, setWrapLines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeMatchIdx, setActiveMatchIdx] = useState(0);
@@ -7604,7 +7522,9 @@ function AttachmentDetailsModal({
             envelope?.error?.message ??
               (response.status === 404
                 ? t("editor.attachmentGone")
-                : t("editor.couldNotRetrieveDetails", { status: response.status })),
+                : t("editor.couldNotRetrieveDetails", {
+                    status: response.status,
+                  })),
           );
         }
         const data = (await response.json()) as AttachmentMetadata;
@@ -7616,7 +7536,6 @@ function AttachmentDetailsModal({
             data.filename,
           );
         if (isText) {
-          setTextLoading(true);
           try {
             const res = await fetch(
               `/api/v1/attachments/${attachmentId}/content`,
@@ -7624,8 +7543,6 @@ function AttachmentDetailsModal({
             if (res.ok) setTextContent(await res.text());
           } catch (e) {
             console.error("Error reading file content", e);
-          } finally {
-            setTextLoading(false);
           }
         }
       } catch (err) {
@@ -7713,14 +7630,6 @@ function AttachmentDetailsModal({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const formatDate = (dateStr: string) => {
-    try {
-      return formatDateTime(dateStr, attachmentLocale);
-    } catch {
-      return dateStr;
-    }
-  };
-
   const isImage = metadata ? metadata.content_type.startsWith("image/") : false;
   const isPdf = metadata ? metadata.content_type === "application/pdf" : false;
   const isVideo = metadata
@@ -7759,13 +7668,21 @@ function AttachmentDetailsModal({
             role="tooltip"
             className="bg-surface-raised border-border text-muted-foreground pointer-events-none absolute top-full left-0 z-50 mt-2 grid w-max max-w-[min(28rem,calc(100vw-4rem))] grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border p-3 text-xs font-normal opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
           >
-            <span className="text-foreground font-semibold">{t("editor.fileLabel")}</span>
+            <span className="text-foreground font-semibold">
+              {t("editor.fileLabel")}
+            </span>
             <span className="break-all">{metadata.filename}</span>
-            <span className="text-foreground font-semibold">{t("editor.sizeLabel")}</span>
+            <span className="text-foreground font-semibold">
+              {t("editor.sizeLabel")}
+            </span>
             <span>{formatSize(metadata.size_bytes)}</span>
-            <span className="text-foreground font-semibold">{t("editor.typeLabel")}</span>
+            <span className="text-foreground font-semibold">
+              {t("editor.typeLabel")}
+            </span>
             <span className="break-all">{metadata.content_type}</span>
-            <span className="text-foreground font-semibold">{t("editor.uploadedLabel")}</span>
+            <span className="text-foreground font-semibold">
+              {t("editor.uploadedLabel")}
+            </span>
             <span>{formatDateTime(metadata.created_at, attachmentLocale)}</span>
           </span>
         </span>
@@ -7829,7 +7746,9 @@ function AttachmentDetailsModal({
         {loading ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2">
             <Loader2 className="text-muted-foreground size-8 animate-spin" />
-            <p className="text-muted-foreground text-sm">{t("editor.loadingDetails")}</p>
+            <p className="text-muted-foreground text-sm">
+              {t("editor.loadingDetails")}
+            </p>
           </div>
         ) : error ? (
           <div className="text-danger flex h-48 flex-col items-center justify-center gap-2">
@@ -7852,7 +7771,9 @@ function AttachmentDetailsModal({
             {/* Compact details bar */}
             <div className="hidden">
               <div className={cn(isOffice && "min-w-0 shrink")}>
-                <span className="text-foreground font-semibold">{t("editor.fileLabel")} </span>
+                <span className="text-foreground font-semibold">
+                  {t("editor.fileLabel")}{" "}
+                </span>
                 <span
                   className={cn(
                     isOffice &&
@@ -7864,11 +7785,15 @@ function AttachmentDetailsModal({
                 </span>
               </div>
               <div>
-                <span className="text-foreground font-semibold">{t("editor.sizeLabel")} </span>
+                <span className="text-foreground font-semibold">
+                  {t("editor.sizeLabel")}{" "}
+                </span>
                 <span>{formatSize(metadata.size_bytes)}</span>
               </div>
               <div>
-                <span className="text-foreground font-semibold">{t("editor.typeLabel")} </span>
+                <span className="text-foreground font-semibold">
+                  {t("editor.typeLabel")}{" "}
+                </span>
                 <span title={metadata.content_type}>
                   {metadata.content_type}
                 </span>
@@ -7877,7 +7802,9 @@ function AttachmentDetailsModal({
                 <span className="text-foreground font-semibold">
                   {t("editor.uploadedLabel")}
                 </span>
-                <span>{formatDateTime(metadata.created_at, attachmentLocale)}</span>
+                <span>
+                  {formatDateTime(metadata.created_at, attachmentLocale)}
+                </span>
               </div>
             </div>
 
@@ -7908,7 +7835,9 @@ function AttachmentDetailsModal({
                     href={contentUrl}
                     download={metadata.filename}
                     className="text-muted-foreground border-border bg-surface hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1 rounded border px-2 text-xs font-medium tracking-normal normal-case transition-[color,background-color,border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-                    title={t("editor.downloadNamed", { filename: metadata.filename })}
+                    title={t("editor.downloadNamed", {
+                      filename: metadata.filename,
+                    })}
                   >
                     <Download className="size-3.5" aria-hidden="true" />
                     <span>{t("editor.download")}</span>
@@ -8093,13 +8022,6 @@ function AttachmentDetailsModal({
                       </div>
                     ))}
                   </div>
-                ) : textLoading ? (
-                  <div className="flex flex-col items-center justify-center gap-2 py-4">
-                    <Loader2 className="text-muted-foreground size-5 animate-spin" />
-                    <span className="text-muted-foreground text-xs">
-                      {t("editor.loadingContent")}
-                    </span>
-                  </div>
                 ) : isPdf ? (
                   <PdfAttachmentPreview
                     contentUrl={contentUrl}
@@ -8118,7 +8040,6 @@ function AttachmentDetailsModal({
                 )}
               </div>
             </div>
-
           </div>
         ) : null}
       </DialogContent>

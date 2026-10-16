@@ -13,6 +13,7 @@ from app.modules.ai.config import AIConfig
 from app.modules.ai.page_context import keywords, parse_questions, wiki_context
 from app.modules.ai.service import AIService
 from app.schemas.ai import PageAnswer, PageDraftRequest
+from tests.unit.ai_fakes import fake_chat
 
 QUESTIONS = {
     "questions": [
@@ -98,7 +99,7 @@ class Harness:
             return "Write a page."
 
         monkeypatch.setattr(service_module, "load_config", config)
-        monkeypatch.setattr(service_module, "chat", chat)
+        fake_chat(monkeypatch, chat)
         monkeypatch.setattr(service_module, "find_related", related)
         monkeypatch.setattr(service_module, "page_draft_instructions", instructions)
         monkeypatch.setattr(service_module.rate_limit, "enforce", enforce)

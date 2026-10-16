@@ -12,6 +12,7 @@ import pytest
 from app.modules.ai import service as service_module
 from app.modules.ai.config import AIConfig
 from app.modules.ai.service import AIService
+from tests.unit.ai_fakes import fake_chat
 
 PAGE_TEXT = "Run the restart script on the host and then check the queue. " * 6
 
@@ -61,7 +62,7 @@ class Harness:
         monkeypatch.setattr(service_module, "get_redis", lambda: self.redis)
         monkeypatch.setattr(service_module, "load_config", config)
         monkeypatch.setattr(service_module, "summary_instructions", instructions)
-        monkeypatch.setattr(service_module, "chat", chat)
+        fake_chat(monkeypatch, chat)
         monkeypatch.setattr(service_module.rate_limit, "enforce", enforce)
 
         async def visible(_self: object, _key: str, _slug: str) -> SimpleNamespace:

@@ -39,7 +39,11 @@ from app.models.permission import (
     SpaceGroupPermission,
     UserGlobalPermissionOverride,
 )
-from app.models.restriction import PageGroupRestriction, PageRestrictionPermission, PageUserRestriction
+from app.models.restriction import (
+    PageGroupRestriction,
+    PageRestrictionPermission,
+    PageUserRestriction,
+)
 from app.models.revision import PageRevision
 from app.models.share import PageShare
 from app.models.space import Space, SpaceOwner, SpaceRole, SpaceStatus, SpaceVisibility
@@ -354,7 +358,9 @@ class TestRoundTrip:
         archive = str(tmp_path / "overwrite-with-job.zip")
         await BackupService(session, actor=seeded["admin"]).export_full_package(archive, storage)  # type: ignore[arg-type]
 
-        job = BackupJob(kind="full_import", status="running", phase="restoring", cancel_requested=False)
+        job = BackupJob(
+            kind="full_import", status="running", phase="restoring", cancel_requested=False
+        )
         session.add(job)
         await session.flush()
 
@@ -642,7 +648,10 @@ class TestRoundTrip:
 
         await _wipe(session)
         report = await BackupService(session).restore_full_package(
-            archive, storage, dry_run=False, space_keys={"eng"}  # lowercase: keys are matched case-insensitively
+            archive,
+            storage,
+            dry_run=False,
+            space_keys={"eng"},  # lowercase: keys are matched case-insensitively
         )
 
         restored_spaces = (await session.execute(select(Space))).scalars().all()
@@ -653,7 +662,9 @@ class TestRoundTrip:
         restored_attachments = (await session.execute(select(PageAttachment))).scalars().all()
         assert len(restored_attachments) == 1
         assert objects[restored_attachments[0].object_key] == b"eng bytes"
-        assert report.skipped.get("space", 0) == 0  # never created, not "skipped" - it just wasn't offered.
+        assert (
+            report.skipped.get("space", 0) == 0
+        )  # never created, not "skipped" - it just wasn't offered.
 
         # The identity graph (users) still restores in full regardless of scope.
         restored_users = (await session.execute(select(User))).scalars().all()
@@ -931,9 +942,7 @@ class TestRoundTrip:
         # the (space, user) rows `SpaceOwner`'s unique constraint protects.
         second_report = await BackupService(session).import_document(document, dry_run=False)
         assert second_report.skipped["space_owner"] == 2
-        assert (
-            len((await session.execute(select(SpaceOwner))).scalars().all()) == 2
-        )
+        assert len((await session.execute(select(SpaceOwner))).scalars().all()) == 2
 
     async def test_full_zip_restores_space_owners(
         self, session: AsyncSession, tmp_path: Path
@@ -976,23 +985,23 @@ class TestRoundTrip:
         loose = await pages.create(space, PageCreate(title="Loose", parent_id=parent.id), alice)
         permissions = PermissionService(session)
         edit = PageRestrictionPermission.edit
-        await permissions.set_page_restriction(parent, alice.id, edit, alice, group=False, present=True)
-        await permissions.set_page_restriction(child, bob.id, edit, alice, group=False, present=True)
+        await permissions.set_page_restriction(
+            parent, alice.id, edit, alice, group=False, present=True
+        )
+        await permissions.set_page_restriction(
+            child, bob.id, edit, alice, group=False, present=True
+        )
         await permissions.set_page_inheritance(loose, alice, inherit=False)
         await session.flush()
         return seeded
 
     async def _assert_restrictions_restored(self, session: AsyncSession) -> None:
-        pages = {
-            page.slug: page for page in (await session.execute(select(WikiPage))).scalars()
-        }
+        pages = {page.slug: page for page in (await session.execute(select(WikiPage))).scalars()}
         assert pages["locked-parent"].view_restricted is True
         assert pages["own-list"].view_restricted is True  # its own list, not Open
         assert pages["own-list"].inherit_restrictions is True
         assert pages["loose"].inherit_restrictions is False
-        users = {
-            user.username: user for user in (await session.execute(select(User))).scalars()
-        }
+        users = {user.username: user for user in (await session.execute(select(User))).scalars()}
         bob_page = pages["own-list"]
         permissions = PermissionService(session)
         assert await permissions.can_edit_page(bob_page, users["bob"])  # the own list is honoured
@@ -1117,15 +1126,28 @@ class TestRoundTrip:
         alice: User = seeded["alice"]  # type: ignore[assignment]
         created = datetime(2019, 5, 1, tzinfo=UTC)
         parent = WikiPage(
-            space_id=space.id, title="Root", slug="root-page", content="r",
-            created_by_id=alice.id, updated_by_id=alice.id, created_at=created, updated_at=created,
+            space_id=space.id,
+            title="Root",
+            slug="root-page",
+            content="r",
+            created_by_id=alice.id,
+            updated_by_id=alice.id,
+            created_at=created,
+            updated_at=created,
         )
         session.add(parent)
         await session.flush()
         session.add(
             WikiPage(
-                space_id=space.id, parent_id=parent.id, title="Leaf", slug="leaf-page", content="l",
-                created_by_id=alice.id, updated_by_id=alice.id, created_at=created, updated_at=created,
+                space_id=space.id,
+                parent_id=parent.id,
+                title="Leaf",
+                slug="leaf-page",
+                content="l",
+                created_by_id=alice.id,
+                updated_by_id=alice.id,
+                created_at=created,
+                updated_at=created,
             )
         )
         await session.flush()
@@ -1171,9 +1193,7 @@ class TestRoundTrip:
         # Membership survived, resolved through natural keys.
         assert await spaces.role_of(restored_space, restored_alice) is SpaceRole.admin
 
-    async def test_restores_pins_drafts_tags_and_page_labels(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_restores_pins_drafts_tags_and_page_labels(self, session: AsyncSession) -> None:
         """The per-user data _apply applies but nothing else exercises against a
         real database - every other case in this file covers it only with a
         mocked session (test_service_apply.py) or checks it made it into the
@@ -1247,9 +1267,7 @@ class TestRoundTrip:
         assert draft.content == "<p>in progress</p>"
 
         tag = (
-            await session.execute(
-                select(UserTag).where(UserTag.user_id == restored_alice.id)
-            )
+            await session.execute(select(UserTag).where(UserTag.user_id == restored_alice.id))
         ).scalar_one()
         assert tag.name == "on-call"
 
@@ -1270,19 +1288,29 @@ class TestRoundTrip:
         space: Space = seeded["space"]  # type: ignore[assignment]
 
         page = WikiPage(
-            space_id=space.id, title="Runbook", slug="runbook", content="<p>x</p>",
-            created_by_id=alice.id, updated_by_id=alice.id,
+            space_id=space.id,
+            title="Runbook",
+            slug="runbook",
+            content="<p>x</p>",
+            created_by_id=alice.id,
+            updated_by_id=alice.id,
         )
         session.add(page)
         await session.flush()
         root = PageComment(
-            page_id=page.id, author_id=alice.id, body="root", mentions=["bob"],
+            page_id=page.id,
+            author_id=alice.id,
+            body="root",
+            mentions=["bob"],
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
         session.add(root)
         await session.flush()
         reply = PageComment(
-            page_id=page.id, parent_id=root.id, author_id=bob.id, body="reply",
+            page_id=page.id,
+            parent_id=root.id,
+            author_id=bob.id,
+            body="reply",
             created_at=datetime(2026, 1, 2, tzinfo=UTC),
         )
         session.add(reply)
@@ -1300,9 +1328,7 @@ class TestRoundTrip:
         report = await BackupService(session).import_document(doc, dry_run=False)
         assert report.created["page_comment"] == 2
 
-        restored = {
-            row.id: row for row in (await session.execute(select(PageComment))).scalars()
-        }
+        restored = {row.id: row for row in (await session.execute(select(PageComment))).scalars()}
         assert set(restored) == {root_id, reply_id}
         assert restored[reply_id].parent_id == root_id
         assert restored[root_id].mentions == ["bob"]
@@ -1322,13 +1348,19 @@ class TestRoundTrip:
         bob: User = seeded["bob"]  # type: ignore[assignment]
         space: Space = seeded["space"]  # type: ignore[assignment]
         page = WikiPage(
-            space_id=space.id, title="Runbook", slug="runbook", content="<p>x</p>",
-            created_by_id=alice.id, updated_by_id=alice.id,
+            space_id=space.id,
+            title="Runbook",
+            slug="runbook",
+            content="<p>x</p>",
+            created_by_id=alice.id,
+            updated_by_id=alice.id,
         )
         session.add(page)
         await session.flush()
         shared = PageShare(
-            page_id=page.id, shared_by_id=alice.id, recipient_id=bob.id,
+            page_id=page.id,
+            shared_by_id=alice.id,
+            recipient_id=bob.id,
             created_at=datetime(2026, 1, 3, tzinfo=UTC),
         )
         orphan = PageShare(page_id=page.id, shared_by_id=None, recipient_id=bob.id)
@@ -1349,10 +1381,27 @@ class TestRoundTrip:
         restored = await session.get(PageShare, shared_id)
         assert restored is not None
         assert restored.created_at == datetime(2026, 1, 3, tzinfo=UTC)
-        assert {row.shared_by_id is None for row in (await session.execute(select(PageShare))).scalars()} == {True, False}
+        assert {
+            row.shared_by_id is None for row in (await session.execute(select(PageShare))).scalars()
+        } == {True, False}
 
         again = await BackupService(session).import_document(doc, dry_run=False)
         assert again.created.get("page_share", 0) == 0
+        assert await _count(session, PageShare) == 2
+
+        # A share to someone the backup does not carry cannot be restored.
+        ghost = doc.model_copy(
+            update={
+                "page_shares": [
+                    doc.page_shares[0].model_copy(
+                        update={"id": uuid.uuid4(), "recipient_username": "ghost"}
+                    )
+                ]
+            }
+        )
+        missing = await BackupService(session).import_document(ghost, dry_run=False)
+        reasons = {(e.kind, e.reason) for e in missing.entries if e.outcome == "skipped"}
+        assert ("page_share", "missing_reference") in reasons
         assert await _count(session, PageShare) == 2
 
     async def test_credentials_survive_when_exported(self, session: AsyncSession) -> None:
@@ -1559,7 +1608,9 @@ class TestReapAbandonedExportJobs:
     ) -> None:
         stale_for_export = datetime.now(UTC) - STALE_JOB_AFTER - timedelta(seconds=1)
         restore = BackupJob(
-            kind="full_import", status="running", phase="restoring",
+            kind="full_import",
+            status="running",
+            phase="restoring",
             heartbeat_at=stale_for_export,
         )
         session.add(restore)
@@ -1575,7 +1626,9 @@ class TestReapAbandonedExportJobs:
     ) -> None:
         stale_for_restore = datetime.now(UTC) - STALE_RESTORE_JOB_AFTER - timedelta(seconds=1)
         restore = BackupJob(
-            kind="full_import", status="running", phase="restoring",
+            kind="full_import",
+            status="running",
+            phase="restoring",
             heartbeat_at=stale_for_restore,
         )
         session.add(restore)
@@ -1592,7 +1645,9 @@ class TestReapAbandonedExportJobs:
         being caught quickly rather than borrowing the restore's patience."""
         stale_for_export = datetime.now(UTC) - STALE_JOB_AFTER - timedelta(seconds=1)
         export = BackupJob(
-            kind="full_export", status="running", phase="exporting",
+            kind="full_export",
+            status="running",
+            phase="exporting",
             heartbeat_at=stale_for_export,
         )
         session.add(export)
@@ -1669,9 +1724,7 @@ class TestRunBackupJobPersistsOutput:
         fell back to a bare timestamp instead. The name is a pure function of
         `created_at`, so `create_export_job` sets it immediately rather than
         waiting for the export to actually produce a file."""
-        job = await create_export_job(
-            session, actor_id=None, kind="full_export", automated=True
-        )
+        job = await create_export_job(session, actor_id=None, kind="full_export", automated=True)
 
         assert job.output_filename == f"wikihub-auto-backup-{job.created_at:%d%m%Y-%H%M%S}.zip"
         # Distinct from `local_filename`, which means "a file exists on disk
@@ -1993,7 +2046,9 @@ async def _seed_permissions_and_discussion(session: AsyncSession) -> dict[str, o
     alice: User = seeded["alice"]  # type: ignore[assignment]
     bob: User = seeded["bob"]  # type: ignore[assignment]
     carol = await AuthService(session).create_user(
-        UserCreate(username="carol", email="carol@example.com", full_name="Carol", password="carol-pass-1")
+        UserCreate(
+            username="carol", email="carol@example.com", full_name="Carol", password="carol-pass-1"
+        )
     )
     permissions = PermissionService(session)
 
@@ -2018,8 +2073,12 @@ async def _seed_permissions_and_discussion(session: AsyncSession) -> dict[str, o
         ]
     )
     await session.flush()
-    await permissions.set_space_permission(space, team.id, Permission.add, alice, group=True, present=True)
-    await permissions.set_space_permission(space, bob.id, Permission.view, alice, group=False, present=True)
+    await permissions.set_space_permission(
+        space, team.id, Permission.add, alice, group=True, present=True
+    )
+    await permissions.set_space_permission(
+        space, bob.id, Permission.view, alice, group=False, present=True
+    )
     await permissions.set_space_owners(space, [alice.id], alice)
 
     pages = PageService(session)
@@ -2031,7 +2090,9 @@ async def _seed_permissions_and_discussion(session: AsyncSession) -> dict[str, o
         locked, team.id, PageRestrictionPermission.edit, alice, group=True, present=True
     )
     await permissions.set_page_restriction(locked, bob.id, view, alice, group=False, present=True)
-    await permissions.set_page_permission_denial(locked, carol.id, view, alice, group=False, denied=True)
+    await permissions.set_page_permission_denial(
+        locked, carol.id, view, alice, group=False, denied=True
+    )
     await permissions.set_page_inheritance(loose, alice, inherit=False)
 
     root = PageComment(page_id=follows.id, author_id=alice.id, body="root @bob", mentions=["bob"])
@@ -2058,17 +2119,23 @@ async def _assert_permissions_and_discussion(session: AsyncSession) -> None:
 
     team = (await session.execute(select(Group).where(Group.name == "team-sec"))).scalar_one()
     owner_ids = set(
-        (await session.execute(select(GroupOwner.user_id).where(GroupOwner.group_id == team.id))).scalars()
+        (
+            await session.execute(select(GroupOwner.user_id).where(GroupOwner.group_id == team.id))
+        ).scalars()
     )
     assert owner_ids == {alice.id, bob.id}
-    assert await permissions.has_global(carol, GlobalPermission.manage_groups) is False  # denial kept
+    assert (
+        await permissions.has_global(carol, GlobalPermission.manage_groups) is False
+    )  # denial kept
     assert await permissions.has_global(bob, GlobalPermission.manage_users) is True  # grant kept
 
     space = await SpaceService(session).get_by_key("SEC")
     assert space.visibility is SpaceVisibility.restricted
     assert {o.username for o in await permissions.list_space_owners(space)} == {"alice"}
     assert Permission.add in await permissions.effective_permissions(space, carol)  # via the group
-    assert Permission.add not in await permissions.effective_permissions(space, bob)  # direct View only
+    assert Permission.add not in await permissions.effective_permissions(
+        space, bob
+    )  # direct View only
 
     pages = {p.slug: p for p in (await session.execute(select(WikiPage))).scalars()}
     locked, follows, loose = pages["locked"], pages["follows"], pages["loose"]
@@ -2093,8 +2160,14 @@ class TestPermissionsAndCommentsRoundTrip:
     ) -> None:
         seeded = await _seed_permissions_and_discussion(session)
         doc = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
-        assert {g.name: sorted(g.owner_usernames) for g in doc.groups}["team-sec"] == ["alice", "bob"]
-        assert {(o.username, o.permission.value, o.enabled) for o in doc.user_global_permission_overrides} == {
+        assert {g.name: sorted(g.owner_usernames) for g in doc.groups}["team-sec"] == [
+            "alice",
+            "bob",
+        ]
+        assert {
+            (o.username, o.permission.value, o.enabled)
+            for o in doc.user_global_permission_overrides
+        } == {
             ("bob", "manage_users", True),
             ("carol", "manage_groups", False),
         }

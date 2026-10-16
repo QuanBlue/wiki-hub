@@ -32,11 +32,21 @@ export const sectionsEn: HelpSection[] = [
         </Callout>
 
         <Callout variant="note" title="WHAT SEARCH ACTUALLY MATCHES">
-          Search looks for your text inside space names/keys/descriptions and page
-          titles/content - a plain substring match, not a ranked full-text search. It
-          does not currently search attachment filenames or attachment content, and
-          only ever shows results you have permission to see. There are no date, space,
-          or author filters.
+          Search looks for your words inside space names/keys/descriptions and page
+          titles/content, ignores accents and capitals (<Code>giam sat</Code> finds{" "}
+          <Code>Giám sát</Code>) and forgives small typos in titles. You can type a whole
+          question, such as <Code>ip của Tessel Abbott là bao nhiêu?</Code> - filler words
+          are ignored. Rarer words count for more (in <Code>tài khoản cloud của nuti</Code>{" "}
+          the word <Code>nuti</Code> decides), a match in the <strong>title</strong> counts
+          extra, and a page is only listed if it covers most of what you typed. Common
+          Vietnamese and English pairs are treated as the same word - <Code>tài khoản</Code>{" "}
+          finds <Code>Account</Code>, <Code>cài đặt</Code> finds <Code>install</Code> - and
+          the words found are highlighted in the results, with the passage that has them
+          shown under the title. If an administrator has set an{" "}
+          <strong>Semantic search</strong> (see AI assistant), search also finds pages by{" "}
+          <strong>meaning</strong>, even when they share none of your words. It does not
+          currently search attachment filenames or attachment content, and only ever shows
+          results you have permission to see. There are no date, space, or author filters.
         </Callout>
 
         <p className="mt-3">
@@ -272,6 +282,61 @@ export const sectionsEn: HelpSection[] = [
             what you&apos;ve starred.
           </li>
         </ol>
+      </>
+    ),
+  },
+  {
+    id: "ask-ai-from-search",
+    title: "Ask AI from search",
+    category: "Workspace",
+    description: "Ask a question in the search box and get an answer written from your wiki pages, with the pages it used.",
+    keywords: ["ai", "ask", "question", "answer", "search", "sources", "citation", "assistant"],
+    body: (
+      <>
+        <p>
+          Quick search can answer a question, not only list pages. Open search (<Kbd>Ctrl+K</Kbd> or
+          the search bar), type a question such as <Code>what is the IP of the DMS SaaS system?</Code>
+          and click <Code>Ask AI</Code> at the top of the results, or press <Kbd>Ctrl+Enter</Kbd>.
+          Plain <Kbd>Enter</Kbd> still opens the highlighted result. The row only appears when an
+          administrator has connected an AI endpoint and the question is at least two characters.
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>
+            <strong>The answer</strong> is short and every statement carries a numbered mark such as{" "}
+            <Code>1</Code>. Click a mark to open the page it came from. A list of several things
+            (systems with their addresses, accounts, servers) comes back as a table. Under the
+            answer, <Code>Sources</Code> lists the pages the marks stand for, one line each - hover a
+            row to see the part of the page that was read. <Code>Also read</Code> is folded away
+            below it and lists pages that were only looked at, never cited, so they cannot be taken
+            for sources.
+          </li>
+          <li>
+            <strong>Going back</strong>: <Code>Results</Code> or <Kbd>Esc</Kbd> returns to the normal
+            results (a second <Kbd>Esc</Kbd> closes search). Changing the question leaves the answer,
+            because it belongs to the question it was written for.
+          </li>
+          <li>
+            <strong>What it reads</strong>: only pages you can open. Page and space permissions apply
+            exactly as in normal search, so a restricted page is never read on your behalf.
+            Passwords, tokens and keys are replaced with <Code>[hidden]</Code> before the AI reads
+            them and again in what it writes - open the source page to see them yourself.
+          </li>
+          <li>
+            <strong>When there is no answer</strong>, it says so and offers the pages that may help.
+            WikiHub never shows an answer it cannot tie to a page: a reply with no valid page mark is
+            discarded.
+          </li>
+          <li>
+            <strong>Cost</strong>: a question uses the same hourly limit as the other AI features.
+            Asking the same thing again within an hour, while the pages are unchanged, is served from a
+            saved copy and costs nothing. A question that matches no page never reaches the model.
+            Administrators see these under <Code>Questions answered</Code> in the AI usage statistics.
+          </li>
+        </ul>
+        <Callout>
+          The AI can misread a page. Open the sources before you rely on an answer for something that
+          matters.
+        </Callout>
       </>
     ),
   },
@@ -1501,6 +1566,16 @@ export const sectionsEn: HelpSection[] = [
           caption="Your account - Profile, Password & authentication, Sessions, Keyboard shortcuts."
         />
 
+        <p className="mt-3 text-sm">
+          A member's <strong>profile</strong> opens with a contribution chart: one square per day
+          over the last year, darker on days with more page edits. Hover a square for its date and
+          count, and pick another year on the right to look further back.
+        </p>
+        <p className="mt-3 text-sm">
+          In the activity feed, a page you edited several times in a row appears as one row,
+          <strong> Updated 6 times</strong>. Click it to see every edit with its own{" "}
+          <strong>view change</strong> link.
+        </p>
         <p className="mt-3 font-semibold text-foreground">1. User Profile Settings:</p>
         <ul className="list-disc pl-5 space-y-1 text-sm">
           <li>
@@ -1953,6 +2028,127 @@ export const sectionsEn: HelpSection[] = [
     ),
   },
   {
+    id: "admin-statistics",
+    title: "Statistics",
+    category: "Administration",
+    description:
+      "See how WikiHub is used: people, edits, page views, AI token usage, and the most viewed, starred and saved pages and spaces.",
+    keywords: [
+      "statistics",
+      "stats",
+      "analytics",
+      "dashboard",
+      "chart",
+      "views",
+      "visits",
+      "tokens",
+      "ai usage",
+      "most viewed",
+      "stars",
+      "saves",
+      "active users",
+    ],
+    body: (
+      <>
+        <p>
+          Administrators open <strong>Administration &gt; Statistics</strong> to see how
+          the workspace is being used. Pick <strong>7, 30 or 90 days</strong> at the top
+          right; every number and chart on the page follows that range.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Overview</p>
+        <ul className="mt-1 list-disc space-y-1 pl-5">
+          <li>
+            Headline cards: users, people active in the range, new users, pages, spaces,
+            edits and page views, each with a derived figure underneath (new users in the
+            range, share of people who were active, average per day, pages per space).
+          </li>
+          <li>
+            Daily charts of page views, edits and new users, each with its total, the
+            change from the first half of the range to the second, the daily average and
+            the busiest day. Hover a chart, or focus it and use the <Kbd>←</Kbd> and{" "}
+            <Kbd>→</Kbd> keys, to read each day.
+          </li>
+          <li>Recent activity: the latest entries from the audit log.</li>
+        </ul>
+
+        <p className="mt-3 font-semibold text-foreground">AI usage</p>
+        <p>
+          Tokens spent by the AI assistant, as reported by the AI gateway: total, prompt
+          and completion tokens, requests, a daily chart, and a breakdown{" "}
+          <strong>by person</strong> and <strong>by feature</strong> (page summaries,
+          creating a page, the writing assistant, labels and related pages, explaining or
+          translating a selection).
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Pages and Spaces</p>
+        <p>
+          Ranked tables of the most <strong>viewed</strong>, <strong>starred</strong> and
+          (for pages) <strong>saved</strong> items. Use <strong>Rank by</strong> to switch.
+          Views follow the selected range; stars and saves are all-time totals. A page
+          counts as starred when people like it, and as saved when people pin it.
+        </p>
+
+        <Callout>
+          Page views and AI tokens are counted from the day this feature was switched on;
+          earlier activity was never recorded, so a new range can show zeros at first.
+          Token counts also depend on the AI gateway reporting its usage. Only system
+          administrators can open this page.
+        </Callout>
+      </>
+    ),
+  },
+  {
+    id: "admin-server-monitor",
+    title: "Server monitor",
+    category: "Administration",
+    description:
+      "See the server and WikiHub's own Docker containers, with their logs.",
+    keywords: ["server", "monitor", "docker", "cpu", "memory", "logs", "container", "uptime"],
+    body: (
+      <>
+        <p>
+          System administrators open <strong>Administration &gt; Server</strong> to see the
+          machine WikiHub runs on and WikiHub's own Docker containers. Other services on the
+          same host are never listed, and their logs cannot be opened - the server refuses the
+          request, not just the page. The page refreshes every five seconds while it is open
+          (and not while the tab is hidden).
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>
+            <strong>Server cards</strong>: CPU load against the number of cores (with the 5
+            and 15 minute averages), memory (with swap and what is still available), the disk
+            holding WikiHub and how much is free, and how long the server has been up with
+            how many containers are running. Every bar shows its percentage at the right end;
+            the ones that measure use turn amber at 70% and red at 90%.
+          </li>
+          <li>
+            <strong>Containers</strong>: name, short id and image, status (<Code>Healthy</Code>,{" "}
+            <Code>Unhealthy</Code>, <Code>Running</Code> or the state it stopped in, plus how
+            often Docker restarted it), uptime, CPU and memory. CPU is a share of one core, so
+            100% is one full core and a busy container on a 12-core server can show more.
+            Click a column header to sort by it (a number column starts with the biggest;
+            click again to reverse).
+          </li>
+          <li>
+            The <strong>Logs</strong> button opens the last 100 to 1,000 lines of a container.
+            Filter them, colour shows errors and warnings, <Code>Follow</Code> refreshes every few
+            seconds, and the copy button copies what is shown. Passwords, keys, tokens and
+            credentials in URLs are hidden before the lines leave the server - a best effort,
+            so still treat logs with care.
+          </li>
+        </ul>
+        <Callout>
+          This page is read-only: it cannot stop, start or change anything. It is served by
+          the small <Code>ollama-controller</Code> service, the only part of WikiHub with access
+          to Docker, so that service has to be running (<Code>./scripts/run.sh --dev</Code>).
+          A container that keeps restarting, or one using far more CPU or memory than expected,
+          is the first thing to look for when WikiHub feels slow.
+        </Callout>
+      </>
+    ),
+  },
+  {
     id: "settings-and-storage",
     title: "Instance Settings & Object Storage Explorer",
     category: "Administration",
@@ -2168,7 +2364,7 @@ export const sectionsEn: HelpSection[] = [
                 <td className="p-2.5"><Code>System administrator</Code></td>
                 <td className="p-2.5">
                   Full administrative control - every other Administration section
-                  (Users, Groups, Spaces, Settings, Backup, Storage), plus every
+                  (Users, Groups, Spaces, Statistics, Settings, Backup, Storage), plus every
                   per-space <Code>Admin</Code> permission on every space regardless of
                   that space&apos;s own Owner/Access settings. Equivalent to the{" "}
                   <Code>Administrator</Code> role for every purpose that matters.
@@ -3023,9 +3219,59 @@ export const sectionsEn: HelpSection[] = [
             Tick <Code>Make this the active connection</Code> to switch it on straight away.
           </li>
           <li>
+            <strong>Semantic search</strong> (its own section next to Key management) finds pages by{" "}
+            <strong>meaning</strong>, not only by words. It is one setting for the whole wiki, separate
+            from the chat providers, so switching the active provider never rebuilds the index. Choose
+            where page text is turned into vectors: <Code>Active AI provider</Code> (if it offers an
+            embedding model), <Code>Another endpoint</Code> (an OpenAI-compatible address and key used only
+            for embeddings, for providers that offer none) or <Code>Self-hosted (Ollama)</Code>. Only
+            models that can create embeddings are listed, and <Code>Save</Code> checks that the source
+            really embeds with the model you pick. WikiHub then indexes every page in the background, a
+            few at a time, keeps the index current as pages change, and shows progress in the section.
+            Changing the model rebuilds the index. Leave the model on <Code>Off</Code> to keep plain
+            keyword search. Results always respect the permissions of whoever searches.
+          </li>
+          <li>
+            <strong>Self-hosted Ollama</strong> runs the embedding model on this server when your provider
+            has none. Open <strong>Semantic search</strong>, choose <Code>Self-hosted (Ollama)</Code>, pick a
+            model (<Code>bge-m3</Code> is multilingual and a good fit for Vietnamese) and click{" "}
+            <Code>Enable and download</Code>. A card shows each step - download Ollama (about 4 GB), start
+            it, wait until it answers, download the model - with a progress bar; you can leave the page and
+            it continues. Nothing is installed or running until you enable it, and{" "}
+            <Code>Disable</Code> stops and removes it so it frees all its memory (about 1-2 GB while
+            indexing, 0.8 GB idle; capped at <Code>WIKIHUB_OLLAMA_MEMORY_LIMIT</Code>, 3 GB by default).
+            The model list is one dropdown: each model is tagged <Code>downloaded</Code> or <Code>not
+            downloaded</Code>, and the <Code>i</Code> beside it says what the model is good at and when to
+            pick it - choosing one that is not downloaded turns Save into <Code>Download &amp; use</Code>.{" "}
+            <Code>Cancel</Code> stops a download and the card says it was cancelled until you dismiss
+            the note. Downloaded models stay on disk until you choose <Code>Delete downloaded models</Code>. This
+            needs WikiHub&apos;s small <Code>ollama-controller</Code> service, which is the only part with access
+            to Docker: it can start and stop this one container and nothing else.
+          </li>
+          <li>
             In the table, the key is always masked (for example <Code>sk-adc2****297a</Code>). It
             is stored encrypted, never shown again and not included in backups. <Code>Edit</Code>{" "}
-            changes a connection - leave the key blank to keep it.
+            changes a connection - leave the key blank to keep it. The <Code>Status</Code> column
+            shows <Code>Working</Code> or <Code>Failing</Code> from the last check; WikiHub checks
+            a connection when it is saved or its address or key changes, then re-checks all of
+            them every five minutes (<Code>Not checked</Code> only until the first check). Click a column header to sort
+            (click again to reverse, a third time to go back to the saved order), type in the
+            boxes under the headers to filter by name, endpoint or model, and use the status
+            list to show only active, working, failing or not-checked connections. The table
+            shows ten connections per page.
+          </li>
+          <li>
+            <strong>If semantic indexing misbehaves</strong>, read the worker log:{" "}
+            <Code>docker compose logs worker | grep search_index</Code>. Each minute that
+            indexed something ends with a <Code>search_index_pass</Code> line - pages and
+            chunks done, <Code>embed_seconds</Code> (time waiting on the AI service),{" "}
+            <Code>backlog_remaining</Code> and <Code>stopped</Code> (why it ended). A problem is
+            a warning: <Code>search_index_paused</Code> with the service&apos;s HTTP{" "}
+            <Code>status</Code> and reply, <Code>ai_embedding_failed</Code> for each failed
+            request, <Code>ai_embedding_slow</Code> past 10 seconds, and{" "}
+            <Code>search_slow</Code> (in the backend log) for a search over a second. Page text,
+            keys and what people searched for are never logged. Set{" "}
+            <Code>WIKIHUB_LOG_LEVEL=DEBUG</Code> to also see every page and request.
           </li>
           <li>
             The power button makes a connection <strong>Active</strong>; doing so switches the

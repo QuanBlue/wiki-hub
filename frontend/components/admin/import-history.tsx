@@ -411,13 +411,16 @@ async function fetchAllRows(
   extra: Record<string, string>,
 ): Promise<JobRow[]> {
   const rows: JobRow[] = [];
-  for (let offset = 0; ; offset += SERVER_PAGE) {
-    const page = await api.get<JobRow[]>(path, {
+  let page: JobRow[];
+  let offset = 0;
+  do {
+    page = await api.get<JobRow[]>(path, {
       query: { ...extra, limit: SERVER_PAGE, offset },
     });
     rows.push(...page);
-    if (page.length < SERVER_PAGE) return rows;
-  }
+    offset += SERVER_PAGE;
+  } while (page.length >= SERVER_PAGE);
+  return rows;
 }
 
 function SortHeader({

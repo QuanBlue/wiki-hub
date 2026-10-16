@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { ThemeProvider } from "next-themes";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ExportError } from "@/components/print/export-error";
 import { ExportShell } from "@/components/print/export-shell";
@@ -92,6 +92,18 @@ describe("ExportShell", () => {
     const wrapper = container.querySelector("[data-export-root]") as HTMLElement;
     expect(wrapper.className).not.toContain("max-w-4xl");
     expect(wrapper.className).toContain("max-w-none");
+  });
+
+  it("reports a timeout when the content never settles", () => {
+    vi.useFakeTimers();
+    try {
+      delete document.body.dataset.exportError;
+      renderWithTheme(<ExportShell bundle={bundle({ page: { id: "1", title: "T", slug: "t", content: "" } })} />);
+      vi.advanceTimersByTime(20_001);
+      expect(document.body.dataset.exportError).toBe("timeout");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

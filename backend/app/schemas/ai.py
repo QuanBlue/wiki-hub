@@ -171,6 +171,18 @@ class ConnectionRead(BaseModel):
     created_at: datetime
 
 
+class SearchIndexStatus(BaseModel):
+    #: ``False`` when the database has no pgvector, so semantic search cannot run.
+    available: bool
+    #: ``False`` until the active connection has an embedding model.
+    enabled: bool
+    #: Pages that should be searchable by meaning, and how many already are.
+    total: int
+    indexed: int
+    #: Why indexing last stopped (refused or unreachable gateway), if it did.
+    error: str | None = None
+
+
 class ConnectionList(BaseModel):
     items: list[ConnectionRead]
 
@@ -238,9 +250,187 @@ class AIModelInfo(BaseModel):
     #: What the gateway says the model can do, when it says.
     reasoning: bool = False
     image: bool = False
+    #: Whether this is an embedding model (turns text into vectors) rather than
+    #: a chat model - the only kind semantic search can use.
+    embedding: bool = False
 
 
 class AITestResult(BaseModel):
     ok: bool
     models: list[AIModelInfo] = []
     error: str | None = None
+
+
+class TuningSpecRead(BaseModel):
+    """One tunable knob: what it is, its default and the range the form should allow."""
+
+    key: str
+    label: str
+    default: float | int | str
+    minimum: float | int | None
+    maximum: float | int | None
+    #: ``int``, ``float`` or ``choice``.
+    kind: str
+    choices: list[str]
+    #: Only matters for the self-hosted Ollama.
+    ollama_only: bool
+    #: Takes effect only after Ollama restarts.
+    restart: bool
+
+
+class EmbeddingSettingsRead(BaseModel):
+    #: ``provider`` (the active connection), ``custom`` (another endpoint) or ``ollama``.
+    source: Literal["provider", "custom", "ollama"]
+    #: The other endpoint's address (used when ``source`` is ``custom``).
+    base_url: str
+    #: Its key with the middle hidden; never the key itself.
+    api_key_preview: str
+    has_key: bool
+    #: Blank when semantic search is off.
+    model: str
+    #: What an administrator has changed; ``None`` for a knob means "the default".
+    tuning: dict[str, float | int | str | None]
+    #: The values actually in effect (overrides over defaults).
+    effective: dict[str, float | int | str]
+    specs: list[TuningSpecRead]
+
+
+class EmbeddingSettingsUpdate(BaseModel):
+    source: Literal["provider", "custom", "ollama"]
+    base_url: str = Field(default="", max_length=500)
+    #: Omit to keep the saved key.
+    api_key: str | None = Field(default=None, min_length=1, max_length=500)
+    #: Blank turns semantic search off.
+    model: str = Field(default="", max_length=255)
+    #: Knobs to change; ``null`` resets one to its default. Omit to leave all as they are.
+    tuning: dict[str, float | int | str | None] | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def _url(cls, value: str) -> str:
+        return _clean_url(value) if value.strip() else ""
+
+    @field_validator("model")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        return value.strip()
+
+
+class EmbeddingModelsRequest(BaseModel):
+    source: Literal["provider", "custom", "ollama"]
+    base_url: str = Field(default="", max_length=500)
+    #: Blank uses the saved key of the other endpoint.
+    api_key: str = Field(default="", max_length=500)
+
+    @field_validator("base_url")
+    @classmethod
+    def _url(cls, value: str) -> str:
+        return _clean_url(value) if value.strip() else ""
+
+
+class EmbeddingModelsResult(BaseModel):
+    ok: bool
+    #: Only models that can create embeddings.
+    models: list[AIModelInfo] = []
+    error: str | None = None
+
+
+class OllamaModelChoice(BaseModel):
+    name: str
+    note: str
+
+
+class OllamaStatus(BaseModel):
+    #: ``not_installed``, ``stopped``, ``installing``, ``starting``, ``running``, ``error``,
+    #: ``controller_down`` (the sidecar is not running) or ``docker_unavailable``.
+    state: str
+    controller_ok: bool
+    docker_ok: bool
+    image: str
+    image_bytes: int
+    memory_bytes: int | None
+    #: Share of one core (100 = one full core); ``None`` when Ollama is not running.
+    cpu_percent: float | None = None
+    memory_limit: str
+    volume_present: bool
+    models: list[str]
+    available_models: list[OllamaModelChoice]
+    #: Cores on the machine, so the form can bound the CPU setting.
+    host_cpus: int
+    #: Memory, cores and keep-alive the running container was created with.
+    applied_memory_mb: int | None
+    applied_cpus: int | None
+    applied_keep_alive: str | None
+    #: The saved Ollama settings differ from what is running: it needs a restart.
+    restart_needed: bool
+    #: While installing: the current step (``image``, ``start``, ``ready``, ``model``).
+    step: str
+    #: The model being downloaded (while installing).
+    model: str
+    percent: int
+    overall: int
+    message: str
+    current: int
+    total: int
+    error: str
+    #: What happened to the last download while Ollama itself is fine (cancelled, refused).
+    notice: str = ""
+
+
+class OllamaEnable(BaseModel):
+    #: One of the embedding models WikiHub offers (see ``OllamaStatus.available_models``).
+    model: str = Field(min_length=1, max_length=100)
+
+
+class EmbeddingBenchmark(BaseModel):
+    ok: bool
+    error: str | None = None
+    #: What was measured with the saved source, model and tuning.
+    passages: int = 0
+    characters: int = 0
+    seconds: float = 0.0
+    seconds_per_passage: float = 0.0
+    batch_size: int = 0
+    #: A plain estimate of how long indexing the whole wiki takes at this speed.
+    estimated_minutes_per_100_pages: float = 0.0
+
+
+class AnswerRequest(BaseModel):
+    #: The question, as typed in the search box.
+    query: str = Field(min_length=2, max_length=300)
+
+    @field_validator("query")
+    @classmethod
+    def _tidy(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if len(value) < 2:
+            raise ValueError("Ask a longer question.")
+        return value
+
+
+class AnswerSource(BaseModel):
+    #: The number the answer cites it by: ``[1]``.
+    n: int
+    id: uuid.UUID
+    title: str
+    slug: str
+    space_key: str
+    space_name: str
+    #: The part of the page the answer was read from.
+    excerpt: str
+
+
+class AnswerResult(BaseModel):
+    #: ``False`` when the wiki does not answer the question; the pages in ``related`` may help.
+    found: bool
+    #: Markdown with ``[n]`` marks, each naming one of ``sources``. Empty when not found.
+    answer: str = ""
+    #: ``no_match`` (nothing relevant), ``not_in_pages`` (relevant pages, but no answer in
+    #: them) or ``ungrounded`` (the model answered without pointing at a page).
+    reason: str = ""
+    #: The pages the answer cites, by their number.
+    sources: list[AnswerSource] = []
+    #: Other pages that were read, or that may help when there is no answer.
+    related: list[AnswerSource] = []
+    #: Served from a short-lived copy: no model call was made.
+    cached: bool = False

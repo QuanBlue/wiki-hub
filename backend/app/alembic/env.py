@@ -38,7 +38,16 @@ def _include_object(obj: object, name: str | None, type_: str, *_: object) -> bo
     # creates false drift reports without improving safety.
     if type_ == "check_constraint":
         return False
-    return not (type_ == "table" and name in {"spatial_ref_sys"})
+    if type_ == "column" and name == "search_vector":
+        # ``pages.search_vector`` is a database-generated column (see
+        # ``app.modules.search.ddl``), not part of the ORM model.
+        return False
+    # ``page_chunks``/``page_search_state`` need the optional pgvector
+    # extension, so they are created by raw SQL in a migration and queried with
+    # raw SQL - they are deliberately not part of the ORM metadata.
+    return not (
+        type_ == "table" and name in {"spatial_ref_sys", "page_chunks", "page_search_state"}
+    )
 
 
 def run_migrations_offline() -> None:

@@ -827,10 +827,7 @@ export function IssuesList({ openId }: { openId?: string }) {
                     align="end"
                   />
                   <FilterMenu
-                    label={t(
-                      SORTS.find((s) => s.value === sort)?.key ??
-                        "adminIssues.sortNewest",
-                    )}
+                    label={t(SORTS.find((s) => s.value === sort)!.key)}
                     icon={<ArrowUpDown className="size-3.5" aria-hidden />}
                   >
                     <DropdownMenuLabel>

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { AiSections } from "@/components/admin/ai-sections";
 import type { AiConnection } from "@/lib/admin-ai";
+import { api } from "@/lib/api-client";
 
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
@@ -55,6 +56,24 @@ describe("AiSections", () => {
       "true",
     );
     expect(screen.getByText("Page summary (TL;DR)")).toBeVisible();
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("has a Semantic search section between keys and skills, off until chosen", async () => {
+    vi.mocked(api.get).mockResolvedValue({ available: true, enabled: false, total: 0, indexed: 0, error: null });
+    vi.mocked(api.post).mockResolvedValue({ ok: true, models: [], error: null });
+    renderSections();
+
+    const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
+    expect(tabs).toEqual(["Key management", "Semantic search", "Skill management"]);
+    // Hidden until chosen, and doing nothing in the meantime (no request for models).
+    expect(screen.queryByRole("heading", { name: "Semantic search", level: 3 })).toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Semantic search" }));
+
+    expect(screen.getByRole("heading", { name: "Semantic search", level: 3 })).toBeVisible();
+    expect(screen.getByRole("radio", { name: /Self-hosted \(Ollama\)/ })).toBeVisible();
     expect(screen.queryByRole("table")).toBeNull();
   });
 

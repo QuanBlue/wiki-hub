@@ -26,10 +26,13 @@ vi.mock("@/lib/api-client", async (importOriginal) => ({
 }));
 
 vi.mock("next/dynamic", () => ({
-  default: () =>
-    function Preview({ content }: { content: string }) {
+  // Run the loader too, as the real one does when a draft first needs the editor.
+  default: (load: () => Promise<unknown>) => {
+    void Promise.resolve(load()).catch(() => undefined);
+    return function Preview({ content }: { content: string }) {
       return <div data-testid="draft-preview">{content}</div>;
-    },
+    };
+  },
 }));
 
 const mocked = vi.mocked(api);
@@ -540,5 +543,66 @@ describe("CreatePageDialog with AI", () => {
       "!",
     );
     expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+
+  it.each([
+    ["a server message", new ApiError(500, "x", "The model is busy."), "The model is busy."],
+    ["an empty server message", new ApiError(500, "x", ""), "The AI assistant could not write this page right now."],
+    ["a failure that is not the server's", new Error("boom"), "The AI assistant could not write this page right now."],
+  ])("explains %s on the page", async (_label, failure, text) => {
+    const { Fresh, freshApi } = await withAi(true);
+    freshApi.post.mockRejectedValueOnce(failure);
+    const actor = userEvent.setup();
+    render(<Fresh spaceKey="ENG" />);
+    const dialog = await openDialog(actor);
+    await actor.click(
+      await within(dialog).findByRole("button", { name: "Write with AI" }),
+    );
+    await actor.type(
+      within(dialog).getByLabelText("Describe the page you want"),
+      "Grafana guide",
+    );
+    await actor.click(within(dialog).getByRole("button", { name: "Generate" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(text);
+  });
+
+  it("fills in the description from a suggestion chip", async () => {
+    const { Fresh } = await withAi(true);
+    const actor = userEvent.setup();
+    render(<Fresh spaceKey="ENG" />);
+    const dialog = await openDialog(actor);
+    await actor.click(
+      await within(dialog).findByRole("button", { name: "Write with AI" }),
+    );
+
+    const chips = within(dialog)
+      .getAllByRole("button")
+      .filter((button) => button.className.includes("rounded-full"));
+    expect(chips).toHaveLength(4);
+    await actor.click(chips[0]);
+
+    expect(within(dialog).getByLabelText("Describe the page you want")).not.toHaveValue("");
+    expect(within(dialog).getByLabelText("Describe the page you want")).toHaveFocus();
+  });
+
+  it("explains a draft that fails after the questions were settled", async () => {
+    const { Fresh, freshApi } = await withAi(true);
+    freshApi.post
+      .mockResolvedValueOnce(CLEAR)
+      .mockRejectedValueOnce(new ApiError(500, "x", "The draft failed."));
+    const actor = userEvent.setup();
+    render(<Fresh spaceKey="ENG" />);
+    const dialog = await openDialog(actor);
+    await actor.click(
+      await within(dialog).findByRole("button", { name: "Write with AI" }),
+    );
+    await actor.type(
+      within(dialog).getByLabelText("Describe the page you want"),
+      "Grafana guide",
+    );
+    await actor.click(within(dialog).getByRole("button", { name: "Generate" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("The draft failed.");
   });
 });

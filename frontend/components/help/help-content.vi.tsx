@@ -33,11 +33,20 @@ export const sectionsVi: HelpSection[] = [
         </Callout>
 
         <Callout variant="note" title="TÌM KIẾM THỰC SỰ KHỚP VỚI NHỮNG GÌ">
-          Tìm kiếm tìm văn bản của bạn bên trong tên/khoá/mô tả của space và tiêu
-          đề/nội dung trang - đây là so khớp chuỗi con đơn giản, không phải tìm kiếm
-          toàn văn có xếp hạng. Nó hiện chưa tìm trong tên tệp đính kèm hay nội dung
-          tệp đính kèm, và chỉ hiển thị những kết quả bạn có quyền xem. Không có bộ
-          lọc theo ngày, space, hay tác giả.
+          Tìm kiếm tìm các từ của bạn bên trong tên/khoá/mô tả của space và tiêu
+          đề/nội dung trang, bỏ qua dấu và chữ hoa (<Code>giam sat</Code> tìm ra{" "}
+          <Code>Giám sát</Code>) và chấp nhận gõ sai nhẹ ở tiêu đề. Bạn có thể gõ cả một câu
+          hỏi, ví dụ <Code>ip của Tessel Abbott là bao nhiêu?</Code> - các từ đệm sẽ bị bỏ
+          qua. Từ càng hiếm càng quan trọng (trong <Code>tài khoản cloud của nuti</Code> thì
+          từ <Code>nuti</Code> quyết định), khớp ở <strong>tiêu đề</strong> được cộng thêm
+          điểm, và một trang chỉ được liệt kê nếu bao phủ phần lớn những gì bạn gõ. Các cặp
+          từ Việt - Anh phổ biến được coi là một - <Code>tài khoản</Code> tìm ra{" "}
+          <Code>Account</Code>, <Code>cài đặt</Code> tìm ra <Code>install</Code> - các từ tìm
+          thấy được tô sáng trong kết quả, kèm đoạn chứa chúng dưới tiêu đề. Nếu quản trị
+          viên đã đặt <strong>Tìm kiếm theo ý nghĩa</strong> (xem Trợ lý AI), tìm kiếm còn tìm trang
+          theo <strong>ý nghĩa</strong>, kể cả khi không trùng từ nào với bạn gõ. Nó hiện chưa
+          tìm trong tên tệp đính kèm hay nội dung tệp đính kèm, và chỉ hiển thị những kết quả
+          bạn có quyền xem. Không có bộ lọc theo ngày, space, hay tác giả.
         </Callout>
 
         <p className="mt-3">
@@ -281,6 +290,59 @@ export const sectionsVi: HelpSection[] = [
             liên quan đến những gì bạn đã đánh dấu sao.
           </li>
         </ol>
+      </>
+    ),
+  },
+  {
+    id: "ask-ai-from-search",
+    title: "Hỏi AI từ ô tìm kiếm",
+    category: "Workspace",
+    description: "Đặt câu hỏi trong ô tìm kiếm và nhận câu trả lời viết từ các trang wiki của bạn, kèm các trang đã dùng.",
+    keywords: ["ai", "hỏi", "câu hỏi", "trả lời", "tìm kiếm", "nguồn", "trích dẫn", "trợ lý"],
+    body: (
+      <>
+        <p>
+          Tìm kiếm nhanh không chỉ liệt kê trang mà còn trả lời được câu hỏi. Mở tìm kiếm (<Kbd>Ctrl+K</Kbd>{" "}
+          hoặc thanh tìm kiếm), gõ một câu hỏi như <Code>ip của hệ thống DMS SaaS là gì?</Code> rồi bấm{" "}
+          <Code>Hỏi AI</Code> ở đầu kết quả, hoặc nhấn <Kbd>Ctrl+Enter</Kbd>. <Kbd>Enter</Kbd> thường vẫn
+          mở kết quả đang chọn. Dòng này chỉ hiện khi quản trị viên đã kết nối AI và câu hỏi có ít nhất
+          hai ký tự.
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>
+            <strong>Câu trả lời</strong> ngắn, mỗi ý có một dấu số như <Code>1</Code>. Bấm dấu số để mở
+            đúng trang nó lấy ra. Danh sách nhiều thứ (hệ thống kèm địa chỉ, tài khoản, máy chủ) được
+            trả về dạng bảng. Bên dưới, <Code>Nguồn</Code> liệt kê các trang mà dấu số trỏ tới, mỗi trang
+            một dòng - rê chuột vào để xem phần của trang đã được đọc. <Code>Cũng đã đọc</Code> được gập
+            lại phía dưới và chỉ gồm các trang đã xem qua nhưng không được trích dẫn, nên không thể nhầm
+            với nguồn.
+          </li>
+          <li>
+            <strong>Quay lại</strong>: <Code>Kết quả</Code> hoặc <Kbd>Esc</Kbd> về kết quả thường (<Kbd>Esc</Kbd>{" "}
+            lần nữa đóng tìm kiếm). Sửa câu hỏi sẽ thoát khỏi câu trả lời, vì nó thuộc về câu hỏi đã được
+            viết cho.
+          </li>
+          <li>
+            <strong>Nó đọc gì</strong>: chỉ các trang bạn mở được. Quyền trang và quyền space áp dụng đúng
+            như tìm kiếm thường, nên trang bị hạn chế không bao giờ được đọc thay bạn. Mật khẩu, token và
+            key được thay bằng <Code>[hidden]</Code> trước khi AI đọc và cả trong những gì nó viết - hãy mở
+            trang nguồn để tự xem.
+          </li>
+          <li>
+            <strong>Khi không có câu trả lời</strong>, nó nói rõ và gợi ý các trang có thể giúp ích. WikiHub
+            không bao giờ hiện câu trả lời không dẫn được về trang nào: câu trả lời không có dấu trang
+            hợp lệ sẽ bị bỏ.
+          </li>
+          <li>
+            <strong>Chi phí</strong>: một câu hỏi dùng chung giới hạn theo giờ với các tính năng AI khác.
+            Hỏi lại đúng điều đó trong vòng một giờ, khi các trang không đổi, được trả từ bản đã lưu và
+            không tốn gì. Câu hỏi không khớp trang nào sẽ không tới mô hình. Quản trị viên thấy phần này
+            ở mục <Code>Hỏi đáp có nguồn</Code> trong thống kê dùng AI.
+          </li>
+        </ul>
+        <Callout>
+          AI có thể đọc nhầm một trang. Hãy mở các nguồn trước khi dựa vào câu trả lời cho việc quan trọng.
+        </Callout>
       </>
     ),
   },
@@ -1568,6 +1630,16 @@ export const sectionsVi: HelpSection[] = [
           caption="Your account - Profile, Password & authentication, Sessions, Keyboard shortcuts."
         />
 
+        <p className="mt-3 text-sm">
+          <strong>Hồ sơ</strong> của một thành viên mở đầu bằng biểu đồ đóng góp: mỗi ô là một ngày
+          trong năm qua, càng đậm khi ngày đó sửa nhiều trang. Rê chuột vào ô để xem ngày và số lượng,
+          chọn năm ở bên phải để xem các năm trước.
+        </p>
+        <p className="mt-3 text-sm">
+          Trong dòng hoạt động, một trang bạn sửa nhiều lần liên tiếp chỉ hiện một dòng,
+          <strong> Cập nhật 6 lần</strong>. Bấm vào dòng đó để xem từng lần sửa kèm liên kết{" "}
+          <strong>xem thay đổi</strong>.
+        </p>
         <p className="mt-3 font-semibold text-foreground">1. Cài đặt hồ sơ người dùng:</p>
         <ul className="list-disc pl-5 space-y-1 text-sm">
           <li>
@@ -2042,6 +2114,128 @@ export const sectionsVi: HelpSection[] = [
           <strong>Light Preview</strong> / <strong>Dark Preview</strong> riêng, để
           bạn có thể kiểm tra một màu thương hiệu trên một tài liệu mẫu ở cả hai
           chế độ trước khi một người dùng thật nào thấy nó.
+        </Callout>
+      </>
+    ),
+  },
+  {
+    id: "admin-statistics",
+    title: "Thống kê",
+    category: "Administration",
+    description:
+      "Xem WikiHub được dùng thế nào: người dùng, chỉnh sửa, lượt xem page, token AI, và các page, space được xem, gắn sao, lưu nhiều nhất.",
+    keywords: [
+      "statistics",
+      "thống kê",
+      "stats",
+      "analytics",
+      "dashboard",
+      "biểu đồ",
+      "chart",
+      "views",
+      "lượt xem",
+      "tokens",
+      "ai usage",
+      "xem nhiều nhất",
+      "sao",
+      "lưu",
+      "người dùng hoạt động",
+    ],
+    body: (
+      <>
+        <p>
+          Quản trị viên mở <strong>Administration &gt; Thống kê</strong> để xem workspace
+          đang được sử dụng thế nào. Chọn <strong>7, 30 hoặc 90 ngày</strong> ở góc trên
+          bên phải; mọi số liệu và biểu đồ trên trang đều theo khoảng này.
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Tổng quan</p>
+        <ul className="mt-1 list-disc space-y-1 pl-5">
+          <li>
+            Thẻ số liệu chính: người dùng, người hoạt động trong khoảng, người dùng mới,
+            page, space, lượt chỉnh sửa và lượt xem page, mỗi thẻ có thêm một số suy ra
+            bên dưới (người dùng mới trong khoảng, tỷ lệ người hoạt động, trung bình mỗi
+            ngày, số page mỗi space).
+          </li>
+          <li>
+            Biểu đồ theo ngày cho lượt xem page, chỉnh sửa và người dùng mới, kèm tổng,
+            mức thay đổi từ nửa đầu sang nửa sau của khoảng, trung bình mỗi ngày và ngày
+            cao nhất. Rê chuột vào biểu đồ, hoặc focus rồi dùng phím <Kbd>←</Kbd> và{" "}
+            <Kbd>→</Kbd>, để đọc từng ngày.
+          </li>
+          <li>Hoạt động gần đây: các dòng mới nhất của audit log.</li>
+        </ul>
+
+        <p className="mt-3 font-semibold text-foreground">Sử dụng AI</p>
+        <p>
+          Số token trợ lý AI đã dùng, theo số liệu gateway AI trả về: tổng, token đầu
+          vào, token đầu ra, số yêu cầu, biểu đồ theo ngày, và phân tích{" "}
+          <strong>theo người dùng</strong> và <strong>theo tính năng</strong> (tóm tắt
+          page, tạo page, trợ lý viết, label và page liên quan, giải thích hoặc dịch đoạn
+          chọn).
+        </p>
+
+        <p className="mt-3 font-semibold text-foreground">Page và Space</p>
+        <p>
+          Bảng xếp hạng các mục được <strong>xem</strong>, <strong>gắn sao</strong> và
+          (với page) <strong>lưu</strong> nhiều nhất. Dùng <strong>Xếp theo</strong> để
+          chuyển. Lượt xem theo khoảng thời gian đã chọn; sao và lượt lưu là tổng từ
+          trước đến nay. Page được tính là gắn sao khi có người thích, và là đã lưu khi
+          có người ghim.
+        </p>
+
+        <Callout>
+          Lượt xem page và token AI được tính từ ngày bật tính năng này; hoạt động trước
+          đó chưa từng được ghi lại nên lúc đầu có thể thấy số 0. Số token còn phụ thuộc
+          việc gateway AI có trả về số liệu sử dụng. Chỉ quản trị viên hệ thống mới mở
+          được trang này.
+        </Callout>
+      </>
+    ),
+  },
+  {
+    id: "admin-server-monitor",
+    title: "Giám sát máy chủ",
+    category: "Administration",
+    description:
+      "Xem máy chủ và các container Docker của WikiHub, kèm log.",
+    keywords: ["máy chủ", "giám sát", "docker", "cpu", "bộ nhớ", "log", "container", "uptime"],
+    body: (
+      <>
+        <p>
+          System administrator mở <strong>Administration &gt; Máy chủ</strong> để xem máy đang
+          chạy WikiHub và các container Docker của chính WikiHub. Dịch vụ khác trên cùng máy
+          không bao giờ được liệt kê và không mở được log của chúng - máy chủ từ chối yêu cầu
+          chứ không chỉ ẩn trên trang. Trang tự làm mới mỗi năm giây khi đang mở (và không làm
+          mới khi tab bị ẩn).
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>
+            <strong>Các thẻ máy chủ</strong>: tải CPU so với số nhân (kèm trung bình 5 và 15
+            phút), bộ nhớ (kèm swap và phần còn trống), ổ đĩa chứa WikiHub cùng dung lượng còn
+            trống, và thời gian máy chủ đã chạy cùng số container đang chạy. Mỗi thanh ghi phần
+            trăm ở đầu bên phải; các thanh đo mức dùng chuyển sang vàng ở 70% và đỏ ở 90%.
+          </li>
+          <li>
+            <strong>Container</strong>: tên, id ngắn và image, trạng thái (<Code>Khoẻ</Code>,{" "}
+            <Code>Không khoẻ</Code>, <Code>Đang chạy</Code> hoặc trạng thái khi dừng, cùng số lần
+            Docker khởi động lại), thời gian chạy, CPU và bộ nhớ. CPU tính theo một nhân nên 100%
+            là đầy một nhân; container bận trên máy 12 nhân có thể hiện hơn thế. Bấm tiêu đề cột để
+            sắp xếp (cột số bắt đầu từ giá trị lớn nhất; bấm lần nữa để đảo chiều).
+          </li>
+          <li>
+            Nút <strong>Log</strong> mở 100 đến 1.000 dòng gần nhất của container. Có thể lọc dòng,
+            màu cho biết lỗi và cảnh báo, <Code>Theo dõi</Code> làm mới sau vài giây, nút sao chép
+            chép các dòng đang hiện. Mật khẩu, key, token và thông tin xác thực trong URL được ẩn
+            trước khi rời máy chủ - chỉ ở mức cố gắng, nên vẫn cần cẩn thận với log.
+          </li>
+        </ul>
+        <Callout>
+          Trang này chỉ để xem: không thể dừng, khởi động hay thay đổi gì. Dữ liệu do dịch vụ nhỏ{" "}
+          <Code>ollama-controller</Code> cung cấp - thành phần duy nhất của WikiHub có quyền truy cập
+          Docker - nên dịch vụ này phải đang chạy (<Code>./scripts/run.sh --dev</Code>). Container
+          cứ khởi động lại liên tục, hoặc dùng CPU hay bộ nhớ nhiều bất thường, là thứ đầu tiên cần
+          tìm khi WikiHub chậm.
         </Callout>
       </>
     ),
@@ -3173,9 +3367,56 @@ export const sectionsVi: HelpSection[] = [
             bật ngay.
           </li>
           <li>
+            <strong>Tìm kiếm theo ý nghĩa</strong> (một mục riêng cạnh Quản lý key) tìm trang theo{" "}
+            <strong>ý nghĩa</strong>, không chỉ theo từ. Đây là một thiết lập chung cho cả wiki, tách khỏi
+            các provider chat, nên đổi provider đang dùng không bao giờ làm lập lại chỉ mục. Chọn nơi nội
+            dung trang được chuyển thành vector: <Code>Provider AI đang dùng</Code> (nếu nó có model
+            embedding), <Code>Endpoint khác</Code> (một địa chỉ tương thích OpenAI kèm key chỉ dùng cho
+            embedding, dành cho provider không có) hoặc <Code>Tự host (Ollama)</Code>. Chỉ các model có thể
+            tạo embedding mới được liệt kê, và <Code>Lưu</Code> kiểm tra nguồn thật sự tạo được embedding với
+            model bạn chọn. WikiHub sẽ lập chỉ mục mọi trang ở nền, từng ít một, giữ chỉ mục cập nhật khi
+            trang thay đổi và hiện tiến độ ngay trong mục này. Đổi model sẽ lập lại chỉ mục. Để model ở{" "}
+            <Code>Tắt</Code> thì chỉ dùng tìm kiếm từ khoá. Kết quả luôn theo quyền của người tìm.
+          </li>
+          <li>
+            <strong>Ollama tự host</strong> chạy model embedding ngay trên máy chủ này khi provider của bạn
+            không có. Mở <strong>Tìm kiếm theo ý nghĩa</strong>, chọn <Code>Tự host (Ollama)</Code>, chọn một
+            model (<Code>bge-m3</Code> đa ngôn ngữ, hợp với tiếng Việt) rồi bấm{" "}
+            <Code>Bật và tải về</Code>. Một card hiện từng bước - tải Ollama (khoảng 4 GB), khởi động, chờ
+            nó phản hồi, tải model - kèm thanh tiến độ; bạn có thể rời trang và việc cài vẫn tiếp tục.
+            Không có gì được cài hay chạy cho tới khi bạn bật, và <Code>Tắt</Code> sẽ dừng và gỡ nó nên
+            giải phóng toàn bộ bộ nhớ (khoảng 1-2 GB khi lập chỉ mục, 0,8 GB lúc rảnh; giới hạn bởi{" "}
+            <Code>WIKIHUB_OLLAMA_MEMORY_LIMIT</Code>, mặc định 3 GB). Danh sách model là một dropdown: mỗi model có thẻ <Code>đã tải</Code> hoặc{" "}
+            <Code>chưa tải</Code>, dấu <Code>i</Code> bên cạnh cho biết model giỏi việc gì và nên chọn khi
+            nào - chọn model chưa tải thì nút Save thành <Code>Download &amp; use</Code>. <Code>Cancel</Code>{" "}
+            dừng việc tải và thẻ báo là đã huỷ cho tới khi bạn đóng ghi chú. Model đã tải nằm lại trên đĩa cho tới
+            khi bạn chọn <Code>Xoá các model đã tải</Code>. Việc này cần dịch vụ{" "}
+            <Code>ollama-controller</Code> nhỏ của WikiHub, thành phần duy nhất có quyền truy cập Docker: nó
+            chỉ có thể bật và tắt đúng container này, không làm gì khác.
+          </li>
+          <li>
             Trong bảng, key luôn được che (ví dụ <Code>sk-adc2****297a</Code>). Key được lưu mã
             hoá, không hiển thị lại và không nằm trong bản sao lưu. <Code>Sửa</Code> để đổi một
             kết nối - để trống ô key để giữ key cũ.
+            Cột <Code>Trạng thái</Code> hiện <Code>Working</Code> hoặc <Code>Failing</Code> theo lần
+            kiểm tra gần nhất; WikiHub kiểm tra ngay khi lưu hoặc khi đổi địa chỉ/key, rồi kiểm tra
+            lại mọi kết nối mỗi năm phút (<Code>Chưa kiểm tra</Code> chỉ tới lần kiểm tra đầu). Bấm tiêu đề cột để sắp xếp
+            (bấm lần nữa để đảo chiều, lần thứ ba để về thứ tự đã lưu), gõ vào ô dưới tiêu đề để
+            lọc theo tên, endpoint hoặc model, và dùng danh sách trạng thái để chỉ xem kết nối
+            đang dùng, hoạt động, lỗi hoặc chưa kiểm tra. Bảng hiện mười kết nối mỗi trang.
+          </li>
+          <li>
+            <strong>Khi lập chỉ mục theo ý nghĩa gặp sự cố</strong>, đọc log của worker:{" "}
+            <Code>docker compose logs worker | grep search_index</Code>. Mỗi phút có xử lý đều
+            kết thúc bằng một dòng <Code>search_index_pass</Code> - số trang và đoạn đã xong,{" "}
+            <Code>embed_seconds</Code> (thời gian chờ dịch vụ AI), <Code>backlog_remaining</Code>{" "}
+            (còn lại) và <Code>stopped</Code> (lý do kết thúc). Sự cố là một cảnh báo:{" "}
+            <Code>search_index_paused</Code> kèm <Code>status</Code> HTTP và nội dung phản hồi của
+            dịch vụ, <Code>ai_embedding_failed</Code> cho từng yêu cầu lỗi,{" "}
+            <Code>ai_embedding_slow</Code> khi quá 10 giây, và <Code>search_slow</Code> (trong log
+            backend) khi một lần tìm kiếm quá một giây. Nội dung trang, key và từ khoá người dùng
+            tìm không bao giờ bị ghi log. Đặt <Code>WIKIHUB_LOG_LEVEL=DEBUG</Code> để xem thêm
+            từng trang và từng yêu cầu.
           </li>
           <li>
             Nút nguồn đặt một kết nối thành <strong>Đang dùng</strong>; việc này tắt kết nối trước

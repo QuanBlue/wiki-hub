@@ -172,6 +172,27 @@ describe("ContactAdminForm", () => {
     expect(screen.getByLabelText(/^Message/u)).toHaveValue("Please create an account.");
   });
 
+  it("explains that the username is optional unless it is a password reset", async () => {
+    const user = userEvent.setup();
+    render(<ContactAdminForm />);
+    await user.click(screen.getByRole("button", { name: "What do you need?" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Something else" }));
+    expect(screen.getByText("If you already have an account.")).toBeInTheDocument();
+  });
+
+  it("shows a general error, and keeps their words, when sending fails for any other reason", async () => {
+    vi.mocked(api.post).mockRejectedValue(new Error("offline"));
+    const user = userEvent.setup();
+    render(<ContactAdminForm />);
+
+    await fill(user);
+    await user.click(screen.getByRole("button", { name: "Send request" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not send your request. Try again.",
+    );
+  });
+
   it("lets them send another request afterwards", async () => {
     vi.mocked(api.post).mockResolvedValue({ delivery: "sent" });
     const user = userEvent.setup();
@@ -895,5 +916,298 @@ describe("InboxList", () => {
     render(<InboxList />);
 
     expect(await screen.findByText("No requests here.")).toBeInTheDocument();
+  });
+});
+
+describe("InboxList edge cases", () => {
+  it("reports a list that cannot be loaded", async () => {
+    vi.mocked(api.get).mockRejectedValue(new Error("down"));
+    render(<InboxList />);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  });
+
+  it("reports a failed action and leaves the request as it was", async () => {
+    vi.mocked(api.get).mockResolvedValue(pageOf([request({ read_at: "2026-09-28T09:00:00Z" })]));
+    vi.mocked(api.patch).mockRejectedValue(new Error("down"));
+    const user = userEvent.setup();
+    render(<InboxList />);
+
+    await user.click(await screen.findByRole("button", { name: /View details/ }));
+    await user.click(await screen.findByRole("button", { name: "Mark resolved" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Mark resolved" })).toBeInTheDocument();
+  });
+
+  it("reports a failure to mark everything read", async () => {
+    vi.mocked(api.get).mockResolvedValue(pageOf([request()]));
+    vi.mocked(api.post).mockRejectedValue(new Error("down"));
+    const user = userEvent.setup();
+    render(<InboxList />);
+    await screen.findByText("Alice Nguyen");
+
+    await user.click(screen.getByRole("button", { name: /Mark all as read/ }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  });
+
+  it("opens a linked request even before the list has arrived", async () => {
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path.includes("/inbox/req-9")) return request({ id: "req-9", requester_name: "Linked Person" });
+      if (path.includes("/inbox/counts")) return { all: 1, unread: 1, open: 1, resolved: 0 };
+      return new Promise(() => {});
+    });
+    vi.mocked(api.patch).mockResolvedValue(
+      request({ id: "req-9", requester_name: "Linked Person", read_at: "2026-09-28T10:00:00Z" }),
+    );
+    render(<InboxList openId="req-9" />);
+
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Request from Linked Person");
+  });
+
+  it("shows a request with no message, no username and no email sent", async () => {
+    vi.mocked(api.get).mockResolvedValue(
+      pageOf([
+        request({
+          read_at: "2026-09-28T09:00:00Z",
+          message: "",
+          requester_username: undefined,
+          delivery_status: "none",
+          mailbox_email: undefined,
+        }),
+      ]),
+    );
+    const user = userEvent.setup();
+    render(<InboxList />);
+
+    const row = (await screen.findByText("Alice Nguyen")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("No message written.")).toBeInTheDocument();
+    expect(within(row).getByText("In app only")).toBeInTheDocument();
+    await user.click(within(row).getByRole("button", { name: /View details/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("No message written.")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Username")).toBeNull();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+});
+
+describe("MailboxPanel edge cases", () => {
+  const rowOf = (email: string) => screen.getByText(email).closest("tr") as HTMLElement;
+
+  it("checks a mailbox now and refreshes the list", async () => {
+    vi.mocked(api.post).mockResolvedValue({ ok: true, error: null });
+    vi.mocked(api.get).mockResolvedValue([mailbox({ health_status: "ok" })]);
+    const user = userEvent.setup();
+    render(<MailboxPanel administrators={ADMINS} initialMailboxes={[mailbox()]} />);
+
+    await user.click(within(rowOf("ada@example.test")).getByRole("button", { name: "Check now" }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(api.post).toHaveBeenCalledWith("/api/v1/admin-mail/mailboxes/mb-1/test");
+  });
+
+  it("explains a failed check, and a check that could not run", async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ ok: false, error: "mail_auth_failed" });
+    vi.mocked(api.get).mockResolvedValue([mailbox()]);
+    const user = userEvent.setup();
+    render(<MailboxPanel administrators={ADMINS} initialMailboxes={[mailbox()]} />);
+
+    await user.click(within(rowOf("ada@example.test")).getByRole("button", { name: "Check now" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+
+    vi.mocked(api.post).mockRejectedValueOnce(new Error("down"));
+    await user.click(within(rowOf("ada@example.test")).getByRole("button", { name: "Check now" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2));
+  });
+
+  it("reports a switch that failed", async () => {
+    vi.mocked(api.patch).mockRejectedValue(new Error("down"));
+    const user = userEvent.setup();
+    render(<MailboxPanel administrators={ADMINS} initialMailboxes={[mailbox()]} />);
+
+    await user.click(screen.getByRole("button", { name: "Switch off" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  });
+
+  it("keeps the mailbox when removing it fails or is called off", async () => {
+    vi.mocked(api.delete).mockRejectedValue(new Error("down"));
+    const user = userEvent.setup();
+    render(<MailboxPanel administrators={ADMINS} initialMailboxes={[mailbox()]} />);
+
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(screen.getByText("ada@example.test")).toBeInTheDocument();
+  });
+
+  it("shows a display name, and says when a mailbox was never checked", () => {
+    render(
+      <MailboxPanel
+        administrators={ADMINS}
+        initialMailboxes={[mailbox({ display_name: "Ops desk", health_checked_at: null })]}
+      />,
+    );
+
+    expect(screen.getByText("Ops desk")).toBeInTheDocument();
+    expect(within(rowOf("ada@example.test")).getByText("Never")).toBeInTheDocument();
+  });
+
+  it("edits a mailbox, keeping the stored password unless a new one is typed", async () => {
+    vi.mocked(api.patch).mockResolvedValue(mailbox({ display_name: "Renamed" }));
+    const user = userEvent.setup();
+    render(
+      <MailboxPanel
+        administrators={ADMINS}
+        initialMailboxes={[mailbox({ smtp_username: "login@example.test" })]}
+      />,
+    );
+
+    await user.click(within(rowOf("ada@example.test")).getByRole("button", { name: "Edit" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByText(/@ada/)).toBeInTheDocument();
+    expect(dialog.getByLabelText(/Username/)).toHaveValue("login@example.test");
+    await user.type(dialog.getByLabelText(/^Sender name/), "Renamed");
+    await user.click(dialog.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Mailbox updated."));
+    const body = vi.mocked(api.patch).mock.calls[0]![1] as Record<string, unknown>;
+    expect(body).not.toHaveProperty("smtp_password");
+    expect(screen.getByText("Renamed")).toBeInTheDocument();
+  });
+
+  it("sends a new password when one is typed while editing", async () => {
+    vi.mocked(api.patch).mockResolvedValue(mailbox());
+    const user = userEvent.setup();
+    render(<MailboxPanel administrators={ADMINS} initialMailboxes={[mailbox()]} />);
+
+    await user.click(within(rowOf("ada@example.test")).getByRole("button", { name: "Edit" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    await user.type(dialog.getByLabelText("Password"), "new-secret");
+    await user.click(dialog.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.patch).toHaveBeenCalled());
+    expect(vi.mocked(api.patch).mock.calls[0]![1]).toMatchObject({ smtp_password: "new-secret" });
+  });
+
+  it("keeps the mailboxes in order of address when one is added", async () => {
+    vi.mocked(api.post).mockResolvedValue(
+      mailbox({ id: "mb-0", user_id: "u-2", email: "aaa@example.test" }),
+    );
+    const user = userEvent.setup();
+    render(
+      <MailboxPanel
+        administrators={ADMINS}
+        initialMailboxes={[mailbox({ email: "zzz@example.test" })]}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Add mailbox/ }));
+    await user.click(screen.getByRole("button", { name: "Administrator account" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: /Grace Admin/ }));
+    await user.type(screen.getByLabelText("Mailbox address"), "aaa@example.test");
+    await user.type(screen.getByLabelText("SMTP server"), "smtp.example.test");
+    await user.type(screen.getByLabelText("Password"), "a-password");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Mailbox added."));
+    const rows = screen.getAllByRole("row").map((row) => row.textContent ?? "");
+    const first = rows.findIndex((text) => text.includes("aaa@example.test"));
+    const second = rows.findIndex((text) => text.includes("zzz@example.test"));
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(second);
+  });
+
+  it("shows a general error when saving fails for a reason that is not the mail server's", async () => {
+    vi.mocked(api.post).mockRejectedValue(new Error("down"));
+    const user = userEvent.setup();
+    render(<MailboxPanel administrators={ADMINS} initialMailboxes={[]} />);
+    await user.click(screen.getByRole("button", { name: /Add mailbox/ }));
+    await user.click(screen.getByRole("button", { name: "Administrator account" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: /Ada Admin/ }));
+    await user.type(screen.getByLabelText("Mailbox address"), "ops@example.test");
+    await user.type(screen.getByLabelText("SMTP server"), "smtp.example.test");
+    await user.type(screen.getByLabelText("Password"), "a-password");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByLabelText("Mailbox address")).toBeInTheDocument();
+  });
+
+  it("goes back to the custom provider when the port or security is changed by hand", async () => {
+    const user = userEvent.setup();
+    render(<MailboxPanel administrators={ADMINS} initialMailboxes={[]} />);
+    await user.click(screen.getByRole("button", { name: /Add mailbox/ }));
+    await user.click(screen.getByRole("button", { name: "Provider" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Gmail" }));
+
+    await user.clear(screen.getByLabelText("Port"));
+    await user.type(screen.getByLabelText("Port"), "2525");
+    expect(screen.getByRole("button", { name: "Provider" })).toHaveTextContent("Other / custom");
+
+    await user.click(screen.getByRole("button", { name: "Provider" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Gmail" }));
+    await user.click(screen.getByRole("button", { name: "Security" }));
+    const options = await screen.findAllByRole("menuitemradio");
+    await user.click(options[options.length - 1]!);
+    expect(screen.getByRole("button", { name: "Provider" })).toHaveTextContent("Other / custom");
+  });
+
+  it("closes the add and password dialogs with Escape", async () => {
+    const user = userEvent.setup();
+    render(
+      <MailboxPanel
+        administrators={ADMINS}
+        initialMailboxes={[mailbox({ health_status: "auth_failed" })]}
+        initialUpdateId="mb-1"
+      />,
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await user.click(screen.getByRole("button", { name: /Add mailbox/ }));
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("explains a password change that fails for another reason", async () => {
+    vi.mocked(api.put).mockRejectedValue(new Error("down"));
+    const user = userEvent.setup();
+    render(
+      <MailboxPanel
+        administrators={ADMINS}
+        initialMailboxes={[mailbox({ health_status: "auth_failed" })]}
+        initialUpdateId="mb-1"
+      />,
+    );
+
+    await user.type(screen.getByLabelText("New password"), "fresh-password");
+    await user.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
+});
+
+describe("MailboxPanel port validation", () => {
+  it("says so when the port is not a number", async () => {
+    const user = userEvent.setup();
+    render(<MailboxPanel administrators={ADMINS} initialMailboxes={[]} />);
+    await user.click(screen.getByRole("button", { name: /Add mailbox/ }));
+    await user.click(screen.getByRole("button", { name: "Administrator account" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: /Ada Admin/ }));
+    await user.type(screen.getByLabelText("Mailbox address"), "ops@example.test");
+    await user.type(screen.getByLabelText("SMTP server"), "smtp.example.test");
+
+    await user.clear(screen.getByLabelText("Port"));
+    await user.type(screen.getByLabelText("Port"), "abc");
+
+    expect(screen.getByText(/port/i, { selector: "p" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 });

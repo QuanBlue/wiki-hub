@@ -80,6 +80,20 @@ describe("AuthPanels", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("still switches forms when the address cannot be updated", async () => {
+    const user = userEvent.setup();
+    const spy = vi.spyOn(window.history, "replaceState").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    try {
+      render(<AuthPanels siteName="WikiHub" />);
+      await user.click(screen.getByRole("button", { name: "Contact an administrator" }));
+      expect(screen.getByRole("heading", { name: CONTACT_TITLE })).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("swaps the heading for the sent screen, whose own button leads back to sign in", async () => {
     vi.mocked(api.post).mockResolvedValue({ delivery: "sent" });
     const user = userEvent.setup();

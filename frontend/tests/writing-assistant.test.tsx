@@ -1,6 +1,6 @@
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,10 +12,13 @@ vi.mock("@/lib/api-client", async (importOriginal) => ({
 }));
 
 vi.mock("next/dynamic", () => ({
-  default: () =>
-    function Preview({ content }: { content: string }) {
+  // Run the loader too, as the real one does when a result first needs the editor.
+  default: (load: () => Promise<unknown>) => {
+    void Promise.resolve(load()).catch(() => undefined);
+    return function Preview({ content }: { content: string }) {
       return <div data-testid="result-preview">{content}</div>;
-    },
+    };
+  },
 }));
 
 let editor: Editor | null = null;
@@ -538,5 +541,190 @@ describe("WritingAssistant", () => {
     await userEvent.click(screen.getByRole("button", { name: "Insert below" }));
     expect(instance.getText()).toContain("First version.");
     expect(instance.getText()).not.toContain("Second version.");
+  });
+});
+
+describe("WritingAssistant edge cases", () => {
+  const ctrlSpace = () =>
+    new KeyboardEvent("keydown", { ctrlKey: true, code: "Space", bubbles: true });
+
+  it("falls back to a general message for a failure that carries none", async () => {
+    const { instance, api } = await mount("<p>Me and him goes there.</p>");
+    api.post.mockRejectedValue(new Error("offline"));
+    await select(instance, 1, 23);
+    await userEvent.click(await screen.findByRole("button", { name: "Writing assistant" }));
+    await userEvent.click(screen.getByRole("button", { name: /Fix grammar/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not answer/i);
+  });
+
+  it("offers nothing when the editor cannot say where the selection is", async () => {
+    const { instance } = await mount("<p>Me and him goes there.</p>");
+    instance.view.coordsAtPos = () => {
+      throw new Error("no layout");
+    };
+    await select(instance, 1, 10);
+
+    expect(screen.queryByRole("button", { name: "Writing assistant" })).toBeNull();
+  });
+
+  it("stays put on scroll when the editor cannot say where the line is any more", async () => {
+    const { instance } = await mount("<p>First line</p><p></p>");
+    await act(async () => {
+      instance.commands.setTextSelection(14);
+      instance.view.dom.dispatchEvent(ctrlSpace());
+    });
+    const box = await screen.findByRole("dialog");
+    const startedAt = box.style.top;
+    instance.view.coordsAtPos = () => {
+      throw new Error("no layout");
+    };
+    await act(async () => {
+      window.dispatchEvent(new Event("scroll"));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(screen.getByRole("dialog").style.top).toBe(startedAt);
+  });
+
+  it("asks for a few words before continuing a sentence that has none", async () => {
+    const { instance, api } = await mount("<p>Hi</p>");
+    await act(async () => {
+      instance.commands.setTextSelection(3);
+    });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("wikihub:ai-assist"));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/few words first/);
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("closes the box on Escape and gives the editor its focus back", async () => {
+    const { instance } = await mount("<p>First line</p><p></p>");
+    await act(async () => {
+      instance.commands.setTextSelection(14);
+      instance.view.dom.dispatchEvent(ctrlSpace());
+    });
+    await screen.findByRole("dialog");
+
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("revises a rewrite of the selection, and still replaces the same words", async () => {
+    const { instance, api } = await mount("<p>We shall proceed. Next.</p>");
+    api.post
+      .mockResolvedValueOnce({ result: "Let's go." })
+      .mockResolvedValueOnce({ result: "Go." });
+    await select(instance, 1, 18);
+    await userEvent.click(await screen.findByRole("button", { name: "Writing assistant" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Ask the AI" }), "Casual{Enter}");
+    await screen.findByText("Let's go.");
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "What should change?" }),
+      "Shorter{Enter}",
+    );
+    await screen.findByText("Go.");
+    expect(api.post).toHaveBeenLastCalledWith(
+      "/api/v1/ai/spaces/ENG/assist",
+      expect.objectContaining({ action: "edit", text: "Let's go.", instruction: "Shorter" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Replace" }));
+
+    expect(instance.getText()).toBe("Go. Next.");
+  });
+
+  it("inserts generated content below a line that already has text", async () => {
+    const { instance, api } = await mount("<p>First line</p>");
+    api.post.mockResolvedValue({ result: "More.", html: "<p>More.</p>" });
+    await act(async () => {
+      instance.commands.setTextSelection(11);
+      instance.view.dom.dispatchEvent(ctrlSpace());
+    });
+    await userEvent.type(await screen.findByRole("textbox", { name: "Ask the AI" }), "More{Enter}");
+    await screen.findByTestId("result-preview");
+    await userEvent.click(screen.getByRole("button", { name: "Insert below" }));
+
+    expect(instance.getText({ blockSeparator: "|" })).toBe("First line|More.");
+  });
+
+  it("opens above the line when there is no room below it", async () => {
+    const original = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 40 });
+    try {
+      const { instance, api } = await mount("<p>First line</p><p></p>");
+      api.post.mockResolvedValue({ result: "More.", html: "<p>More.</p>" });
+      await act(async () => {
+        instance.commands.setTextSelection(14);
+        instance.view.dom.dispatchEvent(ctrlSpace());
+      });
+      const box = await screen.findByRole("dialog");
+
+      expect(box.style.bottom).not.toBe("");
+      expect(box.style.top).toBe("");
+    } finally {
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: original });
+    }
+  });
+
+  it("leaves the box alone on scroll when the line has not moved", async () => {
+    const { instance } = await mount("<p>First line</p><p></p>");
+    await act(async () => {
+      instance.commands.setTextSelection(14);
+      instance.view.dom.dispatchEvent(ctrlSpace());
+    });
+    const box = await screen.findByRole("dialog");
+    const startedAt = box.style.top;
+    await act(async () => {
+      window.dispatchEvent(new Event("scroll"));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(screen.getByRole("dialog").style.top).toBe(startedAt);
+  });
+
+  it("keeps the suggestion and explains when a requested change fails", async () => {
+    const { instance, api } = await mount("<p>Intro.</p><p></p>");
+    api.post
+      .mockResolvedValueOnce({ result: "First.", html: "<p>First.</p>" })
+      .mockRejectedValueOnce(new ApiError(429, "rate_limited", "Too many AI requests."));
+    await act(async () => {
+      instance.commands.setTextSelection(10);
+      instance.view.dom.dispatchEvent(ctrlSpace());
+    });
+    await userEvent.type(await screen.findByRole("textbox", { name: "Ask the AI" }), "Write{Enter}");
+    await screen.findByTestId("result-preview");
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "What should change?" }),
+      "Different{Enter}",
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Too many AI requests.");
+    expect(screen.getByTestId("result-preview")).toHaveTextContent("First.");
+  });
+});
+
+describe("WritingAssistant dismissal", () => {
+  it("closes when something outside the box is pressed, but not when the box itself is", async () => {
+    const { instance } = await mount("<p>First line</p><p></p>");
+    await act(async () => {
+      instance.commands.setTextSelection(14);
+      instance.view.dom.dispatchEvent(
+        new KeyboardEvent("keydown", { ctrlKey: true, code: "Space", bubbles: true }),
+      );
+    });
+    const box = await screen.findByRole("dialog");
+
+    fireEvent.pointerDown(box);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });

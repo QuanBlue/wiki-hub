@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  Activity,
+  BarChart3,
   Bug,
   Check,
   ChevronLeft,
@@ -117,6 +119,18 @@ const ADMIN_NAV: NavItem[] = [
     icon: Bug,
     permission: "settings",
     extraGlobalPermission: "manage_issues",
+  },
+  {
+    href: "/admin/statistics",
+    labelKey: "nav.statistics",
+    icon: BarChart3,
+    permission: "settings",
+  },
+  {
+    href: "/admin/monitor",
+    labelKey: "nav.server",
+    icon: Activity,
+    permission: "settings",
   },
   {
     href: "/admin/settings",

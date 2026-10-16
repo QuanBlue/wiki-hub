@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +20,13 @@ vi.mock("@/components/layout/navigation-progress", () => ({
 }));
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
-  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  api: {
+    get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 
 const mocked = vi.mocked(api);
@@ -68,8 +80,13 @@ describe("SearchModal", () => {
     render(<Harness />);
     expect(screen.getByText("Quick Search WikiHub")).toBeInTheDocument();
     // The input takes focus shortly after opening.
-    await waitFor(() => expect(screen.getByPlaceholderText("Search WikiHub...")).toHaveFocus());
-    expect(mocked.get).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Search WikiHub...")).toHaveFocus(),
+    );
+    // Opening asks whether the AI assistant is on (for the "Ask AI" row), but searches nothing.
+    expect(mocked.get).not.toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/search"),
+    );
   });
 
   it("searches after a pause and lists spaces and pages with highlights", async () => {
@@ -88,9 +105,42 @@ describe("SearchModal", () => {
   it("escapes regex characters in the query when highlighting", async () => {
     const actor = userEvent.setup();
     render(<Harness />);
-    await actor.type(screen.getByPlaceholderText("Search WikiHub..."), "(really)");
+    await actor.type(
+      screen.getByPlaceholderText("Search WikiHub..."),
+      "(really)",
+    );
     await screen.findByText("Pages (2)");
     expect(document.querySelector("mark")).toHaveTextContent("(really)");
+  });
+
+  it("marks the words the server searched for, ignoring accents and including synonyms", async () => {
+    mocked.get.mockResolvedValue({
+      query: "tài khoản nuti",
+      spaces: [],
+      terms: ["tai khoan", "account", "nuti"],
+      pages: [
+        {
+          id: "p1",
+          title: "Account ViettelCloud",
+          slug: "account",
+          space_key: "OPS",
+          space_name: "Operations",
+          snippet: "...đăng nhập tài khoản NUTIFOOD_vts...",
+          updated_at: null,
+        },
+      ],
+    } satisfies SearchResults);
+    const actor = userEvent.setup();
+    render(<Harness />);
+    await actor.type(
+      screen.getByPlaceholderText("Search WikiHub..."),
+      "tài khoản nuti",
+    );
+    await screen.findByText("Pages (1)");
+
+    expect(
+      [...document.querySelectorAll("mark")].map((m) => m.textContent),
+    ).toEqual(["Account", "tài khoản", "NUTIFOOD"]);
   });
 
   it("navigates with the arrow keys and Enter", async () => {
@@ -120,7 +170,6 @@ describe("SearchModal", () => {
     await actor.hover(screen.getByRole("button", { name: /Bare ops/ }));
     await actor.click(screen.getByRole("button", { name: /Operations/ }));
     expect(navigate).toHaveBeenCalledWith("/spaces/OPS");
-
   });
 
   it("encodes the page slug when opening a page", async () => {
@@ -134,7 +183,9 @@ describe("SearchModal", () => {
 
   it("ignores keys when there is nothing to pick", async () => {
     render(<Harness />);
-    fireEvent.keyDown(screen.getByPlaceholderText("Search WikiHub..."), { key: "Enter" });
+    fireEvent.keyDown(screen.getByPlaceholderText("Search WikiHub..."), {
+      key: "Enter",
+    });
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -144,17 +195,23 @@ describe("SearchModal", () => {
     render(<Harness />);
     const input = screen.getByPlaceholderText("Search WikiHub...");
     await actor.type(input, "zzz");
-    expect(await screen.findByText(/No spaces or pages matched/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/No spaces or pages matched/),
+    ).toBeInTheDocument();
 
     mocked.get.mockRejectedValueOnce(new Error("offline"));
     await actor.type(input, "y");
     await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText(/No spaces or pages matched/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/No spaces or pages matched/),
+    ).toBeInTheDocument();
   });
 
   it("shows a searching indicator while the request is in flight", async () => {
     let resolve: (value: SearchResults) => void = () => {};
-    mocked.get.mockReturnValueOnce(new Promise<SearchResults>((r) => (resolve = r)));
+    mocked.get.mockReturnValueOnce(
+      new Promise<SearchResults>((r) => (resolve = r)),
+    );
     const actor = userEvent.setup();
     render(<Harness />);
     await actor.type(screen.getByPlaceholderText("Search WikiHub..."), "ops");
@@ -163,13 +220,63 @@ describe("SearchModal", () => {
     expect(await screen.findByText("Pages (2)")).toBeInTheDocument();
   });
 
+  it("keeps the answer to the latest question when an earlier, slower one arrives afterwards", async () => {
+    const slowEarlier: SearchResults = {
+      ...RESULTS,
+      query: "ops",
+      pages: [
+        {
+          ...RESULTS.pages[0]!,
+          id: "old",
+          title: "Answer to the earlier question",
+        },
+      ],
+    };
+    const latest: SearchResults = {
+      ...RESULTS,
+      query: "ops runbook",
+      pages: [
+        {
+          ...RESULTS.pages[0]!,
+          id: "new",
+          title: "Answer to the latest question",
+        },
+      ],
+    };
+    let resolveEarlier: (value: SearchResults) => void = () => {};
+    mocked.get
+      .mockReturnValueOnce(
+        new Promise<SearchResults>((r) => (resolveEarlier = r)),
+      )
+      .mockResolvedValueOnce(latest);
+    const actor = userEvent.setup();
+    render(<Harness />);
+    const box = screen.getByPlaceholderText("Search WikiHub...");
+
+    await actor.type(box, "ops");
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(1)); // the first is still pending
+    await actor.type(box, " runbook");
+    expect(
+      await screen.findByText("Answer to the latest question"),
+    ).toBeInTheDocument();
+
+    // The slow answer to "ops" lands now: it must not replace what is shown.
+    await act(async () => resolveEarlier(slowEarlier));
+    expect(
+      screen.getByText("Answer to the latest question"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Answer to the earlier question")).toBeNull();
+  });
+
   it("clears the query from the clear button", async () => {
     const actor = userEvent.setup();
     render(<Harness />);
     const input = screen.getByPlaceholderText("Search WikiHub...");
     await actor.type(input, "ops");
     await screen.findByText("Spaces (2)");
-    await actor.click(screen.getByRole("button", { name: "Clear search query" }));
+    await actor.click(
+      screen.getByRole("button", { name: "Clear search query" }),
+    );
     expect(input).toHaveValue("");
     expect(screen.getByText("Quick Search WikiHub")).toBeInTheDocument();
   });

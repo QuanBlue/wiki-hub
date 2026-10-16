@@ -6,6 +6,7 @@ profile-shape checks in test_user_profile.py)."""
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from httpx import AsyncClient
 
@@ -65,9 +66,7 @@ async def test_member_drafts_are_visible_to_their_owner_and_to_an_admin_but_not_
 ) -> None:
     owner_headers = _bearer(api_access_token)
     key, slug = await _create_space_and_page(client, owner_headers)
-    page = (
-        await client.get(f"/api/v1/spaces/{key}/pages/{slug}", headers=owner_headers)
-    ).json()
+    page = (await client.get(f"/api/v1/spaces/{key}/pages/{slug}", headers=owner_headers)).json()
     saved = await client.put(
         f"/api/v1/spaces/{key}/pages/{slug}/draft",
         headers=owner_headers,
@@ -80,9 +79,7 @@ async def test_member_drafts_are_visible_to_their_owner_and_to_an_admin_but_not_
     )
     assert saved.status_code == 200
 
-    as_owner = await client.get(
-        f"/api/v1/users/{api_user.username}/drafts", headers=owner_headers
-    )
+    as_owner = await client.get(f"/api/v1/users/{api_user.username}/drafts", headers=owner_headers)
     assert as_owner.status_code == 200
     assert [d["content"] for d in as_owner.json()] == ["<p>draft body</p>"]
 
@@ -251,3 +248,62 @@ async def test_create_list_and_delete_a_profile_tag(
 
     listed_after = await client.get("/api/v1/users/me/tags", headers=headers)
     assert listed_after.json() == []
+
+
+async def test_contributions_count_edits_per_day_and_list_the_years(
+    client: AsyncClient, api_user: User, api_access_token: str
+) -> None:
+    headers = _bearer(api_access_token)
+    key, slug = await _create_space_and_page(client, headers)
+    edited = await client.patch(
+        f"/api/v1/spaces/{key}/pages/{slug}", headers=headers, json={"content": "<p>more</p>"}
+    )
+    assert edited.status_code == 200
+
+    last_year = await client.get(
+        f"/api/v1/users/{api_user.username}/contributions", headers=headers
+    )
+    assert last_year.status_code == 200
+    body = last_year.json()
+    assert body["total"] >= 1
+    assert body["start"] < body["end"]
+    assert sum(day["count"] for day in body["days"]) == body["total"]
+    assert body["years"] and body["years"][0] == body["year"]
+
+    this_year = await client.get(
+        f"/api/v1/users/{api_user.username}/contributions",
+        headers=headers,
+        params={"year": body["year"]},
+    )
+    assert this_year.json()["total"] >= 1
+
+    month = await client.get(
+        f"/api/v1/users/{api_user.username}/contributions", headers=headers, params={"days": 30}
+    )
+    assert (
+        date.fromisoformat(month.json()["end"]) - date.fromisoformat(month.json()["start"])
+    ).days == 29
+    assert month.json()["total"] >= 1
+
+    recent = await client.get(
+        f"/api/v1/users/{api_user.username}/contributions", headers=headers, params={"hours": 24}
+    )
+    assert recent.status_code == 200
+    assert recent.json()["total"] >= 1
+    assert sum(hour["count"] for hour in recent.json()["hours"]) == recent.json()["total"]
+
+    empty = await client.get(
+        f"/api/v1/users/{api_user.username}/contributions", headers=headers, params={"year": 2001}
+    )
+    assert empty.json()["total"] == 0 and empty.json()["days"] == []
+
+
+async def test_contributions_reject_an_absurd_year(
+    client: AsyncClient, api_user: User, api_access_token: str
+) -> None:
+    response = await client.get(
+        f"/api/v1/users/{api_user.username}/contributions",
+        headers=_bearer(api_access_token),
+        params={"year": 1800},
+    )
+    assert response.status_code == 422

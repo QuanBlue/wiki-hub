@@ -1,24 +1,38 @@
 "use client";
 
-import { KeyRound, Sparkles, type LucideIcon } from "lucide-react";
+import { KeyRound, ScanSearch, Sparkles, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 
 import { AiConnectionsPanel } from "@/components/admin/ai-connections-panel";
 import { AiSkillsPanel } from "@/components/admin/ai-skills-panel";
-import type { AiConnectionList, AiSkill } from "@/lib/admin-ai";
+import { SemanticSearchPanel } from "@/components/admin/semantic-search-panel";
+import type { AiConnectionList, AiSkill, EmbeddingSettings } from "@/lib/admin-ai";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 
-type SectionId = "keys" | "skills";
+type SectionId = "keys" | "semantic" | "skills";
+
+/** Semantic search is off until an administrator picks a source and a model. */
+const NO_EMBEDDING: EmbeddingSettings = {
+  source: "provider",
+  base_url: "",
+  api_key_preview: "",
+  has_key: false,
+  model: "",
+  tuning: {},
+  effective: {},
+  specs: [],
+};
 
 /**
- * Admin > AI assistant in two sections, laid out like Admin > Storage: key
- * management (the providers and their API keys) and skill management (the
- * instructions the AI follows). Both panels stay mounted and are only hidden,
+ * Admin > AI assistant in three sections, laid out like Admin > Storage: key
+ * management (the providers and their API keys), semantic search (where page text
+ * is turned into vectors) and skill management (the instructions the AI follows). Both panels stay mounted and are only hidden,
  * so switching never refetches or loses an edit in progress.
  */
 export function AiSections({
   connections,
+  embedding = NO_EMBEDDING,
   summarySkill,
   pageDraftSkill,
   explainSkill,
@@ -27,6 +41,7 @@ export function AiSections({
   suggestionsSkill,
 }: {
   connections: AiConnectionList;
+  embedding?: EmbeddingSettings;
   summarySkill: AiSkill;
   pageDraftSkill?: AiSkill;
   explainSkill?: AiSkill;
@@ -39,6 +54,7 @@ export function AiSections({
 
   const sections: Array<{ id: SectionId; label: string; icon: LucideIcon }> = [
     { id: "keys", label: t("adminAi.keysSection"), icon: KeyRound },
+    { id: "semantic", label: t("adminAi.semanticSection"), icon: ScanSearch },
     { id: "skills", label: t("adminAi.skillsSection"), icon: Sparkles },
   ];
 
@@ -90,6 +106,14 @@ export function AiSections({
           hidden={active !== "keys"}
         >
           <AiConnectionsPanel initial={connections} />
+        </div>
+        <div
+          id="ai-panel-semantic"
+          role="tabpanel"
+          aria-labelledby="ai-tab-semantic"
+          hidden={active !== "semantic"}
+        >
+          <SemanticSearchPanel initial={embedding} visible={active === "semantic"} />
         </div>
         <div
           id="ai-panel-skills"

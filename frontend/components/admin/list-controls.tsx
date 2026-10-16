@@ -166,19 +166,26 @@ export function ListFilters({
   );
 }
 
-export function PaginationControls({
+/**
+ * The footer of an admin table: how many rows are shown, the rows-per-page choice,
+ * the page number and previous/next. It only draws; `PaginationControls` feeds it from
+ * the URL and a table that pages in memory feeds it from its own state.
+ */
+export function PaginationBar({
   total,
   limit,
   offset,
   pageSizes,
+  onLimitChange,
+  onOffsetChange,
 }: {
   total: number;
   limit: number;
   offset: number;
   pageSizes?: number[];
+  onLimitChange: (limit: number) => void;
+  onOffsetChange: (offset: number) => void;
 }) {
-  const write = useParamWriter();
-
   const from = total === 0 ? 0 : offset + 1;
   const to = Math.min(offset + limit, total);
   const hasPrevious = offset > 0;
@@ -199,7 +206,7 @@ export function PaginationControls({
             </label>
             <Select
               value={String(limit)}
-              onValueChange={(value) => write({ limit: value })}
+              onValueChange={(value) => onLimitChange(Number(value))}
             >
               <SelectTrigger id="page-size" className="h-8 w-20" aria-label="Rows per page">
                 <SelectValue>{limit}</SelectValue>
@@ -222,7 +229,7 @@ export function PaginationControls({
           variant="secondary"
           size="icon"
           disabled={!hasPrevious}
-          onClick={() => write({ offset: String(Math.max(0, offset - limit)) })}
+          onClick={() => onOffsetChange(Math.max(0, offset - limit))}
           aria-label="Previous page"
           title="Previous page"
         >
@@ -232,7 +239,7 @@ export function PaginationControls({
           variant="secondary"
           size="icon"
           disabled={!hasNext}
-          onClick={() => write({ offset: String(offset + limit) })}
+          onClick={() => onOffsetChange(offset + limit)}
           aria-label="Next page"
           title="Next page"
         >
@@ -240,5 +247,30 @@ export function PaginationControls({
         </Button>
       </div>
     </div>
+  );
+}
+
+export function PaginationControls({
+  total,
+  limit,
+  offset,
+  pageSizes,
+}: {
+  total: number;
+  limit: number;
+  offset: number;
+  pageSizes?: number[];
+}) {
+  const write = useParamWriter();
+
+  return (
+    <PaginationBar
+      total={total}
+      limit={limit}
+      offset={offset}
+      pageSizes={pageSizes}
+      onLimitChange={(value) => write({ limit: String(value) })}
+      onOffsetChange={(value) => write({ offset: String(value) })}
+    />
   );
 }

@@ -75,7 +75,9 @@ class TestDocxTableEdges:
         assert "color: #ff0000" in cell["style"]
 
     def test_non_numeric_grid_values_fall_back_to_safe_defaults(self):
-        table = _xml("<w:tbl><w:tblGrid><w:gridCol w:w='wide'/><w:gridCol w:w='40'/></w:tblGrid></w:tbl>")
+        table = _xml(
+            "<w:tbl><w:tblGrid><w:gridCol w:w='wide'/><w:gridCol w:w='40'/></w:tblGrid></w:tbl>"
+        )
         assert convert._docx_table_column_widths(table) == [0, 40]
 
         cell = _xml("<w:tc><w:tcPr><w:gridSpan w:val='many'/></w:tcPr></w:tc>")
@@ -224,7 +226,9 @@ class TestSafeHtmlStyles:
         convert._apply_html_text_marks(cell)
         assert cell.find("em") is not None and cell.find("u") is not None
 
-        bold = BeautifulSoup("<td style='font-weight: bold'><strong>x</strong></td>", "html.parser").td
+        bold = BeautifulSoup(
+            "<td style='font-weight: bold'><strong>x</strong></td>", "html.parser"
+        ).td
         convert._apply_html_text_marks(bold)
         assert len(bold.find_all("strong")) == 1
 
@@ -254,6 +258,44 @@ class TestPandocMedia:
     def test_a_path_the_filesystem_rejects_is_not_a_media_file(self, tmp_path):
         assert (
             convert._resolve_media_path("a%00b", workdir=tmp_path, media_root=tmp_path / "media")
+            is None
+        )
+
+    def test_a_symlink_is_rejected_before_resolve_follows_it(self, tmp_path, monkeypatch):
+        # resolve() would launder the link into a path under the media root,
+        # so the containment check must not be the first line of defence.
+        media_root = tmp_path / "media"
+        media_root.mkdir()
+        outside = tmp_path / "outside.png"
+        outside.write_bytes(b"\x89PNG" + b"y" * 600)
+
+        candidate = media_root / "link.png"
+        created: dict[str, object] = {}
+
+        class SymlinkPath(type(candidate)):
+            """A concrete path that claims to be a symlink, whatever the OS."""
+
+            def is_symlink(self):
+                return created.get(str(self), False)
+
+        monkeypatch.setattr(convert.Path, "is_symlink", lambda self: str(self) == str(candidate))
+
+        assert (
+            convert._resolve_media_path("media/link.png", workdir=tmp_path, media_root=media_root)
+            is None
+        )
+
+    def test_an_unresolvable_path_is_not_a_media_file(self, tmp_path, monkeypatch):
+        media_root = tmp_path / "media"
+        media_root.mkdir()
+
+        def explode(self):
+            raise OSError("path too long for this filesystem")
+
+        monkeypatch.setattr(convert.Path, "resolve", explode)
+
+        assert (
+            convert._resolve_media_path("media/x.png", workdir=tmp_path, media_root=media_root)
             is None
         )
 

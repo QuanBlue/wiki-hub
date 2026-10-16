@@ -56,9 +56,12 @@ export function formatDuration(seconds: number | null): string {
 export function ProgressBar({
   percent,
   label,
+  trackClassName = "bg-surface",
 }: {
   percent: number | null;
   label: string;
+  /** The track's colour, for placing the bar on a surface that is itself `bg-surface`. */
+  trackClassName?: string;
 }) {
   if (percent === null) {
     return (
@@ -66,7 +69,7 @@ export function ProgressBar({
         aria-label={label}
         aria-valuemax={100}
         aria-valuemin={0}
-        className="bg-surface mt-2 h-2 overflow-hidden rounded-full"
+        className={`${trackClassName} mt-2 h-2 overflow-hidden rounded-full`}
         role="progressbar"
       >
         <div className="bg-info motion-safe:animate-pulse h-full w-1/3 rounded-full" />
@@ -79,7 +82,7 @@ export function ProgressBar({
       aria-valuemax={100}
       aria-valuemin={0}
       aria-valuenow={percent}
-      className="bg-surface mt-2 h-2 overflow-hidden rounded-full"
+      className={`${trackClassName} mt-2 h-2 overflow-hidden rounded-full`}
       role="progressbar"
     >
       <div

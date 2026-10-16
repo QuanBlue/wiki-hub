@@ -128,6 +128,15 @@ describe("ImportHistory", () => {
     expect(within(rows[1]).getByRole("button", { name: /View details/ })).toBeInTheDocument();
   });
 
+  it("marks a cancelled run as cancelled", async () => {
+    confluence = [job({ id: "stopped", status: "cancelled" })];
+
+    render(<ImportHistory />);
+
+    const rows = (await screen.findAllByRole("row")).slice(1);
+    expect(within(rows[0]).getByText("Cancelled")).toBeInTheDocument();
+  });
+
   it("shows an empty state and an error state with retry", async () => {
     render(<ImportHistory />);
     expect(await screen.findByText("No imports or restores have been run yet.")).toBeInTheDocument();

@@ -187,7 +187,7 @@ describe("Sidebar mail entries", () => {
     const names = within(admin)
       .getAllByRole("link")
       .map((link) => link.textContent);
-    expect(names).toEqual(["Users", "Groups", "Spaces", "Issues", "Settings", "Mailboxes", "AI assistant", "Storage", "Backup"]);
+    expect(names).toEqual(["Users", "Groups", "Spaces", "Issues", "Statistics", "Server", "Settings", "Mailboxes", "AI assistant", "Storage", "Backup"]);
     // One rule, between the groups: above Settings and nowhere else.
     const ruled = [...admin.querySelectorAll("li")].filter((li) =>
       li.className.includes("border-t"),

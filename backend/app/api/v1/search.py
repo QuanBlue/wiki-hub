@@ -49,6 +49,8 @@ class SearchResponseSchema(BaseModel):
     query: str
     pages: list[SearchResultPageSchema]
     spaces: list[SearchResultSpaceSchema]
+    #: Folded (accent-free, lower-case) words and synonyms to highlight in results.
+    terms: list[str] = []
 
 
 @router.get("", response_model=SearchResponseSchema, summary="Search spaces and pages")

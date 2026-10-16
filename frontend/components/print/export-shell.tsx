@@ -68,9 +68,7 @@ export function ExportShell({ bundle }: { bundle: ExportBundle }) {
       });
     };
 
-    const images = rootRef.current
-      ? Array.from(rootRef.current.querySelectorAll("img"))
-      : [];
+    const images = Array.from(rootRef.current?.querySelectorAll("img") ?? []);
     // The Font Loading API is universal in the Chromium the export renders
     // in; the fallback only matters for jsdom, which doesn't implement it.
     const fontsReady = document.fonts?.ready ?? Promise.resolve();

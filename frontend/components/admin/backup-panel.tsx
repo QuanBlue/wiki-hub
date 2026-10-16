@@ -87,7 +87,7 @@ type HashStats = TransferStats;
 
 /** The Confluence Data Center export only partly works, so it is switched off for now
  * (the card reads "Incoming"). Flip this to bring it back. */
-const CONFLUENCE_EXPORT_AVAILABLE = false;
+export const backupFeatures = { confluenceExport: false };
 
 type PortableBackupJob = {
   id: string;
@@ -157,7 +157,7 @@ type BackupArchiveUploadTarget = {
   reused: boolean;
 };
 
-type StoredConfluenceUpload = {
+export type StoredConfluenceUpload = {
   archiveId: string;
   file?: File;
   fileName: string;
@@ -177,7 +177,12 @@ type StoredConfluenceUploadRecord = Partial<StoredConfluenceUpload> & {
   partSize: number;
 };
 
-function normalizeStoredUpload(
+/** The server's own message when there is one, otherwise `fallback`. */
+export function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
+}
+
+export function normalizeStoredUpload(
   upload: StoredConfluenceUploadRecord | null | undefined,
 ): StoredConfluenceUpload | null {
   if (!upload) return null;
@@ -222,7 +227,7 @@ function storedUploadMetadata(upload: StoredConfluenceUpload) {
   };
 }
 
-function readStoredUploadMetadata(): StoredConfluenceUpload | null {
+export function readStoredUploadMetadata(): StoredConfluenceUpload | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(CONFLUENCE_UPLOAD_METADATA_KEY);
@@ -235,7 +240,7 @@ function readStoredUploadMetadata(): StoredConfluenceUpload | null {
   }
 }
 
-function saveStoredUploadMetadata(upload: StoredConfluenceUpload): void {
+export function saveStoredUploadMetadata(upload: StoredConfluenceUpload): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(
@@ -248,7 +253,7 @@ function saveStoredUploadMetadata(upload: StoredConfluenceUpload): void {
   }
 }
 
-function clearStoredUploadMetadata(): void {
+export function clearStoredUploadMetadata(): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(CONFLUENCE_UPLOAD_METADATA_KEY);
@@ -257,7 +262,7 @@ function clearStoredUploadMetadata(): void {
   }
 }
 
-function readCancelledUploadIds(): Set<string> {
+export function readCancelledUploadIds(): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
     const raw = window.localStorage.getItem(CONFLUENCE_CANCELLED_UPLOADS_KEY);
@@ -268,7 +273,7 @@ function readCancelledUploadIds(): Set<string> {
   }
 }
 
-function rememberCancelledUpload(archiveId: string | null | undefined): void {
+export function rememberCancelledUpload(archiveId: string | null | undefined): void {
   if (!archiveId || typeof window === "undefined") return;
   try {
     const ids = [archiveId, ...readCancelledUploadIds()].slice(0, 20);
@@ -282,7 +287,7 @@ function rememberCancelledUpload(archiveId: string | null | undefined): void {
   }
 }
 
-function forgetCancelledUpload(archiveId: string | null | undefined): void {
+export function forgetCancelledUpload(archiveId: string | null | undefined): void {
   if (!archiveId || typeof window === "undefined") return;
   try {
     const ids = [...readCancelledUploadIds()].filter((id) => id !== archiveId);
@@ -300,7 +305,7 @@ function forgetCancelledUpload(archiveId: string | null | undefined): void {
   }
 }
 
-function fileMatchesStoredUpload(
+export function fileMatchesStoredUpload(
   file: File | null,
   upload: StoredConfluenceUpload | null,
 ) {
@@ -312,7 +317,7 @@ function fileMatchesStoredUpload(
   );
 }
 
-function serverUploadToStoredUpload(
+export function serverUploadToStoredUpload(
   upload: ConfluenceUploadProgress,
 ): StoredConfluenceUpload {
   return {
@@ -470,7 +475,7 @@ class IncrementalSha256 {
   }
 }
 
-async function sha256File(
+export async function sha256File(
   file: File,
   onProgress: (loaded: number) => void,
   signal?: AbortSignal,
@@ -698,7 +703,7 @@ function ImportCompletedDialog({
   );
 }
 
-function CountList({
+export function CountList({
   title,
   counts,
 }: {
@@ -743,7 +748,7 @@ const AUTOMATED_BACKUP_STATUS_ICON: Record<AutomatedBackupStatus, typeof Clock> 
 //: One colour per status, not "green for done, blue for everything else" -
 //: "running" and "cancelled" used to share the same blue and were only told
 //: apart by reading the word itself.
-function automatedBackupBadgeVariant(status: string): BadgeProps["variant"] {
+export function automatedBackupBadgeVariant(status: string): BadgeProps["variant"] {
   if (status === "complete") return "success";
   if (status === "failed") return "danger";
   if (status === "cancelled") return "warning";
@@ -1060,9 +1065,6 @@ export function BackupPanel() {
   const [confluenceUploadError, setConfluenceUploadError] = useState<
     string | null
   >(null);
-  const [confluenceUploadNotice, setConfluenceUploadNotice] = useState<
-    string | null
-  >(null);
   const [siteSettings, setSiteSettings] = useState<SiteSettings | null>(null);
   const [automatedSettings, setAutomatedSettings] = useState<AutomatedBackupSettings | null>(null);
   const [automatedJobs, setAutomatedJobs] = useState<PortableBackupJob[]>([]);
@@ -1333,6 +1335,12 @@ export function BackupPanel() {
           ),
         )
       : 0;
+  const pendingRestoreStats = pendingRestoreUpload && {
+    loaded: pendingRestoreUploadedBytes,
+    total: pendingRestoreUpload.size_bytes,
+    bytesPerSecond: 0,
+    secondsRemaining: null,
+  };
   // Hoisted out of the restore card's render so the navigation guard below
   // can see it too - leaving mid-upload has to prompt, not silently abort.
   const isPreparingArchive =
@@ -1777,7 +1785,7 @@ export function BackupPanel() {
     kind: "full_export" | "confluence_export",
   ) {
     if (isDownloading) return;
-    if (kind === "confluence_export" && !CONFLUENCE_EXPORT_AVAILABLE) return;
+    if (kind === "confluence_export" && !backupFeatures.confluenceExport) return;
     setIsDownloading(true);
     try {
       // apiFetch JSON.stringifies `body` itself - passing an already-stringified
@@ -1803,9 +1811,7 @@ export function BackupPanel() {
       toast.success("Backup export queued. It will continue in the background.");
     } catch (downloadError) {
       toast.error(
-        downloadError instanceof Error
-          ? downloadError.message
-          : "Could not download the backup.",
+        errorMessage(downloadError, "Could not download the backup."),
       );
     } finally {
       setIsDownloading(false);
@@ -1829,9 +1835,7 @@ export function BackupPanel() {
       );
     } catch (cancelError) {
       toast.error(
-        cancelError instanceof ApiError
-          ? cancelError.message
-          : `Could not cancel the ${portableBackupJob.kind === "full_import" ? "restore" : "export"}.`,
+        errorMessage(cancelError, `Could not cancel the ${portableBackupJob.kind === "full_import" ? "restore" : "export"}.`),
       );
     } finally {
       setCancelExportPending(false);
@@ -2132,9 +2136,7 @@ export function BackupPanel() {
         setAutomatedSettings(null);
       }
       setAutomatedError(
-        error instanceof ApiError
-          ? error.message
-          : "Could not load automatic backup settings.",
+        errorMessage(error, "Could not load automatic backup settings."),
       );
     }
   }, [isEditingAutomatedSchedule, automatedJobsOffset, automatedJobsLimit]);
@@ -2209,7 +2211,7 @@ export function BackupPanel() {
       toast.success("Automatic backup queued.");
       await refreshAutomatedBackups();
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Could not queue automatic backup.");
+      toast.error(errorMessage(error, "Could not queue automatic backup."));
     } finally { setAutomatedPending(false); }
   }
 
@@ -2266,8 +2268,6 @@ export function BackupPanel() {
           const end = isTerminal ? new Date(job.updated_at).getTime() : Date.now();
           return end - start;
         }
-        default:
-          return null;
       }
     };
     return [...automatedJobs].sort((a, b) => {
@@ -2308,7 +2308,7 @@ export function BackupPanel() {
       }
     } catch (error) {
       toast.error(
-        error instanceof ApiError ? error.message : "Could not delete the selected backups.",
+        errorMessage(error, "Could not delete the selected backups."),
       );
     } finally {
       setAutomatedPending(false);
@@ -2330,7 +2330,7 @@ export function BackupPanel() {
       await refreshAutomatedBackups();
     } catch (error) {
       toast.error(
-        error instanceof ApiError ? error.message : "Could not cancel the backup.",
+        errorMessage(error, "Could not cancel the backup."),
       );
     } finally {
       setCancelAutomatedJobPending(false);
@@ -2536,9 +2536,7 @@ export function BackupPanel() {
         setConfluenceUploadError(SESSION_EXPIRED_UPLOAD_MESSAGE);
       } else {
         setConfluenceUploadError(
-          restoreError instanceof ApiError
-            ? restoreError.message
-            : "Could not refresh the saved upload progress. You can still try Resume upload.",
+          errorMessage(restoreError, "Could not refresh the saved upload progress. You can still try Resume upload."),
         );
       }
     }
@@ -2590,14 +2588,7 @@ export function BackupPanel() {
   ) {
     const saved = overrideStored ?? (resume ? storedConfluenceUpload : null);
     const selectedFile = saved?.file ?? confluenceFile;
-    if (!selectedFile) {
-      if (saved) {
-        setConfluenceUploadError(
-          "Select the same archive file again to resume this interrupted upload.",
-        );
-      }
-      return;
-    }
+    if (!selectedFile) return;
     // Check file size limit before starting hashing
     let settings = siteSettings;
     if (!settings) {
@@ -2623,21 +2614,14 @@ export function BackupPanel() {
 
     setConfluencePending(true);
     setConfluenceUploadError(null);
-    setConfluenceUploadNotice(null);
     uploadPauseReason.current = null;
     let stopSessionRenewal: (() => void) | null = null;
     let preparingArchive = false;
     if (!saved) {
       setPreparationLogs([]);
       setPreparationLogsExpanded(true);
-      setUploadProgress(0);
-      setUploadStats({
-        loaded: 0,
-        total: selectedFile.size,
-        bytesPerSecond: 0,
-        secondsRemaining: null,
-      });
-    } else if (uploadProgress === null) {
+    }
+    if (!saved || uploadProgress === null) {
       setUploadProgress(0);
       setUploadStats({
         loaded: 0,
@@ -2912,15 +2896,11 @@ export function BackupPanel() {
       } else {
         if (preparingArchive) {
           appendPreparationLog(
-            err instanceof ApiError
-              ? `Preparation failed: ${err.message}`
-              : "Preparation failed.",
+            err instanceof ApiError ? `Preparation failed: ${err.message}` : "Preparation failed.",
           );
         }
         setConfluenceUploadError(
-          err instanceof ApiError
-            ? err.message
-            : "Could not upload or scan the Confluence archive.",
+          errorMessage(err, "Could not upload or scan the Confluence archive."),
         );
       }
     } finally {
@@ -2960,7 +2940,6 @@ export function BackupPanel() {
     setHashStats(null);
     setPreparationLogs([]);
     setConfluenceUploadError(null);
-    setConfluenceUploadNotice(null);
     void clearStoredUpload();
     try {
       if (archiveId) {
@@ -2974,9 +2953,7 @@ export function BackupPanel() {
       toast.success("Confluence archive upload cancelled.");
     } catch (cancelError) {
       toast.error(
-        cancelError instanceof ApiError
-          ? cancelError.message
-          : "Could not cancel the archive upload.",
+        errorMessage(cancelError, "Could not cancel the archive upload."),
       );
     } finally {
       setCancelUploadPending(false);
@@ -3017,7 +2994,6 @@ export function BackupPanel() {
       setHashStats(null);
       setPreparationLogs([]);
       setConfluenceUploadError(null);
-      setConfluenceUploadNotice(null);
       void clearStoredUpload();
       toast.success("Archive selection cleared.");
     } finally {
@@ -3047,7 +3023,7 @@ export function BackupPanel() {
       toast.success("Confluence import queued.");
     } catch (err) {
       toast.error(
-        err instanceof ApiError ? err.message : "Could not queue the import.",
+        errorMessage(err, "Could not queue the import."),
       );
     } finally {
       setConfluencePending(false);
@@ -3326,15 +3302,11 @@ export function BackupPanel() {
         setRestoreArchiveRejected(true);
       }
       appendRestorePreparationLog(
-        err instanceof ApiError
-          ? `Failed: ${err.message}`
-          : "Failed to upload or scan the archive.",
+        err instanceof ApiError ? `Failed: ${err.message}` : "Failed to upload or scan the archive.",
         "error",
       );
       setError(
-        err instanceof ApiError
-          ? err.message
-          : "Could not upload or scan the backup archive.",
+        errorMessage(err, "Could not upload or scan the backup archive."),
       );
     } finally {
       stopSessionRenewal?.();
@@ -3603,9 +3575,7 @@ export function BackupPanel() {
       toast.success("Archive selection cleared.");
     } catch (err) {
       toast.error(
-        err instanceof ApiError
-          ? err.message
-          : "Could not discard the uploaded archive.",
+        errorMessage(err, "Could not discard the uploaded archive."),
       );
     }
   }
@@ -3642,9 +3612,7 @@ export function BackupPanel() {
         toast.success("Restore queued. It will continue in the background.");
       } catch (err) {
         toast.error(
-          err instanceof ApiError
-            ? err.message
-            : "Could not restore the backup file.",
+          errorMessage(err, "Could not restore the backup file."),
         );
       } finally {
         setPending(null);
@@ -3670,9 +3638,7 @@ export function BackupPanel() {
       router.refresh();
     } catch (err) {
       toast.error(
-        err instanceof ApiError
-          ? err.message
-          : "Could not read the backup file.",
+        errorMessage(err, "Could not read the backup file."),
       );
     } finally {
       setPending(null);
@@ -3900,7 +3866,7 @@ export function BackupPanel() {
 
     const title =
       status === "complete"
-        ? `${noun} is ${isRestore ? "complete" : "ready"}`
+        ? `${noun} is ready`
         : status === "failed"
           ? `${noun} failed`
           : status === "cancelled"
@@ -3911,9 +3877,7 @@ export function BackupPanel() {
 
     const subtitle =
       status === "complete"
-        ? isRestore
-          ? "The backup was applied. This page refreshes automatically."
-          : "It should download automatically — if not, click the button."
+        ? "It should download automatically — if not, click the button."
         : status === "failed"
           ? (portableBackupJob.error ??
             `The ${noun.toLowerCase()} could not be completed.`)
@@ -4175,7 +4139,7 @@ export function BackupPanel() {
                   // with it (or, once one starts, an in-flight Confluence
                   // export of its own).
                   disabled={
-                    !CONFLUENCE_EXPORT_AVAILABLE ||
+                    !backupFeatures.confluenceExport ||
                     isDownloading ||
                     isPortableJobRunning
                   }
@@ -4196,7 +4160,7 @@ export function BackupPanel() {
                   variant="primary"
                   className="w-full"
                   disabled={
-                    !CONFLUENCE_EXPORT_AVAILABLE ||
+                    !backupFeatures.confluenceExport ||
                     isDownloading ||
                     isPortableJobRunning ||
                     !confluenceExportProfile
@@ -4209,7 +4173,7 @@ export function BackupPanel() {
                   ) : (
                     <ArrowUpFromLine />
                   )}
-                  {!CONFLUENCE_EXPORT_AVAILABLE
+                  {!backupFeatures.confluenceExport
                     ? "Coming soon"
                     : isConfluenceExportRunning
                       ? "Exporting…"
@@ -5298,20 +5262,21 @@ export function BackupPanel() {
                         );
                         return;
                       }
-                      if (matchesInterruptedUpload && storedConfluenceUpload) {
+                      if (
+                        nextFile &&
+                        matchesInterruptedUpload &&
+                        storedConfluenceUpload
+                      ) {
                         const nextStored = {
                           ...storedConfluenceUpload,
-                          file: nextFile ?? undefined,
-                          fileLastModified:
-                            nextFile?.lastModified ??
-                            storedConfluenceUpload.fileLastModified,
+                          file: nextFile,
+                          fileLastModified: nextFile.lastModified,
                         };
                         setConfluenceFile(null);
                         storedConfluenceUploadRef.current = nextStored;
                         setStoredConfluenceUpload(nextStored);
                         setConfluenceArchive(null);
                         setConfluenceUploadError(null);
-                        setConfluenceUploadNotice(null);
                         setPreparationLogs([]);
                         setUploadProgress((current) => current ?? 0);
                         void saveStoredUpload(nextStored);
@@ -5338,7 +5303,6 @@ export function BackupPanel() {
                       setConfluenceArchive(null);
                       setConfluenceJob(null);
                       setConfluenceUploadError(null);
-                      setConfluenceUploadNotice(null);
                       setPreparationLogs([]);
                       setUploadProgress(null);
                       setUploadStats(null);
@@ -5389,15 +5353,7 @@ export function BackupPanel() {
                     {confluenceUploadError}
                   </p>
                 ) : null}
-
-                {confluenceUploadNotice ? (
-                  <p
-                    role="status"
-                    className="border-success/30 bg-success-bg text-success rounded-md border px-3 py-2 text-sm"
-                  >
-                    {confluenceUploadNotice}
-                  </p>
-                ) : null}
+
 
                 <div className="flex flex-wrap gap-2">
                   {isUploading || isHashingArchive ? (
@@ -5442,9 +5398,7 @@ export function BackupPanel() {
                           void uploadConfluence(Boolean(storedConfluenceUpload));
                         }}
                       >
-                        {isHashingArchive ? (
-                          <FileArchive />
-                        ) : confluencePending && !confluenceArchive ? (
+                        {confluencePending && !confluenceArchive ? (
                           <Loader2 className="animate-spin" />
                         ) : storedConfluenceUpload ? (
                           <Play />
@@ -5644,9 +5598,7 @@ export function BackupPanel() {
                         // card's own error slot, nowhere near this button - a
                         // failure here needs to surface right where it happened.
                         toast.error(
-                          cancelError instanceof ApiError
-                            ? cancelError.message
-                            : "Could not cancel the import.",
+                          errorMessage(cancelError, "Could not cancel the import."),
                         );
                       } finally {
                         setConfluenceCancelPending(false);
@@ -5685,17 +5637,7 @@ export function BackupPanel() {
             // says is already stored - so synthesise the one row the paused
             // panel actually shows ("Uploaded: x / y"); speed and estimate
             // are hidden while paused anyway.
-            stats={
-              restoreUploadStats ??
-              (pendingRestoreUpload
-                ? {
-                    loaded: pendingRestoreUploadedBytes,
-                    total: pendingRestoreUpload.size_bytes,
-                    bytesPerSecond: 0,
-                    secondsRemaining: null,
-                  }
-                : null)
-            }
+            stats={restoreUploadStats ?? pendingRestoreStats}
             uploading={isUploadingBackupArchive}
             totalFallback={file?.size ?? 0}
             note={

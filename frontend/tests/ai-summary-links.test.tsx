@@ -186,3 +186,18 @@ describe("IssueMarkdown links", () => {
     expect(screen.getByText(/Open guide\.pdf now/)).toBeInTheDocument();
   });
 });
+
+describe("aiStatus", () => {
+  it("counts a failed lookup as off, and asks again next time", async () => {
+    vi.resetModules();
+    const { api } = await import("@/lib/api-client");
+    const { aiStatus } = await import("@/lib/ai-summary");
+    const spy = vi.spyOn(api, "get").mockRejectedValueOnce(new Error("down"));
+
+    expect(await aiStatus()).toEqual({ enabled: false, can_configure: false });
+
+    spy.mockResolvedValueOnce({ enabled: true, can_configure: true });
+    expect(await aiStatus()).toEqual({ enabled: true, can_configure: true });
+    spy.mockRestore();
+  });
+});

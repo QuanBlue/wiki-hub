@@ -6,7 +6,15 @@ vi.mock("@/lib/server-api", async () => {
   return { ...actual, serverGet: serverGetMock };
 });
 
-import { getSiteSettings, listAllUsers, listUsers } from "@/lib/admin";
+import {
+  getSiteSettings,
+  getStatsAi,
+  getStatsOverview,
+  getStatsTopPages,
+  getStatsTopSpaces,
+  listAllUsers,
+  listUsers,
+} from "@/lib/admin";
 
 function user(id: string) {
   return { id, username: id };
@@ -83,5 +91,25 @@ describe("getSiteSettings", () => {
 
     expect(await getSiteSettings()).toEqual({ site_name: "WikiHub" });
     expect(serverGetMock).toHaveBeenCalledWith("/api/v1/settings");
+  });
+});
+
+describe("statistics fetchers", () => {
+  beforeEach(() => serverGetMock.mockReset());
+
+  it("asks for each statistics endpoint with the chosen range and ranking", async () => {
+    serverGetMock.mockResolvedValue({});
+
+    await getStatsOverview("7d");
+    await getStatsAi("90d");
+    await getStatsTopPages("30d", "saves");
+    await getStatsTopSpaces("30d", "stars");
+
+    expect(serverGetMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v1/admin/statistics/overview?range=7d",
+      "/api/v1/admin/statistics/ai?range=90d",
+      "/api/v1/admin/statistics/top-pages?range=30d&sort=saves",
+      "/api/v1/admin/statistics/top-spaces?range=30d&sort=stars",
+    ]);
   });
 });

@@ -21,7 +21,7 @@ from app.models.attachment import PageAttachment
 from app.models.page import WikiPage
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
-from app.modules.ai.client import chat
+from app.modules.ai.client import chat_with_usage
 from app.modules.ai.config import load_config
 from app.modules.ai.draft_html import draft_to_html, split_title
 from app.modules.ai.page_context import (
@@ -49,6 +49,7 @@ from app.modules.ai.text import page_plain_text
 from app.modules.pages.service import PageService
 from app.modules.permissions.service import PermissionService
 from app.modules.spaces.service import SpaceService
+from app.modules.stats.recorder import record_ai_usage
 from app.schemas.ai import (
     AssistRequest,
     AssistResult,
@@ -98,6 +99,26 @@ class AIService:
         self.user = user
         self.spaces = SpaceService(session)
         self.pages = PageService(session)
+
+    async def _chat(
+        self,
+        feature: str,
+        config,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int = 2000,
+    ) -> str:
+        """Ask the model and log the tokens it cost for the statistics page."""
+        reply = await chat_with_usage(config, messages, max_tokens=max_tokens)
+        if reply.usage is not None:
+            await record_ai_usage(
+                user_id=self.user.id,
+                feature=feature,
+                model=config.model,
+                prompt_tokens=reply.usage.prompt_tokens,
+                completion_tokens=reply.usage.completion_tokens,
+            )
+        return reply.text
 
     async def _visible_page(self, key: str, slug: str) -> WikiPage:
         """Page text only ever reaches the model for someone allowed to read it."""
@@ -177,7 +198,8 @@ class AIService:
         config, space = await self._creator_config(key)
         request = "\n".join([payload.title.strip(), payload.prompt.strip()]).strip()
         related = await find_related(self.session, self.user, request, space_id=space.id)
-        reply = await chat(
+        reply = await self._chat(
+            "clarify",
             config,
             [
                 {"role": "system", "content": clarify_system_prompt()},
@@ -216,7 +238,8 @@ class AIService:
             parts += ["<answers>", *(f"- {a.question}: {a.answer}" for a in payload.answers)]
             parts.append("</answers>")
         parts.append(wiki_context(await self._readable_pages(payload.related_ids)))
-        reply = await chat(
+        reply = await self._chat(
+            "draft",
             config,
             [
                 {"role": "system", "content": page_draft_system_prompt(instructions)},
@@ -256,7 +279,8 @@ class AIService:
         if payload.action == "terms":
             related = await find_related(self.session, self.user, text, space_id=space.id)
             parts.append(wiki_context(related, 300))
-        reply = await chat(
+        reply = await self._chat(
+            "assist",
             config,
             [
                 {
@@ -342,7 +366,8 @@ class AIService:
             listing,
             "</candidates>",
         ]
-        reply = await chat(
+        reply = await self._chat(
+            "suggest",
             config,
             [
                 {"role": "system", "content": suggest_system_prompt(instructions)},
@@ -396,7 +421,8 @@ class AIService:
         if payload.context.strip():
             parts += ["<surrounding>", payload.context.strip(), "</surrounding>"]
         parts += ["<selected>", text, "</selected>"]
-        result = await chat(
+        result = await self._chat(
+            "explain",
             config,
             [
                 {
@@ -463,7 +489,8 @@ class AIService:
                     summary="", cached=False, too_short=True, attachments=attachments
                 )
             await charge()
-            summary = await chat(
+            summary = await self._chat(
+                "summarize",
                 config,
                 [
                     {"role": "system", "content": prompt},
@@ -479,7 +506,8 @@ class AIService:
             return answer(summary)
 
         await charge()
-        translated = await chat(
+        translated = await self._chat(
+            "translate",
             config,
             [
                 {"role": "system", "content": translation_system_prompt(code)},

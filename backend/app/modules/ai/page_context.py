@@ -174,8 +174,6 @@ def parse_suggestions(reply: str, candidates: int) -> tuple[list[str], list[int]
         data = json.loads(found.group(0))
     except ValueError:
         return [], []
-    if not isinstance(data, dict):
-        return [], []
     labels: list[str] = []
     for item in data.get("labels") or []:
         name = " ".join(str(item).split()).strip(" #,.;")[:64]
