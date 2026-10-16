@@ -347,6 +347,75 @@ export const sectionsVi: HelpSection[] = [
     ),
   },
   {
+    id: "chat-with-ai",
+    title: "Chat với trợ lý AI",
+    category: "Workspace",
+    description: "Khung chat ở mọi trang: hỏi, hỏi tiếp, và xem mỗi câu trả lời đến từ trang wiki hay trang web nào.",
+    keywords: ["ai", "chat", "trợ lý", "câu hỏi", "hỏi tiếp", "nguồn", "tìm kiếm web", "kiến thức chung"],
+    body: (
+      <>
+        <p>
+          Khi quản trị viên đã kết nối AI, nút <Code>Chat với AI</Code> (biểu tượng tia sáng) xuất hiện trên
+          thanh trên cùng của mọi trang, cạnh chuông thông báo. Nó mở một khung bên phải để bạn hỏi và hỏi tiếp: câu như{" "}
+          <Code>còn địa chỉ của nó?</Code> được hiểu dựa trên các tin nhắn trước. Câu trả lời hiện dần
+          từng chữ; <Kbd>Enter</Kbd> để gửi (<Kbd>Shift+Enter</Kbd> xuống dòng).
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>
+            <strong>Kích thước</strong>: kéo cạnh trái của khung để rộng ra hoặc hẹp lại (bấm đúp vào
+            cạnh để về mặc định), dùng nút mở rộng để chiếm cả trang, hoặc dùng phím mũi tên khi đang
+            chọn cạnh. Bấm ra ngoài khung thì khung đóng lại; cuộc trò chuyện vẫn còn.
+          </li>
+          <li>
+            <strong>Câu trả lời đến từ đâu</strong>: trước hết là wiki của bạn, với các dấu số như{" "}
+            <Code>1</Code> mở trang tương ứng và danh sách <Code>Sources</Code>, giống như trong tìm
+            kiếm. Thông tin về hệ thống, tài khoản, con người của bạn chỉ lấy từ wiki.
+          </li>
+          <li>
+            <strong>Internet</strong>: nếu quản trị viên bật tìm kiếm web, chat có thể tra cứu câu hỏi
+            công khai, kỹ thuật mà wiki chưa có. Bạn sẽ thấy <Code>Đang tìm trên web: ...</Code> kèm
+            đúng câu truy vấn, và câu trả lời liệt kê các trang trong mục <Code>Từ web</Code> với dấu
+            như <Code>w1</Code>, mở ở tab mới. Chỉ câu truy vấn ngắn đó rời khỏi WikiHub - không bao
+            giờ là trang wiki - và địa chỉ, e-mail, tên máy chủ nội bộ được loại khỏi truy vấn trước.
+          </li>
+          <li>
+            <strong>Hỏi tiếp và số liệu</strong>: các tin nhắn trước được dùng làm ngữ cảnh, nên{" "}
+            <Code>tôi ở Cam Ranh</Code> sau câu <Code>thời tiết hôm nay thế nào?</Code> vẫn được hiểu.
+            Khi câu hỏi thiếu điều nó phụ thuộc vào (một thành phố), trợ lý sẽ hỏi lại trước. Với thời
+            tiết, nó đọc số đo thật (nhiệt độ, độ ẩm, gió, khả năng mưa) và nêu rõ nguồn; với các câu
+            hỏi khác, nó còn đọc nội dung của vài trang web đầu tiên chứ không chỉ phần mô tả, nên có
+            thể trích được số liệu trên đó. Chỉ tải trang từ địa chỉ công khai.
+          </li>
+          <li>
+            <strong>Kiến thức chung</strong>: khi cả wiki lẫn web đều không trả lời được và câu hỏi
+            mang tính tổng quát, AI có thể trả lời bằng kiến thức của nó. Câu trả lời như vậy luôn có
+            nhãn <Code>Chưa được kiểm chứng với wiki hay trang web nào</Code>; hãy xem như gợi ý.
+          </li>
+          <li>
+            <strong>Giải thích và dịch</strong>: bôi đen một từ, cụm từ hay câu trong câu hỏi hoặc câu
+            trả lời, nút AI nhỏ sẽ hiện ở cuối đoạn chọn, giống như trong trang. Nó giải thích (mặc định
+            bằng tiếng Việt) hoặc dịch; nút quả cầu đổi ngôn ngữ. Chỉ khi bạn chọn thì mới gửi đi, và hỏi
+            lại cùng nội dung thì không tốn thêm.
+          </li>
+          <li>
+            <strong>Cuộc trò chuyện</strong> chỉ lưu trong trình duyệt này, theo tài khoản của bạn. Dùng{" "}
+            <Code>Chat mới</Code> để xóa. <Code>Dừng</Code> hủy câu trả lời và trả câu hỏi về ô nhập
+            để sửa. Từ một câu trả lời trong tìm kiếm, <Code>Tiếp tục trong chat</Code> sẽ chuyển
+            sang chat.
+          </li>
+          <li>
+            <strong>Quản trị viên</strong> bật tại Quản trị, Trợ lý AI, <Code>Tìm kiếm web</Code>: chọn
+            Tavily, Brave Search hoặc Serper, dán key và bấm <Code>Thử tìm kiếm</Code>. Mặc định tắt.
+          </li>
+        </ul>
+        <Callout>
+          AI có thể sai, trang web cũng có thể sai. Hãy mở các nguồn trước khi dựa vào câu trả lời cho
+          việc quan trọng.
+        </Callout>
+      </>
+    ),
+  },
+  {
     id: "my-work",
     title: "Tìm các trang bạn đã ghé thăm, chỉnh sửa hoặc lưu",
     category: "Workspace",

@@ -40,7 +40,7 @@ describe("tables in Markdown", () => {
     });
     expect(link).toHaveAttribute("href", "http://117.1.29.44:9091/graph");
     await userEvent.click(screen.getByRole("button", { name: "2" }));
-    expect(onCite).toHaveBeenCalledWith(2);
+    expect(onCite).toHaveBeenCalledWith(2, false);
   });
 
   it("pads a short row and ignores cells past the header", () => {

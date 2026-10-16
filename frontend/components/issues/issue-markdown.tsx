@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { CodeBlock } from "@/components/issues/code-block";
 import { cn } from "@/lib/utils";
 
 /**
@@ -12,7 +13,7 @@ import { cn } from "@/lib/utils";
  * paragraph stays a line break, as people expect when typing a report.
  */
 const INLINE =
-  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[[^\]\n]+\]\((?:https?:\/\/[^)\s]+|attachment:[0-9a-fA-F-]{36}|cite:\d{1,2})\))|((?<![A-Za-z0-9])_[^_\n]+_(?![A-Za-z0-9]))/g;
+  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[[^\]\n]+\]\((?:https?:\/\/[^)\s]+|attachment:[0-9a-fA-F-]{36}|cite:w?\d{1,2})\))|((?<![A-Za-z0-9])_[^_\n]+_(?![A-Za-z0-9]))/g;
 
 /** The same, plus a bare ``https://...`` address (group 5), for text a model wrote. */
 const INLINE_AUTOLINK = new RegExp(
@@ -37,7 +38,7 @@ type InlineOptions = {
   /** Called for ``[name](attachment:<id>)``; without it such a link is plain text. */
   onOpenAttachment?: (attachmentId: string) => void;
   /** Called for ``[n](cite:n)``, an AI answer's mark for its n-th source; without it, plain ``[n]``. */
-  onCite?: (n: number) => void;
+  onCite?: (n: number, web?: boolean) => void;
 };
 
 const MENTION = /(@[A-Za-z0-9][A-Za-z0-9_.-]*)/g;
@@ -103,13 +104,15 @@ function inline(
       const label = token.slice(1, split);
       const href = token.slice(split + 2, -1);
       if (href.startsWith("cite:")) {
-        const n = Number(href.slice("cite:".length));
+        const target = href.slice("cite:".length);
+        const web = target.startsWith("w");
+        const n = Number(web ? target.slice(1) : target);
         nodes.push(
           onCite ? (
             <button
               key={key}
               type="button"
-              onClick={() => onCite(n)}
+              onClick={() => onCite(n, web)}
               aria-label={`${label}`}
               className="bg-primary-subtle text-primary hover:bg-surface-selected focus-visible:ring-ring mx-0.5 inline-flex min-w-5 cursor-pointer items-center justify-center rounded px-1 align-baseline text-[11px] leading-5 font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
             >
@@ -201,6 +204,7 @@ export function IssueMarkdown({
   autolink,
   onOpenAttachment,
   onCite,
+  codeCard,
 }: {
   source: string;
   className?: string;
@@ -211,7 +215,9 @@ export function IssueMarkdown({
   /** Makes ``[name](attachment:<id>)`` a button that calls this with the id. */
   onOpenAttachment?: (attachmentId: string) => void;
   /** Makes ``[n](cite:n)`` a numbered mark that calls this with n. */
-  onCite?: (n: number) => void;
+  onCite?: (n: number, web?: boolean) => void;
+  /** Draw fenced code as a card with its language and a copy button. */
+  codeCard?: boolean;
 }) {
   const mentionSet: ReadonlySet<string> = new Set(
     (mentions ?? []).map((name) => name.toLowerCase()),
@@ -240,6 +246,7 @@ export function IssueMarkdown({
     }
 
     if (line.trimStart().startsWith("```")) {
+      const language = line.trimStart().slice(3).trim().split(/\s+/)[0] ?? "";
       const code: string[] = [];
       i += 1;
       while (i < lines.length && !lines[i].trimStart().startsWith("```")) {
@@ -247,6 +254,12 @@ export function IssueMarkdown({
         i += 1;
       }
       i += 1; // the closing fence, if there is one
+      if (codeCard) {
+        blocks.push(
+          <CodeBlock key={key++} code={code.join("\n")} language={language} />,
+        );
+        continue;
+      }
       blocks.push(
         <pre
           key={key++}

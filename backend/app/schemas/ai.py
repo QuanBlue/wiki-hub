@@ -420,6 +420,15 @@ class AnswerSource(BaseModel):
     excerpt: str
 
 
+class WebSource(BaseModel):
+    #: The number the answer cites it by: ``[w1]``.
+    n: int
+    title: str
+    url: str
+    host: str
+    snippet: str
+
+
 class AnswerResult(BaseModel):
     #: ``False`` when the wiki does not answer the question; the pages in ``related`` may help.
     found: bool
@@ -434,3 +443,58 @@ class AnswerResult(BaseModel):
     related: list[AnswerSource] = []
     #: Served from a short-lived copy: no model call was made.
     cached: bool = False
+    #: What the answer stands on: ``wiki`` (cited pages), ``web`` (cited internet pages, with
+    #: or without wiki pages), ``general`` (the model's own knowledge, not checked against
+    #: anything) or ``clarify`` (a question put back to the person, claiming nothing).
+    basis: Literal["wiki", "web", "general", "clarify"] = "wiki"
+    #: The internet pages the answer cites, as ``[w1]``, ``[w2]``...
+    web_sources: list[WebSource] = []
+
+
+#: How much of a conversation goes to the model: the latest turns, each kept short.
+CHAT_MAX_MESSAGES = 10
+CHAT_MAX_CHARS = 2000
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=CHAT_MAX_CHARS)
+
+    @field_validator("content")
+    @classmethod
+    def _trim(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("A message cannot be empty.")
+        return value
+
+
+class ChatRequest(BaseModel):
+    #: The conversation so far, oldest first, ending with the question to answer.
+    messages: list[ChatMessage] = Field(min_length=1, max_length=CHAT_MAX_MESSAGES * 2)
+
+    @model_validator(mode="after")
+    def _ends_with_a_question(self) -> ChatRequest:
+        if self.messages[-1].role != "user":
+            raise ValueError("The last message must be a question from the user.")
+        return self
+
+
+class WebSearchRead(BaseModel):
+    enabled: bool
+    provider: Literal["gateway", "tavily", "brave", "serper"]
+    has_key: bool
+    key_preview: str
+
+
+class WebSearchUpdate(BaseModel):
+    enabled: bool
+    provider: Literal["gateway", "tavily", "brave", "serper"]
+    #: Omit to keep the saved key; an empty string removes it.
+    api_key: str | None = Field(default=None, max_length=500)
+
+
+class WebSearchTestResult(BaseModel):
+    ok: bool
+    error: str | None = None
+    results: int = 0

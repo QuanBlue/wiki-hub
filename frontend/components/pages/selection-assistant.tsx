@@ -88,12 +88,18 @@ function readSelection(
  * remembers each answer, so asking again is free.
  */
 export function SelectionAssistant({
-  spaceKey,
-  pageSlug,
+  spaceKey = "",
+  pageSlug = "",
+  endpoint,
+  className,
   children,
 }: {
-  spaceKey: string;
-  pageSlug: string;
+  /** The page the words are on (for the permission check); not needed with ``endpoint``. */
+  spaceKey?: string;
+  pageSlug?: string;
+  /** Where to ask, for words that belong to no page (the chat). Default: the page's own. */
+  endpoint?: string;
+  className?: string;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -220,7 +226,8 @@ export function SelectionAssistant({
     setPending(true);
     try {
       const response = await api.post<{ result: string }>(
-        `/api/v1/ai/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(pageSlug)}/explain`,
+        endpoint ??
+          `/api/v1/ai/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(pageSlug)}/explain`,
         {
           text: selection.text,
           context: selection.context,
@@ -270,6 +277,7 @@ export function SelectionAssistant({
               <button
                 type="button"
                 onMouseDown={keepSelection}
+                data-selection-assistant
                 onClick={() => {
                   setOpen(true);
                   void run("explain");
@@ -286,6 +294,7 @@ export function SelectionAssistant({
                 ref={panelRef}
                 role="dialog"
                 aria-label={t("ai.selectionAi.button")}
+                data-selection-assistant
                 onMouseDown={keepSelection}
                 style={{
                   left: panelLeft,
@@ -392,10 +401,7 @@ export function SelectionAssistant({
                 >
                   {pending ? (
                     <p className="text-muted-foreground flex items-center gap-2 text-sm">
-                      <Loader2
-                        className="size-3.5 animate-spin"
-                        aria-hidden
-                      />
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
                       {t("ai.selectionAi.thinking")}
                     </p>
                   ) : error ? (
@@ -426,7 +432,9 @@ export function SelectionAssistant({
 
   return (
     <>
-      <div ref={rootRef}>{children}</div>
+      <div ref={rootRef} className={className}>
+        {children}
+      </div>
       {floating}
     </>
   );

@@ -1,16 +1,23 @@
 "use client";
 
-import { KeyRound, ScanSearch, Sparkles, type LucideIcon } from "lucide-react";
+import {
+  Globe,
+  KeyRound,
+  ScanSearch,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 import { useState } from "react";
 
 import { AiConnectionsPanel } from "@/components/admin/ai-connections-panel";
 import { AiSkillsPanel } from "@/components/admin/ai-skills-panel";
 import { SemanticSearchPanel } from "@/components/admin/semantic-search-panel";
+import { WebSearchPanel } from "@/components/admin/web-search-panel";
 import type { AiConnectionList, AiSkill, EmbeddingSettings } from "@/lib/admin-ai";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 
-type SectionId = "keys" | "semantic" | "skills";
+type SectionId = "keys" | "semantic" | "web" | "skills";
 
 /** Semantic search is off until an administrator picks a source and a model. */
 const NO_EMBEDDING: EmbeddingSettings = {
@@ -55,6 +62,7 @@ export function AiSections({
   const sections: Array<{ id: SectionId; label: string; icon: LucideIcon }> = [
     { id: "keys", label: t("adminAi.keysSection"), icon: KeyRound },
     { id: "semantic", label: t("adminAi.semanticSection"), icon: ScanSearch },
+    { id: "web", label: t("adminAi.webSection"), icon: Globe },
     { id: "skills", label: t("adminAi.skillsSection"), icon: Sparkles },
   ];
 
@@ -114,6 +122,15 @@ export function AiSections({
           hidden={active !== "semantic"}
         >
           <SemanticSearchPanel initial={embedding} visible={active === "semantic"} />
+        </div>
+        <div
+          id="ai-panel-web"
+          role="tabpanel"
+          aria-labelledby="ai-tab-web"
+          hidden={active !== "web"}
+        >
+          {/* Mounted when first shown: it has nothing to load before then. */}
+          {active === "web" ? <WebSearchPanel /> : null}
         </div>
         <div
           id="ai-panel-skills"

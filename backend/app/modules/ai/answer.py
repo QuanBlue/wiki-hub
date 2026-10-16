@@ -85,7 +85,7 @@ def scrub_secrets(text: str) -> str:
 
 #: The tags that frame the question and the sources: text from a page must not be able to
 #: close them and open its own.
-_FRAMING_TAGS = re.compile(r"</?\s*(?:sources?|question)\b[^>]*>", re.IGNORECASE)
+_FRAMING_TAGS = re.compile(r"</?\s*(?:web_sources?|sources?|question)\b[^>]*>", re.IGNORECASE)
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 

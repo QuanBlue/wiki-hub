@@ -21,8 +21,9 @@ from app.models.attachment import PageAttachment
 from app.models.page import WikiPage
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
+from app.modules.ai.answer import scrub_secrets
 from app.modules.ai.client import chat_with_usage
-from app.modules.ai.config import load_config
+from app.modules.ai.config import AIConfig, load_config
 from app.modules.ai.draft_html import draft_to_html, split_title
 from app.modules.ai.page_context import (
     find_related,
@@ -405,21 +406,55 @@ class AIService:
         if not config.ready:
             raise ServiceUnavailableError("The AI assistant is not enabled.")
         page = await self._visible_page(key, slug)
-        text = payload.text.strip()
         stamp = page.updated_at.timestamp() if page.updated_at else 0
+        return await self._explain(
+            config,
+            payload,
+            scope=f"{page.id}:{stamp}",
+            title=f"<page_title>{page.title}</page_title>",
+        )
+
+    async def explain_text(self, payload: ExplainRequest) -> ExplainResult:
+        """Explain or translate words selected in a chat answer, which belongs to no page.
+
+        The words are what the reader selected from text already shown to them, so there is
+        nothing to check access to; the answer is saved per person, since the surrounding text
+        may come from pages only they could read.
+        """
+        config = await load_config(self.session)
+        if not config.ready:
+            raise ServiceUnavailableError("The AI assistant is not enabled.")
+        return await self._explain(
+            config, payload, scope=f"chat:{self.user.id}", title="", scrub=True
+        )
+
+    async def _explain(
+        self,
+        config: AIConfig,
+        payload: ExplainRequest,
+        *,
+        scope: str,
+        title: str,
+        scrub: bool = False,
+    ) -> ExplainResult:
+        text = payload.text.strip()
+        context = payload.context.strip()
+        if scrub:
+            # Passwords and keys are not sent on to the model, even when typed in a question.
+            text, context = scrub_secrets(text), scrub_secrets(context)
         lang = (payload.lang or "").lower()
         instructions = await selection_instructions(self.session, payload.action)
         fingerprint = hashlib.sha256(
-            "|".join([payload.action, lang, instructions, payload.context.strip(), text]).encode()
+            "|".join([payload.action, lang, instructions, context, text]).encode()
         ).hexdigest()[:24]
-        cache_key = f"ai:selection:{page.id}:{stamp}:{fingerprint}"
+        cache_key = f"ai:selection:{scope}:{fingerprint}"
         redis = get_redis()
         if cached := await self._read(redis, cache_key):
             return ExplainResult(result=cached, cached=True)
         await rate_limit.enforce(f"ai:{self.user.id}", settings.ai_rate_limit)
-        parts = [f"<page_title>{page.title}</page_title>"]
-        if payload.context.strip():
-            parts += ["<surrounding>", payload.context.strip(), "</surrounding>"]
+        parts = [title] if title else []
+        if context:
+            parts += ["<surrounding>", context, "</surrounding>"]
         parts += ["<selected>", text, "</selected>"]
         result = await self._chat(
             "explain",

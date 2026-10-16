@@ -34,7 +34,17 @@ const nextConfig: NextConfig = {
   // resources (HMR, RSC) by default, which silently stalls client hydration
   // for that request - the exported page's readiness signal then never
   // fires. Harmless outside `next dev`; ignored in production builds.
-  allowedDevOrigins: ["frontend"],
+  //
+  // The same guard blocks a tunnel (ngrok) opened in `next dev`: the page
+  // arrives but its dev-only requests get 403, so it never hydrates and the
+  // sign-in form does nothing. Tunnel hosts are therefore allowed too.
+  allowedDevOrigins: [
+    "frontend",
+    "*.ngrok-free.app",
+    "*.ngrok-free.dev",
+    "*.ngrok.app",
+    "*.ngrok.io",
+  ],
   async headers() {
     return [
       {

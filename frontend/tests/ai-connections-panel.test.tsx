@@ -971,3 +971,91 @@ describe("AiConnectionsPanel sorting and filtering", () => {
     expect(screen.getByText("Showing 1–3 of 3")).toBeInTheDocument();
   });
 });
+
+describe("AiConnectionsPanel status filter and list errors", () => {
+  const fleet = [
+    connection({ id: "a", name: "Ok", is_active: true, last_check_ok: true }),
+    connection({
+      id: "b",
+      name: "Bad",
+      is_active: false,
+      last_check_ok: false,
+    }),
+    connection({
+      id: "c",
+      name: "Fresh",
+      is_active: false,
+      last_check_ok: null,
+    }),
+  ];
+  const shown = () =>
+    within(screen.getByRole("table"))
+      .getAllByRole("row")
+      .slice(1)
+      .map(
+        (tr) =>
+          within(tr).getAllByRole("cell")[0]!.querySelector(".font-medium")!
+            .textContent,
+      );
+
+  async function filterBy(label: string) {
+    await userEvent.click(
+      screen.getByRole("button", { name: "Filter by Status" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitemradio", { name: label }),
+    );
+  }
+
+  it.each([
+    ["Active", ["Ok"]],
+    ["Inactive", ["Bad", "Fresh"]],
+    ["Working", ["Ok"]],
+    ["Failing", ["Bad"]],
+    ["Not checked", ["Fresh"]],
+  ])("shows only the %s connections", async (label, expected) => {
+    render(<AiConnectionsPanel initial={list(fleet)} />);
+
+    await filterBy(label);
+
+    expect(shown()).toEqual(expected);
+  });
+
+  it("shows every connection again once the filters are cleared", async () => {
+    render(<AiConnectionsPanel initial={list(fleet)} />);
+    await filterBy("Failing");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Filter by Status" }),
+    );
+    // The first choice of the menu is the one that lets everything through.
+    await userEvent.click((await screen.findAllByRole("menuitemradio"))[0]);
+
+    expect(shown()).toHaveLength(3);
+  });
+
+  it("says so when the list cannot be refreshed", async () => {
+    vi.mocked(api.get).mockRejectedValue(new Error("down"));
+    render(<AiConnectionsPanel initial={list(fleet)} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Refresh the list" }),
+    );
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(shown()).toHaveLength(3);
+  });
+
+  it("asks before removing a connection that is not the active one, and says what is lost", async () => {
+    render(<AiConnectionsPanel initial={list(fleet)} />);
+
+    await userEvent.click(
+      within(row("Bad")).getByRole("button", { name: "Remove" }),
+    );
+
+    const confirm = within(await screen.findByRole("alertdialog"));
+    expect(
+      confirm.getByText("“Bad” and its saved API key will be deleted."),
+    ).toBeInTheDocument();
+  });
+});

@@ -41,7 +41,7 @@ def _split_csv(value: object) -> object:
             parsed = json.loads(stripped)
         except json.JSONDecodeError as exc:
             raise ValueError(f"Expected a JSON array or a comma-separated list: {exc}") from exc
-        if not isinstance(parsed, list):
+        if not isinstance(parsed, list):  # pragma: no cover - JSON starting with "[" is a list
             raise ValueError("Expected a JSON array or a comma-separated list.")
         return [str(item).strip() for item in parsed]
     return [item.strip() for item in stripped.split(",") if item.strip()]
@@ -269,7 +269,9 @@ class Settings(BaseSettings):
         user = quote(self.postgres_user, safe="")
         password = quote(self.postgres_password, safe="")
         db = quote(self.postgres_db, safe="")
-        return f"postgresql+asyncpg://{user}:{password}@{self.postgres_host}:{self.postgres_port}/{db}"
+        return (
+            f"postgresql+asyncpg://{user}:{password}@{self.postgres_host}:{self.postgres_port}/{db}"
+        )
 
     @property
     def sync_database_url(self) -> str:

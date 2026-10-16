@@ -109,3 +109,49 @@ def test_the_built_in_instructions_are_used_unless_an_administrator_writes_their
     custom = selection_system_prompt("explain", "vi", "Explain like I am five.")
     assert custom.startswith("Explain like I am five.")
     assert "Write the explanation in Vietnamese." in custom
+
+
+async def test_words_selected_in_a_chat_answer_are_explained_without_any_page(
+    harness: Harness,
+) -> None:
+    request = ExplainRequest(
+        text="Debian/Ubuntu",
+        context="Install on Debian/Ubuntu with apt.",
+        action="explain",
+        lang="vi",
+    )
+
+    result = await harness.service.explain_text(request)
+
+    assert (result.result, result.cached) == ("An answer.", False)
+    sent = harness.messages[0][1]["content"]
+    assert "<page_title>" not in sent
+    assert "<surrounding>\nInstall on Debian/Ubuntu with apt.\n</surrounding>" in sent
+    assert "<selected>\nDebian/Ubuntu\n</selected>" in sent
+
+
+async def test_an_answer_to_a_chat_selection_is_saved_for_that_person_only(
+    harness: Harness,
+) -> None:
+    request = ExplainRequest(text="PromQL", action="explain", lang="vi")
+
+    await harness.service.explain_text(request)
+    again = await harness.service.explain_text(request)
+    harness.service.user = SimpleNamespace(id="u2")  # type: ignore[assignment]
+    other = await harness.service.explain_text(request)
+
+    assert again.cached is True and other.cached is False
+    assert len(harness.messages) == 2
+
+
+async def test_secrets_in_a_chat_selection_are_not_sent_on(harness: Harness) -> None:
+    request = ExplainRequest(
+        text="login with password: hunter2",
+        context="use admin / password: hunter2 on the host",
+        action="translate",
+        lang="en",
+    )
+
+    await harness.service.explain_text(request)
+
+    assert "hunter2" not in harness.messages[0][1]["content"]

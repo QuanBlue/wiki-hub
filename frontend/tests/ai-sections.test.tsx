@@ -65,7 +65,7 @@ describe("AiSections", () => {
     renderSections();
 
     const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
-    expect(tabs).toEqual(["Key management", "Semantic search", "Skill management"]);
+    expect(tabs).toEqual(["Key management", "Semantic search", "Web search", "Skill management"]);
     // Hidden until chosen, and doing nothing in the meantime (no request for models).
     expect(screen.queryByRole("heading", { name: "Semantic search", level: 3 })).toBeNull();
     expect(api.post).not.toHaveBeenCalled();

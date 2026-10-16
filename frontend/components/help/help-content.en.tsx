@@ -341,6 +341,78 @@ export const sectionsEn: HelpSection[] = [
     ),
   },
   {
+    id: "chat-with-ai",
+    title: "Chat with the AI assistant",
+    category: "Workspace",
+    description: "A chat panel on every page: ask, follow up, and see which wiki pages or web pages each answer comes from.",
+    keywords: ["ai", "chat", "assistant", "question", "follow-up", "sources", "web search", "general knowledge"],
+    body: (
+      <>
+        <p>
+          When an administrator has connected an AI endpoint, a <Code>Chat with AI</Code> button (a
+          sparkle icon) appears in the top bar of every page, next to the notifications. It opens a panel on the right where you
+          can ask a question and keep asking: a follow-up such as <Code>and its address?</Code> is
+          understood from the earlier messages. The reply appears word by word, and{" "}
+          <Kbd>Enter</Kbd> sends (<Kbd>Shift+Enter</Kbd> starts a new line).
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>
+            <strong>Sizing</strong>: drag the left edge of the panel to make it wider or narrower
+            (double-click the edge to reset it), use the expand button for the whole page, or use the
+            arrow keys on the edge. Clicking outside the panel puts it away; your conversation stays.
+          </li>
+          <li>
+            <strong>Where answers come from</strong>: first your wiki, with numbered marks such as{" "}
+            <Code>1</Code> that open the page and a <Code>Sources</Code> list, exactly as in search.
+            Facts about your own systems, accounts and people come from the wiki only.
+          </li>
+          <li>
+            <strong>The internet</strong>: if an administrator turned on web search, the chat may look up
+            a public, technical question the wiki does not cover. You see{" "}
+            <Code>Searching the web for ...</Code> with the exact query, and the answer lists the pages
+            under <Code>From the web</Code> with marks such as <Code>w1</Code>, which open in a new tab.
+            Only that short query leaves WikiHub - never a wiki page - and addresses, e-mails and
+            internal host names are removed from it first.
+          </li>
+          <li>
+            <strong>Follow-ups and numbers</strong>: earlier messages count as context, so{" "}
+            <Code>I am in Cam Ranh</Code> after <Code>what is the weather today?</Code> is understood.
+            When a question lacks something it depends on (a city), the assistant asks first. For the
+            weather it reads real measurements (temperature, humidity, wind, chance of rain) and
+            names the source; for other questions it also reads the text of the top web pages, not
+            only their descriptions, so figures on them can be quoted. Pages are only fetched from
+            public addresses.
+          </li>
+          <li>
+            <strong>General knowledge</strong>: when neither the wiki nor the web answers and the
+            question is general, the AI may answer from its own knowledge. Such an answer is always
+            marked <Code>Not checked against your wiki or any web page</Code>; treat it as a hint.
+          </li>
+          <li>
+            <strong>Explain or translate</strong>: select a word, phrase or sentence in a question or
+            an answer and the small AI button appears at the end of it, as on a page. It explains the
+            words (in Vietnamese by default) or translates them; the globe button switches the
+            language. Nothing is sent until you choose, and asking again is free.
+          </li>
+          <li>
+            <strong>Your conversation</strong> is kept only in this browser, for your account. Use{" "}
+            <Code>New chat</Code> to clear it. <Code>Stop</Code> cancels a reply and gives the
+            question back to edit. From a search answer, <Code>Continue in chat</Code> carries it on.
+          </li>
+          <li>
+            <strong>Administrators</strong> find the switch under Administration, AI assistant,{" "}
+            <Code>Web search</Code>: choose Tavily, Brave Search or Serper, paste the key and use{" "}
+            <Code>Test search</Code>. It is off by default.
+          </li>
+        </ul>
+        <Callout>
+          The AI can be wrong, and web pages can be wrong too. Open the sources before you rely on an
+          answer for something that matters.
+        </Callout>
+      </>
+    ),
+  },
+  {
     id: "my-work",
     title: "Finding pages you've visited, edited, or saved",
     category: "Workspace",

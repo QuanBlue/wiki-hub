@@ -8,6 +8,7 @@ import {
   getAiPageDraftSkill,
   getAiSkill,
   getAiSummarySkill,
+  getEmbeddingSettings,
 } from "@/lib/admin-ai";
 
 describe("admin AI loaders", () => {
@@ -16,9 +17,22 @@ describe("admin AI loaders", () => {
   it.each([
     ["connections", () => getAiConnections(), "/api/v1/ai/connections"],
     ["summary skill", () => getAiSummarySkill(), "/api/v1/ai/skills/summary"],
-    ["page-draft skill", () => getAiPageDraftSkill(), "/api/v1/ai/skills/page-draft"],
+    [
+      "page-draft skill",
+      () => getAiPageDraftSkill(),
+      "/api/v1/ai/skills/page-draft",
+    ],
     ["writing skill", () => getAiSkill("writing"), "/api/v1/ai/skills/writing"],
-    ["explain skill", () => getAiSkill("selection-explain"), "/api/v1/ai/skills/selection-explain"],
+    [
+      "semantic search settings",
+      () => getEmbeddingSettings(),
+      "/api/v1/ai/embedding",
+    ],
+    [
+      "explain skill",
+      () => getAiSkill("selection-explain"),
+      "/api/v1/ai/skills/selection-explain",
+    ],
   ])("fetches the %s", async (_label, load, path) => {
     await expect(load()).resolves.toEqual({ ok: true });
     expect(serverGetMock).toHaveBeenCalledWith(path);

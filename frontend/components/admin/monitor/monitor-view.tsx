@@ -49,24 +49,10 @@ export function formatUptime(seconds: number | null | undefined): string {
 }
 
 /** A thin bar for a share of something, with the share written at its right end; amber, then red, as it fills. */
-function Meter({
-  percent,
-  label,
-  plain = false,
-}: {
-  percent: number;
-  label: string;
-  /** Always the calm colour: for a share that is not a warning when it is high. */
-  plain?: boolean;
-}) {
+function Meter({ percent, label }: { percent: number; label: string }) {
   const value = Math.max(0, Math.min(100, Math.round(percent)));
-  const tone = plain
-    ? "bg-info"
-    : value >= 90
-      ? "bg-danger"
-      : value >= 70
-        ? "bg-warning"
-        : "bg-info";
+  const tone =
+    value >= 90 ? "bg-danger" : value >= 70 ? "bg-warning" : "bg-info";
   return (
     <div className="flex items-center gap-2">
       <div
@@ -103,10 +89,10 @@ function Stat({
   icon: typeof Cpu;
   title: string;
   value: string;
-  detail?: string;
+  detail: string;
   percent?: number;
   /** More figures, each with its own bar, such as swap under memory. */
-  extras?: { label: string; value: string; percent: number; plain?: boolean }[];
+  extras?: { label: string; value: string; percent: number }[];
 }) {
   return (
     <div className="border-border bg-surface space-y-2 rounded-xl border p-4">
@@ -122,18 +108,12 @@ function Stat({
             <span>{extra.label}</span>
             <span className="tabular-nums">{extra.value}</span>
           </p>
-          <Meter
-            percent={extra.percent}
-            label={extra.label}
-            plain={extra.plain}
-          />
+          <Meter percent={extra.percent} label={extra.label} />
         </div>
       ))}
-      {detail ? (
-        <p className="text-muted-foreground text-xs whitespace-pre-line">
-          {detail}
-        </p>
-      ) : null}
+      <p className="text-muted-foreground text-xs whitespace-pre-line">
+        {detail}
+      </p>
     </div>
   );
 }
