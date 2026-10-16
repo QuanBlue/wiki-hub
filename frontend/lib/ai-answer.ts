@@ -12,6 +12,15 @@ export type AnswerSource = {
   excerpt: string;
 };
 
+/** An internet page an answer was read from, cited as ``[w1]``. */
+export type WebSource = {
+  n: number;
+  title: string;
+  url: string;
+  host: string;
+  snippet: string;
+};
+
 export type AnswerResult = {
   found: boolean;
   /** Markdown with ``[n]`` marks, each naming one of ``sources``. */
@@ -22,6 +31,10 @@ export type AnswerResult = {
   /** Other pages that were read, or that may help when there is no answer. */
   related: AnswerSource[];
   cached: boolean;
+  /** What the answer stands on: the wiki, the internet, or the AI's own general knowledge. */
+  basis?: "wiki" | "web" | "general" | "clarify";
+  /** The internet pages the answer cites. */
+  web_sources?: WebSource[];
 };
 
 /**
@@ -54,7 +67,7 @@ export function askWiki(
 
 /** Turn each ``[n]`` of an answer into a link the Markdown renderer shows as a clickable mark. */
 export function citeLinks(answer: string): string {
-  return answer.replace(/\[(\d{1,2})\]/g, "[$1](cite:$1)");
+  return answer.replace(/\[(w?\d{1,2})\]/g, "[$1](cite:$1)");
 }
 
 /** The page address of a source. */

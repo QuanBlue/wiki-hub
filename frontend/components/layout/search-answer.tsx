@@ -2,9 +2,8 @@
 
 import {
   ArrowLeft,
-  ChevronRight,
-  FileText,
   Loader2,
+  MessageCircle,
   RotateCw,
   Sparkles,
   TriangleAlert,
@@ -12,7 +11,11 @@ import {
 import { useEffect, useState } from "react";
 
 import { IssueMarkdown } from "@/components/issues/issue-markdown";
-import { Badge } from "@/components/ui/badge";
+import {
+  AlsoRead,
+  SectionLabel,
+  SourceRow,
+} from "@/components/layout/answer-sources";
 import { Button } from "@/components/ui/button";
 import {
   citeLinks,
@@ -32,99 +35,6 @@ export type AnswerState =
 const SLOW_AFTER_MS = 6000;
 const VERY_SLOW_AFTER_MS = 20000;
 
-function SourceRow({
-  source,
-  onOpen,
-  numbered,
-}: {
-  source: AnswerSource;
-  onOpen: (source: AnswerSource) => void;
-  numbered: boolean;
-}) {
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() => onOpen(source)}
-        // What was read from the page, on hover, so the row itself stays one line.
-        title={source.excerpt || source.title}
-        className="hover:bg-surface-hover focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-      >
-        {numbered ? (
-          <span className="bg-primary-subtle text-primary inline-flex min-w-5 shrink-0 items-center justify-center rounded px-1 text-[11px] leading-5 font-semibold">
-            {source.n}
-          </span>
-        ) : (
-          <FileText
-            className="text-muted-foreground size-3.5 shrink-0"
-            aria-hidden
-          />
-        )}
-        <span className="text-foreground/90 min-w-0 flex-1 truncate text-[13px]">
-          {source.title}
-        </span>
-        <Badge variant="subtle" className="shrink-0 font-mono text-[10px]">
-          {source.space_key}
-        </Badge>
-      </button>
-    </li>
-  );
-}
-
-/** Pages that were read but not cited: folded away, so they are never mistaken for sources. */
-function AlsoRead({
-  pages,
-  onOpen,
-}: {
-  pages: AnswerSource[];
-  onOpen: (source: AnswerSource) => void;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  return (
-    <section
-      aria-label={t("search.answerRelated")}
-      className="border-border/70 mt-1 border-t pt-1"
-    >
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="text-muted-foreground hover:text-foreground hover:bg-surface-hover focus-visible:ring-ring flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-      >
-        <ChevronRight
-          className={cn(
-            "size-3 transition-transform duration-150",
-            open && "rotate-90",
-          )}
-          aria-hidden
-        />
-        {t("search.answerRelated")} ({pages.length})
-      </button>
-      {open ? (
-        <ul className="mt-0.5 space-y-0.5 opacity-90">
-          {pages.map((source) => (
-            <SourceRow
-              key={source.id}
-              source={source}
-              onOpen={onOpen}
-              numbered={false}
-            />
-          ))}
-        </ul>
-      ) : null}
-    </section>
-  );
-}
-
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <h4 className="text-muted-foreground px-2 pb-0.5 text-[10px] font-semibold tracking-wider uppercase">
-      {children}
-    </h4>
-  );
-}
-
 /**
  * The answer to a question asked from the search box. The answer itself is the page's focus: a
  * raised, bordered card with larger text. The pages it came from sit quietly under it, and the
@@ -137,12 +47,15 @@ export function SearchAnswer({
   onBack,
   onRetry,
   onOpen,
+  onContinue,
 }: {
   question: string;
   state: AnswerState;
   onBack: () => void;
   onRetry: () => void;
   onOpen: (source: AnswerSource) => void;
+  /** Carry the answer on in the chat panel, where it can be followed up. */
+  onContinue?: (result: AnswerResult) => void;
 }) {
   const { t } = useTranslation();
   // 0: just started, 1: taking a while, 2: slow - and then the way out is spelled out.
@@ -189,6 +102,17 @@ export function SearchAnswer({
         >
           “{question}”
         </span>
+        {result && onContinue ? (
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={() => onContinue(result)}
+            className="shrink-0"
+          >
+            <MessageCircle aria-hidden />
+            {t("search.continueInChat")}
+          </Button>
+        ) : null}
       </div>
 
       {state.status === "loading" ? (

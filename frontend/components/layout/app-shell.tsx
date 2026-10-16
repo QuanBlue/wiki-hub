@@ -1,3 +1,4 @@
+import { ChatWidget } from "@/components/chat/chat-widget";
 import { AppMain } from "@/components/layout/app-main";
 import { ImpersonationBanner } from "@/components/layout/impersonation-banner";
 import { MailboxPasswordBanner } from "@/components/layout/mailbox-password-banner";
@@ -86,6 +87,7 @@ export async function AppShell({
         >
           {children}
         </AppMain>
+        <ChatWidget userId={user.id} />
         {user.impersonator ? (
           <ImpersonationBanner
             viewingAs={user}

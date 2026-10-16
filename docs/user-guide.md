@@ -68,6 +68,22 @@ you can already read, and has an hourly limit per person.
   and keys are replaced with `[hidden]`. When the wiki has no answer it says so and
   lists pages that may help; an answer that cannot be tied to a page is never shown.
   Asking the same thing again while the pages are unchanged costs no model call.
+- **Chat with the AI assistant** - the sparkle button in the top bar of every page
+  opens a panel where you can ask and follow up (`Enter` sends, `Shift+Enter` adds a
+  line). Answers stream in and cite wiki pages as in search. The panel can be dragged
+  wider or narrower by its left edge, expanded to the whole page, and put away by
+  clicking outside it; the conversation is kept only in your browser. If an
+  administrator turns on *Web search* (Administration > AI assistant), a public technical
+  question the wiki does not cover may be looked up on the internet - you see the query,
+  and the web pages used are listed under *From the web*; only that short query, stripped
+  of addresses, e-mails and internal host names, leaves WikiHub. Otherwise the AI may
+  answer from its own knowledge, always marked as not checked. Facts about your own
+  systems, accounts and people are answered from the wiki only.
+  Selecting words in the chat shows the same small AI button as on a page, to explain or
+  translate them.
+  Earlier messages count as context for a follow-up; the assistant asks when something it
+  depends on (such as a city) is missing, reads real weather measurements for a named place, and
+  reads the text of the top web pages (public addresses only) so it can quote figures from them.
 
 ## History and PDF export
 

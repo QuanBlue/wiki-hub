@@ -24,7 +24,7 @@ describe("citation marks in an AI answer", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "2" }));
 
-    expect(onCite).toHaveBeenCalledWith(2);
+    expect(onCite).toHaveBeenCalledWith(2, false);
     expect(screen.getByText(/Pay on the 25th/)).toBeInTheDocument();
   });
 

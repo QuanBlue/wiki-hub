@@ -1,9 +1,16 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 
-import { OllamaCard } from "@/components/admin/ollama-card";
+import { OllamaCard, useOllama } from "@/components/admin/ollama-card";
 import type { OllamaStatus } from "@/lib/admin-ai";
 import { api } from "@/lib/api-client";
 
@@ -404,5 +411,61 @@ describe("OllamaCard applying saved settings", () => {
     expect(
       screen.queryByRole("button", { name: "Restart to apply" }),
     ).toBeNull();
+  });
+});
+
+describe("the restart notice names what is running now", () => {
+  it("shows memory, a number of cores and the keep-alive the container was created with", () => {
+    renderCard(
+      status({
+        state: "running",
+        models: ["bge-m3:latest"],
+        restart_needed: true,
+        applied_memory_mb: 2048,
+        applied_cpus: 4,
+        applied_keep_alive: "30m",
+      }),
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "now: 2.0 GB memory, 4 cores, model kept 30 minutes",
+    );
+  });
+
+  it("shows dashes and the default keep-alive when nothing is known of the container", () => {
+    renderCard(
+      status({
+        state: "running",
+        models: ["bge-m3:latest"],
+        restart_needed: true,
+        applied_memory_mb: null,
+        applied_cpus: null,
+        applied_keep_alive: null,
+      }),
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "now: - memory, all cores, model kept 5 minutes",
+    );
+  });
+});
+
+describe("useOllama", () => {
+  it("reports that the status could not be read, and recovers when it can", async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new Error("down"));
+    vi.mocked(api.get).mockResolvedValue(status({ state: "running" }));
+    const { result } = renderHook(() => useOllama(true));
+
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    await act(async () => void (await result.current.refresh()));
+
+    expect(result.current.failed).toBe(false);
+    expect(result.current.status?.state).toBe("running");
+  });
+
+  it("does nothing while it is not wanted", () => {
+    renderHook(() => useOllama(false));
+
+    expect(api.get).not.toHaveBeenCalled();
   });
 });

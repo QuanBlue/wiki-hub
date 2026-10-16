@@ -30,6 +30,7 @@ playwright-report/
 test-results/
 blob-report/
 coverage/
+coverage-*/
 .playwright/
 
 # --- Editors / OS ------------------------------------------------------------

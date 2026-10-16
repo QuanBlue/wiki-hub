@@ -8,6 +8,8 @@ onto this host or the gateway.
 from __future__ import annotations
 
 import asyncio
+import json
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import httpx
@@ -157,6 +159,123 @@ async def chat_with_usage(
         logger.warning("ai_empty_reply", finish_reason=choice.get("finish_reason"))
         raise ServiceUnavailableError("The AI assistant returned no answer. Please try again.")
     return ChatReply(text.strip(), usage)
+
+
+def parse_stream_line(line: str) -> tuple[str, Usage | None, bool]:
+    """One line of a streamed reply as ``(text, usage, finished)``.
+
+    Anything that is not a ``data:`` line, or whose JSON is not what a gateway sends, yields
+    nothing: a stray keep-alive or comment must not break an answer that is arriving fine.
+    """
+    if not line.startswith("data:"):
+        return "", None, False
+    payload = line[5:].strip()
+    if payload == "[DONE]":
+        return "", None, True
+    try:
+        chunk = json.loads(payload)
+    except ValueError:
+        return "", None, False
+    if not isinstance(chunk, dict):
+        return "", None, False
+    usage = parse_usage(chunk.get("usage"))
+    choices = chunk.get("choices")
+    text = ""
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        delta = choices[0].get("delta")
+        content = delta.get("content") if isinstance(delta, dict) else None
+        # Only the answer itself; a reasoning model's thinking arrives in other fields.
+        text = content if isinstance(content, str) else ""
+    return text, usage, False
+
+
+async def chat_stream(
+    config: AIConfig, messages: list[dict[str, str]], *, max_tokens: int = 900
+) -> AsyncIterator[str | Usage]:
+    """The reply as it is written: text pieces, then (when the gateway reports it) the usage.
+
+    A gateway that does not stream sends the whole reply at once; that arrives as one piece.
+    A failure before anything was received is retried like :func:`chat_with_usage`; after
+    that the answer is already partly shown, so it is raised rather than started over.
+    """
+    if not config.ready:
+        raise ServiceUnavailableError("The AI assistant is not enabled.")
+    url = config.base_url.rstrip("/") + "/chat/completions"
+    body: dict = {
+        "model": config.model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.2,
+        "reasoning_effort": "low",
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    headers = {"Authorization": f"Bearer {config.api_key}"}
+    transient = 0
+    while True:
+        received = False
+        status: int | None = None
+        retryable = False
+        try:
+            async with (
+                _gate(),
+                httpx.AsyncClient(timeout=settings.ai_timeout_seconds) as http,
+                http.stream("POST", url, json=body, headers=headers) as response,
+            ):
+                if response.status_code in (400, 422):
+                    # An option this gateway does not know: drop it and ask again.
+                    rejected = next(
+                        (k for k in ("reasoning_effort", "stream_options") if k in body), None
+                    )
+                    if rejected is not None:
+                        await response.aread()
+                        del body[rejected]
+                        logger.info("ai_stream_hint_rejected", option=rejected)
+                        continue
+                response.raise_for_status()
+                if "json" in response.headers.get("content-type", ""):
+                    # Not streamed after all: one complete reply.
+                    payload = json.loads(await response.aread())
+                    text = (payload["choices"][0].get("message") or {}).get("content") or ""
+                    if text:
+                        yield text
+                    usage = parse_usage(payload.get("usage"))
+                    if usage is not None:
+                        yield usage
+                    return
+                async for line in response.aiter_lines():
+                    text, usage, finished = parse_stream_line(line)
+                    if text:
+                        received = True
+                        yield text
+                    if usage is not None:
+                        yield usage
+                    if finished:
+                        break
+                if not received:
+                    logger.warning("ai_empty_reply", finish_reason="stream")
+                    raise ServiceUnavailableError(
+                        "The AI assistant returned no answer. Please try again."
+                    )
+                return
+        except ServiceUnavailableError:
+            raise
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            retryable = status in _TRANSIENT_STATUS
+            error = type(exc).__name__
+        except (httpx.ConnectError, httpx.RemoteProtocolError) as exc:
+            retryable = True
+            error = type(exc).__name__
+        except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+            error = type(exc).__name__
+
+        logger.warning("ai_stream_failed", error=error, status=status, attempt=transient + 1)
+        if retryable and not received and transient < len(_BACKOFF):
+            await asyncio.sleep(_BACKOFF[transient])
+            transient += 1
+            continue
+        raise ServiceUnavailableError("The AI assistant could not answer right now.")
 
 
 async def chat(config: AIConfig, messages: list[dict[str, str]], *, max_tokens: int = 2000) -> str:

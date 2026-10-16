@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import uuid
+from collections.abc import AsyncIterator
 from typing import Annotated, Literal
 
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentSuperuser, CurrentUser, DbSession
 from app.core.config import settings
@@ -15,10 +18,12 @@ from app.core.exceptions import BadRequestError, ServiceUnavailableError
 from app.modules.ai import ollama
 from app.modules.ai.admin import AIConnectionService
 from app.modules.ai.answer import AnswerService
+from app.modules.ai.chat import ChatService
 from app.modules.ai.config import load_config
 from app.modules.ai.embedding_settings import EmbeddingSettingsService
 from app.modules.ai.service import AIService
 from app.modules.ai.skills import AISkillService
+from app.modules.ai.websearch import WebSearchSettingsService
 from app.modules.permissions.service import PermissionService
 from app.modules.search.indexer import index_status
 from app.schemas.ai import (
@@ -29,6 +34,7 @@ from app.schemas.ai import (
     AnswerResult,
     AssistRequest,
     AssistResult,
+    ChatRequest,
     ConnectionCreate,
     ConnectionList,
     ConnectionRead,
@@ -50,6 +56,9 @@ from app.schemas.ai import (
     SearchIndexStatus,
     SkillRead,
     SkillUpdate,
+    WebSearchRead,
+    WebSearchTestResult,
+    WebSearchUpdate,
 )
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -80,6 +89,31 @@ async def answer_question(
 ) -> AnswerResult:
     # A POST body, not a query string: what people ask must not end up in access logs.
     return await AnswerService(session, user).answer(payload)
+
+
+def _sse(event: dict) -> str:
+    return f"event: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+@router.post(
+    "/chat",
+    summary="Answer the latest question of a conversation from the wiki, as it is written",
+    response_class=StreamingResponse,
+)
+async def chat(payload: ChatRequest, session: DbSession, user: CurrentUser) -> StreamingResponse:
+    # The pages are found and the quota spent before the first byte, so a refusal is a plain
+    # HTTP error; after that the reply is a stream of server-sent events.
+    turn = await ChatService(session, user).begin(payload)
+
+    async def stream() -> AsyncIterator[str]:
+        async for event in turn.events():
+            yield _sse(event)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post(
@@ -127,6 +161,15 @@ async def explain_selection(
     key: str, slug: str, payload: ExplainRequest, service: AIServiceDep
 ) -> ExplainResult:
     return await service.explain_selection(key, slug, payload)
+
+
+@router.post(
+    "/explain",
+    response_model=ExplainResult,
+    summary="Explain or translate words selected in a chat answer (cached)",
+)
+async def explain_text(payload: ExplainRequest, service: AIServiceDep) -> ExplainResult:
+    return await service.explain_text(payload)
 
 
 @router.post(
@@ -374,3 +417,34 @@ async def read_skill(name: SkillName, service: SkillServiceDep) -> SkillRead:
 @router.put("/skills/{name}", response_model=SkillRead, summary="Customise a skill")
 async def save_skill(name: SkillName, payload: SkillUpdate, service: SkillServiceDep) -> SkillRead:
     return await service.save(name, payload.instructions)
+
+
+@router.get(
+    "/web-search",
+    response_model=WebSearchRead,
+    summary="Whether the chat may look things up on the internet",
+)
+async def get_web_search(session: DbSession, user: CurrentSuperuser) -> WebSearchRead:
+    return await WebSearchSettingsService(session, user).get()
+
+
+@router.put(
+    "/web-search",
+    response_model=WebSearchRead,
+    summary="Turn internet look-ups for the chat on or off, and set the search service",
+)
+async def put_web_search(
+    payload: WebSearchUpdate, session: DbSession, user: CurrentSuperuser
+) -> WebSearchRead:
+    return await WebSearchSettingsService(session, user).put(payload)
+
+
+@router.post(
+    "/web-search/test",
+    response_model=WebSearchTestResult,
+    summary="Try a search with the key being entered (or the saved one)",
+)
+async def test_web_search(
+    payload: WebSearchUpdate, session: DbSession, user: CurrentSuperuser
+) -> WebSearchTestResult:
+    return await WebSearchSettingsService(session, user).test(payload)

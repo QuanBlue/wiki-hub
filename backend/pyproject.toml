@@ -181,3 +181,8 @@ omit = ["app/alembic/*"]
 # PDF extraction, both genuinely CPU-bound) need. Adding "greenlet" alone
 # looked like a regression there (90% -> 55%) for exactly that reason.
 concurrency = ["greenlet", "thread"]
+
+[tool.coverage.report]
+# Every line of the backend is covered; keep it that way.
+fail_under = 100
+skip_covered = true

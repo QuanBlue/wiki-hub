@@ -860,3 +860,102 @@ describe("SemanticSearchPanel tuning", () => {
     );
   });
 });
+
+describe("SemanticSearchPanel when things go wrong", () => {
+  it("shows nothing about indexing when the status cannot be read", async () => {
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/ai/search-index") throw new Error("down");
+      throw new Error(`unexpected GET ${path}`);
+    });
+    vi.mocked(api.post).mockResolvedValue(models([]));
+    render(
+      <SemanticSearchPanel
+        initial={settings({ source: "provider", model: "x/bge-m3" })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith("/api/v1/ai/search-index"),
+    );
+    expect(screen.queryByText(/pages are ready/i)).toBeNull();
+  });
+
+  it("says why the models could not be listed when the request itself fails", async () => {
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/ai/search-index") return index();
+      return ollama();
+    });
+    vi.mocked(api.post).mockRejectedValue(new Error("Network down"));
+    render(<SemanticSearchPanel initial={settings()} />);
+
+    expect(
+      await screen.findByText(/Network down|could not|fetch/i),
+    ).toBeInTheDocument();
+  });
+
+  it("reports a download that could not be started", async () => {
+    serve({ ollama: ollama({ state: "running" }), models: models([]) });
+    vi.mocked(api.post).mockImplementation(async (path: string) => {
+      if (path === MODELS) return models([]);
+      throw new Error("The controller is not reachable.");
+    });
+    render(<SemanticSearchPanel initial={settings({ source: "ollama" })} />);
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(MODELS, expect.anything()),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Embedding model" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitemradio", {
+        name: /bge-m3.*not downloaded/,
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Download & use" }),
+    );
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(api.put).not.toHaveBeenCalled();
+  });
+
+  it("stops waiting for a download that Ollama says is not under way and has not delivered", async () => {
+    serve({ ollama: ollama({ state: "running" }), models: models([]) });
+    vi.mocked(api.post).mockImplementation(async (path: string) => {
+      if (path === MODELS) return models([]);
+      if (path === "/api/v1/ai/ollama/enable")
+        return ollama({ state: "running", models: [] });
+      throw new Error(`unexpected POST ${path}`);
+    });
+    render(<SemanticSearchPanel initial={settings({ source: "ollama" })} />);
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(MODELS, expect.anything()),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Embedding model" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitemradio", {
+        name: /bge-m3.*not downloaded/,
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Download & use" }),
+    );
+
+    // Nothing was delivered, so nothing is saved on the person's behalf.
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/v1/ai/ollama/enable", {
+        model: "bge-m3",
+      }),
+    );
+    expect(api.put).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Download & use" }),
+      ).toBeEnabled(),
+    );
+  });
+});

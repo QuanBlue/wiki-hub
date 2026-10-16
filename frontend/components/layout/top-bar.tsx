@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Wordmark } from "@/components/brand/logo";
+import { ChatTopBarButton } from "@/components/chat/chat-top-bar-button";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { SearchModal } from "@/components/layout/search-modal";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
@@ -20,15 +21,24 @@ import type { Me } from "@/types/api";
 /**
  * Fixed application header: brand, global search entry point and user actions.
  */
-export function TopBar({ siteName: propSiteName, user }: { siteName?: string; user: Me }) {
+export function TopBar({
+  siteName: propSiteName,
+  user,
+}: {
+  siteName?: string;
+  user: Me;
+}) {
   const [searchOpen, setSearchOpen] = useState(false);
   const themeSettings = useThemeSettings();
   const { t } = useTranslation();
-  const effectiveSiteName = themeSettings?.siteName || propSiteName || "WikiHub";
+  const effectiveSiteName =
+    themeSettings?.siteName || propSiteName || "WikiHub";
   // Follows whatever the user has bound, so the hint cannot promise a chord
   // that no longer opens anything. Empty when they have unbound it entirely.
   const searchBindings = useShortcutBindings("search.open");
-  const searchHint = searchBindings[0] ? formatBinding(searchBindings[0]) : null;
+  const searchHint = searchBindings[0]
+    ? formatBinding(searchBindings[0])
+    : null;
 
   return (
     <header className="h-topbar topbar-on-primary fixed inset-x-0 top-0 z-30">
@@ -43,7 +53,7 @@ export function TopBar({ siteName: propSiteName, user }: { siteName?: string; us
           <Wordmark siteName={effectiveSiteName} />
         </Link>
 
-        <div className="mx-auto w-full min-w-0 max-w-md">
+        <div className="mx-auto w-full max-w-md min-w-0">
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
@@ -73,6 +83,7 @@ export function TopBar({ siteName: propSiteName, user }: { siteName?: string; us
               <BookOpen className="size-4" aria-hidden />
             </Link>
           </Button>
+          <ChatTopBarButton />
           <NotificationBell />
           <ThemeToggle />
           <LanguageToggle />

@@ -6,10 +6,11 @@ Every model must be imported here: Alembic's autogenerate walks
 
 from __future__ import annotations
 
+from app.models.admin_mail import AdminMailbox, AdminRequest, AdminRequestRecipient
 from app.models.ai_connection import AiConnection
 from app.models.ai_embedding_settings import AiEmbeddingSettings
 from app.models.ai_skill import AiSkill
-from app.models.admin_mail import AdminMailbox, AdminRequest, AdminRequestRecipient
+from app.models.ai_web_search_settings import AiWebSearchSettings
 from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction, AuditLog
 from app.models.backup_job import AutomatedBackupSettings, BackupArchive, BackupJob
@@ -50,9 +51,9 @@ from app.models.space import (
 )
 from app.models.stats import AiUsage, ContentViewDaily
 from app.models.user import User
+from app.models.user_page_label import UserPageLabel
 from app.models.user_session import UserSession
 from app.models.user_tag import UserTag
-from app.models.user_page_label import UserPageLabel
 
 __all__ = [
     "SINGLETON_ID",
@@ -63,6 +64,7 @@ __all__ = [
     "AiEmbeddingSettings",
     "AiSkill",
     "AiUsage",
+    "AiWebSearchSettings",
     "AuditAction",
     "AuditLog",
     "AutomatedBackupSettings",
@@ -78,17 +80,17 @@ __all__ = [
     "GroupGlobalPermission",
     "GroupMember",
     "ImportArchive",
+    "ImportJob",
+    "ImportLog",
     "Issue",
     "IssueAttachment",
     "IssueNote",
     "IssueStatus",
-    "ImportJob",
-    "ImportLog",
+    "Notification",
     "PageAttachment",
     "PageComment",
     "PageDraft",
     "PageGroupRestriction",
-    "Notification",
     "PageLike",
     "PageRestrictionPermission",
     "PageRevision",
@@ -109,9 +111,9 @@ __all__ = [
     "UUIDPrimaryKeyMixin",
     "User",
     "UserGlobalPermissionOverride",
+    "UserPageLabel",
     "UserPagePin",
     "UserSession",
     "UserTag",
-    "UserPageLabel",
     "WikiPage",
 ]

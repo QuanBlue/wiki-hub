@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { AnswerTimeoutError, askWiki, sourceHref, type AnswerSource } from "@/lib/ai-answer";
+import { openChat } from "@/lib/ai-chat";
 import { aiStatus } from "@/lib/ai-summary";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -331,6 +332,10 @@ export function SearchModal({
                 onBack={leaveAnswer}
                 onRetry={() => void ask()}
                 onOpen={openSource}
+                onContinue={(result) => {
+                  onOpenChange(false);
+                  openChat({ question: query.trim(), result });
+                }}
               />
             ) : (
               <>

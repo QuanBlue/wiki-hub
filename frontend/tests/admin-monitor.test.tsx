@@ -432,3 +432,120 @@ describe("LogsDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe("MonitorView in more situations", () => {
+  const names = () =>
+    screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.querySelector("span.font-medium")?.textContent);
+
+  it("turns a meter to a warning colour at 70% and to danger at 90%, but not where a high share is normal", () => {
+    const hot = overview([container()], {
+      host: {
+        ...overview([]).host,
+        memory_total: 100,
+        memory_used: 95,
+        disk_total: 100,
+        disk_used: 75,
+      },
+    });
+    const { container: view } = render(<MonitorView initial={hot} />);
+
+    expect(view.querySelector(".bg-danger")).not.toBeNull();
+    expect(view.querySelector(".bg-warning")).not.toBeNull();
+  });
+
+  it("shows the swap in use when the machine has any", () => {
+    const swapping = overview([container()]);
+    swapping.host.swap_total = 4 * 1024 ** 3;
+    swapping.host.swap_used = 1024 ** 3;
+    render(<MonitorView initial={swapping} />);
+
+    expect(screen.getByText("Swap")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Swap" })).toHaveAttribute(
+      "aria-valuenow",
+      "25",
+    );
+  });
+
+  it("shows a dash for a load the kernel did not report, and says Docker is unknown when it is", () => {
+    const unknown = overview([container()]);
+    unknown.host.load = [];
+    unknown.host.docker_version = "";
+    render(<MonitorView initial={unknown} />);
+
+    expect(screen.getByText("Docker not reachable")).toBeInTheDocument();
+    expect(screen.queryByText(/cores$/)).toBeNull();
+  });
+
+  it("sorts by memory and by status, the unhealthy ones first", async () => {
+    const fleet = [
+      container({ name: "a-ok", health: "healthy", memory_bytes: 10 }),
+      container({
+        id: "2",
+        name: "b-sick",
+        health: "unhealthy",
+        memory_bytes: 30,
+      }),
+      container({
+        id: "3",
+        name: "c-booting",
+        health: "starting",
+        memory_bytes: 20,
+      }),
+      container({
+        id: "4",
+        name: "d-stopped",
+        state: "exited",
+        health: "",
+        memory_bytes: null,
+      }),
+    ];
+    vi.mocked(api.get).mockResolvedValue(overview(fleet));
+    render(<MonitorView initial={overview(fleet)} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Memory" }));
+    expect(names()).toEqual(["b-sick", "c-booting", "a-ok", "d-stopped"]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Status" }));
+    const first = names();
+    await userEvent.click(screen.getByRole("button", { name: "Status" }));
+    const second = names();
+
+    // One way round the unhealthy come first, the other the stopped ones - and the booting
+    // container always sits between the sick one and the healthy one.
+    const sickFirst = first[0] === "b-sick" ? first : second;
+    const stoppedFirst = first[0] === "d-stopped" ? first : second;
+    expect(sickFirst).toEqual(["b-sick", "c-booting", "a-ok", "d-stopped"]);
+    expect(stoppedFirst).toEqual(["d-stopped", "a-ok", "c-booting", "b-sick"]);
+  });
+
+  it("shows how much of its own memory limit a container uses, when the limit is below the machine's", () => {
+    const limited = [
+      container({ memory_bytes: 512 * 1024 ** 2, memory_limit: 1024 ** 3 }),
+    ];
+    render(<MonitorView initial={overview(limited)} />);
+
+    expect(
+      screen.getByRole("progressbar", { name: "wikihub-backend-1 Memory" }),
+    ).toHaveAttribute("aria-valuenow", "50");
+  });
+
+  it("says the logs could not be copied when the browser refuses", async () => {
+    vi.mocked(api.get).mockResolvedValue({ lines: ["one line"] });
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+      configurable: true,
+    });
+    render(<LogsDialog container={container()} onClose={vi.fn()} />);
+    await screen.findByText(/one line/);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Copy shown lines" }),
+    );
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+});

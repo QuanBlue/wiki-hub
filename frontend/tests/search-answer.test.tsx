@@ -416,4 +416,40 @@ describe("asking the AI from the search box", () => {
     ).toBeInTheDocument();
     expect(document.querySelector("em")).toBeNull();
   });
+
+  it("lists no Also read section when every page read was cited", async () => {
+    serve({ answer: async () => ({ ...FOUND, related: [] }) });
+    const actor = await typeQuestion();
+
+    await actor.click(await screen.findByRole("button", { name: /Ask AI/ }));
+
+    await screen.findByText("AI answer");
+    expect(screen.queryByText(/Also read/)).toBeNull();
+  });
+
+  it("carries the answer on in the chat, and closes the search box", async () => {
+    serve();
+    const heard: Array<{ question?: string; found?: boolean }> = [];
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      heard.push({ question: detail.question, found: detail.result?.found });
+    };
+    window.addEventListener("wikihub:chat-open", listener);
+    try {
+      const actor = await typeQuestion();
+      await actor.click(await screen.findByRole("button", { name: /Ask AI/ }));
+      await screen.findByText("AI answer");
+
+      await actor.click(
+        screen.getByRole("button", { name: "Continue in chat" }),
+      );
+
+      expect(heard).toEqual([
+        { question: "billing server address", found: true },
+      ]);
+      expect(screen.getByTestId("state")).toHaveTextContent("closed");
+    } finally {
+      window.removeEventListener("wikihub:chat-open", listener);
+    }
+  });
 });
