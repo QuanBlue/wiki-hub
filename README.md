@@ -172,6 +172,39 @@ unformatted text.
     related pages* proposes labels (preferring ones you already use) and existing
     pages on the same topic, one click to add or open, remembered until the page
     changes.
+  - **Ask AI from search** — type a question in the search box and click *Ask AI*
+    (or `Ctrl`+`Enter`): a short answer written only from pages you can open, every
+    statement carrying a numbered mark that opens its source page, with the pages read
+    listed under it (folded *Also read* ones are never mistaken for sources). Lists come
+    back as tables; passwords, tokens and keys are replaced with `[hidden]`; an answer
+    that cannot be tied to a page is never shown. *Continue in chat* carries it on.
+  - **Chat with the assistant** — a sparkle button in the top bar opens a panel for a
+    multi-turn conversation: replies stream in word by word and cite wiki pages, earlier
+    messages count as context for follow-ups (and the assistant asks when a city or a
+    version is missing). The panel can be dragged wider or narrower, expanded, and put
+    away by clicking outside; the conversation is kept only in your browser. Questions can
+    be copied or edited, and an edited question keeps its earlier versions to switch back
+    to (`‹ 1 / 2 ›`), each with what followed it. Select any words to explain or translate
+    them, as on a page.
+  - **Web search for the chat (optional, off by default)** — under *AI assistant → Web
+    search* an administrator lets the chat look up public, technical questions on the
+    internet through the AI gateway's own search or Tavily / Brave / Serper (with a key).
+    Only a short query leaves WikiHub, stripped of addresses, e-mails, internal host names
+    and passwords; questions about your own systems, accounts and people are answered from
+    the wiki only. Answers say what they stand on — wiki pages `[1]`, web pages `[w1]`
+    (opened in a new tab) or the model's own knowledge, always marked as unchecked. The
+    text of the top pages is read (public addresses only, bounded in time and size), and
+    the weather of a named place comes from real measurements (Open-Meteo, only the place
+    name is sent).
+  - **Hybrid and semantic search** — keyword search is ranked by how telling each word is
+    (accents ignored, typos in titles tolerated, IP addresses found), and with an
+    embedding model chosen under *AI assistant → Semantic search* it also finds pages by
+    meaning and fuses both rankings. The embedding source can be the active connection,
+    another OpenAI-compatible endpoint, or a **self-hosted Ollama** that an administrator
+    enables and disables from the UI (a card shows install progress, memory and CPU; models
+    are downloaded and chosen in one dropdown; memory, cores and keep-alive are tunable).
+    Ollama is controlled by a tiny sidecar that alone holds the Docker socket and does
+    only five fixed things; an unused Ollama costs no memory.
   - **Not set up yet?** Every AI control stays visible and explains what is missing:
     an administrator gets the three steps and a link to the settings, everyone else
     is told to ask an administrator (the settings link is never shown to them).
@@ -179,7 +212,12 @@ unformatted text.
     encrypted, shown masked, left out of backups) with exactly one active; check
     a connection and pick a model from what it offers; and edit the instructions
     behind each feature as *skills* (summary, create page, explain, translate, writing assistant, labels and related pages)
-    with one-click reset to the built-in wording.
+    with one-click reset to the built-in wording. *Semantic search* and *Web search* have
+    their own tabs.
+  - **Server monitor** — *Administration → Server* shows the machine's load, memory,
+    swap, disk and uptime and WikiHub's own Docker containers (never other services on the
+    host) with uptime, CPU, memory and health, sortable by header, plus their last log lines
+    with credentials hidden. Read-only: nothing there can stop or change anything.
 - **Issue tracker** — anyone reports a problem (with screenshots and labels);
   issue managers claim, assign, note and close it, one at a time or in bulk.
   **Export Word** turns one issue, or every ticked issue in one file with a
@@ -458,9 +496,10 @@ make the two packages public under the repository's *Packages* settings.
 - Structured logs pass through a redaction filter, so passwords, tokens, keys
   and cookies never reach a log sink.
 - Security headers and a strict CSP on every API response.
-- AI features send only what an action needs (the page text or the selected words)
-  to the endpoint an administrator connected, only for pages the person can
-  already read. API keys are stored encrypted, shown masked and excluded from
+- AI features send only what an action needs (the page text, the selected words or the
+  conversation) to the endpoint an administrator connected, only for pages the person can
+  already read. Web search is off until an administrator turns it on, sends only a
+  sanitised query, and reads pages only from public addresses (every redirect re-checked). API keys are stored encrypted, shown masked and excluded from
   backups; page text and file names are treated as data, never as instructions
   to the model, and AI-drafted HTML goes through the same sanitiser as imports.
 
@@ -499,7 +538,7 @@ What's genuinely still open:
 | Kubernetes manifests / Helm chart | Not written — only the Dockerfiles in [`deploy/docker/`](deploy/docker) exist today |
 | `docs/import-confluence.md`, `docs/export.md`, `docs/deployment.md`, `docs/database.md`, `docs/api.md`, `docs/authentication.md`, `docs/permissions.md` | Not written yet |
 | E-mail notifications (password changes, access requests, deactivation) | Planned |
-| AI-assisted search & authoring — **done:** TL;DR summaries, create page with AI, explain/translate a selection, an in-editor writing assistant, label and related-page suggestions. **Still open:** RAG Q&A with citations, hybrid semantic search, stale-content detection | Partly shipped — see [`TODO`](TODO) |
+| AI-assisted search & authoring — **done:** TL;DR summaries, create page with AI, explain/translate a selection, an in-editor writing assistant, label and related-page suggestions, cited Q&A in search, a multi-turn chat (with optional web search, weather and page reading), hybrid and semantic search with an optional self-hosted Ollama. **Still open:** stale-content detection | Partly shipped — see [`TODO`](TODO) |
 
 The live, actively-worked list — including whatever is in progress right
 now — is [`TODO`](TODO).
