@@ -37,13 +37,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ContributionChart } from "@/components/users/contribution-chart";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
-import {
-  formatDate,
-  formatTime,
-} from "@/lib/i18n/format";
+import { formatDate, formatTime } from "@/lib/i18n/format";
 import {
   SIDEBAR_SHORTCUT_LIMIT,
   useSidebarShortcuts,
@@ -116,18 +114,30 @@ function presenceOf(
   t: (key: string, vars?: Record<string, string | number>) => string,
 ) {
   if (!lastActiveAt)
-    return { isOnline: false, label: t("userProfile.offline"), minutesAgo: undefined };
+    return {
+      isOnline: false,
+      label: t("userProfile.offline"),
+      minutesAgo: undefined,
+    };
 
   const lastActiveTime = new Date(lastActiveAt).getTime();
   if (Number.isNaN(lastActiveTime)) {
-    return { isOnline: false, label: t("userProfile.offline"), minutesAgo: undefined };
+    return {
+      isOnline: false,
+      label: t("userProfile.offline"),
+      minutesAgo: undefined,
+    };
   }
   const elapsedMinutes = Math.max(
     0,
     Math.floor((now - lastActiveTime) / 60_000),
   );
   if (elapsedMinutes < 5) {
-    return { isOnline: true, label: t("userProfile.activeNow"), minutesAgo: undefined };
+    return {
+      isOnline: true,
+      label: t("userProfile.activeNow"),
+      minutesAgo: undefined,
+    };
   }
   if (elapsedMinutes < 60) {
     return {
@@ -251,7 +261,8 @@ function SearchableFilterSelect({
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    return () =>
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, [open]);
 
   // Autofocus via the HTML attribute makes the browser scroll the nearest
@@ -264,11 +275,13 @@ function SearchableFilterSelect({
     searchInputRef.current?.focus({ preventScroll: true });
   }, [open]);
 
+  const labelOf = (key: string) =>
+    options.find((o) => o.value === key)?.label ?? key;
   const selectedLabel =
     value.length === 0
       ? allLabel
       : value.length === 1
-        ? (options.find((option) => option.value === value[0])?.label ?? value[0])
+        ? labelOf(value[0]!)
         : `${value.length} ${pluralNoun}`;
   const needle = query.trim().toLowerCase();
   const filteredOptions = needle
@@ -300,7 +313,10 @@ function SearchableFilterSelect({
         className="border-border bg-surface hover:border-border-strong focus-visible:ring-ring flex h-8 w-full cursor-pointer items-center justify-between gap-1.5 rounded-md border px-2.5 text-left text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
       >
         <span className="truncate">{selectedLabel}</span>
-        <ChevronDown className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+        <ChevronDown
+          className="text-muted-foreground size-3.5 shrink-0"
+          aria-hidden
+        />
       </button>
       {open ? (
         <div
@@ -324,7 +340,11 @@ function SearchableFilterSelect({
               className="border-border bg-surface placeholder:text-muted-foreground focus-visible:ring-ring h-7 w-full rounded-md border py-1 pr-2 pl-6 text-xs outline-none focus-visible:ring-1"
             />
           </div>
-          <ul role="listbox" aria-multiselectable="true" className="max-h-48 overflow-y-auto p-1">
+          <ul
+            role="listbox"
+            aria-multiselectable="true"
+            className="max-h-48 overflow-y-auto p-1"
+          >
             <li>
               <button
                 type="button"
@@ -335,7 +355,10 @@ function SearchableFilterSelect({
               >
                 <span className="truncate">{allLabel}</span>
                 {value.length === 0 ? (
-                  <Check className="text-primary size-3.5 shrink-0" aria-hidden />
+                  <Check
+                    className="text-primary size-3.5 shrink-0"
+                    aria-hidden
+                  />
                 ) : null}
               </button>
             </li>
@@ -427,6 +450,131 @@ function ActivityRow({
   );
 }
 
+/** Edits of one page by the same person, newest first, in order of the page's latest edit. */
+function groupByPage(items: RecentPageItem[]) {
+  const pages = new Map<string, RecentPageItem[]>();
+  for (const item of items) {
+    const key = `${item.space_key}/${item.slug}`;
+    pages.set(key, [...(pages.get(key) ?? []), item]);
+  }
+  return Array.from(pages.entries());
+}
+
+function RepeatedActivityRow({
+  items,
+  onViewChange,
+  treePosition,
+}: {
+  items: RecentPageItem[];
+  onViewChange: (item: RecentPageItem) => void;
+  treePosition?: "middle" | "last";
+}) {
+  const { t, locale } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const latest = items[0]!;
+
+  return (
+    <li className={treeConnectorClass(treePosition)}>
+      <div className="hover:bg-surface-hover rounded-md px-2 py-1.5 transition-colors duration-150">
+        <div className="flex items-start gap-2">
+          <FileText
+            className="text-primary mt-0.5 size-4 shrink-0"
+            aria-hidden
+          />
+          <div className="min-w-0 flex-1">
+            <Link
+              href={`/spaces/${encodeURIComponent(latest.space_key)}/pages/${encodeURIComponent(latest.slug)}`}
+              className="text-foreground hover:text-primary focus-visible:ring-ring block truncate text-sm font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+            >
+              {latest.title}
+            </Link>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => setOpen((value) => !value)}
+                className="text-primary hover:bg-primary-subtle hover:text-primary-hover active:bg-surface-selected focus-visible:ring-ring inline-flex cursor-pointer items-center gap-0.5 rounded-sm px-0.5 font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <ChevronRight
+                  className={`size-3 transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+                  aria-hidden
+                />
+                {t("userProfile.updatedManyRow", { count: items.length })}
+              </button>{" "}
+              ·{" "}
+              {t("userProfile.latestRow", {
+                date: formatDate(latest.updated_at, locale),
+                time: formatTime(latest.updated_at, locale),
+              })}{" "}
+              ·{" "}
+              <Link
+                href={`/spaces/${encodeURIComponent(latest.space_key)}`}
+                className="hover:text-primary focus-visible:ring-ring transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+              >
+                {latest.space_name}
+              </Link>
+            </p>
+          </div>
+        </div>
+        {open ? (
+          <ul className="border-border mt-1 ml-6 space-y-0.5 border-l pl-3">
+            {items.map((item) => (
+              <li key={item.id} className="text-muted-foreground text-xs">
+                {t("userProfile.updatedRow", {
+                  date: formatDate(item.updated_at, locale),
+                  time: formatTime(item.updated_at, locale),
+                })}{" "}
+                <button
+                  type="button"
+                  onClick={() => onViewChange(item)}
+                  className="text-primary hover:bg-primary-subtle hover:text-primary-hover active:bg-surface-selected focus-visible:ring-ring cursor-pointer rounded-sm px-0.5 transition-colors duration-150 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+                >
+                  {t("userProfile.viewChange")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+/** One row per page: a page edited several times collapses into "Updated N times". */
+function ActivityRows({
+  items,
+  onViewChange,
+  tree = false,
+}: {
+  items: RecentPageItem[];
+  onViewChange: (item: RecentPageItem) => void;
+  tree?: boolean;
+}) {
+  const pages = groupByPage(items);
+  return pages.map(([key, edits], index) => {
+    const treePosition = tree
+      ? index === pages.length - 1
+        ? "last"
+        : "middle"
+      : undefined;
+    return edits.length === 1 ? (
+      <ActivityRow
+        key={key}
+        item={edits[0]!}
+        onViewChange={onViewChange}
+        treePosition={treePosition}
+      />
+    ) : (
+      <RepeatedActivityRow
+        key={key}
+        items={edits}
+        onViewChange={onViewChange}
+        treePosition={treePosition}
+      />
+    );
+  });
+}
+
 function DraftRow({ draft }: { draft: UserDraftItem }) {
   const { t, locale } = useTranslation();
   return (
@@ -466,7 +614,12 @@ function CompactActivityFeed({
     // Items arrive sorted newest-first. Merge an item into the previous group
     // only when it's the same person; as soon as someone else's activity sits
     // in between, a new group starts, so the newest-to-oldest order holds.
-    const result: { key: string; username: string; name: string; items: RecentPageItem[] }[] = [];
+    const result: {
+      key: string;
+      username: string;
+      name: string;
+      items: RecentPageItem[];
+    }[] = [];
     for (const item of items) {
       const username = item.user_username || "system";
       const current = result[result.length - 1];
@@ -488,14 +641,14 @@ function CompactActivityFeed({
   if (!showActors) {
     return items.length ? (
       <ul className="space-y-0.5 p-4">
-        {items.map((item) => (
-          <ActivityRow key={item.id} item={item} onViewChange={onViewChange} />
-        ))}
+        <ActivityRows items={items} onViewChange={onViewChange} />
       </ul>
     ) : (
       <div className="p-12 text-center">
         <FileText className="text-muted-foreground mx-auto size-6" />
-        <p className="mt-3 text-sm font-medium">{t("userProfile.noVisibleActivity")}</p>
+        <p className="mt-3 text-sm font-medium">
+          {t("userProfile.noVisibleActivity")}
+        </p>
       </div>
     );
   }
@@ -523,21 +676,19 @@ function CompactActivityFeed({
                 {username === "system" ? (
                   group.name
                 ) : (
-                  <UserProfileTrigger username={username} fullName={group.name} />
+                  <UserProfileTrigger
+                    username={username}
+                    fullName={group.name}
+                  />
                 )}
               </p>
             </div>
             <ul className="mt-0.5 ml-4 space-y-0.5">
-              {group.items.map((item, index) => (
-                <ActivityRow
-                  key={item.id}
-                  item={item}
-                  onViewChange={onViewChange}
-                  treePosition={
-                    index === group.items.length - 1 ? "last" : "middle"
-                  }
-                />
-              ))}
+              <ActivityRows
+                items={group.items}
+                onViewChange={onViewChange}
+                tree
+              />
             </ul>
           </section>
         );
@@ -546,7 +697,9 @@ function CompactActivityFeed({
   ) : (
     <div className="p-12 text-center">
       <FileText className="text-muted-foreground mx-auto size-6" />
-      <p className="mt-3 text-sm font-medium">{t("userProfile.noVisibleActivity")}</p>
+      <p className="mt-3 text-sm font-medium">
+        {t("userProfile.noVisibleActivity")}
+      </p>
     </div>
   );
 }
@@ -595,8 +748,12 @@ export function UserProfile({
   // list needs its own lookups for a title and a friendly space name -
   // undefined = not fetched yet, null = the page is gone or no longer
   // reachable (mirrors components/recent/saved-pages-list.tsx).
-  const [savedPages, setSavedPages] = useState<Record<string, WikiPage | null>>({});
-  const [savedSpaceNames, setSavedSpaceNames] = useState<Record<string, string>>({});
+  const [savedPages, setSavedPages] = useState<Record<string, WikiPage | null>>(
+    {},
+  );
+  const [savedSpaceNames, setSavedSpaceNames] = useState<
+    Record<string, string>
+  >({});
   const [pageLabelItems, setPageLabelItems] = useState<UserPageLabelItem[]>([]);
   // Empty array = no filter ("all"). A page/space only needs to match one of
   // the selected spaces, and one of the selected labels, so picking several
@@ -614,7 +771,10 @@ export function UserProfile({
   const [knowledgePageSize, setKnowledgePageSize] =
     useState<(typeof KNOWLEDGE_PAGE_SIZES)[number]>(10);
   const { sidebarFavoriteIds, sidebarPinnedIds, toggleSidebarShortcut } =
-    useSidebarShortcuts(isOwner ? favoriteSpaces : [], isOwner ? pinnedPages : []);
+    useSidebarShortcuts(
+      isOwner ? favoriteSpaces : [],
+      isOwner ? pinnedPages : [],
+    );
 
   useEffect(() => {
     setItems(initialActivity.items);
@@ -626,7 +786,9 @@ export function UserProfile({
     setAllActivityLimit(50);
   }, [initialAllActivity]);
 
-  async function changeAllActivityLimit(limit: (typeof ALL_ACTIVITY_LIMITS)[number]) {
+  async function changeAllActivityLimit(
+    limit: (typeof ALL_ACTIVITY_LIMITS)[number],
+  ) {
     setAllActivityLimit(limit);
     setAllActivityLoading(true);
     setAllActivityError(null);
@@ -636,7 +798,9 @@ export function UserProfile({
       );
       setAllActivityItems(result);
     } catch (err) {
-      setAllActivityError(apiErrorText(err, "userProfile.couldNotLoadMoreActivity"));
+      setAllActivityError(
+        apiErrorText(err, "userProfile.couldNotLoadMoreActivity"),
+      );
     } finally {
       setAllActivityLoading(false);
     }
@@ -684,7 +848,9 @@ export function UserProfile({
    * too. */
   function removeSavedPageKey(key: string) {
     try {
-      const raw = JSON.parse(window.localStorage.getItem(SAVED_PAGE_KEYS_STORAGE) ?? "[]");
+      const raw = JSON.parse(
+        window.localStorage.getItem(SAVED_PAGE_KEYS_STORAGE) ?? "[]",
+      );
       const current: string[] = Array.isArray(raw)
         ? raw.filter((item): item is string => typeof item === "string")
         : [];
@@ -695,7 +861,9 @@ export function UserProfile({
     } catch {
       // Best-effort: the in-memory list below still drops it for this session.
     }
-    setSavedPageKeys((current) => current.filter((existing) => existing !== key));
+    setSavedPageKeys((current) =>
+      current.filter((existing) => existing !== key),
+    );
     window.dispatchEvent(new Event(SAVED_PAGE_KEYS_EVENT));
   }
 
@@ -724,14 +892,16 @@ export function UserProfile({
           const page = await api.get<WikiPage>(
             `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(slug)}`,
           );
-          if (!cancelled) setSavedPages((current) => ({ ...current, [key]: page }));
+          if (!cancelled)
+            setSavedPages((current) => ({ ...current, [key]: page }));
         } catch (error) {
           if (!cancelled) {
             setSavedPages((current) => ({ ...current, [key]: null }));
             // Only a definitive 404 means the page itself is gone - a
             // transient network error or a permissions hiccup should not
             // silently drop it from the saved list.
-            if (error instanceof ApiError && error.status === 404) removeSavedPageKey(key);
+            if (error instanceof ApiError && error.status === 404)
+              removeSavedPageKey(key);
           }
         }
       }),
@@ -741,7 +911,10 @@ export function UserProfile({
             `/api/v1/spaces/${encodeURIComponent(spaceKey)}`,
           );
           if (!cancelled)
-            setSavedSpaceNames((current) => ({ ...current, [spaceKey]: space.name }));
+            setSavedSpaceNames((current) => ({
+              ...current,
+              [spaceKey]: space.name,
+            }));
         } catch {
           // Falls back to the raw space key at render time; nothing to store.
         }
@@ -792,7 +965,8 @@ export function UserProfile({
   // on someone else's profile - under the "all" tab, which shows only theirs
   // (see `visibleItems` below). Infinite scroll has to follow whichever tab
   // that is, re-attaching when it comes into view.
-  const showsPagedFeed = activeTab === "mine" || (!isOwner && activeTab === "all");
+  const showsPagedFeed =
+    activeTab === "mine" || (!isOwner && activeTab === "all");
 
   useEffect(() => {
     const node = sentinelRef.current;
@@ -844,7 +1018,9 @@ export function UserProfile({
         ? pageLabelItems
             .filter(
               (item) =>
-                knowledgeSectionPageKeys.has(`${item.space_key}/${item.slug}`) &&
+                knowledgeSectionPageKeys.has(
+                  `${item.space_key}/${item.slug}`,
+                ) &&
                 (knowledgeSpace.length === 0 ||
                   knowledgeSpace.includes(item.space_key)),
             )
@@ -855,7 +1031,8 @@ export function UserProfile({
   const labeledPageKeys = new Set(
     pageLabelItems
       .filter(
-        (item) => knowledgeLabel.length === 0 || knowledgeLabel.includes(item.name),
+        (item) =>
+          knowledgeLabel.length === 0 || knowledgeLabel.includes(item.name),
       )
       .map((item) => `${item.space_key}/${item.slug}`),
   );
@@ -881,11 +1058,15 @@ export function UserProfile({
                 .map((page) => [page.space_key, page.space_name] as const)
             : savedPageKeys
                 .filter(
-                  (key) => knowledgeLabel.length === 0 || labeledPageKeys.has(key),
+                  (key) =>
+                    knowledgeLabel.length === 0 || labeledPageKeys.has(key),
                 )
                 .map((key) => {
                   const spaceKey = key.split("/")[0] ?? "";
-                  return [spaceKey, savedSpaceNames[spaceKey] ?? spaceKey] as const;
+                  return [
+                    spaceKey,
+                    savedSpaceNames[spaceKey] ?? spaceKey,
+                  ] as const;
                 }),
     ),
   );
@@ -933,14 +1114,18 @@ export function UserProfile({
     const [spaceKey, ...parts] = key.split("/");
     return matchesKnowledge(spaceKey ?? "", parts.join("/"));
   });
-  const knowledgeItemCount = knowledgeSection === "favourites"
-    ? filteredFavoriteSpaces.length
-    : knowledgeSection === "pinned"
-      ? filteredPinnedPages.length
-      : knowledgeSection === "liked"
-        ? filteredLikedPages.length
-        : filteredSavedPageKeys.length;
-  const knowledgePageCount = Math.max(1, Math.ceil(knowledgeItemCount / knowledgePageSize));
+  const knowledgeItemCount =
+    knowledgeSection === "favourites"
+      ? filteredFavoriteSpaces.length
+      : knowledgeSection === "pinned"
+        ? filteredPinnedPages.length
+        : knowledgeSection === "liked"
+          ? filteredLikedPages.length
+          : filteredSavedPageKeys.length;
+  const knowledgePageCount = Math.max(
+    1,
+    Math.ceil(knowledgeItemCount / knowledgePageSize),
+  );
   // Switching sections/filters or shrinking the page size can leave
   // `knowledgePage` past the new last page - clamp rather than show a blank slice.
   const knowledgeSafePage = Math.min(knowledgePage, knowledgePageCount - 1);
@@ -974,11 +1159,13 @@ export function UserProfile({
   const activeKnowledgeSection = knowledgeSectionDetails[knowledgeSection];
 
   return (
-    <div className="grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_20rem]">
+    <div className="grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_26rem]">
       <main className="min-w-0 lg:flex lg:h-[calc(100dvh-var(--wh-topbar-height)-5rem)] lg:flex-col lg:overflow-hidden">
         <div className="shrink-0 px-2 pt-1">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold tracking-tight">{t("userProfile.activity")}</h2>
+            <h2 className="text-lg font-semibold tracking-tight">
+              {t("userProfile.activity")}
+            </h2>
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <div
@@ -998,14 +1185,18 @@ export function UserProfile({
                   {tab === "all"
                     ? isOwner
                       ? t("userProfile.tabAllActivity")
-                      : t("userProfile.tabUserActivity", { username: user.username })
+                      : t("userProfile.tabUserActivity", {
+                          username: user.username,
+                        })
                     : tab === "mine"
                       ? t("userProfile.tabMyActivity")
                       : tab === "knowledge"
                         ? t("userProfile.tabMyKnowledge")
                         : isOwner
                           ? t("userProfile.tabDrafts")
-                          : t("userProfile.tabUserDraft", { username: user.username })}
+                          : t("userProfile.tabUserDraft", {
+                              username: user.username,
+                            })}
                 </button>
               ))}
             </div>
@@ -1071,7 +1262,11 @@ export function UserProfile({
                         [
                           "pinned",
                           t("userProfile.sectionPinned"),
-                          <Pin key="pinned" className="size-4 shrink-0" aria-hidden />,
+                          <Pin
+                            key="pinned"
+                            className="size-4 shrink-0"
+                            aria-hidden
+                          />,
                         ],
                         [
                           "liked",
@@ -1107,7 +1302,7 @@ export function UserProfile({
                           // option (or search match) that no longer applies.
                           clearKnowledgeFilters();
                         }}
-                        className={`focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none ${knowledgeSection === section ? "bg-primary-subtle text-primary font-semibold" : "text-muted-foreground font-normal hover:bg-surface-sunken hover:text-foreground active:bg-surface-selected"}`}
+                        className={`focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none ${knowledgeSection === section ? "bg-primary-subtle text-primary font-semibold" : "text-muted-foreground hover:bg-surface-sunken hover:text-foreground active:bg-surface-selected font-normal"}`}
                       >
                         {icon}
                         <span className="truncate">{label}</span>
@@ -1127,7 +1322,8 @@ export function UserProfile({
                       >
                         {activeKnowledgeSection.title}
                       </h3>
-                      {knowledgeSection === "favourites" || knowledgeSection === "pinned" ? (
+                      {knowledgeSection === "favourites" ||
+                      knowledgeSection === "pinned" ? (
                         <span
                           className="bg-primary-subtle text-primary inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
                           title={t("userProfile.sidebarShortcutsTitle", {
@@ -1156,8 +1352,10 @@ export function UserProfile({
                               setKnowledgeSpaceSearch(event.target.value)
                             }
                             placeholder={t("userProfile.searchSpaces")}
-                            aria-label={t("userProfile.searchFavouriteSpacesAria")}
-                            className="border-border bg-surface placeholder:text-muted-foreground hover:border-border-strong focus-visible:ring-ring h-8 w-full rounded-md border py-1.5 pr-7 pl-8 text-xs outline-none transition-colors duration-150 focus-visible:ring-2"
+                            aria-label={t(
+                              "userProfile.searchFavouriteSpacesAria",
+                            )}
+                            className="border-border bg-surface placeholder:text-muted-foreground hover:border-border-strong focus-visible:ring-ring h-8 w-full rounded-md border py-1.5 pr-7 pl-8 text-xs transition-colors duration-150 outline-none focus-visible:ring-2"
                           />
                           {knowledgeSpaceSearch ? (
                             <button
@@ -1217,7 +1415,7 @@ export function UserProfile({
                     </div>
                   </header>
                   <div className="space-y-3 p-5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-                    <div className="space-y-1 lg:wh-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+                    <div className="lg:wh-scroll space-y-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
                       {knowledgeSection === "favourites" ? (
                         <KnowledgeCard
                           icon={<Star className="size-4" aria-hidden />}
@@ -1227,11 +1425,18 @@ export function UserProfile({
                           {filteredFavoriteSpaces.length ? (
                             <ul className="space-y-0.5">
                               {filteredFavoriteSpaces
-                                .slice(knowledgeStart, knowledgeStart + knowledgePageSize)
+                                .slice(
+                                  knowledgeStart,
+                                  knowledgeStart + knowledgePageSize,
+                                )
                                 .map((space) => {
-                                  const shownInSidebar = sidebarFavoriteIds.includes(space.id);
+                                  const shownInSidebar =
+                                    sidebarFavoriteIds.includes(space.id);
                                   return (
-                                    <li key={space.id} className="flex items-center gap-1">
+                                    <li
+                                      key={space.id}
+                                      className="flex items-center gap-1"
+                                    >
                                       <Link
                                         href={`/spaces/${encodeURIComponent(space.key)}`}
                                         className="hover:bg-surface-hover focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-3 rounded-md px-2.5 py-2 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
@@ -1248,12 +1453,18 @@ export function UserProfile({
                                       </Link>
                                       <Button
                                         type="button"
-                                        variant={shownInSidebar ? "subtle" : "ghost"}
+                                        variant={
+                                          shownInSidebar ? "subtle" : "ghost"
+                                        }
                                         size="icon"
                                         aria-label={
                                           shownInSidebar
-                                            ? t("nav.removeFromSidebar", { name: space.name })
-                                            : t("nav.showInSidebar", { name: space.name })
+                                            ? t("nav.removeFromSidebar", {
+                                                name: space.name,
+                                              })
+                                            : t("nav.showInSidebar", {
+                                                name: space.name,
+                                              })
                                         }
                                         title={
                                           shownInSidebar
@@ -1262,10 +1473,14 @@ export function UserProfile({
                                         }
                                         disabled={
                                           !shownInSidebar &&
-                                          sidebarFavoriteIds.length >= SIDEBAR_SHORTCUT_LIMIT
+                                          sidebarFavoriteIds.length >=
+                                            SIDEBAR_SHORTCUT_LIMIT
                                         }
                                         onClick={() =>
-                                          toggleSidebarShortcut("favorites", space.id)
+                                          toggleSidebarShortcut(
+                                            "favorites",
+                                            space.id,
+                                          )
                                         }
                                       >
                                         {shownInSidebar ? (
@@ -1294,11 +1509,18 @@ export function UserProfile({
                           {filteredPinnedPages.length ? (
                             <ul className="space-y-0.5">
                               {filteredPinnedPages
-                                .slice(knowledgeStart, knowledgeStart + knowledgePageSize)
+                                .slice(
+                                  knowledgeStart,
+                                  knowledgeStart + knowledgePageSize,
+                                )
                                 .map((page) => {
-                                  const shownInSidebar = sidebarPinnedIds.includes(page.id);
+                                  const shownInSidebar =
+                                    sidebarPinnedIds.includes(page.id);
                                   return (
-                                    <li key={page.id} className="flex items-center gap-1">
+                                    <li
+                                      key={page.id}
+                                      className="flex items-center gap-1"
+                                    >
                                       <Link
                                         href={`/spaces/${encodeURIComponent(page.space_key)}/pages/${encodeURIComponent(page.slug)}`}
                                         className="hover:bg-surface-hover focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-3 rounded-md px-2.5 py-2 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
@@ -1320,12 +1542,18 @@ export function UserProfile({
                                       </Link>
                                       <Button
                                         type="button"
-                                        variant={shownInSidebar ? "subtle" : "ghost"}
+                                        variant={
+                                          shownInSidebar ? "subtle" : "ghost"
+                                        }
                                         size="icon"
                                         aria-label={
                                           shownInSidebar
-                                            ? t("nav.removeFromSidebar", { name: page.title })
-                                            : t("nav.showInSidebar", { name: page.title })
+                                            ? t("nav.removeFromSidebar", {
+                                                name: page.title,
+                                              })
+                                            : t("nav.showInSidebar", {
+                                                name: page.title,
+                                              })
                                         }
                                         title={
                                           shownInSidebar
@@ -1334,10 +1562,14 @@ export function UserProfile({
                                         }
                                         disabled={
                                           !shownInSidebar &&
-                                          sidebarPinnedIds.length >= SIDEBAR_SHORTCUT_LIMIT
+                                          sidebarPinnedIds.length >=
+                                            SIDEBAR_SHORTCUT_LIMIT
                                         }
                                         onClick={() =>
-                                          toggleSidebarShortcut("pinned", page.id)
+                                          toggleSidebarShortcut(
+                                            "pinned",
+                                            page.id,
+                                          )
                                         }
                                       >
                                         {shownInSidebar ? (
@@ -1375,7 +1607,10 @@ export function UserProfile({
                                 .filter((page) =>
                                   matchesKnowledge(page.space_key, page.slug),
                                 )
-                                .slice(knowledgeStart, knowledgeStart + knowledgePageSize)
+                                .slice(
+                                  knowledgeStart,
+                                  knowledgeStart + knowledgePageSize,
+                                )
                                 .map((page) => (
                                   <li key={page.id}>
                                     <Link
@@ -1416,7 +1651,10 @@ export function UserProfile({
                           {filteredSavedPageKeys.length ? (
                             <ul className="space-y-0.5">
                               {filteredSavedPageKeys
-                                .slice(knowledgeStart, knowledgeStart + knowledgePageSize)
+                                .slice(
+                                  knowledgeStart,
+                                  knowledgeStart + knowledgePageSize,
+                                )
                                 .map((key) => {
                                   const [spaceKey, ...slugParts] =
                                     key.split("/");
@@ -1440,8 +1678,12 @@ export function UserProfile({
                                           </span>
                                           <span className="text-muted-foreground mt-0.5 block truncate text-xs">
                                             {page === null
-                                              ? t("userProfile.noLongerAvailable")
-                                              : (savedSpaceNames[spaceKey ?? ""] ?? spaceKey)}
+                                              ? t(
+                                                  "userProfile.noLongerAvailable",
+                                                )
+                                              : (savedSpaceNames[
+                                                  spaceKey ?? ""
+                                                ] ?? spaceKey)}
                                           </span>
                                         </span>
                                       </Link>
@@ -1470,7 +1712,10 @@ export function UserProfile({
                         <p className="text-muted-foreground text-xs">
                           {t("common.showingRange", {
                             from: knowledgeStart + 1,
-                            to: Math.min(knowledgeStart + knowledgePageSize, knowledgeItemCount),
+                            to: Math.min(
+                              knowledgeStart + knowledgePageSize,
+                              knowledgeItemCount,
+                            ),
                             total: knowledgeItemCount,
                           })}
                         </p>
@@ -1507,8 +1752,34 @@ export function UserProfile({
                             })}
                           </span>
                           <div className="flex items-center gap-1.5">
-                            <Button type="button" variant="secondary" size="icon" aria-label={t("common.previousPage")} title={t("common.previousPage")} disabled={knowledgeSafePage === 0} onClick={() => setKnowledgePage(knowledgeSafePage - 1)}><ChevronLeft aria-hidden /></Button>
-                            <Button type="button" variant="secondary" size="icon" aria-label={t("common.nextPage")} title={t("common.nextPage")} disabled={knowledgeSafePage >= knowledgePageCount - 1} onClick={() => setKnowledgePage(knowledgeSafePage + 1)}><ChevronRight aria-hidden /></Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="icon"
+                              aria-label={t("common.previousPage")}
+                              title={t("common.previousPage")}
+                              disabled={knowledgeSafePage === 0}
+                              onClick={() =>
+                                setKnowledgePage(knowledgeSafePage - 1)
+                              }
+                            >
+                              <ChevronLeft aria-hidden />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="icon"
+                              aria-label={t("common.nextPage")}
+                              title={t("common.nextPage")}
+                              disabled={
+                                knowledgeSafePage >= knowledgePageCount - 1
+                              }
+                              onClick={() =>
+                                setKnowledgePage(knowledgeSafePage + 1)
+                              }
+                            >
+                              <ChevronRight aria-hidden />
+                            </Button>
                           </div>
                         </div>
                       </div>
@@ -1555,7 +1826,10 @@ export function UserProfile({
           {allActivityError && activeTab === "all" ? (
             <div className="border-danger/30 bg-danger-bg m-4 flex items-center justify-between gap-3 rounded-lg border p-3">
               <p className="text-danger text-sm">{allActivityError}</p>
-              <Button size="sm" onClick={() => void changeAllActivityLimit(allActivityLimit)}>
+              <Button
+                size="sm"
+                onClick={() => void changeAllActivityLimit(allActivityLimit)}
+              >
                 {t("userProfile.tryAgain")}
               </Button>
             </div>
@@ -1619,14 +1893,20 @@ export function UserProfile({
           <dl className="border-border space-y-2.5 border-t px-4 py-3 text-xs">
             <div className="flex items-center gap-2">
               <UsersRound className="text-muted-foreground size-4" />
-              <dt className="text-muted-foreground">{t("profile.workspaceRole")}</dt>
+              <dt className="text-muted-foreground">
+                {t("profile.workspaceRole")}
+              </dt>
               <dd className="ml-auto">
-                {user.is_workspace_admin ? t("profile.administrator") : t("profile.member")}
+                {user.is_workspace_admin
+                  ? t("profile.administrator")
+                  : t("profile.member")}
               </dd>
             </div>
             <div className="flex items-center gap-2">
               <CalendarDays className="text-muted-foreground size-4" />
-              <dt className="text-muted-foreground">{t("userProfile.joined")}</dt>
+              <dt className="text-muted-foreground">
+                {t("userProfile.joined")}
+              </dt>
               <dd className="ml-auto">
                 {user.created_at
                   ? formatDate(user.created_at, locale)
@@ -1640,30 +1920,38 @@ export function UserProfile({
             </div>
             <div className="flex items-center gap-2">
               <Clock3 className="text-muted-foreground size-4" />
-              <dt className="text-muted-foreground">{t("userProfile.lastActive")}</dt>
+              <dt className="text-muted-foreground">
+                {t("userProfile.lastActive")}
+              </dt>
               <dd className="ml-auto">
-                {user.last_active_at ? relativeDate(user.last_active_at, t) : "—"}
+                {user.last_active_at
+                  ? relativeDate(user.last_active_at, t)
+                  : "—"}
               </dd>
             </div>
           </dl>
         </section>
+        <ContributionChart username={user.username} />
         <SideCard title={t("userProfile.statsTitle")}>
           <dl className="space-y-3 text-xs">
             <div className="flex items-center justify-between">
               <dt className="text-muted-foreground flex items-center gap-2">
-                <FilePenLine className="size-4" aria-hidden="true" /> {t("userProfile.statsPagesUpdated")}
+                <FilePenLine className="size-4" aria-hidden="true" />{" "}
+                {t("userProfile.statsPagesUpdated")}
               </dt>
               <dd className="font-semibold">{stats.pages_updated}</dd>
             </div>
             <div className="flex items-center justify-between">
               <dt className="text-muted-foreground flex items-center gap-2">
-                <FilePlus2 className="size-4" aria-hidden="true" /> {t("userProfile.statsPagesCreated")}
+                <FilePlus2 className="size-4" aria-hidden="true" />{" "}
+                {t("userProfile.statsPagesCreated")}
               </dt>
               <dd className="font-semibold">{stats.pages_created}</dd>
             </div>
             <div className="flex items-center justify-between">
               <dt className="text-muted-foreground flex items-center gap-2">
-                <FolderTree className="size-4" aria-hidden="true" /> {t("userProfile.statsSpacesContributed")}
+                <FolderTree className="size-4" aria-hidden="true" />{" "}
+                {t("userProfile.statsSpacesContributed")}
               </dt>
               <dd className="font-semibold">{stats.spaces_contributed}</dd>
             </div>
@@ -1671,9 +1959,7 @@ export function UserProfile({
         </SideCard>
         {!isOwner && isAdmin ? (
           <SideCard title={t("userProfile.draftAccess")}>
-            <EmptyCard>
-              {t("userProfile.draftAccessHint")}
-            </EmptyCard>
+            <EmptyCard>{t("userProfile.draftAccessHint")}</EmptyCard>
           </SideCard>
         ) : null}
       </aside>

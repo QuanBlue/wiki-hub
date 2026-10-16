@@ -178,6 +178,15 @@ Variants are declared with `class-variance-authority`; classes are merged with
 `cn()` (`clsx` + `tailwind-merge`) so a caller's utility always wins over a
 default.
 
+### Charts and statistics
+
+There is no chart dependency. Charts are small SVG or CSS components in
+`components/admin/statistics/`, coloured only with semantic tokens (`primary`,
+`info`, `success`, `warning` for series; `border` for gridlines) so they follow
+dark mode. A handful of headline numbers is a `SummaryMetrics` row, not a chart.
+Every chart prints its numbers (total in the accessible name, value on hover and
+on focus) and is keyboard-readable; never encode a value by colour alone.
+
 ## Brand
 
 The mark is three stacked layers converging on a hub — knowledge accumulating

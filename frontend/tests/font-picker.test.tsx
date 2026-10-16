@@ -43,6 +43,34 @@ describe("FONT_PRESETS ordering", () => {
 });
 
 describe("FontPicker", () => {
+  it("shows a single column on a phone", () => {
+    viewport(400);
+    render(<FontPicker value="inter" onChange={vi.fn()} onInspect={vi.fn()} />);
+
+    expect(cards()).toHaveLength(3);
+  });
+
+  it("assumes a wide screen when the browser cannot report its width", () => {
+    vi.stubGlobal("matchMedia", undefined);
+    render(<FontPicker value="inter" onChange={vi.fn()} onInspect={vi.fn()} />);
+
+    expect(cards()).toHaveLength(9);
+  });
+
+  it("picks a font from the keyboard with Enter or Space, and ignores other keys", async () => {
+    const user = userEvent.setup();
+    viewport(1400);
+    const onChange = vi.fn();
+    render(<FontPicker value="inter" onChange={onChange} onInspect={vi.fn()} />);
+
+    const card = cards()[1];
+    card.focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
+    await user.keyboard("a");
+
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
   it("shows three rows of cards, then the rest on Show more", async () => {
     const user = userEvent.setup();
     render3Wide();

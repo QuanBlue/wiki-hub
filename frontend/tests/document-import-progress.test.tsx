@@ -334,4 +334,48 @@ describe("DocumentImportProgress", () => {
       timeout: 4000,
     });
   });
+
+  it("says how many pages were kept when the import was cancelled", async () => {
+    stubFetch({});
+    renderProgress(job({ status: "cancelled", percent: null }));
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith("Import cancelled. 1 page(s) were kept."),
+    );
+  });
+
+  it("shows the server's reason when the cancellation is refused", async () => {
+    stubFetch({ error: { code: "conflict", message: "Already finished." } }, 409);
+    const user = userEvent.setup();
+    renderProgress(job());
+
+    await user.click(screen.getByRole("button", { name: /cancel import/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^cancel import$/i }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Already finished."));
+  });
+
+  it("falls back to a general message for a failure that is not the server's", async () => {
+    stubFetch(job({ cancel_requested: true }));
+    const user = userEvent.setup();
+    renderProgress(job(), {
+      onJobChange: vi.fn(() => {
+        throw new Error("render failed");
+      }),
+    });
+
+    await user.click(screen.getByRole("button", { name: /cancel import/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^cancel import$/i }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Could not cancel the import."));
+  });
+
+  it("shows the import as cancelling once a cancel has been requested", () => {
+    stubFetch({});
+    renderProgress(job({ cancel_requested: true }));
+
+    expect(screen.getByRole("button", { name: "Cancelling…" })).toBeDisabled();
+  });
 });

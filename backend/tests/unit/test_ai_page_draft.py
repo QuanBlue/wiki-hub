@@ -17,6 +17,7 @@ from app.modules.ai.skills import (
     page_draft_system_prompt,
 )
 from app.schemas.ai import PageDraftRequest
+from tests.unit.ai_fakes import fake_chat
 
 MODEL_REPLY = """Title: Restart the queue worker
 
@@ -135,7 +136,7 @@ class Harness:
 
         monkeypatch.setattr(service_module, "load_config", config)
         monkeypatch.setattr(service_module, "page_draft_instructions", instructions)
-        monkeypatch.setattr(service_module, "chat", chat)
+        fake_chat(monkeypatch, chat)
         monkeypatch.setattr(service_module.rate_limit, "enforce", enforce)
         self.service = AIService.__new__(AIService)
         self.service.session = None  # type: ignore[assignment]

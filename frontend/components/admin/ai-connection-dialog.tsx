@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -46,6 +47,12 @@ export function AiConnectionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-w-lg"
+        // Radix would focus the first tabbable thing, which is now a field's
+        // info button - opening its tooltip before anyone hovered anything.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          document.getElementById("ai-name")?.focus();
+        }}
         title={target ? t("adminAi.dialogEditTitle") : t("adminAi.dialogAddTitle")}
         description={t("adminAi.dialogDescription")}
       >
@@ -168,12 +175,17 @@ ${apiKey}` === lastChecked.current) return;
   // list it offered - the model is never typed by hand.
   const modelChosen =
     check.state === "ok" && check.models.some((candidate) => candidate.id === model);
+  // Embedding models belong to Semantic search, not to the chat model list.
+  const chatModels = check.state === "ok" ? check.models.filter((m) => !m.embedding) : [];
   const canSave = Boolean(name.trim() && baseUrl.trim() && modelChosen);
 
   return (
     <form onSubmit={save} className="space-y-4">
       <div className="space-y-1.5">
-        <Label htmlFor="ai-name">{t("adminAi.nameLabel")}</Label>
+        <div className="flex items-center gap-1">
+          <Label htmlFor="ai-name">{t("adminAi.nameLabel")}</Label>
+          <InfoTip>{t("adminAi.nameHelp")}</InfoTip>
+        </div>
         <Input
           id="ai-name"
           value={name}
@@ -185,7 +197,10 @@ ${apiKey}` === lastChecked.current) return;
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="ai-base-url">{t("adminAi.baseUrl")}</Label>
+        <div className="flex items-center gap-1">
+          <Label htmlFor="ai-base-url">{t("adminAi.baseUrl")}</Label>
+          <InfoTip>{t("adminAi.baseUrlHint")}</InfoTip>
+        </div>
         <Input
           id="ai-base-url"
           value={baseUrl}
@@ -198,11 +213,13 @@ ${apiKey}` === lastChecked.current) return;
           autoComplete="off"
           spellCheck={false}
         />
-        <p className="text-muted-foreground text-xs">{t("adminAi.baseUrlHint")}</p>
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="ai-api-key">{t("adminAi.apiKey")}</Label>
+        <div className="flex items-center gap-1">
+          <Label htmlFor="ai-api-key">{t("adminAi.apiKey")}</Label>
+          <InfoTip>{t("adminAi.keyNote")}</InfoTip>
+        </div>
         <PasswordInput
           id="ai-api-key"
           value={apiKey}
@@ -219,13 +236,15 @@ ${apiKey}` === lastChecked.current) return;
             {t("adminAi.apiKeyKeep", { preview: target.api_key_preview })}
           </p>
         ) : null}
-        <p className="text-muted-foreground text-xs">{t("adminAi.keyNote")}</p>
       </div>
 
       <div className="space-y-2">
         <div className="flex items-end justify-between gap-3">
-          <span id="ai-models-heading" className="text-sm leading-none font-medium">
-            {t("adminAi.modelsHeading")}
+          <span className="flex items-center gap-1">
+            <span id="ai-models-heading" className="text-sm leading-none font-medium">
+              {t("adminAi.modelsHeading")}
+            </span>
+            <InfoTip>{t("adminAi.modelsHelp")}</InfoTip>
           </span>
           <Button
             type="button"
@@ -255,18 +274,18 @@ ${apiKey}` === lastChecked.current) return;
               {check.message}
             </p>
           ) : check.state === "ok" ? (
-            check.models.length ? (
+            chatModels.length ? (
               <div className="space-y-2">
                 <p className="text-success flex items-center gap-2">
                   <Check className="size-4" aria-hidden />
-                  {t("adminAi.modelsFound", { count: check.models.length })}
+                  {t("adminAi.modelsFound", { count: chatModels.length })}
                 </p>
                 <div
                   role="radiogroup"
                   aria-labelledby="ai-models-heading"
                   className="border-border wh-scroll max-h-56 divide-y overflow-y-auto rounded-md border"
                 >
-                  {check.models.map((candidate) => (
+                  {chatModels.map((candidate) => (
                     <ModelRow
                       key={candidate.id}
                       model={candidate}
@@ -275,7 +294,7 @@ ${apiKey}` === lastChecked.current) return;
                     />
                   ))}
                 </div>
-                {model && !check.models.some((candidate) => candidate.id === model) ? (
+                {model && !chatModels.some((candidate) => candidate.id === model) ? (
                   <p className="text-muted-foreground text-xs">
                     {t("adminAi.modelNotListed", { model })}
                   </p>
@@ -284,7 +303,11 @@ ${apiKey}` === lastChecked.current) return;
             ) : (
               <p className="text-muted-foreground">{t("adminAi.noModels")}</p>
             )
-          ) : null}
+          ) : (
+            <p className="text-muted-foreground border-border rounded-md border border-dashed px-3 py-4 text-center">
+              {t("adminAi.modelsEmpty")}
+            </p>
+          )}
         </div>
 
       </div>

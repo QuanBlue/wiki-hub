@@ -92,6 +92,36 @@ class Settings(BaseSettings):
     ai_rate_limit: str = "60/hour"
     #: Characters of page text sent to the model in one call.
     ai_max_input_chars: int = 24000
+    # --- self-hosted Ollama (optional embedding source, run by the controller) ---
+    #: Where the Ollama container is reachable inside the compose network.
+    ollama_url: str = "http://ollama:11434"
+    #: The tiny sidecar that alone holds the Docker socket (see ``app/ollama_controller``).
+    ollama_controller_url: str = "http://ollama-controller:8765"
+    #: Embedding model WikiHub offers to download first (multilingual, 1024 dimensions).
+    ollama_default_model: str = "bge-m3"
+    #: Defaults for the Ollama container; each can be changed in the admin UI.
+    ollama_memory_gb: float = 3.0
+    #: Cores Ollama may use; 0 = all of them.
+    ollama_cpus: int = 0
+    ollama_keep_alive: str = "5m"
+    #: Seconds one embedding request may take. A CPU-only Ollama needs far longer
+    #: than a hosted API, and a request that times out is retried in smaller batches.
+    ai_embedding_timeout_seconds: float = 180.0
+    # --- semantic search ---
+    #: Pages embedded per background pass (one pass a minute); bounds API spend.
+    search_index_batch: int = 20
+    #: Chunks of one page that get embedded; a very long page is cut here.
+    search_max_chunks_per_page: int = 60
+    #: Cosine similarity a passage must reach to count as a semantic match at all.
+    #: Models differ a lot in scale (measured on real pages: bge-m3 scores unrelated
+    #: Vietnamese pages 0.5+, OpenAI's small model around 0.1), so this is only a
+    #: floor; what really cuts the noise is the margin below.
+    search_semantic_min_similarity: float = 0.30
+    #: A passage must also be within this of the *best* match for the query - "as
+    #: good as the top hit", whatever the model's scale.
+    search_semantic_margin: float = 0.10
+    #: Seconds to wait for the query embedding before using keyword search alone.
+    search_embed_timeout_seconds: float = 4.0
     # --- admin mail (public "contact an administrator" form) ---
     # Unauthenticated, and every accepted request sends one email per admin
     # mailbox, so it is throttled per client and again across all clients.

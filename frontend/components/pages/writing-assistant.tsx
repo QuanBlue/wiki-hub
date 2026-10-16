@@ -167,6 +167,7 @@ export function WritingAssistant({
   const request = useRef(0);
   const promptRef = useRef<HTMLInputElement>(null);
   const refineRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [canConfigure, setCanConfigure] = useState(false);
   const [target, setTarget] = useState<Target | null>(null);
@@ -384,6 +385,17 @@ export function WritingAssistant({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, close, editor]);
 
+  // A press anywhere outside the box dismisses it, like any other popover.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (panelRef.current?.contains(event.target as Node)) return;
+      close();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open, close]);
+
   // The "not set up" notice is only a tooltip: carrying on typing dismisses it.
   useEffect(() => {
     if (!open || enabled === true) return;
@@ -526,6 +538,7 @@ export function WritingAssistant({
       </button>
     ) : (
       <div
+        ref={panelRef}
         role="dialog"
         aria-label={t("ai.writing.button")}
         onMouseDown={keepFocusUnlessInput}

@@ -48,7 +48,7 @@ name: wikihub
 
 services:
   postgres:
-    image: postgres:16.10-bookworm
+    image: pgvector/pgvector:0.8.1-pg16-bookworm
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-wikihub}
@@ -252,6 +252,39 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  # Two jobs, both behind the same fixed-and-bounded design:
+  #  1. Starts and stops WikiHub's *own* Ollama (self-hosted embeddings) when an
+  # administrator enables it in Administration > AI assistant > Semantic search.
+  # It is the only service that mounts the Docker socket, so the backend and
+  # worker never touch it: every Docker parameter (image, container name, volume,
+  # network, memory limit) is fixed in code (app/ollama_controller/docker_api.py)
+  # and nothing a request sends reaches Docker. It runs as root because reading
+  # the socket needs it; it publishes no port and answers only on this network.
+  # Ollama itself is NOT part of this file: it exists only while it is enabled, so
+  # an unused install costs just this small process.
+  ollama-controller:
+    build:
+      context: .
+      dockerfile: deploy/docker/backend.Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "app.ollama_controller"]
+    user: "0:0"
+    env_file: [.env]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backend:/app
+    mem_limit: 192m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8765/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   frontend:
     build:

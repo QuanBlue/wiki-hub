@@ -20,6 +20,9 @@ from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine
 from app.workers.tasks import (
     check_admin_mailboxes,
+    check_ai_connections,
+    index_search_pages,
+    install_ollama,
     ping,
     reap_backup_jobs,
     schedule_automated_backup,
@@ -70,6 +73,7 @@ class WorkerSettings:
         func(run_confluence_import, timeout=LONG_RUNNING_JOB_TIMEOUT_SECONDS),
         func(run_backup_job, timeout=LONG_RUNNING_JOB_TIMEOUT_SECONDS),
         run_document_import,
+        func(install_ollama, timeout=LONG_RUNNING_JOB_TIMEOUT_SECONDS),
         schedule_automated_backup,
     ]
     cron_jobs: ClassVar[list[Any]] = [
@@ -77,6 +81,11 @@ class WorkerSettings:
         # when a worker dies without restarting (so `on_startup` never runs).
         cron(reap_backup_jobs, second=0, run_at_startup=False),
         cron(schedule_automated_backup, second=10, run_at_startup=False),
+        # Keeps the semantic-search index current (a no-op until an embedding
+        # model is configured).
+        cron(index_search_pages, second=40, run_at_startup=False),
+        # Every five minutes: refresh each AI connection's Working/Failing status.
+        cron(check_ai_connections, minute=set(range(0, 60, 5)), second=50, run_at_startup=False),
         # Hourly. Mailbox passwords expire on the mail provider's schedule, so
         # this is what turns "a request silently failed to arrive" into a
         # banner in front of the mailbox's owner.

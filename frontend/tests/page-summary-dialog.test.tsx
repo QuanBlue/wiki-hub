@@ -117,6 +117,18 @@ describe("PageSummaryDialog", () => {
     expect(api.post).toHaveBeenCalledWith(SUMMARY_URL);
   });
 
+  it("shows nothing under the title when the answer has no text and is not flagged too short", async () => {
+    vi.resetModules();
+    const { api } = await import("@/lib/api-client");
+    vi.mocked(api.post).mockResolvedValue({ summary: "  ", cached: false, too_short: false });
+    await setup(true);
+
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(SUMMARY_URL));
+    await waitFor(() => expect(within(dialog).queryByRole("status")).toBeNull());
+    expect(within(dialog).queryByText(/Saved summary/)).toBeNull();
+  });
+
   it("opens a file's viewer on top of the summary, which stays open underneath", async () => {
     vi.resetModules();
     const { api } = await import("@/lib/api-client");

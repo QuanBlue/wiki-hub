@@ -20,6 +20,7 @@ from app.models.permission import (
 from app.models.user import User
 from app.modules.permissions.service import PermissionService
 from app.modules.spaces.service import SpaceService
+from app.modules.stats.recorder import record_view
 from app.schemas.permission import EffectivePermissionsRead, GroupRead, SpacePermissionRead
 from app.schemas.space import (
     AudienceRead,
@@ -107,6 +108,7 @@ async def get_space(key: str, user: CurrentUser, service: SpaceServiceDep) -> Sp
     # space this way, so this is the one place that reliably sees "the user
     # opened this space" without a separate call from the frontend.
     await service.record_visit(space, user)
+    await record_view("space", space.id)
     return await service.to_read(space, user)
 
 

@@ -392,3 +392,17 @@ def test_a_reader_can_switch_the_summary_language_and_each_gets_its_own_prompt()
     page, vi, en = (summary_system_prompt("Be brief.", lang) for lang in (None, "vi", "en"))
     assert len({page, vi, en}) == 3  # so the saved summaries never mix
     assert "Vietnamese" in vi and LANGUAGE_RULE not in vi
+
+
+async def test_a_malformed_reply_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"unexpected": True})
+
+    _gateway(monkeypatch, handler)
+    with pytest.raises(ServiceUnavailableError):
+        await client.chat(CONFIG, [{"role": "user", "content": "hi"}])
+    assert calls == 1

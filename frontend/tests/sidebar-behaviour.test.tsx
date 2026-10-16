@@ -115,7 +115,7 @@ describe("Sidebar navigation", () => {
 
     expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current");
-    for (const name of ["Groups", "Settings", "Mailboxes", "Storage", "Backup"]) {
+    for (const name of ["Groups", "Statistics", "Settings", "Mailboxes", "Storage", "Backup"]) {
       expect(screen.getByRole("link", { name })).toBeInTheDocument();
     }
   });

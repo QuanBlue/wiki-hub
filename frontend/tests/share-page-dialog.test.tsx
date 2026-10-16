@@ -150,4 +150,43 @@ describe("SharePageDialog", () => {
       expect(api.get).toHaveBeenLastCalledWith(`${BASE}/candidates`, { query: { q: "er" } }),
     );
   });
+
+  it("steps back up the list with the arrow keys, skipping people without access", async () => {
+    renderDialog();
+    await screen.findByText("Carol Le");
+
+    const search = screen.getByRole("combobox", { name: "Search by name or username" });
+    search.focus();
+    // Carol is first; going up wraps past Dave to Erin.
+    await userEvent.keyboard("{ArrowUp}{Enter}");
+
+    const chips = screen.getByRole("list", { name: "Sharing with" });
+    expect(within(chips).getAllByRole("listitem").map((chip) => chip.textContent)).toEqual([
+      "Erin Vo",
+    ]);
+  });
+
+  it("ignores the keys when nobody can be picked", async () => {
+    vi.mocked(api.get).mockResolvedValue([people[1]]);
+    renderDialog();
+    await screen.findByText("Dave Pham");
+
+    screen.getByRole("combobox").focus();
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+
+    expect(screen.queryByRole("list", { name: "Sharing with" })).not.toBeInTheDocument();
+  });
+
+  it("says when nobody matches, and when the search itself fails", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce([]);
+    renderDialog();
+    expect(await screen.findByText("No one matches")).toBeInTheDocument();
+
+    vi.mocked(api.get).mockRejectedValueOnce(new Error("offline"));
+    await userEvent.type(screen.getByRole("combobox"), "x");
+    await waitFor(() =>
+      expect(api.get).toHaveBeenLastCalledWith(`${BASE}/candidates`, { query: { q: "x" } }),
+    );
+    expect(await screen.findByText("No one matches")).toBeInTheDocument();
+  });
 });

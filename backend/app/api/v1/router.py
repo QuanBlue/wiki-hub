@@ -10,6 +10,8 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     admin_mail,
+    admin_monitor,
+    admin_stats,
     ai,
     attachments,
     audit_logs,
@@ -60,6 +62,8 @@ api_router.include_router(admin_mail.public_router)
 api_router.include_router(notifications.router)
 api_router.include_router(issues.router)
 api_router.include_router(ai.router)
+api_router.include_router(admin_stats.router)
+api_router.include_router(admin_monitor.router)
 api_router.include_router(export_render.router)
 
 # Registered in later phases:

@@ -8,6 +8,7 @@ onto this host or the gateway.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 
 import httpx
 
@@ -36,7 +37,50 @@ def _gate() -> asyncio.Semaphore:
     return _semaphore
 
 
-async def _complete(config: AIConfig, messages: list[dict[str, str]], max_tokens: int) -> dict:
+@dataclass(frozen=True)
+class Usage:
+    """Tokens a request spent, as the gateway reported them."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+    @property
+    def total_tokens(self) -> int:
+        return self.prompt_tokens + self.completion_tokens
+
+    def __add__(self, other: Usage) -> Usage:
+        return Usage(
+            self.prompt_tokens + other.prompt_tokens,
+            self.completion_tokens + other.completion_tokens,
+        )
+
+
+def parse_usage(raw: object) -> Usage | None:
+    """The gateway's ``usage`` object, or ``None`` when it sent nothing usable."""
+    if not isinstance(raw, dict):
+        return None
+    prompt = raw.get("prompt_tokens")
+    completion = raw.get("completion_tokens")
+    if isinstance(prompt, bool) or isinstance(completion, bool):
+        return None
+    if not isinstance(prompt, int) and not isinstance(completion, int):
+        return None
+    return Usage(
+        max(0, prompt) if isinstance(prompt, int) else 0,
+        max(0, completion) if isinstance(completion, int) else 0,
+    )
+
+
+@dataclass(frozen=True)
+class ChatReply:
+    text: str
+    #: ``None`` when the gateway did not report usage - nothing is guessed.
+    usage: Usage | None
+
+
+async def _complete(
+    config: AIConfig, messages: list[dict[str, str]], max_tokens: int
+) -> tuple[dict, object]:
     url = config.base_url.rstrip("/") + "/chat/completions"
     body: dict = {
         "model": config.model,
@@ -61,7 +105,8 @@ async def _complete(config: AIConfig, messages: list[dict[str, str]], max_tokens
                 logger.info("ai_reasoning_hint_rejected", status=response.status_code)
                 continue
             response.raise_for_status()
-            return response.json()["choices"][0]
+            payload = response.json()
+            return payload["choices"][0], payload.get("usage")
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
             retryable = status in _TRANSIENT_STATUS
@@ -81,27 +126,39 @@ async def _complete(config: AIConfig, messages: list[dict[str, str]], max_tokens
         raise ServiceUnavailableError("The AI assistant could not answer right now.")
 
 
-async def chat(config: AIConfig, messages: list[dict[str, str]], *, max_tokens: int = 2000) -> str:
-    """Return the assistant's reply text, or raise ``ServiceUnavailableError``.
+async def chat_with_usage(
+    config: AIConfig, messages: list[dict[str, str]], *, max_tokens: int = 2000
+) -> ChatReply:
+    """Return the assistant's reply and the tokens it cost, or raise ``ServiceUnavailableError``.
 
     ``max_tokens`` has to leave room for the model's hidden reasoning: a
     reasoning model that spends the budget thinking returns no content, or an
     answer cut off mid-sentence. Either way the request is repeated once with
-    double the budget before giving up on a complete answer.
+    double the budget before giving up on a complete answer; the usage of both
+    attempts is added up, since both were paid for.
     """
     if not config.ready:
         raise ServiceUnavailableError("The AI assistant is not enabled.")
 
-    choice = await _complete(config, messages, max_tokens)
+    choice, raw = await _complete(config, messages, max_tokens)
+    usage = parse_usage(raw)
     for _ in range(_RETRIES):
         if choice.get("finish_reason") != "length":
             break
         logger.info("ai_reply_cut_off", max_tokens=max_tokens)
         max_tokens *= 2
-        choice = await _complete(config, messages, max_tokens)
+        choice, raw = await _complete(config, messages, max_tokens)
+        again = parse_usage(raw)
+        if again is not None:
+            usage = again if usage is None else usage + again
 
     text = (choice.get("message") or {}).get("content") or ""
     if not text.strip():
         logger.warning("ai_empty_reply", finish_reason=choice.get("finish_reason"))
         raise ServiceUnavailableError("The AI assistant returned no answer. Please try again.")
-    return text.strip()
+    return ChatReply(text.strip(), usage)
+
+
+async def chat(config: AIConfig, messages: list[dict[str, str]], *, max_tokens: int = 2000) -> str:
+    """Like :func:`chat_with_usage`, for callers that only want the text."""
+    return (await chat_with_usage(config, messages, max_tokens=max_tokens)).text

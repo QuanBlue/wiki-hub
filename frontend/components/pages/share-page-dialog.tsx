@@ -88,11 +88,10 @@ export function SharePageDialog({
 
   /** The next pickable row from ``from`` in ``step`` direction, wrapping. */
   function nextSelectable(list: MentionCandidate[], from: number, step: 1 | -1): number {
-    for (let offset = 1; offset <= list.length; offset += 1) {
-      const index = (from + step * offset + list.length * offset) % list.length;
-      if (list[index].can_view) return index;
-    }
-    return from;
+    const order = list.map(
+      (_, i) => (from + step * (i + 1) + list.length * (i + 1)) % list.length,
+    );
+    return order.find((index) => list[index].can_view) ?? from;
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {

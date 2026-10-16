@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import date as date_type
 from datetime import datetime
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -143,6 +144,28 @@ class UserProfileStats(BaseModel):
     pages_updated: int = 0
     pages_created: int = 0
     spaces_contributed: int = 0
+
+
+class ContributionDay(BaseModel):
+    date: date_type
+    count: int
+
+
+class ContributionHour(BaseModel):
+    hour: datetime
+    count: int
+
+
+class UserContributions(BaseModel):
+    """Page edits per day for one calendar year, plus the years worth browsing."""
+
+    year: int
+    start: date_type
+    end: date_type
+    total: int = 0
+    years: list[int] = []
+    days: list[ContributionDay] = []
+    hours: list[ContributionHour] = []
 
 
 class UserDraftItem(BaseModel):

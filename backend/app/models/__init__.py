@@ -7,6 +7,7 @@ Every model must be imported here: Alembic's autogenerate walks
 from __future__ import annotations
 
 from app.models.ai_connection import AiConnection
+from app.models.ai_embedding_settings import AiEmbeddingSettings
 from app.models.ai_skill import AiSkill
 from app.models.admin_mail import AdminMailbox, AdminRequest, AdminRequestRecipient
 from app.models.attachment import PageAttachment
@@ -47,6 +48,7 @@ from app.models.space import (
     SpaceVisibility,
     SpaceVisit,
 )
+from app.models.stats import AiUsage, ContentViewDaily
 from app.models.user import User
 from app.models.user_session import UserSession
 from app.models.user_tag import UserTag
@@ -58,7 +60,9 @@ __all__ = [
     "AdminRequest",
     "AdminRequestRecipient",
     "AiConnection",
+    "AiEmbeddingSettings",
     "AiSkill",
+    "AiUsage",
     "AuditAction",
     "AuditLog",
     "AutomatedBackupSettings",
@@ -66,6 +70,7 @@ __all__ = [
     "BackupJob",
     "Base",
     "CommentLike",
+    "ContentViewDaily",
     "DocumentImportItem",
     "DocumentImportJob",
     "GlobalPermission",

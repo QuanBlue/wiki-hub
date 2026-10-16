@@ -31,6 +31,8 @@ export interface SearchResults {
   query: string;
   pages: SearchResultPage[];
   spaces: SearchResultSpace[];
+  /** Folded words and synonyms to highlight (absent on older servers). */
+  terms?: string[];
 }
 
 export interface RecentPageItem {
@@ -214,6 +216,18 @@ export interface UserProfileStats {
   pages_updated: number;
   pages_created: number;
   spaces_contributed: number;
+}
+
+/** Page edits per day for one year of a member's profile chart. */
+export interface UserContributions {
+  year: number;
+  start: string;
+  end: string;
+  total: number;
+  years: number[];
+  days: { date: string; count: number }[];
+  /** Only when asked for the last few hours: one entry per hour that had edits. */
+  hours: { hour: string; count: number }[];
 }
 
 export interface UserDraftItem {
@@ -1058,4 +1072,69 @@ export interface MentionCandidate {
   avatar_url: string | null;
   /** False for someone who cannot open this page - shown disabled. */
   can_view: boolean;
+}
+
+export type StatsRange = "7d" | "30d" | "90d";
+
+export interface StatsOverview {
+  range_days: number;
+  totals: {
+    users: number;
+    new_users: number;
+    active_users: number;
+    spaces: number;
+    pages: number;
+    edits: number;
+    views: number;
+  };
+  daily: Array<{ day: string; edits: number; views: number; new_users: number }>;
+  recent_activity: Array<{
+    id: string;
+    created_at: string;
+    actor_username: string;
+    action: string;
+    entity_type: string;
+    entity_label: string;
+  }>;
+  views_tracked_since: string | null;
+}
+
+export interface StatsAi {
+  range_days: number;
+  totals: {
+    tokens: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    calls: number;
+    users: number;
+  };
+  daily: Array<{ day: string; tokens: number; calls: number }>;
+  by_user: Array<{
+    user_id: string | null;
+    username: string;
+    full_name: string | null;
+    tokens: number;
+    calls: number;
+  }>;
+  by_feature: Array<{ feature: string; tokens: number; calls: number }>;
+  tracked_since: string | null;
+}
+
+export interface StatsTopItem {
+  id: string;
+  title: string;
+  /** Page slug; null for a space. */
+  slug: string | null;
+  space_key: string;
+  space_name: string;
+  views: number;
+  stars: number;
+  /** Null for a space, which cannot be saved. */
+  saves: number | null;
+}
+
+export interface StatsTopContent {
+  range_days: number;
+  sort: string;
+  items: StatsTopItem[];
 }

@@ -7,17 +7,25 @@ import { api } from "@/lib/api-client";
 import * as drafts from "@/lib/drafts";
 import type { Group, PageDraft, Space, WikiPage } from "@/types/api";
 
-const { push, refresh, toastSuccess, toastError, sidebar, uploadResults } = vi.hoisted(() => ({
+const { push, refresh, toastSuccess, toastError, toastInfo, ai, sidebar, uploadResults } = vi.hoisted(() => ({
   push: vi.fn(),
   refresh: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  toastInfo: vi.fn(),
+  ai: { enabled: false },
   sidebar: { collapsed: false, setCollapsed: vi.fn(), mobileOpen: false },
   uploadResults: [] as unknown[],
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh }) }));
-vi.mock("sonner", () => ({ toast: { success: toastSuccess, error: toastError } }));
+vi.mock("sonner", () => ({
+  toast: Object.assign(toastInfo, { success: toastSuccess, error: toastError }),
+}));
+vi.mock("@/lib/ai-summary", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai-summary")>()),
+  aiStatus: async () => ({ enabled: ai.enabled, can_configure: false }),
+}));
 vi.mock("@/components/layout/sidebar-context", () => ({ useSidebar: () => sidebar }));
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
@@ -796,6 +804,25 @@ describe("SpaceWorkspace editing", () => {
     expect(mockedDrafts.clearLocalPageDraft).toHaveBeenCalledWith("ENG", "guides");
     expect(refresh).toHaveBeenCalled();
     expect(screen.queryByLabelText("Page title")).toBeNull();
+  });
+
+  it("offers label suggestions after a save when the assistant is on, and opens the labels", async () => {
+    ai.enabled = true;
+    try {
+      const { actor } = renderWorkspace({ currentPage: GUIDES });
+      await startEditing(actor);
+      await actor.type(screen.getByLabelText("Rich editor"), "!");
+      await actor.click(screen.getByRole("button", { name: "Save changes" }));
+
+      await waitFor(() => expect(toastInfo).toHaveBeenCalled());
+      const [message, options] = toastInfo.mock.calls[0];
+      expect(message).toBe("Want labels and related pages suggested?");
+      expect(options.action.label).toBe("Suggest");
+      act(() => options.action.onClick());
+      expect(await screen.findByRole("dialog", { name: "Labels" })).toBeInTheDocument();
+    } finally {
+      ai.enabled = false;
+    }
   });
 
   it("falls back to the old title when the field was emptied, and reports a failed save", async () => {

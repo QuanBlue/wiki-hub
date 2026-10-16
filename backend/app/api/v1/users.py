@@ -13,7 +13,7 @@ layer so they hold for any future caller:
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, UploadFile, status
@@ -30,6 +30,7 @@ from app.core.exceptions import (
 )
 from app.models.draft import PageDraft
 from app.models.page import PageLike, UserPagePin, WikiPage
+from app.models.revision import PageRevision
 from app.models.user_page_label import UserPageLabel
 from app.models.permission import GlobalPermission, Group, GroupMember, UserGlobalPermissionOverride
 from app.models.space import Space, SpaceStatus
@@ -47,7 +48,10 @@ from app.schemas.user import (
     PasswordReset,
     PublicUserRead,
     SelfProfileUpdate,
+    ContributionDay,
+    ContributionHour,
     UserActivityPage,
+    UserContributions,
     UserCreate,
     UserDraftItem,
     UserGroupMembership,
@@ -204,6 +208,73 @@ async def list_public_activity(
 
 
 @router.get(
+    "/{username}/contributions",
+    response_model=UserContributions,
+    summary="Read a member's page edits per day for a year",
+)
+async def get_contributions(
+    username: str,
+    _viewer: CurrentUser,
+    session: DbSession,
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    days: int = Query(default=365, ge=1, le=366),
+    hours: int | None = Query(default=None, ge=1, le=72),
+) -> UserContributions:
+    """Aggregate-only, like the totals: counts per day, never the pages behind them.
+
+    ``year`` picks a calendar year, ``hours`` the last few hours bucketed per hour;
+    otherwise the last ``days`` days (a year by default).
+    """
+    member = await get_public_member(username, session)
+    now = datetime.now(UTC)
+    today = now.date()
+    if year is None:
+        start, end = today - timedelta(days=days - 1), today
+    else:
+        start, end = date(year, 1, 1), min(date(year, 12, 31), today)
+    active_pages = WikiPage.space_id.in_(select(Space.id).where(Space.status == SpaceStatus.active))
+    day = func.date(func.timezone("UTC", PageRevision.created_at))
+    mine = (
+        PageRevision.created_by_id == member.id,
+        PageRevision.page_id.in_(select(WikiPage.id).where(active_pages)),
+    )
+    hourly: list[ContributionHour] = []
+    if hours is not None and year is None:
+        # Whole hours, oldest first, ending with the one that is running now.
+        hour = func.date_trunc("hour", PageRevision.created_at)
+        first_hour = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=hours - 1)
+        found = (
+            await session.execute(
+                select(hour, func.count()).where(*mine, hour >= first_hour).group_by(hour)
+            )
+        ).all()
+        hourly = [ContributionHour(hour=h, count=int(count)) for h, count in sorted(found)]
+        start, end = first_hour.date(), today
+
+    rows = (
+        await session.execute(
+            select(day, func.count())
+            .where(*mine, day >= start, day <= end)
+            .group_by(day)
+            .order_by(day)
+        )
+    ).all()
+    first = await session.scalar(select(func.min(PageRevision.created_at)).where(*mine))
+    first_year = first.year if first else today.year
+    return UserContributions(
+        year=end.year if year is None else year,
+        start=start,
+        end=end,
+        total=sum(item.count for item in hourly)
+        if hours is not None and year is None
+        else sum(int(count) for _day, count in rows),
+        years=list(range(today.year, first_year - 1, -1)),
+        days=[ContributionDay(date=d, count=int(count)) for d, count in rows],
+        hours=hourly,
+    )
+
+
+@router.get(
     "/{username}/stats", response_model=UserProfileStats, summary="Read member activity totals"
 )
 async def get_profile_stats(
@@ -305,15 +376,24 @@ async def list_own_likes(user: CurrentUser, session: DbSession) -> list[UserPinn
     )
     permissions = PermissionService(session)
     return [
-        UserPinnedPageItem(id=page.id, title=page.title, slug=page.slug,
-                           space_key=space.key, space_name=space.name,
-                           pinned_at=page.updated_at)
+        UserPinnedPageItem(
+            id=page.id,
+            title=page.title,
+            slug=page.slug,
+            space_key=space.key,
+            space_name=space.name,
+            pinned_at=page.updated_at,
+        )
         for _like, page, space in rows
         if await permissions.can_view_page(page, user)
     ]
 
 
-@router.get("/me/page-labels", response_model=list[UserPageLabelItem], summary="List your private page labels")
+@router.get(
+    "/me/page-labels",
+    response_model=list[UserPageLabelItem],
+    summary="List your private page labels",
+)
 async def list_own_page_labels(user: CurrentUser, session: DbSession) -> list[UserPageLabelItem]:
     rows = await session.execute(
         select(UserPageLabel, WikiPage, Space)
@@ -324,9 +404,15 @@ async def list_own_page_labels(user: CurrentUser, session: DbSession) -> list[Us
     )
     permissions = PermissionService(session)
     return [
-        UserPageLabelItem(id=label.id, name=label.name, page_id=page.id,
-                          title=page.title, slug=page.slug,
-                          space_key=space.key, space_name=space.name)
+        UserPageLabelItem(
+            id=label.id,
+            name=label.name,
+            page_id=page.id,
+            title=page.title,
+            slug=page.slug,
+            space_key=space.key,
+            space_name=space.name,
+        )
         for label, page, space in rows
         if await permissions.can_view_page(page, user)
     ]
@@ -478,15 +564,17 @@ async def list_permission_override_users(user: CurrentUser, session: DbSession) 
     # user in the workspace - only the (typically small) matching subset
     # ever pays for a full `_read_user`.
     user_ids = (
-        await session.execute(select(UserGlobalPermissionOverride.user_id).distinct())
-    ).scalars().all()
+        (await session.execute(select(UserGlobalPermissionOverride.user_id).distinct()))
+        .scalars()
+        .all()
+    )
     if not user_ids:
         return []
     accounts = (
-        await session.execute(
-            select(User).where(User.id.in_(user_ids)).order_by(User.username)
-        )
-    ).scalars().all()
+        (await session.execute(select(User).where(User.id.in_(user_ids)).order_by(User.username)))
+        .scalars()
+        .all()
+    )
     return [await _read_user(session, account) for account in accounts]
 
 
@@ -509,7 +597,9 @@ async def list_users(
     ),
     status_filter: Literal["active", "disabled"] | None = Query(default=None, alias="status"),
     role: Literal["admin", "member"] | None = Query(default=None),
-    sort: Literal["username", "email", "groups", "role", "status", "last_login"] | None = Query(default=None),
+    sort: Literal["username", "email", "groups", "role", "status", "last_login"] | None = Query(
+        default=None
+    ),
     order: Literal["asc", "desc"] = Query(default="desc"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { AiSections } from "@/components/admin/ai-sections";
 import {
   getAiConnections,
+  getEmbeddingSettings,
   getAiPageDraftSkill,
   getAiSkill,
   getAiSummarySkill,
@@ -37,6 +38,7 @@ export default async function AdminAiPage() {
 
   const [
     connections,
+    embedding,
     summarySkill,
     pageDraftSkill,
     explainSkill,
@@ -45,6 +47,7 @@ export default async function AdminAiPage() {
     suggestionsSkill,
   ] = await Promise.all([
     getAiConnections(),
+    getEmbeddingSettings(),
     getAiSummarySkill(),
     getAiPageDraftSkill(),
     getAiSkill("selection-explain"),
@@ -68,6 +71,7 @@ export default async function AdminAiPage() {
       </header>
       <AiSections
         connections={connections}
+        embedding={embedding}
         summarySkill={summarySkill}
         pageDraftSkill={pageDraftSkill}
         explainSkill={explainSkill}

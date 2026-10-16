@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  * paragraph stays a line break, as people expect when typing a report.
  */
 const INLINE =
-  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[[^\]\n]+\]\((?:https?:\/\/[^)\s]+|attachment:[0-9a-fA-F-]{36})\))|(_[^_\n]+_)/g;
+  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[[^\]\n]+\]\((?:https?:\/\/[^)\s]+|attachment:[0-9a-fA-F-]{36}|cite:\d{1,2})\))|((?<![A-Za-z0-9])_[^_\n]+_(?![A-Za-z0-9]))/g;
 
 /** The same, plus a bare ``https://...`` address (group 5), for text a model wrote. */
 const INLINE_AUTOLINK = new RegExp(
@@ -36,6 +36,8 @@ type InlineOptions = {
   autolink?: boolean;
   /** Called for ``[name](attachment:<id>)``; without it such a link is plain text. */
   onOpenAttachment?: (attachmentId: string) => void;
+  /** Called for ``[n](cite:n)``, an AI answer's mark for its n-th source; without it, plain ``[n]``. */
+  onCite?: (n: number) => void;
 };
 
 const MENTION = /(@[A-Za-z0-9][A-Za-z0-9_.-]*)/g;
@@ -47,7 +49,9 @@ function withMentions(
   mentions: ReadonlySet<string>,
 ): ReactNode[] {
   return text.split(MENTION).map((part, index) => {
-    const name = part.startsWith("@") ? part.slice(1).replace(/[.-]+$/, "") : "";
+    const name = part.startsWith("@")
+      ? part.slice(1).replace(/[.-]+$/, "")
+      : "";
     if (!name || !mentions.has(name.toLowerCase())) return part;
     const trailing = part.slice(1 + name.length);
     return (
@@ -61,8 +65,12 @@ function withMentions(
   });
 }
 
-function inline(text: string, keyPrefix: string, options: InlineOptions = {}): ReactNode[] {
-  const { mentions, autolink, onOpenAttachment } = options;
+function inline(
+  text: string,
+  keyPrefix: string,
+  options: InlineOptions = {},
+): ReactNode[] {
+  const { mentions, autolink, onOpenAttachment, onCite } = options;
   const nodes: ReactNode[] = [];
   let last = 0;
   let index = 0;
@@ -94,7 +102,24 @@ function inline(text: string, keyPrefix: string, options: InlineOptions = {}): R
       const split = token.indexOf("](");
       const label = token.slice(1, split);
       const href = token.slice(split + 2, -1);
-      if (href.startsWith("attachment:")) {
+      if (href.startsWith("cite:")) {
+        const n = Number(href.slice("cite:".length));
+        nodes.push(
+          onCite ? (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onCite(n)}
+              aria-label={`${label}`}
+              className="bg-primary-subtle text-primary hover:bg-surface-selected focus-visible:ring-ring mx-0.5 inline-flex min-w-5 cursor-pointer items-center justify-center rounded px-1 align-baseline text-[11px] leading-5 font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+            >
+              {label}
+            </button>
+          ) : (
+            `[${label}]`
+          ),
+        );
+      } else if (href.startsWith("attachment:")) {
         const attachmentId = href.slice("attachment:".length);
         nodes.push(
           onOpenAttachment ? (
@@ -154,6 +179,19 @@ function inline(text: string, keyPrefix: string, options: InlineOptions = {}): R
   return nodes;
 }
 
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+const TABLE_SEPARATOR = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+
+/** The cells of one ``| a | b |`` row. */
+function tableCells(row: string): string[] {
+  return row
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
 const BLOCK_START = /^(```|#{1,3}\s|>\s?|[-*]\s|\d+\.\s)/;
 
 export function IssueMarkdown({
@@ -162,6 +200,7 @@ export function IssueMarkdown({
   mentions,
   autolink,
   onOpenAttachment,
+  onCite,
 }: {
   source: string;
   className?: string;
@@ -171,12 +210,24 @@ export function IssueMarkdown({
   autolink?: boolean;
   /** Makes ``[name](attachment:<id>)`` a button that calls this with the id. */
   onOpenAttachment?: (attachmentId: string) => void;
+  /** Makes ``[n](cite:n)`` a numbered mark that calls this with n. */
+  onCite?: (n: number) => void;
 }) {
   const mentionSet: ReadonlySet<string> = new Set(
     (mentions ?? []).map((name) => name.toLowerCase()),
   );
-  const options: InlineOptions = { mentions: mentionSet, autolink, onOpenAttachment };
+  const options: InlineOptions = {
+    mentions: mentionSet,
+    autolink,
+    onOpenAttachment,
+    onCite,
+  };
   const lines = source.replaceAll("\r\n", "\n").split("\n");
+  /** A pipe table starts here: a row of cells, then the ``---|---`` row under it. */
+  const startsTable = (at: number) =>
+    at + 1 < lines.length &&
+    TABLE_ROW.test(lines[at]) &&
+    TABLE_SEPARATOR.test(lines[at + 1]);
   const blocks: ReactNode[] = [];
   let i = 0;
   let key = 0;
@@ -277,7 +328,9 @@ export function IssueMarkdown({
       const items: ReactNode[] = [];
       while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
         items.push(
-          <li key={i}>{inline(lines[i].replace(/^[-*]\s+/, ""), `u${i}`, options)}</li>,
+          <li key={i}>
+            {inline(lines[i].replace(/^[-*]\s+/, ""), `u${i}`, options)}
+          </li>,
         );
         i += 1;
       }
@@ -293,7 +346,9 @@ export function IssueMarkdown({
       const items: ReactNode[] = [];
       while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
         items.push(
-          <li key={i}>{inline(lines[i].replace(/^\d+\.\s+/, ""), `o${i}`, options)}</li>,
+          <li key={i}>
+            {inline(lines[i].replace(/^\d+\.\s+/, ""), `o${i}`, options)}
+          </li>,
         );
         i += 1;
       }
@@ -305,8 +360,66 @@ export function IssueMarkdown({
       continue;
     }
 
-    const paragraph: string[] = [];
-    while (i < lines.length && lines[i].trim() && !BLOCK_START.test(lines[i])) {
+    if (startsTable(i)) {
+      const head = tableCells(lines[i]);
+      i += 2; // the header row and the separator
+      const rows: string[][] = [];
+      while (i < lines.length && TABLE_ROW.test(lines[i])) {
+        rows.push(tableCells(lines[i]));
+        i += 1;
+      }
+      const at = key++;
+      blocks.push(
+        <div
+          key={at}
+          className="border-border my-2 overflow-x-auto rounded-lg border"
+        >
+          <table className="w-full border-collapse text-left text-sm">
+            <thead>
+              <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-xs">
+                {head.map((cell, column) => (
+                  <th key={column} className="px-3 py-2 font-semibold">
+                    {inline(cell, `th${at}-${column}`, options)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, r) => (
+                <tr
+                  key={r}
+                  className="border-border border-b align-top last:border-b-0"
+                >
+                  {head.map((_, column) => (
+                    <td
+                      key={column}
+                      className="px-3 py-2 [overflow-wrap:break-word]"
+                    >
+                      {inline(
+                        row[column] ?? "",
+                        `td${at}-${r}-${column}`,
+                        options,
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+
+    // The first line is always taken, so a line that merely starts like a block cannot stall.
+    const paragraph: string[] = [lines[i]];
+    i += 1;
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !BLOCK_START.test(lines[i]) &&
+      !startsTable(i)
+    ) {
       paragraph.push(lines[i]);
       i += 1;
     }
@@ -322,7 +435,5 @@ export function IssueMarkdown({
     );
   }
 
-  return (
-    <div className={cn("text-sm break-words", className)}>{blocks}</div>
-  );
+  return <div className={cn("text-sm break-words", className)}>{blocks}</div>;
 }

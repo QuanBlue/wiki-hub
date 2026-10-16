@@ -62,3 +62,9 @@ if (
     });
   };
 }
+
+// jsdom has no layout, so it never implemented hit-testing; ProseMirror asks for it
+// on every mouse press in the editor.
+if (typeof document !== "undefined" && typeof document.elementFromPoint !== "function") {
+  document.elementFromPoint = () => null;
+}

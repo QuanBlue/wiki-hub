@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,25 +23,52 @@ import type {
 
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
-  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  api: {
+    get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
+}));
+// The chart has its own tests and its own request; here it would only consume queued replies.
+vi.mock("@/components/users/contribution-chart", () => ({
+  ContributionChart: ({ username }: { username: string }) => (
+    <div data-testid="contributions">{username}</div>
+  ),
 }));
 vi.mock("@/components/pages/page-history-modal", () => ({
-  PageHistoryModal: ({ pageTitle, onOpenChange }: { pageTitle: string; onOpenChange: (open: boolean) => void }) => (
+  PageHistoryModal: ({
+    pageTitle,
+    onOpenChange,
+  }: {
+    pageTitle: string;
+    onOpenChange: (open: boolean) => void;
+  }) => (
     <div role="dialog" aria-label={`History of ${pageTitle}`}>
-      <button type="button" onClick={() => onOpenChange(true)}>Stay open</button>
-      <button type="button" onClick={() => onOpenChange(false)}>Close history</button>
+      <button type="button" onClick={() => onOpenChange(true)}>
+        Stay open
+      </button>
+      <button type="button" onClick={() => onOpenChange(false)}>
+        Close history
+      </button>
     </div>
   ),
 }));
 vi.mock("@/components/users/user-profile-trigger", () => ({
-  UserProfileTrigger: ({ fullName, variant }: { fullName: string; variant?: string }) => (
-    <span data-variant={variant ?? "name"}>{fullName}</span>
-  ),
+  UserProfileTrigger: ({
+    fullName,
+    variant,
+  }: {
+    fullName: string;
+    variant?: string;
+  }) => <span data-variant={variant ?? "name"}>{fullName}</span>,
 }));
 
 const mocked = vi.mocked(api);
 
-let observerCallback: ((entries: { isIntersecting: boolean }[]) => void) | null = null;
+let observerCallback:
+  ((entries: { isIntersecting: boolean }[]) => void) | null = null;
 class FakeIntersectionObserver {
   constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
     observerCallback = callback;
@@ -49,7 +83,10 @@ function minutesAgo(minutes: number) {
   return new Date(NOW - minutes * 60_000).toISOString();
 }
 
-function activity(id: string, overrides: Partial<RecentPageItem> = {}): RecentPageItem {
+function activity(
+  id: string,
+  overrides: Partial<RecentPageItem> = {},
+): RecentPageItem {
   return {
     id,
     title: `Page ${id}`,
@@ -83,12 +120,33 @@ function space(id: string, key: string, name: string): Space {
   return { id, key, name } as Space;
 }
 
-function pin(id: string, key: string, slug: string, title: string, spaceName = key): UserPinnedPageItem {
-  return { id, title, slug, space_key: key, space_name: spaceName, pinned_at: "2026-01-01T00:00:00Z" };
+function pin(
+  id: string,
+  key: string,
+  slug: string,
+  title: string,
+  spaceName = key,
+): UserPinnedPageItem {
+  return {
+    id,
+    title,
+    slug,
+    space_key: key,
+    space_name: spaceName,
+    pinned_at: "2026-01-01T00:00:00Z",
+  };
 }
 
 function label(name: string, key: string, slug: string): UserPageLabelItem {
-  return { id: `${name}-${slug}`, name, page_id: slug, title: slug, slug, space_key: key, space_name: key };
+  return {
+    id: `${name}-${slug}`,
+    name,
+    page_id: slug,
+    title: slug,
+    slug,
+    space_key: key,
+    space_name: key,
+  };
 }
 
 const DRAFT: UserDraftItem = {
@@ -107,12 +165,23 @@ type Props = Parameters<typeof UserProfile>[0];
 function renderProfile(overrides: Partial<Props> = {}) {
   const props: Props = {
     user: USER,
-    initialActivity: { items: [activity("m1", { updated_at: minutesAgo(30) })], next_cursor: null },
+    initialActivity: {
+      items: [activity("m1", { updated_at: minutesAgo(30) })],
+      next_cursor: null,
+    },
     initialAllActivity: [
       activity("a1"),
       activity("a2", { updated_at: minutesAgo(20) }),
-      activity("a3", { user_username: "", user_full_name: "", updated_at: minutesAgo(40) }),
-      activity("a4", { user_username: "bob", user_full_name: "", updated_at: minutesAgo(50) }),
+      activity("a3", {
+        user_username: "",
+        user_full_name: "",
+        updated_at: minutesAgo(40),
+      }),
+      activity("a4", {
+        user_username: "bob",
+        user_full_name: "",
+        updated_at: minutesAgo(50),
+      }),
       activity("a5", { updated_at: minutesAgo(60 * 10) }),
     ],
     stats: { pages_updated: 7, pages_created: 3, spaces_contributed: 2 },
@@ -125,7 +194,11 @@ function renderProfile(overrides: Partial<Props> = {}) {
     ...overrides,
   };
   const view = render(<UserProfile {...props} />, { wrapper: LocaleProvider });
-  return { view, props, actor: userEvent.setup({ advanceTimers: vi.advanceTimersByTime }) };
+  return {
+    view,
+    props,
+    actor: userEvent.setup({ advanceTimers: vi.advanceTimersByTime }),
+  };
 }
 
 beforeEach(() => {
@@ -149,11 +222,16 @@ describe("UserProfile summary", () => {
   it("introduces the person with presence, role and stats", () => {
     renderProfile();
 
-    expect(screen.getByRole("heading", { level: 1, name: "Ann Lee" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Ann Lee" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("AL")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Active now" })).toBeInTheDocument();
     expect(screen.getByText("Writes docs.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Edit profile/ })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: /Edit profile/ })).toHaveAttribute(
+      "href",
+      "/account",
+    );
     expect(screen.getByText("Member")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
   });
@@ -181,7 +259,16 @@ describe("UserProfile summary", () => {
     expect(screen.getByText("Administrator")).toBeInTheDocument();
     view.unmount();
 
-    renderProfile({ user: { ...USER, full_name: " ", username: " ", created_at: "", bio: "", last_active_at: null } });
+    renderProfile({
+      user: {
+        ...USER,
+        full_name: " ",
+        username: " ",
+        created_at: "",
+        bio: "",
+        last_active_at: null,
+      },
+    });
     expect(screen.getByText("No recent activity")).toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
   });
@@ -192,7 +279,9 @@ describe("UserProfile summary", () => {
 
     act(() => vi.advanceTimersByTime(3 * 60_000));
 
-    expect(screen.getByRole("img", { name: "Active 6m ago" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Active 6m ago" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -203,16 +292,86 @@ describe("UserProfile activity", () => {
     expect(screen.getAllByText("Ann Lee").length).toBeGreaterThan(1);
     // A nameless system update reads as the workspace itself.
     expect(screen.getByText("system")).toBeInTheDocument();
-    expect(screen.getByText("bob", { selector: "[data-variant=name]" })).toBeInTheDocument();
+    expect(
+      screen.getByText("bob", { selector: "[data-variant=name]" }),
+    ).toBeInTheDocument();
     // A gap of hours starts a new group even for the same person.
-    expect(screen.getAllByText("Ann Lee", { selector: "[data-variant=avatar]" })).toHaveLength(2);
+    expect(
+      screen.getAllByText("Ann Lee", { selector: "[data-variant=avatar]" }),
+    ).toHaveLength(2);
 
-    await actor.click(screen.getAllByRole("button", { name: "(view change)" })[0]!);
+    await actor.click(
+      screen.getAllByRole("button", { name: "(view change)" })[0]!,
+    );
     const history = screen.getByRole("dialog", { name: "History of Page a1" });
-    await actor.click(within(history).getByRole("button", { name: "Stay open" }));
+    await actor.click(
+      within(history).getByRole("button", { name: "Stay open" }),
+    );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    await actor.click(within(history).getByRole("button", { name: "Close history" }));
+    await actor.click(
+      within(history).getByRole("button", { name: "Close history" }),
+    );
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("folds repeated edits of a page into one row that opens to show each change", async () => {
+    const edit = (id: string, slug: string, title: string, minutes: number) =>
+      activity(id, { slug, title, updated_at: minutesAgo(minutes) });
+    const { actor } = renderProfile({
+      initialAllActivity: [
+        edit("e1", "runbook", "Runbook", 1),
+        edit("e2", "data", "Personal data tests", 2),
+        edit("e3", "runbook", "Runbook", 3),
+        edit("e4", "runbook", "Runbook", 4),
+      ],
+    });
+
+    // Interleaved pages stay one row each, in order of their latest edit.
+    expect(
+      screen
+        .getAllByRole("link", { name: /^Runbook$|^Personal data tests$/ })
+        .map((link) => link.textContent),
+    ).toEqual(["Runbook", "Personal data tests"]);
+    const toggle = screen.getByRole("button", { name: "Updated 3 times" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("button", { name: "(view change)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "(view change)" }),
+    ).toHaveLength(1);
+
+    await actor.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const changes = screen.getAllByRole("button", { name: "(view change)" });
+    expect(changes).toHaveLength(4);
+
+    await actor.click(changes[1]!);
+    expect(
+      screen.getByRole("dialog", { name: "History of Runbook" }),
+    ).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Close history" }));
+    await actor.click(toggle);
+    expect(
+      screen.getAllByRole("button", { name: "(view change)" }),
+    ).toHaveLength(1);
+  });
+
+  it("folds repeated edits on someone else's profile too", () => {
+    renderProfile({
+      isOwner: false,
+      initialActivity: {
+        items: [
+          activity("f1", { slug: "same" }),
+          activity("f2", { slug: "same" }),
+        ],
+        next_cursor: null,
+      },
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Updated 2 times" }),
+    ).toBeInTheDocument();
   });
 
   it("loads a larger slice of recent activity, and offers a retry when that fails", async () => {
@@ -227,11 +386,16 @@ describe("UserProfile activity", () => {
     await actor.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(await screen.findByText("Page fresh")).toBeInTheDocument();
-    expect(mocked.get).toHaveBeenLastCalledWith("/api/v1/pages/recent?limit=100");
+    expect(mocked.get).toHaveBeenLastCalledWith(
+      "/api/v1/pages/recent?limit=100",
+    );
   });
 
   it("says so when there is no activity to show", async () => {
-    const { actor } = renderProfile({ initialAllActivity: [], initialActivity: { items: [], next_cursor: null } });
+    const { actor } = renderProfile({
+      initialAllActivity: [],
+      initialActivity: { items: [], next_cursor: null },
+    });
 
     expect(screen.getByText("No visible activity yet")).toBeInTheDocument();
     await actor.click(screen.getByRole("tab", { name: "My activity" }));
@@ -251,12 +415,16 @@ describe("UserProfile activity", () => {
 
     await actor.click(screen.getByRole("tab", { name: "My activity" }));
     act(() => observerCallback?.([{ isIntersecting: false }]));
-    expect(mocked.get).not.toHaveBeenCalledWith(expect.stringContaining("/activity?"));
+    expect(mocked.get).not.toHaveBeenCalledWith(
+      expect.stringContaining("/activity?"),
+    );
     await act(async () => observerCallback?.([{ isIntersecting: true }]));
 
     expect(await screen.findByText("Page m2")).toBeInTheDocument();
     expect(screen.getAllByText("Page m1")).toHaveLength(1);
-    expect(mocked.get).toHaveBeenCalledWith("/api/v1/users/ann/activity?limit=20&cursor=c1");
+    expect(mocked.get).toHaveBeenCalledWith(
+      "/api/v1/users/ann/activity?limit=20&cursor=c1",
+    );
   });
 
   it("offers a retry when loading more of the person's activity fails", async () => {
@@ -277,7 +445,9 @@ describe("UserProfile activity", () => {
     await actor.click(screen.getByRole("tab", { name: "My activity" }));
 
     await act(async () => observerCallback?.([{ isIntersecting: true }]));
-    expect(await screen.findByText("Could not reach the WikiHub API.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Could not reach the WikiHub API."),
+    ).toBeInTheDocument();
     await actor.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(await screen.findByText("Page m9")).toBeInTheDocument();
@@ -285,7 +455,9 @@ describe("UserProfile activity", () => {
 
   it("loads more on someone else's profile too, where their activity is the main feed", async () => {
     mocked.get.mockImplementation(async (path: string) =>
-      path.includes("/activity?") ? { items: [activity("o2")], next_cursor: null } : [],
+      path.includes("/activity?")
+        ? { items: [activity("o2")], next_cursor: null }
+        : [],
     );
     renderProfile({
       isOwner: false,
@@ -312,7 +484,11 @@ describe("UserProfile activity", () => {
     await act(async () => observerCallback?.([{ isIntersecting: true }]));
     await act(async () => observerCallback?.([{ isIntersecting: true }]));
     expect(screen.getByText("Loading more activity…")).toBeInTheDocument();
-    expect(mocked.get.mock.calls.filter(([path]) => String(path).includes("/activity?"))).toHaveLength(1);
+    expect(
+      mocked.get.mock.calls.filter(([path]) =>
+        String(path).includes("/activity?"),
+      ),
+    ).toHaveLength(1);
 
     await act(async () => release({ items: [], next_cursor: null }));
   });
@@ -320,17 +496,24 @@ describe("UserProfile activity", () => {
   it("shows drafts, or says there are none", async () => {
     const { actor, view } = renderProfile();
     await actor.click(screen.getByRole("tab", { name: "Drafts" }));
-    expect(screen.getByRole("link", { name: "Half-written" })).toHaveAttribute("href", "/spaces/ENG/pages/half");
+    expect(screen.getByRole("link", { name: "Half-written" })).toHaveAttribute(
+      "href",
+      "/spaces/ENG/pages/half",
+    );
     view.unmount();
 
     const second = renderProfile({ drafts: [] });
     await second.actor.click(screen.getByRole("tab", { name: "Drafts" }));
-    expect(screen.getByText("No drafts are available to view.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No drafts are available to view."),
+    ).toBeInTheDocument();
   });
 
   it("is limited to the person's own activity on someone else's profile", async () => {
     const { actor, view } = renderProfile({ isOwner: false, isAdmin: false });
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["@ann activity"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "@ann activity",
+    ]);
     expect(screen.getByText("Page m1")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Edit profile/ })).toBeNull();
     view.unmount();
@@ -357,9 +540,18 @@ describe("UserProfile activity", () => {
 });
 
 describe("UserProfile knowledge", () => {
-  const FAVOURITES = [space("s1", "ENG", "Engineering"), space("s2", "OPS", "Operations")];
-  const PINNED = [pin("p1", "ENG", "runbook", "Runbook", "Engineering"), pin("p2", "OPS", "oncall", "On-call", "Operations")];
-  const LIKED = [pin("l1", "ENG", "style", "Style guide", "Engineering"), pin("l2", "OPS", "intro", "Intro", "Operations")];
+  const FAVOURITES = [
+    space("s1", "ENG", "Engineering"),
+    space("s2", "OPS", "Operations"),
+  ];
+  const PINNED = [
+    pin("p1", "ENG", "runbook", "Runbook", "Engineering"),
+    pin("p2", "OPS", "oncall", "On-call", "Operations"),
+  ];
+  const LIKED = [
+    pin("l1", "ENG", "style", "Style guide", "Engineering"),
+    pin("l2", "OPS", "intro", "Intro", "Operations"),
+  ];
 
   async function openKnowledge(overrides: Partial<Props> = {}) {
     const result = renderProfile({
@@ -376,24 +568,36 @@ describe("UserProfile knowledge", () => {
     const { actor } = await openKnowledge();
 
     expect(screen.getByText("2/5")).toBeInTheDocument();
-    await actor.click(screen.getByRole("button", { name: "Remove Engineering from sidebar" }));
+    await actor.click(
+      screen.getByRole("button", { name: "Remove Engineering from sidebar" }),
+    );
     expect(screen.getByText("1/5")).toBeInTheDocument();
-    await actor.click(screen.getByRole("button", { name: "Show Engineering in sidebar" }));
+    await actor.click(
+      screen.getByRole("button", { name: "Show Engineering in sidebar" }),
+    );
 
     await actor.type(screen.getByLabelText("Search favourite spaces"), "ops");
     expect(screen.queryByText("Engineering")).toBeNull();
-    await actor.click(screen.getByRole("button", { name: "Clear space search" }));
+    await actor.click(
+      screen.getByRole("button", { name: "Clear space search" }),
+    );
     await actor.type(screen.getByLabelText("Search favourite spaces"), "zzz");
-    expect(screen.getByText("No favourite spaces match the current filters.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No favourite spaces match the current filters."),
+    ).toBeInTheDocument();
     await actor.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByText("Operations")).toBeInTheDocument();
   });
 
   it("won't add a sixth sidebar shortcut", async () => {
-    const many = Array.from({ length: 6 }, (_, index) => space(`s${index}`, `K${index}`, `Space ${index}`));
+    const many = Array.from({ length: 6 }, (_, index) =>
+      space(`s${index}`, `K${index}`, `Space ${index}`),
+    );
     await openKnowledge({ favoriteSpaces: many });
 
-    expect(screen.getByRole("button", { name: "Show Space 5 in sidebar" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Show Space 5 in sidebar" }),
+    ).toBeDisabled();
   });
 
   it("filters pinned pages by space and label, and toggles sidebar shortcuts", async () => {
@@ -405,14 +609,20 @@ describe("UserProfile knowledge", () => {
     const { actor } = await openKnowledge();
     await actor.click(screen.getByRole("button", { name: /Pinned pages/ }));
 
-    await actor.click(screen.getByRole("button", { name: "Remove Runbook from sidebar" }));
-    await actor.click(screen.getByRole("button", { name: "Show Runbook in sidebar" }));
+    await actor.click(
+      screen.getByRole("button", { name: "Remove Runbook from sidebar" }),
+    );
+    await actor.click(
+      screen.getByRole("button", { name: "Show Runbook in sidebar" }),
+    );
 
     await actor.click(screen.getByRole("button", { name: "Filter by space" }));
     await actor.click(screen.getByRole("option", { name: "Operations" }));
     expect(screen.queryByText("Runbook")).toBeNull();
     await actor.click(screen.getByRole("option", { name: "Engineering" }));
-    expect(screen.getByRole("button", { name: "Filter by space" })).toHaveTextContent("2 spaces");
+    expect(
+      screen.getByRole("button", { name: "Filter by space" }),
+    ).toHaveTextContent("2 spaces");
     await actor.click(screen.getByRole("option", { name: "Engineering" }));
     await actor.type(screen.getByLabelText("Search spaces"), "zzz");
     expect(screen.getByText("No matches")).toBeInTheDocument();
@@ -423,7 +633,9 @@ describe("UserProfile knowledge", () => {
     await actor.click(screen.getByRole("option", { name: "ops" }));
     expect(screen.getByText("On-call")).toBeInTheDocument();
     await actor.click(screen.getByRole("option", { name: "All labels" }));
-    expect(screen.getByRole("button", { name: "Filter by label" })).toHaveTextContent("All labels");
+    expect(
+      screen.getByRole("button", { name: "Filter by label" }),
+    ).toHaveTextContent("All labels");
 
     // A label narrows the space choices to spaces that carry it.
     await actor.click(screen.getByRole("button", { name: "Filter by label" }));
@@ -439,15 +651,25 @@ describe("UserProfile knowledge", () => {
     const { actor } = await openKnowledge({ pinnedPages: [] });
     await actor.click(screen.getByRole("button", { name: /Pinned pages/ }));
 
-    expect(screen.getByText("No pinned pages match the current filters.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No pinned pages match the current filters."),
+    ).toBeInTheDocument();
   });
 
   it("filters liked pages and pages through a long list", async () => {
     const liked = Array.from({ length: 12 }, (_, index) =>
-      pin(`l${index}`, index % 2 ? "OPS" : "ENG", `p${index}`, `Liked ${index}`, index % 2 ? "Operations" : "Engineering"),
+      pin(
+        `l${index}`,
+        index % 2 ? "OPS" : "ENG",
+        `p${index}`,
+        `Liked ${index}`,
+        index % 2 ? "Operations" : "Engineering",
+      ),
     );
     mocked.get.mockImplementation(async (path: string) =>
-      path === "/api/v1/users/me/page-labels" ? [label("odd", "OPS", "p1")] : [],
+      path === "/api/v1/users/me/page-labels"
+        ? [label("odd", "OPS", "p1")]
+        : [],
     );
     const { actor } = await openKnowledge({ likedPages: liked });
     await actor.click(screen.getByRole("button", { name: /Liked pages/ }));
@@ -464,7 +686,9 @@ describe("UserProfile knowledge", () => {
     await actor.click(screen.getByRole("option", { name: "odd" }));
     expect(screen.getAllByText(/^Liked \d+$/)).toHaveLength(1);
     await actor.click(screen.getByRole("button", { name: "Filter by space" }));
-    expect(screen.getByRole("option", { name: "Operations" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Operations" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Engineering" })).toBeNull();
     await actor.click(screen.getByRole("option", { name: "Operations" }));
     await actor.click(screen.getByRole("option", { name: "Operations" }));
@@ -485,7 +709,9 @@ describe("UserProfile knowledge", () => {
     const { actor } = await openKnowledge({ likedPages: [] });
     await actor.click(screen.getByRole("button", { name: /Liked pages/ }));
 
-    expect(screen.getByText("No liked pages match the current filters.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No liked pages match the current filters."),
+    ).toBeInTheDocument();
   });
 
   it("lists pages saved for later, naming spaces and dropping pages that are gone", async () => {
@@ -494,10 +720,14 @@ describe("UserProfile knowledge", () => {
       JSON.stringify(["ENG/guide", "OPS/gone", "LOST/missing", "BAD", 7]),
     );
     mocked.get.mockImplementation(async (path: string) => {
-      if (path === "/api/v1/users/me/page-labels") return [label("keep", "ENG", "guide")];
-      if (path === "/api/v1/spaces/ENG/pages/guide") return { title: "Style guide" };
-      if (path === "/api/v1/spaces/OPS/pages/gone") throw new ApiError(404, "not_found", "Gone.");
-      if (path === "/api/v1/spaces/LOST/pages/missing") throw new ApiError(403, "forbidden", "No.");
+      if (path === "/api/v1/users/me/page-labels")
+        return [label("keep", "ENG", "guide")];
+      if (path === "/api/v1/spaces/ENG/pages/guide")
+        return { title: "Style guide" };
+      if (path === "/api/v1/spaces/OPS/pages/gone")
+        throw new ApiError(404, "not_found", "Gone.");
+      if (path === "/api/v1/spaces/LOST/pages/missing")
+        throw new ApiError(403, "forbidden", "No.");
       if (path === "/api/v1/spaces/ENG") return { name: "Engineering" };
       throw new Error("offline");
     });
@@ -509,44 +739,68 @@ describe("UserProfile knowledge", () => {
     expect(screen.getAllByText("Engineering").length).toBeGreaterThan(0);
     // A 404 prunes the key everywhere; a permission error only marks it.
     await waitFor(() => expect(screen.queryByText("gone")).toBeNull());
-    expect(JSON.parse(window.localStorage.getItem("wikihub:saved-page-keys")!)).not.toContain("OPS/gone");
+    expect(
+      JSON.parse(window.localStorage.getItem("wikihub:saved-page-keys")!),
+    ).not.toContain("OPS/gone");
     expect(screen.getByText("missing")).toBeInTheDocument();
-    expect(screen.getAllByText("No longer available").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("No longer available").length).toBeGreaterThan(
+      0,
+    );
 
     await actor.click(screen.getByRole("button", { name: "Filter by label" }));
     await actor.click(screen.getByRole("option", { name: "keep" }));
     expect(screen.queryByText("missing")).toBeNull();
     await actor.click(screen.getByRole("button", { name: "Filter by space" }));
-    expect(screen.getByRole("option", { name: "Engineering" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Engineering" }),
+    ).toBeInTheDocument();
   });
 
   it("re-reads saved pages when another tab or the sidebar changes them", async () => {
     mocked.get.mockImplementation(async (path: string) => {
       if (path === "/api/v1/users/me/page-labels") throw new Error("offline");
-      if (path.startsWith("/api/v1/spaces/ENG/pages/")) return { title: "Fresh" };
+      if (path.startsWith("/api/v1/spaces/ENG/pages/"))
+        return { title: "Fresh" };
       return { name: "Engineering" };
     });
     const { actor } = await openKnowledge();
     await actor.click(screen.getByRole("button", { name: /Saved for later/ }));
     await act(async () => vi.advanceTimersByTime(1));
-    expect(screen.getByText("No saved pages match the current filters.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open Saved for later" })).toHaveAttribute("href", "/saved");
+    expect(
+      screen.getByText("No saved pages match the current filters."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open Saved for later" }),
+    ).toHaveAttribute("href", "/saved");
 
-    window.localStorage.setItem("wikihub:saved-page-keys", JSON.stringify(["ENG/new"]));
+    window.localStorage.setItem(
+      "wikihub:saved-page-keys",
+      JSON.stringify(["ENG/new"]),
+    );
     act(() => window.dispatchEvent(new Event("wikihub:saved-pages-changed")));
     expect(await screen.findByText("Fresh")).toBeInTheDocument();
 
     window.localStorage.setItem("wikihub:saved-page-keys", "{broken");
     act(() => window.dispatchEvent(new Event("storage")));
-    expect(screen.getByText("No saved pages match the current filters.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No saved pages match the current filters."),
+    ).toBeInTheDocument();
 
-    window.localStorage.setItem("wikihub:saved-page-keys", JSON.stringify({ not: "a list" }));
+    window.localStorage.setItem(
+      "wikihub:saved-page-keys",
+      JSON.stringify({ not: "a list" }),
+    );
     act(() => window.dispatchEvent(new Event("storage")));
-    expect(screen.getByText("No saved pages match the current filters.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No saved pages match the current filters."),
+    ).toBeInTheDocument();
   });
 
   it("prunes a dead page even if storage was overwritten with something else meanwhile", async () => {
-    window.localStorage.setItem("wikihub:saved-page-keys", JSON.stringify(["ENG/gone"]));
+    window.localStorage.setItem(
+      "wikihub:saved-page-keys",
+      JSON.stringify(["ENG/gone"]),
+    );
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));
     mocked.get.mockImplementation(async (path: string) => {
@@ -560,18 +814,27 @@ describe("UserProfile knowledge", () => {
     renderProfile();
     await act(async () => vi.advanceTimersByTime(1));
 
-    window.localStorage.setItem("wikihub:saved-page-keys", JSON.stringify({ not: "a list" }));
+    window.localStorage.setItem(
+      "wikihub:saved-page-keys",
+      JSON.stringify({ not: "a list" }),
+    );
     await act(async () => release());
 
     await waitFor(() =>
-      expect(JSON.parse(window.localStorage.getItem("wikihub:saved-page-keys")!)).toEqual([]),
+      expect(
+        JSON.parse(window.localStorage.getItem("wikihub:saved-page-keys")!),
+      ).toEqual([]),
     );
   });
 
   it("copes with storage that stops working while pruning a dead page", async () => {
-    window.localStorage.setItem("wikihub:saved-page-keys", JSON.stringify(["ENG/gone", "ENG/x"]));
+    window.localStorage.setItem(
+      "wikihub:saved-page-keys",
+      JSON.stringify(["ENG/gone", "ENG/x"]),
+    );
     mocked.get.mockImplementation(async (path: string) => {
-      if (path === "/api/v1/spaces/ENG/pages/gone") throw new ApiError(404, "not_found", "Gone.");
+      if (path === "/api/v1/spaces/ENG/pages/gone")
+        throw new ApiError(404, "not_found", "Gone.");
       if (path === "/api/v1/spaces/ENG/pages/x") return { title: "Kept" };
       if (path === "/api/v1/spaces/ENG") return { name: "Engineering" };
       return [];
@@ -581,8 +844,12 @@ describe("UserProfile knowledge", () => {
     // re-read that follows treats the list as empty.
     const getItem = Storage.prototype.getItem;
     let savedReads = 0;
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key: string) {
-      if (key === "wikihub:saved-page-keys" && ++savedReads > 1) throw new Error("blocked");
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (
+      this: Storage,
+      key: string,
+    ) {
+      if (key === "wikihub:saved-page-keys" && ++savedReads > 1)
+        throw new Error("blocked");
       return getItem.call(this, key);
     });
     const { actor } = await openKnowledge();
@@ -596,13 +863,17 @@ describe("UserProfile knowledge", () => {
   });
 
   it("ignores saved-page results that arrive after leaving the profile", async () => {
-    window.localStorage.setItem("wikihub:saved-page-keys", JSON.stringify(["ENG/late"]));
+    window.localStorage.setItem(
+      "wikihub:saved-page-keys",
+      JSON.stringify(["ENG/late"]),
+    );
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));
     mocked.get.mockImplementation(async (path: string) => {
       if (path === "/api/v1/users/me/page-labels") return [];
       await gate;
-      if (path.includes("/pages/")) throw new ApiError(404, "not_found", "Gone.");
+      if (path.includes("/pages/"))
+        throw new ApiError(404, "not_found", "Gone.");
       return { name: "Engineering" };
     });
     const { view } = renderProfile();
@@ -611,6 +882,8 @@ describe("UserProfile knowledge", () => {
     view.unmount();
     await act(async () => release());
 
-    expect(JSON.parse(window.localStorage.getItem("wikihub:saved-page-keys")!)).toEqual(["ENG/late"]);
+    expect(
+      JSON.parse(window.localStorage.getItem("wikihub:saved-page-keys")!),
+    ).toEqual(["ENG/late"]);
   });
 });

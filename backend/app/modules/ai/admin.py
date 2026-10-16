@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -10,12 +12,13 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.ai_connection import AiConnection
 from app.models.user import User
 from app.modules.admin_mail.crypto import encrypt_password
-from app.modules.ai.config import decrypt_key
+from app.modules.ai.config import AIConfig, decrypt_key
+from app.modules.ai.embeddings import EmbeddingError, embed
 from app.schemas.ai import (
     AIModelInfo,
     AITestRequest,
@@ -38,6 +41,35 @@ def mask_key(key: str) -> str:
     return f"{key[:6]}****{key[-4:]}"
 
 
+#: Model ids that name embedding models, for gateways that say nothing else.
+_EMBEDDING_ID = re.compile(
+    r"embed|(^|[/_-])(bge|e5|gte|jina|minilm|mxbai|nomic|voyage|m3e|snowflake-arctic)([/_.-]|$)",
+    re.IGNORECASE,
+)
+
+
+def _is_embedding_model(item: dict, capabilities: dict) -> bool:
+    """Whether the gateway's model entry describes an embedding model.
+
+    Believes what the gateway says (a capability flag, a ``mode``/``type`` of
+    "embedding", or text-in/vector-out modalities) and falls back to the model's
+    name. A model that outputs text is a chat model whatever it is called.
+    """
+    if capabilities.get("embedding") or capabilities.get("embeddings"):
+        return True
+    for key in ("mode", "type", "task"):
+        if "embed" in str(item.get(key) or "").lower():
+            return True
+    model_id = str(item.get("id", ""))
+    if "embed" in model_id.lower():
+        # Some gateways list every model as text-out; the name is then the tell.
+        return True
+    outputs = [str(x).lower() for x in item.get("output_modalities") or []]
+    if outputs:
+        return any("embed" in x or x == "vector" for x in outputs)
+    return bool(_EMBEDDING_ID.search(model_id))
+
+
 def _model_info(item: dict) -> AIModelInfo:
     capabilities = item.get("capabilities") if isinstance(item.get("capabilities"), dict) else {}
     return AIModelInfo(
@@ -45,7 +77,25 @@ def _model_info(item: dict) -> AIModelInfo:
         name=str(item.get("name") or item["id"]),
         reasoning=bool(capabilities.get("reasoning")),
         image=bool(capabilities.get("vision")),
+        embedding=_is_embedding_model(item, capabilities),
     )
+
+
+async def ensure_embeddings(base_url: str, api_key: str, model: str) -> None:
+    """Prove the endpoint can create embeddings with ``model``, or say why not.
+
+    Saving a model that cannot embed would leave semantic search silently
+    empty, so the administrator hears about it here instead.
+    """
+    config = AIConfig(True, base_url, api_key, "", embedding_model=model)
+    try:
+        await embed(config, ["WikiHub"])
+    except EmbeddingError as exc:
+        raise BadRequestError(
+            f"This endpoint cannot create embeddings with “{model}”. "
+            "Pick an embedding model it offers, or leave this blank. "
+            f"({exc})"
+        ) from exc
 
 
 async def probe(base_url: str, api_key: str) -> AITestResult:
@@ -69,6 +119,23 @@ async def probe(base_url: str, api_key: str) -> AITestResult:
         logger.info("ai_test_failed", error=type(exc).__name__)
         return AITestResult(ok=False, error="Could not reach the endpoint at that address.")
     return AITestResult(ok=True, models=models)
+
+
+async def record_check(connection: AiConnection) -> AITestResult:
+    """Probe a saved connection with its stored key and stamp the outcome on it."""
+    result = await probe(connection.base_url, decrypt_key(connection))
+    connection.last_checked_at = datetime.now(UTC)
+    connection.last_check_ok = result.ok
+    return result
+
+
+async def check_all_connections(session: AsyncSession) -> int:
+    """Re-check every saved connection (the scheduled health pass); returns how many."""
+    connections = list((await session.scalars(select(AiConnection))).all())
+    # Probes only wait on the network, so run them side by side.
+    await asyncio.gather(*(record_check(c) for c in connections))
+    await session.commit()
+    return len(connections)
 
 
 class AIConnectionService:
@@ -110,7 +177,7 @@ class AIConnectionService:
         except IntegrityError as exc:  # two connections claimed "active" at once
             await self.session.rollback()
             raise ConflictError("Another connection was activated first. Try again.") from exc
-        await self.session.refresh(connection)
+        await self._record_check(connection)
         return ConnectionRead.model_validate(connection)
 
     async def update(self, connection_id: uuid.UUID, payload: ConnectionUpdate) -> ConnectionRead:
@@ -133,8 +200,23 @@ class AIConnectionService:
             connection.last_check_ok = None
         connection.updated_by_id = self.actor.id
         await self.session.commit()
-        await self.session.refresh(connection)
+        if changed_target:
+            # Saving does not prove it still works: check right away rather
+            # than leaving the row "not checked" until the next scheduled pass.
+            await self._record_check(connection)
+        else:
+            await self.session.refresh(connection)
         return ConnectionRead.model_validate(connection)
+
+    async def _record_check(self, connection: AiConnection) -> None:
+        """Probe ``connection`` and store the outcome; never fails the save."""
+        try:
+            await record_check(connection)
+            await self.session.commit()
+        except Exception:  # a failed probe must not undo a save
+            await self.session.rollback()
+            logger.warning("ai_connection_check_failed", exc_info=True)
+        await self.session.refresh(connection)
 
     async def _make_only_active(self, connection: AiConnection) -> None:
         # Switch the old one off first: the unique index allows one active row.
@@ -173,9 +255,7 @@ class AIConnectionService:
     async def check(self, connection_id: uuid.UUID) -> AITestResult:
         """Check a saved connection with its stored key and remember the outcome."""
         connection = await self._get(connection_id)
-        result = await probe(connection.base_url, decrypt_key(connection))
-        connection.last_checked_at = datetime.now(UTC)
-        connection.last_check_ok = result.ok
+        result = await record_check(connection)
         await self.session.commit()
         return result
 

@@ -379,50 +379,44 @@ export function SelectionAssistant({
                   </DropdownMenu>
                 </div>
 
-                {action ? (
-                  <div
-                    aria-live="polite"
-                    aria-busy={pending}
-                    className={cn(
-                      "wh-scroll mt-2 max-h-64 overflow-y-auto rounded-md px-3 py-2",
-                      // A failure gets a red ground so it cannot be read as an answer.
-                      !pending && error
-                        ? "border-danger/40 bg-danger-bg border"
-                        : "bg-surface-sunken",
-                    )}
-                  >
-                    {pending ? (
-                      <p className="text-muted-foreground flex items-center gap-2 text-sm">
-                        <Loader2
-                          className="size-3.5 animate-spin"
-                          aria-hidden
-                        />
-                        {t("ai.selectionAi.thinking")}
-                      </p>
-                    ) : error ? (
-                      <p
-                        role="alert"
-                        className="text-danger flex items-start gap-2 text-sm"
-                      >
-                        <TriangleAlert
-                          className="mt-0.5 size-3.5 shrink-0"
-                          aria-hidden
-                        />
-                        {error}
-                      </p>
-                    ) : result !== null ? (
-                      <IssueMarkdown
-                        source={result}
-                        autolink
-                        className="text-xs leading-5"
+                <div
+                  aria-live="polite"
+                  aria-busy={pending}
+                  className={cn(
+                    "wh-scroll mt-2 max-h-64 overflow-y-auto rounded-md px-3 py-2",
+                    // A failure gets a red ground so it cannot be read as an answer.
+                    !pending && error
+                      ? "border-danger/40 bg-danger-bg border"
+                      : "bg-surface-sunken",
+                  )}
+                >
+                  {pending ? (
+                    <p className="text-muted-foreground flex items-center gap-2 text-sm">
+                      <Loader2
+                        className="size-3.5 animate-spin"
+                        aria-hidden
                       />
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground mt-2 text-xs">
-                    {t("ai.selectionAi.hint")}
-                  </p>
-                )}
+                      {t("ai.selectionAi.thinking")}
+                    </p>
+                  ) : error ? (
+                    <p
+                      role="alert"
+                      className="text-danger flex items-start gap-2 text-sm"
+                    >
+                      <TriangleAlert
+                        className="mt-0.5 size-3.5 shrink-0"
+                        aria-hidden
+                      />
+                      {error}
+                    </p>
+                  ) : (
+                    <IssueMarkdown
+                      source={result ?? ""}
+                      autolink
+                      className="text-xs leading-5"
+                    />
+                  )}
+                </div>
               </div>
             )}
           </>,

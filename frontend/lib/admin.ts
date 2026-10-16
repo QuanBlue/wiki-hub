@@ -1,5 +1,14 @@
 import { queryString, serverGet } from "@/lib/server-api";
-import type { AdminAccount, Page, SiteSettings, User } from "@/types/api";
+import type {
+  AdminAccount,
+  Page,
+  SiteSettings,
+  StatsAi,
+  StatsOverview,
+  StatsRange,
+  StatsTopContent,
+  User,
+} from "@/types/api";
 
 export interface UserQuery {
   q?: string;
@@ -60,4 +69,30 @@ export function listAdministrators(): Promise<AdminAccount[]> {
  * backend). Also registered ahead of `GET /{user_id}`. */
 export function listPermissionOverrideUsers(): Promise<User[]> {
   return serverGet<User[]>("/api/v1/users/permission-overrides");
+}
+
+export function getStatsOverview(range: StatsRange): Promise<StatsOverview> {
+  return serverGet<StatsOverview>(`/api/v1/admin/statistics/overview${queryString({ range })}`);
+}
+
+export function getStatsAi(range: StatsRange): Promise<StatsAi> {
+  return serverGet<StatsAi>(`/api/v1/admin/statistics/ai${queryString({ range })}`);
+}
+
+export function getStatsTopPages(
+  range: StatsRange,
+  sort: "views" | "stars" | "saves",
+): Promise<StatsTopContent> {
+  return serverGet<StatsTopContent>(
+    `/api/v1/admin/statistics/top-pages${queryString({ range, sort })}`,
+  );
+}
+
+export function getStatsTopSpaces(
+  range: StatsRange,
+  sort: "views" | "stars",
+): Promise<StatsTopContent> {
+  return serverGet<StatsTopContent>(
+    `/api/v1/admin/statistics/top-spaces${queryString({ range, sort })}`,
+  );
 }

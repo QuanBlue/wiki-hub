@@ -125,4 +125,38 @@ describe("PageAiSuggestions", () => {
       ),
     );
   });
+
+  it("falls back to a general message for a failure that carries none", async () => {
+    const { api } = await mount();
+    api.post.mockRejectedValue(new Error("offline"));
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Suggest labels and related pages",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "The AI assistant could not answer right now.",
+      ),
+    );
+  });
+
+  it("shows it is working while it asks again", async () => {
+    const { api } = await mount();
+    api.post.mockResolvedValueOnce(SUGGESTIONS);
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Suggest labels and related pages",
+      }),
+    );
+    const again = await screen.findByRole("button", { name: "Suggest again" });
+
+    api.post.mockReturnValueOnce(new Promise(() => {}));
+    await userEvent.click(again);
+
+    expect(await screen.findByRole("button", { name: /Thinking|Working/ })).toBeDisabled();
+  });
+
 });

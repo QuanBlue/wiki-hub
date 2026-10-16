@@ -13,6 +13,7 @@ from app.modules.ai.config import AIConfig
 from app.modules.ai.service import AIService
 from app.modules.ai.skills import selection_system_prompt
 from app.schemas.ai import ExplainRequest
+from tests.unit.ai_fakes import fake_chat
 
 
 class FakeRedis:
@@ -53,7 +54,7 @@ class Harness:
 
         monkeypatch.setattr(service_module, "get_redis", lambda: self.redis)
         monkeypatch.setattr(service_module, "load_config", config)
-        monkeypatch.setattr(service_module, "chat", chat)
+        fake_chat(monkeypatch, chat)
         monkeypatch.setattr(service_module, "selection_instructions", instructions)
         monkeypatch.setattr(service_module.rate_limit, "enforce", enforce)
         monkeypatch.setattr(AIService, "_visible_page", visible)
