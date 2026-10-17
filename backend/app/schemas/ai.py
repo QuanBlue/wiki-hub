@@ -408,6 +408,40 @@ class AnswerRequest(BaseModel):
         return value
 
 
+class HelpAskRequest(BaseModel):
+    #: The question, as typed in the search box of the Help centre.
+    question: str = Field(min_length=2, max_length=300)
+    #: The language of the interface: the answer and the guide titles come in it.
+    locale: Literal["en", "vi"] = "en"
+
+    @field_validator("question")
+    @classmethod
+    def _tidy(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if len(value) < 2:
+            raise ValueError("Ask a longer question.")
+        return value
+
+
+class HelpGuide(BaseModel):
+    #: The Help section's id: the guide opens at ``/help/<topic>#<id>``.
+    id: str
+    title: str
+    #: Its Help category (Workspace, Writing, Attachments & Media, Account, Administration).
+    category: str
+
+
+class HelpAnswer(BaseModel):
+    #: Whether the Help page answers the question; when not, ``answer`` is empty.
+    found: bool
+    #: The answer, in Markdown.
+    answer: str
+    #: The guides to open for more, best first.
+    guides: list[HelpGuide] = []
+    #: Pages of the application the answer is about, as buttons (only those the person may open).
+    actions: list[AnswerAction] = []
+
+
 class AnswerSource(BaseModel):
     #: The number the answer cites it by: ``[1]``.
     n: int

@@ -214,6 +214,11 @@ unformatted text.
     (Administration pages only for people who may open them). Help is copied for the
     assistant by `scripts/build_help_knowledge.py` into `backend/app/assets/help_{en,vi}.json`:
     run it after editing Help (a test fails when the copy is stale).
+  - **A Help centre that answers** — `/help` searches the guides as you type (both
+    languages, accents optional) and, asked a whole question, has the assistant answer from
+    the guides alone (`POST /api/v1/ai/help`, no model call when no guide is about it),
+    naming the guides to open; topics list their guides, and each guide has its own page with
+    a navigation of every topic and *Previous* / *Next*.
   - **A chat that does things, once you confirm** — *create a space abc and write a Prometheus
     guide in it* shows a plan (create a space, write a page drafted by AI, add someone to a
     space with a role, star a space) with *Confirm and run* / *Cancel*. Nothing changes before

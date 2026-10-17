@@ -1,9 +1,19 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 
+const ai = vi.hoisted(() => ({ enabled: vi.fn() }));
+vi.mock("@/lib/ai-summary", () => ({
+  aiStatus: () => Promise.resolve({ enabled: ai.enabled(), can_configure: false }),
+  resetAiStatus: () => {},
+}));
+
 import { ImportPagesDialog } from "@/components/pages/import-pages-dialog";
+
+beforeEach(() => {
+  ai.enabled.mockReturnValue(true);
+});
 
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), {
@@ -269,6 +279,32 @@ describe("ImportPagesDialog", () => {
     await user.click(screen.getByRole("button", { name: /^import$/i }));
     await waitFor(() => expect(FakeXHR.last).not.toBeNull());
     expect(FakeXHR.last!.body!.get("translate")).toBe("");
+  });
+
+  it("turns the review and the translation off when the AI assistant is not set up", async () => {
+    ai.enabled.mockReturnValue(false);
+    stubMeta();
+    stubXHR();
+    const { user } = await openDialog();
+    await choose([file("a.docx")]);
+    await screen.findByText("a.docx");
+
+    // Neither can be used: the switch and the language list are disabled, with the reason.
+    const select = await screen.findByRole("button", { name: /language to translate/i });
+    await waitFor(() => expect(select).toBeDisabled());
+    const box = screen.getByRole("checkbox", { name: /review with ai/i });
+    expect(box).toBeDisabled();
+    expect(box).not.toBeChecked();
+    expect(screen.getAllByText(/needs the AI assistant, which is not set up/i)).toHaveLength(2);
+    // Both rows look switched off, not only the controls in them.
+    expect(box.closest("label")!.className).toContain("opacity-60");
+    expect(select.closest("div.opacity-60, div[class*='opacity-60']")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+    expect(FakeXHR.last!.body!.get("translate")).toBe("");
+    // Not asked for either, whatever was remembered from when the assistant was on.
+    expect(FakeXHR.last!.body!.get("review")).toBe("false");
   });
 
   it("sends the language chosen to translate the pages into", async () => {

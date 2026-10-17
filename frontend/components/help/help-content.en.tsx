@@ -56,7 +56,9 @@ export const sectionsEn: HelpSection[] = [
           <li>
             <strong>Top Navigation Bar</strong>: the search pill (opens the same{" "}
             <Kbd>Ctrl</Kbd>+<Kbd>K</Kbd> modal), a <strong>Help</strong> link (book
-            icon, takes you here), a <strong>notification bell</strong> (what has
+            icon, takes you here: type to find a guide, or ask a whole question and press{" "}
+            <Kbd>Enter</Kbd> for an answer from these guides by the AI assistant, with the guides
+            to read next), a <strong>notification bell</strong> (what has
             happened to you - see <em>Notifications</em>), the Light/Dark theme toggle, and
             your user menu.
           </li>
