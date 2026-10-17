@@ -1,6 +1,6 @@
 "use client";
 
-import { FileUp, Loader2, Upload, X } from "lucide-react";
+import { FileUp, Languages, Loader2, Sparkles, Upload, X } from "lucide-react";
 import type { ChangeEvent, DragEvent, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -13,7 +13,15 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { formatBytes } from "@/components/ui/job-progress";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -46,6 +54,34 @@ type Candidate = {
 };
 
 type ConflictMode = "ask" | "rename" | "replace";
+
+const REVIEW_KEY = "wikihub:import-review";
+
+/** The kinds of file the importer takes, shown under the drop area. */
+const FORMAT_CHIPS = ["DOCX", "PDF", "HTML", "MD", "EPUB", "ODT", "RTF"];
+
+/** The short badge for a file in the list: its extension, or a dash for none. */
+function extensionLabel(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1, dot + 5).toUpperCase() : "—";
+}
+
+/** Whether to review each page against its file: on, until it has been turned off here. */
+function readReviewChoice(): boolean {
+  try {
+    return window.localStorage.getItem(REVIEW_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function saveReviewChoice(value: boolean): void {
+  try {
+    window.localStorage.setItem(REVIEW_KEY, value ? "true" : "false");
+  } catch {
+    // Private windows: the choice is just not kept.
+  }
+}
 
 function extensionOf(name: string): string {
   const index = name.lastIndexOf(".");
@@ -136,6 +172,10 @@ export function ImportPagesDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const requestRef = useRef<XMLHttpRequest | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Compare each page with its file afterwards and mend what differs: remembered, on at first.
+  const [review, setReview] = useState(readReviewChoice);
+  // The language to translate each page into with the AI assistant: "" keeps the document's own.
+  const [translate, setTranslate] = useState("");
   const { t } = useTranslation();
 
   // Derived, never stored: the upload ceiling arrives asynchronously, and a
@@ -266,6 +306,8 @@ export function ImportPagesDialog({
     for (const candidate of sendable) form.append("files", candidate.file);
     if (parentPage?.id) form.append("parent_id", parentPage.id);
     form.append("conflict_mode", conflictMode);
+    form.append("review", review ? "true" : "false");
+    form.append("translate", translate);
 
     setUploading(true);
     setUploadPercent(0);
@@ -388,53 +430,77 @@ export function ImportPagesDialog({
             onFinished={(job) => onFinished?.(job)}
           />
         ) : <form onSubmit={submit} className="space-y-4" noValidate>
-          <div className="space-y-1.5">
-            <Label htmlFor="import-files">{t("importDialog.documentsLabel")}</Label>
-            <div
-              onDragOver={(event) => {
-                event.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={onDrop}
-              className={cn(
-                "border-border hover:border-primary/50 hover:bg-surface-hover flex flex-col items-center gap-2 rounded-md border border-dashed px-4 py-6 text-center transition-colors duration-150",
-                dragging && "border-primary bg-surface-hover",
-              )}
-            >
-              <Upload className="text-muted-foreground size-5" />
-              <p className="text-muted-foreground text-sm">
-                {t("importDialog.dropHint")}
-              </p>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => inputRef.current?.click()}
-                disabled={uploading}
-              >
-                {t("importDialog.chooseFiles")}
-              </Button>
-              <input
-                ref={inputRef}
-                id="import-files"
-                type="file"
-                multiple
-                accept={ACCEPT_ATTRIBUTE}
-                onChange={onPick}
-                className="sr-only"
-              />
+          <div
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+            className={cn(
+              "border-border-strong hover:border-primary/60 hover:bg-primary/5 flex flex-col items-center gap-3 rounded-xl border-2 border-dashed px-4 py-7 text-center transition-colors duration-150",
+              dragging && "border-primary bg-primary/10",
+            )}
+          >
+            <span className="bg-primary/10 text-primary grid size-11 place-items-center rounded-full">
+              <Upload className="size-5" aria-hidden />
+            </span>
+            <div className="space-y-0.5">
+              <Label htmlFor="import-files" className="sr-only">
+                {t("importDialog.documentsLabel")}
+              </Label>
+              <p className="text-foreground text-sm font-medium">{t("importDialog.dropHint")}</p>
+              <p className="text-muted-foreground text-xs">{t("importDialog.dropOr")}</p>
             </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => inputRef.current?.click()}
+              disabled={uploading}
+            >
+              {t("importDialog.chooseFiles")}
+            </Button>
+            <div className="flex flex-wrap justify-center gap-1" aria-hidden>
+              {FORMAT_CHIPS.map((chip) => (
+                <span
+                  key={chip}
+                  className="bg-surface-sunken text-muted-foreground rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wide"
+                >
+                  {chip}
+                </span>
+              ))}
+            </div>
+            <input
+              ref={inputRef}
+              id="import-files"
+              type="file"
+              multiple
+              accept={ACCEPT_ATTRIBUTE}
+              onChange={onPick}
+              className="sr-only"
+            />
           </div>
 
           {inspected.length > 0 ? (
-            <ul className="border-border divide-border max-h-52 divide-y overflow-y-auto rounded-md border text-sm">
+            <ul className="border-border divide-border max-h-52 divide-y overflow-y-auto rounded-xl border text-sm">
               {inspected.map((candidate) => (
                 <li
                   key={candidate.key}
-                  className="flex items-start justify-between gap-3 px-3 py-2"
+                  className="hover:bg-surface-hover flex items-center gap-3 px-3 py-2 transition-colors duration-150"
                 >
-                  <div className="min-w-0">
+                  <span
+                    className={cn(
+                      "grid h-9 w-11 shrink-0 place-items-center rounded-md text-[10px] font-semibold tracking-wide",
+                      candidate.problem
+                        ? "bg-danger/10 text-danger"
+                        : "bg-primary/10 text-primary",
+                    )}
+                    aria-hidden
+                  >
+                    {extensionLabel(candidate.file.name)}
+                  </span>
+                  <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{candidate.file.name}</p>
                     {candidate.problem ? (
                       // Inline, next to the file it is about, rather than a
@@ -469,6 +535,88 @@ export function ImportPagesDialog({
             </ul>
           ) : null}
 
+          <section aria-label={t("importDialog.aiOptions")} className="space-y-2">
+            <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+              {t("importDialog.aiOptions")}
+            </h3>
+            <div className="border-border divide-border divide-y overflow-hidden rounded-xl border">
+              <label className="hover:bg-surface-hover flex cursor-pointer items-center gap-3 p-3 transition-colors duration-150 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring">
+                <span className="bg-primary/10 text-primary grid size-9 shrink-0 place-items-center rounded-lg">
+                  <Sparkles className="size-4" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1 text-sm">
+                  <span className="flex items-center gap-1 font-medium">
+                    {t("importDialog.review")}
+                    <InfoTip>{t("importDialog.reviewHint")}</InfoTip>
+                  </span>
+                  <span className="text-muted-foreground mt-0.5 block text-xs leading-5">
+                    {t("importDialog.reviewShort")}
+                  </span>
+                </span>
+                <span className="relative inline-flex shrink-0">
+                  <input
+                    type="checkbox"
+                    aria-label={t("importDialog.review")}
+                    checked={review}
+                    disabled={uploading}
+                    onChange={(event) => {
+                      setReview(event.target.checked);
+                      saveReviewChoice(event.target.checked);
+                    }}
+                    className="peer sr-only"
+                  />
+                  <span
+                    aria-hidden
+                    className="bg-border-strong peer-checked:bg-primary peer-disabled:opacity-50 h-5 w-9 rounded-full transition-colors duration-150"
+                  />
+                  <span
+                    aria-hidden
+                    className="bg-background absolute top-0.5 left-0.5 size-4 rounded-full shadow transition-transform duration-150 peer-checked:translate-x-4"
+                  />
+                </span>
+              </label>
+
+              <div className="flex flex-wrap items-center gap-3 p-3 sm:flex-nowrap">
+                <span className="bg-primary/10 text-primary grid size-9 shrink-0 place-items-center rounded-lg">
+                  <Languages className="size-4" aria-hidden />
+                </span>
+                <div className="min-w-0 flex-1 basis-48 text-sm">
+                  <span className="flex items-center gap-1 font-medium">
+                    {t("importDialog.translate")}
+                    <InfoTip>{t("importDialog.translateHint")}</InfoTip>
+                  </span>
+                  <span className="text-muted-foreground mt-0.5 block text-xs leading-5">
+                    {t("importDialog.translateShort")}
+                  </span>
+                </div>
+                <div className="w-full sm:w-48 sm:shrink-0">
+                  <Select
+                    value={translate || "original"}
+                    onValueChange={(value) => setTranslate(value === "original" ? "" : value)}
+                    disabled={uploading}
+                  >
+                    <SelectTrigger aria-label={t("importDialog.translateAria")}>
+                      <SelectValue>
+                        {translate === "en"
+                          ? t("importDialog.translateEn")
+                          : translate === "vi"
+                            ? t("importDialog.translateVi")
+                            : t("importDialog.translateOriginal")}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="end" className="whitespace-nowrap">
+                      <SelectItem value="original">
+                        {t("importDialog.translateOriginal")}
+                      </SelectItem>
+                      <SelectItem value="en">{t("importDialog.translateEn")}</SelectItem>
+                      <SelectItem value="vi">{t("importDialog.translateVi")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {uploading ? (
             <div
               aria-label={t("importDialog.uploadProgressAria", {
@@ -487,7 +635,15 @@ export function ImportPagesDialog({
             </div>
           ) : null}
 
-          <DialogFooter>
+          <DialogFooter className="items-center sm:justify-between">
+            <p className="text-muted-foreground text-xs">
+              {sendable.length > 0
+                ? t("importDialog.summary", {
+                    count: sendable.length,
+                    size: formatBytes(sendable.reduce((sum, c) => sum + c.file.size, 0)),
+                  })
+                : t("importDialog.summaryEmpty")}
+            </p>
             <Button
               type="submit"
               variant="primary"

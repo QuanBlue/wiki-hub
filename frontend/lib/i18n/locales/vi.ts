@@ -1107,6 +1107,24 @@ export const vi: Dictionary = {
   },
 
   importProgress: {
+    translation: {
+      running: "Đang dịch sang {language}...",
+      log: "Nhật ký dịch ({count} bước)",
+      done: "Đã dịch sang {language}",
+      partial: "Đã dịch sang {language}; còn {left} đoạn giữ nguyên",
+      skipped: "Không dịch",
+      failed: "Không dịch xong; page giữ nguyên ngôn ngữ gốc",
+    },
+    review: {
+      running: "Đang đối chiếu page với bản gốc...",
+      log: "Nhật ký review ({count} bước)",
+      clean: "Đã xem lại: page khớp với bản gốc",
+      fixed: "Đã xem lại: sửa {fixes} chỗ, giờ đã khớp với bản gốc",
+      partial: "Đã xem lại: sửa {fixes} chỗ, còn {left} chỗ lệch",
+      kept: "Đã xem lại: giữ nguyên như khi chuyển đổi",
+      skipped: "Bỏ qua việc xem lại",
+      failed: "Không xem lại xong; page giữ nguyên như khi chuyển đổi",
+    },
     openPage: "Mở page",
     cancelledToast: "Đã hủy nhập. {count} page đã được giữ lại.",
     failedToast: "Nhập tài liệu thất bại.",
@@ -1159,6 +1177,22 @@ export const vi: Dictionary = {
     descriptionTop:
       "Mỗi tệp sẽ trở thành một page cấp cao nhất mới trong space này.",
     documentsLabel: "Tài liệu",
+    dropOr: "hoặc chọn từ máy tính của bạn",
+    aiOptions: "Tùy chọn AI",
+    reviewShort: "Đối chiếu từng page với file gốc và sửa chỗ lệch.",
+    translateShort: "Chuyển từng page sang English hoặc Tiếng Việt.",
+    summary: "{count} file sẵn sàng · {size}",
+    summaryEmpty: "Chưa chọn file nào",
+    translate: "Dịch bằng AI",
+    translateAria: "Ngôn ngữ để dịch các page sang",
+    translateOriginal: "Ngôn ngữ gốc",
+    translateEn: "English",
+    translateVi: "Tiếng Việt",
+    translateHint:
+      "Mỗi page được trợ lý AI dịch sau khi tạo xong, giữ nguyên bảng, danh sách, hình ảnh, liên kết và code. Bản vừa nhập vẫn còn trong lịch sử page. Cần trợ lý AI đã được thiết lập.",
+    review: "Review với AI sau khi nhập",
+    reviewHint:
+      "So sánh từng page với file gốc và sửa chỗ lệch (tiêu đề, danh sách, bảng, đoạn bị mất). Chỗ rõ ràng được sửa không cần AI; trợ lý AI, nếu đã thiết lập, xử lý phần còn lại. Bản vừa chuyển đổi vẫn còn trong lịch sử page.",
     dropHint: "Kéo thả tệp Word, PDF, HTML hoặc Markdown vào đây",
     chooseFiles: "Chọn tệp",
     removeFileAria: "Xóa {name}",

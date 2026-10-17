@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -43,6 +43,12 @@ class DocumentImportItemRead(BaseModel):
     page_title: str | None = None
     page_slug: str | None = None
     attachments_created: int = 0
+    #: What the review of the page against its file found and did: ``status`` (clean, fixed,
+    #: partial, kept, skipped, failed), the differences before and after, the fixes and notes.
+    review: dict[str, Any] | None = None
+    #: What the translation of the page did: ``status`` (running, done, partial, skipped,
+    #: failed), the language, the pieces translated and left, notes and the log.
+    translation: dict[str, Any] | None = None
 
 
 class DocumentImportJobRead(BaseModel):
@@ -52,6 +58,10 @@ class DocumentImportJobRead(BaseModel):
     status: str
     phase: str
     conflict_mode: DocumentImportConflictMode = "rename"
+    #: Whether each page is compared with its file and mended once it has been made.
+    ai_review: bool = False
+    #: The language the pages are translated into (``en``, ``vi``), or null for none.
+    translate_to: str | None = None
     counters: dict[str, int] = {}
     cancel_requested: bool = False
     error: str | None = None

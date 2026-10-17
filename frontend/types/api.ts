@@ -931,6 +931,37 @@ export interface ExportBundle {
   fmt: "pdf" | "html" | "docx";
 }
 
+/** What the review of an imported page against its file found and did. */
+export interface DocumentImportReview {
+  /** clean: matches; fixed: all differences mended; partial: some left; kept: the page
+   *  stays as converted; skipped: this file type is not reviewed; failed: it could not finish;
+   *  running: still going, see the log. */
+  status: "running" | "clean" | "fixed" | "partial" | "kept" | "skipped" | "failed";
+  issues_before: number;
+  issues_after: number;
+  fixes: number;
+  ai_calls: number;
+  notes: string[];
+  /** What the review did, step by step; it grows while the review runs. */
+  log?: string[];
+}
+
+/** What the AI translation of an imported page did. */
+export interface DocumentImportTranslation {
+  /** running: still going; done: all of it translated; partial: some pieces left in the
+   *  original language; skipped: nothing to do or not possible; failed: it could not finish. */
+  status: "running" | "done" | "partial" | "skipped" | "failed";
+  /** The language asked for: en or vi. */
+  language: string;
+  units_total: number;
+  units_done: number;
+  units_left: number;
+  ai_calls: number;
+  notes: string[];
+  /** What it did, step by step; it grows while the translation runs. */
+  log?: string[];
+}
+
 /** One file in a document import, and what became of it. */
 export interface DocumentImportItem {
   id: string;
@@ -948,6 +979,10 @@ export interface DocumentImportItem {
   page_title: string | null;
   page_slug: string | null;
   attachments_created: number;
+  /** Null when no review was asked for. */
+  review?: DocumentImportReview | null;
+  /** Null when no translation was asked for. */
+  translation?: DocumentImportTranslation | null;
 }
 
 /** A batch of documents being turned into pages. */
@@ -958,6 +993,10 @@ export interface DocumentImportJob {
   status: "queued" | "running" | "complete" | "failed" | "cancelled";
   phase: string;
   conflict_mode?: "rename" | "replace";
+  /** Each page is compared with its file and mended once it has been made. */
+  ai_review?: boolean;
+  /** The language the pages are translated into (en, vi), or null for none. */
+  translate_to?: string | null;
   counters: Record<string, number>;
   cancel_requested: boolean;
   error: string | null;

@@ -1,10 +1,15 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 
 import { DocumentImportProgress } from "@/components/pages/document-import-progress";
-import type { DocumentImportItem, DocumentImportJob } from "@/types/api";
+import type {
+  DocumentImportItem,
+  DocumentImportJob,
+  DocumentImportReview,
+  DocumentImportTranslation,
+} from "@/types/api";
 
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), {
@@ -160,6 +165,167 @@ describe("DocumentImportProgress", () => {
     );
 
     expect(screen.getByText("This PDF appears to be scanned.")).toBeInTheDocument();
+  });
+
+  it("says what the review of a page found, with its notes", () => {
+    stubFetch({});
+    const review = (
+      status: DocumentImportReview["status"],
+      over: Partial<DocumentImportReview> = {},
+    ): DocumentImportReview => ({
+      status,
+      issues_before: 3,
+      issues_after: 0,
+      fixes: 3,
+      ai_calls: 1,
+      notes: [],
+      ...over,
+    });
+    const done = (id: string, extra: Partial<DocumentImportItem> = {}) =>
+      item({ id, filename: `${id}.docx`, status: "complete", page_slug: id, ...extra });
+    renderProgress(
+      job({
+        status: "complete",
+        items: [
+          done("a", {
+            review: review("fixed", {
+              notes: ["set 1 heading level", "the AI assistant mended 2 blocks"],
+            }),
+          }),
+          done("b", { review: review("partial", { fixes: 2, issues_after: 1 }) }),
+          done("c", { review: review("clean") }),
+          done("d", { review: review("kept") }),
+          done("e", { review: review("skipped") }),
+          done("f", { review: review("failed") }),
+          done("g"),
+        ],
+      }),
+    );
+
+    expect(
+      screen.getByText("Reviewed: 3 fix(es), now it matches the original"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("set 1 heading level")).toBeInTheDocument();
+    expect(screen.getByText("the AI assistant mended 2 blocks")).toBeInTheDocument();
+    expect(
+      screen.getByText("Reviewed: 2 fix(es), 1 difference(s) left"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Reviewed: the page matches the original")).toBeInTheDocument();
+    expect(screen.getByText("Reviewed: left as converted")).toBeInTheDocument();
+    expect(screen.getByText("Review skipped")).toBeInTheDocument();
+    expect(
+      screen.getByText("The review could not finish; the page is as converted"),
+    ).toBeInTheDocument();
+    // A file that was not reviewed says nothing about it.
+    expect(screen.getAllByText(/review/i)).toHaveLength(6);
+  });
+
+  it("shows the steps of a review as it runs, and keeps them as a log afterwards", () => {
+    stubFetch({});
+    const base: DocumentImportReview = {
+      status: "running",
+      issues_before: 0,
+      issues_after: 0,
+      fixes: 0,
+      ai_calls: 0,
+      notes: [],
+      log: ["Reading the original file again, on its own...", "Compared 8 blocks."],
+    };
+    renderProgress(
+      job({
+        status: "running",
+        items: [
+          item({ id: "a", filename: "a.docx", status: "complete", page_slug: "a", review: base }),
+        ],
+      }),
+    );
+
+    expect(screen.getByText("Reviewing the page against the original...")).toBeInTheDocument();
+    // While it runs the log is open, so the steps can be followed.
+    expect(screen.getByText("Compared 8 blocks.")).toBeVisible();
+    expect(screen.getByText("Review log (2 steps)").closest("details")).toHaveAttribute("open");
+
+    cleanup();
+    renderProgress(
+      job({
+        status: "complete",
+        items: [
+          item({
+            id: "a",
+            filename: "a.docx",
+            status: "complete",
+            page_slug: "a",
+            review: { ...base, status: "fixed", fixes: 2, log: [...(base.log ?? []), "Done."] },
+          }),
+        ],
+      }),
+    );
+    // Afterwards it is one click away, closed.
+    const summary = screen.getByText("Review log (3 steps)");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("Done.")).toBeInTheDocument();
+  });
+
+  it("shows a translation as it runs, and what it did afterwards", () => {
+    stubFetch({});
+    const translation = (
+      status: DocumentImportTranslation["status"],
+      over: Partial<DocumentImportTranslation> = {},
+    ): DocumentImportTranslation => ({
+      status,
+      language: "en",
+      units_total: 10,
+      units_done: 10,
+      units_left: 0,
+      ai_calls: 2,
+      notes: [],
+      log: [],
+      ...over,
+    });
+    const done = (id: string, extra: Partial<DocumentImportItem>) =>
+      item({ id, filename: `${id}.docx`, status: "complete", page_slug: id, ...extra });
+    renderProgress(
+      job({
+        status: "running",
+        items: [
+          done("a", {
+            translation: translation("running", {
+              log: ["Found 10 pieces of text.", "Step 1 of 2: 5 of 5 pieces translated."],
+            }),
+          }),
+          done("b", { translation: translation("done", { log: ["Done."] }) }),
+          done("c", {
+            translation: translation("partial", {
+              language: "vi",
+              units_left: 3,
+              notes: ["3 of 10 pieces were left in the original language"],
+            }),
+          }),
+          done("d", { translation: translation("skipped", { notes: ["already in English"] }) }),
+          done("e", { translation: translation("failed") }),
+          done("f", {}),
+        ],
+      }),
+    );
+
+    expect(screen.getByText("Translating into English...")).toBeInTheDocument();
+    // Open while it runs, so the steps can be followed.
+    expect(screen.getByText("Step 1 of 2: 5 of 5 pieces translated.")).toBeVisible();
+    expect(
+      screen.getByText("Translation log (2 steps)").closest("details"),
+    ).toHaveAttribute("open");
+    expect(screen.getByText("Translated into English")).toBeInTheDocument();
+    expect(screen.getByText("Translation log (1 steps)").closest("details")).not.toHaveAttribute(
+      "open",
+    );
+    expect(
+      screen.getByText("Translated into Tiếng Việt; 3 piece(s) left as they were"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Not translated")).toBeInTheDocument();
+    expect(screen.getByText("already in English")).toBeInTheDocument();
+    expect(
+      screen.getByText("The translation could not finish; the page is in its own language"),
+    ).toBeInTheDocument();
   });
 
   it("asks for confirmation in a dialog, never window.confirm", async () => {

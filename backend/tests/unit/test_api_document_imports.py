@@ -182,6 +182,13 @@ class TestMagicBytes:
         _check_magic_bytes("notes.md", "markdown", b"# hello")
 
 
+def _job_args(monkeypatch) -> dict:
+    """The keyword arguments of the latest ``create_document_import_job`` call."""
+    import app.api.v1.document_imports as module
+
+    return module.create_document_import_job.await_args.kwargs
+
+
 class TestCreateEndpoint:
     @pytest.mark.asyncio
     async def test_a_valid_batch_is_accepted(self, monkeypatch):
@@ -196,6 +203,34 @@ class TestCreateEndpoint:
             "ENG", Mock(), session, [_upload("a.docx", _zip_bytes())], None
         )
         assert "id" in result
+
+    @pytest.mark.asyncio
+    async def test_the_review_is_off_unless_asked_for(self, monkeypatch):
+        _stub_services(monkeypatch)
+        session = AsyncMock()
+        session.execute.return_value = Mock(scalars=Mock(return_value=Mock(all=Mock(return_value=[]))))
+
+        await create_document_import("ENG", Mock(), session, [_upload("a.docx", _zip_bytes())], None)
+        assert _job_args(monkeypatch)["ai_review"] is False
+
+        await create_document_import(
+            "ENG", Mock(), session, [_upload("a.docx", _zip_bytes())], None, review=True
+        )
+        assert _job_args(monkeypatch)["ai_review"] is True
+
+    @pytest.mark.asyncio
+    async def test_the_translation_is_off_unless_a_language_is_asked_for(self, monkeypatch):
+        _stub_services(monkeypatch)
+        session = AsyncMock()
+        session.execute.return_value = Mock(scalars=Mock(return_value=Mock(all=Mock(return_value=[]))))
+
+        await create_document_import("ENG", Mock(), session, [_upload("a.docx", _zip_bytes())], None)
+        assert _job_args(monkeypatch)["translate_to"] is None
+
+        await create_document_import(
+            "ENG", Mock(), session, [_upload("a.docx", _zip_bytes())], None, translate="vi"
+        )
+        assert _job_args(monkeypatch)["translate_to"] == "vi"
 
     @pytest.mark.asyncio
     async def test_ask_mode_refuses_to_queue_when_server_finds_a_filename_conflict(

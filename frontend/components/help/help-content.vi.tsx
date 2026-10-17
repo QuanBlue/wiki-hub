@@ -1720,6 +1720,39 @@ export const sectionsVi: HelpSection[] = [
             thẳng đến trang mới của nó, nên bạn có thể tiếp tục làm việc trong khi
             một lô lớn đang được chuyển đổi.
           </li>
+          <li>
+            <strong>Review với AI sau khi nhập</strong> (mặc định bật; lựa chọn được nhớ). Khi page đã
+            được tạo, WikiHub đọc lại file gốc một cách độc lập và so sánh với page: đoạn bị mất, tiêu đề
+            sai cấp, danh sách / code / trích dẫn bị biến thành đoạn thường, bảng bị vỡ, đầu trang và chân
+            trang lặp lại, các khối sai thứ tự, và cả giao diện (dòng thụt lề trong ô bảng bị biến thành trích dẫn,
+            chữ khó đọc trên ô có màu, màu đen bị ép cứng). Chỗ chắc chắn được sửa ngay; nếu trợ lý AI đã được thiết
+            lập, AI sửa phần còn lại, từng nhóm vài khối, dùng đúng các định dạng của trình soạn thảo
+            (danh sách, bảng, khối code, trích dẫn, callout). Thay đổi chỉ được giữ nếu page khớp file hơn và
+            không mất chữ nào. Kết quả của từng file hiện trong thẻ tiến trình (<Code>Đã xem lại: sửa 3 chỗ,
+            giờ đã khớp với bản gốc</Code> hoặc còn bao nhiêu chỗ lệch, kèm ghi chú), và bản vừa chuyển đổi
+            vẫn còn trong lịch sử page để khôi phục. Word, HTML và PDF được xem lại; các loại khác nhập như
+            trước. File không có gì lệch không tốn lượt AI nào, và xem lại lỗi không bao giờ làm hỏng việc
+            nhập. Trong khi một file đang được xem lại, thẻ của nó hiện nhật ký trực tiếp
+            (<Code>Đọc lại file gốc... So sánh 439 khối với 314: 14 chỗ lệch... Hỏi trợ lý AI về 12 chỗ...
+            đề xuất 3 thay đổi, giữ 2</Code>), và nhật ký đó vẫn nằm dưới file với tên <em>Review log</em> khi đã xong. Danh sách cũng giữ
+            đúng cấp lồng nhau: Word thụt lề theo vị trí của đoạn, điều mà bộ chuyển đổi bỏ qua, nên
+            review đọc lại các mức thụt lề đó và lồng danh sách đúng như file gốc.
+          </li>
+          <li>
+            <strong>Dịch bằng AI</strong> chuyển mỗi page sang <em>English</em> hoặc <em>Tiếng Việt</em>{" "}
+            sau khi page được tạo (mặc định giữ ngôn ngữ gốc của tài liệu). Trợ lý AI dịch từng đoạn
+            chữ &mdash; mỗi đoạn văn, mục danh sách, ô bảng và tiêu đề &mdash; và mỗi đoạn chỉ được đặt lại
+            khi thẻ, liên kết, nguồn ảnh và code vẫn y nguyên, nên bảng, danh sách, hình ảnh, màu sắc
+            và độ rộng của page không đổi; khối code và code trong dòng không bao giờ bị dịch, tên sản
+            phẩm và từ viết tắt được giữ. Việc dịch chạy sau bước review, hiện <em>Translation log</em>{" "}
+            trực tiếp trên thẻ của file, và bản ngôn ngữ gốc vẫn nằm trong lịch sử page. Đoạn nào model
+            dịch sai được giữ nguyên ngôn ngữ gốc và được đếm lại. Cần trợ lý AI đã được thiết lập; tài
+            liệu vốn đã ở ngôn ngữ bạn chọn thì không dịch, và tài liệu quá lớn bị bỏ qua. Cả hai tùy chọn nằm
+            trong mục <em>Tùy chọn AI</em> của hộp thoại nhập, mỗi cái có một dòng tóm tắt và nút <strong>i</strong>{" "}
+            giải thích đầy đủ khi rê chuột; <em>Ngôn ngữ gốc</em> giữ nguyên văn bản. Dịch là rất nhiều
+            lượt gọi nhỏ nên có hạn mức theo giờ riêng, và tiêu đề page vẫn là tên file. Nếu việc dịch báo
+            không hoàn tất, hãy nhập lại file.
+          </li>
         </ul>
 
         <Callout variant="note" title="KHÔNG GIỐNG CONFLUENCE IMPORT">

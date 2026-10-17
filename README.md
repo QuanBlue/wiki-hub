@@ -115,6 +115,27 @@ unformatted text.
 - **Attachments & Office editing** — images, video (with subtitles, audio tracks,
   and Picture-in-Picture), PDFs, and in-place editing of Word/Excel/PowerPoint via
   an embedded ONLYOFFICE Document Server.
+- **Document import with a review** — turn Word, PDF, HTML, Markdown, EPUB, ODT or RTF
+  files into pages, up to 20 at a time, in a background job with per-file progress. Optionally
+  (on by default) each page is then **reviewed against its file**: the original is read again
+  on its own (Word paragraphs and styles, HTML blocks, PDF text blocks) and compared with the
+  page — lost text, heading levels, lists, code and quotes that became paragraphs, broken
+  tables, repeated page headers and footers, block order, and how it looks (cell text turned into a
+  quote, unreadable text on a coloured cell, forced black). What is certain is mended without a
+  model; with the AI assistant set up, it mends the rest in the editor's own formats, a
+  window of the page at a time (a clean file costs no model call, at most four calls per
+  file). A change is kept only if the page then agrees with the file better and lost no text;
+  it is saved as its own revision ("Review of the import…"), so the page as converted stays in
+  the history, and the result is shown per file. A review that fails or times out never costs
+  the import. Each step of the review is logged live on the file's progress card, and nested lists get
+  their nesting back from the file's own indents. Optionally **translate** each page into English
+  or Vietnamese with the AI assistant, piece by piece, accepting a piece only when its tags,
+  links, images and code are unchanged, so tables and lists stay exactly as they are; the page in
+  its own language stays in its history; the title stays the file's name, a document already in the
+  language chosen or over about 700,000 characters is skipped, and translating has its own hourly
+  allowance (`ai_translate_rate_limit`, 1500/hour by default) and a four-hour job limit. The import
+  dialog groups both under **AI options**, each with a one-line summary and an **i** button for
+  the full account, and the progress card shows a live log of each.
 - **Confluence import & export** — import a Confluence XML or HTML space export
   with a live progress report, or export to Confluence Data Center's own XML
   format for a one-way hand-off.
