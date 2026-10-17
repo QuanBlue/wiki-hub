@@ -13,9 +13,13 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentSuperuser, CurrentUser, DbSession
+from app.core import rate_limit
 from app.core.config import settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError
+from app.db.session import get_session_factory
+from app.models.user import User
 from app.modules.ai import ollama
+from app.modules.ai.actions import PlanRunner, StepInput
 from app.modules.ai.admin import AIConnectionService
 from app.modules.ai.answer import AnswerService
 from app.modules.ai.chat import ChatService
@@ -44,6 +48,7 @@ from app.schemas.ai import (
     EmbeddingModelsResult,
     EmbeddingSettingsRead,
     EmbeddingSettingsUpdate,
+    ExecuteRequest,
     ExplainRequest,
     ExplainResult,
     OllamaEnable,
@@ -108,6 +113,39 @@ async def chat(payload: ChatRequest, session: DbSession, user: CurrentUser) -> S
     async def stream() -> AsyncIterator[str]:
         async for event in turn.events():
             yield _sse(event)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post(
+    "/chat/execute",
+    summary="Carry out the steps of a plan the assistant proposed, after the person confirmed",
+    response_class=StreamingResponse,
+)
+async def execute_plan(payload: ExecuteRequest, user: CurrentUser) -> StreamingResponse:
+    """Run confirmed steps as the person - with the permissions they have, and no more.
+
+    One event per step as it finishes (writing a page takes as long as the model does), then a
+    final ``done``. The steps are checked again here: what the browser sends is not trusted.
+    """
+    # Counted before the first byte, like a chat message, so a refusal is a plain HTTP error.
+    await rate_limit.enforce(f"aiact:{user.id}", settings.ai_rate_limit)
+    steps = [StepInput(type=step.type, args=step.args) for step in payload.steps]
+    user_id = user.id
+    lang = payload.lang or "en"
+
+    async def stream() -> AsyncIterator[str]:
+        # Its own session: the request's is closed by the time a stream is being written.
+        async with get_session_factory()() as session:
+            actor = await session.get(User, user_id)
+            if actor is None:  # pragma: no cover - the person was deleted a moment ago
+                return
+            async for event in PlanRunner(session, actor, lang).run(steps):
+                yield _sse(event)
 
     return StreamingResponse(
         stream(),

@@ -213,11 +213,14 @@ describe("ImpersonationBanner", () => {
 
   it("returns to the real account", async () => {
     mocked.delete.mockResolvedValue({});
+    window.localStorage.setItem("wikihub:chat:v1:viewed", "[]");
     render(<ImpersonationBanner viewingAs={viewingAs} impersonator={impersonator} />);
     await userEvent.click(screen.getByRole("button"));
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/"));
     expect(mocked.delete).toHaveBeenCalledWith("/api/v1/auth/impersonate");
     expect(nav.refresh).toHaveBeenCalled();
+    // The conversation of the person that was viewed does not stay for the administrator.
+    expect(window.localStorage.getItem("wikihub:chat:v1:viewed")).toBeNull();
   });
 
   it("reports a failure and re-enables the button", async () => {

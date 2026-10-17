@@ -55,14 +55,15 @@ _SENSITIVE_LABELS = (
 )
 #: ``password: hunter2``, ``token=abc``, ``api key is abc`` -> the value is hidden.
 _SECRET_ASSIGNMENT = re.compile(
-    rf"(?i)\b({_SENSITIVE_LABELS})\b(\s*[:=]\s*|\s+is\s+|\s+l\u00e0\s+)(?!\[hidden\])([^\s,;\"'<>]+)"
+    rf"(?i)\b({_SENSITIVE_LABELS})\b(\s*(?::|=(?!=))\s*|\s+is\s+|\s+l\u00e0\s+)(?!\[hidden\])([^\s,;\"'<>]+)"
 )
 #: ``https://user:secret@host`` -> ``https://user:[hidden]@host``.
 _URL_CREDENTIALS = re.compile(r"(?i)(\b[a-z][a-z0-9+.-]*://[^\s:/@]+:)([^\s@/]+)(@)")
 #: ``admin/P@ssw0rd!``, ``tamdt25/tamdt25@123``: wiki pages list accounts as ``user/password``.
-#: The right-hand side must hold a symbol, which a plain path or a host name does not.
+#: The right-hand side must hold a symbol, which a plain path or a host name does not. Not ``*``:
+#: ``km/h**,`` is a unit before the end of Markdown bold, not a password.
 _USER_SLASH_PASSWORD = re.compile(
-    r"(?<![\w/:.@%-])([A-Za-z0-9_.-]{2,40}/)(?=[^\s/<>]*[!@#$%^&*])[^\s/<>]{4,80}"
+    r"(?<![\w/:.@%-])([A-Za-z0-9_.-]{2,40}/)(?=[^\s/<>]*[!@#$%^&])[^\s/<>]{4,80}"
     r"(?=[\s,;)\]\"']|$)"
 )
 _BEARER = re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]{12,}")

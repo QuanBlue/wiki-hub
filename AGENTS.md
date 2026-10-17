@@ -28,6 +28,14 @@ Before creating or changing UI, agents must:
 When a request conflicts with this contract, ask for clarification before
 creating a one-off visual style.
 
+## AI assistant knowledge of the Help page
+
+The chat assistant answers "how do I..." questions from the Help page itself. Its text is
+copied by `scripts/build_help_knowledge.py` into `backend/app/assets/help_{en,vi}.json`. After
+changing `frontend/components/help/help-content.{en,vi}.tsx`, run
+`python scripts/build_help_knowledge.py` and commit the JSON; a backend test fails when the
+copy is out of date (`python scripts/build_help_knowledge.py --check` does the same by hand).
+
 ## Confluence import rules
 
 When modifying the Confluence import and file upload component (`frontend/components/admin/backup-panel.tsx`):

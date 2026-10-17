@@ -1,3 +1,11 @@
+import {
+  CircleAlert,
+  Info,
+  Lightbulb,
+  OctagonAlert,
+  CircleCheck,
+  type LucideIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import { CodeBlock } from "@/components/issues/code-block";
@@ -30,7 +38,52 @@ function unescapeMarkdown(text: string): string {
   return text.replace(/\\([\\<>*_`[\]()#+.!|{}~-])/g, "$1");
 }
 
+/**
+ * ``> [!TIP] text`` (also NOTE, IMPORTANT, WARNING, SUCCESS, DANGER) draws a coloured callout in
+ * rich text: the mark a model writes to say "this matters", with an icon so it is seen.
+ */
+const CALLOUT = /^\[!(NOTE|TIP|IMPORTANT|WARNING|SUCCESS|DANGER)\]\s*(.*)$/i;
+const CALLOUTS: Record<
+  string,
+  { icon: LucideIcon; box: string; label: string }
+> = {
+  NOTE: {
+    icon: Info,
+    box: "border-info/40 bg-info-bg [&_svg]:text-info",
+    label: "Note",
+  },
+  TIP: {
+    icon: Lightbulb,
+    box: "border-success/40 bg-success-bg [&_svg]:text-success",
+    label: "Tip",
+  },
+  IMPORTANT: {
+    icon: CircleAlert,
+    box: "border-primary/40 bg-primary-subtle [&_svg]:text-primary",
+    label: "Important",
+  },
+  WARNING: {
+    icon: OctagonAlert,
+    box: "border-warning/50 bg-warning-bg [&_svg]:text-warning",
+    label: "Warning",
+  },
+  SUCCESS: {
+    icon: CircleCheck,
+    box: "border-success/40 bg-success-bg [&_svg]:text-success",
+    label: "Done",
+  },
+  DANGER: {
+    icon: OctagonAlert,
+    box: "border-danger/40 bg-danger-bg [&_svg]:text-danger",
+    label: "Careful",
+  },
+};
+
 type InlineOptions = {
+  /** Richer emphasis for an assistant's answer: coloured bold, ``==highlight==``. */
+  rich?: boolean;
+  /** Internal: ``==...==`` was already looked for in this piece of text. */
+  highlighted?: boolean;
   /** Usernames whose ``@name`` is highlighted. */
   mentions?: ReadonlySet<string>;
   /** Turn a bare ``https://...`` address into a link. */
@@ -71,7 +124,38 @@ function inline(
   keyPrefix: string,
   options: InlineOptions = {},
 ): ReactNode[] {
-  const { mentions, autolink, onOpenAttachment, onCite } = options;
+  const { mentions, autolink, onOpenAttachment, onCite, rich } = options;
+  if (rich && !options.highlighted && /==|\*/.test(text)) {
+    // ==the one thing to remember== is marked like a highlighter and *a term* is italic; either
+    // may hold bold or code. (Single asterisks are only italics here: in an issue, a pattern
+    // such as *.log must stay as typed.)
+    const MARKED =
+      /(==[^=\n]+==|(?<![*\w])\*[^*\s](?:[^*\n]*[^*\s])?\*(?![*\w]))/;
+    return text.split(MARKED).flatMap<ReactNode>((part, n) => {
+      const inner = { ...options, highlighted: true };
+      if (/^==[^=\n]+==$/.test(part)) {
+        return [
+          <mark
+            key={`${keyPrefix}-hl${n}`}
+            className="bg-warning-bg text-foreground rounded [box-decoration-break:clone] px-1 py-0.5 font-medium"
+          >
+            {inline(part.slice(2, -2), `${keyPrefix}-hl${n}`, inner)}
+          </mark>,
+        ];
+      }
+      if (
+        /^\*[^*\s](?:[^*\n]*[^*\s])?\*$/.test(part) &&
+        !part.startsWith("**")
+      ) {
+        return [
+          <em key={`${keyPrefix}-it${n}`}>
+            {inline(part.slice(1, -1), `${keyPrefix}-it${n}`, inner)}
+          </em>,
+        ];
+      }
+      return inline(part, `${keyPrefix}-pl${n}`, inner);
+    });
+  }
   const nodes: ReactNode[] = [];
   let last = 0;
   let index = 0;
@@ -98,7 +182,14 @@ function inline(
         </code>,
       );
     } else if (match[2]) {
-      nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>);
+      nodes.push(
+        <strong
+          key={key}
+          className={rich ? "text-foreground font-semibold" : undefined}
+        >
+          {token.slice(2, -2)}
+        </strong>,
+      );
     } else if (match[3]) {
       const split = token.indexOf("](");
       const label = token.slice(1, split);
@@ -205,6 +296,7 @@ export function IssueMarkdown({
   onOpenAttachment,
   onCite,
   codeCard,
+  rich,
 }: {
   source: string;
   className?: string;
@@ -218,6 +310,11 @@ export function IssueMarkdown({
   onCite?: (n: number, web?: boolean) => void;
   /** Draw fenced code as a card with its language and a copy button. */
   codeCard?: boolean;
+  /**
+   * An assistant's answer, made easier to take in: coloured bold for the key words,
+   * ``==highlight==``, coloured callouts (``> [!TIP]``), coloured list markers and headings.
+   */
+  rich?: boolean;
 }) {
   const mentionSet: ReadonlySet<string> = new Set(
     (mentions ?? []).map((name) => name.toLowerCase()),
@@ -227,6 +324,7 @@ export function IssueMarkdown({
     autolink,
     onOpenAttachment,
     onCite,
+    rich,
   };
   const lines = source.replaceAll("\r\n", "\n").split("\n");
   /** A pipe table starts here: a row of cells, then the ``---|---`` row under it. */
@@ -281,6 +379,7 @@ export function IssueMarkdown({
           className={cn(
             "mt-3 mb-1 font-semibold",
             level === 1 ? "text-lg" : level === 2 ? "text-base" : "text-sm",
+            rich && "border-border mt-4 border-b pb-1",
           )}
         >
           {inline(heading[2], `h${key}`, options)}
@@ -296,10 +395,39 @@ export function IssueMarkdown({
         quoted.push(lines[i].replace(/^>\s?/, ""));
         i += 1;
       }
+      const callout = rich ? CALLOUT.exec(quoted[0]) : null;
+      if (callout) {
+        const kind = CALLOUTS[callout[1].toUpperCase()];
+        const Icon = kind.icon;
+        const body = [callout[2], ...quoted.slice(1)].filter((text) => text);
+        blocks.push(
+          <aside
+            key={key++}
+            role="note"
+            aria-label={kind.label}
+            className={cn(
+              "my-2.5 flex items-start gap-2.5 rounded-lg border px-3 py-2.5",
+              kind.box,
+            )}
+          >
+            <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <div className="text-foreground min-w-0 flex-1 space-y-1">
+              {body.map((text, n) => (
+                <p key={n}>{inline(text, `c${key}-${n}`, options)}</p>
+              ))}
+            </div>
+          </aside>,
+        );
+        continue;
+      }
       blocks.push(
         <blockquote
           key={key++}
-          className="border-border text-muted-foreground my-2 border-l-2 pl-3"
+          className={cn(
+            "border-border text-muted-foreground my-2 border-l-2 pl-3",
+            rich &&
+              "border-border-strong bg-surface-sunken text-foreground/85 rounded-r-lg border-l-4 py-1.5 pr-3 italic",
+          )}
         >
           {quoted.map((text, n) => (
             <p key={n}>{inline(text, `q${key}-${n}`, options)}</p>
@@ -348,7 +476,13 @@ export function IssueMarkdown({
         i += 1;
       }
       blocks.push(
-        <ul key={key++} className="my-2 list-disc pl-6">
+        <ul
+          key={key++}
+          className={cn(
+            "my-2 list-disc pl-6",
+            rich && "marker:text-primary space-y-1",
+          )}
+        >
           {items}
         </ul>,
       );
@@ -366,7 +500,13 @@ export function IssueMarkdown({
         i += 1;
       }
       blocks.push(
-        <ol key={key++} className="my-2 list-decimal pl-6">
+        <ol
+          key={key++}
+          className={cn(
+            "my-2 list-decimal pl-6",
+            rich && "marker:text-primary space-y-1 marker:font-semibold",
+          )}
+        >
           {items}
         </ol>,
       );
@@ -401,12 +541,18 @@ export function IssueMarkdown({
               {rows.map((row, r) => (
                 <tr
                   key={r}
-                  className="border-border border-b align-top last:border-b-0"
+                  className={cn(
+                    "border-border border-b align-top last:border-b-0",
+                    rich && "hover:bg-surface-hover even:bg-surface-sunken/40",
+                  )}
                 >
                   {head.map((_, column) => (
                     <td
                       key={column}
-                      className="px-3 py-2 [overflow-wrap:break-word]"
+                      className={cn(
+                        "px-3 py-2 [overflow-wrap:break-word]",
+                        rich && column === 0 && "font-medium",
+                      )}
                     >
                       {inline(
                         row[column] ?? "",

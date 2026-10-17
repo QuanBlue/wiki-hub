@@ -205,9 +205,14 @@ async def read_pages(results: list[WebResult], query: str) -> list[WebResult]:
     if not results:
         return results
     head = results[:_PAGES_READ]
+
+    async def text_of(result: WebResult) -> str:
+        # A result that came with its text (a free source's) has nothing more to read.
+        return "" if result.content else await fetch_text(result.url)
+
     try:
         texts = await asyncio.wait_for(
-            asyncio.gather(*(fetch_text(result.url) for result in head)),
+            asyncio.gather(*(text_of(result) for result in head)),
             timeout=_PAGES_BUDGET_SECONDS,
         )
     except TimeoutError:
@@ -219,8 +224,111 @@ async def read_pages(results: list[WebResult], query: str) -> list[WebResult]:
     return [*read, *results[_PAGES_READ:]]
 
 
-async def search_web(config: WebConfig, query: str) -> list[WebResult]:
-    """The top results for ``query`` (already made safe with :func:`public_query`)."""
+async def search_web(config: WebConfig, query: str, *, fallback: bool = True) -> list[WebResult]:
+    """The top results for ``query`` (already made safe with :func:`public_query`).
+
+    When the configured service finds nothing - the free one behind a gateway does now and then,
+    for hours, once it has been asked a lot - the free sources of :func:`free_sources` are tried,
+    so a question about the news is not left unanswered. ``fallback=False`` is for testing the
+    configured service alone.
+    """
+    if not config.ready:  # off, or no key: nothing was asked for, so nothing is borrowed
+        raise ServiceUnavailableError("Web search is not set up.")
+    failure: ServiceUnavailableError | None = None
+    try:
+        found = await _configured_search(config, query)
+    except ServiceUnavailableError as exc:
+        found, failure = [], exc
+    if fallback and config.provider == "gateway":
+        # The free engine behind a gateway answers, now and then, with whatever it has -
+        # dictionary entries for "so", lottery results - so what it returns is checked.
+        found = _about(found, query)
+    enough = _ENOUGH_FROM_A_GATEWAY if config.provider == "gateway" else _ENOUGH
+    if len(found) >= enough or not fallback:
+        if failure is not None:
+            raise failure
+        return found
+    extra = await free_sources(query)
+    if extra:
+        logger.info("ai_web_search_fallback", provider=config.provider, results=len(extra))
+    elif failure is not None and not found:
+        raise failure
+    known = {result.url for result in found}
+    return [*found, *(result for result in extra if result.url not in known)][:RESULTS]
+
+
+#: How many results a search needs before the free sources are left alone. A paid service that
+#: finds one page has found it; the free engine behind a gateway that finds one has most likely
+#: found one page and junk, so it gets help from the free sources unless it has two good ones.
+_ENOUGH = 1
+_ENOUGH_FROM_A_GATEWAY = 2
+_WORD = re.compile(r"[a-z0-9]+")
+#: Words that say nothing about what a page is about, in the two languages people ask in.
+_FILLER = frozenset(
+    [
+        "the",
+        "and",
+        "for",
+        "with",
+        "what",
+        "how",
+        "does",
+        "which",
+        "are",
+        "was",
+        "were",
+        "this",
+        "that",
+        "from",
+        "have",
+        "has",
+        "into",
+        "about",
+        "vs",
+        "gi",
+        "la",
+        "va",
+        "cua",
+        "co",
+        "khong",
+        "nao",
+        "nhu",
+        "cho",
+        "voi",
+        "cac",
+        "nhung",
+        "mot",
+        "nay",
+        "trong",
+        "duoc",
+        "khac",
+        "sao",
+    ]
+)
+
+
+def _words(text: str) -> set[str]:
+    from app.modules.ai.assistant_context import fold
+
+    return {
+        w for w in _WORD.findall(fold(text)) if w not in _FILLER and (len(w) >= 3 or w.isdigit())
+    }
+
+
+def _about(results: list[WebResult], query: str) -> list[WebResult]:
+    """The results that are about the query: those whose title or line hold half of its words."""
+    wanted = _words(query)
+    if not wanted:
+        return results
+    need = max(1, (len(wanted) + 1) // 2)
+    return [
+        result
+        for result in results
+        if len(wanted & _words(f"{result.title} {result.snippet} {result.content}")) >= need
+    ]
+
+
+async def _configured_search(config: WebConfig, query: str) -> list[WebResult]:
     if not config.ready:
         raise ServiceUnavailableError("Web search is not set up.")
     try:
@@ -255,6 +363,224 @@ async def search_web(config: WebConfig, query: str) -> list[WebResult]:
         # Never log the query or the key - only what failed.
         logger.warning("ai_web_search_failed", provider=config.provider, error=type(exc).__name__)
         raise ServiceUnavailableError("The web search is not available right now.") from None
+
+
+# ------------------------------------------------------------------ free sources
+
+#: Needs no key and no account: Google News' public feed (what is being reported, with the
+#: day and the paper) and Wikipedia (what a thing is). Only the search query leaves, as ever.
+_FREE_TIMEOUT_SECONDS = 8.0
+_NEWS_RESULTS = 2
+_WIKI_RESULTS = 1
+_NEWS_URL = "https://news.google.com/rss/search"
+_WIKI_URL = "https://{lang}.wikipedia.org/w/api.php"
+_USER_AGENT = "Mozilla/5.0 (compatible; WikiHubReader/1.0)"
+#: Letters only Vietnamese uses, to pick the language of the feed and of the encyclopedia.
+_VIETNAMESE = re.compile(
+    "[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]", re.IGNORECASE
+)
+_DOCTYPE = re.compile(r"<!(?:DOCTYPE|ENTITY)", re.IGNORECASE)
+
+
+def _is_vietnamese(query: str) -> bool:
+    return bool(_VIETNAMESE.search(query))
+
+
+def _text_of_html(markup: str) -> str:
+    from bs4 import BeautifulSoup  # lxml is already a dependency of the page reader
+
+    return _clean(BeautifulSoup(markup or "", "lxml").get_text(" "), _SNIPPET_CHARS)
+
+
+def parse_news(feed: str) -> list[WebResult]:
+    """The items of a Google News RSS feed: headline, paper, day and what it says."""
+    if _DOCTYPE.search(feed[:2000]):  # a feed has none; one with a DTD is not one to parse
+        return []
+    from xml.etree import ElementTree
+
+    try:
+        root = ElementTree.fromstring(feed)  # noqa: S314
+    except ElementTree.ParseError:
+        return []
+    found: list[WebResult] = []
+    seen: set[str] = set()
+    for item in root.iter("item"):
+        title = _clean(item.findtext("title"), 200)
+        link = _clean(item.findtext("link"), 500)
+        if not title or not link.lower().startswith(("http://", "https://")) or title in seen:
+            continue
+        seen.add(title)
+        paper = _clean(item.findtext("source"), 80)
+        day = _clean(item.findtext("pubDate"), 40)
+        about = _text_of_html(item.findtext("description") or "")
+        # The same headline is repeated in the description: say it once.
+        about = " ".join(about.replace(title, "").split()).strip("- ")
+        said = " | ".join(part for part in (paper, day, about) if part)
+        found.append(WebResult(title=title, url=link, snippet=said[:_SNIPPET_CHARS], content=said))
+        if len(found) >= _NEWS_RESULTS:
+            break
+    return found
+
+
+async def _news(http: httpx.AsyncClient, query: str) -> list[WebResult]:
+    params = (
+        {"q": query, "hl": "vi", "gl": "VN", "ceid": "VN:vi"}
+        if _is_vietnamese(query)
+        else {"q": query, "hl": "en", "gl": "US", "ceid": "US:en"}
+    )
+    response = await http.get(_NEWS_URL, params=params, timeout=_FREE_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    return parse_news(response.text)
+
+
+async def _encyclopedia(http: httpx.AsyncClient, query: str) -> list[WebResult]:
+    lang = "vi" if _is_vietnamese(query) else "en"
+    response = await http.get(
+        _WIKI_URL.format(lang=lang),
+        params={
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": query,
+            "gsrlimit": _WIKI_RESULTS,
+            "prop": "extracts|info",
+            "inprop": "url",
+            "exintro": 1,
+            "explaintext": 1,
+            "exchars": 1200,
+            "format": "json",
+        },
+        headers={"User-Agent": _USER_AGENT},
+        timeout=_FREE_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    pages = (response.json().get("query") or {}).get("pages") or {}
+    ordered = sorted(pages.values(), key=lambda page: page.get("index", 99))
+    found = []
+    for page in ordered:
+        extract = _clean(page.get("extract"), 1200)
+        address = _clean(page.get("fullurl"), 500)
+        if extract and address.lower().startswith("https://"):
+            found.append(
+                WebResult(
+                    title=_clean(page.get("title"), 200) + " - Wikipedia",
+                    url=address,
+                    snippet=extract[:_SNIPPET_CHARS],
+                    content=extract,
+                )
+            )
+    return found
+
+
+_WEB_RESULTS = 4
+_BING_URL = "https://www.bing.com/search"
+_DDG_URL = "https://lite.duckduckgo.com/lite/"
+#: A browser's name: these two answer a program that says it is one, and the page reader's own
+#: name gets nothing from them.
+_BROWSER = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0 Safari/537.36"
+)
+
+
+def parse_web(feed: str) -> list[WebResult]:
+    """The results of a Bing RSS search: title, address and the line under it."""
+    if _DOCTYPE.search(feed[:2000]):
+        return []
+    from xml.etree import ElementTree
+
+    try:
+        root = ElementTree.fromstring(feed)  # noqa: S314
+    except ElementTree.ParseError:
+        return []
+    items = [
+        {
+            "title": item.findtext("title"),
+            "link": item.findtext("link"),
+            "about": item.findtext("description"),
+        }
+        for item in root.iter("item")
+    ]
+    return _results(items, "title", "link", "about")[:_WEB_RESULTS]
+
+
+def parse_duckduckgo(markup: str) -> list[WebResult]:
+    """The results of DuckDuckGo's plain-HTML page: links with the snippet after each."""
+    from urllib.parse import parse_qs
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(markup, "lxml")
+    snippets = [
+        _clean(cell.get_text(" "), _SNIPPET_CHARS) for cell in soup.select(".result-snippet")
+    ]
+    items = []
+    for index, link in enumerate(soup.select("a.result-link")):
+        href = str(link.get("href") or "")
+        if "uddg=" in href:  # DuckDuckGo's own redirect: the address is in it
+            href = (parse_qs(urlsplit(href).query).get("uddg") or [""])[0]
+        elif href.startswith("//"):
+            href = "https:" + href
+        items.append(
+            {
+                "title": link.get_text(" "),
+                "link": href,
+                "about": snippets[index] if index < len(snippets) else "",
+            }
+        )
+    return _results(items, "title", "link", "about")[:_WEB_RESULTS]
+
+
+async def _web(http: httpx.AsyncClient, query: str) -> list[WebResult]:
+    """Pages from the open web: Bing's RSS, or DuckDuckGo's plain page when Bing gives none."""
+    vietnamese = _is_vietnamese(query)
+    headers = {"User-Agent": _BROWSER, "Accept-Language": "vi,en;q=0.8" if vietnamese else "en"}
+    try:
+        response = await http.get(
+            _BING_URL,
+            params={
+                "q": query,
+                "format": "rss",
+                "setlang": "vi" if vietnamese else "en",
+                "cc": "VN" if vietnamese else "US",
+            },
+            headers=headers,
+            timeout=_FREE_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        found = parse_web(response.text)
+        if found:
+            return found
+    except httpx.HTTPError:
+        logger.warning("ai_web_free_source_failed", error="bing")
+    response = await http.post(
+        _DDG_URL, data={"q": query}, headers=headers, timeout=_FREE_TIMEOUT_SECONDS
+    )
+    response.raise_for_status()
+    return parse_duckduckgo(response.text)
+
+
+async def free_sources(query: str) -> list[WebResult]:
+    """Pages of the open web, news headlines and encyclopedia entries for ``query``.
+
+    ``[]`` when none answers. Never raises: this is what is tried when everything else came
+    back empty. The open web comes first - its pages can be read for their text, and a question
+    about a product or a how-to is answered there and not in the news - then the news, then
+    the encyclopedia.
+    """
+    async with httpx.AsyncClient(follow_redirects=True) as http:
+        outcomes = await asyncio.gather(
+            _web(http, query),
+            _news(http, query),
+            _encyclopedia(http, query),
+            return_exceptions=True,
+        )
+    found: list[WebResult] = []
+    for outcome in outcomes:
+        if isinstance(outcome, BaseException):
+            logger.warning("ai_web_free_source_failed", error=type(outcome).__name__)
+            continue
+        found.extend(outcome)
+    return found[:RESULTS]
 
 
 # ---------------------------------------------------------------- administration
@@ -311,7 +637,7 @@ class WebSearchSettingsService:
                 return WebSearchTestResult(ok=False, error="Enter the key of the search service.")
             config = WebConfig(True, payload.provider, key)
         try:
-            found = await search_web(config, "what is the linux kernel")
+            found = await search_web(config, "what is the linux kernel", fallback=False)
         except ServiceUnavailableError:
             return WebSearchTestResult(
                 ok=False, error="The search service did not accept the key or did not answer."

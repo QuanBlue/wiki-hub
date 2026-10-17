@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { clearStoredChats } from "@/lib/ai-chat";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import type { User } from "@/types/api";
@@ -37,6 +38,8 @@ export function ImpersonationBanner({
     setPending(true);
     try {
       await api.delete<unknown>("/api/v1/auth/impersonate");
+      // The conversation of the person that was viewed must not stay for the administrator.
+      clearStoredChats();
       router.replace("/");
       router.refresh();
     } catch (error) {

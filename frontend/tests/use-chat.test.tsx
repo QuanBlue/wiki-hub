@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useChat } from "@/components/chat/use-chat";
 import type { AnswerResult } from "@/lib/ai-answer";
-import { ChatStreamError } from "@/lib/ai-chat";
+import { ChatStreamError, messagesToSend } from "@/lib/ai-chat";
 
 const streamChat = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/ai-chat", async (importOriginal) => ({
@@ -59,11 +59,14 @@ describe("useChat", () => {
     streamChat.mockResolvedValue(answer("done [1]"));
     const { result } = await ready();
 
-    expect(result.current.stop()).toBe("");
+    act(() => result.current.stop());
+    expect(result.current.entries).toHaveLength(0);
 
     await act(async () => void result.current.send("question"));
     await waitFor(() => expect(result.current.busy).toBe(false));
-    expect(result.current.stop()).toBe("");
+    const before = result.current.entries;
+    act(() => result.current.stop());
+    expect(result.current.entries).toBe(before);
     expect(result.current.entries).toHaveLength(2);
   });
 
@@ -105,6 +108,41 @@ describe("useChat", () => {
 
     expect(result.current.entries[1]).toMatchObject({ status: "done" });
     expect(Object.keys(result.current.slots)).toHaveLength(1);
+  });
+
+  it("regenerate answers a question again, keeping the earlier answer as a version", async () => {
+    streamChat.mockResolvedValueOnce(answer("first [1]"));
+    streamChat.mockResolvedValueOnce(answer("second [1]"));
+    streamChat.mockResolvedValueOnce(answer("again [1]"));
+    const { result } = await ready();
+    await act(async () => void result.current.send("one"));
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    await act(async () => void result.current.send("two"));
+    await waitFor(() => expect(result.current.busy).toBe(false));
+
+    // Not a question, or nothing: ignored.
+    act(() => result.current.regenerate(result.current.entries[1].id));
+    act(() => result.current.regenerate("missing"));
+    expect(streamChat).toHaveBeenCalledTimes(2);
+
+    await act(async () =>
+      result.current.regenerate(result.current.entries[0].id),
+    );
+    await waitFor(() => expect(result.current.busy).toBe(false));
+
+    expect(streamChat).toHaveBeenCalledTimes(3);
+    expect(result.current.entries).toHaveLength(2);
+    expect(result.current.entries[0]).toMatchObject({ content: "one" });
+    expect(result.current.entries[1]).toMatchObject({ status: "done" });
+
+    // The first answer (and the question after it) is still there to go back to, and forth.
+    const slot = Object.keys(result.current.slots)[0];
+    expect(result.current.slots[slot]).toMatchObject({ active: 1 });
+    expect(result.current.slots[slot].variants).toHaveLength(2);
+    act(() => result.current.switchVersion(slot, -1));
+    expect(result.current.entries).toHaveLength(4);
+    act(() => result.current.switchVersion(slot, 1));
+    expect(result.current.entries).toHaveLength(2);
   });
 
   it("an edit of something that is not a question, or of nothing, is ignored", async () => {
@@ -150,7 +188,51 @@ describe("useChat", () => {
     act(() => void result.current.stop());
   });
 
-  it("stopping an edit brings back the version it replaced and forgets there were two", async () => {
+  it("stopping keeps the question, with what was written and a cancelled mark", async () => {
+    streamChat.mockImplementationOnce(
+      (_m: unknown, { onDelta }: { onDelta: (text: string) => void }) => {
+        onDelta("The address is ");
+        return hangs();
+      },
+    );
+    const { result } = await ready();
+    await act(async () => void result.current.send("billing address"));
+
+    act(() => result.current.stop());
+
+    expect(result.current.busy).toBe(false);
+    expect(result.current.entries).toHaveLength(2);
+    expect(result.current.entries[0]).toMatchObject({
+      role: "user",
+      content: "billing address",
+    });
+    expect(result.current.entries[1]).toMatchObject({
+      role: "assistant",
+      status: "cancelled",
+      content: "The address is ",
+    });
+    // What was cut off is not something later questions are told the assistant said.
+    expect(messagesToSend(result.current.entries)).toEqual([
+      { role: "user", content: "billing address" },
+    ]);
+  });
+
+  it("a cancelled answer is asked again with retry, and that replaces it", async () => {
+    streamChat.mockImplementationOnce(() => hangs());
+    streamChat.mockResolvedValueOnce(answer("fine [1]"));
+    const { result } = await ready();
+    await act(async () => void result.current.send("question"));
+    act(() => result.current.stop());
+
+    await act(async () => result.current.retry());
+    await waitFor(() => expect(result.current.busy).toBe(false));
+
+    expect(result.current.entries).toHaveLength(2);
+    expect(result.current.entries[1]).toMatchObject({ status: "done" });
+    expect(streamChat).toHaveBeenCalledTimes(2);
+  });
+
+  it("stopping an edit keeps the edited question and the version it came from", async () => {
     streamChat.mockResolvedValueOnce(answer("first [1]"));
     const { result } = await ready();
     await act(async () => void result.current.send("original"));
@@ -160,21 +242,19 @@ describe("useChat", () => {
     await act(async () =>
       result.current.edit(result.current.entries[0].id, "changed"),
     );
-    let asked = "";
-    act(() => {
-      asked = result.current.stop();
-    });
+    act(() => result.current.stop());
 
-    expect(asked).toBe("changed");
-    expect(result.current.entries.map((e) => e.role)).toEqual([
-      "user",
-      "assistant",
-    ]);
+    expect(result.current.entries[0]).toMatchObject({ content: "changed" });
+    expect(result.current.entries[1]).toMatchObject({ status: "cancelled" });
+    // Two versions, and going back to the first one is possible.
+    const [slot] = Object.entries(result.current.slots);
+    expect(slot[1].variants).toHaveLength(2);
+    expect(slot[1].pending).toBeUndefined();
+    act(() => result.current.switchVersion(slot[0], -1));
     expect(result.current.entries[0]).toMatchObject({ content: "original" });
-    expect(result.current.slots).toEqual({});
   });
 
-  it("stopping an edit of an already edited question keeps the versions it had", async () => {
+  it("stopping an edit of an already edited question adds it to the versions it had", async () => {
     streamChat.mockResolvedValueOnce(answer("first [1]"));
     streamChat.mockResolvedValueOnce(answer("second [1]"));
     const { result } = await ready();
@@ -192,8 +272,10 @@ describe("useChat", () => {
     act(() => void result.current.stop());
 
     const [slot] = Object.values(result.current.slots);
-    expect(slot.variants).toHaveLength(2);
-    expect(result.current.entries[0]).toMatchObject({ content: "changed" });
+    expect(slot.variants).toHaveLength(3);
+    expect(result.current.entries[0]).toMatchObject({
+      content: "changed again",
+    });
   });
 
   it("carries on from a question answered elsewhere, but not while a reply is being written", async () => {
@@ -210,13 +292,75 @@ describe("useChat", () => {
     act(() =>
       result.current.adopt("search question", answer("from search [1]")),
     );
+    // The cancelled question stays, and the one from the search box comes after it.
     expect(result.current.entries.map((e) => e.role)).toEqual([
       "user",
       "assistant",
+      "user",
+      "assistant",
     ]);
-    expect(result.current.entries[0]).toMatchObject({
+    expect(result.current.entries[2]).toMatchObject({
       content: "search question",
     });
+  });
+
+  it("drops the words shown so far when the reply is redone as a search", async () => {
+    let finish!: (result: AnswerResult) => void;
+    streamChat.mockImplementationOnce(
+      (
+        _m: unknown,
+        {
+          onDelta,
+          onReset,
+          onSearching,
+        }: {
+          onDelta: (text: string) => void;
+          onReset: () => void;
+          onSearching: (q: string) => void;
+        },
+      ) => {
+        onDelta("A guess about the news. ");
+        onReset();
+        onSearching("the news");
+        return new Promise<AnswerResult>((resolve) => {
+          finish = resolve;
+        });
+      },
+    );
+    const { result } = await ready();
+    await act(async () => void result.current.send("what is the news"));
+
+    // The guess is gone and the search is shown in its place.
+    expect(result.current.entries[1]).toMatchObject({
+      content: "",
+      searching: "the news",
+      status: "streaming",
+    });
+    await act(async () => finish(answer("The news [1].")));
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(result.current.entries[1]).toMatchObject({
+      content: "The news [1].",
+    });
+  });
+
+  it("removes what another person left in this browser before reading its own", async () => {
+    const stored = JSON.stringify({
+      entries: [{ id: "a", role: "user", content: "mine" }],
+      slots: {},
+    });
+    window.localStorage.setItem("wikihub:chat:v1:me", stored);
+    window.localStorage.setItem("wikihub:chat:v1:someone-else", stored);
+    window.localStorage.setItem("wikihub:chat-detail", "brief");
+
+    const { result } = renderHook(() => useChat("me"));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    expect(result.current.entries.map((e) => e.content)).toEqual(["mine"]);
+    expect(
+      window.localStorage.getItem("wikihub:chat:v1:someone-else"),
+    ).toBeNull();
+    expect(window.localStorage.getItem("wikihub:chat-detail")).toBe("brief");
+    window.localStorage.clear();
   });
 
   it("shows the search under way while the reply has no words yet", async () => {

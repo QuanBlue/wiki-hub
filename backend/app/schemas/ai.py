@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -429,6 +429,49 @@ class WebSource(BaseModel):
     snippet: str
 
 
+class AnswerAction(BaseModel):
+    """A button under an answer that opens a page of the application."""
+
+    id: str
+    #: An address inside WikiHub (always starts with ``/``).
+    href: str
+    label_en: str
+    label_vi: str
+
+
+class AnswerPlanStep(BaseModel):
+    """One thing the assistant proposes to do, shown to the person before it runs."""
+
+    type: Literal["create_space", "create_page", "favorite_space", "add_space_member"]
+    #: Checked values for the step; sent back unchanged to run it.
+    args: dict[str, Any]
+    label_en: str
+    label_vi: str
+
+
+class AnswerPlanSkip(BaseModel):
+    """Something that was asked for but cannot be offered, and why."""
+
+    label: str
+    reason_en: str
+    reason_vi: str
+
+
+class AnswerPlan(BaseModel):
+    steps: list[AnswerPlanStep]
+    skipped: list[AnswerPlanSkip] = []
+
+
+class ExecuteStep(BaseModel):
+    type: Literal["create_space", "create_page", "favorite_space", "add_space_member"]
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecuteRequest(BaseModel):
+    steps: list[ExecuteStep] = Field(min_length=1, max_length=6)
+    lang: str | None = Field(default=None, max_length=8)
+
+
 class AnswerResult(BaseModel):
     #: ``False`` when the wiki does not answer the question; the pages in ``related`` may help.
     found: bool
@@ -446,9 +489,14 @@ class AnswerResult(BaseModel):
     #: What the answer stands on: ``wiki`` (cited pages), ``web`` (cited internet pages, with
     #: or without wiki pages), ``general`` (the model's own knowledge, not checked against
     #: anything) or ``clarify`` (a question put back to the person, claiming nothing).
-    basis: Literal["wiki", "web", "general", "clarify"] = "wiki"
+    #: ``app`` is an answer about the person's own account or about how WikiHub works.
+    basis: Literal["wiki", "web", "general", "clarify", "app", "plan"] = "wiki"
     #: The internet pages the answer cites, as ``[w1]``, ``[w2]``...
     web_sources: list[WebSource] = []
+    #: Buttons that open the pages the answer is about (settings, account, the user guide).
+    actions: list[AnswerAction] = []
+    #: Steps the assistant proposes to carry out once the person confirms (``basis`` is ``plan``).
+    plan: AnswerPlan | None = None
 
 
 #: How much of a conversation goes to the model: the latest turns, each kept short.
@@ -472,6 +520,8 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     #: The conversation so far, oldest first, ending with the question to answer.
     messages: list[ChatMessage] = Field(min_length=1, max_length=CHAT_MAX_MESSAGES * 2)
+    #: How much the person wants in the answer: the gist, the usual, or everything relevant.
+    detail: Literal["brief", "normal", "detailed"] = "normal"
 
     @model_validator(mode="after")
     def _ends_with_a_question(self) -> ChatRequest:

@@ -30,7 +30,7 @@ def _fresh_index_cache(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_with_no_ideas_there_are_no_weights(installed: AsyncSession) -> None:
-    assert await SearchService(installed)._idea_weights([]) == []
+    assert await SearchService(installed)._idea_weights([]) == ([], 0.0)
 
 
 async def test_passages_cannot_be_matched_when_the_query_cannot_be_embedded(

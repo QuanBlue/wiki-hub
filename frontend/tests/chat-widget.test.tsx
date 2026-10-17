@@ -196,7 +196,7 @@ describe("the chat widget", () => {
     expect(screen.getAllByText("billing")).toHaveLength(1); // not asked twice on screen
   });
 
-  it("stopping gives the question back to be edited", async () => {
+  it("stopping keeps the question and says the answer was cancelled", async () => {
     ai(true);
     streamChat.mockImplementation(
       (_m: unknown, { signal }: { signal: AbortSignal }) =>
@@ -213,8 +213,15 @@ describe("the chat widget", () => {
     await actor.type(box, "billing address{Enter}");
     await actor.click(await screen.findByRole("button", { name: "Stop" }));
 
-    expect(box).toHaveValue("billing address");
-    expect(screen.getByText("Ask your wiki")).toBeInTheDocument();
+    // The question stays where it was asked, with a note under it, and the box is free.
+    expect(screen.getByText("billing address")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "You cancelled this answer.",
+    );
+    expect(box).toHaveValue("");
+    // Giving up is not asking again: nothing is sent a second time.
+    expect(streamChat).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   });
 
   it("does not send while an input method is composing, nor on Shift+Enter", async () => {
@@ -520,15 +527,15 @@ describe("the versions of an edited question", () => {
     await askThenEdit(actor);
     first.unmount();
 
+    // The panel was open when the page went away, so it is open again (see the next test).
     render(<Shell userId="u1" />);
-    await openPanel(actor);
 
     expect(await screen.findByText("2 / 2")).toBeInTheDocument();
     await actor.click(screen.getByRole("button", { name: "Previous version" }));
     expect(screen.getByText(/First answer/)).toBeInTheDocument();
   });
 
-  it("stopping an edit that has no answer yet brings the earlier version back", async () => {
+  it("stopping an edit keeps it as a version, with the earlier one one arrow away", async () => {
     ai(true);
     streamChat.mockResolvedValueOnce(reply("First answer [1]."));
     streamChat.mockImplementationOnce(
@@ -550,10 +557,13 @@ describe("the versions of an edited question", () => {
     await actor.type(editor, "billing address{Enter}");
     await actor.click(await screen.findByRole("button", { name: "Stop" }));
 
-    // The question is back as it was, with its answer, and no version counter for one version.
+    // The edited question is there with its note, and the first version is one arrow away.
+    expect(screen.getByText("billing address")).toBeInTheDocument();
+    expect(screen.getByText("You cancelled this answer.")).toBeInTheDocument();
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Previous version" }));
     expect(screen.getByText("billing adress")).toBeInTheDocument();
     expect(screen.getByText(/First answer/)).toBeInTheDocument();
-    expect(screen.queryByText(/\d \/ \d/)).toBeNull();
   });
 
   it("keeps the question where it was when another version, with a longer or shorter answer, is shown", async () => {

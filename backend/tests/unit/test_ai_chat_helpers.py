@@ -77,7 +77,13 @@ def test_a_reply_that_is_nothing_once_checked_is_not_an_answer() -> None:
 async def test_a_rewrite_too_short_to_search_with_is_replaced_by_the_questions_as_asked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def reply(config: AIConfig, messages: list[dict[str, str]], *, max_tokens: int):
+    async def reply(
+        config: AIConfig,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int,
+        temperature: float = 0.2,
+    ):
         return ChatReply("x", None)
 
     monkeypatch.setattr(chat_module, "chat_with_usage", reply)
@@ -95,7 +101,13 @@ async def test_a_rewrite_too_short_to_search_with_is_replaced_by_the_questions_a
 async def test_a_rewrite_that_fails_is_replaced_by_the_questions_as_asked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def broken(config: AIConfig, messages: list[dict[str, str]], *, max_tokens: int):
+    async def broken(
+        config: AIConfig,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int,
+        temperature: float = 0.2,
+    ):
         raise ServiceUnavailableError("down")
 
     monkeypatch.setattr(chat_module, "chat_with_usage", broken)
@@ -108,3 +120,28 @@ async def test_a_rewrite_that_fails_is_replaced_by_the_questions_as_asked(
     )
 
     assert "billing" in query
+
+
+def test_a_unit_before_the_end_of_bold_text_is_not_taken_for_a_password() -> None:
+    # Seen live: "gió **10.7 km/h**, lượng mưa" lost "h**," to [hidden] and left the bold open.
+    from app.modules.ai.answer import scrub_secrets
+
+    text = "gió **10.7 km/h**, lượng mưa 0.1 mm"
+    assert scrub_secrets(text) == text
+    # A real user/password pair, with a symbol in the password, is still hidden.
+    assert "P@ssw0rd" not in scrub_secrets("account admin/P@ssw0rd! for the server")
+
+
+def test_the_rewrite_is_told_to_write_abbreviations_out() -> None:
+    from app.modules.ai.chat import _REWRITE_RULES
+    from app.modules.ai.skills import CONVERSATION_RULES
+
+    assert "tp Hcm" in _REWRITE_RULES and "abbreviations" in _REWRITE_RULES
+    assert "tp Hcm" in CONVERSATION_RULES
+
+
+def test_a_highlight_after_a_secret_looking_word_is_not_a_secret() -> None:
+    from app.modules.ai.answer import scrub_secrets
+
+    assert scrub_secrets("Mở ==Account > Password==.") == "Mở ==Account > Password==."
+    assert "hunter2" not in scrub_secrets("password=hunter2 and token: abc123")

@@ -81,14 +81,14 @@ class ChatReply:
 
 
 async def _complete(
-    config: AIConfig, messages: list[dict[str, str]], max_tokens: int
+    config: AIConfig, messages: list[dict[str, str]], max_tokens: int, temperature: float = 0.2
 ) -> tuple[dict, object]:
     url = config.base_url.rstrip("/") + "/chat/completions"
     body: dict = {
         "model": config.model,
         "messages": messages,
         "max_tokens": max_tokens,
-        "temperature": 0.2,
+        "temperature": temperature,
         # Reasoning models otherwise think for most of the budget, which is slow
         # (and is what makes a long page time out or get cut off). Models without
         # the setting ignore it; a gateway that rejects it is retried without.
@@ -129,7 +129,11 @@ async def _complete(
 
 
 async def chat_with_usage(
-    config: AIConfig, messages: list[dict[str, str]], *, max_tokens: int = 2000
+    config: AIConfig,
+    messages: list[dict[str, str]],
+    *,
+    max_tokens: int = 2000,
+    temperature: float = 0.2,
 ) -> ChatReply:
     """Return the assistant's reply and the tokens it cost, or raise ``ServiceUnavailableError``.
 
@@ -142,14 +146,14 @@ async def chat_with_usage(
     if not config.ready:
         raise ServiceUnavailableError("The AI assistant is not enabled.")
 
-    choice, raw = await _complete(config, messages, max_tokens)
+    choice, raw = await _complete(config, messages, max_tokens, temperature)
     usage = parse_usage(raw)
     for _ in range(_RETRIES):
         if choice.get("finish_reason") != "length":
             break
         logger.info("ai_reply_cut_off", max_tokens=max_tokens)
         max_tokens *= 2
-        choice, raw = await _complete(config, messages, max_tokens)
+        choice, raw = await _complete(config, messages, max_tokens, temperature)
         again = parse_usage(raw)
         if again is not None:
             usage = again if usage is None else usage + again

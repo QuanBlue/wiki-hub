@@ -72,7 +72,7 @@ you can already read, and has an hourly limit per person.
   opens a panel where you can ask and follow up (`Enter` sends, `Shift+Enter` adds a
   line). Answers stream in and cite wiki pages as in search. The panel can be dragged
   wider or narrower by its left edge, expanded to the whole page, and put away by
-  clicking outside it; the conversation is kept only in your browser. If an
+  clicking outside it; the conversation is kept only in your browser and is removed when you sign out or switch account. If an
   administrator turns on *Web search* (Administration > AI assistant), a public technical
   question the wiki does not cover may be looked up on the internet - you see the query,
   and the web pages used are listed under *From the web*; only that short query, stripped
@@ -86,6 +86,29 @@ you can already read, and has an hourly limit per person.
   Earlier messages count as context for a follow-up; the assistant asks when something it
   depends on (such as a city) is missing, reads real weather measurements for a named place, and
   reads the text of the top web pages (public addresses only) so it can quote figures from them.
+  Where to look is decided before an answer is written: asking for the internet, or a question
+  about now or the news, goes to the web first; a question your wiki clearly holds is answered
+  from it. When the configured search finds nothing (or only pages about something else),
+  free sources that need no key are tried - the open web, news headlines and Wikipedia - with
+  the same short query.
+  The chat also knows **your account and WikiHub**: ask *which spaces can I open?*, *what is
+  my role in OPS?*, *how do I change my password?* or *can it back up on a schedule?* and it
+  answers from your own spaces, roles and permissions and from the Help page, with buttons that
+  open the page you need (Administration pages only if you may open them).
+  It can also **do things for you, once you confirm**: *create a space abc and write a
+  Prometheus guide in it* shows a plan - create a space, write a page drafted by AI, add
+  someone to a space with a role, star a space - with *Confirm and run* and *Cancel*.
+  Nothing changes before that, it runs with your own permissions (a step you may not take is
+  listed as not offered), it stops at the first step that fails, and each finished step has an
+  *Open* link.
+  Under the box, *Detail* sets the length of answers: *Brief* (the key point), *Balanced* or
+  *Detailed* (steps, values, examples, limits). `Up` and `Down` in the box bring back the questions
+  you asked before; the caret goes to the end so you can edit and send. *Answer again* (under a
+  question) asks once more and keeps the earlier answer as a version. *Stop* keeps the question,
+  with what was written and a note that you cancelled it, and *Try again* asks it once more. The
+  panel stays open when you go to another page. Answers are laid out to be scanned - a bold first
+  sentence, numbered steps, tables, `code`, italics, quotes, and coloured Tip, Warning, Important
+  and Note boxes - and colour is kept for those.
 
 ## History and PDF export
 
@@ -143,8 +166,11 @@ four tabs:
 - **Web search** - off by default. Turn it on so the chat may look up public, technical
   questions on the internet, and choose the service: the AI gateway's own search (no
   extra key), Tavily, Brave Search or Serper (each needs its own key; the info buttons
-  explain how they differ). *Test search* tries it before you save. Only a short query,
-  stripped of addresses, e-mails and internal names, leaves WikiHub.
+  explain how they differ). *Test search* tries the service you chose on its own before you
+  save. Only a short query, stripped of addresses, e-mails and internal names, leaves WikiHub.
+  The free search behind a gateway is the least dependable: when it finds nothing, or pages about
+  something else, the chat falls back to free sources that need no key (open web, news headlines,
+  Wikipedia); a paid service is steadier.
 - **Skill management** - the instructions behind each feature, with one-click reset.
 
 Under **Server**, system administrators see the machine's load, memory, swap, disk and
