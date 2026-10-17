@@ -3,11 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnswerResult } from "@/lib/ai-answer";
 import {
   ChatStreamError,
+  clearStoredChats,
+  executePlan,
   loadChat,
   messagesToSend,
   openChat,
   parseEvents,
+  readDetail,
   saveChat,
+  saveDetail,
   streamChat,
   toggleChat,
   type ChatEntry,
@@ -99,7 +103,61 @@ describe("streamChat", () => {
     expect(String(url)).toMatch(/\/api\/v1\/ai\/chat$/);
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({
       messages: [{ role: "user", content: "address?" }],
+      detail: "normal",
     });
+  });
+
+  it("tells when what was shown is to be dropped for a search", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          streamed([
+            event("delta", { text: "A guess. " }) +
+              event("reset", {}) +
+              event("searching", { query: "kubernetes version" }) +
+              event("delta", { text: "The latest is 1.34 [w1]." }) +
+              event("done", { result: RESULT }),
+          ]),
+        ),
+    );
+    const seen: string[] = [];
+
+    await streamChat([{ role: "user", content: "q" }], {
+      onDelta: (text) => seen.push(`delta:${text}`),
+      onReset: () => seen.push("reset"),
+      onSearching: (query) => seen.push(`search:${query}`),
+    });
+
+    expect(seen).toEqual([
+      "delta:A guess. ",
+      "reset",
+      "search:kubernetes version",
+      "delta:The latest is 1.34 [w1].",
+    ]);
+  });
+
+  it("sends how much detail the person asked for", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(streamed([event("done", { result: RESULT })])),
+    );
+
+    await streamChat([{ role: "user", content: "q" }], { detail: "brief" });
+
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(String((init as RequestInit).body)).detail).toBe("brief");
+  });
+
+  it("remembers the level chosen, and falls back to the usual one", () => {
+    window.localStorage.clear();
+    expect(readDetail()).toBe("normal");
+    saveDetail("detailed");
+    expect(readDetail()).toBe("detailed");
+    window.localStorage.setItem("wikihub:chat-detail", "nonsense");
+    expect(readDetail()).toBe("normal");
+    window.localStorage.clear();
   });
 
   it.each([
@@ -577,5 +635,163 @@ describe("asking the chat panel to open", () => {
       ["open", {}],
       ["toggle", undefined],
     ]);
+  });
+});
+
+describe("clearing the conversations kept in the browser", () => {
+  const entries: ChatEntry[] = [{ id: "u", role: "user", content: "secret" }];
+  const keys = () =>
+    Object.keys(window.localStorage).filter((k) =>
+      k.startsWith("wikihub:chat:v1:"),
+    );
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    saveChat("a", { entries, slots: {} });
+    saveChat("b", { entries, slots: {} });
+    window.localStorage.setItem("wikihub:chat-width", "480");
+    window.localStorage.setItem("wikihub:chat-detail", "detailed");
+    window.localStorage.setItem("something-else", "x");
+  });
+
+  it("removes everyone's conversations and keeps what is not one", () => {
+    clearStoredChats();
+
+    expect(keys()).toEqual([]);
+    expect(window.localStorage.getItem("wikihub:chat-width")).toBe("480");
+    expect(window.localStorage.getItem("wikihub:chat-detail")).toBe("detailed");
+    expect(window.localStorage.getItem("something-else")).toBe("x");
+    loadChat("a"); // lifts the stop on writing for the tests that follow
+  });
+
+  it("can spare one person's, and then writing goes on", () => {
+    clearStoredChats("a");
+
+    expect(keys()).toEqual(["wikihub:chat:v1:a"]);
+    saveChat("a", { entries, slots: {} });
+    expect(keys()).toEqual(["wikihub:chat:v1:a"]);
+  });
+
+  it("stops a reply still arriving from bringing the chat back, until one is loaded", () => {
+    clearStoredChats();
+    saveChat("a", { entries, slots: {} });
+    expect(keys()).toEqual([]);
+
+    // The next person's conversation is loaded: writing is allowed again.
+    expect(loadChat("c").entries).toEqual([]);
+    saveChat("c", { entries, slots: {} });
+    expect(keys()).toEqual(["wikihub:chat:v1:c"]);
+  });
+
+  it("does not fail where storage cannot be read", () => {
+    vi.spyOn(Storage.prototype, "key").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+
+    expect(() => clearStoredChats()).not.toThrow();
+    vi.restoreAllMocks();
+    loadChat("a");
+  });
+});
+
+describe("executePlan", () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  const steps = [
+    {
+      type: "create_space" as const,
+      args: { name: "abc", key: "ABC" },
+      label_en: "Create",
+      label_vi: "Tạo",
+    },
+    {
+      type: "create_page" as const,
+      args: { space: "$1", title: "T" },
+      label_en: "Page",
+      label_vi: "Trang",
+    },
+  ];
+
+  it("sends only what each step needs and tells each one's end as it comes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        streamed([
+          event("step", { index: 1, ok: true, href: "/spaces/ABC" }),
+          event("step", { index: 2, ok: true, href: "/spaces/ABC/pages/t" }) +
+            event("done", { ok: true }),
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const seen: unknown[] = [];
+
+    const ok = await executePlan(steps, {
+      lang: "vi",
+      onStep: (step) => seen.push(step),
+    });
+
+    expect(ok).toBe(true);
+    expect(seen).toEqual([
+      { ok: true, href: "/spaces/ABC", error: undefined },
+      { ok: true, href: "/spaces/ABC/pages/t", error: undefined },
+    ]);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.lang).toBe("vi");
+    // The labels are for people: the server is sent the type and the checked values only.
+    expect(body.steps).toEqual([
+      { type: "create_space", args: { name: "abc", key: "ABC" } },
+      { type: "create_page", args: { space: "$1", title: "T" } },
+    ]);
+    expect(fetchMock.mock.calls[0][0]).toContain("/api/v1/ai/chat/execute");
+  });
+
+  it("reports a plan that stopped, and a refusal before it started", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          streamed([
+            event("step", { index: 1, ok: false, error: "no" }) +
+              event("done", { ok: false }),
+          ]),
+        )
+        .mockResolvedValueOnce(new Response("{}", { status: 429 }))
+        .mockRejectedValueOnce(new TypeError("offline")),
+    );
+
+    expect(await executePlan(steps, { lang: "en" })).toBe(false);
+    await expect(executePlan(steps, { lang: "en" })).rejects.toMatchObject({
+      failure: "rate_limited",
+    });
+    await expect(executePlan(steps, { lang: "en" })).rejects.toMatchObject({
+      failure: "error",
+    });
+  });
+
+  it("a stream that ends without its end is a failure, and silence times out", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          streamed([event("step", { index: 1, ok: true, href: "/x" })]),
+        )
+        .mockImplementationOnce(
+          (_url: unknown, init?: RequestInit) =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () =>
+                reject(new DOMException("aborted", "AbortError")),
+              );
+            }),
+        ),
+    );
+
+    await expect(executePlan(steps, { lang: "en" })).rejects.toMatchObject({
+      failure: "error",
+    });
+    await expect(
+      executePlan(steps, { lang: "en", idleTimeoutMs: 20 }),
+    ).rejects.toMatchObject({ failure: "timeout" });
   });
 });

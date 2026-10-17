@@ -1,0 +1,762 @@
+[
+ {
+  "id": "getting-started",
+  "title": "Bắt đầu & Điều hướng",
+  "category": "Workspace",
+  "keywords": [
+   "login",
+   "đăng nhập",
+   "search",
+   "tìm kiếm",
+   "navigation",
+   "điều hướng",
+   "home",
+   "trang chủ",
+   "sidebar",
+   "rail"
+  ],
+  "text": "<>\nChào mừng bạn đến với WikiHub - trung tâm tài liệu và tri\nthức nhóm. Để bắt đầu, hãy đăng nhập bằng tên đăng nhập hoặc địa chỉ email\nđã đăng ký của bạn.\nNhấn Ctrl + K (hoặc ⌘ + K trên\nmacOS) ở bất kỳ đâu trong ứng dụng để mở ngay Global Search.\nGõ từ khoá, tên space, hoặc tiêu đề trang để chuyển thẳng đến bất kỳ tài\nliệu nào.\nTìm kiếm tìm các từ của bạn bên trong tên/khoá/mô tả của space và tiêu\nđề/nội dung trang, bỏ qua dấu và chữ hoa (giam sat tìm ra\nGiám sát) và chấp nhận gõ sai nhẹ ở tiêu đề. Bạn có thể gõ cả một câu\nhỏi, ví dụ ip của Tessel Abbott là bao nhiêu? - các từ đệm sẽ bị bỏ\nqua. Từ càng hiếm càng quan trọng (trong tài khoản cloud của nuti thì\ntừ nuti quyết định), khớp ở tiêu đề được cộng thêm\nđiểm, và một trang chỉ được liệt kê nếu bao phủ phần lớn những gì bạn gõ. Các cặp\ntừ Việt - Anh phổ biến được coi là một - tài khoản tìm ra\nAccount, cài đặt tìm ra install - các từ tìm\nthấy được tô sáng trong kết quả, kèm đoạn chứa chúng dưới tiêu đề. Nếu quản trị\nviên đã đặt Tìm kiếm theo ý nghĩa (xem Trợ lý AI), tìm kiếm còn tìm trang\ntheo ý nghĩa, kể cả khi không trùng từ nào với bạn gõ. Nó hiện chưa\ntìm trong tên tệp đính kèm hay nội dung tệp đính kèm, và chỉ hiển thị những kết quả\nbạn có quyền xem. Không có bộ lọc theo ngày, space, hay tác giả.\nCác vùng giao diện chính:\nThanh điều hướng trên cùng: ô tìm kiếm (mở cùng một\nmodal Ctrl+K), liên kết Help\n(biểu tượng quyển sách, đưa bạn đến đây), nút chuyển đổi giao diện\nSáng/Tối, chuông thông báo (điều gì đã xảy ra với\nbạn - xem Thông báo), và menu người dùng của bạn.\nThanh sidebar bên trái: Home và\nSpaces (kèm Yêu cầu cho tài khoản gắn với hộp\nthư quản trị), sau đó là danh sách Most visited\ncủa bạn - một danh sách tự động, xếp hạng theo server dựa trên những\nspace bạn thực sự mở, không phải danh sách ghim thủ công - và, với\nadmin, một mục Administration.\nThu gọn Sidebar: nhấn nút thu gọn/mở rộng, hoặc kéo\ncạnh phải của sidebar qua khỏi độ rộng tối thiểu, để thu nhỏ về chỉ còn\nbiểu tượng. Lựa chọn của bạn được ghi nhớ trên thiết bị này.\n),\n},"
+ },
+ {
+  "id": "keyboard-shortcuts",
+  "title": "Tra cứu phím tắt bàn phím",
+  "category": "Workspace",
+  "keywords": [
+   "keyboard",
+   "bàn phím",
+   "shortcut",
+   "phím tắt",
+   "hotkey",
+   "ctrl",
+   "cmd",
+   "escape"
+  ],
+  "text": "<>\nKhông có command palette nào ngoài Search - chỉ có bộ phím tắt này. Những\nphím được đánh dấu Rebindable là mặc định mà bạn có thể\nthay đổi; xem Tuỳ chỉnh phím tắt bàn phím trong mục\nAccount.\nPhím tắt |\nỞ đâu & làm gì |\nRebindable |\nCtrl/⌘ + K |\nỞ bất kỳ đâu - mở hoặc đóng Global Search. Sau đó dùng ↑/↓ để di chuyển lựa chọn, Enter để mở, Esc để đóng. |\nCó |\nCtrl/⌘ + F |\nMột cách khác để mở Global Search, thay cho thanh tìm kiếm của trình duyệt. Bên trong bản xem trước tệp văn bản hoặc code, nó sẽ lấy tiêu điểm vào ô Search content của bản xem trước đó, để bạn tìm trong chính tệp đang xem. |\nCó |\nCtrl/⌘ + S |\nKhi đang chỉnh sửa trang - lưu ngay lập tức, chặn hộp thoại Save-page mặc định của trình duyệt. |\nCó |\nCtrl/⌘ + R |\nKhi đang chỉnh sửa - được chặn lại để hỏi “Reload site?” thay vì âm thầm bỏ các thay đổi chưa lưu. |\nCó |\nSpace |\nTrong bản xem trước video - phát hoặc tạm dừng, từ bất kỳ đâu trong bản xem trước chứ không chỉ khi trình phát đang được focus. Bị bỏ qua khi một nút hoặc ô nhập liệu đang được focus, nên không bao giờ chiếm phím của phần tử khác. |\nCó |\n/ |\nĐầu một dòng trống trong trình soạn thảo - mở menu slash command (xem Slash Commands). |\nKhông |\n← / → |\nTrong bản xem trước tệp PowerPoint - slide trước/tiếp theo (hoạt động cả bên trong lẫn bên ngoài chế độ Present toàn màn hình). |\nKhông |\nEsc |\nĐóng lớp phủ (overlay) đang được focus - một dialog, ngăn kéo sidebar trên di động, hoặc (được kiểm tra trước) chỉ riêng slideshow PowerPoint mà không đóng cửa sổ tệp đính kèm chứa nó. |\nKhông |\n),\n},"
+ },
+ {
+  "id": "spaces",
+  "title": "Spaces, Quyền truy cập & Vai trò",
+  "category": "Workspace",
+  "keywords": [
+   "favourite",
+   "favorite",
+   "yêu thích",
+   "members",
+   "thành viên",
+   "visibility",
+   "hiển thị",
+   "archive",
+   "lưu trữ",
+   "layers",
+   "permissions",
+   "quyền",
+   "roles",
+   "vai trò"
+  ],
+  "text": "<>\nMột Space là một khu vực tri thức riêng cho một nhóm,\nphòng ban hoặc dự án cụ thể. Mọi trang trong WikiHub đều thuộc về một\nspace.\n“Spaces giữ cho tài liệu của nhóm được tổ chức và tách biệt bằng các\nquy tắc truy cập riêng, quyền thành viên, và khoá space duy nhất.”\nCác khả năng quản lý Space:\nTạo một Space: Người dùng có quyền tạo space có thể\nnhấn Create Space trong danh bạ Spaces. Chỉ định một\nSpace Key duy nhất (vd: ENG,\nPRODUCT), tên space, mô tả, và emoji hoặc biểu tượng vector\ntuỳ chỉnh.\nKhả năng hiển thị của Space (đặt từ\nEdit space > Access & Permissions):\nOpen: mọi người dùng đã\nđăng nhập tự động có toàn quyền đọc và ghi -\nView, Add/Edit, Delete,\nDelete own và Move - không cần cấp riêng\ncho từng người. Hai quyền có thể cấu hình lại chính space,\nAdmin và Restrictions, không bao giờ được\ncấp miễn phí ở chế độ nào - chỉ Owner của space hoặc người được\nthăng cấp rõ ràng mới có.\nRestricted: mặc định\nkhông ai có gì cả - các bảng quyền bên dưới trở thành nguồn duy\nnhất quyết định ai có thể xem, sửa, xoá hoặc di chuyển bất cứ thứ\ngì.\nChuyển đổi giữa hai chế độ diễn ra ngay lập tức và không phá huỷ dữ\nliệu: các bảng quyền của một space Restricted vẫn giữ nguyên cấu hình\ntrong khi space ở chế độ Open, nên việc bật/tắt qua lại không bao giờ\ncó nghĩa là phải xây dựng lại từ đầu.\nSpace Owner: mỗi space luôn có ít nhất một Owner\n(mặc định là người tạo) - một Administrator được bảo vệ, không thể bị\nxoá xuống còn 0, để một space không bao giờ rơi vào tình trạng không\nai quản lý được dù bảng quyền bên dưới thế nào. Quản lý danh sách này\ntừ Edit space > General; chỉ một Owner hiện có mới\ncó thể thêm hoặc xoá Owner khác. Một space có thể có nhiều Owner cùng\nlúc, và mỗi Owner đều bỏ qua mọi giới hạn ở cấp trang giống như quyền\nAdmin.\nQuyền theo từng user & từng nhóm: thay vì một danh\nsách vai trò cố định, WikiHub cấp trực tiếp các khả năng cụ thể cho\nmột user hoặc một nhóm - View, Add/Edit,\nDelete, Delete own, Restrictions\n, Move, và Admin - từ tab\nEdit space > Access & Permissions của chính\nspace đó, hoặc từ Administration > Spaces (xem\nQuyền truy cập Space & Quyền hiệu lực để biết bức tranh đầy\nđủ, bao gồm cách kiểm tra quyền đã phân giải của bất kỳ ai). Xuất trang\ntự động theo View, không cần cấp riêng. Khi space đang ở\nchế độ Open, các bảng hiển thị All thay vì ô checkbox cho\nnăm quyền mà Open đã cấp sẵn cho mọi người - Admin và\nRestrictions vẫn là checkbox sống bất kể chế độ nào, vì\nđó là cách duy nhất để ai đó trở thành Admin hoặc thu hẹp phạm vi ai\nđược giới hạn một trang.\nMột quyền cấp trực tiếp ghi đè quyền của nhóm, chứ không cộng\nthêm: các nhóm bạn thuộc về vẫn kết hợp với nhau như bình\nthường, nhưng ngay khi một user có dòng quyền riêng của mình\ntrên một space, dòng đó sẽ quyết định mọi thứ cho họ - tư cách thành\nviên nhóm không còn đóng góp gì thêm. Đây là cách một thành viên trong\nmột nhóm rộng (ví dụ mọi người đều có Add/Edit) có thể bị\nthu hẹp chỉ còn View, bằng cách cấp cho người đó một dòng\nquyền riêng nhỏ hơn. Admin là ngoại lệ duy nhất: quyền\nAdmin của một nhóm luôn được áp dụng, để một space không\nbao giờ bị khoá mà không có admin nào tiếp cận được.\nChỉnh sửa một space: nhấn Edit space\n(biểu tượng bút chì ở chân sidebar của space, chỉ admin) để có ba tab:\nGeneral (tên, Space Owner, và giới hạn kích thước tệp\nđính kèm tuỳ chọn theo space, ghi đè mặc định của workspace),\nAccess & Permissions (General access cộng các\nbảng ở trên), và Space settings & Danger zone (Lưu\ntrữ/Khôi phục space, hoặc Xoá vĩnh viễn - xoá vĩnh viễn chỉ khả dụng từ\nAdministration > Spaces, không phải ở đây).\nĐánh dấu yêu thích: Nhấn biểu tượng ★ Star\ntrên tiêu đề của space để thêm vào mục yêu thích. Các space đã đánh\ndấu yêu thích xuất hiện trong My favorite spaces ở\ntrang Home, và trong tab Favorite của danh bạ Spaces (\n/spaces?tab=starred). Tab Own của danh\nbạ lại khác - nó liệt kê các space bạn sở hữu (xem Space Owner\nở trên), không phải các space bạn đã đánh dấu sao.\nDanh sách Most visited riêng của sidebar là tự động\nvà độc lập - nó xếp hạng những space bạn thực sự mở nhiều nhất, không\nliên quan đến những gì bạn đã đánh dấu sao.\n),\n},"
+ },
+ {
+  "id": "ask-ai-from-search",
+  "title": "Hỏi AI từ ô tìm kiếm",
+  "category": "Workspace",
+  "keywords": [
+   "ai",
+   "hỏi",
+   "câu hỏi",
+   "trả lời",
+   "tìm kiếm",
+   "nguồn",
+   "trích dẫn",
+   "trợ lý"
+  ],
+  "text": "<>\nTìm kiếm nhanh không chỉ liệt kê trang mà còn trả lời được câu hỏi. Mở tìm kiếm (Ctrl+K\nhoặc thanh tìm kiếm), gõ một câu hỏi như ip của hệ thống DMS SaaS là gì? rồi bấm\nHỏi AI ở đầu kết quả, hoặc nhấn Ctrl+Enter. Enter thường vẫn\nmở kết quả đang chọn. Dòng này chỉ hiện khi quản trị viên đã kết nối AI và câu hỏi có ít nhất\nhai ký tự.\nCâu trả lời ngắn, mỗi ý có một dấu số như 1. Bấm dấu số để mở\nđúng trang nó lấy ra. Danh sách nhiều thứ (hệ thống kèm địa chỉ, tài khoản, máy chủ) được\ntrả về dạng bảng. Bên dưới, Nguồn liệt kê các trang mà dấu số trỏ tới, mỗi trang\nmột dòng - rê chuột vào để xem phần của trang đã được đọc. Cũng đã đọc được gập\nlại phía dưới và chỉ gồm các trang đã xem qua nhưng không được trích dẫn, nên không thể nhầm\nvới nguồn.\nQuay lại: Kết quả hoặc Esc về kết quả thường (Esc\nlần nữa đóng tìm kiếm). Sửa câu hỏi sẽ thoát khỏi câu trả lời, vì nó thuộc về câu hỏi đã được\nviết cho.\nNó đọc gì: chỉ các trang bạn mở được. Quyền trang và quyền space áp dụng đúng\nnhư tìm kiếm thường, nên trang bị hạn chế không bao giờ được đọc thay bạn. Mật khẩu, token và\nkey được thay bằng [hidden] trước khi AI đọc và cả trong những gì nó viết - hãy mở\ntrang nguồn để tự xem.\nKhi không có câu trả lời, nó nói rõ và gợi ý các trang có thể giúp ích. WikiHub\nkhông bao giờ hiện câu trả lời không dẫn được về trang nào: câu trả lời không có dấu trang\nhợp lệ sẽ bị bỏ.\nChi phí: một câu hỏi dùng chung giới hạn theo giờ với các tính năng AI khác.\nHỏi lại đúng điều đó trong vòng một giờ, khi các trang không đổi, được trả từ bản đã lưu và\nkhông tốn gì. Câu hỏi không khớp trang nào sẽ không tới mô hình. Quản trị viên thấy phần này\nở mục Hỏi đáp có nguồn trong thống kê dùng AI.\nAI có thể đọc nhầm một trang. Hãy mở các nguồn trước khi dựa vào câu trả lời cho việc quan trọng.\n),\n},"
+ },
+ {
+  "id": "chat-with-ai",
+  "title": "Chat với trợ lý AI",
+  "category": "Workspace",
+  "keywords": [
+   "ai",
+   "chat",
+   "trợ lý",
+   "câu hỏi",
+   "hỏi tiếp",
+   "nguồn",
+   "tìm kiếm web",
+   "kiến thức chung"
+  ],
+  "text": "<>\nKhi quản trị viên đã kết nối AI, nút Chat với AI (biểu tượng tia sáng) xuất hiện trên\nthanh trên cùng của mọi trang, cạnh chuông thông báo. Nó mở một khung bên phải để bạn hỏi và hỏi tiếp: câu như\ncòn địa chỉ của nó? được hiểu dựa trên các tin nhắn trước. Câu trả lời hiện dần\ntừng chữ; Enter để gửi (Shift+Enter xuống dòng).\nKích thước: kéo cạnh trái của khung để rộng ra hoặc hẹp lại (bấm đúp vào\ncạnh để về mặc định), dùng nút mở rộng để chiếm cả trang, hoặc dùng phím mũi tên khi đang\nchọn cạnh. Bấm ra ngoài khung thì khung đóng lại; cuộc trò chuyện vẫn còn.\nCâu trả lời đến từ đâu: trước hết là wiki của bạn, với các dấu số như\n1 mở trang tương ứng và danh sách Sources, giống như trong tìm\nkiếm. Thông tin về hệ thống, tài khoản, con người của bạn chỉ lấy từ wiki.\nInternet: nếu quản trị viên bật tìm kiếm web, chat có thể tra cứu câu hỏi\ncông khai, kỹ thuật mà wiki chưa có. Bạn sẽ thấy Đang tìm trên web: ... kèm\nđúng câu truy vấn, và câu trả lời liệt kê các trang trong mục Từ web với dấu\nnhư w1, mở ở tab mới. Chỉ câu truy vấn ngắn đó rời khỏi WikiHub - không bao\ngiờ là trang wiki - và địa chỉ, e-mail, tên máy chủ nội bộ được loại khỏi truy vấn trước.\nNếu dịch vụ tìm kiếm không thấy gì, hoặc chỉ ra các trang về chuyện khác (loại miễn phí\nsau gateway đôi khi như vậy), WikiHub thử các nguồn miễn phí không cần khóa - web mở\n(Bing, DuckDuckGo), tiêu đề Google News và Wikipedia - rồi đọc nội dung các trang tìm được,\nvẫn chỉ gửi đi câu truy vấn ngắn đó.\nHỏi tiếp và số liệu: các tin nhắn trước được dùng làm ngữ cảnh, nên\ntôi ở Cam Ranh sau câu thời tiết hôm nay thế nào? vẫn được hiểu.\nKhi câu hỏi thiếu điều nó phụ thuộc vào (một thành phố), trợ lý sẽ hỏi lại trước. Với thời\ntiết, nó đọc số đo thật (nhiệt độ, độ ẩm, gió, khả năng mưa) và nêu rõ nguồn; với các câu\nhỏi khác, nó còn đọc nội dung của vài trang web đầu tiên chứ không chỉ phần mô tả, nên có\nthể trích được số liệu trên đó. Chỉ tải trang từ địa chỉ công khai.\nKiến thức chung: khi cả wiki lẫn web đều không trả lời được và câu hỏi\nmang tính tổng quát, AI có thể trả lời bằng kiến thức của nó. Câu trả lời như vậy luôn có\nnhãn Chưa được kiểm chứng với wiki hay trang web nào; hãy xem như gợi ý.\nGiải thích và dịch: bôi đen một từ, cụm từ hay câu trong câu hỏi hoặc câu\ntrả lời, nút AI nhỏ sẽ hiện ở cuối đoạn chọn, giống như trong trang. Nó giải thích (mặc định\nbằng tiếng Việt) hoặc dịch; nút quả cầu đổi ngôn ngữ. Chỉ khi bạn chọn thì mới gửi đi, và hỏi\nlại cùng nội dung thì không tốn thêm.\nChat biết tài khoản của bạn. Hỏi tôi có quyền truy cập những space nào?,\nvai trò của tôi trong OPS là gì?, đổi mật khẩu thế nào? hoặc\nsao tôi không xem được trang này? — chat trả lời từ space, vai trò và quyền\ncủa chính bạn cùng cách WikiHub hoạt động, kèm các nút dưới câu trả lời để mở nhanh trang cần\nđến (Space, tài khoản, hướng dẫn sử dụng; với quản trị viên còn có trang Quản trị tương ứng).\nChat chỉ đọc tài khoản của bạn, và chỉ hiện nút Quản trị cho người được phép mở.\nChat làm giúp bạn. Hỏi tạo space abc và viết trang hướng dẫn\nPrometheus trong đó và chat đưa ra một kế hoạch ngắn - ví dụ\nTạo space \"abc\", rồi Tạo trang \"Hướng dẫn\nPrometheus\" (nội dung do AI soạn) - kèm nút Xác nhận và thực hiện\nvà Hủy. Chưa có gì thay đổi cho đến khi bạn xác nhận, và việc chạy bằng quyền\ncủa chính bạn: việc bạn không tự làm được thì chat cũng không làm, bước nào bạn không\nđược phép sẽ được liệt kê là không thực hiện được. Chat tạo được space và trang, thêm\nngười vào space kèm vai trò, và đánh dấu yêu thích space. Mỗi bước xong có liên kết\nMở. Nếu một bước lỗi thì các bước sau không chạy.\nChat đọc hướng dẫn này. Câu hỏi về cách WikiHub hoạt động (sao lưu, phân\nquyền, tải tệp, phím tắt...) được trả lời từ các mục của trang Trợ giúp. Nếu tính năng\nthuộc về quản trị viên mà bạn không phải, chat sẽ nói rõ và cho biết nên hỏi ai.\nChat tự quyết định tìm ở đâu. Khi cho phép dùng internet, câu hỏi về\nthời điểm hiện tại hoặc tin tức (hôm nay, hôm qua, ngày tháng, giá cả, thời tiết) hay\ncâu mà wiki của bạn không rõ ràng có sẽ được tìm trên web trước khi viết câu trả lời; câu\nvề wiki và tài khoản của bạn thì trả lời từ đó. Câu trả lời không đi đến đâu được xem lại\nmột lần, và lựa chọn cho một câu hỏi được nhớ 10 phút nên hỏi lại sẽ đi cùng đường.\nDễ đọc hơn. Câu trả lời được trình bày để lướt nhanh: câu đầu in đậm\nnêu đáp án, các bước thành danh sách đánh số, bảng khi nhiều thứ có nhiều thông tin, code\ncho thứ cần gõ, chữ nghiêng cho thuật ngữ, khung trích dẫn cho lời lấy từ trang, hộp\nlưu ý có màu (Mẹo, Cảnh báo, Quan trọng, Ghi chú) cho điều không được bỏ sót, và tô nền cho\ngiá trị quan trọng nhất. Màu chỉ dành cho những chỗ đó, phần còn lại để thường.\nChat luôn mở. Khung chat vẫn mở khi bạn sang trang khác - kể cả qua các nút\nchat đưa ra - cùng cuộc trò chuyện bên trong. Chỉ đóng khi bạn bấm ra ngoài, bấm Esc\ntrong khung hoặc bấm dấu X.\nMức chi tiết. Dưới ô nhập, chọn Ngắn gọn (chỉ ý chính),\nVừa phải hoặc Chi tiết (các bước, giá trị, ví dụ và giới hạn).\nLựa chọn được nhớ trong trình duyệt này và áp dụng cho câu hỏi tiếp theo; muốn xem câu\ntrả lời cũ ở mức khác, đổi mức rồi bấm Trả lời lại ở câu hỏi.\nCâu hỏi trước đó. Trong ô nhập, bấm ↑ để nạp lại câu hỏi\nvừa hỏi, bấm tiếp để lùi thêm, và ↓ để đi lên các câu sau - tới cuối thì quay\nvề phần bạn đang gõ dở. Con trỏ nằm ở cuối câu nên bạn sửa được rồi gửi. Với câu hỏi\nnhiều dòng, mũi tên di chuyển trong văn bản.\nCuộc trò chuyện chỉ lưu trong trình duyệt này, theo tài khoản của bạn, và bị xóa\nkhi bạn đăng xuất hoặc đổi tài khoản. Dùng\nChat mới để xóa. Dừng hủy câu trả lời: câu hỏi vẫn còn, kèm\nphần đã viết và ghi chú bạn đã hủy, và Thử lại hỏi lại lần nữa. Rê chuột vào một câu hỏi và bấm Trả lời lại để nhận câu trả lời\nmới; câu trả lời cũ vẫn còn, dùng mũi tên 1 / 2 để quay lại. Từ một câu trả lời trong tìm kiếm, Tiếp tục trong chat sẽ chuyển\nsang chat.\nQuản trị viên bật tại Quản trị, Trợ lý AI, Tìm kiếm web: chọn\ntìm kiếm của chính gateway AI (không cần key), Tavily, Brave Search hoặc Serper (dán key) và\nbấm Thử tìm kiếm, nút này chỉ thử dịch vụ bạn đã chọn. Mặc định tắt. Dịch vụ\ntrả phí ổn định hơn loại miễn phí sau gateway.\nAI có thể sai, trang web cũng có thể sai. Hãy mở các nguồn trước khi dựa vào câu trả lời cho\nviệc quan trọng.\n),\n},"
+ },
+ {
+  "id": "my-work",
+  "title": "Tìm các trang bạn đã ghé thăm, chỉnh sửa hoặc lưu",
+  "category": "Workspace",
+  "keywords": [
+   "recently visited",
+   "recently worked on",
+   "history",
+   "lịch sử",
+   "my work",
+   "saved",
+   "đã lưu",
+   "activity",
+   "hoạt động"
+  ],
+  "text": "<>\nNgoài luồng hoạt động toàn workspace trên Home, WikiHub\ncòn giữ ba màn hình lịch sử cá nhân của riêng bạn:\nCác trang này đã tồn tại và hoạt động ngay hôm nay, nhưng chưa có mục\nmenu nào trỏ đến chúng - hãy đánh dấu (bookmark) trang nào bạn dùng.\nRecently visited /recent/visited\n: các trang bạn đã mở trên thiết bị này, mới nhất trước. Chỉ lưu trong\ntrình duyệt này, giống Save for later bên dưới.\nRecently worked on /recent/worked-on\n: các trang bạn đã tự tạo hoặc chỉnh sửa. Danh sách này được lấy từ\nserver, nên giống nhau trên mọi thiết bị bạn đăng nhập.\nSaved for later /saved\n: mọi thứ bạn đã đánh dấu bằng nút Save for later (xem\nThích, lưu & chia sẻ một trang bên dưới).\nBản thân Home (logo, hoặc Home trong\nsidebar) hiển thị một góc nhìn khác, cho toàn workspace:\nAll updates - mọi trang mà bất kỳ ai đã chỉnh sửa, được\nnhóm theo tác giả - cùng với các space yêu thích của bạn ở bảng bên\nphải.\n),\n},"
+ },
+ {
+  "id": "page-engagement",
+  "title": "Thích, lưu & chia sẻ một trang",
+  "category": "Workspace",
+  "keywords": [
+   "like",
+   "thích",
+   "save for later",
+   "share",
+   "chia sẻ",
+   "bookmark",
+   "page access",
+   "restrict",
+   "restriction",
+   "giới hạn"
+  ],
+  "text": "<>\nBên dưới tiêu đề của một trang, thanh công cụ của trang mang theo một số\nthao tác nhỏ, tách biệt với việc chỉnh sửa:\nLike: nhấn biểu tượng ngón tay cái phía trên phần bình luận,\ncạnh số bình luận, để đánh dấu một trang là hữu ích. Số lượt thích hiển thị cho\nmọi người và biểu tượng tô xanh khi bạn đã thích - một tín hiệu nhẹ nhàng cho biết\nnội dung nào thực sự được đọc, không phải công cụ kiểm duyệt. Nhấn vào\ncon số cạnh ngón tay cái để xem ai đã thích trang. Nhấn vào số bình\nluận bên cạnh để nhảy tới ô viết bình luận - ô này luôn dính ở đáy màn hình khi bạn\nđọc, nên có thể bình luận từ bất kỳ đâu trên trang.\nSave for later: nhấn nút ngôi sao\nSave for later để đánh dấu một trang.\nTrạng thái Saved-for-later được lưu trong trình duyệt này, không\nphải tài khoản của bạn - lưu trên laptop sẽ không hiện trên điện\nthoại, và xoá dữ liệu trình duyệt cũng xoá luôn. Mọi thứ bạn đã lưu\nđược liệt kê tại /saved.\nShare: nhấn Share rồi chọn một tuỳ chọn.\nSao chép liên kết đưa liên kết trực tiếp của trang vào clipboard, sẵn\nsàng dán vào chat hoặc email. Chia sẻ cho người khác… mở bảng chọn: tìm\ntheo tên hoặc username, chọn một hoặc nhiều đồng nghiệp rồi nhấn\nChia sẻ - mỗi người nhận được thông báo rằng bạn đã chia sẻ trang, và\nbấm vào sẽ mở trang đó. Chia sẻ không cấp thêm quyền: với space hoặc trang bị giới hạn,\nngười không mở được trang vẫn hiện trong danh sách nhưng bị làm mờ, có ổ khoá và dòng\nKhông có quyền truy cập trang hoặc space này, và không chọn được. Mỗi người\nđược chia sẻ cộng một vào số lượt chia sẻ cạnh số like và bình luận dưới trang; bấm vào\ncon số đó để chia sẻ tiếp. Trang tổng quan của space chỉ có Share để sao\nchép liên kết.\nTL;DR: nhấn TL;DR trên thanh công cụ để xem bản tóm tắt\nngắn do AI viết, dạng Markdown (từ khoá in đậm, mã, danh sách), viết bằng cùng ngôn ngữ\nvới trang. Bản tóm tắt được lưu cho đến khi trang thay đổi nên mở lại là có ngay; Tóm tắt lại yêu cầu\nmột bản mới. Bản tóm tắt viết bằng ngôn ngữ của chính trang; nút chuyển ở phía trên đổi\nsang English hoặc Tiếng Việt (và Ngôn ngữ trang\nđể quay lại). Chuyển ngôn ngữ chỉ dịch bản tóm tắt bạn đã có, nên nhanh và nhẹ cho AI;\nchỉ khi nhấn Tóm tắt lại thì AI mới đọc lại trang và viết bản mới. Địa chỉ web trong bản tóm tắt là link bấm được, và tên một tệp đính kèm\ncủa trang sẽ mở tệp đó - để xem, và để sửa nếu bạn có quyền sửa trang. Nút\ni cạnh tiêu đề nhắc rằng AI có thể bỏ sót chi tiết.\nAI chỉ đọc các trang bạn vốn đã mở được, và mỗi người chỉ được tạo một số bản tóm tắt\nmới giới hạn mỗi giờ. Khi quản trị viên chưa kết nối endpoint, hộp thoại sẽ cho biết\ntrợ lý AI chưa được thiết lập.\nPage access: trên một trang bạn có thể quản lý, nhấn\nPage access để mở cài đặt General access\n- Open hoặc Restricted - cùng bảng bên dưới,\ntrông khác nhau tuỳ vào lựa chọn:\nOpen (mặc định) liệt kê mọi người và mọi nhóm mà\nspace đã cấp quyền truy cập, với quyền View/Edit hiện tại của họ\nđối với trang này được đánh dấu sẵn - không cần tìm kiếm hay thêm\ngì. Bỏ đánh dấu một ô chỉ chặn riêng người hoặc nhóm đó; mọi người\nkhác không bị ảnh hưởng. Edit bị làm mờ với bất kỳ ai mà vai trò\ntrong space của họ không bao gồm quyền đó, vì một giới hạn trang\nchỉ thu hẹp ai được sửa trong số những người space đã cho phép sửa\n- nó không bao giờ cấp thêm quyền sửa ngoài phạm vi đó. Cả View và\nEdit đều bị làm mờ (và đánh dấu sẵn) đối với một Admin của space,\nvì Admin bỏ qua mọi giới hạn ở cấp trang - chặn ở đây sẽ không có\ntác dụng gì, nên ô đó bị khoá thay vì đưa ra một điều khiển vô\nnghĩa.\nRestricted thay vào đó bắt đầu từ một danh sách\ncho phép trống, bạn tự xây dựng bằng cách tìm và thêm người hoặc\nnhóm cụ thể - bất kỳ ai không được thêm vào sẽ không thể thấy\ntrang này, bất kể vai trò của họ trong space.\nGiới hạn View và Edit áp dụng xuống mọi trang con. Trang con không có\ngiới hạn riêng sẽ đi theo trang cha: ai xem hoặc sửa được trang cha thì\ncũng xem hoặc sửa được trang con, ngoài ra không ai khác. Mở\nPage access trên trang con như vậy sẽ thấy General access là\nKế thừa page cha, kèm tên trang cha, và chỉ liệt kê những người\ntrang cha cho phép, chỉ để xem - quyền Xem và Sửa đều theo trang cha.\nChọn Hạn chế (danh sách riêng) để cho page này danh sách của\nriêng nó - lần đầu sẽ mở bảng nháp điền sẵn từ trang cha, chỉ áp dụng khi bạn\nbấm Lưu danh sách. Từ đó danh sách này quyết định cho page (và các\ntrang con của nó): người có trong đó xem và sửa được dù trang cha chưa từng cho\nhọ vào, còn người chỉ có trong danh sách của trang cha thì không vào được. Các\nchặn riêng đặt trên các trang phía trên vẫn áp dụng.\nMọi trang con đều có công tắc Kế thừa phân quyền từ page cha,\nmặc định bật. Tắt đi thì trang sẽ sao chép quyền của trang cha trước - lúc\nđó không ai được thêm hay mất quyền - rồi giữ thiết lập riêng: thêm người mà\ntrang cha chưa cho phép, hoặc bớt người. Các trang con của nó sẽ theo nó,\nkhông theo các trang phía trên. Bật lại công tắc (có xác nhận) sẽ xóa thiết\nlập riêng và theo lại trang cha.\nDòng ở cuối mỗi page trả lời câu hỏi đó, ví dụ\n11 người dùng và 1 nhóm xem được page này, đã tính cả giới hạn\nriêng của page lẫn phần kế thừa. Khi space Open và không có gì giới hạn, dòng\nnày hiện Tất cả người dùng và tất cả nhóm xem được page này. Trang\ntổng quan của space hiện thông tin tương tự cho cả space.\nKhông bảng nào có thể nhấn được checkbox cho đến khi bạn nhấn nút\nEdit riêng của bảng đó - một cú nhấn nhầm không thể thay\nđổi quyền của ai. Nhấn Done khi bạn hoàn tất với bảng đó\nđể khoá lại.\nBật/tắt General access bao nhiêu lần tuỳ thích - danh sách cho phép\nRestricted hoặc các chặn Open bạn đã cấu hình sẽ luôn quay lại y\nnguyên mỗi lần, thay vì phải xây dựng lại từ đầu. Reset to\ndefault (có xác nhận trước) là cách chủ động để thực sự xoá\nchế độ đang hoạt động: Restricted đặt lại về danh sách cho phép\ntrống, Open xoá mọi chặn.\nNó chỉ cho phép bạn tìm và chọn người hoặc nhóm mà space đã cấp\nquyền truy cập - giới hạn một trang cho ai đó còn bị chặn ngay từ\ncửa space sẽ chẳng làm được gì ngoài gây nhầm lẫn. Bất kỳ ai khác bạn\ntìm vẫn hiện ra, bị làm mờ và đánh dấu Not added to space\n; hãy thêm họ vào Access & Permissions của space trước,\nrồi quay lại đây. Trong space Open, mọi người đều đã\ncó quyền truy cập nên mọi người dùng và nhóm đều chọn được ngay. Nếu ai đó sau này bị xoá khỏi space hoàn toàn, mọi\ngiới hạn hoặc chặn ở cấp trang nhắc đến họ sẽ được dọn dẹp tự động.\nTrường hợp thực tế: một space vẫn mở cho cả nhóm, nhưng riêng trang ghi\nlại phân tích sự cố (postmortem) hoặc chính sách lương thưởng được\nchuyển sang Restricted và giới hạn chỉ cho những người cần.\nHoặc ngược lại - một trang vẫn Open, nhưng một người không\nnên thấy nó (một quản lý đang xem phản hồi về chính họ) - nên chỉ cần bỏ\nđánh dấu View của riêng người đó.\n),\n},"
+ },
+ {
+  "id": "page-comments",
+  "title": "Bình luận, phản hồi & lượt thích",
+  "category": "Workspace",
+  "keywords": [
+   "comment",
+   "bình luận",
+   "reply",
+   "phản hồi",
+   "trả lời",
+   "like",
+   "thích",
+   "mention",
+   "nhắc",
+   "@",
+   "thảo luận"
+  ],
+  "text": "<>\nMỗi trang có phần Bình luận bên dưới nội dung (phần này ẩn khi bạn đang\nchỉnh sửa trang). Bất kỳ ai xem được trang đều có thể bình luận, phản hồi và\nthích - bạn không cần quyền chỉnh sửa.\nViết và phản hồi:\nGõ vào ô rồi nhấn Enter (hoặc bấm Bình luận) để gửi;\nShift+Enter để xuống dòng. Văn bản thường dùng được, **đậm**, _nghiêng_,\n`code` và liên kết cũng vậy.\nChọn Phản hồi dưới một bình luận để trả lời nó. Các phản hồi nằm dưới\nbình luận mà chúng trả lời, theo dạng cây; bình luận có phản hồi hiện nút\nXem N phản hồi để mở và Ẩn phản hồi để gập lại. Chuỗi\nquá sâu sẽ ngừng thụt vào sau vài cấp để vẫn dễ đọc. Bình luận dài (ví dụ một đoạn log)\nchỉ hiện vài dòng đầu kèm nút Xem thêm màu xanh để mở toàn bộ.\nGõ @ và một cái tên để nhắc đến ai đó: chọn bằng phím\nmũi tên và Enter, hoặc bấm chuột. Người được nhắc nhận được thông báo. Với\nspace hoặc trang bị giới hạn, người không có quyền xem vẫn hiện trong danh sách nhưng bị\nlàm mờ, có biểu tượng ổ khoá và dòng Không có quyền xem trang này - không chọn\nđược cho đến khi họ được cấp quyền.\nThích, sửa và xoá:\nBấm Thích dưới bình luận để thích (chữ chuyển xanh); bấm lại để rút\nlượt thích. Khi bình luận đã có lượt thích, một huy hiệu ngón tay cái màu xanh kèm con số\nhiện ở cuối hàng - bấm vào để xem ai đã thích. Tác giả bình luận được báo một lần.\nRê chuột vào bình luận rồi mở menu ⋯ (luôn hiện trên màn hình cảm ứng) để\nSửa bình luận của mình - sau đó bình luận hiện đã chỉnh sửa.\nCũng trong menu đó có Xoá cho bình luận của bạn. Chủ sở hữu space, quản trị viên\nspace và quản trị viên hệ thống xoá được bình luận của bất kỳ ai. Xoá một bình luận\ncũng xoá toàn bộ phản hồi của nó, và WikiHub sẽ hỏi xác nhận trước.\nSắp xếp và lọc:\nKhi page có từ hai bình luận trở lên, một menu ở cuối hàng like / bình luận (ban đầu\nhiện Cũ nhất) cho sắp xếp theo Cũ nhất,\nMới nhất hoặc Nhiều like nhất - số like tính trên cả\nluồng. Mỗi lựa chọn có mô tả ngắn.\nCũng menu đó cho lọc theo Nhắc tới tôi hoặc\nBình luận của tôi, kèm số lượng. Luồng được giữ nguyên khi có bất kỳ\nbình luận nào khớp, và các phản hồi khớp tự mở ra. Chọn lại một kiểu sắp xếp để hiện tất cả.\nBạn được thông báo khi có người phản hồi bình luận của bạn, nhắc đến bạn, thích bình luận\ncủa bạn, hoặc bình luận trong một trang do bạn tạo - bấm vào thông báo trong\nchuông thông báo, WikiHub sẽ mở trang, tự mở luồng nếu đó là một phản\nhồi, cuộn bình luận vào giữa màn hình và làm nổi bật nó trong giây lát. Cách này vẫn hoạt\nđộng khi bạn đang ở sẵn trang đó. Bình luận được đưa vào sao lưu và khôi phục.\n),\n},"
+ },
+ {
+  "id": "page-actions-menu",
+  "title": "Menu “⋯”: di chuyển, độ rộng xem, xuất & xoá",
+  "category": "Workspace",
+  "keywords": [
+   "move page",
+   "di chuyển trang",
+   "full width",
+   "delete page",
+   "xoá trang",
+   "page tree",
+   "reorganize",
+   "more actions"
+  ],
+  "text": "<>\nNhấn biểu tượng ⋯ (More page actions) cạnh\nEdit để thấy mọi thứ không phải chỉnh sửa trực tiếp:\nMove page: chọn một Space đích và một\nParent page (có thể tìm kiếm, hoặc\nTop-level page) để chuyển một trang đến bất kỳ đâu - kể\ncả sang một space khác. Các trang con di chuyển theo, và bộ chọn sẽ\nkhông cho bạn thả một trang vào bên trong một trang con cháu của chính\nnó.\nPage history: mở dòng thời gian các phiên bản (xem\nLịch sử phiên bản, So sánh trực quan & Xuất tệp).\nImport from file…: chuyển tài liệu thành các trang\ncon mới (xem Nhập tài liệu thành trang mới trong Attachments\n& Media).\nView → Full width /\nNormal width: mở rộng cột đọc, hữu ích cho các trang\ndày đặc bảng biểu hoặc ảnh chụp màn hình.\nExport → HTML / PDF\n/ Word: xem Lịch sử phiên bản, So sánh trực quan &\nXuất tệp để biết chính xác mỗi định dạng giữ lại những gì.\nDelete page: xoá vĩnh viễn\ntrang này.\nXoá một trang sẽ đưa các trang con của nó lên một cấp thay vì xoá luôn\nchúng - nội dung của các trang con luôn được giữ và có thể truy cập.\n),\n},\n// ---------------------------------------------------------------------------\n// WRITING CATEGORY\n// ---------------------------------------------------------------------------"
+ },
+ {
+  "id": "pages",
+  "title": "Trang, Thanh công cụ dính & Chỉnh sửa mã nguồn",
+  "category": "Writing",
+  "keywords": [
+   "editor",
+   "trình soạn thảo",
+   "toolbar",
+   "sticky",
+   "markdown",
+   "html",
+   "source",
+   "mã nguồn",
+   "draft",
+   "bản nháp",
+   "autosave",
+   "rename",
+   "rename page",
+   "title",
+   "đổi tên"
+  ],
+  "text": "<>\nWikiHub có một trình soạn thảo tài liệu hiện đại, được thiết kế để viết\nnhanh và không xao nhãng.\nKhi bạn cuộn xuống các tài liệu dài ở chế độ chỉnh sửa, thanh công cụ\ncủa trình soạn thảo vẫn cố định ở đầu màn hình. Bạn có thể định dạng\nvăn bản, chèn phần tử, hoặc chuyển chế độ bất cứ lúc nào mà không cần\ncuộn lên lại.\nChế độ chỉnh sửa & Công cụ:\nĐổi tên một trang: nhấn Edit, sau đó\nnhấn vào chính tiêu đề ở đầu trang - nó trở nên chỉnh sửa được ngay\ntại đó, không cần hộp thoại riêng. Trang giữ nguyên liên kết hiện có\nkhi bạn lưu, nên bất cứ gì đã trỏ đến nó vẫn hoạt động.\nChế độ Rich-Text: chỉnh sửa WYSIWYG với đầy đủ công cụ\nđịnh dạng nội tuyến:\nBold (Ctrl+B)\nItalic (Ctrl+I)\nUnderline (Ctrl+U)\nStrikethrough\nInline Code\nLink (Ctrl+K)\nChế độ Mã nguồn Markdown & HTML: Nhấn\n<Source /> trong tiêu đề trình soạn thảo để chuyển\nsang xem mã Markdown hoặc HTML thô. Rất phù hợp để dán tài liệu kỹ\nthuật, kiểm tra markup, hoặc tinh chỉnh chính xác các phần tử HTML.\nBản nháp tự động (cục bộ & server): Mỗi lần gõ phím\nđều tự động được lưu vào bộ nhớ cục bộ của trình duyệt và đồng bộ với\nserver. Nếu bạn vô tình đóng trình duyệt, bản nháp của bạn được khôi\nphục liền mạch khi quay lại.\n),\n},"
+ },
+ {
+  "id": "slash-commands",
+  "title": "Tra cứu nhanh Slash Commands (/)",
+  "category": "Writing",
+  "keywords": [
+   "slash",
+   "shortcut",
+   "phím tắt",
+   "heading",
+   "tiêu đề",
+   "callout",
+   "table",
+   "bảng",
+   "code",
+   "image",
+   "hình ảnh",
+   "todo",
+   "toggle"
+  ],
+  "text": "<>\nGõ / ở đầu một đoạn văn trống để mở\nSlash Command Popup Menu. Tiếp tục gõ để lọc lệnh, hoặc\nnhấn Enter để chèn.\nLệnh |\nTên |\nMô tả & Hành vi |\n/h1, /h2, /h3 |\nTiêu đề |\nChèn Tiêu đề mục 1, 2, hoặc 3. |\n/bullet |\nDanh sách gạch đầu dòng |\nTạo một mục danh sách không có thứ tự. |\n/numbered |\nDanh sách đánh số |\nTạo một mục danh sách có thứ tự tuần tự. |\n/todo |\nDanh sách To-Do |\nMục checkbox tương tác; trạng thái được giữ lại khi lưu. |\n/quote |\nTrích dẫn (Blockquote) |\nKhối trích dẫn có viền nhấn. |\n/callout |\nCallout cảnh báo |\nKhối cảnh báo nổi bật kèm biểu tượng. |\n/toggle |\nToggle thu gọn |\nKhối accordion có thể mở rộng/thu gọn. |\n/table |\nBảng dữ liệu |\nChèn một ma trận bảng dữ liệu nhiều cột. |\n/code |\nKhối code |\nKhối code tô màu cú pháp kèm bộ chọn ngôn ngữ có ô lọc (dùng mũi tên lên/xuống để chọn) và mười giao diện màu sáng/tối, chọn riêng cho từng khối trong tùy chọn của khối. Trong trình soạn thảo, nút Lưu nháp giữ chỉnh sửa thành bản nháp riêng mà không thêm phiên bản vào lịch sử trang. Trong khối code, Tab / Shift+Tab thụt vào / thụt ra các dòng đang chọn. Ngoài khối code, Tab / Shift+Tab thụt lề đoạn văn và tiêu đề. |\n/image |\nTải ảnh lên |\nTải ảnh lên với tay cầm chỉnh cỡ ở góc & chú thích. Bạn cũng có thể dán ảnh chụp màn hình hoặc ảnh đã sao chép trực tiếp vào trang bằng Ctrl+V. |\n/attachment |\nTệp đính kèm |\nTải tệp lên với modal chi tiết & xem trước code. |\n/divider |\nĐường phân cách |\nĐường kẻ ngang phân cách (---). |\n/link-to-page |\nLiên kết chọn trang |\nTìm và chèn một liên kết nội tuyến đến trang wiki khác. |\n/subpage |\nTạo trang con |\nTạo một trang con mới bên dưới trang hiện tại, không cần rời trình soạn thảo. |\n),\n},"
+ },
+ {
+  "id": "images-and-attachments",
+  "title": "Hình ảnh, Chỉnh cỡ & Tệp đính kèm",
+  "category": "Writing",
+  "keywords": [
+   "image",
+   "hình ảnh",
+   "attachment",
+   "tệp đính kèm",
+   "resize",
+   "chỉnh cỡ",
+   "align",
+   "canh lề",
+   "caption",
+   "chú thích",
+   "preview",
+   "xem trước",
+   "modal",
+   "zoom",
+   "lightbox",
+   "expand"
+  ],
+  "text": "<>\nWikiHub giúp việc tích hợp media trở nên liền mạch cho tài liệu kỹ\nthuật.\nBạn có thể kéo ảnh trực tiếp từ máy tính vào bề mặt trình soạn thảo để\ntải lên ngay lập tức.\nTính năng hình ảnh:\nTay cầm chỉnh cỡ ở góc: Nhấn vào một ảnh ở chế độ\nchỉnh sửa để hiện các tay cầm ở góc. Nhấn và kéo tay cầm để thay đổi độ\nrộng theo pixel một cách linh hoạt.\nThanh công cụ ảnh nổi: Di chuột qua bất kỳ ảnh nào để\ntruy cập các điều khiển vị trí nhanh: Align Left,\nCenter, Align Right, và\nEdit Caption.\nChú thích: Thêm chú thích mô tả bên dưới ảnh; chú\nthích được định dạng bằng văn bản nhẹ để trình bày gọn gàng.\nNhấn để phóng to: Trên một trang đã xuất bản (không\nphải khi đang chỉnh sửa), nhấn vào bất kỳ ảnh nào để mở toàn màn hình.\nCuộn hoặc nhấn đúp để phóng to/thu nhỏ, kéo để di chuyển khi đã phóng\nto, và dùng nút +/- trên thanh công cụ hoặc\nbiểu tượng đặt lại để điều khiển chính xác. Nhấn bên ngoài ảnh, nhấn\nEsc, hoặc dùng nút X để đóng.\nTệp đính kèm:\nTải lên tài liệu PDF, kho nén (.zip, .tar.gz),\ntệp code, video, hoặc tài liệu Office theo cách tương tự. Nhấn vào bất\nkỳ tệp đính kèm nào sẽ mở cùng một modal xem trước tương tác - xem hướng\ndẫn Attachments & Media để biết mỗi loại tệp có thể\nlàm gì sau khi tải lên, bao gồm chỉnh sửa Office tại chỗ, trình chiếu\nPowerPoint, và Picture-in-Picture cho video.\n),\n},"
+ },
+ {
+  "id": "tables-and-codeblocks",
+  "title": "Bảng, Khối code & Các thành phần tương tác",
+  "category": "Writing",
+  "keywords": [
+   "table",
+   "bảng",
+   "codeblock",
+   "syntax",
+   "toggle",
+   "collapsible",
+   "todo",
+   "copy",
+   "sao chép"
+  ],
+  "text": "<>\nTrình bày thông tin có cấu trúc bằng các khối tương tác nâng cao.\n1. Bảng dữ liệu:\nDi chuột qua các ô của bảng để hiện các mũi tên thao tác chèn/xoá dòng\nvà cột.\nBật/tắt định dạng dòng tiêu đề để làm nổi bật tên cột.\nCác ô hỗ trợ định dạng nội tuyến phong phú (liên kết, in đậm, code nội tuyến).\n2. Khối code có tô màu cú pháp:\nTự động tô màu cú pháp bởi Prism/HLJS cho hơn 40 ngôn ngữ (Python,\nTypeScript, Go, Rust, SQL, Bash, Dockerfile, v.v.).\nThanh tuỳ chọn: Nhấn biểu tượng tuỳ chọn ở góc trên\nbên phải của bất kỳ khối code nào để mở\nCode Block Details Modal để đặt ngôn ngữ, tiêu đề,\nhoặc số dòng.\nSao chép 1-chạm: Người đọc có thể nhấn nút\nCopy để sao chép mã nguồn thô vào clipboard ngay lập tức.\n3. Toggle thu gọn & Danh sách To-Do:\nKhối Toggle: Thu gọn nội dung phụ dài (như changelog\nhoặc payload thô) dưới một chevron có thể mở rộng.\nDanh sách To-Do có thể đánh dấu: Tạo danh sách công\nviệc. Nhấn vào checkbox sẽ chuyển đổi trạng thái hoàn thành và được\ngiữ lại khi lưu.\n),\n},"
+ },
+ {
+  "id": "history-and-export",
+  "title": "Lịch sử phiên bản, So sánh trực quan & Xuất tệp",
+  "category": "Writing",
+  "keywords": [
+   "revision",
+   "phiên bản",
+   "history",
+   "lịch sử",
+   "compare",
+   "so sánh",
+   "diff",
+   "restore",
+   "khôi phục",
+   "pdf",
+   "html",
+   "word",
+   "docx",
+   "export",
+   "xuất"
+  ],
+  "text": "<>\nWikiHub giữ lại một nhật ký kiểm toán đầy đủ, không thể thay đổi, cho\nmỗi thay đổi được lưu vào một trang.\nKhôi phục một phiên bản cũ không bao giờ xoá lịch sử! Việc khôi phục tạo\nra một phiên bản mới hoàn toàn với nội dung cũ, nên mọi phiên bản trung\ngian vẫn được giữ nguyên vẹn mãi mãi.\nTính năng lịch sử:\nDòng thời gian lịch sử trang: Nhấn\nHistory trên thanh hành động của trang để xem danh\nsách theo thời gian các phiên bản kèm tác giả, thời gian, và tóm tắt\nthay đổi.\nSo sánh trực quan: Chọn hai phiên bản bất kỳ để so\nsánh thay đổi song song hoặc theo dòng. Phần thêm mới được tô sáng\nmàu xanh, phần bị xoá được tô sáng màu đỏ.\nXuất tệp: Mở Export trong các hành\nđộng của trang để tải trang về dạng PDF, HTML, hoặc Word. PDF và HTML\nđược render từ đúng trang bạn thấy trên màn hình, nên màu sắc, font\nchữ, tô màu cú pháp code, callout, và bảng biểu ra kết quả giống hệt\ntrang thực - không phải một bản xấp xỉ được định dạng lại.\nMột mục toggle đang thu gọn sẽ xuất ra ở trạng thái mở rộng hoàn toàn,\nvì một tệp tĩnh không có cách nào để nhấn mở nó. Word là định dạng duy\nnhất có giới hạn thực sự: định dạng .docx của nó không có gì tương đương\nvới góc bo tròn CSS, đổ bóng, hay gradient, nên một callout hay khối\ncode sẽ ra thành một đoạn văn bản vuông có tô nền - trung thực về màu\nsắc và nội dung, nhưng không đúng hình dạng. PDF và HTML không có giới\nhạn này.\n),\n},"
+ },
+ {
+  "id": "drafts-and-autosave",
+  "title": "Tự động lưu & Khôi phục bản nháp",
+  "category": "Writing",
+  "keywords": [
+   "draft",
+   "bản nháp",
+   "autosave",
+   "auto-save",
+   "recovery",
+   "khôi phục",
+   "discard",
+   "unsaved",
+   "conflict",
+   "xung đột"
+  ],
+  "text": "<>\nXuất bản một trang (nhấn Save) và chỉ đơn thuần có thay đổi\nchưa lưu là hai việc khác nhau trong WikiHub - một hệ thống bản nháp\nriêng nằm giữa hai việc đó, để một tab bị đóng hay trình duyệt bị treo\nkhông bao giờ khiến bạn mất công sức thực sự.\nBật/tắt tự động lưu: khi đang chỉnh sửa, bật\nAuto-save (trong thanh công cụ trình soạn thảo) để lưu\nbản chỉnh sửa đang dở lên server mỗi 30 giây - tách biệt với việc thực\nsự xuất bản trang. Một bản sao cục bộ cũng được giữ trong trình duyệt\ncủa bạn như một phương án dự phòng.\nKhôi phục một bản nháp: nếu bạn rời trang (hoặc trình\nduyệt đóng) trong khi còn một bản nháp chưa xuất bản, quay lại trang\nđó sẽ hiện một banner Draft not released - “This\ndraft was last saved on {\"\"} and has not been saved to the\npage.” Nhấn Open editor để tiếp tục đúng chỗ\nbạn đã dừng lại, hoặc Discard draft để bỏ nó đi.\nCảnh báo xung đột: nếu ai đó khác đã xuất bản thay\nđổi cho trang sau khi bản nháp của bạn được tạo, banner sẽ thêm\n“The page has changed since this draft was created.”\nđể bạn biết cần kiểm tra chồng chéo trước khi tiếp tục.\nDiscard draft sẽ hỏi “Discard unreleased\ndraft?” trước khi làm bất cứ điều gì - nó chỉ xoá bản nháp đã lưu\nvà khôi phục trang về nội dung hiện tại, đã xuất bản.\n),\n},"
+ },
+ {
+  "id": "format-conversion",
+  "title": "Chuyển đổi giữa Rich Text, Markdown & HTML",
+  "category": "Writing",
+  "keywords": [
+   "markdown",
+   "html",
+   "convert",
+   "chuyển đổi",
+   "live preview",
+   "split",
+   "source",
+   "lossy"
+  ],
+  "text": "<>\nChuyển chế độ chỉnh sửa của một trang giữa Rich text và\nmã nguồn Markdown không chỉ là một cách xem khác của\ncùng dữ liệu - định dạng nội dung gốc thực sự thay đổi, nên WikiHub sẽ\nxác nhận trước.\nMarkdown không thể biểu diễn mọi tính năng rich-text - màu chữ, màu nền\nô, và các ô bảng đã gộp không có cú pháp Markdown tương ứng. Để vẫn giữ\nlại chúng, WikiHub nhúng trực tiếp HTML thô của chúng vào bên trong mã\nnguồn Markdown thay vì âm thầm bỏ đi. Chuyển ngược lại HTML luôn không\nmất mát.\nKhi đang chỉnh sửa ở chế độ mã nguồn Markdown:\nXem trước trực tiếp: bật/tắt bản xem trước đã hiển\nthị của Markdown cùng với mã nguồn thô.\nBố cục Split / Full: chọn xem song song mã\nnguồn-và-xem trước, hoặc chỉ xem trước để rà soát trước khi lưu.\n),\n},\n// ---------------------------------------------------------------------------\n// ATTACHMENTS & MEDIA CATEGORY\n// ---------------------------------------------------------------------------"
+ },
+ {
+  "id": "attachment-previews",
+  "title": "Xem trước tệp mà không rời trang",
+  "category": "Attachments & Media",
+  "keywords": [
+   "attachment",
+   "tệp đính kèm",
+   "preview",
+   "xem trước",
+   "modal",
+   "pdf",
+   "zoom",
+   "rotate",
+   "xoay",
+   "download",
+   "tải về",
+   "code",
+   "search",
+   "tìm kiếm"
+  ],
+  "text": "<>\nNhấn vào bất kỳ tệp đính kèm nào trong một trang để mở modal\nAttachment details - cùng một modal cho mọi loại tệp,\nvới một khung xem trước thích ứng theo loại tệp thực tế:\nẢnh: phóng to và di chuyển (pan).\nPDF: trình xem nhiều trang liên tục với zoom out /\nactual size / zoom in, nút Rotate pages (xoay từng\n90°), và một nút chuyển sang kích thước đầy đủ.\nVideo: đầy đủ điều khiển phát cộng phụ đề, chuyển đổi\ntrack âm thanh, và Picture-in-Picture - xem\nVideo: Phụ đề, Track âm thanh & Picture-in-Picture bên dưới.\nWord, Excel & PowerPoint: một bản xem trước được\nrender trung thực (với các điều khiển zoom riêng) và, khi bạn đang\nchỉnh sửa trang, một nút Edit - xem\nChỉnh sửa Word, Excel & PowerPoint tại chỗ bên dưới.\nTệp code & văn bản (.py, .ts\n, .json, .md, .log, v.v.): tô\nmàu cú pháp kèm số dòng, một ô Search content… có bộ\nđếm số khớp và điều hướng khớp trước/sau (Enter /\nShift+Enter để xoay vòng các kết quả), và một\nnút bật/tắt word-wrap.\nMọi loại khác (kho nén, tệp nhị phân, loại không\nnhận diện được): thông tin tệp và một nút Download.\nDi chuột vào biểu tượng ⓘ cạnh tiêu đề “Attachment\ndetails” để xem tên tệp, kích thước, loại MIME, và ngày tải lên -\nmà không cần mở Download.\nTrường hợp thực tế: kiểm tra nội dung chính xác của tệp\nconfig.json của đồng nghiệp, xem lại một hợp đồng PDF đã ký,\nhoặc lướt qua một ảnh thiết kế PNG - tất cả mà không bao giờ rời khỏi\ntrang wiki mà nó được đính kèm.\n),\n},"
+ },
+ {
+  "id": "office-editing",
+  "title": "Chỉnh sửa Word, Excel & PowerPoint tại chỗ",
+  "category": "Attachments & Media",
+  "keywords": [
+   "onlyoffice",
+   "word",
+   "excel",
+   "powerpoint",
+   "docx",
+   "xlsx",
+   "pptx",
+   "edit",
+   "chỉnh sửa",
+   "autosave"
+  ],
+  "text": "<>\nWikiHub có thể nhúng một trình soạn thảo tài liệu ONLYOFFICE\nđầy đủ ngay bên trong modal xem trước tệp đính kèm cho các tệp\n.docx, .xlsx, và .pptx - cùng\nribbon, công thức, định dạng, và bố cục slide như ứng dụng desktop, chạy\nngay trong trình duyệt.\nTrong khi đang chỉnh sửa trang (nút Edit chỉ xuất\nhiện ở chế độ chỉnh sửa, không phải với người chỉ đang đọc trang), mở\ntệp đính kèm và nhấn Edit (biểu tượng bút chì) cạnh\nDownload.\nThay đổi tự động lưu khi bạn gõ - không có nút Save\nthủ công, và thanh công cụ hiển thị Saving changes… hoặc\n{\"\"} · Changes save automatically. Mỗi lần lưu\ntăng phiên bản của tệp đính kèm, nên nó luôn được tính vào hoạt động\ncủa trang.\nNhấn Back to preview để quay lại bản xem chỉ đọc bất\ncứ lúc nào.\nCác định dạng Office khác - .doc, .ppt,\n.xls, .odp, .ods, và các biến thể\ntemplate như .dotx/.potx/.xltx -\nxem trước đúng nhưng phải chỉnh sửa ở nơi khác rồi tải lên lại.\nNút Edit chỉ xuất hiện khi một quản trị viên đã cấu hình và kết nối một\nONLYOFFICE Document Server. Nếu nó hoàn toàn không có, hoặc hiện\n“The workspace document editor is not configured,” hãy hỏi\nquản trị viên của bạn.\nTrường hợp thực tế: sửa một lỗi chính tả trong tệp đặc tả kỹ thuật\n.docx dùng chung, hoặc cập nhật một tệp ngân sách\n.xlsx mà không cần rời wiki hay gửi qua lại một bản sao\nmới qua email.\n),\n},"
+ },
+ {
+  "id": "video-playback",
+  "title": "Video: Phụ đề, Track âm thanh & Picture-in-Picture",
+  "category": "Attachments & Media",
+  "keywords": [
+   "video",
+   "subtitle",
+   "phụ đề",
+   "caption",
+   "audio track",
+   "track âm thanh",
+   "picture-in-picture",
+   "pip",
+   "mp4"
+  ],
+  "text": "<>\nNhấn vào một tệp video đính kèm để mở trình phát HTML5 chuẩn với\nplay/pause, tua, âm lượng, và toàn màn hình.\nPhụ đề: nếu video có track phụ đề, một nút\nSubtitles xuất hiện trên thanh công cụ xem trước -\nchọn một track, hoặc Off.\nTrack âm thanh: với video có nhiều hơn một track âm\nthanh, một bộ chọn Audio track cho phép chuyển đổi\ngiữa chúng (chỉ khi chính trình duyệt hiển thị nhiều track - không\nphải mọi định dạng đều hỗ trợ điều này).\nPicture-in-Picture: dùng biểu tượng PiP trong các\nđiều khiển của trình phát (hoặc nhấn chuột phải → Picture in\nPicture) để đưa video vào một cửa sổ nổi nhỏ luôn nằm trên mọi\ncửa sổ và tab khác.\nĐóng bản xem trước tệp đính kèm trong khi video đang nổi ở chế độ\nPicture-in-Picture sẽ không dừng nó lại - giống hệt\nviệc đóng một tab trình duyệt không dừng một video PiP ở nơi khác trên\nweb. Rời khỏi PiP (nút “back to tab” hoặc đóng của chính\nnó) sẽ tự động mở lại bản xem trước, tiếp tục đúng chỗ bạn đã dừng. Chỉ\nđóng bản xem trước vừa mở lại đó mới thực sự dừng phát.\nTrường hợp thực tế: xem một bản demo hoặc video đào tạo đã ghi ở góc màn\nhình trong khi bạn ghi chú hoặc trả lời chat ở một tab khác.\n),\n},"
+ },
+ {
+  "id": "pptx-slideshow",
+  "title": "Trình chiếu PowerPoint: Slideshow toàn màn hình",
+  "category": "Attachments & Media",
+  "keywords": [
+   "powerpoint",
+   "pptx",
+   "slideshow",
+   "trình chiếu",
+   "present",
+   "presentation",
+   "fullscreen",
+   "toàn màn hình"
+  ],
+  "text": "<>\nMở bất kỳ tệp .pptx nào - nó hiển thị như một tập slide\nphân trang với dải thumbnail bên trái và slide hiện tại bên phải. Dùng\nmũi tên ‹ › trên màn hình, hoặc ←/→,\nđể chuyển giữa các slide bất cứ lúc nào.\nNhấn Present (biểu tượng màn hình nhỏ trên thanh công\ncụ) để bắt đầu một slideshow toàn màn hình: tập slide lấp đầy toàn bộ\nmàn hình, có viền đen theo đúng tỷ lệ khung hình của slide, không có\ngiao diện trình duyệt hay dải thumbnail nào cản trở.\nNhấn Esc, hoặc nhấn ✕ ở góc trên bên phải, để\nthoát - quay về bản xem trước bình thường, không phải toàn bộ cửa sổ\ntệp đính kèm.\nTrường hợp thực tế: trình chiếu một bộ slide ngay từ trang wiki mà nó\nđược đính kèm trong một cuộc họp, không cần phần mềm phụ và không cần\ntải tệp về trước.\n),\n},"
+ },
+ {
+  "id": "importing-documents",
+  "title": "Nhập tài liệu thành trang mới",
+  "category": "Attachments & Media",
+  "keywords": [
+   "import",
+   "nhập",
+   "docx",
+   "pdf",
+   "markdown",
+   "epub",
+   "convert",
+   "chuyển đổi",
+   "bulk",
+   "hàng loạt",
+   "drag and drop",
+   "kéo thả"
+  ],
+  "text": "<>\nTừ bất kỳ trang nào, mở menu ⋯ và chọn\nImport from file….\nKéo thả, hoặc duyệt tìm, tối đa 20 tệp mỗi lần. Định\ndạng được hỗ trợ: Word (.docx), OpenDocument Text (\n.odt), Rich Text (.rtf), EPUB (\n.epub), HTML (.html/.htm),\nMarkdown (.md/.markdown), và PDF (\n.pdf).\nMỗi tệp trở thành một trang con mới bên dưới trang\nbạn bắt đầu (hoặc ở cấp cao nhất của space, nếu bắt đầu từ Home) -\ntiêu đề, định dạng, và hình ảnh được chuyển sang tự động.\nTrang mới được đặt tên theo tên tệp, bỏ phần mở rộng\n(Runbook-v2.docx trở thành trang tên\nRunbook-v2) - không theo tiêu đề hay heading bên trong\ntài liệu.\nNhập chạy như một tác vụ nền với thanh tiến trình trực tiếp cho từng\ntệp (queued / running / complete / failed), mỗi tệp hoàn tất liên kết\nthẳng đến trang mới của nó, nên bạn có thể tiếp tục làm việc trong khi\nmột lô lớn đang được chuyển đổi.\nTính năng này khác với Confluence Archive Import trong\nAdministration > Backup: tính năng đó khôi phục toàn\nbộ một space Confluence đã xuất, bao gồm cả quyền và lịch sử,\nvà chỉ dành cho admin. Import from file… chuyển đổi\ntừng tài liệu riêng lẻ thành trang mới, và khả dụng cho bất kỳ ai có\nquyền chỉnh sửa space.\nTrường hợp thực tế: di chuyển một thư mục các runbook Word hoặc PDF hiện\ncó vào wiki thành một cây trang được tổ chức gọn gàng, trong một lần.\n),\n},\n// ---------------------------------------------------------------------------\n// ACCOUNT CATEGORY\n// ---------------------------------------------------------------------------"
+ },
+ {
+  "id": "your-account",
+  "title": "Hồ sơ, Bảo mật mật khẩu & Phiên đang hoạt động",
+  "category": "Account",
+  "keywords": [
+   "avatar",
+   "password",
+   "mật khẩu",
+   "authentication",
+   "session",
+   "phiên",
+   "profile",
+   "hồ sơ",
+   "logout",
+   "đăng xuất"
+  ],
+  "text": "<>\nQuản lý tuỳ chọn tài khoản cá nhân của bạn trong Your\naccount từ menu hồ sơ.\nHồ sơ của một thành viên mở đầu bằng biểu đồ đóng góp: mỗi ô là một ngày\ntrong năm qua, càng đậm khi ngày đó sửa nhiều trang. Rê chuột vào ô để xem ngày và số lượng,\nchọn năm ở bên phải để xem các năm trước.\nTrong dòng hoạt động, một trang bạn sửa nhiều lần liên tiếp chỉ hiện một dòng,\nCập nhật 6 lần. Bấm vào dòng đó để xem từng lần sửa kèm liên kết\nxem thay đổi.\n1. Cài đặt hồ sơ người dùng:\nNhấn Edit profile để cập nhật tên hiển thị, email,\nảnh đại diện, tiểu sử, đại từ nhân xưng, công ty, và liên kết mạng xã\nhội.\nKiểm tra trường dữ liệu đưa phản hồi tức thì về lỗi định dạng hay yêu cầu.\n2. Bảo mật & Quy tắc mật khẩu:\nCập nhật mật khẩu của bạn trong Password &\nauthentication.\nThanh đo độ mạnh mật khẩu kiểm tra độ dài, số, ký tự đặc biệt, và quy\ntắc chữ hoa. Nhấn Generate password để tạo một mật\nkhẩu ngẫu nhiên mạnh.\n3. Quản lý phiên đang hoạt động:\nTrong Sessions, xem các trình duyệt đang hoạt động và\nđăng xuất mọi phiên khác nếu bạn thấy hoạt động không nhận ra. Bạn có\nthể thu hồi các thiết bị cụ thể hoặc nhấn Revoke all\nsessions để vô hiệu hoá ngay lập tức mọi token từ xa.\n),\n},"
+ },
+ {
+  "id": "notifications",
+  "title": "Thông báo: chuông và cửa sổ nhắc",
+  "category": "Account",
+  "keywords": [
+   "thông báo",
+   "chuông",
+   "toast",
+   "notification",
+   "chưa đọc"
+  ],
+  "text": "<>\nChuông trên thanh trên cùng cho bạn biết điều gì đã xảy ra với\nbạn. Ai cũng có, không chỉ quản trị viên. Số đỏ trên chuông là số thông báo bạn\nchưa đọc.\nBạn được báo về:\nĐược thêm vào, bị gỡ khỏi, hoặc được đổi vai trò trong một space.\nĐược cấp hoặc bị thu hồi một quyền cụ thể trên space, hoặc trở thành (hay thôi là) chủ sở hữu space.\nĐược thêm vào hoặc bị gỡ khỏi một nhóm.\nQuản trị viên đặt lại mật khẩu của bạn.\nVai trò hoặc quyền trên workspace của bạn bị thay đổi, hoặc tài khoản được bật lại.\nVới Quản trị hệ thống: mọi yêu cầu mới từ trang đăng nhập.\nViệc chính bạn làm không tạo thông báo cho bạn. Thông báo hiển thị bằng ngôn ngữ của\nbạn và chỉ mình bạn thấy được của mình.\nDùng chuông:\nMở ra để xem những thông báo mới nhất, mới nhất ở trên. Mỗi thông báo có biểu tượng\nmàu - xanh lá cho tin tốt (được thêm vào, được cấp quyền), xanh dương cho thay đổi,\nvàng cam cho điều bị lấy đi hoặc mật khẩu bị đặt lại - và cho biết xảy ra cách đây bao\nlâu.\nBấm vào một thông báo để đọc: nếu nó dẫn tới đâu đó (một space, trang Yêu cầu) bạn sẽ\nđược đưa tới đó, và nó không còn tính là chưa đọc.\nĐánh dấu tất cả đã đọc xử lý toàn bộ.\nCửa sổ nhắc:\nThông báo mới cũng hiện thành một cửa sổ nhỏ ở góc dưới bên phải trong vài giây - bạn\nkhông cần tải lại trang. Mọi thông điệp của ứng dụng (đã lưu, thất bại, ...) đều dùng\ncùng kiểu này, tô màu theo nội dung: xanh lá là thành công, xanh dương là thông tin,\nvàng cam là cảnh báo, đỏ là lỗi. Nhiều thông báo cùng lúc sẽ gộp thành một chồng gọn; rê\nchuột vào là chúng xếp dọc, không chồng lên nhau, để bạn đọc trọn vẹn từng cái. Mỗi\nthông báo có đồng hồ mười giây riêng, hiển thị bằng thanh dưới nội dung: rê chuột vào\nthông báo nào thì chỉ thông báo đó tạm dừng, và đồng hồ chạy tiếp từ chỗ đã dừng khi bạn\nrời chuột đi. Hết giờ, thông báo trượt sang phải rồi biến mất. Bấm dấu\nx nhỏ để đóng sớm hơn.\n),\n},"
+ },
+ {
+  "id": "report-issues",
+  "title": "Báo lỗi (Issue)",
+  "category": "Account",
+  "keywords": [
+   "issue",
+   "lỗi",
+   "báo lỗi",
+   "vấn đề",
+   "ảnh chụp",
+   "góp ý",
+   "manage issues"
+  ],
+  "text": "<>\nWikiHub còn mới nên bạn có thể gặp lỗi. Mở menu tài khoản (tên bạn, góc\ntrên bên phải) và chọn Báo lỗi. Nhập tiêu đề, mô tả bạn đang làm gì và\nđiều gì đã sai, kèm ảnh chụp màn hình nếu có: bấm Thêm ảnh hoặc dán ảnh\ntrực tiếp bằng Ctrl+V. Tối đa năm ảnh PNG, JPEG, GIF hoặc WebP, mỗi ảnh\n5 MB. Dùng Nhãn để gắn bug, question,\nenhancement... giúp tìm lại dễ hơn.\nTheo dõi báo cáo của bạn:\nIssue của tôi (cũng nằm trong menu tài khoản) liệt kê mọi issue bạn đã\nbáo, kèm trạng thái - Mới, Đang xử lý hoặc Hoàn thành - và\nngười đã tiếp nhận.\nBạn nhận thông báo khi có quản trị viên tiếp nhận hoặc được giao issue, và khi issue\nđược đóng - kèm một email khi đóng. Nếu quản trị viên để lại ghi chú\nkhi đóng, bạn đọc được ngay dưới issue và nó được trích trong email. Chỉ bạn và những\nngười quản lý issue mới xem được issue của bạn.\nDành cho người quản lý issue:\nSuperuser, system administrator và người được cấp quyền Manage issues\n(Quản trị > Nhóm, hoặc Global access của từng người dùng) thấy mục\nQuản trị > Issue và được báo khi có issue mới.\nMỗi khi có người báo issue, tất cả những ai quản lý issue đều được báo qua thông báo\nvà email.\nTick một hoặc nhiều issue trong danh sách (ô trên cùng tick cả trang) để đổi cùng lúc:\nĐánh dấu là mở, mở lại hoặc hoàn thành, và Giao cho\ngiao cho ai đó - chỉ superuser mới giao issue cho người khác được. Issue nào bạn không\nđược đổi sẽ bị bỏ qua và được đếm, không làm dừng phần còn lại.\nChọn chế độ xem ở bên trái - Issue, Giao cho tôi hoặc\nTôi tạo - chuyển giữa Đang mở và\nĐã đóng, và lọc theo người báo, người tiếp nhận, nhãn (chọn nhiều nhãn thì issue phải\ncó đủ; hoặc chọn Không có nhãn) hoặc thứ tự. Ô tìm\nkiếm chỉ tìm trong tiêu đề và mô tả, và bôi xanh phần khớp.\nMở một issue rồi chọn Tiếp nhận để gắn tên bạn vào. Issue sẽ chuyển\nsang đang xử lý. Dùng Thêm ghi chú cho ghi chú chỉ quản lý thấy. Khi bấm\nHoàn thành, ô ghi chú khi đóng hiện ra cho nội dung\nngười báo sẽ đọc; xác nhận để đóng issue.\nChỉ người đã tiếp nhận issue, hoặc superuser, mới đánh dấu\nhoàn thành, mở lại hay đổi trạng thái. System administrator chưa tiếp\nnhận chỉ xem được, không đóng được.\nĐể gửi issue cho người ngoài WikiHub, nhấn Xuất Word - trong cửa sổ\nissue, hoặc cạnh mỗi issue ở trang Issue của tôi. File .docx gồm\ntiêu đề, bảng thông tin (trạng thái, nhãn, người báo, người xử lý, ngày tháng, link\ntrang), mô tả, toàn bộ ảnh chụp màn hình nhúng sẵn trong file, và các ghi chú đã chia\nsẻ với người báo. Ghi chú nội bộ không bao giờ được đưa vào. Nhãn trong tài liệu theo\nngôn ngữ giao diện của bạn. Muốn gửi nhiều issue cùng lúc, tick chọn chúng trong danh\nsách rồi nhấn Xuất Word trên thanh chọn: bạn nhận một file gồm bảng\ntổng quan, sau đó mỗi issue một chương được đánh số.\n),\n},"
+ },
+ {
+  "id": "language-switching",
+  "title": "Chuyển đổi ngôn ngữ giao diện",
+  "category": "Account",
+  "keywords": [
+   "language",
+   "ngôn ngữ",
+   "locale",
+   "translation",
+   "chuyển ngữ",
+   "vietnamese",
+   "tiếng việt",
+   "english",
+   "i18n"
+  ],
+  "text": "<>\nNhấn huy hiệu EN/VI trên thanh trên\ncùng để mở menu ngôn ngữ, sau đó chọn English hoặc\nTiếng Việt. Huy hiệu luôn hiển thị ngôn ngữ đang hoạt\nđộng.\nMọi nhãn, nút, thông báo, và thông điệp kiểm tra dữ liệu trên khắp\nWikiHub đều theo ngôn ngữ đã chọn - không có màn hình nào chuyển ngữ\nnửa vời.\nThay đổi được áp dụng ngay lập tức, không cần tải lại trang, nên bất\ncứ gì bạn đang chỉnh sửa dở trong trình soạn thảo vẫn được giữ nguyên\nnhư cũ.\nLựa chọn được ghi nhớ theo từng trình duyệt (không gắn với tài khoản\ncủa bạn), nên chuyển sang máy khác hoặc đăng nhập ở nơi khác sẽ bắt\nđầu lại bằng tiếng Anh cho đến khi bạn chọn tiếng Việt ở đó nữa.\n),\n},"
+ },
+ {
+  "id": "keyboard-shortcut-settings",
+  "title": "Tuỳ chỉnh phím tắt bàn phím",
+  "category": "Account",
+  "keywords": [
+   "keyboard",
+   "bàn phím",
+   "shortcut",
+   "phím tắt",
+   "hotkey",
+   "rebind",
+   "remap",
+   "gán lại",
+   "customize",
+   "customise",
+   "tuỳ chỉnh",
+   "keybinding",
+   "ctrl",
+   "cmd"
+  ],
+  "text": "<>\nPhím tắt của WikiHub là mặc định, không phải quy tắc cố định. Mở\nTài khoản từ menu hồ sơ và chọn\nKeyboard shortcuts để thay đổi bất kỳ phím nào.\n1. Gán lại một phím tắt:\nNhấn huy hiệu phím cạnh hành động bạn muốn thay đổi - nó chuyển sang\nPress keys…\nNhấn tổ hợp phím bạn muốn. Nó được ghi nhận và lưu ngay khi bạn nhấn;\nkhông có nút Save riêng.\nNhấn Esc để thoát ra mà không thay đổi gì.\n2. Nhiều phím cho một hành động:\nNhấn + để gán cho một hành động một tổ hợp thứ hai (hoặc\nthứ ba) - hữu ích khi bạn muốn cả thói quen cũ lẫn thói quen mới đều\nhoạt động. Global search mặc định đã như vậy, đáp ứng cả\nCtrl+K lẫn Ctrl+F. Xoá một\ntổ hợp bằng nút ✕ cạnh nó; tổ hợp cuối cùng còn lại không\nthể bị xoá, nên một hành động không bao giờ vô tình trở nên không thể\ngọi được.\n3. Quay về bình thường:\nMột mũi tên tròn xuất hiện cạnh bất kỳ hành động nào bạn đã thay đổi -\nnhấn vào đó để khôi phục riêng hành động đó. Reset all to\ndefaults ở trên cùng khôi phục mọi phím tắt cùng lúc.\n4. Phạm vi áp dụng của từng phím tắt:\nMỗi hành động liệt kê ngữ cảnh mà nó hoạt động - bất kỳ đâu trong ứng\ndụng, khi đang chỉnh sửa một trang, hoặc khi một bản xem trước tệp đính\nkèm đang mở. Hai hành động trong ngữ cảnh khác nhau có thể an\ntoàn dùng chung một tổ hợp, và hành động ở ngữ cảnh hẹp hơn sẽ thắng khi\nnó đang hoạt động. Đó chính xác là cách Ctrl+F\nhoạt động theo mặc định: bình thường nó mở tìm kiếm toàn cục, nhưng khi\nbạn đang mở bản xem trước một tệp văn bản, nó sẽ tìm bên trong tệp đó\nthay vào đó.\nNếu bạn gán cùng một tổ hợp cho hai hành động trong cùng một\nngữ cảnh, một cảnh báo sẽ xuất hiện ở trên cùng và cả hai huy hiệu\nchuyển sang màu hổ phách. Hành động nào xử lý phím trước sẽ thắng, nên\nhành động còn lại có thể không kích hoạt. Không có gì ngăn bạn lưu nó\nlại - cảnh báo tồn tại để một phím tắt âm thầm ngừng hoạt động không\nbao giờ trở thành một bí ẩn.\nGợi ý trên thanh tìm kiếm ở thanh trên cùng luôn theo đúng những gì\nbạn đã gán, nên nó luôn hiển thị tổ hợp thực sự đang hoạt động.\nMột số tổ hợp được trình duyệt giữ riêng - Ctrl+\nW, Ctrl+T, Ctrl+\nN và tương tự. Chúng không bao giờ đến được trang, nên\nWikiHub không thể bắt được chúng.\nCác phím định dạng văn bản bên trong trình soạn thảo (Ctrl\n+B cho in đậm và tương tự), / cho menu slash, và\nEsc để đóng overlay cũng cố định và không xuất hiện trong\ndanh sách này.\nPhím tắt của bạn được lưu trong trình duyệt bạn đã đặt chúng, nên\nchúng không theo bạn sang máy khác hoặc tồn tại qua việc xoá dữ liệu\ntrang.\n),\n},\n// ---------------------------------------------------------------------------\n// ADMINISTRATION CATEGORY\n// ---------------------------------------------------------------------------"
+ },
+ {
+  "id": "theme-and-branding",
+  "title": "Tuỳ chỉnh giao diện & Thương hiệu",
+  "category": "Administration",
+  "keywords": [
+   "theme",
+   "giao diện",
+   "color",
+   "màu",
+   "hex",
+   "palette",
+   "icon",
+   "logo",
+   "favicon",
+   "preview",
+   "xem trước",
+   "branding",
+   "thương hiệu",
+   "ssr"
+  ],
+  "text": "<>\nQuản trị viên có thể tuỳ chỉnh hoàn toàn nhận diện trực quan của\nWikiHub trong Administration > Settings > Theme &\nBranding.\nDanh sách Page Typography & Font Family xếp các phông gần giống nhau\nvào cùng nhóm. Lọc theo loại - Tất cả, Sans-Serif,\nGeometric Sans hoặc Serif - và bấm Hiện thêm để xem\ntoàn bộ phông trong nhóm (Thu gọn đưa về ba dòng).\nCác thay đổi giao diện ở chế độ nháp cho đến khi bạn nhấn rõ ràng\nSave settings! Nhấn Preview Theme để\nmở một modal sandbox tương tác, nơi bạn có thể thử màu sắc, tìm kiếm,\ncác tab điều hướng, nút bấm, và chế độ Sáng/Tối.\nCài đặt |\nMô tả & Tuỳ chọn |\nMẫu màu thương hiệu |\nChọn từ 8 bảng màu được tuyển chọn: Blue,\nEmerald, Indigo, Violet,\nRose, Amber, Teal,\nSlate.\n|\nBộ chọn Hex tuỳ chỉnh |\nNhập bất kỳ mã màu hex chính tuỳ chỉnh nào (vd: #216fc0\n). Tự động tạo một bảng màu HSL đầy đủ 10 sắc độ.\n|\nMẫu biểu tượng Logo |\nChọn từ 9 biểu tượng vector dựng sẵn: Hub,\nBook, Layers, Compass,\nSparkles, Feather,\nGraduation, CPU, Shield.\n|\nTải logo tuỳ chỉnh |\nTải lên ảnh PNG hoặc SVG tuỳ chỉnh của tổ chức bạn (dưới 2MB). Tự\nđộng điều chỉnh tỷ lệ và hiển thị trên header và favicon.\n|\nFavicon động trên tab |\nHTML5 Canvas chuyển các SVG dựng sẵn hoặc logo đã tải lên thành\nPNG data URL kích thước 64x64, cập nhật ngay dải tab trình duyệt.\n|\nSSR không nhấp nháy |\nCác biến CSS theme được tải trước trong <head>\nngay từ khung hình đầu tiên, ngăn hiện tượng nhấp nháy trắng/xanh\nkhi tải lại trang.\n|\nBộ chọn font chữ |\nNhấn vào một font trong danh sách sẽ mở modal\nFont Specimen - một bộ kiểm tra kiểu chữ tương\ntác với ô nhập mẫu tự do, bốn câu mẫu dựng sẵn, năm mức kích cỡ\ndựng sẵn (14–36px), một bản mô phỏng cấu trúc tài liệu đầy đủ, và\nmột ma trận ký tự/glyph - trước khi bạn xác nhận bằng\nApply This Font.\n|\nSandbox Preview Theme có công tắc\nLight Preview / Dark Preview riêng, để\nbạn có thể kiểm tra một màu thương hiệu trên một tài liệu mẫu ở cả hai\nchế độ trước khi một người dùng thật nào thấy nó.\n),\n},"
+ },
+ {
+  "id": "admin-statistics",
+  "title": "Thống kê",
+  "category": "Administration",
+  "keywords": [
+   "statistics",
+   "thống kê",
+   "stats",
+   "analytics",
+   "dashboard",
+   "biểu đồ",
+   "chart",
+   "views",
+   "lượt xem",
+   "tokens",
+   "ai usage",
+   "xem nhiều nhất",
+   "sao",
+   "lưu",
+   "người dùng hoạt động"
+  ],
+  "text": "<>\nQuản trị viên mở Administration > Thống kê để xem workspace\nđang được sử dụng thế nào. Chọn 7, 30 hoặc 90 ngày ở góc trên\nbên phải; mọi số liệu và biểu đồ trên trang đều theo khoảng này.\nTổng quan\nThẻ số liệu chính: người dùng, người hoạt động trong khoảng, người dùng mới,\npage, space, lượt chỉnh sửa và lượt xem page, mỗi thẻ có thêm một số suy ra\nbên dưới (người dùng mới trong khoảng, tỷ lệ người hoạt động, trung bình mỗi\nngày, số page mỗi space).\nBiểu đồ theo ngày cho lượt xem page, chỉnh sửa và người dùng mới, kèm tổng,\nmức thay đổi từ nửa đầu sang nửa sau của khoảng, trung bình mỗi ngày và ngày\ncao nhất. Rê chuột vào biểu đồ, hoặc focus rồi dùng phím ← và\n→, để đọc từng ngày.\nHoạt động gần đây: các dòng mới nhất của audit log.\nSử dụng AI\nSố token trợ lý AI đã dùng, theo số liệu gateway AI trả về: tổng, token đầu\nvào, token đầu ra, số yêu cầu, biểu đồ theo ngày, và phân tích\ntheo người dùng và theo tính năng (tóm tắt\npage, tạo page, trợ lý viết, label và page liên quan, giải thích hoặc dịch đoạn\nchọn).\nPage và Space\nBảng xếp hạng các mục được xem, gắn sao và\n(với page) lưu nhiều nhất. Dùng Xếp theo để\nchuyển. Lượt xem theo khoảng thời gian đã chọn; sao và lượt lưu là tổng từ\ntrước đến nay. Page được tính là gắn sao khi có người thích, và là đã lưu khi\ncó người ghim.\nLượt xem page và token AI được tính từ ngày bật tính năng này; hoạt động trước\nđó chưa từng được ghi lại nên lúc đầu có thể thấy số 0. Số token còn phụ thuộc\nviệc gateway AI có trả về số liệu sử dụng. Chỉ quản trị viên hệ thống mới mở\nđược trang này.\n),\n},"
+ },
+ {
+  "id": "admin-server-monitor",
+  "title": "Giám sát máy chủ",
+  "category": "Administration",
+  "keywords": [
+   "máy chủ",
+   "giám sát",
+   "docker",
+   "cpu",
+   "bộ nhớ",
+   "log",
+   "container",
+   "uptime"
+  ],
+  "text": "<>\nSystem administrator mở Administration > Máy chủ để xem máy đang\nchạy WikiHub và các container Docker của chính WikiHub. Dịch vụ khác trên cùng máy\nkhông bao giờ được liệt kê và không mở được log của chúng - máy chủ từ chối yêu cầu\nchứ không chỉ ẩn trên trang. Trang tự làm mới mỗi năm giây khi đang mở (và không làm\nmới khi tab bị ẩn).\nCác thẻ máy chủ: tải CPU so với số nhân (kèm trung bình 5 và 15\nphút), bộ nhớ (kèm swap và phần còn trống), ổ đĩa chứa WikiHub cùng dung lượng còn\ntrống, và thời gian máy chủ đã chạy cùng số container đang chạy. Mỗi thanh ghi phần\ntrăm ở đầu bên phải; các thanh đo mức dùng chuyển sang vàng ở 70% và đỏ ở 90%.\nContainer: tên, id ngắn và image, trạng thái (Khoẻ,\nKhông khoẻ, Đang chạy hoặc trạng thái khi dừng, cùng số lần\nDocker khởi động lại), thời gian chạy, CPU và bộ nhớ. CPU tính theo một nhân nên 100%\nlà đầy một nhân; container bận trên máy 12 nhân có thể hiện hơn thế. Bấm tiêu đề cột để\nsắp xếp (cột số bắt đầu từ giá trị lớn nhất; bấm lần nữa để đảo chiều).\nNút Log mở 100 đến 1.000 dòng gần nhất của container. Có thể lọc dòng,\nmàu cho biết lỗi và cảnh báo, Theo dõi làm mới sau vài giây, nút sao chép\nchép các dòng đang hiện. Mật khẩu, key, token và thông tin xác thực trong URL được ẩn\ntrước khi rời máy chủ - chỉ ở mức cố gắng, nên vẫn cần cẩn thận với log.\nTrang này chỉ để xem: không thể dừng, khởi động hay thay đổi gì. Dữ liệu do dịch vụ nhỏ\nollama-controller cung cấp - thành phần duy nhất của WikiHub có quyền truy cập\nDocker - nên dịch vụ này phải đang chạy (./scripts/run.sh --dev). Container\ncứ khởi động lại liên tục, hoặc dùng CPU hay bộ nhớ nhiều bất thường, là thứ đầu tiên cần\ntìm khi WikiHub chậm.\n),\n},"
+ },
+ {
+  "id": "settings-and-storage",
+  "title": "Cài đặt hệ thống & Trình duyệt Object Storage",
+  "category": "Administration",
+  "keywords": [
+   "settings",
+   "cài đặt",
+   "storage",
+   "lưu trữ",
+   "objects",
+   "attachment",
+   "limits",
+   "giới hạn",
+   "matrix",
+   "download",
+   "s3",
+   "office",
+   "preview",
+   "word",
+   "excel",
+   "powerpoint",
+   "pdf",
+   "docx",
+   "xlsx",
+   "pptx",
+   "onlyoffice",
+   "video",
+   "audio",
+   "syntax highlighting",
+   "code preview",
+   "quota",
+   "quotas",
+   "hạn mức",
+   "browse files"
+  ],
+  "text": "<>\nQuản trị viên cấu hình hành vi toàn workspace trong\nAdministration > Settings, và mọi thứ về bucket S3\n- duyệt nó và đặt giới hạn cho nó - trong\nAdministration > Storage.\n1. Cài đặt hệ thống toàn cục:\nSite Name: Tiêu đề site tuỳ chỉnh hiển thị trên tab\ntrình duyệt và thanh trên cùng.\nSession Lifetime (Hours): Cấu hình thời gian hết hạn\nphiên JWT (vd: 24h, 72h, 168h).\nSidebar Access Matrix: Chọn mục điều hướng nào hiển\nthị theo từng vai trò người dùng (member,\nadmin).\n2. Storage: Duyệt tệp & Hạn mức:\nAdministration > Storage chia thành hai phần, chọn\ntừ danh sách bên trái của riêng nó:\nBrowse files: một trình duyệt cây bucket S3 gọn gàng.\nLọc đối tượng theo truy vấn tìm kiếm, loại tệp, space, hoặc ID trang;\ntạo URL tải xuống ký sẵn (pre-signed) an toàn; xem trước ảnh, video và\ntệp âm thanh, tệp code/văn bản (tô màu theo phần mở rộng của tệp), và\ntài liệu Word, Excel, PowerPoint và PDF (mở ở chế độ chỉ đọc qua cùng\ntrình xem tài liệu mà các trang dùng để chỉnh sửa tệp đính kèm - xem\nnó, tải nó về, không có gì được lưu lại từ đây, và mỗi bản xem trước\ncuộn ở một chỗ thay vì cả trong hộp thoại lẫn nội dung bên dưới nó); và\nxoá các đối tượng mồ côi, việc này cũng tự động xoá bản ghi tệp đính\nkèm và hash lưu trữ tương ứng trong cơ sở dữ liệu.\nQuotas: Max single attachment size,\nMax backup import size, và\nAllowed attachment extensions (một danh sách cho\nphép, vd: png, pdf, zip, docx, *) - mỗi mục hiển thị\n(inherited from environment) cho đến khi bạn thực sự ghi\nđè nó ở đây.\n),\n},"
+ },
+ {
+  "id": "permissions-overview",
+  "title": "Tra cứu Quyền & Vai trò",
+  "category": "Administration",
+  "keywords": [
+   "permissions",
+   "quyền",
+   "roles",
+   "vai trò",
+   "administrator",
+   "member",
+   "global access",
+   "global permission",
+   "space permission",
+   "owner",
+   "open",
+   "restricted",
+   "system administrator",
+   "effective permissions",
+   "quyền hiệu lực",
+   "access control"
+  ],
+  "text": "<>\nBa lớp độc lập quyết định những gì một người có thể làm:\nVai trò tài khoản (Member hoặc Administrator),\nQuyền toàn cục (khả năng toàn workspace như tạo space\nhoặc quản lý người dùng), và Quyền theo Space (những gì\nai đó có thể làm bên trong một space cụ thể). Các mục bên dưới nói rõ\ntừng lớp; Quản lý người dùng & Nhóm và\nQuyền truy cập Space & Quyền hiệu lực (xa hơn phía dưới) mô tả\ncác màn hình thực sự thiết lập chúng.\n1. Vai trò tài khoản:\nVai trò |\nÝ nghĩa |\nMember |\nVai trò mặc định. Những gì một Member thực sự có thể làm ngoài\nviệc xem/sửa các space họ có quyền truy cập hoàn toàn đến từ các\nquyền Global và Space bên dưới - một Member có thể giữ bất kỳ\nquyền nào trong bốn quyền toàn cục, hoặc là Space Owner/Admin,\ngiống như bất kỳ ai khác.\n|\nAdministrator |\nVô điều kiện giữ cả bốn quyền toàn cục - Create\nspaces, Manage users, Manage\ngroups, System administrator - bất kể tư\ncách thành viên nhóm hay bất kỳ override nào. Một Administrator\nthông thường không thể Edit, Delete, Demote, hoặc đặt lại mật\nkhẩu của một tài khoản Administrator khác, hay thay đổi Role\nhoặc Global access override của chính mình - xem\nbảo vệ giữa các admin ngang cấp bên dưới.\n|\nAdmin khởi tạo được bảo vệ |\nTài khoản mà WikiHub được thiết lập ban đầu (hoặc một tài khoản\nđược đánh dấu bảo vệ rõ ràng). Nó luôn là Administrator, không\nbao giờ bị chỉnh sửa, vô hiệu hoá, hay xoá bởi bất kỳ ai khác, và\nlà tài khoản duy nhất có thể Edit, Delete,\nDemote, hoặc đặt lại mật khẩu của một Administrator khác.\n|\n2. Bốn quyền Global:\nQuyền |\nMở khoá điều gì |\nCreate spaces |\nCho phép tạo space tài liệu mới từ danh bạ\nSpaces thông thường. Nó không\nmở Administration > Spaces, vốn vẫn chỉ dành\ncho System administrator.\n|\nManage users |\nMở khoá Administration > Users: tạo, sửa,\nđặt lại mật khẩu, và vô hiệu hoá tài khoản Member,\nvà quản lý tư cách thành viên nhóm của họ. Nó không bao giờ\nthăng cấp/hạ cấp ai, đụng đến một tài khoản Administrator hiện\ncó, hoặc mở tab Global access - những việc đó\nluôn cần thực sự là một System administrator.\n|\nManage groups |\nMở khoá Administration > Groups: tạo, cập\nnhật, gán thành viên vào, và quản lý các nhóm người dùng.\n|\nSystem administrator |\nToàn quyền quản trị - mọi phần Administration khác (Users,\nGroups, Spaces, Settings, Backup, Storage), cộng với mọi quyền\nAdmin theo từng space trên mọi space bất kể cài đặt\nOwner/Access riêng của space đó. Tương đương vai trò\nAdministrator cho mọi mục đích quan trọng.\n|\nMỗi trong bốn quyền được kiểm tra theo thứ tự: Role đã là\nAdministrator chưa? Nếu có, được cấp ngay lập tức. Nếu\nkhông, một override Global access theo từng user có ép\nnó enabled hoặc disabled không? Một override\nluôn thắng. Nếu không, có nhóm nào người đó thuộc về cấp quyền này\nkhông? Nếu không có điều nào ở trên, nó không được cấp. Xem\nQuản lý người dùng & Nhóm bên dưới để biết mỗi cái này thực sự\nđược đặt ở đâu.\n3. Bảy quyền theo từng Space:\nQuyền |\nCấp quyền gì |\nView |\nXem space này và mở các trang của nó. Xuất\ntrang tự động theo View - không phải một quyền cấp\nriêng. |\nAdd/Edit |\nTạo trang mới và sửa bất kỳ trang hiện có\nnào trong space này. |\nDelete |\nXoá bất kỳ trang nào trong space này, kể cả\ntrang do người khác tạo. |\nDelete own |\nChỉ xoá các trang do chính người hoặc nhóm\nnày tạo. |\nRestrictions |\nGiới hạn từng trang riêng lẻ cho những\nngười hoặc nhóm cụ thể. |\nMove |\nDi chuyển hoặc sắp xếp lại trang trong cây\nphân cấp của space này. |\nAdmin |\nToàn quyền kiểm soát cài đặt và quyền của\nspace này - bao hàm mọi quyền khác trong bảng này. |\n4. Space Owner, Open vs Restricted, và quyền hiệu lực:\nSpace Owner là một tầng riêng, được bảo vệ, nằm trên\nbảng trên - một space luôn giữ ít nhất một Owner, và chỉ một Owner\n(không chỉ đơn thuần có quyền Admin) mới có thể chuyển\nmột space giữa Open và Restricted, hoặc\nthay đổi ai là Owner.\nSpace Open tự động cấp cho mọi người\ndùng đã đăng nhập View, Add/Edit,\nDelete, Delete own, và Move -\nchỉ Admin và Restrictions vẫn cần được cấp\nrõ ràng. Space Restricted không tự động\ncấp gì cả - mọi quyền cho mọi người hoặc nhóm đến từ các bảng trong\nbảng Access của space đó.\nVới một người và một space cho trước, thứ tự phân giải là: Owner (mọi\nthứ, luôn luôn) → một quyền cấp trực tiếp theo user nếu có (điều này\nghi đè mọi nhóm họ thuộc về cho space đó, trừ Admin) →\nnếu không, mọi nhóm họ thuộc về, kết hợp lại → nếu không, bất cứ gì\nOpen tự động cấp. Bộ chọn Effective\npermissions trong bảng Access của một space phân giải tất cả\nđiều này cho bạn thay vì phải đối chiếu thủ công - xem\nQuyền truy cập Space & Quyền hiệu lực bên dưới.\nMột Administrator thông thường có thể quản lý toàn bộ mọi tài khoản\nMember - bao gồm thăng cấp một người lên Administrator -\nnhưng không thể Edit, Delete, Demote, hoặc đặt lại mật khẩu của\nmột tài khoản Administrator khác. Chỉ tài khoản admin\nkhởi tạo được bảo vệ mới có thể đụng đến một Administrator khác. Điều\nnày giữ cho không một admin nào có thể khoá, hạ cấp, hoặc xoá mọi admin\nkhác.\n),\n},"
+ },
+ {
+  "id": "admin-users-groups",
+  "title": "Quản lý người dùng & Nhóm",
+  "category": "Administration",
+  "keywords": [
+   "users",
+   "người dùng",
+   "groups",
+   "nhóm",
+   "create user",
+   "tạo người dùng",
+   "invite",
+   "mời",
+   "password",
+   "mật khẩu",
+   "deactivate",
+   "vô hiệu hoá",
+   "delete user",
+   "xoá người dùng",
+   "role",
+   "vai trò",
+   "global permission override",
+   "administrators tab",
+   "permission overrides",
+   "permission overrides tab",
+   "group directory",
+   "global access tab",
+   "bulk delete",
+   "select multiple"
+  ],
+  "text": "<>\nWikiHub không tự gửi e-mail mời. Một quản trị viên tạo mọi tài khoản trực\ntiếp trong Administration > Users > Create user\nvà chia sẻ mật khẩu tạm thời cho người đó ngoài hệ thống (chat, gặp\ntrực tiếp, v.v.) - trừ khi quản trị viên đó có hộp thư đang hoạt động\n(xem Hộp thư quản trị & Yêu cầu), thì WikiHub tự động gửi\nthông tin đăng nhập qua email, không cần thêm thao tác nào (form Tạo\nngười dùng sẽ báo trước khi việc này xảy ra; đặt mật khẩu mới cho tài\nkhoản đã có, thăng cấp ai đó lên Quản trị viên trong Edit user, hay\nthêm/gỡ ai đó khỏi tab Access của một space cũng vậy). Yêu cầu gửi từ\ntrang đăng nhập cũng hoạt động tương tự: quản trị viên có hộp thư có\nthể tạo tài khoản ngay từ trang Yêu cầu và để WikiHub gửi mail tên\nđăng nhập và mật khẩu cho người đó.\n1. Danh bạ People:\nDanh bạ hiển thị các ô tổng quan (Total / Administrators / Members /\nActive / Disabled), cùng tìm kiếm và bộ lọc Status/Role.\nCột Đăng nhập lần cuối cho biết mỗi người đăng nhập lần cuối\nkhi nào, kèm trạng thái: Đang online (có hoạt động trong 5 phút\ngần nhất), Offline hoặc Chưa từng đăng nhập. Bấm vào\ntiêu đề cột để sắp xếp theo lần đăng nhập cuối (mới nhất trước, bấm lần nữa để\nđảo ngược); tài khoản chưa từng đăng nhập luôn nằm cuối danh sách.\nCreate user: tên/họ, tên đăng nhập (kiểm tra tính khả\ndụng khi gõ), e-mail, mật khẩu với danh sách kiểm tra độ mạnh trực\ntiếp (8+ ký tự, chữ hoa & chữ thường, một số hoặc ký hiệu), và vai trò\nMember hoặc Administrator.\nMỗi dòng có một nút Edit mở một hộp thoại cho mọi thứ\nvề tài khoản đó, qua ba tab: General (Role\nMember/Administrator, Status Active/Disabled dưới dạng\ncông tắc, một mật khẩu mới tuỳ chọn với danh sách yêu cầu trực tiếp -\nđể trống cả hai ô mật khẩu để giữ mật khẩu hiện tại),\nGroups (bên dưới), và Global access (các\noverride Workspace Global Access của nó - xem bên\ndưới). Một nút Delete riêng, chỉ có biểu tượng, xoá\nhoàn toàn tài khoản. Tài khoản của chính bạn và tài khoản admin khởi\ntạo được bảo vệ không bao giờ hiện các điều khiển này, nên bạn không\nbao giờ có thể tự khoá mình. Hộp thoại luôn lấy dữ liệu mới nhất của\ntài khoản này mỗi lần mở, thay vì dùng lại dòng trong danh bạ - mở lại\nngay sau khi lưu một override luôn hiển thị đúng những gì đã được\nlưu, không phải những gì dòng đó tình cờ đang hiển thị.\nTab Groups liệt kê mọi nhóm tài khoản này thuộc về,\nmỗi nhóm có nút Leave một-chạm - và cùng kiểu mẫu\nSelect / chọn-tất-cả như chính danh bạ, để rời nhiều\nnhóm cùng lúc. Rời nhóm có hiệu lực ngay lập tức, không phải một phần\ncủa thao tác Save của hộp thoại.\nMột Administrator thông thường không thể Edit hoặc Delete\nmột tài khoản Administrator khác, hay đặt lại mật khẩu\ncủa nó - chỉ admin khởi tạo được bảo vệ mới có thể. Điều này giữ cho\nmột admin không thể hạ cấp, vô hiệu hoá hoặc khoá một admin khác; một\nAdministrator thông thường vẫn có thể quản lý toàn bộ mọi tài khoản\nMember, bao gồm thăng cấp một người lên\nAdministrator.\nGiữ Manage users mà không tự bản thân là một\nSystem administrator (dù Role của tài khoản\nđã là như vậy, hay một nhóm/override cấp System\nadministrator) cố ý bị thu hẹp hơn: nó tạo, sửa, đặt lại mật\nkhẩu và vô hiệu hoá tài khoản Member, và quản lý tư cách\nthành viên nhóm của họ, nhưng trường Role và toàn bộ\ntab Global access bị vô hiệu hoá - nó không bao giờ\ncó thể thăng cấp hay hạ cấp ai, cấp một Global Access override (một\noverride có thể cấp System administrator chắc chắn không\nkém gì Role), hay đụng đến một tài khoản Administrator\nhiện có. Cách duy nhất để có được bất kỳ điều đó là thực sự trở thành\nmột System administrator.\nSelect (cạnh ô tìm kiếm) bật một checkbox trên mỗi\ndòng và một thanh Delete selected để xoá nhiều tài\nkhoản cùng lúc. Dòng của một tài khoản được bảo vệ, tài khoản của\nchính bạn, hoặc (trừ khi bạn là admin khởi tạo được bảo vệ) một tài\nkhoản Administrator khác có checkbox bị vô hiệu hoá hoàn\ntoàn thay vì để nó thất bại giữa chừng một lô.\n2. Override Workspace Global Access:\nMột tóm tắt Currently granted nằm phía trên bốn dòng\nquyền, liệt kê chính xác những gì tài khoản này đang có (hoặc\nAll permissions (Administrator role) khi Role của nó đã\nbao trọn mọi thứ) - nơi duy nhất cần kiểm tra trước khi quyết định có\ncần thay đổi gì bên dưới không. Nó, cùng huy hiệu\nActive/Disabled riêng của mỗi dòng, cập nhật\nngay khi bạn đổi Role hoặc một menu thả xuống override - không cần\nSave rồi mở lại hộp thoại chỉ để xem một lựa chọn có thực sự có hiệu\nlực không.\nBốn quyền toàn cục (Create spaces, Manage\nusers, Manage groups, System\nadministrator) thường đến từ các nhóm của một người dùng. Hộp\nthoại Edit cho phép bạn đặt một trong ba trạng thái cho mỗi quyền,\ntheo từng người: Inherit from groups (mặc định),\nForce enabled, hoặc Force disabled - override\nluôn thắng bất kể các nhóm của người đó nói gì về quyền đó.\nĐiều này không ảnh hưởng đến một tài khoản có Role đã là\nAdministrator: vai trò đó vô điều kiện cấp mọi quyền,\ngiống như luôn vậy.\nManage users mở khoá Administration >\nUsers và Manage groups mở khoá\nAdministration > Groups cho tài khoản đó, dù\nquyền đến từ một nhóm hay một override ở đây - mỗi quyền chỉ mở đúng\nphần tương ứng của nó, không phải toàn bộ Administration.\nCreate spaces chỉ mở khoá nút Create space\ntrên danh bạ Spaces thông thường (xem “Tạo một Space” ở\ntrên); nó không mở Administration > Spaces, vốn\nvẫn là một góc nhìn giám sát chỉ dành cho System\nadministrator (lưu trữ hoặc xoá vĩnh viễn bất kỳ space nào) -\ngiống như Settings, Backup và Storage.\n3. Tab Administrators:\nLiệt kê mọi tài khoản hiện đang có quyền truy cập\nSystem administrator bất kể có được bằng cách nào - công\ntắc Role, một quyền toàn cục của nhóm, hay một override\ntheo từng user - với một cột Granted via nói rõ là\ncách nào. Bộ lọc Role trên danh bạ People chỉ hiển thị cái đầu tiên\ntrong ba cách này.\nDưới Granted via, một cấp quyền qua Role hoặc\noverride cũng nêu tên ai đã làm việc đó - tài khoản\nđã bật công tắc hoặc thêm override, đọc từ nhật ký kiểm toán. Một cấp\nquyền qua nhóm thay vào đó nêu tên nhóm nào: tư cách\nthành viên nhóm và quyền cấp riêng của một nhóm không được theo dõi\ntheo từng thành viên, nên không có một người cụ thể để chỉ ra ở đó.\nCả hai có thể hiện là không xác định được nguồn với một tài khoản đã\ncó quyền này từ trước khi việc theo dõi này tồn tại.\nDemote to Member hoàn tác lại đúng cách nó đã được\ncấp: nó chuyển Role về lại Member với một Administrator\ntrực tiếp, hoặc thêm một override force-disabled với một tài khoản\nđược cấp qua nhóm hoặc một override có sẵn. Bị vô hiệu hoá với admin\nđược bảo vệ, tài khoản của chính bạn, hoặc quản trị viên cuối cùng còn\nlại trong danh sách - và, với một Administrator trực tiếp (Granted\nvia: Administrator role), bị vô hiệu hoá với bất kỳ ai\nngoại trừ admin khởi tạo được bảo vệ, giống như Edit/Delete trong danh\nbạ People.\n4. Tab Permission overrides:\nLiệt kê mọi tài khoản có ít nhất một override Global\naccess - Create spaces, Manage\nusers, Manage groups, hoặc System\nadministrator, bị ép Enabled hoặc\nDisabled riêng cho tài khoản đó. Trước khi tab này tồn\ntại, cách duy nhất để tìm ra ai có một quyền tuỳ chỉnh là mở hộp thoại\nEdit của từng tài khoản một và kiểm tra tab Global access của nó -\ntab này tồn tại chính xác để việc đó không bao giờ cần thiết nữa.\nCột Overrides của mỗi dòng nêu tên chính xác những\nquyền nào bị override và thành giá trị nào - một tài khoản kế thừa\nmọi thứ bình thường từ Role hoặc nhóm của nó sẽ không bao giờ xuất\nhiện ở đây.\nCùng các hành động Edit/Delete như\ndanh bạ People có ngay trên dòng đó, nên hành động dựa trên những gì\nbạn thấy - sửa hoặc xoá một override - không bao giờ có nghĩa là phải\nchuyển sang tab khác trước.\n5. Groups:\nGroups gộp người dùng lại để cấp quyền theo space có thể tái sử dụng -\ngán một nhóm một lần trong bảng Access của một space\nthay vì thêm từng thành viên riêng lẻ.\nMỗi nhóm cũng có thể mang quyền toàn cục: Create\nspaces, Manage users, Manage groups, System admin.\nGroup directory và Global access là\nhai tab riêng phía trên bảng, cùng kiểu chia như Administration >\nUsers. Group directory liệt kê mọi nhóm; Global access thu hẹp xuống\nchỉ những nhóm (thường không nhiều) thực sự cấp một trong bốn quyền\ntoàn cục ở trên - những nhóm đáng để kiểm tra lại trước khi thêm ai\nđó vào, trong số một danh sách nhóm dài hơn nhiều tồn tại thuần tuý\ncho quyền truy cập Space/Page.\nCác nhóm hệ thống mặc định (administrators,\nusers, confluence-administrators,\nconfluence-users) không thể bị xoá, chỉ có thể chỉnh sửa.\nMột nhóm vẫn đang cấp quyền truy cập cho bất kỳ Space nào hoặc có giới\nhạn trên bất kỳ Page nào không thể bị xoá -\n\"Remove this group's permission assignments\nbefore deleting it\" nghĩa chính xác như vậy, và cả hai\nphải được xoá trước (quyền toàn cục của nó, trong Edit > Global\naccess, không tính - chỉ các cấp quyền Space/Page mới tính).\nCột Access grants của bảng Directory nêu số lượng\nSpace và Page mà một nhóm được cấp quyền truy cập - Not\nused nghĩa là nó có thể bị xoá ngay. Nhấn vào số lượng sẽ mở\nmột danh sách xem nhanh liệt kê từng cái theo tên, mỗi cái liên kết\nthẳng đến Space hoặc Page đó, kèm nút Remove riêng\nngay tại chỗ để xoá quyền cấp ngay lập tức - không cần lục qua từng\nbảng Access của từng Space trước. Cùng danh sách đó, với cùng nút\nRemove, cũng là một tab riêng (Access grants) bên\ntrong hộp thoại Edit Group đầy đủ, ngay cạnh Members.\nCùng điều khiển Select / xoá hàng loạt như danh bạ\nPeople có sẵn cạnh ô tìm kiếm nhóm; một nhóm hệ thống mặc định vẫn bị\nloại trừ ngay cả khi được chọn.\n),\n},"
+ },
+ {
+  "id": "admin-spaces-access",
+  "title": "Quyền truy cập Space & Quyền hiệu lực",
+  "category": "Administration",
+  "keywords": [
+   "space access",
+   "quyền truy cập space",
+   "permissions",
+   "quyền",
+   "effective permissions",
+   "quyền hiệu lực",
+   "groups",
+   "nhóm",
+   "restrict",
+   "giới hạn",
+   "archived spaces",
+   "archived spaces tab",
+   "space directory"
+  ],
+  "text": "<>\nAdministration > Spaces liệt kê mọi space với các ô\nTotal / Active / Archived. Xoá space vĩnh viễn chỉ khả dụng ở đây (cài\nđặt riêng của một space chỉ có tuỳ chọn Archive). Mở bảng\nAccess của một space để quản lý chính xác ai được làm\ngì:\nHai tab phía trên bảng, cùng kiểu chia như Administration > Users và\nGroups: Space directory liệt kê mọi space đang hoạt\nđộng, Archived spaces chỉ liệt kê những space bị ẩn\nkhỏi điều hướng thông thường - khôi phục một space từ chính\nEdit space > Space settings & Danger zone của nó, hoặc\nxoá vĩnh viễn ngay từ một trong hai tab.\nGeneral access: Open tự động cấp cho\nmọi người dùng đã đăng nhập toàn quyền đọc/ghi (mọi thứ trừ\nAdmin/Restrictions) - một banner cảnh báo\nnói rõ điều này ngay phía trên các bảng. Restricted rút\nlại điều đó, nên chỉ những người được cấp rõ ràng bên dưới mới có thể\nlàm bất cứ điều gì.\nSpace Owner (đặt từ tab Edit space >\nGeneral của chính space, không phải ở đây): một\nAdministrator được bảo vệ mà một space luôn giữ ít nhất một, để nó\nkhông bao giờ trở nên không thể quản lý bất kể chuyện gì xảy ra với\ncác bảng bên dưới.\nMột bảng quyền Groups và một bảng quyền\nIndividual users, mỗi bảng có checkbox cho\nView, Add/Edit, Delete,\nDelete own, Restrictions, Move,\nvà Admin. View chỉ cấp quyền đọc - chỉnh sửa\ncần thêm Add/Edit, và di chuyển một trang cần thêm\nMove. Xuất tệp tự động theo View và không\nphải một checkbox riêng. Khi space đang ở chế độ Open,\nnăm cột đầu hiển thị All thay vào đó - Open đã cấp sẵn\ncho mọi người, nên một checkbox ở đó sẽ không thực sự thay đổi gì;\nRestrictions/Admin vẫn hoạt động bất kể chế\nđộ nào. Thay đổi diễn ra rõ ràng - Edit, rồi Save hoặc Cancel - kèm\ncảnh báo thay đổi chưa lưu nếu bạn rời đi giữa chừng.\nEffective permissions: chọn một người dùng bất kỳ và\nxem tập quyền đã được phân giải đầy đủ của họ cho space đó - quyền\ntruy cập Open, một quyền cấp trực tiếp (ghi đè mọi nhóm họ thuộc về\nmột khi đã có, trừ Admin), hoặc nếu không thì mọi nhóm họ thuộc về\nkết hợp lại - thay vì phải đối chiếu thủ công ba nguồn khác nhau.\nTrường hợp thực tế: trước khi chuyển một space sang Restricted, dùng\nEffective permissions để xác nhận tài khoản nhà thầu\nduy nhất vẫn cần quyền đọc thực sự vẫn còn giữ được quyền đó.\n),\n},"
+ },
+ {
+  "id": "switch-account",
+  "title": "Switch Account (Giả lập tài khoản)",
+  "category": "Administration",
+  "keywords": [
+   "impersonate",
+   "giả lập",
+   "switch account",
+   "debug",
+   "gỡ lỗi",
+   "superuser",
+   "view as"
+  ],
+  "text": "<>\nSuperuser khi chưa giả lập ai sẽ thấy một điều khiển\nSwitch account (biểu tượng người) trong menu tài\nkhoản, liệt kê các tài khoản đang hoạt động khác. Chọn một tài khoản sẽ\nđăng nhập bạn dưới danh nghĩa họ mà không cần trao đổi mật khẩu - hữu\ních để xác nhận “tại sao người này không thấy trang kia” mà\nkhông cần yêu cầu họ chia sẻ màn hình.\nTrong khi giả lập, một banner cố định được ghim ở đáy mọi màn hình:\n“Viewing WikiHub as {\"\"}. Your actions are\nrecorded against {\"\"}.” Menu tài khoản cũng hiển\nthị Signed in as {\"\"}. Nhấn\nReturn to my account (trong banner hoặc menu) để kết\nthúc phiên.\nTài khoản admin khởi tạo được bảo vệ và tài khoản của chính bạn bị loại\nkhỏi danh sách chuyển đổi.\n),\n},"
+ },
+ {
+  "id": "backup-and-restore",
+  "title": "Sao lưu, Nhập Confluence & Xuất DC",
+  "category": "Administration",
+  "keywords": [
+   "backup",
+   "sao lưu",
+   "zip",
+   "restore",
+   "khôi phục",
+   "confluence",
+   "import",
+   "nhập",
+   "export",
+   "xuất",
+   "xml",
+   "datacenter",
+   "resume",
+   "tiếp tục",
+   "sha-256",
+   "automatic",
+   "automated",
+   "scheduled",
+   "schedule",
+   "lịch trình",
+   "retention",
+   "cron"
+  ],
+  "text": "<>\nAdministration > Backup có hai phần:\nExport / Backup và Import / Restore.\n1. Hai định dạng xuất - không thể thay thế cho nhau:\nExport WikiHub Backup: một tệp .zip gốc,\ncó thể khôi phục, gồm space, trang, phiên bản, tệp đính kèm, người\ndùng, và nhóm - giới hạn theo All spaces hoặc một\ntập con đã chọn qua Select spaces to export. Bản sao\nlưu cũng mang theo mọi issue đã báo - nhãn, trạng thái,\nngười tiếp nhận, ghi chú và ảnh chụp màn hình - và khi khôi phục sẽ đưa\nlại đúng ngày giờ cũ; issue đã có sẵn thì được bỏ qua, không bị nhân đôi.\nIssue thuộc về cả workspace nên bản sao lưu giới hạn theo space sẽ không\ncó chúng.\nPhân quyền và thảo luận được khôi phục y nguyên: chế độ Open/Restricted, owner và\nmọi quyền theo người dùng / nhóm của space; nhóm cùng toàn bộ owner, thành viên và\nquyền hệ thống, cùng quyền hệ thống ép bật/tắt riêng của từng người; chế độ\nOpen/Restricted của từng page, việc page có kế thừa page cha hay không, danh sách\ncho phép và các lượt chặn; mọi bình luận, phản hồi kèm lượt thích, và lượt thích\npage. Dữ liệu đã có sẵn ở nơi khôi phục được bỏ qua, không bị ghi đè.\nExport Confluence Backup: một kho lưu trữ XML cho\ncông cụ khôi phục riêng của Atlassian Confluence Data Center, nhắm\nđến Data Center 8.x hoặc 9.x. Đây\nlà một sự chuyển giao một chiều - nó không thể dùng để khôi phục lại\nchính WikiHub. Sắp ra mắt: tính năng export này tạm\nthời bị tắt (thẻ hiển thị “Coming soon”) cho đến khi hoàn thiện.\nCheckbox Include password hashes của bản sao lưu\nWikiHub mặc định tắt và được cảnh báo rõ ràng là cho phép dò mật khẩu\nngoại tuyến nếu kho lưu trữ bị rò rỉ - chỉ bật nó cho một cuộc di\nchuyển thực sự, và lưu tệp ở nơi an toàn.\n2. Khôi phục / Nhập:\nCả khôi phục bản sao lưu WikiHub lẫn Confluence Archive\nImport đều tải lên dưới dạng truyền tải nhiều gigabyte,\nchia theo phần, có thể tiếp tục, với các điều khiển\nPause upload / Resume upload - an\ntoàn để bắt đầu, tạm dừng, và tiếp tục sau mà không cần gửi lại những\ngì đã tải thành công.\nNhập Confluence quét kho lưu trữ để tìm space, đánh dấu xung đột\nkhoá, cho bạn chọn space nào để mang vào, và chạy như một tác vụ nền\nvới log trực tiếp.\nMột kho lưu trữ Confluence lớn có thể mất hàng giờ để tải lên. Trang\nnày tự động gia hạn phiên trình duyệt của bạn miễn là tab đó vẫn mở -\nbạn không cần giữ đăng nhập thủ công, và các tab khác vẫn hoạt động\nbình thường trong suốt quá trình.\nKhôi phục vào một instance đã có sẵn space sẽ kích hoạt một bước xung\nđột Replace existing spaces? cho bất cứ thứ gì có\nthể va chạm.\nCả hai đường tải lên đều từ chối tệp vượt quá giới hạn dung lượng đã\ncấu hình (hiển thị ngay trên mỗi thẻ, mặc định 1024 MB) trước khi bắt\nđầu tải. Quản trị viên hệ thống có thể tăng giới hạn này tại\nAdministration > Object storage > Quotas >\n“Max Confluence / Backup Archive (MB)”.\nMột kiểm tra phía client bắt lỗi tải lên rõ ràng sai ngay lập tức - vd.\nchọn một bản xuất Confluence dưới mục khôi phục WikiHub sẽ hiện\n“This is a Confluence export, not a WikiHub backup. Upload it\nunder ‘Import Confluence Backup’ instead.”\ntrước khi bất cứ điều gì bắt đầu tải lên. Riêng biệt, tiếp tục một lần\ntải lên bị gián đoạn với một tệp khác so với tệp đã tải một\nphần sẽ hiện hộp thoại\n“That is a different file”, so sánh tệp\nđang được tải với tệp bạn vừa chọn (tên, kích thước, đã lưu được bao\nnhiêu) và hỏi bạn Discard and upload this hoặc\nChoose the original.\n3. Sao lưu tự động (theo lịch):\nBảng Automatic backups, phía trên\nExport / Backup, chạy một Export WikiHub\nBackup định kỳ theo lịch mà không ai cần nhấn gì cả.\nNó ghi mỗi bản sao lưu vào một thư mục được mount vào chính server (\nWIKIHUB_AUTOMATED_BACKUP_HOST_DIRECTORY trong môi trường\ntriển khai) thay vì object storage - một bản sao riêng trên hạ tầng\nriêng, để một sự cố với storage chính không làm mất luôn cả bản sao\nlưu của nó. Enabled vẫn bị làm mờ, và\nRun now vẫn bị vô hiệu hoá, cho đến khi một người\nvận hành thực sự đã mount thư mục đó.\nSubfolder (optional) giới hạn sao lưu vào một thư\nmục con bên dưới volume đã mount, vd. team-a ghi vào\n<mounted volume>/team-a thay vì gốc của volume -\nhữu ích để giữ đầu ra của nhiều lịch trình tách biệt nhau. Thư mục\nphải đã tồn tại trên host: Save schedule kiểm tra nó\nvới hệ thống tệp thực và từ chối một đường dẫn không tồn tại hoặc sẽ\nphân giải ra ngoài volume đã mount, kèm lý do hiển thị ngay dưới\ntrường đó.\nCấu hình Every N hours/days, một\nStart time và Timezone (một tên\nmúi giờ IANA, vd. Asia/Ho_Chi_Minh), và số bản sao lưu\nhoàn tất cần Keep - các bản cũ hơn số đó bị xoá tự\nđộng khi bản mới xuất hiện. Nhấn Save schedule để áp\ndụng; bảng sau đó hiển thị thời gian Last run và\nNext run đã tính toán.\nRun now xếp hàng một bản ngay lập tức mà không cần\nchờ lịch trình hay làm gián đoạn nó. Danh sách bên dưới hiển thị các\nbản sao lưu theo lịch gần đây với Download và\nDelete cho mỗi bản.\nKhông giống Export WikiHub Backup thủ công, một bản\nsao lưu theo lịch luôn bao gồm password hashes - không có công tắc cho\nviệc này, vì không có ai hiện diện để chọn mỗi lần. Hạn chế quyền truy\ncập vào thư mục đã mount giống như bất kỳ kho lưu trữ thông tin đăng\nnhập nào khác.\n4. Lịch sử import và log:\nTrong Import / Restore, thẻ Lịch sử import\nliệt kê mọi lần import Confluence và khôi phục WikiHub - lần đang chạy và tất\ncả các lần trước - kèm trạng thái, thời gian chạy và số cảnh báo/lỗi đã ghi.\nBảng được phân trang (10, 20 hoặc 50 dòng mỗi trang). Bấm vào tiêu đề cột\nđể sắp xếp, bấm lần nữa để đảo chiều, và dùng bộ lọc trạng thái để chỉ hiện\ncác lần Thất bại, Đang chạy,...\nBấm Xem chi tiết ở một lần chạy để đọc toàn bộ log, dòng cũ nhất trước. Có thể lọc\nCảnh báo hoặc Lỗi, Sao chép\ncác dòng, hoặc dùng Tải .txt để lưu toàn bộ log.\nLog được lưu trên máy chủ nên một lần import chạy lâu khi bạn đã đóng hoặc\ntreo trình duyệt vẫn xem lại được. Các file mà bản export Confluence liệt kê\nnhưng không thực sự chứa được gộp thành một dòng tổng kết, chỉ 100 file đầu\nđược nêu tên riêng.\n),\n},"
+ },
+ {
+  "id": "admin-ai",
+  "title": "Trợ lý AI",
+  "category": "Administration",
+  "keywords": [
+   "ai",
+   "trợ lý",
+   "tóm tắt",
+   "tldr",
+   "dịch",
+   "giải thích",
+   "soạn",
+   "ngữ pháp",
+   "nhãn",
+   "liên quan",
+   "ctrl+space",
+   "openai",
+   "llm",
+   "model",
+   "endpoint",
+   "api key"
+  ],
+  "text": "<>\nVới mọi người: mỗi trang có nút TL;DR trên thanh công\ncụ, cạnh Save for later. Nhấn vào để xem bản tóm tắt ngắn dạng Markdown, viết bằng cùng\nngôn ngữ với trang. Nút chuyển ở phía trên đổi sang English hoặc\nTiếng Việt: việc này dịch bản tóm tắt đã viết thay vì đọc lại cả trang nên\nnhanh và rẻ. Địa chỉ web trong đó là link, và tên tệp đính kèm mở tệp đó phía trên bản\ntóm tắt. Bản tóm tắt được lưu cho đến khi trang thay đổi nên mở lại là có ngay;\nTóm tắt lại đọc lại trang và viết bản mới. AI chỉ đọc các trang bạn vốn đã\nmở được, và mỗi người chỉ được gửi một số yêu cầu AI giới hạn mỗi giờ (60 nếu quản trị\nviên không đặt giới hạn khác).\nAI trong trình soạn thảo: khi đang sửa page, đặt con trỏ ở một dòng\ntrống, dòng gợi ý Nhấn Ctrl+Space để dùng AI hoặc '/' để chọn lệnh sẽ hiện\nra. Nhấn Ctrl + Space để mở hộp AI, mô tả điều bạn muốn - một\nchecklist, bảng các lựa chọn, đoạn mở đầu - rồi nhấn Enter. AI viết nội dung,\ncó tính đến văn bản quanh con trỏ, và hiển thị bản đã định dạng trước khi thêm gì vào\npage. Sau đó Chèn bên dưới đưa nội dung vào page (thay cho dòng trống), hoặc\nChỉnh sửa để yêu cầu thay đổi - ví dụ ngắn hơn hay\nthêm một bảng - bao nhiêu lần tuỳ ý. Mọi phiên bản đều được giữ: các mũi tên ở\nđầu hộp lùi và tiến giữa chúng, và Chèn bên dưới dùng phiên bản đang hiện.\nNếu chưa kết nối AI, phím tắt chỉ hiện một thông báo nhỏ và nó biến mất ngay khi bạn gõ\ntiếp.\nCải thiện đoạn văn bạn đã viết: bôi đen chữ trong một đoạn văn, một\nnút AI nhỏ hiện ở cuối phần bôi đen (hoặc nhấn Ctrl +\nSpace). Mô tả thay đổi - viết trang trọng hơn,\ndịch sang tiếng Anh - hoặc chọn một thao tác nhanh: Sửa ngữ pháp\n(chính tả, dấu câu và ngữ pháp, giữ nguyên cách diễn đạt), Thuật ngữ nhất quán\n(dùng đúng thuật ngữ của các page liên quan đã có trong wiki, và dùng một từ cho một khái\nniệm trong chính đoạn văn) hoặc Viết tiếp (hoàn thiện câu; / →\nViết tiếp bằng AI làm điều tương tự tại con trỏ). Kết quả chỉ là gợi ý: chưa\ncó gì thay đổi cho đến khi bạn bấm Thay thế (hoặc Chèn), và gợi\ný không được áp dụng nếu văn bản đã thay đổi trong lúc chờ. Chỉnh sửa xin\nmột phiên bản khác. Chỉ người sửa được space mới dùng được, và gợi ý là văn bản thuần\nthay cho phần đã bôi đen nên định dạng bên trong (in đậm, liên kết) không được giữ - hãy\nbôi đen phần nhỏ hơn để giữ định dạng. Quản trị viên chỉnh văn phong chung, như giọng\nvăn hay bảng thuật ngữ, ở Quản lý skill → Trợ lý soạn thảo.\nGiải thích hoặc dịch phần đã chọn: bôi đen một từ, cụm từ hoặc câu\ntrong page đang đọc, một nút AI nhỏ sẽ hiện ở cuối phần bôi đen. Bấm vào\nlà phần đó được giải thích ngay, mặc định bằng tiếng Việt, dựa trên\ntiêu đề page và văn bản xung quanh để hiểu đúng nghĩa. Chọn Dịch để dịch\nthay vì giải thích, và dùng menu quả địa cầu trên thẻ để đổi ngôn ngữ giữa\nEnglish và Tiếng Việt - đổi ngôn ngữ sẽ làm lại thao tác đang\nxem. Câu trả lời được nhớ nên hỏi lại là có ngay, và mỗi lần chọn được tối đa 2.000 ký\ntự. Nhấn Escape hoặc nút đóng để tắt thẻ.\nTạo page bằng AI: trong Create page, bấm\nViết bằng AI (hoặc sau khi gõ vài chữ ở tab Tự viết, bấm\nNhờ AI soạn để dùng chúng làm mô tả), mô tả page trong một hai câu rồi bấm\nTạo nội dung. AI tìm trước trong wiki các page liên quan bạn đọc được - liệt\nkê ở bên phải - và có thể hỏi vài câu trắc nghiệm, mỗi lần một câu: chọn một đáp án (rê\nchuột vào nút i của lựa chọn để xem chi tiết), chọn nhiều nếu được phép hoặc\ntự nhập câu trả lời, hay bấm Bỏ qua câu hỏi. Câu trả lời được thêm vào mô tả\nđể bạn thấy và sửa được những gì bản nháp dựa vào. WikiHub soạn cả page theo đúng định\ndạng của mình - tiêu đề, danh sách, checklist, bảng và khối mã - tự điền tiêu đề nếu đang\ntrống và hiện bản xem trước có thể phóng to. Dòng ghi chú ở trên cùng cho biết page do AI\ntạo để người đọc biết cần kiểm tra lại. Chưa có gì được lưu cho đến khi bạn bấm\nCreate page; dùng Tạo lại để thử lần nữa hoặc\nBỏ bản nháp để làm lại, và sau đó vẫn chỉnh sửa page thoải mái. Chỉ người\nđược phép tạo page trong space mới dùng được. Khi chưa kết nối AI, tab này giải thích\ncòn thiếu gì.\nKết nối (System Administrator): mở\nAdministration → Trợ lý AI. Trang là bảng các kết nối đã lưu - lưu được\nnhiều kết nối nhưng mỗi lúc chỉ một kết nối được bật.\nThêm OpenAI Compatible mở một biểu mẫu: Tên,\nĐịa chỉ endpoint của dịch vụ tương thích OpenAI bất kỳ, gồm cả đường dẫn\nphiên bản (ví dụ https://host/v1) và API key. Khi bạn bấm ra\nkhỏi ô địa chỉ hoặc key, WikiHub tự kiểm tra kết nối và liệt kê các model dịch vụ cung\ncấp - hoặc bấm Fetch models. Chọn model sẽ dùng trong danh sách - model luôn\nđược chọn từ những gì dịch vụ cung cấp, và nút Lưu chỉ bật khi kết nối\nkiểm tra thành công và đã chọn model. Chọn Đặt làm kết nối đang dùng để\nbật ngay.\nTìm kiếm theo ý nghĩa (một mục riêng cạnh Quản lý key) tìm trang theo\ný nghĩa, không chỉ theo từ. Đây là một thiết lập chung cho cả wiki, tách khỏi\ncác provider chat, nên đổi provider đang dùng không bao giờ làm lập lại chỉ mục. Chọn nơi nội\ndung trang được chuyển thành vector: Provider AI đang dùng (nếu nó có model\nembedding), Endpoint khác (một địa chỉ tương thích OpenAI kèm key chỉ dùng cho\nembedding, dành cho provider không có) hoặc Tự host (Ollama). Chỉ các model có thể\ntạo embedding mới được liệt kê, và Lưu kiểm tra nguồn thật sự tạo được embedding với\nmodel bạn chọn. WikiHub sẽ lập chỉ mục mọi trang ở nền, từng ít một, giữ chỉ mục cập nhật khi\ntrang thay đổi và hiện tiến độ ngay trong mục này. Đổi model sẽ lập lại chỉ mục. Để model ở\nTắt thì chỉ dùng tìm kiếm từ khoá. Kết quả luôn theo quyền của người tìm.\nOllama tự host chạy model embedding ngay trên máy chủ này khi provider của bạn\nkhông có. Mở Tìm kiếm theo ý nghĩa, chọn Tự host (Ollama), chọn một\nmodel (bge-m3 đa ngôn ngữ, hợp với tiếng Việt) rồi bấm\nBật và tải về. Một card hiện từng bước - tải Ollama (khoảng 4 GB), khởi động, chờ\nnó phản hồi, tải model - kèm thanh tiến độ; bạn có thể rời trang và việc cài vẫn tiếp tục.\nKhông có gì được cài hay chạy cho tới khi bạn bật, và Tắt sẽ dừng và gỡ nó nên\ngiải phóng toàn bộ bộ nhớ (khoảng 1-2 GB khi lập chỉ mục, 0,8 GB lúc rảnh; giới hạn bởi\nWIKIHUB_OLLAMA_MEMORY_LIMIT, mặc định 3 GB). Danh sách model là một dropdown: mỗi model có thẻ đã tải hoặc\nchưa tải, dấu i bên cạnh cho biết model giỏi việc gì và nên chọn khi\nnào - chọn model chưa tải thì nút Save thành Download & use. Cancel\ndừng việc tải và thẻ báo là đã huỷ cho tới khi bạn đóng ghi chú. Model đã tải nằm lại trên đĩa cho tới\nkhi bạn chọn Xoá các model đã tải. Việc này cần dịch vụ\nollama-controller nhỏ của WikiHub, thành phần duy nhất có quyền truy cập Docker: nó\nchỉ có thể bật và tắt đúng container này, không làm gì khác.\nTrong bảng, key luôn được che (ví dụ sk-adc2****297a). Key được lưu mã\nhoá, không hiển thị lại và không nằm trong bản sao lưu. Sửa để đổi một\nkết nối - để trống ô key để giữ key cũ.\nCột Trạng thái hiện Working hoặc Failing theo lần\nkiểm tra gần nhất; WikiHub kiểm tra ngay khi lưu hoặc khi đổi địa chỉ/key, rồi kiểm tra\nlại mọi kết nối mỗi năm phút (Chưa kiểm tra chỉ tới lần kiểm tra đầu). Bấm tiêu đề cột để sắp xếp\n(bấm lần nữa để đảo chiều, lần thứ ba để về thứ tự đã lưu), gõ vào ô dưới tiêu đề để\nlọc theo tên, endpoint hoặc model, và dùng danh sách trạng thái để chỉ xem kết nối\nđang dùng, hoạt động, lỗi hoặc chưa kiểm tra. Bảng hiện mười kết nối mỗi trang.\nKhi lập chỉ mục theo ý nghĩa gặp sự cố, đọc log của worker:\ndocker compose logs worker | grep search_index. Mỗi phút có xử lý đều\nkết thúc bằng một dòng search_index_pass - số trang và đoạn đã xong,\nembed_seconds (thời gian chờ dịch vụ AI), backlog_remaining\n(còn lại) và stopped (lý do kết thúc). Sự cố là một cảnh báo:\nsearch_index_paused kèm status HTTP và nội dung phản hồi của\ndịch vụ, ai_embedding_failed cho từng yêu cầu lỗi,\nai_embedding_slow khi quá 10 giây, và search_slow (trong log\nbackend) khi một lần tìm kiếm quá một giây. Nội dung trang, key và từ khoá người dùng\ntìm không bao giờ bị ghi log. Đặt WIKIHUB_LOG_LEVEL=DEBUG để xem thêm\ntừng trang và từng yêu cầu.\nNút nguồn đặt một kết nối thành Đang dùng; việc này tắt kết nối trước\nđó. Tắt kết nối đang dùng thì các thao tác AI tắt với mọi người.\nKiểm tra ngay thử một kết nối đã lưu và ghi lại là\nHoạt động hay Lỗi; Xoá xoá kết nối sau\nkhi bạn xác nhận.\nNhãn và page liên quan: mở Nhãn của page (nút thẻ dưới\ntiêu đề) rồi bấm Gợi ý nhãn và page liên quan. AI đọc page và đề xuất vài\nnhãn - ưu tiên các nhãn bạn đã dùng ở page khác, có đánh dấu - cùng danh sách các page\ncùng chủ đề đã có. Bấm một nhãn để thêm; bấm một page liên quan để mở ở tab mới. Sau khi\nlưu một lần sửa, một thông báo nhỏ cũng đề nghị việc này. Nhãn vẫn là riêng của tài khoản\nbạn, AI chỉ thấy các page bạn vốn đọc được, và câu trả lời được nhớ đến khi page thay\nđổi nên mở lại là có ngay.\nSkill: mở Quản lý skill để thấy mỗi skill AI một thẻ -\nTóm tắt trang (TL;DR), Tạo page bằng AI,\nGiải thích phần đã chọn, Dịch phần đã chọn,\nTrợ lý soạn thảo và Nhãn và page liên quan. Thẻ chỉ hiện\ntên, mô tả ngắn và cho biết skill đang dùng nội dung Mặc định hay\nTuỳ chỉnh; bấm vào thẻ để đọc đầy đủ hướng dẫn, rồi Sửa\nđể chỉnh, bắt đầu từ nội dung hiện tại thay vì viết lại từ đầu. Dùng\nLưu skill để áp dụng hoặc Dùng mặc định để quay về nội dung có\nsẵn. Đây là nơi đặt giọng văn, bảng thuật ngữ hay quy ước đặt tên nhãn. WikiHub luôn tự\nthêm các phần cố định - định dạng câu trả lời, ngôn ngữ đích, quy tắc an toàn và, với\npage, định dạng trình soạn thảo hiểu được - nên sửa skill không làm hỏng tính năng. Nội\ndung tóm tắt có sẵn được viết cho người chưa từng xem page (phong cách chuyển thể từ\nskill mã nguồn mở tldr-skill, Apache-2.0). Hướng dẫn mới áp dụng cho câu trả lời kế\ntiếp, các bản đã lưu theo hướng dẫn cũ không được dùng lại.\nMô hình chạy ở dịch vụ bạn kết nối, nên WikiHub chỉ gửi yêu cầu khi có người nhấn.\n),\n},"
+ },
+ {
+  "id": "admin-mail",
+  "title": "Hộp thư quản trị & Yêu cầu",
+  "category": "Administration",
+  "keywords": [
+   "mail",
+   "email",
+   "smtp",
+   "inbox",
+   "hộp thư",
+   "thông báo",
+   "chuông",
+   "yêu cầu",
+   "mật khẩu",
+   "hết hạn",
+   "tài khoản",
+   "liên hệ"
+  ],
+  "text": "<>\nNgười chưa có tài khoản, hoặc quên mật khẩu, không thể đăng nhập để nhờ giúp đỡ.\nLiên kết Liên hệ quản trị viên trên trang đăng nhập cho họ một biểu\nmẫu ngắn (các ô có dấu * đỏ là bắt buộc: tên và email; nội dung không bắt buộc).\nWikiHub lưu yêu cầu, báo trên chuông cho mọi Quản trị hệ thống,\nhiển thị ở trang Yêu cầu của tất cả họ, và gửi mail tới các hộp thư\nquản trị.\nMọi Quản trị hệ thống đều thấy mọi yêu cầu và ai cũng có thể xử lý - ai thấy trước\nthì xử lý trước. Không cần hộp thư để xem hay xử lý yêu cầu: hộp thư chỉ quyết định\nemail được gửi đi đâu. Khi một người đã xử lý xong, yêu cầu được đánh dấu đã giải\nquyết với tất cả, và thông báo trên chuông của những người khác tự tắt. Nếu chưa có\nhộp thư nào, yêu cầu vẫn đến trong app với nhãn Chỉ trong app; thông tin\nđăng nhập từ Tạo tài khoản / Đặt lại mật khẩu khi đó được hiện trên\nmàn hình để bạn tự chuyển cho người dùng.\nThiết lập hộp thư (Quản trị viên hệ thống): mở\nAdministration → Hộp thư quản trị và chọn\nThêm hộp thư.\nTài khoản quản trị: tài khoản sở hữu hộp thư này - email yêu cầu\nđược gửi tới địa chỉ của nó và nó ký tên trên mail tài khoản đó gửi đi. Chỉ có thể\ngắn với Quản trị viên hệ thống, và mỗi tài khoản có một hộp thư. Nếu tài khoản đó bị\nvô hiệu hóa, hộp thư của nó tự động ngừng nhận yêu cầu. (Dù vậy mọi Quản trị hệ thống\nvẫn thấy các yêu cầu trong app.)\nĐịa chỉ hộp thư, Tên người gửi và\nNhà cung cấp: tên người gửi là tùy chọn, là tên hiển thị làm người\ngửi của các email yêu cầu trong ứng dụng thư của bạn (để trống sẽ hiện địa chỉ). Chọn\nGmail hoặc Outlook để điền sẵn máy chủ, hoặc chọn Khác rồi tự nhập\nMáy chủ SMTP, Cổng và Bảo mật\n(STARTTLS thường là cổng 587, SSL/TLS là cổng 465). Mỗi hộp thư có cấu hình riêng.\nTên đăng nhập và Mật khẩu: để trống tên đăng nhập\nđể dùng địa chỉ hộp thư. Mật khẩu được lưu mã hóa và không bao giờ hiển thị lại. Khi\nbấm Lưu, WikiHub đăng nhập thử vào máy chủ mail bằng các thông tin\nnày và chỉ lưu nếu thành công. Nếu không, sẽ không lưu gì và hộp thoại giải thích lỗi\nbằng lời dễ hiểu (câu trả lời gốc của máy chủ nằm trong Chi tiết kỹ thuật) để\nbạn sửa lại rồi thử tiếp. Gmail cần mật khẩu ứng dụng chứ không phải mật khẩu Google\nthông thường.\nMỗi hộp thư tự gửi mail cho chính nó, nên với ba hộp thư, một yêu cầu đến sẽ tạo ba\nmail. Người gửi yêu cầu chỉ được báo có sự cố gửi mail khi không hộp thư nào\nliên lạc được.\nChỉ chính chủ hộp thư, hoặc quản trị viên cấp cao (built-in), mới có quyền sửa cấu\nhình, kiểm tra kết nối, đổi mật khẩu hay xoá hộp thư đó - một Quản trị viên hệ thống\nkhác nhìn thấy nó trong danh sách nhưng các nút thao tác đều bị mờ đi (disabled), nên\nkhông xảy ra chuyện sửa nhầm hay cố tình phá hộp thư của người khác.\nTrạng thái trên trang Hộp thư quản trị:\nHoạt động: lần đăng nhập hoặc gửi gần nhất thành công.\nCần mật khẩu mới: máy chủ mail từ chối mật khẩu, thường vì đã hết\nhạn.\nKhông kết nối được / Lỗi máy chủ: không liên lạc\nđược với máy chủ hoặc máy chủ từ chối thư. Không phải vấn đề mật khẩu.\nĐã tắt / Tài khoản bị vô hiệu: không nhận yêu\ncầu. Dùng nút nguồn để bật hoặc tắt một hộp thư.\nKhi mật khẩu hộp thư hết hạn. Nhiều nhà cung cấp mail bắt đổi mật\nkhẩu vài tháng một lần. WikiHub đăng nhập vào mọi hộp thư đang bật mỗi giờ một lần.\nKhi máy chủ từ chối mật khẩu, chủ hộp thư sẽ thấy một thanh cảnh báo đỏ ở đầu mọi\ntrang với nút Cập nhật mật khẩu (cũng có ở biểu tượng chìa khóa trên\ntrang Hộp thư quản trị). Mật khẩu mới được thử với máy chủ mail trước khi lưu. Các\nquản trị viên khác không thấy thanh này - việc sửa là của chủ hộp thư.\nPool hộp thư. Mọi hộp thư còn hoạt động trên trang này - được đánh dấu\nTrong pool bên cạnh trạng thái - đều có thể gửi thay cho quản trị viên\nchưa có hộp thư riêng. Các mail tự động nói ở trang này, cũng như ở\nNgười dùng và tab Access của một space, vẫn được gửi dù người\nthực hiện thao tác chưa từng cấu hình hộp thư riêng (hoặc hộp thư của họ đang mất kết\nnối): WikiHub sẽ chuyển tiếp mail qua một hộp thư trong pool, được chọn tự động. Mail\nvẫn ký tên đúng người thực hiện thao tác, và khi ai đó bấm trả lời thì mail sẽ đến đúng\nngười đó, không phải chủ hộp thư vừa chuyển tiếp hộ. Chỉ khi pool rỗng - không còn hộp\nthư nào trong hệ thống đang kết nối - thì mail mới thực sự không gửi được.\nTrang Yêu cầu và chuông thông báo. Tài khoản gắn với một hộp thư đang\nbật có mục Yêu cầu ngay dưới Trang chủ và Spaces trên thanh bên, kèm số yêu cầu chưa\nđọc. Mỗi yêu cầu mới cũng đến chuông trên thanh trên cùng như mọi\nthông báo khác (xem Thông báo).\nLọc theo Tất cả, Chưa đọc,\nĐang mở hoặc Đã xử lý; mỗi tab cho biết có bao nhiêu\nyêu cầu. Danh sách Loại yêu cầu thu hẹp về yêu cầu tạo tài khoản, đặt\nlại mật khẩu hoặc yêu cầu khác, và số trên các tab đổi theo. Dùng Số dòng\nvà các mũi tên dưới bảng để chuyển trang. Mở một yêu cầu bằng\nXem chi tiết sẽ đánh dấu đã đọc; Đánh dấu chưa đọc\nhoàn tác, và Đánh dấu tất cả đã đọc xử lý toàn bộ. Trạng thái đã\nđọc là của riêng bạn.\nĐánh dấu đã xử lý đóng yêu cầu cho tất cả những người nhận nó, để\nhai quản trị viên không trả lời cùng một người. Mở lại hoàn tác.\nMỗi yêu cầu cho biết mail gửi tới hộp thư của bạn đã gửi được chưa. Yêu\ncầu luôn được lưu ở trang Yêu cầu, kể cả khi không gửi được mail.\nXử lý yêu cầu. Với yêu cầu tạo tài khoản hoặc đặt lại mật khẩu, cửa sổ\nchi tiết có khung Xử lý yêu cầu này với hai cách làm:\nTự động. Tự động tạo tài khoản tạo tài khoản từ yêu cầu (vai\ntrò Member, tên đăng nhập lấy từ địa chỉ email, mật khẩu tự sinh) và gửi tên đăng nhập\ncùng mật khẩu tới người gửi từ hộp thư của bạn. Tự động đặt lại mật khẩu đặt\nmột mật khẩu tự sinh cho tài khoản mà yêu cầu nêu tên và gửi mail cho họ. Bạn được hỏi\nxác nhận trước, và yêu cầu được đánh dấu đã xử lý sau đó. Dù thế nào, kết quả cũng nằm\nsau nút Hiện thông tin với nút Sao chép cho tên đăng\nnhập và địa chỉ email - và nếu không gửi được mail thì có cả mật khẩu, chỉ hiện đúng\nmột lần đó và không được lưu lại - để bạn chuyển cho họ bằng cách khác.\nThủ công. Tạo tài khoản thủ công mở form Tạo người dùng quen\nthuộc với thông tin của người gửi đã điền sẵn; Đặt mật khẩu thủ công cho bạn\ntự chọn (hoặc tạo ngẫu nhiên) mật khẩu mới. WikiHub không gửi mail trong trường hợp\nnày, và yêu cầu được đánh dấu đã xử lý khi bạn lưu.\nĐặt lại tự động chỉ được đề nghị khi email trong yêu cầu đúng là email đang có trên tài\nkhoản, để mật khẩu không bao giờ gửi tới một địa chỉ ai đó chỉ gõ vào. Nếu địa chỉ khác,\ntài khoản bị vô hiệu hóa, hoặc là quản trị viên bạn không quản lý được, khung sẽ nói lý\ndo và chỉ còn cách thủ công. Yêu cầu đã xử lý thì không còn được đề nghị gì, nên không\nthể làm hai lần. Cả hai thao tác cần quyền Manage users và được ghi vào\nnhật ký kiểm toán của Người dùng.\nAi cũng có thể nhập bất kỳ địa chỉ mail nào vào biểu mẫu. Hãy coi nó là cách để trả\nlời, không phải bằng chứng về danh tính - hãy xác nhận danh tính trước khi tạo tài\nkhoản hoặc đặt lại mật khẩu cho ai đó. Mật khẩu gửi qua mail chỉ là tạm thời: hãy nhắc\nhọ đổi sau khi đăng nhập.\nGiao diện của các email. Thông báo mà hộp thư của bạn gửi cho chính\nnó, và các thư cấp tài khoản hoặc mật khẩu cho người dùng, được trình bày theo màu và\ntên của workspace, có bản văn bản thuần cho các ứng dụng thư không hiển thị được, và\nkết thúc bằng chữ ký (với thư tài khoản và mật khẩu là tên và địa chỉ của chính bạn).\nHãy đặt WIKIHUB_PUBLIC_URL (ví dụ https://wiki.example.com)\nđể thư có nút Mở Yêu cầu hoặc Đăng nhập; để trống thì các nút\nđó đơn giản là không có.\nMật khẩu hộp thư được mã hóa bằng WIKIHUB_MAIL_ENCRYPTION_KEY, hoặc, khi\nđể trống, bằng khóa suy ra từ WIKIHUB_SECRET_KEY. Nếu giá trị đó đổi,\ncác mật khẩu đã lưu không đọc được nữa: các hộp thư sẽ hiện\nCần mật khẩu mới và mỗi chủ hộp thư nhập lại mật khẩu của mình.\nBackend và worker phải dùng cùng một giá trị.\n),\n},"
+ },
+ {
+  "id": "safe-operation",
+  "title": "Vận hành an toàn & Xử lý sự cố hệ thống",
+  "category": "Administration",
+  "keywords": [
+   "security",
+   "bảo mật",
+   "troubleshooting",
+   "xử lý sự cố",
+   "failed",
+   "upload",
+   "tải lên",
+   "access",
+   "redis",
+   "minio"
+  ],
+  "text": "<>\nCác thực hành tốt nhất để duy trì sự ổn định của workspace và giải\nquyết các vấn đề kỹ thuật:\nVấn đề quyền truy cập & Quyền hạn: Nếu một người\ndùng không thể thấy một trang hoặc space, hãy kiểm tra\nSpace access, giới hạn Page access, và tư cách\nthành viên nhóm - hoặc chỉ cần mở Effective\npermissions trong bảng Access của space cho người dùng đó và\nxem câu trả lời đã phân giải trực tiếp thay vì đối chiếu cả ba nguồn\nbằng tay.\nLỗi tải lên: Kiểm tra giới hạn kích thước tệp và\nphần mở rộng được phép trong Settings. Đảm bảo\nobject storage MinIO/S3 đang hoạt động khoẻ mạnh và phản hồi tốt.\nLỗi Import Worker: Kiểm tra log tác vụ worker chạy\nnền, kết nối hàng đợi Redis, và dung lượng đĩa còn trống. Các kho lưu\ntrữ đã quét có thể được tiếp tục từ bảng Backup.\nTài liệu API: Quản trị viên có thể truy cập tài\nliệu OpenAPI / Swagger tương tác tại /docs và ReDoc tại\n/redoc.\nBa thứ mọi người thường đi tìm nhưng chưa tồn tại trong bản build này,\nnên đáng để biết trước khi bạn đi tìm: không có mail mời tự động\n(tài khoản được tạo trực tiếp - xem Quản lý người dùng & Nhóm;\nngười không đăng nhập được có thể gửi yêu cầu từ trang đăng nhập, và quản trị viên có\nthể trả lời từ trang Yêu cầu bằng cách tạo tài khoản và gửi mail thông tin đăng nhập, xem\nHộp thư quản trị & Yêu cầu), không có cảnh báo theo dõi\ntrang/@-mention (chuông báo về thay đổi quyền truy cập và tài khoản của chính bạn - với\nhoạt động của trang, thứ gần nhất là luồng hoạt động trên Home và Recently\nvisited/worked on), và không có trình xem nhật ký kiểm\ntoán trong ứng dụng (hành động của admin và việc giả lập tài khoản\nđược ghi log phía server, nhưng chưa có nơi nào trong giao diện để\nduyệt log đó).\n),\n},\n];"
+ }
+]

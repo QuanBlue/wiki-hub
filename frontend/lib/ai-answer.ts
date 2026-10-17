@@ -21,6 +21,33 @@ export type WebSource = {
   snippet: string;
 };
 
+/** A button under an answer that opens a page of the application. */
+export type AnswerAction = {
+  id: string;
+  /** An address inside WikiHub; always starts with a single ``/``. */
+  href: string;
+  label_en: string;
+  label_vi: string;
+};
+
+/** One thing the assistant proposes to do; nothing happens until the person confirms. */
+export type AnswerPlanStep = {
+  type: "create_space" | "create_page" | "favorite_space" | "add_space_member";
+  /** Checked values, sent back unchanged to run the step. */
+  args: Record<string, unknown>;
+  label_en: string;
+  label_vi: string;
+};
+
+/** Something that was asked for but cannot be offered, and why. */
+export type AnswerPlanSkip = {
+  label: string;
+  reason_en: string;
+  reason_vi: string;
+};
+
+export type AnswerPlan = { steps: AnswerPlanStep[]; skipped: AnswerPlanSkip[] };
+
 export type AnswerResult = {
   found: boolean;
   /** Markdown with ``[n]`` marks, each naming one of ``sources``. */
@@ -32,9 +59,13 @@ export type AnswerResult = {
   related: AnswerSource[];
   cached: boolean;
   /** What the answer stands on: the wiki, the internet, or the AI's own general knowledge. */
-  basis?: "wiki" | "web" | "general" | "clarify";
+  basis?: "wiki" | "web" | "general" | "clarify" | "app" | "plan";
   /** The internet pages the answer cites. */
   web_sources?: WebSource[];
+  /** Buttons to the pages the answer is about: settings, the account, the user guide. */
+  actions?: AnswerAction[];
+  /** Steps to carry out once the person confirms (basis is "plan"). */
+  plan?: AnswerPlan | null;
 };
 
 /**

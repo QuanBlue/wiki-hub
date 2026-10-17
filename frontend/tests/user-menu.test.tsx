@@ -134,6 +134,8 @@ describe("UserMenu", () => {
   });
 
   it("signs out and returns to the login page", async () => {
+    window.localStorage.setItem("wikihub:chat:v1:u-1", "[]");
+    window.localStorage.setItem("wikihub:chat-width", "500");
     const actor = userEvent.setup();
     render(<UserMenu user={makeUser()} />);
     await actor.click(trigger("Ann Lee"));
@@ -142,10 +144,15 @@ describe("UserMenu", () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
     expect(mocked.post).toHaveBeenCalledWith("/api/v1/auth/logout");
     expect(refresh).toHaveBeenCalled();
+    // What was asked of the assistant does not stay for the next person; a preference does.
+    expect(window.localStorage.getItem("wikihub:chat:v1:u-1")).toBeNull();
+    expect(window.localStorage.getItem("wikihub:chat-width")).toBe("500");
+    window.localStorage.clear();
   });
 
   it("reports a failed sign-out and allows another try", async () => {
     mocked.post.mockRejectedValueOnce(new ApiError(500, "x", "Server down."));
+    window.localStorage.setItem("wikihub:chat:v1:u-1", "[]");
     const actor = userEvent.setup();
     render(<UserMenu user={makeUser()} />);
     await actor.click(trigger("Ann Lee"));
@@ -153,6 +160,9 @@ describe("UserMenu", () => {
 
     await waitFor(() => expect(toastError).toHaveBeenCalled());
     expect(replace).not.toHaveBeenCalled();
+    // Still signed in, so the conversation stays.
+    expect(window.localStorage.getItem("wikihub:chat:v1:u-1")).toBe("[]");
+    window.localStorage.clear();
 
     await actor.click(trigger("Ann Lee"));
     expect(screen.getByRole("menuitem", { name: /Sign out/ })).not.toHaveAttribute("data-disabled");

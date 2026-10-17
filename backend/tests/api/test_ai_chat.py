@@ -36,7 +36,9 @@ def model(monkeypatch: pytest.MonkeyPatch) -> list[list[dict[str, str]]]:
         yield " [1]."
         yield Usage(10, 5)
 
-    async def rewrite(config, messages, *, max_tokens: int = 2000) -> ChatReply:
+    async def rewrite(
+        config, messages, *, max_tokens: int = 2000, temperature: float = 0.2
+    ) -> ChatReply:
         return ChatReply("address of the server", Usage(3, 2))
 
     async def no_usage(**_: object) -> None:

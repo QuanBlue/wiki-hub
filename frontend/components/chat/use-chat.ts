@@ -5,7 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AnswerResult } from "@/lib/ai-answer";
 import {
   ChatStreamError,
+  clearStoredChats,
   EMPTY_CHAT,
+  executePlan,
+  type ChatDetail,
   loadChat,
   messagesToSend,
   saveChat,
@@ -33,6 +36,18 @@ function finished(result: AnswerResult): Partial<Assistant> {
     related: result.related,
     basis: result.basis ?? "wiki",
     webSources: result.web_sources ?? [],
+    actions: result.actions ?? [],
+    plan: result.plan
+      ? {
+          steps: result.plan.steps,
+          skipped: result.plan.skipped,
+          // Nothing to confirm when every step was left out.
+          status: result.plan.steps.length
+            ? ("pending" as const)
+            : ("done" as const),
+          results: [],
+        }
+      : undefined,
     searching: undefined,
   };
 }
@@ -43,11 +58,16 @@ function finished(result: AnswerResult): Partial<Assistant> {
  * back to), try again and start over. It is kept in this browser for this person, and nowhere
  * else.
  */
-export function useChat(userId: string) {
+export function useChat(userId: string, detail: ChatDetail = "normal") {
   const [state, setState] = useState<ChatState>(EMPTY_CHAT);
   const [loaded, setLoaded] = useState(false);
   const stateRef = useRef<ChatState>(EMPTY_CHAT);
   const controllerRef = useRef<AbortController | null>(null);
+  // The level chosen now, read when a question is sent (also when one is asked again).
+  const detailRef = useRef<ChatDetail>(detail);
+  useEffect(() => {
+    detailRef.current = detail;
+  }, [detail]);
 
   const commit = useCallback((next: ChatState) => {
     stateRef.current = next;
@@ -84,6 +104,8 @@ export function useChat(userId: string) {
 
   // Read what this browser kept - after mount, so the server and the first paint agree.
   useEffect(() => {
+    // Whatever another person left in this browser goes before this one's is read.
+    clearStoredChats(userId);
     commit(loadChat(userId));
     setLoaded(true);
   }, [userId, commit]);
@@ -127,6 +149,7 @@ export function useChat(userId: string) {
       try {
         const result = await streamChat(toSend, {
           signal: controller.signal,
+          detail: detailRef.current,
           onDelta: (piece) =>
             patchAssistant(reply.id, (entry) => ({
               content: entry.content + piece,
@@ -134,6 +157,11 @@ export function useChat(userId: string) {
             })),
           onSearching: (query) =>
             patchAssistant(reply.id, () => ({ searching: query })),
+          onReset: () =>
+            patchAssistant(reply.id, () => ({
+              content: "",
+              searching: undefined,
+            })),
         });
         patchAssistant(reply.id, () => finished(result));
         settle(slot);
@@ -214,54 +242,38 @@ export function useChat(userId: string) {
     [commit],
   );
 
-  /** Give up on the reply being written; the question goes back to be edited or sent again. */
-  const stop = useCallback((): string => {
+  /**
+   * Give up on the reply being written. The question stays in the conversation, with what was
+   * written of the reply and a note that it was cancelled; asking again is one press away.
+   */
+  const stop = useCallback((): void => {
     const controller = controllerRef.current;
-    if (!controller) return "";
+    if (!controller) return;
     controller.abort();
     controllerRef.current = null;
-    const { entries, slots } = stateRef.current;
+    const { entries } = stateRef.current;
     const last = entries[entries.length - 1];
     const asked = entries[entries.length - 2];
     // A reply is only ever under way as the last of a question and its reply, so the guard
     // below cannot trigger; it is there so a broken state is left alone rather than cut into.
-    /* v8 ignore next 7 -- @preserve */
-    if (
-      last?.role !== "assistant" ||
-      last.status !== "streaming" ||
-      asked?.role !== "user"
-    ) {
-      return "";
-    }
-    const prefix = entries.slice(0, -2);
-    const slot = asked.slot ? slots[asked.slot] : undefined;
-    if (asked.slot && slot && slot.pending !== undefined) {
-      // An edit that was stopped is undone: the version it replaced comes back.
-      const variants = slot.variants.slice(0, -1);
-      const back = variants[slot.pending] ?? [];
-      const rest = { ...slots };
-      delete rest[asked.slot];
-      commit({
-        entries: [...prefix, ...back],
-        slots:
-          variants.length > 1
-            ? { ...rest, [asked.slot]: { variants, active: slot.pending } }
-            : rest,
-      });
-      return asked.content;
-    }
-    commit({ entries: prefix, slots });
-    return asked.content;
-  }, [commit]);
+    /* v8 ignore next 3 -- @preserve */
+    if (last?.role !== "assistant" || last.status !== "streaming") return;
+    patchAssistant(last.id, () => ({
+      status: "cancelled",
+      searching: undefined,
+    }));
+    // A cancelled edit stays too, next to the version it was made from.
+    settle(asked?.role === "user" ? asked.slot : undefined);
+  }, [patchAssistant, settle]);
 
-  /** Ask the last question again, after a reply that failed. */
+  /** Ask the last question again, after a reply that failed or was cancelled. */
   const retry = useCallback(() => {
     const { entries, slots } = stateRef.current;
     const last = entries[entries.length - 1];
     const asked = entries[entries.length - 2];
     if (
       last?.role !== "assistant" ||
-      last.status !== "error" ||
+      (last.status !== "error" && last.status !== "cancelled") ||
       asked?.role !== "user"
     ) {
       return;
@@ -269,6 +281,73 @@ export function useChat(userId: string) {
     commit({ entries: entries.slice(0, -2), slots });
     void send(asked.content, asked.slot);
   }, [commit, send]);
+
+  /**
+   * Answer a question again. It is an edit that changes nothing: the earlier reply, with what
+   * followed it, is kept as a version to go back to, and the new reply becomes the latest.
+   * Unlike ``retry`` this works for any question, not only after a failure.
+   */
+  const regenerate = useCallback(
+    (id: string) => {
+      const asked = stateRef.current.entries.find((entry) => entry.id === id);
+      if (asked?.role === "user") edit(id, asked.content);
+    },
+    [edit],
+  );
+
+  /** The person confirmed a proposed plan: run its steps, showing each as it ends. */
+  const runPlan = useCallback(
+    async (id: string, lang: string): Promise<boolean> => {
+      const found = stateRef.current.entries.find(
+        (entry) => entry.id === id && entry.role === "assistant",
+      ) as Assistant | undefined;
+      if (!found?.plan || found.plan.status !== "pending") return false;
+      patchAssistant(id, (entry) => ({
+        plan: { ...entry.plan!, status: "running", results: [] },
+      }));
+      try {
+        const ok = await executePlan(found.plan.steps, {
+          lang,
+          onStep: (step) =>
+            patchAssistant(id, (entry) => ({
+              plan: { ...entry.plan!, results: [...entry.plan!.results, step] },
+            })),
+        });
+        patchAssistant(id, (entry) => ({
+          plan: { ...entry.plan!, status: ok ? "done" : "failed" },
+        }));
+        return ok;
+      } catch (error) {
+        patchAssistant(id, (entry) => ({
+          plan: {
+            ...entry.plan!,
+            status: "failed",
+            results: [
+              ...entry.plan!.results,
+              {
+                ok: false,
+                error:
+                  error instanceof ChatStreamError ? error.failure : "error",
+              },
+            ],
+          },
+        }));
+        return false;
+      }
+    },
+    [patchAssistant],
+  );
+
+  /** The person decided not to run the plan. */
+  const cancelPlan = useCallback(
+    (id: string) =>
+      patchAssistant(id, (entry) =>
+        entry.plan?.status === "pending"
+          ? { plan: { ...entry.plan, status: "cancelled" } }
+          : {},
+      ),
+    [patchAssistant],
+  );
 
   const clear = useCallback(() => {
     controllerRef.current?.abort();
@@ -307,6 +386,9 @@ export function useChat(userId: string) {
     switchVersion,
     stop,
     retry,
+    regenerate,
+    runPlan,
+    cancelPlan,
     clear,
     adopt,
   };

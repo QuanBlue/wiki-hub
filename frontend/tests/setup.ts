@@ -6,6 +6,8 @@ import { afterEach, vi } from "vitest";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  // Per tab, like the chat panel's open state: one test must not leave it open for the next.
+  if (typeof window !== "undefined") window.sessionStorage.clear();
 });
 
 // jsdom implements neither of these, and both are used by the layout components.

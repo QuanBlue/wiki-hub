@@ -80,6 +80,11 @@ The layering is not optional. To add an endpoint:
 5. **Router** — `app/modules/<feature>/router.py`, HTTP wiring only. Register it
    in `app/api/v1/router.py`.
 6. **Tests** — service tests for the rules, API tests for the contract.
+7. **Help** — document the feature in the in-app Help page
+   (`frontend/components/help/help-content.{en,vi}.tsx`), then run
+   `python scripts/build_help_knowledge.py`: the chat assistant answers "how do I…"
+   questions from a copy of Help kept in `backend/app/assets/help_{en,vi}.json`, and a
+   backend test fails while that copy is stale (`--check` does the same by hand).
 
 ## Migrations
 

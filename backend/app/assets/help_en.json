@@ -1,0 +1,656 @@
+[
+ {
+  "id": "getting-started",
+  "title": "Getting started & Navigation",
+  "category": "Workspace",
+  "keywords": [
+   "login",
+   "search",
+   "navigation",
+   "home",
+   "sidebar",
+   "rail"
+  ],
+  "text": "<>\nWelcome to WikiHub — the central documentation and team\nknowledge hub. To get started, sign in with your registered username or\nemail address.\nPress Ctrl + K (or ⌘ + K on\nmacOS) anywhere in the application to instantly open Global Search.\nType keywords, space names, or page titles to jump directly to any document.\nSearch looks for your words inside space names/keys/descriptions and page\ntitles/content, ignores accents and capitals (giam sat finds\nGiám sát) and forgives small typos in titles. You can type a whole\nquestion, such as ip của Tessel Abbott là bao nhiêu? - filler words\nare ignored. Rarer words count for more (in tài khoản cloud của nuti\nthe word nuti decides), a match in the title counts\nextra, and a page is only listed if it covers most of what you typed. Common\nVietnamese and English pairs are treated as the same word - tài khoản\nfinds Account, cài đặt finds install - and\nthe words found are highlighted in the results, with the passage that has them\nshown under the title. If an administrator has set an\nSemantic search (see AI assistant), search also finds pages by\nmeaning, even when they share none of your words. It does not\ncurrently search attachment filenames or attachment content, and only ever shows\nresults you have permission to see. There are no date, space, or author filters.\nKey Interface Regions:\nTop Navigation Bar: the search pill (opens the same\nCtrl+K modal), a Help link (book\nicon, takes you here), a notification bell (what has\nhappened to you - see Notifications), the Light/Dark theme toggle, and\nyour user menu.\nLeft Sidebar Rail: Home and\nSpaces (plus Requests for accounts linked to an\nadmin mailbox), then your Most visited spaces -\nan automatic, server-ranked list based on which spaces you actually open,\nnot a manually pinned one - and, for admins, an\nAdministration section.\nSidebar Collapse: click the collapse/expand button, or\ndrag the sidebar's right edge past its minimum width, to shrink it to\nicons-only. Your preference is remembered on this device.\n),\n},"
+ },
+ {
+  "id": "keyboard-shortcuts",
+  "title": "Keyboard Shortcuts Reference",
+  "category": "Workspace",
+  "keywords": [
+   "keyboard",
+   "shortcut",
+   "hotkey",
+   "ctrl",
+   "cmd",
+   "escape"
+  ],
+  "text": "<>\nThere is no command palette beyond Search - just this set. The ones marked\nRebindable are defaults you can change; see\nCustomising Keyboard Shortcuts under Account.\nShortcut |\nWhere & what it does |\nRebindable |\nCtrl/⌘ + K |\nAnywhere - opens or closes Global Search. Then ↑/↓ to move the selection, Enter to open it, Esc to close. |\nYes |\nCtrl/⌘ + F |\nA second way to open Global Search, in place of the browser's own find bar. Inside a text or code attachment preview it focuses that preview's own Search content box instead, so you can search the file you are looking at. |\nYes |\nCtrl/⌘ + S |\nWhile editing a page - saves immediately, intercepting the browser's own Save-page dialog. |\nYes |\nCtrl/⌘ + R |\nWhile editing - intercepted to ask “Reload site?” instead of silently discarding unsaved changes. |\nYes |\nSpace |\nIn a video attachment preview - plays or pauses, from anywhere in the preview rather than only while the player itself has focus. Ignored while a button or text field is focused, so it never steals the key from something else. |\nYes |\n/ |\nStart of an empty line in the editor - opens the slash command menu (see Slash Commands). |\nNo |\n← / → |\nIn a PowerPoint attachment preview - previous/next slide (works both inside and outside fullscreen Present mode). |\nNo |\nEsc |\nCloses the currently focused overlay - a dialog, the mobile sidebar drawer, or (checked first) just the PowerPoint slideshow without closing its parent attachment window. |\nNo |\n),\n},"
+ },
+ {
+  "id": "spaces",
+  "title": "Spaces, Access Rights & Roles",
+  "category": "Workspace",
+  "keywords": [
+   "favourite",
+   "favorite",
+   "members",
+   "visibility",
+   "archive",
+   "layers",
+   "permissions",
+   "roles"
+  ],
+  "text": "<>\nA Space is a dedicated knowledge container for a specific\nteam, department, or project. Every page in WikiHub belongs to a space.\n“Spaces keep team documentation organized and isolated with custom\naccess rules, member permissions, and unique space keys.”\nSpace Management Capabilities:\nCreating a Space: Users with space-creation rights can\nclick Create Space in the Spaces directory. Specify a\nunique Space Key (e.g., ENG,\nPRODUCT), space name, description, and custom emoji or\nvector icon.\nSpace Visibility (set from\nEdit space > Access & Permissions):\nOpen: every signed-in user\ngets full read and write access automatically -\nView, Add/Edit, Delete,\nDelete own and Move - with no need to grant\nanyone anything individually. The two permissions that could\nreconfigure the space itself, Admin and\nRestrictions, are never handed out for free in either\nmode - only a space Owner or someone explicitly promoted holds them.\nRestricted: nobody has\nanything by default - the permission tables below become the sole\nsource of who can view, edit, delete, or move anything.\nSwitching between the two is immediate and non-destructive: a\nRestricted space's permission tables stay exactly as configured while\nthe space is Open, so flipping back and forth never means rebuilding\nthem from scratch.\nSpace Owner: every space always has at least one Owner\n(the creator, by default) - a protected Administrator that cannot be\nremoved down to zero, so a space can never end up with nobody able to\nmanage it no matter what happens to the permission tables below. Manage\nthe list from Edit space > General; only an existing\nOwner can add or remove another one. A space can have several Owners at\nonce, and each one bypasses every page-level restriction the same way a\nAdmin grant does.\nPer-user & per-group permissions: instead of a fixed\nlist of named roles, WikiHub grants specific capabilities directly to a\nuser or a group - View, Add/Edit,\nDelete, Delete own, Restrictions,\nMove, and Admin - from a space's own\nEdit space > Access & Permissions tab, or from\nAdministration > Spaces (see\nSpace Access & Effective Permissions for the full picture,\nincluding how to check any one person's resolved access). Exporting a\npage follows View automatically, with no separate grant to\nhand out. While the space is Open, the tables show All\ninstead of a checkbox for the five permissions Open already grants\neveryone - Admin and Restrictions stay live\ncheckboxes regardless of mode, since those are the only way anyone\nbecomes an Admin or narrows who can restrict a page.\nA direct grant overrides a group's, not adds to it:\ngroups you belong to combine with each other as usual, but the moment a\nuser has their own row on a space, that row alone decides\neverything for them - group membership stops contributing anything\nbeyond it. This is how one member of an otherwise broad group (say,\neveryone with Add/Edit) can be narrowed to\nView only, by giving that person their own smaller row.\nAdmin is the one exception: a group's\nAdmin grant always still applies, so a space can never\nend up locked with no administrator reachable.\nEditing a space: click Edit space\n(pencil icon in the space sidebar footer, admins only) for three tabs:\nGeneral (name, Space Owner, and an optional per-space\nattachment-size limit that overrides the workspace default),\nAccess & Permissions (General access plus the\ntables above), and Space settings & Danger zone\n(Archive/Restore the space, or permanently Delete it - permanent\ndeletion is only available from Administration > Spaces,\nnot here).\nFavouriting: Click the ★ Star icon on a\nspace's header to add it to your favourites. Favourited spaces show up\nunder My favorite spaces on the Home page, and under the\nFavorite tab of the Spaces directory (\n/spaces?tab=starred). The directory's own\nOwn tab is different - it lists spaces\nyou own (see Space Owner above), not ones you have starred.\nThe sidebar's own Most visited list is separate and\nautomatic - it ranks whichever spaces you actually open most, independent of\nwhat you've starred.\n),\n},"
+ },
+ {
+  "id": "ask-ai-from-search",
+  "title": "Ask AI from search",
+  "category": "Workspace",
+  "keywords": [
+   "ai",
+   "ask",
+   "question",
+   "answer",
+   "search",
+   "sources",
+   "citation",
+   "assistant"
+  ],
+  "text": "<>\nQuick search can answer a question, not only list pages. Open search (Ctrl+K or\nthe search bar), type a question such as what is the IP of the DMS SaaS system?\nand click Ask AI at the top of the results, or press Ctrl+Enter.\nPlain Enter still opens the highlighted result. The row only appears when an\nadministrator has connected an AI endpoint and the question is at least two characters.\nThe answer is short and every statement carries a numbered mark such as\n1. Click a mark to open the page it came from. A list of several things\n(systems with their addresses, accounts, servers) comes back as a table. Under the\nanswer, Sources lists the pages the marks stand for, one line each - hover a\nrow to see the part of the page that was read. Also read is folded away\nbelow it and lists pages that were only looked at, never cited, so they cannot be taken\nfor sources.\nGoing back: Results or Esc returns to the normal\nresults (a second Esc closes search). Changing the question leaves the answer,\nbecause it belongs to the question it was written for.\nWhat it reads: only pages you can open. Page and space permissions apply\nexactly as in normal search, so a restricted page is never read on your behalf.\nPasswords, tokens and keys are replaced with [hidden] before the AI reads\nthem and again in what it writes - open the source page to see them yourself.\nWhen there is no answer, it says so and offers the pages that may help.\nWikiHub never shows an answer it cannot tie to a page: a reply with no valid page mark is\ndiscarded.\nCost: a question uses the same hourly limit as the other AI features.\nAsking the same thing again within an hour, while the pages are unchanged, is served from a\nsaved copy and costs nothing. A question that matches no page never reaches the model.\nAdministrators see these under Questions answered in the AI usage statistics.\nThe AI can misread a page. Open the sources before you rely on an answer for something that\nmatters.\n),\n},"
+ },
+ {
+  "id": "chat-with-ai",
+  "title": "Chat with the AI assistant",
+  "category": "Workspace",
+  "keywords": [
+   "ai",
+   "chat",
+   "assistant",
+   "question",
+   "follow-up",
+   "sources",
+   "web search",
+   "general knowledge"
+  ],
+  "text": "<>\nWhen an administrator has connected an AI endpoint, a Chat with AI button (a\nsparkle icon) appears in the top bar of every page, next to the notifications. It opens a panel on the right where you\ncan ask a question and keep asking: a follow-up such as and its address? is\nunderstood from the earlier messages. The reply appears word by word, and\nEnter sends (Shift+Enter starts a new line).\nSizing: drag the left edge of the panel to make it wider or narrower\n(double-click the edge to reset it), use the expand button for the whole page, or use the\narrow keys on the edge. Clicking outside the panel puts it away; your conversation stays.\nWhere answers come from: first your wiki, with numbered marks such as\n1 that open the page and a Sources list, exactly as in search.\nFacts about your own systems, accounts and people come from the wiki only.\nThe internet: if an administrator turned on web search, the chat may look up\na public, technical question the wiki does not cover. You see\nSearching the web for ... with the exact query, and the answer lists the pages\nunder From the web with marks such as w1, which open in a new tab.\nOnly that short query leaves WikiHub - never a wiki page - and addresses, e-mails and\ninternal host names are removed from it first. If the search service finds nothing, or\nonly pages about something else (the free one behind a gateway sometimes does), WikiHub\ntries free sources that need no key - the open web (Bing, DuckDuckGo), Google News\nheadlines and Wikipedia - and reads the text of the pages it finds, again sending only\nthat short query.\nFollow-ups and numbers: earlier messages count as context, so\nI am in Cam Ranh after what is the weather today? is understood.\nWhen a question lacks something it depends on (a city), the assistant asks first. For the\nweather it reads real measurements (temperature, humidity, wind, chance of rain) and\nnames the source; for other questions it also reads the text of the top web pages, not\nonly their descriptions, so figures on them can be quoted. Pages are only fetched from\npublic addresses.\nGeneral knowledge: when neither the wiki nor the web answers and the\nquestion is general, the AI may answer from its own knowledge. Such an answer is always\nmarked Not checked against your wiki or any web page; treat it as a hint.\nExplain or translate: select a word, phrase or sentence in a question or\nan answer and the small AI button appears at the end of it, as on a page. It explains the\nwords (in Vietnamese by default) or translates them; the globe button switches the\nlanguage. Nothing is sent until you choose, and asking again is free.\nIt knows your account. Ask which spaces can I open?,\nwhat is my role in OPS?, how do I change my password? or\nwhy can't I see a page? and it answers from your own spaces,\nroles and permissions and from how WikiHub works, with buttons under the answer that\nopen the page you need (Spaces, your account, the user guide - and, for\nadministrators, the matching Administration page). It only ever reads your own\naccount, and shows administration buttons only to people who may open them.\nIt can do things for you. Ask create a space called abc and\nwrite a Prometheus guide in it and it shows a short plan - for example\nCreate space \"abc\", then Write the page \"Prometheus\nguide\" (the page is drafted by AI) - with Confirm and run and\nCancel. Nothing changes until you confirm, and it runs with your own\npermissions: what you could not do by hand it will not do, and a step you are not\nallowed to take is listed as not offered. It can create spaces and pages, add someone\nto a space with a role, and star a space. Each finished step has an\nOpen link. If a step fails, the ones after it are not run.\nIt reads this guide. Questions about how WikiHub works (backups,\npermissions, uploads, shortcuts...) are answered from the sections of this Help page.\nIf the feature belongs to administrators and you are not one, it says so and who to\nask.\nIt decides where to look. When the internet is allowed, a question\nabout now or the news (today, yesterday, a date, prices, weather) or one your wiki does\nnot clearly hold is sent to the web before an answer is written; questions about your\nown wiki and your account are answered from them. A reply that came to nothing gets a\nsecond look, and the choice for a question is kept for ten minutes, so asking again goes\nthe same way.\nHow much detail. Under the box, choose Brief (just the\nkey point), Balanced or Detailed (steps, values, examples and\nlimits). The choice is kept in this browser and applies to the next question; to see an\nearlier answer at another level, change it and press Answer again on the\nquestion.\nEasier to read. Answers are laid out to be scanned: the answer in a bold\nfirst sentence, steps as a numbered list, a table when several things have several facts\neach, code for what to type, italics for a term, a quote for words\ntaken from a page, coloured notes (Tip, Warning, Important, Note) for what must not be\nmissed, and a highlighter on the one value that matters. Colour is kept for those; the\nrest is plain.\nIt stays open. The panel stays open when you go to another page - also\nthrough the buttons it shows - and with your conversation in it. It closes only when you\nclick outside it, press Esc in it or use the X.\nEarlier questions. In the box, press ↑ to bring back the\nquestion you asked before, again for the one before that, and ↓ to come\nforward - back to what you were typing. The cursor goes to the end, so you can change\nit and send it. In a question of several lines the arrows move inside the text.\nYour conversation is kept only in this browser, for your account, and is removed\nwhen you sign out or switch account. Use\nNew chat to clear it. Stop cancels a reply: the question stays,\nwith what was written and a note that you cancelled it, and Try again asks\nit once more. Hover a question and press Answer again to get a\nfresh answer; the earlier one stays under the 1 / 2 arrows to go back to. From a search answer, Continue in chat carries it on.\nAdministrators find the switch under Administration, AI assistant,\nWeb search: choose the AI gateway's own search (no key), Tavily, Brave\nSearch or Serper (paste the key) and use Test search, which tries the\nservice you chose on its own. It is off by default. A paid service is more reliable than\nthe free one behind a gateway.\nThe AI can be wrong, and web pages can be wrong too. Open the sources before you rely on an\nanswer for something that matters.\n),\n},"
+ },
+ {
+  "id": "my-work",
+  "title": "Finding pages you've visited, edited, or saved",
+  "category": "Workspace",
+  "keywords": [
+   "recently visited",
+   "recently worked on",
+   "history",
+   "my work",
+   "saved",
+   "activity"
+  ],
+  "text": "<>\nBeyond the workspace-wide activity feed on Home, WikiHub keeps\nthree personal views of your own history:\nThese pages exist and work today, but there is no menu item pointing at them\nyet - bookmark whichever ones you use.\nRecently visited /recent/visited\n: pages you've opened on this device, most recent first. Stored in this\nbrowser only, like Save for later below.\nRecently worked on /recent/worked-on\n: pages you personally created or edited. This one is pulled from the\nserver, so it is the same list on every device you sign in from.\nSaved for later /saved\n: everything you've bookmarked with the Save for later\nbutton (see Liking, saving & sharing a page below).\nHome itself (the logo, or Home in the\nsidebar) shows a different, workspace-wide view: All updates -\nevery page anyone has edited, grouped by author - alongside your favourite\nspaces in the right-hand panel.\n),\n},"
+ },
+ {
+  "id": "page-engagement",
+  "title": "Liking, saving & sharing a page",
+  "category": "Workspace",
+  "keywords": [
+   "like",
+   "save for later",
+   "share",
+   "bookmark",
+   "page access",
+   "restrict",
+   "restriction"
+  ],
+  "text": "<>\nBelow a page's title, the page toolbar carries a small set of actions\nseparate from editing:\nLike: click the thumbs-up above the comments, beside the\ncomment count, to flag a page as useful. The count is visible to everyone and\nthe icon fills in blue once you have liked it - a lightweight signal for what\nactually gets read, not a moderation tool. Click the number beside\nthe thumb to see who liked the page. Clicking the speech-bubble count next to it\njumps to the comment box, which stays pinned to the bottom of the screen while you\nread so you can comment from anywhere on the page.\nSave for later: click the star\nSave for later button to bookmark a page.\nSaved-for-later status lives in this browser, not your account - saving on\nyour laptop will not show up on your phone, and clearing browser data\nclears it too. Everything you've saved is listed at\n/saved.\nShare: click Share and pick an option.\nCopy link puts the page's direct link on your clipboard, ready to\npaste into chat or email. Share with people… opens a picker: search by\nname or username, pick one or more colleagues, then click Share - each\nof them gets a notification saying you shared the page, and the link opens it.\nSharing never grants access: on a restricted space or page, people who can't\nopen it are listed greyed out with a lock and\nNo access to this page or space, and can't be picked. Every person you\nshare with adds one to the share count beside the like and comment counts under the\npage; click that count to share again. A space overview only has\nShare to copy its link.\nTL;DR: click TL;DR in the toolbar for a short AI\nsummary of the page, written in Markdown (bold key terms, code, lists). The summary is\nsaved until the page changes, so reopening it is instant; Summarize again\nasks for a fresh one. The summary is in the page's own language; the switch at the\ntop changes it to English or Tiếng Việt (and\nPage language goes back). Switching only translates the summary you already\nhave, which is quick and light on the AI; only Summarize again reads the\npage and writes a new one. Web addresses in the summary are links, and the name of a file\nattached to the page opens that file - to view it, or to edit it too if you can edit\nthe page. The i beside the title says the summary can miss\ndetails. It only reads pages you can already open, and each person gets a limited\nnumber of new summaries per hour. Until an administrator connects an endpoint it\nexplains that the assistant isn't set up yet.\nPage access: on a page you can manage, click\nPage access to open its General access setting -\nOpen or Restricted - plus the table underneath it,\nwhich looks different depending on which one is picked:\nOpen (the default) lists every person and group the\nspace already grants access to, with their current View/Edit access to\nthis page pre-checked - nothing to search for or add. Unchecking a box\nblocks just that person or group; everyone else is unaffected. Edit is\ngreyed out for anyone whose space role does not include it, since a\npage restriction only ever narrows who edits among people the space\nalready lets edit - it never grants editing beyond that. Both View and\nEdit are greyed out (and pre-checked) for a space Admin, since Admins\nbypass every page-level restriction - blocking one here would not\nactually do anything, so the box is locked instead of offering a\ncontrol with no effect.\nRestricted instead starts from an empty allow-list you\nbuild up by searching and adding specific people or groups - anyone\nnot added cannot see the page at all, regardless of their space role.\nView and Edit restrictions flow down to every child page. A child with no\nrestrictions of its own follows its parent: whoever can view or edit the\nparent can do the same on the child, and nobody else can. Opening\nPage access on such a child shows General access as\nInherit parent, names the parent, and lists only the\npeople the parent lets in, read-only - View and Edit both follow the parent.\nPick Restricted (own list) to give this page a list of its own - the\nfirst time, a draft table pre-filled from the parent opens, and nothing applies\nuntil you press Save list. From then on that list decides for the page\n(and its children): people on it can view and edit it even if the parent never let\nthem in, and people only on the parent's list do not get in. Blocks set on\npages above still apply.\nEvery child page has an Inherit permissions from parent page\nswitch, on by default. Turn it off and the page copies its parent's\naccess first - nobody gains or loses anything at that moment - then keeps\nits own settings: add people the parent never allowed, or remove some. Its\nown children follow it, not the pages above it. Turning the switch back on\n(confirmed first) clears the page's own settings and follows the parent\nagain.\nThe line at the very bottom of every page answers it: for example\n11 users and 1 group can view this page, counted after the\npage's own restrictions and everything it inherits. When nothing narrows\nan Open space it reads All users and all groups can view this page.\nThe Space overview shows the same for the space itself.\nNeither table's checkboxes can be clicked until you press its own\nEdit button - a stray click cannot change anyone's\naccess. Press Done when you are finished with that table to\nlock it again.\nFlip General access back and forth as much as you like - whatever\nRestricted allow-list or Open blocks you had configured comes right back\neach time, instead of being rebuilt from scratch. Reset to default\n(with a confirmation first) is the deliberate way to actually clear\nwhichever mode is currently active: Restricted resets to an empty\nallow-list, Open clears every block.\nIt only lets you search and pick people or groups the space itself has\nalready granted access to - restricting a page to someone still locked\nout at the space door would do nothing but confuse. Anyone else you\nsearch for still shows up, greyed out and marked\nNot added to space; add them under the space's own\nAccess & Permissions first, then come back here. In an\nOpen space everyone already has access, so every user and\ngroup can be picked straight away. If someone\nis later removed from the space entirely, any page-level restriction or\nblock naming them is cleaned up automatically.\nReal-world use cases: a space stays open to the whole team, but the one page\ndocumenting an incident postmortem or a compensation policy gets switched to\nRestricted and limited to just the people who need it. Or the\nopposite - a page stays Open, but one person should not see it\n(a manager reviewing feedback about themselves) - so just their own View is\nunchecked instead.\n),\n},"
+ },
+ {
+  "id": "page-comments",
+  "title": "Comments, replies & likes",
+  "category": "Workspace",
+  "keywords": [
+   "comment",
+   "comments",
+   "reply",
+   "thread",
+   "like",
+   "mention",
+   "@",
+   "discussion",
+   "feedback"
+  ],
+  "text": "<>\nEvery page has a Comments section below its content (it is hidden\nwhile you edit the page). Anyone who can view the page can comment, reply and\nlike - you do not need edit access.\nWriting and replying:\nType in the box and press Enter (or Comment) to send;\nShift+Enter starts a new line. Plain text works, and so do **bold**,\n_italic_, `code` and links.\nChoose Reply under a comment to answer it. Replies sit under the\ncomment they answer, as a tree; a comment with replies shows\nView N replies to open them and Hide replies to fold\nthem again. Deep threads stop indenting after a few levels so they stay readable. A long\ncomment (a pasted log, say) shows its first few lines with a blue See more\nthat opens the rest.\nType @ and a name to mention someone: pick them with\nthe arrow keys and Enter, or click. They get a notification. On a\nrestricted space or page, people who can't open it are still listed but greyed out\nwith a lock and No access to this page - they can't be picked until someone\ngrants them access.\nLiking, editing and deleting:\nClick Like under a comment to like it (it turns blue); click it again\nto take the like back. Once a comment has likes, a blue thumbs-up badge with the count\nsits at the end of that row - click it to see who liked it. The comment's author is\nnotified once.\nHover a comment and open its ⋯ menu (always visible on touch screens)\nto Edit your own comment - it then shows edited.\nThe same menu has Delete for your own comments. Space owners, space administrators\nand system administrators can delete anyone's. Deleting a comment also deletes\nall of its replies, and WikiHub asks you to confirm first.\nSorting and filtering:\nOnce a page has more than one comment, a menu at the end of the like / comment row\n(it reads Oldest to start with) orders the discussion by\nOldest, Newest or Most liked - likes\ncount across the whole thread. Each choice says what it shows.\nThe same menu narrows to Mentions me or My comments,\neach with its count. A thread is kept whole when any comment in it matches, and the\nmatching replies open automatically. Pick an order again to see everything.\nYou are notified when someone replies to your comment, mentions you, likes your comment,\nor comments on a page you created - click it in the notification bell\nand WikiHub opens the page, expands the thread if the comment is a reply, scrolls it into\nthe middle of the screen and highlights it for a moment. This works even if you are\nalready on that page. Comments are included in backups and restores.\n),\n},"
+ },
+ {
+  "id": "page-actions-menu",
+  "title": "The “⋯” menu: move, view width, export & delete",
+  "category": "Workspace",
+  "keywords": [
+   "move page",
+   "full width",
+   "delete page",
+   "page tree",
+   "reorganize",
+   "more actions"
+  ],
+  "text": "<>\nClick the ⋯ (More page actions) icon next to\nEdit for everything that isn't inline editing:\nMove page: pick a destination Space and a\nParent page (searchable, or Top-level page) to\nrelocate a page anywhere - even into a different space. Its child pages\nmove with it, and the picker won't let you drop a page inside one of\nits own descendants.\nPage history: opens the revision timeline (see\nRevision History, Visual Diff & Export).\nImport from file…: convert documents into new child pages\n(see Importing documents as new pages in Attachments & Media).\nView → Full width /\nNormal width: widen the reading column, useful for pages\ndense with tables or screenshots.\nExport → HTML / PDF /\nWord: see Revision History, Visual Diff & Export\nfor exactly what each format preserves.\nDelete page: permanently removes\nthe page.\nDeleting a page moves any of its child pages up one level rather than deleting\nthem too - their content always stays reachable.\n),\n},\n// ---------------------------------------------------------------------------\n// WRITING CATEGORY\n// ---------------------------------------------------------------------------"
+ },
+ {
+  "id": "pages",
+  "title": "Pages, Sticky Toolbar & Source Editing",
+  "category": "Writing",
+  "keywords": [
+   "editor",
+   "toolbar",
+   "sticky",
+   "markdown",
+   "html",
+   "source",
+   "draft",
+   "autosave",
+   "rename",
+   "rename page",
+   "title"
+  ],
+  "text": "<>\nWikiHub features a state-of-the-art document editor designed for fast,\ndistraction-free writing.\nAs you scroll down long documents in edit mode, the editor toolbar\nremains fixed at the top of your screen. You can format text, insert\nelements, or switch modes at any time without scrolling back up.\nEditing Modes & Tools:\nRename a page: click Edit, then click the\ntitle itself at the top of the page - it becomes editable right there,\nno separate dialog. The page keeps its existing link when you save, so\nanything that already points to it keeps working.\nRich-Text Mode: WYSIWYG editing with full inline\nformatting tools:\nBold (Ctrl+B)\nItalic (Ctrl+I)\nUnderline (Ctrl+U)\nStrikethrough\nInline Code\nLink (Ctrl+K)\nMarkdown & HTML Source Mode: Click\n<Source /> in the editor header to toggle into raw\nMarkdown or HTML code view. Perfect for pasting technical documents,\ninspecting markup, or fine-tuning exact HTML elements.\nAutomatic Local & Server Drafts: Every keystroke\nis automatically saved to your browser's local storage and synced with\nthe server. If you accidentally close your browser, your draft is\nrestored seamlessly when you return.\n),\n},"
+ },
+ {
+  "id": "slash-commands",
+  "title": "Slash Commands (/) Quick Reference",
+  "category": "Writing",
+  "keywords": [
+   "slash",
+   "shortcut",
+   "heading",
+   "callout",
+   "table",
+   "code",
+   "image",
+   "todo",
+   "toggle"
+  ],
+  "text": "<>\nType / at the beginning of any empty paragraph to open the\nSlash Command Popup Menu. Keep typing to filter\ncommands, or press Enter to insert.\nCommand |\nName |\nDescription & Behavior |\n/h1, /h2, /h3 |\nHeadings |\nInsert Section Heading 1, 2, or 3. |\n/bullet |\nBulleted List |\nCreate an unordered bulleted list item. |\n/numbered |\nNumbered List |\nCreate a ordered sequential list item. |\n/todo |\nTo-Do List |\nInteractive checkbox item; state persists on save. |\n/quote |\nBlockquote |\nBorder-accented blockquote container. |\n/callout |\nCallout Alert |\nHighlighted alert callout box with icon. |\n/toggle |\nToggle Collapsible |\nAccordion container with expandable/collapsible body. |\n/table |\nData Table |\nInsert a multi-column data table matrix. |\n/code |\nCode Block |\nSyntax-highlighted code block with a filterable language picker (use the up/down arrow keys to choose) and ten colour themes, light and dark, set per block from the block's options. In the editor, Save draft keeps your edits as a private draft without adding a version to the page history. Inside a code block, Tab / Shift+Tab indent / outdent the selected lines. Outside one, Tab / Shift+Tab indent paragraphs and headings. |\n/image |\nImage Upload |\nUpload image with corner resize handles & captions. You can also paste a screenshot or copied image straight into the page with Ctrl+V. |\n/attachment |\nFile Attachment |\nUpload file with detail modal & code preview. |\n/divider |\nDivider Rule |\nHorizontal line separator (---). |\n/link-to-page |\nPage Picker Link |\nSearch and insert an inline link to another wiki page. |\n/subpage |\nCreate Sub-page |\nSpawn a new child page under this one, without leaving the editor. |\n),\n},"
+ },
+ {
+  "id": "images-and-attachments",
+  "title": "Images, Resizing & File Attachments",
+  "category": "Writing",
+  "keywords": [
+   "image",
+   "attachment",
+   "resize",
+   "align",
+   "caption",
+   "preview",
+   "modal",
+   "zoom",
+   "lightbox",
+   "expand"
+  ],
+  "text": "<>\nWikiHub makes media integration seamless for technical documentation.\nYou can drag images directly from your computer into the editor surface to upload them instantly.\nImage Features:\nCorner Resize Handles: Click any image in edit mode to\ndisplay visual corner handles. Click and drag the handle to resize the\npixel width dynamically.\nFloating Image Toolbar: Hover over any image to access\nquick positioning controls: Align Left, Center,\nAlign Right, and Edit Caption.\nCaptions: Add descriptive captions below images; captions\nare formatted with subtle text for clean presentation.\nClick to Zoom: On a published page (not while editing),\nclick any image to open it full-screen. Scroll or double-click to zoom in\nand out, drag to pan around once zoomed, and use the toolbar's\n+/- buttons or the reset icon for precise control.\nClick anywhere outside the image, press Esc, or use the\nX button to close it.\nFile Attachments:\nUpload PDF documents, archives (.zip, .tar.gz), code\nfiles, video, or Office documents the same way. Clicking any attachment opens\nthe same interactive preview modal - see the\nAttachments & Media guide for what each file type can do\nonce it's uploaded, including in-place Office editing, PowerPoint\nslideshows, and video Picture-in-Picture.\n),\n},"
+ },
+ {
+  "id": "tables-and-codeblocks",
+  "title": "Tables, Code Blocks & Interactive Components",
+  "category": "Writing",
+  "keywords": [
+   "table",
+   "codeblock",
+   "syntax",
+   "toggle",
+   "collapsible",
+   "todo",
+   "copy"
+  ],
+  "text": "<>\nPresent structured information using advanced interactive blocks.\n1. Data Tables:\nHover over table cells to reveal action chevrons for inserting/deleting\nrows and columns.\nToggle header row formatting to highlight column titles.\nCells support rich inline formatting (links, bold, inline code).\n2. Syntax-Highlighted Code Blocks:\nAutomatic syntax highlighting powered by Prism/HLJS for over 40\nlanguages (Python, TypeScript, Go, Rust, SQL, Bash, Dockerfile, etc.).\nOptions Bar: Click the top-right options icon on any code\nblock to open the Code Block Details Modal to set a language,\ntitle, or line numbers.\n1-Click Copy: Readers can click the Copy\nbutton to copy raw code to their clipboard instantly.\n3. Collapsible Toggles & To-Do Lists:\nToggle Blocks: Collapse lengthy secondary content (such as\nchangelogs or raw payloads) under an expandable chevron.\nCheckable To-Do Lists: Create task checklists. Clicking a\ncheckbox toggles its completed state and persists when saved.\n),\n},"
+ },
+ {
+  "id": "history-and-export",
+  "title": "Revision History, Visual Diff & Export",
+  "category": "Writing",
+  "keywords": [
+   "revision",
+   "history",
+   "compare",
+   "diff",
+   "restore",
+   "pdf",
+   "html",
+   "word",
+   "docx",
+   "export"
+  ],
+  "text": "<>\nWikiHub keeps a complete, immutable audit trail of every change saved to a\npage.\nRestoring an old revision never deletes history! Restoring creates a brand\nnew revision with the older content, so all intermediate revisions remain\nintact forever.\nHistory Features:\nPage History Timeline: Click History in the\npage action bar to view a chronological list of revisions with author,\ntimestamp, and change summary.\nVisual Diff Comparison: Select any two revisions to compare\nchanges side-by-side or inline. Additions are highlighted in green,\nand deletions are highlighted in red.\nExport: Open Export in page actions to\ndownload the page as PDF, HTML, or Word. PDF and HTML are rendered from\nthe exact page you see on screen, so colors, fonts, code highlighting,\ncallouts, and tables come out looking identical to the live page - not a\nre-formatted approximation of it.\nA collapsed toggle section exports fully expanded, since a static file has\nno way to click it open. Word is the one format with a real ceiling: its\n.docx format has no equivalent of a CSS rounded corner, shadow, or\ngradient, so a callout or code block comes out as a square shaded\nparagraph - faithful in color and text, not in exact shape. PDF and HTML\nhave no such limit.\n),\n},"
+ },
+ {
+  "id": "drafts-and-autosave",
+  "title": "Draft Auto-save & Recovery",
+  "category": "Writing",
+  "keywords": [
+   "draft",
+   "autosave",
+   "auto-save",
+   "recovery",
+   "discard",
+   "unsaved",
+   "conflict"
+  ],
+  "text": "<>\nPublishing a page (clicking Save) and merely having unsaved\nchanges are two different things in WikiHub - a dedicated draft system sits\nbetween them so a closed tab or a crashed browser never costs you real work.\nAuto-save toggle: while editing, switch on\nAuto-save (in the editor toolbar) to save your in-progress edit\nto the server every 30 seconds - separately from actually publishing the\npage. A local copy is also kept in your browser as a fallback.\nRecovering a draft: if you navigate away (or your browser\ncloses) with an unpublished draft still pending, coming back to that page\nshows a Draft not released banner - “This draft was last\nsaved on {\"\"} and has not been saved to the page.” Click\nOpen editor to resume exactly where you left off, or\nDiscard draft to throw it away.\nConflict warning: if someone else published changes to the\npage after your draft was created, the banner adds\n“The page has changed since this draft was created.” so\nyou know to check for overlap before resuming.\nDiscard draft asks “Discard unreleased draft?”\nbefore doing anything - it only ever removes the saved draft and restores the\npage to its current, already-published content.\n),\n},"
+ },
+ {
+  "id": "format-conversion",
+  "title": "Switching Between Rich Text, Markdown & HTML",
+  "category": "Writing",
+  "keywords": [
+   "markdown",
+   "html",
+   "convert",
+   "live preview",
+   "split",
+   "source",
+   "lossy"
+  ],
+  "text": "<>\nSwitching a page's edit mode between Rich text and\nMarkdown source is not just a different view of the same\ndata - the underlying content format actually changes, so WikiHub confirms it\nfirst.\nMarkdown cannot represent every rich-text feature - text colors, cell\nbackgrounds, and merged table cells have no Markdown syntax. To preserve them\nanyway, WikiHub embeds their raw HTML directly inside the Markdown source\nrather than silently dropping them. Converting back to HTML is always\nlossless.\nWhile editing in Markdown source:\nLive preview: toggle a rendered preview of your Markdown\nalongside the raw source.\nSplit / Full layout: choose side-by-side source-and-preview,\nor a preview-only view for proofreading before you save.\n),\n},\n// ---------------------------------------------------------------------------\n// ATTACHMENTS & MEDIA CATEGORY\n// ---------------------------------------------------------------------------"
+ },
+ {
+  "id": "attachment-previews",
+  "title": "Previewing Files Without Leaving the Page",
+  "category": "Attachments & Media",
+  "keywords": [
+   "attachment",
+   "preview",
+   "modal",
+   "pdf",
+   "zoom",
+   "rotate",
+   "download",
+   "code",
+   "search"
+  ],
+  "text": "<>\nClick any attachment in a page to open the Attachment details\nmodal - the same modal for every file type, with a preview panel that adapts\nto what the file actually is:\nImages: zoom and pan.\nPDFs: continuous multi-page viewer with zoom out / actual\nsize / zoom in, a Rotate pages button (90° steps), and an\nexpand-to-full-size toggle.\nVideo: full playback controls plus subtitles, audio-track\nswitching, and Picture-in-Picture - see\nVideo: Subtitles, Audio Tracks & Picture-in-Picture below.\nWord, Excel & PowerPoint: a faithful rendered preview\n(with its own zoom controls) and, while you are editing the page, an\nEdit button - see Editing Word, Excel & PowerPoint\nin Place below.\nCode & text files (.py, .ts,\n.json, .md, .log, etc.):\nsyntax-highlighted with line numbers, a Search content… box\nwith a match counter and Previous/Next-match navigation (\nEnter / Shift+Enter to cycle matches), and a\nword-wrap toggle.\nEverything else (archives, binaries, unrecognized types):\nfile details and a Download button.\nHover the ⓘ icon next to the “Attachment details”\ntitle for filename, size, MIME type, and upload date - without opening\nDownload.\nReal-world use case: checking the exact contents of a teammate's\nconfig.json, reviewing a signed PDF contract, or eyeballing a\ndesign PNG - all without ever leaving the wiki page it's attached to.\n),\n},"
+ },
+ {
+  "id": "office-editing",
+  "title": "Editing Word, Excel & PowerPoint in Place",
+  "category": "Attachments & Media",
+  "keywords": [
+   "onlyoffice",
+   "word",
+   "excel",
+   "powerpoint",
+   "docx",
+   "xlsx",
+   "pptx",
+   "edit",
+   "autosave"
+  ],
+  "text": "<>\nWikiHub can embed a full ONLYOFFICE document editor directly\ninside the attachment preview modal for .docx,\n.xlsx, and .pptx files - the same ribbon, formulas,\nformatting, and slide layouts as the desktop apps, running in the browser.\nWhile editing the page (the Edit button only appears in\nedit mode, not for someone just reading the page), open the attachment and\nclick Edit (pencil icon) next to Download.\nChanges autosave as you type - there is no manual Save\nbutton, and the toolbar shows Saving changes… or\n{\"\"} · Changes save automatically. Every save bumps\nthe attachment's revision, so it stays accounted for in the page's\nactivity.\nClick Back to preview to return to the read-only render at\nany time.\nOther Office formats - .doc, .ppt,\n.xls, .odp, .ods, and template variants\nlike .dotx/.potx/.xltx - preview\ncorrectly but must be edited elsewhere and re-uploaded.\nThe Edit button only appears when an administrator has configured and\nconnected an ONLYOFFICE Document Server. If it's missing entirely, or\nshows “The workspace document editor is not configured,” ask your\nadministrator.\nReal-world use case: fixing a typo in a shared spec .docx or\nupdating a budget .xlsx without leaving the wiki or e-mailing a\nnew copy back and forth.\n),\n},"
+ },
+ {
+  "id": "video-playback",
+  "title": "Video: Subtitles, Audio Tracks & Picture-in-Picture",
+  "category": "Attachments & Media",
+  "keywords": [
+   "video",
+   "subtitle",
+   "caption",
+   "audio track",
+   "picture-in-picture",
+   "pip",
+   "mp4"
+  ],
+  "text": "<>\nClick a video attachment to open the standard HTML5 player with play/pause,\nseek, volume, and fullscreen.\nSubtitles: if the video has caption tracks, a\nSubtitles button appears in the preview toolbar - pick a\ntrack, or Off.\nAudio tracks: for videos with more than one audio track, an\nAudio track picker lets you switch between them (only where\nthe browser itself exposes multiple tracks - not every format supports\nthis).\nPicture-in-Picture: use the PiP icon in the player's\nown controls (or right-click → Picture in Picture) to pop the video\ninto a small floating window that stays on top of every other window and\ntab.\nClosing the attachment preview while a video is floating in Picture-in-Picture\ndoes not stop it - exactly like closing a browser tab\ndoesn't stop a PiP video elsewhere on the web. Leaving PiP (its own\n“back to tab” or close control) reopens the preview automatically,\nresuming right where you left off. Only closing that reopened preview actually\nstops playback.\nReal-world use case: watching a recorded demo or training clip in the corner\nof your screen while you take notes or reply in chat in another tab.\n),\n},"
+ },
+ {
+  "id": "pptx-slideshow",
+  "title": "Presenting a PowerPoint Deck: Fullscreen Slideshow",
+  "category": "Attachments & Media",
+  "keywords": [
+   "powerpoint",
+   "pptx",
+   "slideshow",
+   "present",
+   "presentation",
+   "fullscreen"
+  ],
+  "text": "<>\nOpen any .pptx attachment - it renders as a paginated deck with a\nthumbnail rail on the left and the current slide on the right. Use the\non-screen ‹ › arrows, or ←/→, to move\nbetween slides at any time.\nClick Present (the small monitor icon in the toolbar) to\nstart a fullscreen slideshow: the deck fills the entire screen,\nletterboxed to the slide's own aspect ratio, with no browser chrome or\nthumbnail rail in the way.\nPress Esc, or click the ✕ in the top-right corner,\nto exit - back to the normal preview, not the whole attachment window.\nReal-world use case: presenting a slide deck straight from the wiki page\nit's attached to during a meeting, with no extra software and no\nre-downloading the file first.\n),\n},"
+ },
+ {
+  "id": "importing-documents",
+  "title": "Importing Documents as New Pages",
+  "category": "Attachments & Media",
+  "keywords": [
+   "import",
+   "docx",
+   "pdf",
+   "markdown",
+   "epub",
+   "convert",
+   "bulk",
+   "drag and drop"
+  ],
+  "text": "<>\nFrom any page, open the ⋯ menu and choose\nImport from file….\nDrag and drop, or browse for, up to 20 files at once.\nSupported formats: Word (.docx), OpenDocument Text (\n.odt), Rich Text (.rtf), EPUB (\n.epub), HTML (.html/.htm), Markdown (\n.md/.markdown), and PDF (.pdf).\nEach file becomes a new child page under the page you\nstarted from (or at the top level of the space, from Home) - headings,\nformatting, and images carry over automatically.\nThe new page is named after the file name, extension\ndropped (Runbook-v2.docx becomes a page titled\nRunbook-v2) - not after a heading or title inside the\ndocument.\nImport runs as a background job with a live per-file progress indicator\n(queued / running / complete / failed), each finished file linking straight\nto its new page, so you can keep working while a large batch converts.\nThis is different from Confluence Archive Import under\nAdministration > Backup: that one restores a whole\nexported Confluence space, including permissions and history, and is\nadmin-only. Import from file… converts individual documents\ninto fresh pages, and is available to anyone who can edit the space.\nReal-world use case: migrating a folder of existing Word or PDF runbooks into\nthe wiki as a properly organized page tree, in one pass.\n),\n},\n// ---------------------------------------------------------------------------\n// ACCOUNT CATEGORY\n// ---------------------------------------------------------------------------"
+ },
+ {
+  "id": "your-account",
+  "title": "Profile, Password Security & Active Sessions",
+  "category": "Account",
+  "keywords": [
+   "avatar",
+   "password",
+   "authentication",
+   "session",
+   "profile",
+   "logout"
+  ],
+  "text": "<>\nManage your personal account preferences under Account\nfrom the profile menu.\nA member's profile opens with a contribution chart: one square per day\nover the last year, darker on days with more page edits. Hover a square for its date and\ncount, and pick another year on the right to look further back.\nIn the activity feed, a page you edited several times in a row appears as one row,\nUpdated 6 times. Click it to see every edit with its own\nview change link.\n1. User Profile Settings:\nClick Edit profile to update display name, email, avatar\nimage, bio, pronouns, company, and social links.\nField validation provides instant feedback on format or requirement errors.\n2. Password Security & Rules:\nUpdate your password in Password & authentication.\nPassword strength meters check length, numbers, symbols, and uppercase\ncharacter rules. Click Generate password to create a strong\nrandom password.\n3. Active Sessions Management:\nIn Sessions, view active browsers and sign out all other\nsessions if you see activity you do not recognise. You can revoke specific\ndevices or click Revoke all sessions to invalidate\nall remote tokens immediately.\n),\n},"
+ },
+ {
+  "id": "notifications",
+  "title": "Notifications: the Bell and Pop-ups",
+  "category": "Account",
+  "keywords": [
+   "notification",
+   "bell",
+   "toast",
+   "alert",
+   "unread",
+   "popup"
+  ],
+  "text": "<>\nThe bell in the top bar tells you what has happened\nto you. It is there for everyone, not only administrators. A red number on\nit counts what you have not read yet.\nWhat you are told about:\nBeing added to, removed from, or given a different role in a space.\nBeing given or losing a specific permission on a space, or becoming (or ceasing to be) a space owner.\nBeing added to or removed from a group.\nAn administrator resetting your password.\nYour workspace role or permissions being changed, or your account being switched back on.\nFor System Administrators: every new request from the sign-in page.\nSomething you do yourself does not notify you. Notifications are shown in your own\nlanguage and only you can see yours.\nUsing the bell:\nOpen it to see the latest, newest first. Each has a coloured icon - green for good\nnews (you were added or given access), blue for a change, amber for something taken\naway or a password reset - and how long ago it happened.\nClick one to read it: if it leads somewhere (a space, Requests) you go there, and it\nstops counting as unread. Mark all as read clears the lot.\nPop-ups:\nA new notification also appears as a pop-up in the bottom-right corner within a few\nseconds - you do not need to reload. Every message the app shows (saved, failed, and so\non) uses the same style, coloured for what it says: green for success, blue for\ninformation, amber for a warning, red for an error. Several at once form a compact\nstack; hover over it and they line up in a column, none overlapping, so you can read\neach in full. Each pop-up has its own ten-second timer, shown by the bar under its\ntext: hovering a pop-up pauses that one only, and the timer carries on from where it\nstopped when you move away. When it runs out, the pop-up slides off to the right. Use the small x to close one sooner.\n),\n},"
+ },
+ {
+  "id": "report-issues",
+  "title": "Reporting Issues",
+  "category": "Account",
+  "keywords": [
+   "issue",
+   "bug",
+   "report",
+   "problem",
+   "screenshot",
+   "feedback",
+   "manage issues"
+  ],
+  "text": "<>\nWikiHub is new, so you may hit a problem. Open your account menu (your\nname, top right) and choose Report issue. Give it a title, say what\nyou were doing and what went wrong, and add screenshots if you can: use\nAdd image, or simply paste a screenshot with Ctrl+V.\nUp to five PNG, JPEG, GIF or WebP images of 5 MB each. Use Labels to\ntag it - bug, question, enhancement and so on - so it is easy\nto find later.\nFollowing your report:\nMy issues (also in the account menu) lists everything you reported,\nwith its status - Open, In progress or Done - and who took it.\nYou get a notification when an administrator takes or is given your issue, and when it\nis closed - and an email too when it is closed. If the administrator\nleft a closing note, you can read it under the issue and it is quoted in the email.\nOnly you and the people who manage issues can see your issue.\nFor people who manage issues:\nSuperusers, system administrators and anyone given the\nManage issues permission (Administration > Groups, or a user's\nGlobal access) see Administration > Issues and are told when a new\none arrives.\nWhenever someone reports an issue, everyone who can manage issues is told by\nnotification and by email.\nTick one or more issues in the list (the box at the top ticks the whole page) to\nchange them together: Mark as opens, reopens or completes them, and\nAssign hands them to someone - only a superuser can give an issue to\nanother person. Anything you are not allowed to change is skipped and counted, not a\nreason to stop the rest.\nPick a view on the left - Issues, Assigned to me or\nCreated by me - switch between Open and\nClosed, and narrow by author, assignee, label (tick\nseveral to require all of them, or pick No labels) or order. The search box\nlooks in titles and descriptions only, and marks in blue what matched.\nOpen an issue and choose Take it to put your name on it. It then\ncounts as in progress. Use Add note for notes only managers see. When you press\nMark done, a closing note box appears for what the\nreporter should read; confirm to close the issue.\nOnly the person who took an issue, or a superuser, can mark it\ndone, reopen it or otherwise change its status. A system\nadministrator who has not taken it can read it, not close it.\nTo hand an issue to someone outside WikiHub, press Export Word - in\nthe issue window, or next to each issue on My issues. The .docx\nholds the title, a details table (status, labels, reporter, assignee, dates, page\nlink), the description, every screenshot embedded in the file, and the notes shared\nwith the reporter. Internal notes are never included. The document's labels follow\nyour interface language. To send several at once, tick them in the list and press\nExport Word in the selection bar: you get one file with a summary\ntable first, then a numbered chapter per issue.\n),\n},"
+ },
+ {
+  "id": "language-switching",
+  "title": "Switching the Interface Language",
+  "category": "Account",
+  "keywords": [
+   "language",
+   "locale",
+   "translation",
+   "vietnamese",
+   "tiếng việt",
+   "english",
+   "i18n"
+  ],
+  "text": "<>\nClick the EN/VI badge in the top bar\nto open the language menu, then pick English or\nTiếng Việt. The badge always shows the language\ncurrently active.\nEvery label, button, toast, and validation message across WikiHub comes\nfrom the chosen language - there is no partially-translated screen.\nThe change applies immediately, with no page reload, so anything you\nwere mid-edit in the page editor is left exactly as it was.\nThe choice is remembered per browser (not tied to your account), so\nswitching computers or signing in elsewhere starts from English again\nuntil you pick Vietnamese there too.\n),\n},"
+ },
+ {
+  "id": "keyboard-shortcut-settings",
+  "title": "Customising Keyboard Shortcuts",
+  "category": "Account",
+  "keywords": [
+   "keyboard",
+   "shortcut",
+   "hotkey",
+   "rebind",
+   "remap",
+   "customize",
+   "customise",
+   "keybinding",
+   "ctrl",
+   "cmd"
+  ],
+  "text": "<>\nWikiHub's shortcuts are defaults, not fixed rules. Open\nAccount from the profile menu and choose\nKeyboard shortcuts to change any of them.\n1. Rebinding a shortcut:\nClick the key badge next to the action you want to change - it switches to\nPress keys…\nPress the combination you want. It is captured and saved the moment you press\nit; there is no separate Save button.\nPress Esc to back out without changing anything.\n2. Several keys for one action:\nClick + to give an action a second (or third) combination - handy\nwhen you want both an old habit and a new one to work. Global search ships this\nway, answering to both Ctrl+K and Ctrl+\nF. Remove one with the ✕ beside it; the last remaining\nbinding cannot be removed, so an action is never left unreachable by accident.\n3. Getting back to normal:\nA circular arrow appears beside any action you have changed - click it to\nrestore just that one. Reset all to defaults at the top\nrestores every shortcut at once.\n4. Where each shortcut applies:\nEach action lists the context it works in - anywhere in the app, while editing a\npage, or while an attachment preview is open. Two actions in\ndifferent contexts may safely share a combination, and the narrower one\nwins while it is active. That is exactly how Ctrl+F works\nby default: normally it opens global search, but while you have a text file\npreview open it searches inside that file instead.\nIf you assign one combination to two actions in the same context, a\nwarning appears at the top and both badges turn amber. Whichever action\nhandles the key first wins, so the other may not fire. Nothing stops you\nsaving it - the warning is there so a shortcut that has quietly stopped\nworking is never a mystery.\nThe hint on the search bar in the top bar follows whatever you have bound, so\nit always shows the combination that actually works.\nSome combinations are reserved by the browser itself - Ctrl+\nW, Ctrl+T, Ctrl+N and\nsimilar. They never reach the page, so WikiHub cannot capture them.\nText formatting keys inside the editor (Ctrl+B for bold\nand friends), / for the slash menu, and Esc for closing\noverlays are also fixed and do not appear in this list.\nYour shortcuts are stored in the browser you set them in, so they do not\nfollow you to another computer or survive clearing site data.\n),\n},\n// ---------------------------------------------------------------------------\n// ADMINISTRATION CATEGORY\n// ---------------------------------------------------------------------------"
+ },
+ {
+  "id": "theme-and-branding",
+  "title": "Theme & Branding Customization",
+  "category": "Administration",
+  "keywords": [
+   "theme",
+   "color",
+   "hex",
+   "palette",
+   "icon",
+   "logo",
+   "favicon",
+   "preview",
+   "branding",
+   "ssr"
+  ],
+  "text": "<>\nAdministrators can fully customize WikiHub's visual identity under\nAdministration > Settings > Theme & Branding.\nThe Page Typography & Font Family list keeps similar typefaces\ntogether. Filter it by type - All, Sans-Serif,\nGeometric Sans or Serif - and use Show more to see\nevery font in the group (Show less folds it back to three rows).\nTheme modifications stay in draft mode until you explicitly click\nSave settings! Click Preview Theme to open an\ninteractive sandbox modal where you can test colors, search, navigation tabs,\nbuttons, and Light/Dark mode.\nSetting |\nDescription & Options |\nBrand Color Presets |\nChoose from 8 curated palettes: Blue, Emerald,\nIndigo, Violet, Rose,\nAmber, Teal, Slate.\n|\nCustom Hex Picker |\nEnter any custom primary hex color code (e.g., #216fc0).\nGenerates a full 10-shade HSL palette automatically.\n|\nLogo Mark Presets |\nSelect from 9 built-in vector icons: Hub, Book,\nLayers, Compass, Sparkles,\nFeather, Graduation, CPU,\nShield.\n|\nCustom Logo Upload |\nUpload your organization's custom PNG or SVG image (under 2MB).\nAutomatically scales and renders across header and favicon.\n|\nDynamic Tab Favicon |\nHTML5 Canvas converts preset SVGs or uploaded logos into rasterized\n64x64 PNG data URLs, updating the browser tab strip instantly.\n|\nZero-Flicker SSR |\nCSS theme variables are preloaded in <head> on frame 0,\npreventing white/blue flash during page refreshes.\n|\nFont Picker |\nClicking a font in the list opens a Font Specimen\nmodal - an interactive type tester with a free-text sample input, four\npreset sample sentences, five size presets (14–36px), a full\ndocument-hierarchy mockup, and a glyph/character-set matrix - before\nyou commit with Apply This Font.\n|\nThe Preview Theme sandbox has its own\nLight Preview / Dark Preview toggle, so you\ncan check a brand color against a mock document in both modes before a single\nreal user sees it.\n),\n},"
+ },
+ {
+  "id": "admin-statistics",
+  "title": "Statistics",
+  "category": "Administration",
+  "keywords": [
+   "statistics",
+   "stats",
+   "analytics",
+   "dashboard",
+   "chart",
+   "views",
+   "visits",
+   "tokens",
+   "ai usage",
+   "most viewed",
+   "stars",
+   "saves",
+   "active users"
+  ],
+  "text": "<>\nAdministrators open Administration > Statistics to see how\nthe workspace is being used. Pick 7, 30 or 90 days at the top\nright; every number and chart on the page follows that range.\nOverview\nHeadline cards: users, people active in the range, new users, pages, spaces,\nedits and page views, each with a derived figure underneath (new users in the\nrange, share of people who were active, average per day, pages per space).\nDaily charts of page views, edits and new users, each with its total, the\nchange from the first half of the range to the second, the daily average and\nthe busiest day. Hover a chart, or focus it and use the ← and\n→ keys, to read each day.\nRecent activity: the latest entries from the audit log.\nAI usage\nTokens spent by the AI assistant, as reported by the AI gateway: total, prompt\nand completion tokens, requests, a daily chart, and a breakdown\nby person and by feature (page summaries,\ncreating a page, the writing assistant, labels and related pages, explaining or\ntranslating a selection).\nPages and Spaces\nRanked tables of the most viewed, starred and\n(for pages) saved items. Use Rank by to switch.\nViews follow the selected range; stars and saves are all-time totals. A page\ncounts as starred when people like it, and as saved when people pin it.\nPage views and AI tokens are counted from the day this feature was switched on;\nearlier activity was never recorded, so a new range can show zeros at first.\nToken counts also depend on the AI gateway reporting its usage. Only system\nadministrators can open this page.\n),\n},"
+ },
+ {
+  "id": "admin-server-monitor",
+  "title": "Server monitor",
+  "category": "Administration",
+  "keywords": [
+   "server",
+   "monitor",
+   "docker",
+   "cpu",
+   "memory",
+   "logs",
+   "container",
+   "uptime"
+  ],
+  "text": "<>\nSystem administrators open Administration > Server to see the\nmachine WikiHub runs on and WikiHub's own Docker containers. Other services on the\nsame host are never listed, and their logs cannot be opened - the server refuses the\nrequest, not just the page. The page refreshes every five seconds while it is open\n(and not while the tab is hidden).\nServer cards: CPU load against the number of cores (with the 5\nand 15 minute averages), memory (with swap and what is still available), the disk\nholding WikiHub and how much is free, and how long the server has been up with\nhow many containers are running. Every bar shows its percentage at the right end;\nthe ones that measure use turn amber at 70% and red at 90%.\nContainers: name, short id and image, status (Healthy,\nUnhealthy, Running or the state it stopped in, plus how\noften Docker restarted it), uptime, CPU and memory. CPU is a share of one core, so\n100% is one full core and a busy container on a 12-core server can show more.\nClick a column header to sort by it (a number column starts with the biggest;\nclick again to reverse).\nThe Logs button opens the last 100 to 1,000 lines of a container.\nFilter them, colour shows errors and warnings, Follow refreshes every few\nseconds, and the copy button copies what is shown. Passwords, keys, tokens and\ncredentials in URLs are hidden before the lines leave the server - a best effort,\nso still treat logs with care.\nThis page is read-only: it cannot stop, start or change anything. It is served by\nthe small ollama-controller service, the only part of WikiHub with access\nto Docker, so that service has to be running (./scripts/run.sh --dev).\nA container that keeps restarting, or one using far more CPU or memory than expected,\nis the first thing to look for when WikiHub feels slow.\n),\n},"
+ },
+ {
+  "id": "settings-and-storage",
+  "title": "Instance Settings & Object Storage Explorer",
+  "category": "Administration",
+  "keywords": [
+   "settings",
+   "storage",
+   "objects",
+   "attachment",
+   "limits",
+   "matrix",
+   "download",
+   "s3",
+   "office",
+   "preview",
+   "word",
+   "excel",
+   "powerpoint",
+   "pdf",
+   "docx",
+   "xlsx",
+   "pptx",
+   "onlyoffice",
+   "video",
+   "audio",
+   "syntax highlighting",
+   "code preview",
+   "quota",
+   "quotas",
+   "browse files"
+  ],
+  "text": "<>\nAdministrators configure global workspace behavior under\nAdministration > Settings, and everything about the S3\nbucket - browsing it and setting its limits - under\nAdministration > Storage.\n1. Global Instance Settings:\nSite Name: Custom site title displayed in browser tab and top bar.\nSession Lifetime (Hours): Configure JWT session expiration (e.g. 24h, 72h, 168h).\nSidebar Access Matrix: Select which navigation sections are visible per user role (member, admin).\n2. Storage: Browse files & Quotas:\nAdministration > Storage splits into two sections, picked from\nits own left-hand list:\nBrowse files: a clean S3 bucket tree browser. Filter objects by\nsearch query, file type, space, or page ID; generate secure pre-signed download\nURLs; preview images, video and audio files, code/text files (syntax-coloured by\nthe file's extension), and Word, Excel, PowerPoint and PDF documents (opened\nread-only through the same document viewer pages use to edit attachments - see\nit, download it, nothing is ever saved back from here, and each preview scrolls\nin one place rather than in both the dialog and the content underneath it); and\ndelete orphan objects, which also clears the matching database attachment and\narchive hash records automatically.\nQuotas: Max single attachment size,\nMax backup import size, and\nAllowed attachment extensions (a whitelist, e.g.\npng, pdf, zip, docx, *) - each shown as\n(inherited from environment) until you actually override it here.\n),\n},"
+ },
+ {
+  "id": "permissions-overview",
+  "title": "Permissions & Roles Reference",
+  "category": "Administration",
+  "keywords": [
+   "permissions",
+   "roles",
+   "administrator",
+   "member",
+   "global access",
+   "global permission",
+   "space permission",
+   "owner",
+   "open",
+   "restricted",
+   "system administrator",
+   "effective permissions",
+   "access control"
+  ],
+  "text": "<>\nThree independent layers decide what any one person can do:\nAccount role (Member or Administrator),\nGlobal permissions (workspace-wide abilities like\ncreating spaces or managing users), and Space permissions\n(what someone can do inside one specific space). The sections below spell\nout each layer; Managing Users & Groups and\nSpace Access & Effective Permissions (further down) cover the\nscreens that actually set them.\n1. Account roles:\nRole |\nWhat it means |\nMember |\nThe default role. What a Member can actually do beyond viewing/editing\nthe spaces they have access to comes entirely from the Global and Space\npermissions below - a Member can hold any of the four global\npermissions, or be a Space Owner/Admin, the same as anyone else.\n|\nAdministrator |\nUnconditionally holds all four global permissions - Create\nspaces, Manage users, Manage groups,\nSystem administrator - regardless of group membership or\nany override. An ordinary Administrator cannot Edit, Delete, Demote, or\nreset the password of another Administrator account, or change anyone's\nRole or Global access overrides for themselves - see\npeer-admin protection below.\n|\nProtected bootstrap admin |\nThe one account WikiHub is initially set up with (or one explicitly\nmarked protected). It is always an Administrator, can never be edited,\ndeactivated, or deleted by anyone else, and is the only\naccount that can Edit, Delete, Demote, or reset the password of another\nAdministrator.\n|\n2. The four Global permissions:\nPermission |\nWhat it unlocks |\nCreate spaces |\nAllows creating new documentation spaces from the regular\nSpaces directory. It does not open\nAdministration > Spaces, which stays\nSystem administrator-only.\n|\nManage users |\nUnlocks Administration > Users: create, edit, reset\nthe password of, and deactivate Member accounts, and manage\ntheir group memberships. It never promotes/demotes anyone, touches an\nexisting Administrator account, or opens the Global access\ntab - those always require actually being a\nSystem administrator.\n|\nManage groups |\nUnlocks Administration > Groups: create, update,\nassign members to, and manage user groups.\n|\nSystem administrator |\nFull administrative control - every other Administration section\n(Users, Groups, Spaces, Statistics, Settings, Backup, Storage), plus every\nper-space Admin permission on every space regardless of\nthat space's own Owner/Access settings. Equivalent to the\nAdministrator role for every purpose that matters.\n|\nEach of the four checks, in order: is the Role already\nAdministrator? If so, granted outright. Otherwise, does a\nper-user Global access override force it\nenabled or disabled? An override always wins.\nOtherwise, does any group this person belongs to grant it? If none of the\nabove, it is not granted. See Managing Users & Groups below\nfor where each of these is actually set.\n3. The seven per-Space permissions:\nPermission |\nWhat it grants |\nView |\nSee this space and open its pages. Exporting pages\nfollows View automatically - it is not a separate grant. |\nAdd/Edit |\nCreate new pages and edit any existing page in this space. |\nDelete |\nDelete any page in this space, including ones created by others. |\nDelete own |\nDelete only pages this person or group created themselves. |\nRestrictions |\nRestrict individual pages to specific people or groups. |\nMove |\nMove or reorder pages within this space's hierarchy. |\nAdmin |\nFull control of this space's settings and permissions -\nimplies every other permission in this table. |\n4. Space Owner, Open vs Restricted, and effective access:\nSpace Owner is a separate, protected tier above the table\nabove - a space always keeps at least one, and only an Owner (not merely\nsomeone with the Admin permission) can flip a space between\nOpen and Restricted, or change who the Owners are.\nOpen spaces grant every signed-in user\nView, Add/Edit, Delete,\nDelete own, and Move automatically - only\nAdmin and Restrictions still need an explicit grant.\nRestricted spaces grant nothing automatically -\nevery permission for every person or group comes from the tables in that\nspace's Access panel.\nFor a given person and space, the resolution order is: Owner (everything,\nalways) → a direct per-user grant if one exists (which overrides every\ngroup they belong to for that space, Admin aside) → otherwise\nevery group they belong to, combined → otherwise whatever Open\nhands out automatically. The Effective permissions picker\nin a space's Access panel resolves all of this for you instead of\ncross-referencing it by hand - see Space Access & Effective\nPermissions below.\nAn ordinary Administrator can fully manage every Member account\n- including promoting one to Administrator - but cannot Edit, Delete,\nDemote, or reset the password of another Administrator\naccount. Only the protected bootstrap admin account can touch another\nAdministrator. This keeps any one administrator from locking out, demoting,\nor deleting every other administrator.\n),\n},"
+ },
+ {
+  "id": "admin-users-groups",
+  "title": "Managing Users & Groups",
+  "category": "Administration",
+  "keywords": [
+   "users",
+   "groups",
+   "create user",
+   "invite",
+   "password",
+   "deactivate",
+   "delete user",
+   "role",
+   "global permission override",
+   "administrators tab",
+   "permission overrides",
+   "permission overrides tab",
+   "group directory",
+   "global access tab",
+   "bulk delete",
+   "select multiple"
+  ],
+  "text": "<>\nWikiHub does not send invitation e-mails on its own. An administrator creates every\naccount directly under Administration > Users > Create\nuser and shares the temporary password with that person out of band\n(chat, in person, etc.) - unless the administrator has a working mailbox (see\nAdministrator Mail & Requests), in which case WikiHub\ne-mails the sign-in details automatically, no extra step needed\n(the Create user form says so when it is about to happen; the same\napplies when setting a new password for an existing account,\npromoting someone to Administrator in Edit user, and adding or\nremoving someone in a space Access tab). A request sent from the\nsign-in page works the same way: an administrator with a mailbox\ncan create the account from their Requests page and have WikiHub\ne-mail the username and password to the person.\n1. People directory:\nThe directory shows summary tiles (Total / Administrators / Members /\nActive / Disabled), with search and Status/Role filters.\nThe Last sign-in column shows when each person last signed\nin, with a presence marker: Online (active in the last 5\nminutes), Offline, or Never signed in. Click the\ncolumn header to sort by last sign-in (newest first, click again for oldest\nfirst); accounts that never signed in always stay at the bottom.\nCreate user: first/last name, username (checked for\navailability as you type), e-mail, a password with a live strength\nchecklist (8+ characters, upper & lower case, a number or symbol), and a\nrole of Member or Administrator.\nEach row has an Edit button opening one dialog for\neverything about that account, across three tabs:\nGeneral (Role Member/Administrator,\nStatus Active/Disabled as a switch, an optional new password\nwith a live requirements checklist - leave both password fields blank to\nkeep the current one), Groups (below), and\nGlobal access (its Workspace Global Access\noverrides - see below). A separate, icon-only Delete button\nremoves the account entirely. Your own account and the protected bootstrap\nadmin account never show these controls, so you can never lock yourself out.\nThe dialog fetches this account's current data fresh each time it\nopens, rather than reusing the directory row - reopening right after saving\nan override always shows what was actually saved, not what the row still\nhappened to be showing.\nThe Groups tab lists every group this account belongs to,\neach with a one-click Leave button - and the same\nSelect / select-all pattern as the directory itself, for\nleaving several groups at once. Leaving takes effect immediately, it is not\npart of the dialog's own Save.\nAn ordinary Administrator cannot Edit or Delete another\nAdministrator account, or reset its password - only the\nprotected bootstrap admin can. This keeps one administrator from\ndemoting, deactivating or locking out another; an ordinary\nAdministrator can still fully manage every Member account,\nincluding promoting one to Administrator.\nHolding Manage users without being a\nSystem administrator yourself (whether the account's\nRole already is one, or a group/override grants\nSystem administrator) is deliberately narrower: it creates,\nedits, resets the password of and deactivates Member\naccounts, and manages their group memberships, but the\nRole field and the entire Global access\ntab are disabled - it can never promote or demote anyone, grant a Global\nAccess override (an override can hand out\nSystem administrator just as surely as Role can), or touch\nan existing Administrator account at all. The only way to\ngain any of that is to actually become a\nSystem administrator.\nSelect (next to the search box) turns on a checkbox per\nrow and a Delete selected bar for removing several\naccounts at once. A protected, your-own-account, or (unless you are\nthe protected bootstrap admin) another Administrator's\nrow has its checkbox disabled outright rather than left to fail\npartway through a batch.\n2. Workspace Global Access overrides:\nA Currently granted summary sits above the four\npermission rows, listing exactly what this account has right now (or\nAll permissions (Administrator role) when its Role already\ncovers everything) - the one place to check before deciding what, if\nanything, needs changing below. It, and each row's own\nActive/Disabled badge, update the instant you\nchange Role or an override dropdown - no need to Save and reopen the\ndialog just to see whether a choice actually took effect.\nThe four global permissions (Create spaces,\nManage users, Manage groups,\nSystem administrator) normally come from a user's groups.\nThe Edit dialog lets you set one of three states per permission, per\nperson: Inherit from groups (the default), Force\nenabled, or Force disabled - the override always wins\nover whatever that person's groups say for that one permission.\nThis has no effect on an account whose Role is already\nAdministrator: that role unconditionally grants every\npermission, the same way it always has.\nManage users unlocks Administration > Users\nand Manage groups unlocks Administration >\nGroups for that account, whether the permission came from a\ngroup or an override here - each opens only its own matching section,\nnot the rest of Administration. Create spaces only unlocks\nthe Create space button on the regular Spaces directory\n(see “Creating a Space” above); it does not open\nAdministration > Spaces, which stays a\nSystem administrator-only oversight view (archive or\npermanently delete any space) — same as Settings, Backup and Storage.\n3. Administrators tab:\nLists every account that currently holds System administrator\naccess however it got there - the Role switch, a group's\nglobal permission, or a per-user override - with a\nGranted via column saying which. The Role filter on the\nPeople directory only ever shows the first of these three.\nUnder Granted via, a Role or override grant also names\nwho did it - the account that flipped the switch or added\nthe override, read off the audit log. A group grant instead names\nwhich group: group membership and a group's own\npermission grants aren't tracked per member, so there is no individual\nperson to point to there. Either can read as unattributed for an account\nthat has held its access since before this tracking existed.\nDemote to Member undoes whichever of those it was: it\nflips Role back to Member for a direct Administrator, or adds\na force-disabled override for one granted through a group or an existing\noverride. Disabled for the protected admin, your own account, or the last\nremaining administrator on the list - and, for a direct Administrator\n(Granted via: Administrator role), disabled for anyone except\nthe protected bootstrap admin, same as Edit/Delete in the People directory.\n4. Permission overrides tab:\nLists every account that has at least one Global access\noverride set - Create spaces, Manage users,\nManage groups, or System administrator, force\nEnabled or Disabled for that one account\nspecifically. Before this tab existed, the only way to find out who had a\ncustomized permission was opening every single account's Edit dialog\nand checking its Global access tab one at a time - this tab exists\nprecisely so that is never necessary.\nEach row's Overrides column names exactly which\npermissions are overridden and to what value - an account inheriting\neverything normally from its Role or groups never shows up here at all.\nThe same Edit/Delete actions as the People\ndirectory are right there in the row, so acting on what you see - fixing or\nremoving an override - never means switching back to a different tab first.\n5. Groups:\nGroups bundle users for reusable space-permission grants - assign a group\nonce in a space's Access panel instead of adding every\nmember individually.\nEach group can also carry global permissions: Create\nspaces, Manage users, Manage groups, System admin.\nGroup directory and Global access are two\nseparate tabs above the table, the same split as Administration > Users.\nGroup directory lists every group; Global access narrows that down to only\nthe (usually few) groups that actually grant one of the four global\npermissions above - the ones worth double-checking before adding someone to\nthem, out of what is otherwise a much longer list of groups that exist\npurely for Space/Page access.\nThe default system groups (administrators, users,\nconfluence-administrators, confluence-users)\ncannot be deleted, only edited.\nA group still granting access to any Space or with a restriction on any\nPage cannot be deleted - \"Remove this group's permission\nassignments before deleting it\" means exactly that, and both\nhave to be cleared first (its global permissions, under Edit > Global\naccess, don't count - only Space/Page grants do).\nThe Directory table's Access grants column names how\nmany Spaces and Pages a group is granted access to - Not used\nmeans it can be deleted outright. Clicking the count opens a quick-view\nlisting every one of them by name, each linking straight to that Space or\nPage, with its own Remove button right there to clear the\ngrant on the spot - no need to hunt through every Space's Access panel\nfirst. The same list, with the same Remove buttons, is also its own tab\n(Access grants) inside the full Edit Group dialog, right\nnext to Members.\nThe same Select / bulk-delete control as the People\ndirectory is available next to the group search box; a default system group\nstays excluded even when selected.\n),\n},"
+ },
+ {
+  "id": "admin-spaces-access",
+  "title": "Space Access & Effective Permissions",
+  "category": "Administration",
+  "keywords": [
+   "space access",
+   "permissions",
+   "effective permissions",
+   "groups",
+   "restrict",
+   "archived spaces",
+   "archived spaces tab",
+   "space directory"
+  ],
+  "text": "<>\nAdministration > Spaces lists every space with Total /\nActive / Archived tiles. Permanent space deletion is only available here (an\nindividual space's own settings only offer Archive). Open a space's\nAccess panel to manage exactly who can do what:\nTwo tabs above the table, the same split as Administration > Users and\nGroups: Space directory lists every active space,\nArchived spaces lists only the ones hidden from normal\nnavigation - restore one from its own Edit space > Space settings\n& Danger zone, or delete it permanently right from either tab.\nGeneral access: Open gives every signed-in\nuser full read/write access automatically (everything except\nAdmin/Restrictions) - a warning banner says so\nright above the tables. Restricted withdraws that, so only\npeople explicitly granted access below can do anything.\nSpace Owner (set from the space's own\nEdit space > General tab, not here): a protected\nAdministrator a space always keeps at least one of, so it can never end\nup unmanageable regardless of what happens to the tables below.\nA Groups permission table and an\nIndividual users permission table, each with checkboxes for\nView, Add/Edit, Delete,\nDelete own, Restrictions, Move, and\nAdmin. View grants reading only - editing needs\nAdd/Edit too, and relocating a page needs\nMove as well. Exporting follows View\nautomatically and isn't a separate checkbox. While the space is\nOpen, the first five columns show All instead -\nOpen already grants them to everyone, so a checkbox there would not\nactually change anything; Restrictions/Admin\nstay live regardless of mode. Changes are explicit - Edit, then Save or\nCancel - with an unsaved-changes guard if you navigate away mid-edit.\nEffective permissions: pick any user and see their fully\nresolved permission set for that space - Open access, any direct grant\n(which overrides every group they belong to once they have one, Admin\naside), or otherwise every group they belong to combined - instead of\nmanually cross-referencing three sources by hand.\nReal-world use case: before turning a space Restricted, use\nEffective permissions to confirm the one contractor account\nthat still needs read access actually keeps it.\n),\n},"
+ },
+ {
+  "id": "switch-account",
+  "title": "Switch Account (Impersonation)",
+  "category": "Administration",
+  "keywords": [
+   "impersonate",
+   "switch account",
+   "debug",
+   "superuser",
+   "view as"
+  ],
+  "text": "<>\nSuperusers who are not already impersonating someone see a\nSwitch account control (people icon) in the account menu,\nlisting other active accounts. Picking one signs you in as them with no\npassword exchange - useful for confirming “why can't this person\nsee that page” without asking them to screen-share.\nWhile impersonating, a permanent banner is pinned to the bottom of every\nscreen: “Viewing WikiHub as {\"\"}. Your actions\nare recorded against {\"\"}.” The account menu also shows\nSigned in as {\"\"}. Click\nReturn to my account (in the banner or the menu) to end the\nsession.\nThe protected bootstrap admin account and your own account are excluded from\nthe switch list.\n),\n},"
+ },
+ {
+  "id": "backup-and-restore",
+  "title": "Backup, Confluence Import & DC Export",
+  "category": "Administration",
+  "keywords": [
+   "backup",
+   "zip",
+   "restore",
+   "confluence",
+   "import",
+   "export",
+   "xml",
+   "datacenter",
+   "resume",
+   "sha-256",
+   "automatic",
+   "automated",
+   "scheduled",
+   "schedule",
+   "retention",
+   "cron"
+  ],
+  "text": "<>\nAdministration > Backup has two sections:\nExport / Backup and Import / Restore.\n1. Two export formats - not interchangeable:\nExport WikiHub Backup: a native, restorable\n.zip of spaces, pages, revisions, attachments, users, and\ngroups - scoped to All spaces or a picked subset via\nSelect spaces to export. It also carries every reported\nissue - its labels, status, assignee, notes and screenshots - and\nrestoring puts them back with the same dates; an issue that already exists is\nskipped, never duplicated. Issues belong to the whole workspace, so a backup scoped\nto some spaces leaves them out.\nAccess and discussion come back exactly as they were: space visibility, owners and\nevery per-user / per-group permission; groups with all their owners, members and\nglobal permissions, and each person's own global-permission overrides; each\npage's Open/Restricted setting, whether it inherits from its parent, its\nallow-list and its blocks; and every comment and reply with its likes, plus page\nlikes. Rows that already exist on the target are skipped, never overwritten.\nExport Confluence Backup: an XML archive for Atlassian\nConfluence Data Center's own restore tooling, targeting\nData Center 8.x or 9.x. This one is a\none-way hand-off - it cannot be used to restore WikiHub itself.\nIncoming: this export is switched off for now (the card reads\n“Coming soon”) while it is finished.\nThe WikiHub backup's Include password hashes checkbox is\noff by default and explicitly warned as enabling offline password cracking if\nthe archive leaks - only enable it for an actual migration, and store the file\nsecurely.\n2. Restoring / importing:\nBoth a WikiHub backup restore and a Confluence Archive\nImport upload as resumable, chunked, multi-gigabyte transfers with\nPause upload / Resume upload controls -\nsafe to start, pause, and pick back up later without re-sending what already\nmade it through.\nConfluence import scans the archive for spaces, flags key conflicts, lets\nyou pick which spaces to bring in, and runs as a background job with live\nlog output.\nA large Confluence archive can take hours to upload. The page keeps your\nbrowser session renewed automatically for as long as that tab stays open -\nyou do not need to stay logged in manually, and other tabs keep working\nnormally throughout.\nRestoring into an instance that already has spaces triggers a\nReplace existing spaces? conflict step for anything that\nwould collide.\nBoth upload paths reject a file above a configured size limit (shown on\neach card, 1024 MB by default) before uploading starts. A system\nadministrator can raise it under\nAdministration > Object storage > Quotas > “Max\nConfluence / Backup Archive (MB)”.\nA client-side check catches an obviously wrong upload immediately - e.g.\npicking a Confluence export under WikiHub restore surfaces\n“This is a Confluence export, not a WikiHub backup. Upload it under\n‘Import Confluence Backup’ instead.”\nbefore anything even starts uploading. Separately, resuming an interrupted\nupload with a different file than the one partially uploaded shows a\n“That is a different file” dialog, comparing what\nwas being uploaded against what you just chose (name, size, how much is\nalready stored) and asking you to either\nDiscard and upload this or Choose the original.\n3. Automatic backups (scheduled):\nThe Automatic backups panel, above\nExport / Backup, runs a recurring\nExport WikiHub Backup on a schedule with no one needing to\nclick anything.\nIt writes each backup to a directory mounted into the server itself\n(WIKIHUB_AUTOMATED_BACKUP_HOST_DIRECTORY in the deployment's\nenvironment) rather than object storage - a separate copy on separate\ninfrastructure, so a problem with the primary storage does not also take\nout its own backups. Enabled stays greyed out, and\nRun now stays disabled, until an operator has actually\nmounted that directory.\nSubfolder (optional) scopes backups to a folder under that\nmounted volume, e.g. team-a writes into <mounted\nvolume>/team-a instead of the volume's root - useful for keeping\nmore than one schedule's output apart. The folder must already exist on\nthe host: Save schedule checks it against the real\nfilesystem and refuses a path that is missing or that would resolve outside\nthe mounted volume, with the reason shown right under the field.\nConfigure Every N hours/days, a Start time\nand Timezone (an IANA zone name, e.g.\nAsia/Ho_Chi_Minh), and how many completed backups to\nKeep - older ones past that count are deleted automatically\nas newer ones land. Click Save schedule to apply; the panel\nthen shows the computed Last run and\nNext run times.\nRun now queues one immediately without waiting for the\nschedule or disturbing it. The list below shows recent scheduled backups\nwith Download and Delete for each.\nUnlike a manual Export WikiHub Backup, a scheduled backup\nalways includes password hashes - there is no toggle for it, since nobody is\npresent to opt in each time. Restrict access to the mounted directory the\nsame way you would any other credential store.\n4. Import history and logs:\nUnder Import / Restore, the Import history\ncard lists every Confluence import and WikiHub restore - the current one and\nall earlier runs - with its status, how long it took, and how many warnings\nand errors it logged.\nThe table is paged (10, 20 or 50 rows per page). Click a column heading\nto sort by it, click again to reverse the order, and use the status\nfilter to show only Failed, Running and\nso on.\nClick View details on a run to read its full log, oldest line first. Filter to\nWarnings or Errors, Copy the\nlines, or use Download .txt to save the whole log.\nLogs are stored on the server, so a long import that ran while your browser\nwas closed or asleep can still be explained afterwards. Files that a Confluence\nexport lists but does not actually contain are counted in a summary line, with\nonly the first 100 named individually.\n),\n},"
+ },
+ {
+  "id": "admin-ai",
+  "title": "AI assistant",
+  "category": "Administration",
+  "keywords": [
+   "ai",
+   "assistant",
+   "summary",
+   "summarize",
+   "tldr",
+   "translate",
+   "explain",
+   "write",
+   "draft",
+   "grammar",
+   "label",
+   "related",
+   "ctrl+space",
+   "openai",
+   "llm",
+   "model",
+   "endpoint",
+   "api key"
+  ],
+  "text": "<>\nFor everyone: every page has a TL;DR button in its\ntoolbar, next to Save for later. Click it for a short summary written in Markdown, in the\npage's own language. The switch at the top changes it to English or\nTiếng Việt: that translates the summary already written instead of reading\nthe page again, so it is quick and cheap. Web addresses in it are links, and a file's\nname opens that file on top of the summary. The summary is saved until the page changes, so\nreopening it is instant; Summarize again reads the page again and writes a\nfresh one. It only reads pages you can already open, and each person gets a limited\nnumber of AI requests per hour (60 unless an administrator sets another limit).\nAI in the editor: while you edit a page, put the caret on an empty line\nand the hint Press Ctrl+Space for AI or '/' for commands appears. Press\nCtrl + Space to open the AI box, describe what you want - a\nchecklist, a table of options, an introduction - and press Enter. The AI\nwrites it, taking the text around the caret into account, and shows it formatted before\nanything is added. Then Insert below puts it into the page (replacing the\nempty line), or Edit lets you ask for changes - for example\nshorter or add a table - as many times as you like. Every version is\nkept: the arrows at the top of the box step back and forward between them, and\nInsert below uses the one on screen. If AI is not connected yet, the shortcut\nshows a small notice that disappears as soon as you carry on typing.\nImprove text you already wrote: select text inside one paragraph and a\nsmall AI button appears at the end of the selection (or press\nCtrl + Space). Describe the change - make it more formal,\ntranslate to English - or pick a one-click action: Fix grammar\n(spelling, punctuation and grammar, keeping your wording), Consistent terms\n(uses the same terms as the related pages already in the wiki, and the same word for the\nsame thing within your text) or Continue writing (finishes the sentence;\n/ → Continue writing with AI does the same at the caret). The\nanswer is only a suggestion: nothing changes until you click Replace (or\nInsert), and it is not applied if the text changed in the meantime.\nEdit asks for another version. Only people who can edit the space can use\nit, and a plain-text suggestion replaces the selected words, so formatting inside the\nselection (bold, links) is not kept - select a smaller part to protect it.\nAdministrators can set the house style, such as a tone or a glossary, in\nSkill management → Writing assistant.\nExplain or translate a selection: select a word, phrase or sentence in\na page you are reading and a small AI button appears at the end of the\nselection. Click it and the words are explained straight away, in Vietnamese by\ndefault, using the page title and the surrounding text to pick the right\nmeaning. Use Translate instead to translate the words, and the globe menu\non the card to switch the language between English and\nTiếng Việt - changing it redoes the current action. Answers are remembered\nso asking again is instant, and up to 2,000 characters can be selected at a time.\nPress Escape or the close button to dismiss the card.\nCreate a page with AI: in Create page, click\nWrite with AI (or, after typing a few words in Write,\nDraft it with AI to use them as the description), describe the page in a\nsentence or two and click Generate. The AI first searches the wiki for\nrelated pages you can read - they are listed on the right - and may ask a few\nmultiple-choice questions, one at a time: pick an option (hover its i button\nfor the detail), tick several where allowed or write your own answer, or choose\nSkip questions. Your answers are added to the description so you can see\nand edit what the draft is built from. WikiHub then drafts the whole page in its own\nformat - headings, lists, checklists, tables and code blocks - fills in the title if it\nis empty and shows a preview you can enlarge. A notice at the very top says the page was\nwritten by AI, so readers know to check it. Nothing is saved until you click\nCreate page; use Regenerate for another try or\nDiscard to start over, and edit the page freely afterwards. Only people who\nmay create pages in the space can use it. Until AI is connected, the tab explains what\nis missing instead.\nConnect it (System Administrators): open\nAdministration → AI assistant. The page is a table of saved\nconnections - any number can be saved, but only one is active at a time.\nAdd OpenAI Compatible opens a form: a Name, the\nEndpoint address of any OpenAI-compatible service including the version\npath (for example https://host/v1) and its API key. When you\nclick out of the address or key field WikiHub checks the connection and lists the\nmodels the service offers - or click Fetch models. Pick the model to use\nfrom the list - the model is always chosen from what the service offers, and\nSave stays off until the connection checks out and a model is picked.\nTick Make this the active connection to switch it on straight away.\nSemantic search (its own section next to Key management) finds pages by\nmeaning, not only by words. It is one setting for the whole wiki, separate\nfrom the chat providers, so switching the active provider never rebuilds the index. Choose\nwhere page text is turned into vectors: Active AI provider (if it offers an\nembedding model), Another endpoint (an OpenAI-compatible address and key used only\nfor embeddings, for providers that offer none) or Self-hosted (Ollama). Only\nmodels that can create embeddings are listed, and Save checks that the source\nreally embeds with the model you pick. WikiHub then indexes every page in the background, a\nfew at a time, keeps the index current as pages change, and shows progress in the section.\nChanging the model rebuilds the index. Leave the model on Off to keep plain\nkeyword search. Results always respect the permissions of whoever searches.\nSelf-hosted Ollama runs the embedding model on this server when your provider\nhas none. Open Semantic search, choose Self-hosted (Ollama), pick a\nmodel (bge-m3 is multilingual and a good fit for Vietnamese) and click\nEnable and download. A card shows each step - download Ollama (about 4 GB), start\nit, wait until it answers, download the model - with a progress bar; you can leave the page and\nit continues. Nothing is installed or running until you enable it, and\nDisable stops and removes it so it frees all its memory (about 1-2 GB while\nindexing, 0.8 GB idle; capped at WIKIHUB_OLLAMA_MEMORY_LIMIT, 3 GB by default).\nThe model list is one dropdown: each model is tagged downloaded or not\ndownloaded, and the i beside it says what the model is good at and when to\npick it - choosing one that is not downloaded turns Save into Download & use.\nCancel stops a download and the card says it was cancelled until you dismiss\nthe note. Downloaded models stay on disk until you choose Delete downloaded models. This\nneeds WikiHub's small ollama-controller service, which is the only part with access\nto Docker: it can start and stop this one container and nothing else.\nIn the table, the key is always masked (for example sk-adc2****297a). It\nis stored encrypted, never shown again and not included in backups. Edit\nchanges a connection - leave the key blank to keep it. The Status column\nshows Working or Failing from the last check; WikiHub checks\na connection when it is saved or its address or key changes, then re-checks all of\nthem every five minutes (Not checked only until the first check). Click a column header to sort\n(click again to reverse, a third time to go back to the saved order), type in the\nboxes under the headers to filter by name, endpoint or model, and use the status\nlist to show only active, working, failing or not-checked connections. The table\nshows ten connections per page.\nIf semantic indexing misbehaves, read the worker log:\ndocker compose logs worker | grep search_index. Each minute that\nindexed something ends with a search_index_pass line - pages and\nchunks done, embed_seconds (time waiting on the AI service),\nbacklog_remaining and stopped (why it ended). A problem is\na warning: search_index_paused with the service's HTTP\nstatus and reply, ai_embedding_failed for each failed\nrequest, ai_embedding_slow past 10 seconds, and\nsearch_slow (in the backend log) for a search over a second. Page text,\nkeys and what people searched for are never logged. Set\nWIKIHUB_LOG_LEVEL=DEBUG to also see every page and request.\nThe power button makes a connection Active; doing so switches the\nprevious one off. Switch the active one off and the AI actions are off for everyone.\nCheck now tests a saved connection and records whether it is\nWorking or Failing; Remove deletes it\nafter you confirm.\nLabels and related pages: open a page's Page labels\n(the tag button under its title) and click Suggest labels and related pages.\nThe AI reads the page and proposes a few labels - preferring ones you already use on\nother pages, which are marked - and lists existing pages that cover the same ground.\nClick a label to add it; click a related page to open it in a new tab. After you save an\nedit, a small notice offers the same. Labels stay private to your account, the AI only\nsees pages you can already read, and the answer is remembered until the page changes, so\nopening it again is free.\nSkills: open Skill management for one card per AI\nskill - Page summary (TL;DR), Create page with AI,\nExplain a selection, Translate a selection,\nWriting assistant and Labels and related pages. A card\nshows only the name and a short description plus whether the skill uses the\nDefault wording or a Custom one; click it to read the\ninstructions in full, then Edit to change them, starting from the current\nwording rather than from scratch. Use Save skill to apply a change or\nUse default to go back to the built-in wording. This is where to put a tone\nof voice, a glossary of terms or label naming conventions. WikiHub always adds the fixed\nparts itself - the answer format, the target language, the safety rules and, for pages,\nthe format the editor understands - so editing a skill cannot break a feature. The\nbuilt-in summary wording is written for someone who has never seen the page (its style\nis adapted from the open-source tldr-skill, Apache-2.0). A new instruction applies to the\nnext answer; answers saved under the old one are not reused.\nThe model runs on the service you connect, so WikiHub only sends a request when\nsomeone clicks.\n),\n},"
+ },
+ {
+  "id": "admin-mail",
+  "title": "Administrator Mail & Requests",
+  "category": "Administration",
+  "keywords": [
+   "mail",
+   "email",
+   "smtp",
+   "inbox",
+   "notification",
+   "bell",
+   "request",
+   "password",
+   "expired",
+   "account",
+   "contact"
+  ],
+  "text": "<>\nSomeone who has no account yet, or has forgotten their password, cannot sign in to\nask for help. The Contact an administrator link on the sign-in page\ngives them a short form (fields marked with a red * are required: name and email; the\nmessage is optional). WikiHub saves the request, tells\nevery System Administrator in the bell, shows it on everyone's\nRequests page, and e-mails it to your administrator mailboxes.\nEvery System Administrator sees every request and any of them can handle it -\nwhoever gets there first. A mailbox is not needed to see or act on requests: it only\ndecides where the email goes. Once someone resolves a request it is resolved for\neveryone, and the others' bell notifications about it clear. With no mailbox set\nup, requests still arrive in the app, marked In app only; the sign-in\ndetails from Create account / Reset password are then handed back\non screen to pass on yourself.\nSet up a mailbox (System Administrators): open\nAdministration → Mailboxes and choose Add mailbox.\nAdministrator account: the account this mailbox belongs to - the\nrequest emails go to its address and it signs the mail that account sends. Only\nSystem Administrators can be linked, and each account has one mailbox. If that\naccount is disabled, its mailbox stops receiving requests automatically. (Every\nSystem Administrator sees the requests in the app either way.)\nMailbox address, Sender name and\nProvider: the sender name is optional and is the name shown as the\nsender of the request emails in your mail client (leave it blank to show the\naddress). Pick Gmail or Outlook to fill in the server, or choose Other and\nenter the\nSMTP server, Port and Security\n(STARTTLS is usually port 587, SSL/TLS port 465) yourself. Each mailbox has its own\nsettings.\nUsername and Password: leave the username blank to\nuse the address. The password is stored encrypted and is never shown again. When you\npress Save, WikiHub first signs in to the mail server with these\nsettings, and only saves if that works. If it does not, nothing is saved and the\ndialog explains what went wrong in plain words (with the server's own reply under\nTechnical details), so you can correct the details and try again. Gmail\nneeds an app password rather than your normal Google password.\nEach mailbox e-mails a request to itself, so with three mailboxes an incoming request\nproduces three e-mails. The requester is only told about a delivery problem when\nnone of them could be reached.\nOnly a mailbox's own account, or the built-in super administrator, can edit its\nsettings, test it, change its password or remove it - another System Administrator\nseeing it in this list has those buttons greyed out, so a mistake (or a deliberate one)\non someone else's mailbox is not possible.\nStatus on the Mailboxes page:\nWorking: the last sign-in or send succeeded.\nNeeds new password: the mail server rejected the password, usually\nbecause it expired.\nCan't connect / Server error: the server was\nunreachable or refused the message. Not a password problem.\nSwitched off / Account disabled: not receiving\nrequests. Use the power button to switch a mailbox on or off.\nWhen a mailbox password expires. Many mail providers require a new\npassword every few months. WikiHub signs in to every active mailbox once an hour. When\nthe server rejects a password, the mailbox's owner sees a red banner across the\ntop of every page with an Update password button (also available as\nthe key icon on the Mailboxes page). The new password is tested with the mail server\nbefore it is saved. Other administrators do not see the banner - it is the owner's\nto fix.\nThe mailbox pool. Every working mailbox on this page - marked\nIn pool next to its status - also stands in for administrators who have\nnone of their own. The automatic e-mails this page describes, and the ones in\nUsers and a space's Access tab, still go out even when the\nadministrator making the change has never set up a mailbox (or theirs is not connected\nright now): WikiHub relays the message through one mailbox from the pool instead, chosen\nautomatically. The message is still signed with the acting administrator's own\nname, and a reply reaches them, not whoever's mailbox happened to relay it. Nothing\ngoes out at all only when the pool is empty, too - no mailbox in the workspace is\ncurrently connected.\nRequests page and notification bell. An account linked to an active\nmailbox gets a Requests entry under Home and Spaces in the sidebar, with a\ncount of unread requests. Each new request also arrives in the bell in the top\nbar, like any other notification (see Notifications).\nFilter by All, Unread, Open or\nResolved; each tab shows how many requests it holds. The\nRequest type list narrows everything to account requests, password\nresets or other requests, and the tab numbers follow it. Use Rows and\nthe arrows under the table to page through. Opening a request with\nView details marks\nit read; Mark as unread undoes that, and\nMark all as read clears the lot. Read state is your own.\nMark resolved closes a request for everyone who received it, so two\nadministrators do not answer the same person. Reopen undoes it.\nEach request shows whether the e-mail to your mailbox was sent. A request is\nalways saved on the Requests page, even when the e-mail could not be delivered.\nHandle a request. For an account or password-reset request, the\ndetails window has a Handle this request box with two ways to do it:\nAutomatically. Create account automatically creates the\naccount from the request (a Member, with a username taken from the e-mail address, and\na generated password) and e-mails the username and password to the requester from your\nmailbox. Reset password automatically sets a generated password on the\naccount the request names and e-mails it. You are asked to confirm first, and the\nrequest is marked resolved afterwards. Either way, the result sits behind a\nShow details toggle with a Copy button for the\nusername and address - and, if the e-mail could not be sent, the password too, shown\nonly that once and never stored - so you can pass any of them on another way.\nManually. Create account manually opens the usual Create user\nform with the requester's details already filled in; Set password manually\nlets you choose (or generate) the new password yourself. WikiHub does not e-mail\nanything in this case, and the request is marked resolved once you save.\nThe automatic reset is only offered when the e-mail in the request is the one already on\nthe account, so a password is never sent to an address someone merely typed. If the\naddress differs, the account is disabled, or it is an administrator you cannot manage,\nthe box says why and only the manual route is left. Nothing is offered for a request\nthat is already resolved, so it cannot be done twice. Both actions need the\nManage users permission and appear in the Users audit trail.\nAnyone can type any e-mail address into the form. Treat it as a way to reply, not as\nproof of who they are - confirm identity before creating an account or resetting a\npassword for someone. Emailed passwords are temporary: ask people to change them after\nsigning in.\nWhat the e-mails look like. The notification your mailbox sends\nitself, and the messages that give someone their new account or password, are styled\nin the workspace's colours and name, with a plain-text version for clients that\ncannot show it, and end with a signature (for account and password e-mails, your\nown name and address). Set WIKIHUB_PUBLIC_URL (for example\nhttps://wiki.example.com) so they can include an\nOpen Requests or Sign in button; left blank, those buttons are\nsimply left out.\nMailbox passwords are encrypted with WIKIHUB_MAIL_ENCRYPTION_KEY, or,\nwhen that is blank, with a key derived from WIKIHUB_SECRET_KEY. If that\nvalue changes, the stored passwords cannot be read: the mailboxes then show\nNeeds new password and each owner enters theirs again. The backend\nand the worker must use the same value.\n),\n},"
+ },
+ {
+  "id": "safe-operation",
+  "title": "Safe Operation & System Troubleshooting",
+  "category": "Administration",
+  "keywords": [
+   "security",
+   "troubleshooting",
+   "failed",
+   "upload",
+   "access",
+   "redis",
+   "minio"
+  ],
+  "text": "<>\nBest practices for maintaining workspace stability and resolving technical issues:\nAccess & Permission Issues: If a user cannot see a page\nor space, check Space access, Page access restrictions,\nand group membership - or just open Effective permissions\nin the space's Access panel for that user and see the resolved answer\ndirectly instead of cross-referencing all three by hand.\nUpload Failures: Verify file size limits and allowed extensions under\nSettings. Ensure MinIO/S3 object storage is healthy and responsive.\nImport Worker Failures: Check background worker task logs, Redis queue\nconnectivity, and available disk space. Scanned archives can be resumed from the Backup panel.\nAPI Documentation: Administrators can access interactive OpenAPI / Swagger\ndocumentation at /docs and ReDoc at /redoc.\nThree things people often go looking for don't exist in this build, so\nit's worth knowing before you go hunting: there is no automatic invite\ne-mail (accounts are created directly - see Managing Users & Groups;\nsomeone who can't sign in can send a request from the sign-in page instead,\nand an administrator can answer it from Requests by creating the account and\ne-mailing the sign-in details, see Administrator Mail & Requests), no page-watch or @-mention alerts\n(the bell tells you about changes to your own access and account - for page\nactivity the closest things are the Home activity feed and Recently\nvisited/worked on), and no in-app audit-log viewer (admin actions and impersonation are logged\nserver-side, but there is nowhere in the UI to browse that log yet).\n),\n},\n];"
+ }
+]

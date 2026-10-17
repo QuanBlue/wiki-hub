@@ -1,5 +1,41 @@
 import { apiBaseUrl } from "@/lib/env";
-import type { AnswerResult, AnswerSource, WebSource } from "@/lib/ai-answer";
+import type {
+  AnswerAction,
+  AnswerPlan,
+  AnswerPlanStep,
+  AnswerResult,
+  AnswerSource,
+  WebSource,
+} from "@/lib/ai-answer";
+
+/** How much the person wants in an answer: the gist, the usual, or everything relevant. */
+export type ChatDetail = "brief" | "normal" | "detailed";
+export const CHAT_DETAILS: readonly ChatDetail[] = [
+  "brief",
+  "normal",
+  "detailed",
+];
+const DETAIL_KEY = "wikihub:chat-detail";
+
+/** The level last chosen in this browser; the usual one when none, or it cannot be read. */
+export function readDetail(): ChatDetail {
+  try {
+    const stored = window.localStorage.getItem(DETAIL_KEY);
+    return CHAT_DETAILS.includes(stored as ChatDetail)
+      ? (stored as ChatDetail)
+      : "normal";
+  } catch {
+    return "normal";
+  }
+}
+
+export function saveDetail(detail: ChatDetail): void {
+  try {
+    window.localStorage.setItem(DETAIL_KEY, detail);
+  } catch {
+    // Private windows and full storage: the choice is just not kept.
+  }
+}
 
 /** What the server accepts of one message, and of a whole conversation. */
 export const CHAT_MAX_CHARS = 2000;
@@ -24,6 +60,17 @@ export class ChatStreamError extends Error {
   }
 }
 
+/** What became of one step of a plan that was run. */
+export type PlanStepResult = { ok: boolean; href?: string; error?: string };
+
+/** A plan the assistant proposed, and where it stands: it runs only when the person confirms. */
+export type PlanState = {
+  steps: AnswerPlanStep[];
+  skipped: AnswerPlan["skipped"];
+  status: "pending" | "running" | "done" | "failed" | "cancelled";
+  results: PlanStepResult[];
+};
+
 /** One turn of the conversation as it is shown (and kept in the browser). */
 export type ChatEntry =
   | {
@@ -38,15 +85,19 @@ export type ChatEntry =
       role: "assistant";
       /** The words so far while the reply is being written; the final answer once it is. */
       content: string;
-      status: "streaming" | "done" | "error";
+      status: "streaming" | "done" | "error" | "cancelled";
       /** Set once done: whether the pages answer the question, and which pages. */
       found?: boolean;
       reason?: string;
       sources?: AnswerSource[];
       related?: AnswerSource[];
       /** What the answer stands on, and the internet pages it cites. */
-      basis?: "wiki" | "web" | "general" | "clarify";
+      basis?: "wiki" | "web" | "general" | "clarify" | "app" | "plan";
       webSources?: WebSource[];
+      /** Steps proposed, to confirm before they run. */
+      plan?: PlanState;
+      /** Buttons to the pages the answer is about. */
+      actions?: AnswerAction[];
       /** While it is being written: the web search that is under way. */
       searching?: string;
       failure?: ChatFailure;
@@ -88,6 +139,8 @@ export type ChatEvent =
   | { type: "start"; pages: number }
   | { type: "delta"; text: string }
   | { type: "searching"; query: string }
+  /** What was shown so far is dropped: a better way of answering is being taken. */
+  | { type: "reset" }
   | { type: "done"; result: AnswerResult }
   | { type: "error"; code: string };
 
@@ -142,12 +195,18 @@ export async function streamChat(
     onStart,
     onDelta,
     onSearching,
+    onReset,
+    detail = "normal",
     idleTimeoutMs = CHAT_IDLE_TIMEOUT_MS,
   }: {
     signal?: AbortSignal;
     onStart?: (pages: number) => void;
     onDelta?: (text: string) => void;
     onSearching?: (query: string) => void;
+    /** The words shown so far are to be dropped: the reply is being redone (a web search). */
+    onReset?: () => void;
+    /** How long and thorough the answer should be. */
+    detail?: ChatDetail;
     idleTimeoutMs?: number;
   } = {},
 ): Promise<AnswerResult> {
@@ -175,7 +234,7 @@ export async function streamChat(
           "Content-Type": "application/json",
           Accept: "text/event-stream",
         },
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages, detail }),
         credentials: "include",
         signal: controller.signal,
       });
@@ -213,6 +272,7 @@ export async function streamChat(
           if (event.type === "start") onStart?.(event.pages);
           else if (event.type === "delta") onDelta?.(event.text);
           else if (event.type === "searching") onSearching?.(event.query);
+          else if (event.type === "reset") onReset?.();
           else if (event.type === "done") return event.result;
           else if (event.type === "error") {
             throw new ChatStreamError(
@@ -225,6 +285,100 @@ export async function streamChat(
       void reader.cancel().catch(() => undefined);
     }
     // The stream ended without a result: the connection was cut.
+    throw new ChatStreamError("error");
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+// ------------------------------------------------------------ carrying out a plan
+
+type PlanEvent =
+  | { type: "step"; index: number; ok: boolean; href?: string; error?: string }
+  | { type: "done"; ok: boolean };
+
+/**
+ * Run the steps of a confirmed plan, as the person. onStep hears of each step as it ends
+ * (writing a page takes as long as the model does); the promise says whether all of them went
+ * through. Rejects with ChatStreamError.
+ */
+export async function executePlan(
+  steps: AnswerPlanStep[],
+  {
+    lang,
+    signal,
+    onStep,
+    idleTimeoutMs = CHAT_IDLE_TIMEOUT_MS,
+  }: {
+    lang: string;
+    signal?: AbortSignal;
+    onStep?: (result: PlanStepResult) => void;
+    idleTimeoutMs?: number;
+  },
+): Promise<boolean> {
+  const controller = new AbortController();
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, idleTimeoutMs);
+  };
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort);
+  try {
+    arm();
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl()}/api/v1/ai/chat/execute`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          lang,
+          steps: steps.map(({ type, args }) => ({ type, args })),
+        }),
+        credentials: "include",
+        signal: controller.signal,
+      });
+    } catch {
+      throw new ChatStreamError(timedOut ? "timeout" : "error");
+    }
+    if (!response.ok || !response.body) {
+      throw new ChatStreamError(failureOf(response.status));
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      for (;;) {
+        let chunk: ReadableStreamReadResult<Uint8Array>;
+        try {
+          chunk = await reader.read();
+        } catch {
+          throw new ChatStreamError(timedOut ? "timeout" : "error");
+        }
+        if (chunk.done) break;
+        arm();
+        buffer += decoder.decode(chunk.value, { stream: true });
+        const parsed = parseEvents(buffer);
+        buffer = parsed.rest;
+        for (const event of parsed.events as unknown as PlanEvent[]) {
+          if (event.type === "step") {
+            onStep?.({ ok: event.ok, href: event.href, error: event.error });
+          } else if (event.type === "done") {
+            return event.ok;
+          }
+        }
+      }
+    } finally {
+      void reader.cancel().catch(() => undefined);
+    }
     throw new ChatStreamError("error");
   } finally {
     clearTimeout(timer);
@@ -252,7 +406,38 @@ export type ChatState = { entries: ChatEntry[]; slots: ChatSlots };
 
 export const EMPTY_CHAT: ChatState = { entries: [], slots: {} };
 
-const storageKey = (userId: string) => `wikihub:chat:v1:${userId}`;
+const CHAT_KEY_PREFIX = "wikihub:chat:v1:";
+const storageKey = (userId: string) => `${CHAT_KEY_PREFIX}${userId}`;
+
+/** Set once the chats were wiped (signing out, changing account): nothing is written back. */
+let wiped = false;
+
+/**
+ * Remove the conversations kept in this browser: everyone's, or everyone's but ``keep``'s.
+ *
+ * What people ask an assistant about their wiki can be sensitive, and it is kept here, in a
+ * browser the next person may use. So it goes when the person signs out, when an
+ * administrator starts or stops viewing as someone else, and - for any other way a session
+ * ends (it expired, the window was just closed) - the next time a chat opens, which removes
+ * every conversation but its own owner's. Wiping everything also stops later writes (a reply
+ * still arriving must not bring the chat back) until a conversation is loaded again.
+ * Preferences (width, level of detail) hold nothing of what was asked and stay.
+ */
+export function clearStoredChats(keep?: string): void {
+  try {
+    const store = window.localStorage;
+    const spared = keep === undefined ? undefined : storageKey(keep);
+    for (let index = store.length - 1; index >= 0; index -= 1) {
+      const key = store.key(index);
+      if (key?.startsWith(CHAT_KEY_PREFIX) && key !== spared) {
+        store.removeItem(key);
+      }
+    }
+  } catch {
+    // Private windows and blocked storage: there is nothing kept to remove.
+  }
+  if (keep === undefined) wiped = true;
+}
 
 const isEntry = (entry: unknown): entry is ChatEntry =>
   !!entry &&
@@ -262,14 +447,22 @@ const isEntry = (entry: unknown): entry is ChatEntry =>
   ((entry as ChatEntry).role === "user" ||
     (entry as ChatEntry).role === "assistant");
 
-// A reply that was still being written when the page closed is not a reply.
-const settled = (entry: ChatEntry): ChatEntry =>
-  entry.role === "assistant" && entry.status === "streaming"
-    ? { ...entry, status: "error" as const, failure: "error" as const }
-    : entry;
+// A reply that was still being written when the page closed is not a reply; and a plan that was
+// running is no longer known to be (it may have finished on the server: look before asking again).
+const settled = (entry: ChatEntry): ChatEntry => {
+  if (entry.role !== "assistant") return entry;
+  if (entry.status === "streaming") {
+    return { ...entry, status: "error" as const, failure: "error" as const };
+  }
+  if (entry.plan?.status === "running") {
+    return { ...entry, plan: { ...entry.plan, status: "failed" as const } };
+  }
+  return entry;
+};
 
 /** The conversation kept in this browser for this person; empty when there is none or it is unreadable. */
 export function loadChat(userId: string): ChatState {
+  wiped = false;
   try {
     const raw = window.localStorage.getItem(storageKey(userId));
     if (!raw) return EMPTY_CHAT;
@@ -313,6 +506,7 @@ const storable = (entries: ChatEntry[]) =>
   );
 
 export function saveChat(userId: string, state: ChatState): void {
+  if (wiped) return;
   try {
     const entries = storable(state.entries).slice(-STORED_MAX);
     if (entries.length === 0) {

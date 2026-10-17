@@ -377,6 +377,10 @@ export const sectionsVi: HelpSection[] = [
             đúng câu truy vấn, và câu trả lời liệt kê các trang trong mục <Code>Từ web</Code> với dấu
             như <Code>w1</Code>, mở ở tab mới. Chỉ câu truy vấn ngắn đó rời khỏi WikiHub - không bao
             giờ là trang wiki - và địa chỉ, e-mail, tên máy chủ nội bộ được loại khỏi truy vấn trước.
+            Nếu dịch vụ tìm kiếm không thấy gì, hoặc chỉ ra các trang về chuyện khác (loại miễn phí
+            sau gateway đôi khi như vậy), WikiHub thử các nguồn miễn phí không cần khóa - web mở
+            (Bing, DuckDuckGo), tiêu đề Google News và Wikipedia - rồi đọc nội dung các trang tìm được,
+            vẫn chỉ gửi đi câu truy vấn ngắn đó.
           </li>
           <li>
             <strong>Hỏi tiếp và số liệu</strong>: các tin nhắn trước được dùng làm ngữ cảnh, nên{" "}
@@ -398,14 +402,73 @@ export const sectionsVi: HelpSection[] = [
             lại cùng nội dung thì không tốn thêm.
           </li>
           <li>
-            <strong>Cuộc trò chuyện</strong> chỉ lưu trong trình duyệt này, theo tài khoản của bạn. Dùng{" "}
-            <Code>Chat mới</Code> để xóa. <Code>Dừng</Code> hủy câu trả lời và trả câu hỏi về ô nhập
-            để sửa. Từ một câu trả lời trong tìm kiếm, <Code>Tiếp tục trong chat</Code> sẽ chuyển
+            <strong>Chat biết tài khoản của bạn.</strong> Hỏi <Code>tôi có quyền truy cập những space nào?</Code>,{" "}
+            <Code>vai trò của tôi trong OPS là gì?</Code>, <Code>đổi mật khẩu thế nào?</Code> hoặc{" "}
+            <Code>sao tôi không xem được trang này?</Code> — chat trả lời từ space, vai trò và quyền
+            của chính bạn cùng cách WikiHub hoạt động, kèm các nút dưới câu trả lời để mở nhanh trang cần
+            đến (Space, tài khoản, hướng dẫn sử dụng; với quản trị viên còn có trang Quản trị tương ứng).
+            Chat chỉ đọc tài khoản của bạn, và chỉ hiện nút Quản trị cho người được phép mở.
+          </li>
+          <li>
+            <strong>Chat làm giúp bạn.</strong> Hỏi <Code>tạo space abc và viết trang hướng dẫn
+            Prometheus trong đó</Code> và chat đưa ra một kế hoạch ngắn - ví dụ{" "}
+            <Code>Tạo space &quot;abc&quot;</Code>, rồi <Code>Tạo trang &quot;Hướng dẫn
+            Prometheus&quot;</Code> (nội dung do AI soạn) - kèm nút <Code>Xác nhận và thực hiện</Code>{" "}
+            và <Code>Hủy</Code>. Chưa có gì thay đổi cho đến khi bạn xác nhận, và việc chạy bằng quyền
+            của chính bạn: việc bạn không tự làm được thì chat cũng không làm, bước nào bạn không
+            được phép sẽ được liệt kê là không thực hiện được. Chat tạo được space và trang, thêm
+            người vào space kèm vai trò, và đánh dấu yêu thích space. Mỗi bước xong có liên kết{" "}
+            <Code>Mở</Code>. Nếu một bước lỗi thì các bước sau không chạy.
+          </li>
+          <li>
+            <strong>Chat đọc hướng dẫn này.</strong> Câu hỏi về cách WikiHub hoạt động (sao lưu, phân
+            quyền, tải tệp, phím tắt...) được trả lời từ các mục của trang Trợ giúp. Nếu tính năng
+            thuộc về quản trị viên mà bạn không phải, chat sẽ nói rõ và cho biết nên hỏi ai.
+          </li>
+          <li>
+            <strong>Chat tự quyết định tìm ở đâu.</strong> Khi cho phép dùng internet, câu hỏi về
+            thời điểm hiện tại hoặc tin tức (hôm nay, hôm qua, ngày tháng, giá cả, thời tiết) hay
+            câu mà wiki của bạn không rõ ràng có sẽ được tìm trên web trước khi viết câu trả lời; câu
+            về wiki và tài khoản của bạn thì trả lời từ đó. Câu trả lời không đi đến đâu được xem lại
+            một lần, và lựa chọn cho một câu hỏi được nhớ 10 phút nên hỏi lại sẽ đi cùng đường.
+          </li>
+          <li>
+            <strong>Dễ đọc hơn.</strong> Câu trả lời được trình bày để lướt nhanh: câu đầu in đậm
+            nêu đáp án, các bước thành danh sách đánh số, bảng khi nhiều thứ có nhiều thông tin, <Code>code</Code>{" "}
+            cho thứ cần gõ, <em>chữ nghiêng</em> cho thuật ngữ, khung trích dẫn cho lời lấy từ trang, hộp
+            lưu ý có màu (Mẹo, Cảnh báo, Quan trọng, Ghi chú) cho điều không được bỏ sót, và tô nền cho
+            giá trị quan trọng nhất. Màu chỉ dành cho những chỗ đó, phần còn lại để thường.
+          </li>
+          <li>
+            <strong>Chat luôn mở.</strong> Khung chat vẫn mở khi bạn sang trang khác - kể cả qua các nút
+            chat đưa ra - cùng cuộc trò chuyện bên trong. Chỉ đóng khi bạn bấm ra ngoài, bấm <Kbd>Esc</Kbd>{" "}
+            trong khung hoặc bấm dấu X.
+          </li>
+          <li>
+            <strong>Mức chi tiết.</strong> Dưới ô nhập, chọn <Code>Ngắn gọn</Code> (chỉ ý chính),{" "}
+            <Code>Vừa phải</Code> hoặc <Code>Chi tiết</Code> (các bước, giá trị, ví dụ và giới hạn).
+            Lựa chọn được nhớ trong trình duyệt này và áp dụng cho câu hỏi tiếp theo; muốn xem câu
+            trả lời cũ ở mức khác, đổi mức rồi bấm <Code>Trả lời lại</Code> ở câu hỏi.
+          </li>
+          <li>
+            <strong>Câu hỏi trước đó.</strong> Trong ô nhập, bấm <Kbd>↑</Kbd> để nạp lại câu hỏi
+            vừa hỏi, bấm tiếp để lùi thêm, và <Kbd>↓</Kbd> để đi lên các câu sau - tới cuối thì quay
+            về phần bạn đang gõ dở. Con trỏ nằm ở cuối câu nên bạn sửa được rồi gửi. Với câu hỏi
+            nhiều dòng, mũi tên di chuyển trong văn bản.
+          </li>
+          <li>
+            <strong>Cuộc trò chuyện</strong> chỉ lưu trong trình duyệt này, theo tài khoản của bạn, và bị xóa
+            khi bạn đăng xuất hoặc đổi tài khoản. Dùng{" "}
+            <Code>Chat mới</Code> để xóa. <Code>Dừng</Code> hủy câu trả lời: câu hỏi vẫn còn, kèm
+            phần đã viết và ghi chú bạn đã hủy, và <Code>Thử lại</Code> hỏi lại lần nữa. Rê chuột vào một câu hỏi và bấm <Code>Trả lời lại</Code> để nhận câu trả lời
+            mới; câu trả lời cũ vẫn còn, dùng mũi tên <Code>1 / 2</Code> để quay lại. Từ một câu trả lời trong tìm kiếm, <Code>Tiếp tục trong chat</Code> sẽ chuyển
             sang chat.
           </li>
           <li>
             <strong>Quản trị viên</strong> bật tại Quản trị, Trợ lý AI, <Code>Tìm kiếm web</Code>: chọn
-            Tavily, Brave Search hoặc Serper, dán key và bấm <Code>Thử tìm kiếm</Code>. Mặc định tắt.
+            tìm kiếm của chính gateway AI (không cần key), Tavily, Brave Search hoặc Serper (dán key) và
+            bấm <Code>Thử tìm kiếm</Code>, nút này chỉ thử dịch vụ bạn đã chọn. Mặc định tắt. Dịch vụ
+            trả phí ổn định hơn loại miễn phí sau gateway.
           </li>
         </ul>
         <Callout>

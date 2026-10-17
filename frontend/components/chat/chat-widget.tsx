@@ -1,12 +1,34 @@
 "use client";
 
 import {
+  Activity,
   ArrowDown,
+  ArrowRight,
+  Ban,
+  BarChart3,
+  BookOpen,
+  BookOpenText,
+  Bookmark,
+  Bug,
   Check,
+  ListChecks,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Copy,
+  Database,
+  Feather,
+  Folder,
+  HardDrive,
+  LayoutGrid,
+  Mail,
   Pencil,
+  Scale,
+  Settings,
+  Star,
+  UserRound,
+  Users,
+  type LucideIcon,
   ExternalLink,
   Info,
   Loader2,
@@ -20,11 +42,13 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -43,17 +67,23 @@ import { aiStatus } from "@/lib/ai-summary";
 import {
   citeLinks,
   sourceHref,
+  type AnswerAction,
   type AnswerSource,
   type WebSource,
 } from "@/lib/ai-answer";
 import {
+  CHAT_DETAILS,
   CHAT_MAX_CHARS,
   CHAT_OPEN_EVENT,
   CHAT_TOGGLE_EVENT,
   type ChatEntry,
+  type ChatDetail,
   type ChatSlots,
+  type PlanState,
   type ChatFailure,
   type ChatOpenDetail,
+  readDetail,
+  saveDetail,
 } from "@/lib/ai-chat";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
@@ -63,6 +93,9 @@ type Assistant = Extract<ChatEntry, { role: "assistant" }>;
 const DEFAULT_WIDTH = 416;
 const MIN_WIDTH = 320;
 const WIDTH_KEY = "wikihub:chat-width";
+/** Every page draws its own shell, so going to another page builds the panel again: this is how
+ * it comes back open, as it was, until the person clicks outside it or closes it. */
+const OPEN_KEY = "wikihub:chat-open";
 /** Within this of the page's width counts as "the whole width". */
 const FULL_SLACK = 24;
 
@@ -74,6 +107,15 @@ function readWidth(): number {
       : DEFAULT_WIDTH;
   } catch {
     return DEFAULT_WIDTH;
+  }
+}
+
+/** Read once, like the width: nothing is drawn until the AI status is known, after hydration. */
+function readOpen(): boolean {
+  try {
+    return window.sessionStorage.getItem(OPEN_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -154,14 +196,205 @@ function WebSourceRow({ page }: { page: WebSource }) {
   );
 }
 
+/** Only an address inside WikiHub is ever a button: the server's word is checked, not trusted. */
+const isInternal = (href: string) =>
+  href.startsWith("/") && !href.startsWith("//");
+
+/** An icon that says where a button goes, chosen by the address it opens. */
+function actionIcon(href: string): LucideIcon {
+  if (href.startsWith("/admin/backup")) return Database;
+  if (href.startsWith("/admin/monitor")) return Activity;
+  if (href.startsWith("/admin/statistics")) return BarChart3;
+  if (href.startsWith("/admin/mail") || href.startsWith("/admin/inbox"))
+    return Mail;
+  if (href.startsWith("/admin/ai")) return Sparkles;
+  if (href.startsWith("/admin/storage")) return HardDrive;
+  if (href.startsWith("/admin/users") || href.startsWith("/admin/groups"))
+    return Users;
+  if (href.startsWith("/admin/issues")) return Bug;
+  if (href.startsWith("/admin")) return Settings;
+  if (href.startsWith("/account")) return UserRound;
+  if (href.startsWith("/issues")) return Bug;
+  if (href.startsWith("/help")) return BookOpen;
+  if (href.startsWith("/recent")) return Clock;
+  if (href.startsWith("/saved")) return Bookmark;
+  if (href.startsWith("/favorites")) return Star;
+  if (/^\/spaces\/[^/]+/.test(href)) return Folder;
+  if (href.startsWith("/spaces")) return LayoutGrid;
+  return ArrowRight;
+}
+
+/** Quick links to the pages an answer is about: settings, the account, the user guide. */
+function ActionButtons({ actions }: { actions: AnswerAction[] | undefined }) {
+  const { t, locale } = useTranslation();
+  const shown = (actions ?? []).filter((action) => isInternal(action.href));
+  if (!shown.length) return null;
+  return (
+    <nav aria-label={t("chat.goTo")} className="flex flex-wrap gap-2 pt-2">
+      {shown.map((action) => {
+        const Icon = actionIcon(action.href);
+        return (
+          <Link
+            key={action.id}
+            href={action.href}
+            className="group border-primary/30 bg-primary-subtle text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary active:bg-primary/90 focus-visible:ring-ring inline-flex max-w-full cursor-pointer items-center gap-2 rounded-full border py-1.5 pr-3 pl-2.5 text-[13px] font-semibold shadow-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+          >
+            <Icon className="size-4 shrink-0" aria-hidden />
+            <span className="truncate">
+              {locale === "vi" ? action.label_vi : action.label_en}
+            </span>
+            <ArrowRight
+              className="size-3.5 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5"
+              aria-hidden
+            />
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** A plan the assistant proposes: what it will do, to confirm - and, once run, what came of it. */
+function PlanCard({
+  plan,
+  onRun,
+  onCancel,
+}: {
+  plan: PlanState;
+  onRun: () => void;
+  onCancel: () => void;
+}) {
+  const { t, locale } = useTranslation();
+  const vi = locale === "vi";
+  const pending = plan.status === "pending";
+  return (
+    <section
+      aria-label={t("chat.planTitle")}
+      className="border-primary/30 bg-surface space-y-3 rounded-2xl border p-3 shadow-sm"
+    >
+      {plan.steps.length ? (
+        <>
+          <h3 className="text-primary flex items-center gap-2 text-sm font-semibold">
+            <ListChecks className="size-4" aria-hidden />
+            {t("chat.planTitle")}
+          </h3>
+          <ol className="space-y-1.5">
+            {plan.steps.map((step, index) => {
+              const result = plan.results[index];
+              const running = plan.status === "running" && !result;
+              const href = result?.ok ? result.href : undefined;
+              return (
+                <li
+                  key={index}
+                  className="flex items-start gap-2 text-sm leading-6"
+                >
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center">
+                    {result?.ok ? (
+                      <Check className="text-success size-4" aria-hidden />
+                    ) : result ? (
+                      <TriangleAlert
+                        className="text-danger size-4"
+                        aria-hidden
+                      />
+                    ) : running && plan.results.length === index ? (
+                      <Loader2
+                        className="text-primary size-4 animate-spin"
+                        aria-hidden
+                      />
+                    ) : (
+                      <span className="bg-surface-sunken text-muted-foreground flex size-5 items-center justify-center rounded-full text-[11px] font-semibold">
+                        {index + 1}
+                      </span>
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="wrap-break-word">
+                      {vi ? step.label_vi : step.label_en}
+                    </span>
+                    {result && !result.ok && result.error ? (
+                      <span className="text-danger block text-xs">
+                        {result.error}
+                      </span>
+                    ) : null}
+                  </span>
+                  {href && isInternal(href) ? (
+                    <Link
+                      href={href}
+                      className="text-primary hover:bg-primary-subtle focus-visible:ring-ring inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      {t("chat.planOpen")}
+                      <ArrowRight className="size-3.5" aria-hidden />
+                    </Link>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+        </>
+      ) : null}
+      {plan.skipped.length ? (
+        <div className="text-muted-foreground space-y-0.5 text-xs">
+          <p className="font-semibold">{t("chat.planSkipped")}</p>
+          <ul className="list-disc space-y-0.5 pl-4">
+            {plan.skipped.map((skip, index) => (
+              <li key={index}>
+                {skip.label}: {vi ? skip.reason_vi : skip.reason_en}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {pending ? (
+        <>
+          <p className="text-muted-foreground text-xs">{t("chat.planNote")}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" size="sm" onClick={onRun}>
+              <Check aria-hidden />
+              {t("chat.planRun")}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={onCancel}>
+              {t("chat.planCancel")}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <p
+          role="status"
+          className={cn(
+            "text-xs font-semibold",
+            plan.status === "done" && plan.steps.length && "text-success",
+            plan.status === "failed" && "text-danger",
+            (plan.status === "cancelled" || plan.status === "running") &&
+              "text-muted-foreground",
+          )}
+        >
+          {plan.status === "running"
+            ? t("chat.planRunning")
+            : plan.status === "done" && plan.steps.length
+              ? t("chat.planDone")
+              : plan.status === "failed"
+                ? t("chat.planFailed")
+                : plan.status === "cancelled"
+                  ? t("chat.planCancelled")
+                  : null}
+        </p>
+      )}
+    </section>
+  );
+}
+
 function AssistantMessage({
   entry,
   onOpen,
+  onRunPlan,
+  onCancelPlan,
   onRetry,
   canRetry,
 }: {
   entry: Assistant;
   onOpen: (source: AnswerSource) => void;
+  onRunPlan: () => void;
+  onCancelPlan: () => void;
   onRetry: () => void;
   canRetry: boolean;
 }) {
@@ -177,8 +410,38 @@ function AssistantMessage({
         source={entry.content}
         autolink
         codeCard
+        rich
         className="text-foreground text-[15px] leading-7"
       />
+    );
+  }
+
+  if (entry.status === "cancelled") {
+    return (
+      <div className="space-y-2">
+        {entry.content ? (
+          <IssueMarkdown
+            source={entry.content}
+            autolink
+            codeCard
+            rich
+            className="text-foreground/70 text-[15px] leading-7"
+          />
+        ) : null}
+        <p
+          role="status"
+          className="text-muted-foreground bg-surface-sunken flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
+        >
+          <Ban className="size-3.5 shrink-0" aria-hidden />
+          {t("chat.cancelled")}
+        </p>
+        {canRetry ? (
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            <RotateCw aria-hidden />
+            {t("search.answerRetry")}
+          </Button>
+        ) : null}
+      </div>
     );
   }
 
@@ -221,6 +484,7 @@ function AssistantMessage({
             </ul>
           </section>
         ) : null}
+        <ActionButtons actions={entry.actions} />
       </div>
     );
   }
@@ -245,8 +509,12 @@ function AssistantMessage({
           if (source) onOpen(source);
         }}
         codeCard
+        rich
         className="text-foreground text-[15px] leading-7"
       />
+      {entry.plan ? (
+        <PlanCard plan={entry.plan} onRun={onRunPlan} onCancel={onCancelPlan} />
+      ) : null}
       {entry.basis === "general" ? (
         <p
           role="note"
@@ -282,6 +550,7 @@ function AssistantMessage({
           {related.length ? <AlsoRead pages={related} onOpen={onOpen} /> : null}
         </section>
       ) : null}
+      <ActionButtons actions={entry.actions} />
     </div>
   );
 }
@@ -317,12 +586,14 @@ function UserMessage({
   entry,
   busy,
   onEdit,
+  onRegenerate,
   versions,
   onSwitch,
 }: {
   entry: Extract<ChatEntry, { role: "user" }>;
   busy: boolean;
   onEdit: (id: string, text: string) => void;
+  onRegenerate: (id: string) => void;
   /** Where this question stands among its edited versions, when it has been edited. */
   versions?: { index: number; total: number };
   onSwitch: (delta: -1 | 1) => void;
@@ -468,6 +739,13 @@ function UserMessage({
           )}
         </QuestionAction>
         <QuestionAction
+          label={t("chat.regenerate")}
+          disabled={busy}
+          onClick={() => onRegenerate(entry.id)}
+        >
+          <RotateCw className="size-3.5" aria-hidden />
+        </QuestionAction>
+        <QuestionAction
           label={t("chat.edit")}
           disabled={busy}
           onClick={() => {
@@ -485,19 +763,25 @@ function UserMessage({
 function Message({
   entry,
   onOpen,
+  onRunPlan,
+  onCancelPlan,
   onRetry,
   canRetry,
   busy,
   onEdit,
+  onRegenerate,
   versions,
   onSwitch,
 }: {
   entry: ChatEntry;
   onOpen: (source: AnswerSource) => void;
+  onRunPlan: (id: string) => void;
+  onCancelPlan: (id: string) => void;
   onRetry: () => void;
   canRetry: boolean;
   busy: boolean;
   onEdit: (id: string, text: string) => void;
+  onRegenerate: (id: string) => void;
   versions?: { index: number; total: number };
   onSwitch: (delta: -1 | 1) => void;
 }) {
@@ -507,6 +791,7 @@ function Message({
         entry={entry}
         busy={busy}
         onEdit={onEdit}
+        onRegenerate={onRegenerate}
         versions={versions}
         onSwitch={onSwitch}
       />
@@ -517,6 +802,8 @@ function Message({
       <AssistantMessage
         entry={entry}
         onOpen={onOpen}
+        onRunPlan={() => onRunPlan(entry.id)}
+        onCancelPlan={() => onCancelPlan(entry.id)}
         onRetry={onRetry}
         canRetry={canRetry}
       />
@@ -533,6 +820,18 @@ function versionsOf(entry: ChatEntry, slots: ChatSlots) {
     : undefined;
 }
 
+const DETAIL_ICONS: Record<ChatDetail, LucideIcon> = {
+  // Light, in balance, and a book to read: what each level gives.
+  brief: Feather,
+  normal: Scale,
+  detailed: BookOpenText,
+};
+const DETAIL_KEYS: Record<ChatDetail, string> = {
+  brief: "Brief",
+  normal: "Normal",
+  detailed: "Detailed",
+};
+
 function ChatPanel({
   userId,
   onClose,
@@ -546,8 +845,11 @@ function ChatPanel({
   onToggleExpanded: () => void;
   adoptRef: React.MutableRefObject<((detail: ChatOpenDetail) => void) | null>;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const router = useRouter();
+  // How long and thorough the answers are; read once, like the width (the panel is drawn only
+  // after the AI status is known, long after hydration).
+  const [detail, setDetail] = useState<ChatDetail>(readDetail);
   const {
     entries,
     slots,
@@ -558,14 +860,32 @@ function ChatPanel({
     switchVersion,
     stop,
     retry,
+    regenerate,
+    runPlan,
+    cancelPlan,
     clear,
     adopt,
-  } = useChat(userId);
+  } = useChat(userId, detail);
   const [draft, setDraft] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickRef = useRef(true);
+  // The questions asked so far, oldest first, each once: what the arrow keys walk through. While
+  // walking, which one is shown and what was typed before starting.
+  const asked = useMemo(() => {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    for (const entry of [...entries].reverse()) {
+      if (entry.role === "user" && !seen.has(entry.content)) {
+        seen.add(entry.content);
+        list.push(entry.content);
+      }
+    }
+    return list.reverse();
+  }, [entries]);
+  const browsing = useRef<{ index: number; saved: string } | null>(null);
+  const caretToEnd = useRef(false);
   // Where the question being switched sat in the list, so it can be kept there.
   const anchorRef = useRef<{ slot: string; top: number } | null>(null);
   const [away, setAway] = useState(false);
@@ -612,6 +932,11 @@ function ChatPanel({
     if (!box) return;
     box.style.height = "auto";
     box.style.height = `${Math.min(box.scrollHeight, 128)}px`;
+    // A question brought back with the arrows: the caret goes to its end, ready to edit.
+    if (caretToEnd.current) {
+      caretToEnd.current = false;
+      box.setSelectionRange(box.value.length, box.value.length);
+    }
   }, [draft]);
 
   const open = useCallback(
@@ -627,15 +952,18 @@ function ChatPanel({
     (text: string) => {
       if (!text.trim() || busy) return;
       stickRef.current = true;
+      browsing.current = null;
       setDraft("");
       void send(text);
     },
     [busy, send],
   );
 
-  const onStop = () => {
-    const asked = stop();
-    if (asked) setDraft(asked);
+  const onStop = (event: React.MouseEvent) => {
+    // This button turns into the Send button as soon as the reply is given up, and a click is
+    // finished by what the button is *then*: without this, stopping sent a question again.
+    event.preventDefault();
+    stop();
     inputRef.current?.focus();
   };
 
@@ -731,10 +1059,15 @@ function ChatPanel({
                 key={entry.id}
                 entry={entry}
                 onOpen={open}
+                onRunPlan={(id) =>
+                  void runPlan(id, locale).then(() => router.refresh())
+                }
+                onCancelPlan={cancelPlan}
                 onRetry={retry}
                 canRetry={entry === last && !busy}
                 busy={busy}
                 onEdit={edit}
+                onRegenerate={regenerate}
                 versions={versionsOf(entry, slots)}
                 onSwitch={(delta) => {
                   if (entry.role !== "user" || !entry.slot) return;
@@ -795,8 +1128,60 @@ function ChatPanel({
             value={draft}
             rows={1}
             maxLength={CHAT_MAX_CHARS}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              browsing.current = null;
+              setDraft(event.target.value);
+            }}
             onKeyDown={(event) => {
+              // Up and Down walk through the questions asked before, as in a terminal.
+              if (
+                (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+                !event.shiftKey &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                const box = event.currentTarget;
+                const up = event.key === "ArrowUp";
+                // Only when the caret has nowhere further to go in the text: in a question of
+                // several lines the arrows still move between its lines.
+                const onFirstLine = !box.value
+                  .slice(0, box.selectionStart)
+                  .includes("\n");
+                const onLastLine = !box.value
+                  .slice(box.selectionEnd)
+                  .includes("\n");
+                if (up ? !onFirstLine : !onLastLine) return;
+                const at = browsing.current;
+                if (up) {
+                  const next = at ? at.index - 1 : asked.length - 1;
+                  if (next < 0) {
+                    // The oldest one is already shown (or there is none): nothing to jump to.
+                    if (at) event.preventDefault();
+                    return;
+                  }
+                  event.preventDefault();
+                  browsing.current = {
+                    index: next,
+                    saved: at ? at.saved : draft,
+                  };
+                  caretToEnd.current = true;
+                  setDraft(asked[next]);
+                } else if (at) {
+                  event.preventDefault();
+                  caretToEnd.current = true;
+                  if (at.index + 1 >= asked.length) {
+                    // Past the newest: back to what was being typed.
+                    browsing.current = null;
+                    setDraft(at.saved);
+                  } else {
+                    browsing.current = { index: at.index + 1, saved: at.saved };
+                    setDraft(asked[at.index + 1]);
+                  }
+                }
+                return;
+              }
               // Enter sends; Shift+Enter is a new line. Never while an input method (such as
               // Telex) is still composing a word - that Enter belongs to the word.
               if (
@@ -814,6 +1199,7 @@ function ChatPanel({
           />
           {busy ? (
             <Button
+              key="stop"
               type="button"
               variant="primary"
               size="icon"
@@ -826,6 +1212,7 @@ function ChatPanel({
             </Button>
           ) : (
             <Button
+              key="send"
               type="submit"
               variant="primary"
               size="icon"
@@ -838,6 +1225,41 @@ function ChatPanel({
             </Button>
           )}
         </form>
+        <div
+          role="radiogroup"
+          aria-label={t("chat.detail")}
+          className="mt-2 flex flex-wrap items-center gap-1 px-1"
+        >
+          <span className="text-muted-foreground mr-1 text-[11px]">
+            {t("chat.detail")}
+          </span>
+          {CHAT_DETAILS.map((value) => {
+            const Icon = DETAIL_ICONS[value];
+            const chosen = detail === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={chosen}
+                title={t(`chat.detail${DETAIL_KEYS[value]}Hint`)}
+                onClick={() => {
+                  setDetail(value);
+                  saveDetail(value);
+                }}
+                className={cn(
+                  "focus-visible:ring-ring inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                  chosen
+                    ? "border-primary/40 bg-primary-subtle text-primary"
+                    : "border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected",
+                )}
+              >
+                <Icon className="size-3.5" aria-hidden />
+                {t(`chat.detail${DETAIL_KEYS[value]}`)}
+              </button>
+            );
+          })}
+        </div>
         <p className="text-muted-foreground/70 mt-1.5 px-1 text-[10px]">
           {t("search.answerCheck")}
         </p>
@@ -870,9 +1292,9 @@ function ChatPanel({
 export function ChatWidget({ userId }: { userId: string }) {
   const { t } = useTranslation();
   const [enabled, setEnabled] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(readOpen);
   // Mounted on first use, then kept (hidden) so a reply being written is not lost on close.
-  const [everOpened, setEverOpened] = useState(false);
+  const [everOpened, setEverOpened] = useState(readOpen);
   // Widened to the whole width of the page, for long answers and tables.
   const [expanded, setExpanded] = useState(false);
   // How wide the panel is when it is not the whole page: dragged by its left edge.
@@ -915,6 +1337,14 @@ export function ChatWidget({ userId }: { userId: string }) {
       // not kept
     }
   }, [dragging, width]);
+  // Written whenever it changes (see OPEN_KEY).
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(OPEN_KEY, open ? "1" : "0");
+    } catch {
+      // not kept
+    }
+  }, [open]);
   const adoptRef = useRef<((detail: ChatOpenDetail) => void) | null>(null);
   const pending = useRef<ChatOpenDetail | null>(null);
 

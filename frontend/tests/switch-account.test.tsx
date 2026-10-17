@@ -130,6 +130,7 @@ describe("SwitchAccountMenu popup with search filter", () => {
     expect(screen.queryByText("Bao Hoang")).not.toBeInTheDocument();
 
     // Click on matching user to switch
+    window.localStorage.setItem("wikihub:chat:v1:admin", "[]");
     await user.click(screen.getByText("Bang Hoang"));
 
     await waitFor(() => {
@@ -138,6 +139,8 @@ describe("SwitchAccountMenu popup with search filter", () => {
       });
       expect(onSwitched).toHaveBeenCalledTimes(1);
     });
+    // The administrator's own conversation does not follow into the other account.
+    expect(window.localStorage.getItem("wikihub:chat:v1:admin")).toBeNull();
   });
 });
 

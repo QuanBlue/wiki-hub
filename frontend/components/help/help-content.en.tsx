@@ -372,7 +372,11 @@ export const sectionsEn: HelpSection[] = [
             <Code>Searching the web for ...</Code> with the exact query, and the answer lists the pages
             under <Code>From the web</Code> with marks such as <Code>w1</Code>, which open in a new tab.
             Only that short query leaves WikiHub - never a wiki page - and addresses, e-mails and
-            internal host names are removed from it first.
+            internal host names are removed from it first. If the search service finds nothing, or
+            only pages about something else (the free one behind a gateway sometimes does), WikiHub
+            tries free sources that need no key - the open web (Bing, DuckDuckGo), Google News
+            headlines and Wikipedia - and reads the text of the pages it finds, again sending only
+            that short query.
           </li>
           <li>
             <strong>Follow-ups and numbers</strong>: earlier messages count as context, so{" "}
@@ -395,14 +399,79 @@ export const sectionsEn: HelpSection[] = [
             language. Nothing is sent until you choose, and asking again is free.
           </li>
           <li>
-            <strong>Your conversation</strong> is kept only in this browser, for your account. Use{" "}
-            <Code>New chat</Code> to clear it. <Code>Stop</Code> cancels a reply and gives the
-            question back to edit. From a search answer, <Code>Continue in chat</Code> carries it on.
+            <strong>It knows your account.</strong> Ask <Code>which spaces can I open?</Code>,{" "}
+            <Code>what is my role in OPS?</Code>, <Code>how do I change my password?</Code> or{" "}
+            <Code>why can&apos;t I see a page?</Code> and it answers from your own spaces,
+            roles and permissions and from how WikiHub works, with buttons under the answer that
+            open the page you need (Spaces, your account, the user guide - and, for
+            administrators, the matching Administration page). It only ever reads your own
+            account, and shows administration buttons only to people who may open them.
+          </li>
+          <li>
+            <strong>It can do things for you.</strong> Ask <Code>create a space called abc and
+            write a Prometheus guide in it</Code> and it shows a short plan - for example{" "}
+            <Code>Create space &quot;abc&quot;</Code>, then <Code>Write the page &quot;Prometheus
+            guide&quot;</Code> (the page is drafted by AI) - with <Code>Confirm and run</Code> and{" "}
+            <Code>Cancel</Code>. Nothing changes until you confirm, and it runs with your own
+            permissions: what you could not do by hand it will not do, and a step you are not
+            allowed to take is listed as not offered. It can create spaces and pages, add someone
+            to a space with a role, and star a space. Each finished step has an{" "}
+            <Code>Open</Code> link. If a step fails, the ones after it are not run.
+          </li>
+          <li>
+            <strong>It reads this guide.</strong> Questions about how WikiHub works (backups,
+            permissions, uploads, shortcuts...) are answered from the sections of this Help page.
+            If the feature belongs to administrators and you are not one, it says so and who to
+            ask.
+          </li>
+          <li>
+            <strong>It decides where to look.</strong> When the internet is allowed, a question
+            about now or the news (today, yesterday, a date, prices, weather) or one your wiki does
+            not clearly hold is sent to the web before an answer is written; questions about your
+            own wiki and your account are answered from them. A reply that came to nothing gets a
+            second look, and the choice for a question is kept for ten minutes, so asking again goes
+            the same way.
+          </li>
+          <li>
+            <strong>How much detail.</strong> Under the box, choose <Code>Brief</Code> (just the
+            key point), <Code>Balanced</Code> or <Code>Detailed</Code> (steps, values, examples and
+            limits). The choice is kept in this browser and applies to the next question; to see an
+            earlier answer at another level, change it and press <Code>Answer again</Code> on the
+            question.
+          </li>
+          <li>
+            <strong>Easier to read.</strong> Answers are laid out to be scanned: the answer in a bold
+            first sentence, steps as a numbered list, a table when several things have several facts
+            each, <Code>code</Code> for what to type, <em>italics</em> for a term, a quote for words
+            taken from a page, coloured notes (Tip, Warning, Important, Note) for what must not be
+            missed, and a highlighter on the one value that matters. Colour is kept for those; the
+            rest is plain.
+          </li>
+          <li>
+            <strong>It stays open.</strong> The panel stays open when you go to another page - also
+            through the buttons it shows - and with your conversation in it. It closes only when you
+            click outside it, press <Kbd>Esc</Kbd> in it or use the X.
+          </li>
+          <li>
+            <strong>Earlier questions.</strong> In the box, press <Kbd>↑</Kbd> to bring back the
+            question you asked before, again for the one before that, and <Kbd>↓</Kbd> to come
+            forward - back to what you were typing. The cursor goes to the end, so you can change
+            it and send it. In a question of several lines the arrows move inside the text.
+          </li>
+          <li>
+            <strong>Your conversation</strong> is kept only in this browser, for your account, and is removed
+            when you sign out or switch account. Use{" "}
+            <Code>New chat</Code> to clear it. <Code>Stop</Code> cancels a reply: the question stays,
+            with what was written and a note that you cancelled it, and <Code>Try again</Code> asks
+            it once more. Hover a question and press <Code>Answer again</Code> to get a
+            fresh answer; the earlier one stays under the <Code>1 / 2</Code> arrows to go back to. From a search answer, <Code>Continue in chat</Code> carries it on.
           </li>
           <li>
             <strong>Administrators</strong> find the switch under Administration, AI assistant,{" "}
-            <Code>Web search</Code>: choose Tavily, Brave Search or Serper, paste the key and use{" "}
-            <Code>Test search</Code>. It is off by default.
+            <Code>Web search</Code>: choose the AI gateway&apos;s own search (no key), Tavily, Brave
+            Search or Serper (paste the key) and use <Code>Test search</Code>, which tries the
+            service you chose on its own. It is off by default. A paid service is more reliable than
+            the free one behind a gateway.
           </li>
         </ul>
         <Callout>

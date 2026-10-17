@@ -186,6 +186,28 @@ unformatted text.
     be copied or edited, and an edited question keeps its earlier versions to switch back
     to (`‹ 1 / 2 ›`), each with what followed it. Select any words to explain or translate
     them, as on a page.
+  - **A chat that knows you and WikiHub** — *which spaces can I open?*, *what is my role in
+    OPS?*, *how do I change my password?*, *can it back up on a schedule?* are answered from
+    your own spaces, roles and permissions (read on the server, only yours) and from the
+    in-app Help page itself, with buttons under the answer that open the page needed
+    (Administration pages only for people who may open them). Help is copied for the
+    assistant by `scripts/build_help_knowledge.py` into `backend/app/assets/help_{en,vi}.json`:
+    run it after editing Help (a test fails when the copy is stale).
+  - **A chat that does things, once you confirm** — *create a space abc and write a Prometheus
+    guide in it* shows a plan (create a space, write a page drafted by AI, add someone to a
+    space with a role, star a space) with *Confirm and run* / *Cancel*. Nothing changes before
+    that; it runs through the same services as WikiHub's own pages with your permissions, each
+    step re-checked, stops at the first that fails, and every finished step has an *Open* link.
+  - **Reading and typing in the chat** — a *Detail* switch under the box (Brief / Balanced /
+    Detailed) sets how long and thorough answers are; `↑` / `↓` bring back the questions
+    asked before, as in a terminal; *Answer again* keeps the earlier answer as a version;
+    *Stop* keeps the question with what was written and a *cancelled* note (and *Try again*);
+    the panel stays open when you go to another page. The conversation is kept only in your
+    browser, for your account, and is wiped when you sign out or when an administrator starts or
+    stops viewing as someone else (and, if a session ended any other way, the next chat that opens
+    removes what another person left). Answers are laid out to be scanned: a
+    bold first sentence, numbered steps, tables, `code`, italics, quotes, coloured Tip /
+    Warning / Important / Note callouts and a single highlighter mark.
   - **Web search for the chat (optional, off by default)** — under *AI assistant → Web
     search* an administrator lets the chat look up public, technical questions on the
     internet through the AI gateway's own search or Tavily / Brave / Serper (with a key).
@@ -195,7 +217,16 @@ unformatted text.
     (opened in a new tab) or the model's own knowledge, always marked as unchecked. The
     text of the top pages is read (public addresses only, bounded in time and size), and
     the weather of a named place comes from real measurements (Open-Meteo, only the place
-    name is sent).
+    name is sent). Where to look is decided *before* an answer is written: the person saying
+    "on the internet" or a question about now or the news (today, a date, prices, weather)
+    goes to the web first, a question the wiki clearly holds is answered from it, and for the
+    rest a small model call (temperature 0, remembered for ten minutes per question, so the
+    same question goes the same way) picks wiki, web, weather or a question back; a reply that
+    still came to nothing gets a second look. When the configured search finds nothing, or
+    pages about something else (the free engine behind a gateway does, now and then), free
+    sources that need no key are tried — Bing and DuckDuckGo pages, Google News headlines,
+    Wikipedia — with the same short query; a paid service (Tavily, Brave, Serper) is still the
+    more dependable choice.
   - **Hybrid and semantic search** — keyword search is ranked by how telling each word is
     (accents ignored, typos in titles tolerated, IP addresses found), and with an
     embedding model chosen under *AI assistant → Semantic search* it also finds pages by

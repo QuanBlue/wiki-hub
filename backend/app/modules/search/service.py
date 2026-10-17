@@ -24,6 +24,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import reduce
+from typing import Literal
 
 import sqlalchemy as sa
 from sqlalchemy import select, text
@@ -73,6 +74,9 @@ _OLLAMA_COLD_START_SECONDS = 15.0
 _SEMANTIC_WEIGHT = 0.7
 #: A page must match ideas worth at least this share of the query to be listed.
 _MIN_COVERAGE = 0.5
+#: A page holding at least this share of everything the question asks about is "the wiki holds
+#: it": the answer comes from it without anyone being asked where else to look.
+_CONFIDENT_COVERAGE = 0.4
 #: Substring matching only fills in when ranked search found fewer than this.
 _SUBSTRING_FILL_BELOW = 5
 #: Trigram similarity a title needs to be listed on its likeness to the query alone.
@@ -105,6 +109,17 @@ class AnswerPassage:
 
 
 @dataclass(slots=True)
+class AnswerContext:
+    """What a question can be answered from, and how far the wiki can be trusted to hold it."""
+
+    passages: list[AnswerPassage]
+    #: ``high``: a page holds the ideas of the question (ranked keyword match); ``low``: pages
+    #: were found only by meaning or by a likeness of wording, which may be about the same area
+    #: and not the same thing; ``none``: nothing.
+    confidence: Literal["high", "low", "none"]
+
+
+@dataclass(slots=True)
 class SearchResultSpace:
     id: uuid.UUID
     key: str
@@ -130,6 +145,11 @@ class _Ranked:
     weights: dict[str, float] = field(default_factory=dict)
     #: Ranked search could not run (missing extension or column): substring only.
     degraded: bool = False
+    #: How much of what the question asks about its best page holds, from 0 to 1: the weight of
+    #: the ideas found in it over the weight of *all* the ideas, those that no page mentions
+    #: included (they are the rarest, so they weigh the most). A page that holds "information"
+    #: and "details" of a question about an event nobody wrote about scores low.
+    best_coverage: float = 0.0
 
 
 def extract_snippet(content: str, query: str, max_len: int = 140) -> str:
@@ -144,6 +164,9 @@ def extract_snippet(content: str, query: str, max_len: int = 140) -> str:
 class SearchService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+        #: How well the last page search matched (see :class:`AnswerContext`). Set by
+        #: ``_search_pages``; this object lives for one request.
+        self.last_confidence: Literal["high", "low", "none"] = "none"
 
     async def search(self, query: str, user: User, limit: int = 20) -> SearchResults:
         query_trimmed = query.strip()
@@ -221,6 +244,7 @@ class SearchService:
 
         order = _fuse(ranked.ids, list(semantic), weights=(1.0, _SEMANTIC_WEIGHT))
         terms = _highlight_terms(concepts, ranked.weights)
+        self.last_confidence = "none"
         if not order:
             self._log_search(
                 query, started, keyword_seconds, semantic_seconds, concepts, ranked, semantic, 0
@@ -264,6 +288,14 @@ class SearchService:
             )
             if len(results) >= limit:
                 break
+        if results:
+            top = ranked.ids[0] if ranked.ids else None
+            self.last_confidence = (
+                "high"
+                if ranked.best_coverage >= _CONFIDENT_COVERAGE
+                and any(result.id == top for result in results)
+                else "low"
+            )
         self._log_search(
             query,
             started,
@@ -331,6 +363,11 @@ class SearchService:
             passages.append(AnswerPassage(page=result, text=body))
         return passages
 
+    async def answer_context(self, query: str, user: User, **limits: int) -> AnswerContext:
+        """:meth:`answer_passages` with how well the wiki matched the question."""
+        passages = await self.answer_passages(query, user, **limits)
+        return AnswerContext(passages, self.last_confidence if passages else "none")
+
     async def _best_passages(
         self, query: str, ids: list[uuid.UUID], config: AIConfig, per_page: int = 2
     ) -> dict[uuid.UUID, list[str]]:
@@ -397,6 +434,7 @@ class SearchService:
             semantic_seconds=round(semantic_seconds, 3),
             total_seconds=round(total, 3),
             ranked_search_degraded=ranked.degraded,
+            best_coverage=round(ranked.best_coverage, 2),
         )
 
     async def _keyword_pages(self, query: str, concepts: list[Concept], wanted: int) -> _Ranked:
@@ -447,9 +485,10 @@ class SearchService:
         # How common each idea is decides how much finding it says: a page
         # mentioning "nuti" (in 2 pages) tells far more than one mentioning
         # "cloud" (in 60).
-        weights = await self._idea_weights(concepts)
+        weights, absent_weight = await self._idea_weights(concepts)
         live = [(c, w) for c, w in zip(concepts, weights, strict=True) if w > 0]
         total_weight = sum(w for _, w in live)
+        in_body: sa.ColumnElement = sa.literal(0.0)
 
         matches = [contains_title, similar_title]
         score = sa.case((contains_title, 3.0), else_=0.0) + sa.func.similarity(title_key, key_text)
@@ -481,25 +520,36 @@ class SearchService:
                 + 2.0 * in_body / total_weight
                 + 0.5 * sa.func.ts_rank_cd(_VECTOR, any_idea, 32)
             )
-        rows = await self.session.execute(
-            select(WikiPage.id)
-            .join(Space, WikiPage.space_id == Space.id)
-            .where(active, sa.or_(*matches))
-            .order_by(score.desc(), WikiPage.updated_at.desc())
-            .limit(wanted)
-        )
+        rows = (
+            await self.session.execute(
+                select(WikiPage.id, in_body.label("body_weight"), contains_title.label("whole"))
+                .join(Space, WikiPage.space_id == Space.id)
+                .where(active, sa.or_(*matches))
+                .order_by(score.desc(), WikiPage.updated_at.desc())
+                .limit(wanted)
+            )
+        ).all()
         term_weights: dict[str, float] = {}
         for concept, weight in live:
             for term in concept.terms():
                 term_weights[term] = max(weight, term_weights.get(term, 0.0))
         if not term_weights:  # found by title alone: still highlight what was typed
             term_weights = {term: 1.0 for c in concepts for term in c.terms()}
-        return _Ranked(ids=list(rows.scalars().all()), weights=term_weights)
+        best = 0.0
+        if rows:
+            # A title that holds the whole question is as sure as it gets; otherwise how much of
+            # everything asked (the ideas no page has included) the best page holds.
+            _, body_weight, whole = rows[0]
+            best = 1.0 if whole else float(body_weight) / max(total_weight + absent_weight, 1e-9)
+        return _Ranked(
+            ids=[row[0] for row in rows], weights=term_weights, best_coverage=min(best, 1.0)
+        )
 
-    async def _idea_weights(self, concepts: list[Concept]) -> list[float]:
-        """A weight per idea (0 when no page mentions it), larger for rarer ones."""
+    async def _idea_weights(self, concepts: list[Concept]) -> tuple[list[float], float]:
+        """A weight per idea (0 when no page mentions it), larger for rarer ones; and what the
+        ideas no page mentions would weigh together, were they counted as the rarest."""
         if not concepts:
-            return []
+            return [], 0.0
         queries = [sa.func.to_tsquery(_SIMPLE, c.tsquery()) for c in concepts]
         any_idea = sa.func.to_tsquery(_SIMPLE, " | ".join(f"({c.tsquery()})" for c in concepts))
         active = Space.status == SpaceStatus.active
@@ -519,7 +569,8 @@ class SearchService:
             )
         ).one()
         total = max(int(total or 0), 1)
-        return [math.log(1 + total / n) if n else 0.0 for n in counts]
+        weights = [math.log(1 + total / n) if n else 0.0 for n in counts]
+        return weights, math.log(1 + total) * sum(1 for n in counts if not n)
 
     async def _semantic_hits(
         self,

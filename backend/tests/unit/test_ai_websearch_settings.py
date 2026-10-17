@@ -164,7 +164,7 @@ async def test_trying_the_gateway_searches_through_the_connection(
     monkeypatch.setattr(websearch, "load_config", active)
     used: list[WebConfig] = []
 
-    async def search(config: WebConfig, query: str) -> list[object]:
+    async def search(config: WebConfig, query: str, *, fallback: bool = True) -> list[object]:
         used.append(config)
         return [object(), object()]
 
@@ -183,7 +183,7 @@ async def test_a_search_that_fails_is_reported_without_the_services_own_words(
     stored(monkeypatch, None)
     monkeypatch.setattr(websearch, "load_config", active)
 
-    async def failing(config: WebConfig, query: str) -> list[object]:
+    async def failing(config: WebConfig, query: str, *, fallback: bool = True) -> list[object]:
         raise ServiceUnavailableError("secret detail")
 
     monkeypatch.setattr(websearch, "search_web", failing)

@@ -33,6 +33,19 @@ from tests.integration.test_hybrid_semantic_search import (  # noqa: F401 - fixt
 pytestmark = pytest.mark.integration
 
 
+class MemoryRedis:
+    """The two Redis calls the router makes, in a dict."""
+
+    def __init__(self) -> None:
+        self.data: dict[str, str] = {}
+
+    async def get(self, key: str) -> str | None:
+        return self.data.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.data[key] = value
+
+
 class Model:
     """A pretend gateway: streams ``pieces``, and answers the rewrite call with ``rewrite``."""
 
@@ -42,6 +55,7 @@ class Model:
         self.streams: list[list[dict[str, str]]] = []
         self.rewrites: list[list[dict[str, str]]] = []
         self.hang = False
+        self.redis = MemoryRedis()
         #: Replies for successive calls; when it runs out, ``pieces`` is used.
         self.script: list[list[str]] = []
 
@@ -53,7 +67,9 @@ class Model:
             yield piece
         yield Usage(100, 20)
 
-    async def complete(self, config, messages, *, max_tokens: int = 2000) -> ChatReply:
+    async def complete(
+        self, config, messages, *, max_tokens: int = 2000, temperature: float = 0.2
+    ) -> ChatReply:
         self.rewrites.append(messages)
         return ChatReply(self.rewrite, Usage(30, 5))
 
@@ -74,6 +90,12 @@ def model(installed: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> Model:
 
     monkeypatch.setattr(chat_module, "chat_stream", fake.stream)
     monkeypatch.setattr(chat_module, "chat_with_usage", fake.complete)
+    # What decides where a question is answered asks the same fake model, and keeps its
+    # decisions in memory (no Redis in these tests).
+    from app.modules.ai import reviewer
+
+    monkeypatch.setattr(reviewer, "chat_with_usage", fake.complete)
+    monkeypatch.setattr(reviewer, "get_redis", lambda: fake.redis)
     monkeypatch.setattr(chat_module.rate_limit, "enforce", count)
     monkeypatch.setattr(chat_module, "record_ai_usage", record)
     _hits.clear()
@@ -155,7 +177,7 @@ async def test_when_the_rewrite_fails_the_latest_questions_are_searched_as_typed
     owner, space, pages = await _setup(installed)
     await _page(pages, space, owner, "Billing server", "The billing server is 10.0.0.5")
 
-    async def broken(config, messages, *, max_tokens: int = 2000):
+    async def broken(config, messages, *, max_tokens: int = 2000, temperature: float = 0.2):
         raise ServiceUnavailableError("down")
 
     monkeypatch.setattr(chat_module, "chat_with_usage", broken)
