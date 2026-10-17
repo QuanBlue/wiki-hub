@@ -74,6 +74,8 @@ async def create_document_import_job(
     documents: list[StagedDocument],
     creator: User,
     conflict_mode: str = "rename",
+    ai_review: bool = False,
+    translate_to: str | None = None,
 ) -> DocumentImportJob:
     """Persist the job and its items, and stage every file in object storage.
 
@@ -88,6 +90,8 @@ async def create_document_import_job(
         status="queued",
         phase="queued",
         conflict_mode=conflict_mode,
+        ai_review=ai_review,
+        translate_to=translate_to,
         counters={
             "items_total": len(documents),
             "items_processed": 0,
@@ -187,6 +191,8 @@ def to_job_read(job: DocumentImportJob, *, space_key: str) -> DocumentImportJobR
         status=job.status,
         phase=job.phase,
         conflict_mode=job.conflict_mode,
+        ai_review=bool(job.ai_review),
+        translate_to=job.translate_to,
         counters=dict(job.counters or {}),
         cancel_requested=job.cancel_requested,
         error=job.error,

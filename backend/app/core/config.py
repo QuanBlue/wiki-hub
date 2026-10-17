@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     ai_max_concurrency: int = 2
     #: Per-user ceiling on AI calls.
     ai_rate_limit: str = "60/hour"
+    #: Translating a document takes many small calls, so it has an allowance of its own.
+    ai_translate_rate_limit: str = "1500/hour"
     #: Characters of page text sent to the model in one call.
     ai_max_input_chars: int = 24000
     # --- self-hosted Ollama (optional embedding source, run by the controller) ---

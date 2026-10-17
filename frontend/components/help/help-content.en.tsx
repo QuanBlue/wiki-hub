@@ -1666,6 +1666,44 @@ export const sectionsEn: HelpSection[] = [
             (queued / running / complete / failed), each finished file linking straight
             to its new page, so you can keep working while a large batch converts.
           </li>
+          <li>
+            <strong>Review with AI after importing</strong> (on by default; the choice is
+            remembered). Once a page is made, WikiHub reads the original file again, on its own, and
+            compares it with the page: text that went missing, a heading of another level, a list
+            or code or quote that became plain paragraphs, a table that fell apart, repeated page
+            headers and footers, blocks in another order, and how it looks (an indented line in a table cell turned into a quote, unreadable text on a coloured cell, black forced on every run). What is certain is mended at once; if
+            the AI assistant is set up, it mends the rest, a few blocks at a time and using the
+            editor&apos;s own formats (lists, tables, code blocks, quotes, callouts). A change is
+            kept only if the page then matches the file better and lost no text. Each file shows
+            the result in the progress card (<Code>Reviewed: 3 fixes, now it matches the original</Code>
+            or how many differences are left, with notes), and the page as it was converted stays in
+            its history, so you can restore it. Word, HTML and PDF files are reviewed; the other
+            types are imported as before. A clean file costs no AI call, and a review that fails
+            never costs the import. While a file is being reviewed its card shows a live log
+            (<Code>Reading the original file again... Compared 439 blocks with 314: 14 differences...
+            Asking the AI assistant about 12 differences... 3 changes proposed, 2 kept</Code>), and the
+            same log stays under the file as <em>Review log</em> once it is done. Lists keep their
+            nesting too: Word indents by how far in a paragraph sits, which the converter ignores, so
+            the review reads those indents again and nests the list as the file does.
+          </li>
+          <li>
+            <strong>Translate with AI</strong> turns each page into <em>English</em> or{" "}
+            <em>Tiếng Việt</em> once it has been made (the default keeps the document&apos;s own
+            language). The AI assistant translates the text piece by piece &mdash; every paragraph,
+            list item, table cell and heading &mdash; and each piece goes back only if its tags, links,
+            image sources and code are exactly as they were, so tables, lists, images, colours and
+            widths of the page do not change; code blocks and inline code are never translated, and
+            product names and abbreviations are kept. It runs after the review, shows a live
+            <em> Translation log</em> on the file&apos;s card, and the page in its own language stays
+            in its history. A piece the model got wrong is left in its own language and counted. It
+            needs the AI assistant to be set up; a document already in the language you chose is not
+            translated, and a very large one is skipped. Both options sit under <em>AI options</em> in
+            the import dialog, each with a one-line summary and an <strong>i</strong> button that
+            explains it in full on hover; <em>Original language</em> keeps the text as it is.
+            Translating is many small calls, so it has its own hourly allowance, and the page title
+            stays the file&apos;s name. If a translation says it could not finish, import the file
+            again.
+          </li>
         </ul>
 
         <Callout variant="note" title="NOT THE SAME AS CONFLUENCE IMPORT">

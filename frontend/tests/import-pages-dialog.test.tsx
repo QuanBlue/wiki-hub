@@ -226,6 +226,77 @@ describe("ImportPagesDialog", () => {
     // No page with this name is known to exist - the server is left to decide
     // rather than assuming a conflict for every import.
     expect(sent.get("conflict_mode")).toBe("ask");
+    // Each page is reviewed against its file unless that has been turned off.
+    expect(sent.get("review")).toBe("true");
+  });
+
+  it("reviews each page by default, and remembers when that is turned off", async () => {
+    window.localStorage.removeItem("wikihub:import-review");
+    stubMeta();
+    stubXHR();
+    const { user } = await openDialog();
+    await choose([file("a.docx")]);
+    await screen.findByText("a.docx");
+
+    const box = screen.getByRole("checkbox", { name: /review with ai after importing/i });
+    expect(box).toBeChecked();
+    // A short line is always there; the long account comes with the info button.
+    expect(screen.getByText(/checks each page against the original/i)).toBeInTheDocument();
+    expect(screen.queryByText(/headings, lists, tables, lost text/i)).not.toBeInTheDocument();
+    await user.hover(screen.getAllByRole("button", { name: /more info/i })[0]);
+    expect(await screen.findAllByText(/headings, lists, tables, lost text/i)).not.toHaveLength(0);
+    await user.click(box);
+    expect(box).not.toBeChecked();
+    expect(window.localStorage.getItem("wikihub:import-review")).toBe("false");
+
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+    expect(FakeXHR.last!.body!.get("review")).toBe("false");
+    window.localStorage.removeItem("wikihub:import-review");
+  });
+
+  it("keeps the document's own language unless a translation is chosen", async () => {
+    stubMeta();
+    stubXHR();
+    const { user } = await openDialog();
+    await choose([file("a.docx")]);
+    await screen.findByText("a.docx");
+
+    // Nothing is translated by default.
+    const select = screen.getByRole("button", { name: /language to translate/i });
+    expect(select).toHaveTextContent("Original language");
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+    expect(FakeXHR.last!.body!.get("translate")).toBe("");
+  });
+
+  it("sends the language chosen to translate the pages into", async () => {
+    stubMeta();
+    stubXHR();
+    const { user } = await openDialog();
+    await choose([file("a.docx")]);
+    await screen.findByText("a.docx");
+
+    await user.click(screen.getByRole("button", { name: /language to translate/i }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Tiếng Việt" }));
+    expect(screen.getByRole("button", { name: /language to translate/i })).toHaveTextContent(
+      "Tiếng Việt",
+    );
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+    expect(FakeXHR.last!.body!.get("translate")).toBe("vi");
+  });
+
+  it("starts with the review off when it was turned off before", async () => {
+    window.localStorage.setItem("wikihub:import-review", "false");
+    stubMeta();
+    stubXHR();
+    await openDialog();
+
+    expect(screen.getByRole("checkbox", { name: /review with ai/i })).not.toBeChecked();
+    window.localStorage.removeItem("wikihub:import-review");
   });
 
   it("sends the parent page id when importing under a page", async () => {
@@ -428,7 +499,7 @@ describe("ImportPagesDialog edge cases", () => {
     const zone = document.querySelector("#import-files")!.parentElement!;
 
     fireEvent.dragOver(zone);
-    expect(zone.className).toContain("bg-surface-hover");
+    expect(zone.className).toContain("border-primary bg-primary/10");
     fireEvent.dragLeave(zone);
     fireEvent.drop(zone, { dataTransfer: { files: [file("dropped.docx")] } });
     expect(await screen.findByText("dropped.docx")).toBeInTheDocument();

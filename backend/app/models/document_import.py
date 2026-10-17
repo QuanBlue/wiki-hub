@@ -62,6 +62,14 @@ class DocumentImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: attachments_created.
     counters: Mapped[dict[str, int]] = mapped_column(JSONB, nullable=False, default=dict)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: Compare each page with its file once it exists and mend what differs (see
+    #: ``review.py``). Off for a request that did not ask: the page is then as converted.
+    ai_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    #: The language each page is translated into by the AI assistant once it has been made
+    #: (``en`` or ``vi``, see ``translate.py``); null keeps the document's own language.
+    translate_to: Mapped[str | None] = mapped_column(String(8), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: Refreshed while the worker works. A "running" row with a stale heartbeat
     #: belongs to a worker that died and is reaped; without it there is no way
@@ -114,6 +122,12 @@ class DocumentImportItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: PDF, content truncated. The file still imported; the user should know
     #: what it cost.
     warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    #: What the review of the page found and did (status, differences before and after, fixes,
+    #: notes); null when no review was asked for.
+    review: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    #: What the translation of the page did (status, language, pieces done and left, notes, log);
+    #: null when no translation was asked for.
+    translation: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     job: Mapped[DocumentImportJob] = relationship(back_populates="items")

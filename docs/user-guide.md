@@ -110,6 +110,49 @@ you can already read, and has an hourly limit per person.
   sentence, numbered steps, tables, `code`, italics, quotes, and coloured Tip, Warning, Important
   and Note boxes - and colour is kept for those.
 
+## Importing documents
+
+Open the **...** menu of a page (or Home) and choose *Import from file...* to turn up to 20 Word,
+PDF, HTML, Markdown, EPUB, ODT or RTF files into pages. They are converted in the background with
+a progress card, each finished file linking to its new page; each page is named after its file.
+
+The dialog is a drop area (drag files in, or *Choose files*; the formats are listed under it), a
+list of the chosen files with their type and size (a file the importer cannot take is marked in
+red with the reason), and an **AI options** group with two rows: a switch for the review and a
+language list for the translation. Each row has a one-line summary and an **i** button, which
+explains it in full when you hover or focus it. The footer shows how many files are ready and
+their total size.
+
+*Review with AI after importing* (on by default, remembered) compares every page with the
+original file once it is made, and mends what differs: text that went missing, a heading of
+another level, a list, code or quote that became plain paragraphs, a table that fell apart,
+repeated page headers and footers, lists that lost their nesting (Word indents a list by how far
+in it sits, which the converter ignores, so the review reads the indents again and nests the
+list as the file does), plus how it looks (table cells turned into quotes, unreadable text on
+coloured cells, black forced on every run). What is certain is fixed at once; if the AI assistant is set
+up it fixes the rest, in the editor's own formats. A change is kept only if the page then matches
+the file better and lost no text, and the progress card says what was done per file, with a live
+log of each step (reading the file, what differed, the fixes made, what the AI assistant proposed
+and what was kept or dropped) that stays under the file as *Review log*. The page as
+it was converted stays in its history. Word, HTML and PDF files are reviewed; other types are
+imported as before.
+
+*Translate with AI* turns each page into English or Tiếng Việt once it is made (by default the
+document keeps its own language). The AI assistant translates paragraph by paragraph and each
+piece goes back only if its tags, links, images and code are unchanged, so tables, lists, images
+and colours stay as they were; code and product names are not translated. It runs after the
+review, shows a live *Translation log* on the file, and the page in its own language stays in its
+history. It needs the AI assistant to be set up; a document already in the chosen language is not
+translated, and a very large one (over about 700,000 characters) is skipped. *Original language*
+leaves the text as it is. A piece the model translates badly is left in its own language and
+counted (*N pieces left in the original language*). The page title stays the file's name.
+
+Both steps use the AI assistant's connection and are counted in its usage. The review has its own
+hourly allowance, and translating (many small calls per file) has a larger one of its own,
+`ai_translate_rate_limit` (1500 per hour by default); a whole batch can run for hours, so the
+import job is allowed four. If a translation reports that it could not finish, import the file
+again.
+
 ## History and PDF export
 
 Every saved page change creates a revision. Open page history to inspect past
@@ -226,5 +269,10 @@ can be resumed after returning to the Backup page.
 - If an upload fails, check file type and configured size limits.
 - For a failed import, resume/retry it in Backup after checking worker, Redis,
   and object-storage health.
+- If an imported page was reviewed or translated and you prefer the version before, open the
+  page history and restore the earlier revision ("Imported from...", "Review of the import...",
+  "Translated into ... by AI ...").
+- If a file's card says the review or translation was *skipped*, read its notes: the AI assistant
+  is not set up, the document is already in the chosen language, or it is too large.
 
 For API-level integration details, use Swagger at `/docs` or ReDoc at `/redoc`.

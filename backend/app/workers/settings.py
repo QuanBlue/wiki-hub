@@ -40,6 +40,8 @@ logger = get_logger(__name__)
 #: through the attachments phase, so the pages existed but never got linked
 #: to their files, while importing a single space always finished in time.
 LONG_RUNNING_JOB_TIMEOUT_SECONDS = 24 * 3600
+#: A batch of documents with each page reviewed and translated is many model calls per file.
+DOCUMENT_IMPORT_JOB_TIMEOUT_SECONDS = 4 * 3600
 
 
 def redis_settings() -> RedisSettings:
@@ -72,7 +74,7 @@ class WorkerSettings:
         ping,
         func(run_confluence_import, timeout=LONG_RUNNING_JOB_TIMEOUT_SECONDS),
         func(run_backup_job, timeout=LONG_RUNNING_JOB_TIMEOUT_SECONDS),
-        run_document_import,
+        func(run_document_import, timeout=DOCUMENT_IMPORT_JOB_TIMEOUT_SECONDS),
         func(install_ollama, timeout=LONG_RUNNING_JOB_TIMEOUT_SECONDS),
         schedule_automated_backup,
     ]

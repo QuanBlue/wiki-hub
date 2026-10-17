@@ -5,8 +5,10 @@ import {
   Check,
   Clock,
   FileText,
+  Languages,
   Loader2,
   MinusCircle,
+  ScanSearch,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -19,7 +21,12 @@ import { LogDisclosure } from "@/components/ui/log-disclosure";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
-import type { DocumentImportItem, DocumentImportJob } from "@/types/api";
+import type {
+  DocumentImportItem,
+  DocumentImportJob,
+  DocumentImportReview,
+  DocumentImportTranslation,
+} from "@/types/api";
 
 const TERMINAL: ReadonlySet<DocumentImportJob["status"]> = new Set([
   "complete",
@@ -45,6 +52,104 @@ function ItemIcon({ status }: { status: DocumentImportItem["status"] }) {
   return <Clock className="text-muted-foreground size-4 shrink-0" />;
 }
 
+/** What the review of a page against its file found and did, in a line, with its notes. */
+function ReviewLine({ review }: { review: DocumentImportReview }) {
+  const { t } = useTranslation();
+  const running = review.status === "running";
+  const log = review.log ?? [];
+  const tone =
+    review.status === "clean" || review.status === "fixed"
+      ? "text-success"
+      : review.status === "partial" || review.status === "failed"
+        ? "text-warning"
+        : "text-muted-foreground";
+  return (
+    <div className="mt-0.5">
+      <p className={cn("flex items-center gap-1.5", tone)}>
+        {running ? (
+          <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+        ) : (
+          <ScanSearch className="size-3.5 shrink-0" aria-hidden />
+        )}
+        {t(`importProgress.review.${review.status}`, {
+          fixes: review.fixes,
+          left: review.issues_after,
+        })}
+      </p>
+      <StepLog title={t("importProgress.review.log", { count: log.length })} log={log} open={running} />
+      <Notes notes={review.notes} />
+    </div>
+  );
+}
+
+/** The steps of something that runs behind the card: open while it runs, folded once done. */
+function StepLog({ title, log, open }: { title: string; log: string[]; open: boolean }) {
+  if (log.length === 0) return null;
+  return (
+    <details open={open} className="ml-5 mt-0.5 text-xs">
+      <summary className="text-muted-foreground hover:text-foreground w-fit cursor-pointer rounded-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring">
+        {title}
+      </summary>
+      <ol className="text-muted-foreground mt-1 list-decimal space-y-0.5 pl-5">
+        {log.map((line, index) => (
+          <li key={`${index}-${line}`}>{line}</li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+function Notes({ notes }: { notes: string[] }) {
+  if (notes.length === 0) return null;
+  return (
+    <ul className="text-muted-foreground ml-5 list-disc text-xs">
+      {notes.map((note) => (
+        <li key={note}>{note}</li>
+      ))}
+    </ul>
+  );
+}
+
+/** What the AI translation of a page did, in a line, with its live log. */
+function TranslationLine({ translation }: { translation: DocumentImportTranslation }) {
+  const { t } = useTranslation();
+  const running = translation.status === "running";
+  const log = translation.log ?? [];
+  const tone =
+    translation.status === "done"
+      ? "text-success"
+      : translation.status === "partial" || translation.status === "failed"
+        ? "text-warning"
+        : "text-muted-foreground";
+  const language =
+    translation.language === "vi"
+      ? t("importDialog.translateVi")
+      : translation.language === "en"
+        ? t("importDialog.translateEn")
+        : translation.language;
+  return (
+    <div className="mt-0.5">
+      <p className={cn("flex items-center gap-1.5", tone)}>
+        {running ? (
+          <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+        ) : (
+          <Languages className="size-3.5 shrink-0" aria-hidden />
+        )}
+        {t(`importProgress.translation.${translation.status}`, {
+          language,
+          left: translation.units_left,
+        })}
+      </p>
+      <StepLog
+        title={t("importProgress.translation.log", { count: log.length })}
+        log={log}
+        open={running}
+      />
+      <Notes notes={translation.notes} />
+    </div>
+  );
+}
+
 function ItemRow({
   item,
   spaceKey,
@@ -67,6 +172,8 @@ function ItemRow({
           </Link>
         ) : null}
         {item.error ? <p className="text-danger">{item.error}</p> : null}
+        {item.review ? <ReviewLine review={item.review} /> : null}
+        {item.translation ? <TranslationLine translation={item.translation} /> : null}
         {item.warnings.map((warning) => (
           <p key={warning} className="text-warning">
             {warning}

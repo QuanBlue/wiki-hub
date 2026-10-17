@@ -142,6 +142,13 @@ async def create_document_import(
     # Every new request starts with a conflict check.  The worker only receives
     # ``rename`` or ``replace`` after this endpoint has resolved the choice.
     conflict_mode: Annotated[Literal["ask", "rename", "replace"], Form()] = "ask",
+    # Compare each page with its file afterwards and mend what differs; the AI assistant
+    # joins in when it is set up. Off unless asked for, so the page is as converted.
+    review: Annotated[bool, Form()] = False,
+    # Translate each page into this language with the AI assistant, once it is made (after the
+    # review, which compares it with the file in the file's own language). Empty keeps the
+    # document's own language.
+    translate: Annotated[Literal["", "en", "vi"], Form()] = "",
 ) -> DocumentImportJobRead:
     space = await SpaceService(session).get_by_key(key)
     page_service = PageService(session)
@@ -215,6 +222,8 @@ async def create_document_import(
         conflict_mode=conflict_mode,
         documents=documents,
         creator=user,
+        ai_review=review,
+        translate_to=translate or None,
     )
     # A commit, not just a flush: `_enqueue` hands the job to the worker on
     # a separate connection immediately below, and a flush alone leaves the
