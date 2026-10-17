@@ -5,7 +5,16 @@ WikiHub is a self-hosted workspace for shared documentation. Knowledge lives in
 search, backup/restore, and administration tools.
 
 The same guide is available to every signed-in user in the application at
-**Help** (`/help`).
+**Help** (`/help`, the book icon in the top bar).
+
+The Help centre opens on a search box. As you type it lists the guides that match (in either
+language, accents optional, with the passage that matched); arrow keys and Enter open one. Ask a
+whole question instead - press Enter or **Ask AI** - and, when the AI assistant is set up, it
+answers from the guides themselves, in the language you asked in, with the guides to read next
+and *Continue in the chat* to carry on. Under the search are suggested questions, the guides to
+start with, and every topic with its first guides. A guide opens on its own page: the left
+column lists every topic and guide (and the search again), the top shows where you are, and
+*Previous* / *Next* at the bottom walk through all the guides in order.
 
 ## Getting started
 
@@ -146,6 +155,8 @@ history. It needs the AI assistant to be set up; a document already in the chose
 translated, and a very large one (over about 700,000 characters) is skipped. *Original language*
 leaves the text as it is. A piece the model translates badly is left in its own language and
 counted (*N pieces left in the original language*). The page title stays the file's name.
+
+When the AI assistant is not set up (or an administrator has switched it off) the dialog says so: the review switch and the translation list are unavailable.
 
 Both steps use the AI assistant's connection and are counted in its usage. The review has its own
 hourly allowance, and translating (many small calls per file) has a larger one of its own,

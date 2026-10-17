@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { aiStatus, resetAiStatus } from "@/lib/ai-summary";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import type { DocumentImportJob, InstanceInfo, WikiPage } from "@/types/api";
@@ -176,7 +177,24 @@ export function ImportPagesDialog({
   const [review, setReview] = useState(readReviewChoice);
   // The language to translate each page into with the AI assistant: "" keeps the document's own.
   const [translate, setTranslate] = useState("");
+  // Whether the AI assistant is set up: null until known, and only `false` is acted on.
+  const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
+  const aiOff = aiEnabled === false;
   const { t } = useTranslation();
+
+  // Asked afresh whenever the dialog opens: an administrator may have switched the assistant
+  // on or off since the page loaded.
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    resetAiStatus();
+    void aiStatus().then((status) => {
+      if (live) setAiEnabled(status.enabled);
+    });
+    return () => {
+      live = false;
+    };
+  }, [open]);
 
   // Derived, never stored: the upload ceiling arrives asynchronously, and a
   // `problem` kept in state would have to be re-synced when it does.
@@ -306,8 +324,9 @@ export function ImportPagesDialog({
     for (const candidate of sendable) form.append("files", candidate.file);
     if (parentPage?.id) form.append("parent_id", parentPage.id);
     form.append("conflict_mode", conflictMode);
-    form.append("review", review ? "true" : "false");
-    form.append("translate", translate);
+    form.append("review", review && !aiOff ? "true" : "false");
+    // Without the assistant there is nothing to translate with, whatever was chosen before.
+    form.append("translate", aiOff ? "" : translate);
 
     setUploading(true);
     setUploadPercent(0);
@@ -540,7 +559,12 @@ export function ImportPagesDialog({
               {t("importDialog.aiOptions")}
             </h3>
             <div className="border-border divide-border divide-y overflow-hidden rounded-xl border">
-              <label className="hover:bg-surface-hover flex cursor-pointer items-center gap-3 p-3 transition-colors duration-150 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring">
+              <label
+                className={cn(
+                  "flex items-center gap-3 p-3 transition-colors duration-150 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
+                  aiOff ? "cursor-not-allowed opacity-60" : "hover:bg-surface-hover cursor-pointer",
+                )}
+              >
                 <span className="bg-primary/10 text-primary grid size-9 shrink-0 place-items-center rounded-lg">
                   <Sparkles className="size-4" aria-hidden />
                 </span>
@@ -550,15 +574,15 @@ export function ImportPagesDialog({
                     <InfoTip>{t("importDialog.reviewHint")}</InfoTip>
                   </span>
                   <span className="text-muted-foreground mt-0.5 block text-xs leading-5">
-                    {t("importDialog.reviewShort")}
+                    {t(aiOff ? "importDialog.reviewShortOff" : "importDialog.reviewShort")}
                   </span>
                 </span>
                 <span className="relative inline-flex shrink-0">
                   <input
                     type="checkbox"
                     aria-label={t("importDialog.review")}
-                    checked={review}
-                    disabled={uploading}
+                    checked={review && !aiOff}
+                    disabled={uploading || aiOff}
                     onChange={(event) => {
                       setReview(event.target.checked);
                       saveReviewChoice(event.target.checked);
@@ -576,7 +600,12 @@ export function ImportPagesDialog({
                 </span>
               </label>
 
-              <div className="flex flex-wrap items-center gap-3 p-3 sm:flex-nowrap">
+              <div
+                className={cn(
+                  "flex flex-wrap items-center gap-3 p-3 sm:flex-nowrap",
+                  aiOff && "cursor-not-allowed opacity-60",
+                )}
+              >
                 <span className="bg-primary/10 text-primary grid size-9 shrink-0 place-items-center rounded-lg">
                   <Languages className="size-4" aria-hidden />
                 </span>
@@ -586,22 +615,24 @@ export function ImportPagesDialog({
                     <InfoTip>{t("importDialog.translateHint")}</InfoTip>
                   </span>
                   <span className="text-muted-foreground mt-0.5 block text-xs leading-5">
-                    {t("importDialog.translateShort")}
+                    {t(aiOff ? "importDialog.translateOff" : "importDialog.translateShort")}
                   </span>
                 </div>
                 <div className="w-full sm:w-48 sm:shrink-0">
                   <Select
-                    value={translate || "original"}
+                    value={aiOff ? "original" : translate || "original"}
                     onValueChange={(value) => setTranslate(value === "original" ? "" : value)}
-                    disabled={uploading}
+                    disabled={uploading || aiOff}
                   >
                     <SelectTrigger aria-label={t("importDialog.translateAria")}>
                       <SelectValue>
-                        {translate === "en"
-                          ? t("importDialog.translateEn")
-                          : translate === "vi"
-                            ? t("importDialog.translateVi")
-                            : t("importDialog.translateOriginal")}
+                        {aiOff
+                          ? t("importDialog.translateOriginal")
+                          : translate === "en"
+                            ? t("importDialog.translateEn")
+                            : translate === "vi"
+                              ? t("importDialog.translateVi")
+                              : t("importDialog.translateOriginal")}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent align="end" className="whitespace-nowrap">

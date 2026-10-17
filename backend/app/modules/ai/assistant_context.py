@@ -776,7 +776,8 @@ def match_topics(question: str, viewer: Viewer | None = None) -> list[Topic]:
         hits = sum(
             len(keyword.split())
             for keyword in topic.keywords
-            if re.search(rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])", words)
+            # "backups" is about backup: an English plural ending is allowed.
+            if re.search(rf"(?<![a-z0-9]){re.escape(keyword)}(?:e?s)?(?![a-z0-9])", words)
         )
         if hits:
             scored.append((-hits, order, topic))

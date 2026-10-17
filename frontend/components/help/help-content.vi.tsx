@@ -56,7 +56,9 @@ export const sectionsVi: HelpSection[] = [
           <li>
             <strong>Thanh điều hướng trên cùng</strong>: ô tìm kiếm (mở cùng một
             modal <Kbd>Ctrl</Kbd>+<Kbd>K</Kbd>), liên kết <strong>Help</strong>{" "}
-            (biểu tượng quyển sách, đưa bạn đến đây), nút chuyển đổi giao diện
+            (biểu tượng quyển sách, đưa bạn đến đây: gõ để tìm hướng dẫn, hoặc đặt cả câu hỏi rồi
+            nhấn <Kbd>Enter</Kbd> để trợ lý AI trả lời từ chính các hướng dẫn này, kèm hướng dẫn nên
+            đọc tiếp), nút chuyển đổi giao diện
             Sáng/Tối, <strong>chuông thông báo</strong> (điều gì đã xảy ra với
             bạn - xem <em>Thông báo</em>), và menu người dùng của bạn.
           </li>

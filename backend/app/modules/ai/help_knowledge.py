@@ -195,6 +195,18 @@ def _index() -> tuple[list[Passage], dict[str, float]]:
     return passages, idf
 
 
+@lru_cache(maxsize=2)
+def section_titles(lang: str) -> dict[str, tuple[str, str]]:
+    """Section id -> (title, category) in one language, for naming a guide to the reader."""
+    path = _ASSETS / f"help_{lang}.json"
+    if not path.exists():  # pragma: no cover - both files are shipped and checked by a test
+        return {}
+    return {
+        section["id"]: (section["title"], section["category"])
+        for section in json.loads(path.read_text(encoding="utf-8"))
+    }
+
+
 def search(
     question: str, *, prefer: frozenset[str] | set[str] = frozenset(), limit: int = MAX_PASSAGES
 ) -> list[Passage]:

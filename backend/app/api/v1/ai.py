@@ -25,6 +25,7 @@ from app.modules.ai.answer import AnswerService
 from app.modules.ai.chat import ChatService
 from app.modules.ai.config import load_config
 from app.modules.ai.embedding_settings import EmbeddingSettingsService
+from app.modules.ai.help_answer import HelpAnswerService
 from app.modules.ai.service import AIService
 from app.modules.ai.skills import AISkillService
 from app.modules.ai.websearch import WebSearchSettingsService
@@ -51,6 +52,8 @@ from app.schemas.ai import (
     ExecuteRequest,
     ExplainRequest,
     ExplainResult,
+    HelpAnswer,
+    HelpAskRequest,
     OllamaEnable,
     OllamaStatus,
     PageClarify,
@@ -94,6 +97,15 @@ async def answer_question(
 ) -> AnswerResult:
     # A POST body, not a query string: what people ask must not end up in access logs.
     return await AnswerService(session, user).answer(payload)
+
+
+@router.post(
+    "/help",
+    response_model=HelpAnswer,
+    summary="Answer a question about using WikiHub from the Help page, naming the guides",
+)
+async def answer_help(payload: HelpAskRequest, session: DbSession, user: CurrentUser) -> HelpAnswer:
+    return await HelpAnswerService(session, user).answer(payload)
 
 
 def _sse(event: dict) -> str:
