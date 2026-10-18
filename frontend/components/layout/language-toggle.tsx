@@ -39,10 +39,12 @@ export function LanguageToggle() {
           variant="ghost"
           aria-label={t("language.changeLanguageAria")}
           title={t("language.changeLanguageAria")}
-          className="h-8 gap-1.5 px-2 text-xs font-semibold"
+          className="h-8 gap-1.5 px-2 text-xs font-semibold max-sm:px-1.5"
         >
           <Globe className="size-3.5 shrink-0" aria-hidden />
-          <span aria-hidden>{activeBadge}</span>
+          <span aria-hidden className="max-sm:hidden">
+            {activeBadge}
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">

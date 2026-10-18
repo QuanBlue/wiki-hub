@@ -2,7 +2,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import type { ViewMutationRecord } from "@tiptap/pm/view";
+
 import {
+  ignoreNodeViewChrome,
   RichTextContent,
   RichTextEditor,
 } from "@/components/pages/rich-text-editor";
@@ -211,5 +214,82 @@ describe("callouts", () => {
       container.querySelector("[data-node-view-wrapper] svg"),
     ).not.toBeNull();
     expect(type).toBeTruthy();
+  });
+});
+
+describe("ignoreNodeViewChrome", () => {
+  /**
+   * A node view the way Tiptap builds one: its root (`react-renderer`) holds React's frame,
+   * and inside that the editable content element it moves in.
+   */
+  function nodeView() {
+    document.body.innerHTML = `
+      <div class="react-renderer node-callout" id="view">
+        <div data-node-view-wrapper id="frame">
+          <span id="icon"></span>
+          <div data-node-view-content id="slot">
+            <div data-node-view-content-react data-node-view-wrapper id="content"><p id="text">Hi</p></div>
+          </div>
+        </div>
+      </div>`;
+    const el = (id: string) => document.getElementById(id)!;
+    return { el };
+  }
+  const change = (
+    over: Partial<{ type: string; target: Node; addedNodes: Node[]; removedNodes: Node[] }>,
+  ) =>
+    ({
+      type: "childList",
+      target: document.body,
+      addedNodes: [],
+      removedNodes: [],
+      ...over,
+    }) as unknown as ViewMutationRecord;
+
+  it("lets ProseMirror see selection changes", () => {
+    nodeView();
+    expect(ignoreNodeViewChrome({ mutation: { type: "selection", target: document.body } as ViewMutationRecord })).toBe(false);
+  });
+
+  it("ignores React drawing the frame, which Android would read as an Enter", () => {
+    const { el } = nodeView();
+    expect(ignoreNodeViewChrome({ mutation: change({ target: el("view"), addedNodes: [el("frame")] }) })).toBe(true);
+    expect(ignoreNodeViewChrome({ mutation: change({ target: el("frame"), addedNodes: [el("icon")] }) })).toBe(true);
+  });
+
+  it("ignores Tiptap moving the content element into the frame", () => {
+    const { el } = nodeView();
+    expect(ignoreNodeViewChrome({ mutation: change({ target: el("slot"), addedNodes: [el("content")] }) })).toBe(true);
+    expect(ignoreNodeViewChrome({ mutation: change({ target: el("slot"), removedNodes: [el("content")] }) })).toBe(true);
+  });
+
+  it("leaves everything inside the editable content to ProseMirror", () => {
+    const { el } = nodeView();
+    const typed = document.createTextNode("x");
+    expect(ignoreNodeViewChrome({ mutation: change({ target: el("content"), addedNodes: [typed] }) })).toBe(false);
+    expect(ignoreNodeViewChrome({ mutation: change({ target: el("text").firstChild!, type: "characterData" }) })).toBe(false);
+    expect(ignoreNodeViewChrome({ mutation: change({ target: el("content"), addedNodes: [el("icon")] }) })).toBe(false);
+  });
+
+  it("keeps a node view inside another one apart from its parent's content", () => {
+    document.body.innerHTML = `
+      <div class="react-renderer" id="outer">
+        <div data-node-view-content data-node-view-wrapper>
+          <div data-node-view-content-react id="outer-content">
+            <div class="react-renderer" id="inner"><div id="inner-frame"></div></div>
+          </div>
+        </div>
+      </div>`;
+    const inner = document.getElementById("inner")!;
+    // The inner callout's frame sits inside the outer one's content, but is the inner's own chrome.
+    expect(
+      ignoreNodeViewChrome({
+        mutation: change({ target: inner, addedNodes: [document.getElementById("inner-frame")!] }),
+      }),
+    ).toBe(true);
+  });
+
+  it("ignores a change with no element to place", () => {
+    expect(ignoreNodeViewChrome({ mutation: change({ target: document.createTextNode("") }) })).toBe(true);
   });
 });

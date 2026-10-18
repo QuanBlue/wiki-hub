@@ -229,15 +229,21 @@ mid-edit in the page editor survives the switch untouched.
 
 ## Small screens
 
-<img src="assets/demo-mobile.gif" alt="At phone width: signing in, opening Onboarding checklist from the page tree, choosing Edit then Normal editor, typing a line at the end, and saving" width="300">
+<img src="assets/demo-mobile.gif" alt="At phone width: signing in, opening the page tree drawer and choosing Onboarding checklist, then Edit and Normal editor, typing /callout, picking Callout: Tip, typing into it, and saving" width="300">
 
 The same sign-in → space → page → edit → save flow at a real phone width
 (360×780, Playwright's *Galaxy S24* preset) rather than a scaled-down desktop
-layout. The sign-in cover is left out, and the editor's toolbar keeps the basic
-formatting buttons and puts the rest behind **⋯**.
-The space's page tree has no off-canvas drawer at this width yet, so it stays
-above the page content instead of tucking behind a menu button. The account
-avatar is cut off at the right edge of the top bar at this width.
+layout, now with the callout from the `/` menu as well. The sign-in cover is
+left out, and the editor's toolbar keeps the basic formatting buttons and puts
+the rest behind **⋯**.
+
+- **Page tree drawer.** A space's page tree is hidden behind the top bar's
+  sidebar button; it slides in over the page, and puts itself away when you
+  choose a page, press `Esc`, or tap outside it.
+- **A top bar that fits.** Below 640px the site name and the search field give
+  way to the logo and one search button, the language button shows only its
+  icon, and below 400px the Help button moves into the account menu, so
+  the avatar is no longer cut off at the edge.
 
 ## AI features
 

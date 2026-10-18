@@ -122,6 +122,18 @@ describe("TopBar", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
+  it("fits a phone: the name, the search field and the Help button give way", () => {
+    render(<TopBar user={user()} />);
+    // The site name stays readable to a screen reader and the link still names the site.
+    expect(screen.getByTestId("wordmark")).toBeInTheDocument();
+    // Search becomes one icon button below 640px, with its label kept for assistive tech.
+    const search = screen.getByRole("button", { name: /search/i });
+    expect(search).toHaveClass("max-sm:w-8", "max-sm:justify-center");
+    expect(search.querySelector("span")).toHaveClass("max-sm:sr-only");
+    // Help is the first to go when there is no room, and is in the account menu instead.
+    expect(screen.getByRole("link", { name: /help/i }).closest("a")).toHaveClass("max-[400px]:hidden");
+  });
+
   it("drops the hint when the shortcut is unbound", () => {
     setBindings("search.open", []);
     render(<TopBar user={user()} />);

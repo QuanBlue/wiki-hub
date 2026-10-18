@@ -1,10 +1,17 @@
 "use client";
 
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useSyncExternalStore } from "react";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n/context";
+
+function subscribeToPhoneViewport(onChange: () => void): () => void {
+  const query = window.matchMedia("(min-width: 768px)");
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
 
 /**
  * One control, two behaviours by breakpoint: it opens the drawer on small
@@ -20,8 +27,14 @@ export function SidebarToggle() {
   const isMobileViewport = () =>
     typeof window !== "undefined" &&
     !window.matchMedia("(min-width: 768px)").matches;
+  const onPhone = useSyncExternalStore(
+    subscribeToPhoneViewport,
+    isMobileViewport,
+    () => false,
+  );
 
-  const open = mobileOpen || !collapsed;
+  // A phone's drawer starts closed whatever the desktop rail was left on.
+  const open = onPhone ? mobileOpen : mobileOpen || !collapsed;
   const Icon = open ? PanelLeftClose : PanelLeftOpen;
   const toggleLabel = open
     ? t("topbar.collapseSidebar")

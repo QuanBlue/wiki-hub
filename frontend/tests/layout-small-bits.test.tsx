@@ -105,9 +105,13 @@ describe("SidebarToggle", () => {
   it("opens the drawer on a small screen", async () => {
     setDesktop(false);
     mount();
-    const button = screen.getByRole("button", { name: /collapse/i });
+    // The drawer starts shut, even though the desktop rail is left open: so it offers to open.
+    const button = screen.getByRole("button", { name: /expand/i });
+    expect(button).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(button);
     expect(screen.getByTestId("state")).toHaveTextContent('"m":true');
+    expect(button).toHaveAttribute("aria-label", expect.stringMatching(/collapse/i));
+    expect(button).toHaveAttribute("aria-expanded", "true");
     await userEvent.click(button);
     expect(screen.getByTestId("state")).toHaveTextContent('"m":false');
   });

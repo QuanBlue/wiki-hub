@@ -42,7 +42,7 @@ export function TopBar({
 
   return (
     <header className="h-topbar topbar-on-primary fixed inset-x-0 top-0 z-30">
-      <div className="topbar-inner flex h-full items-center gap-3 px-4">
+      <div className="topbar-inner flex h-full items-center gap-3 px-4 max-sm:gap-1.5">
         <SidebarToggle />
 
         <Link
@@ -50,17 +50,18 @@ export function TopBar({
           className="hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring rounded-md px-1 py-1 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
           aria-label={t("topbar.homeAria", { siteName: effectiveSiteName })}
         >
-          <Wordmark siteName={effectiveSiteName} />
+          <Wordmark siteName={effectiveSiteName} nameClassName="max-sm:sr-only" />
         </Link>
 
-        <div className="mx-auto w-full max-w-md min-w-0">
+        {/* A phone has no room for the search field: it becomes one icon button. */}
+        <div className="mx-auto w-full max-w-md min-w-0 max-sm:mr-0 max-sm:ml-auto max-sm:w-auto">
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="border-border bg-surface-hover text-muted-foreground hover:bg-surface-selected hover:border-border-strong active:bg-surface-selected flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-left transition-colors duration-150"
+            className="border-border bg-surface-hover text-muted-foreground hover:bg-surface-selected hover:border-border-strong active:bg-surface-selected flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-left transition-colors duration-150 max-sm:w-8 max-sm:justify-center max-sm:px-0"
           >
             <Search className="size-4 shrink-0" />
-            <span className="truncate text-xs">
+            <span className="truncate text-xs max-sm:sr-only">
               {t("topbar.searchPlaceholder", { siteName: effectiveSiteName })}
             </span>
             {searchHint ? (
@@ -78,6 +79,7 @@ export function TopBar({
             asChild
             aria-label={t("topbar.help")}
             title={t("topbar.help")}
+            className="max-[400px]:hidden"
           >
             <Link href="/help">
               <BookOpen className="size-4" aria-hidden />
