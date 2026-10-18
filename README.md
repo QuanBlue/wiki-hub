@@ -25,7 +25,8 @@ If WikiHub is useful to you, a ⭐ on the repo helps other teams find it.
 
 > **Status: the core platform is built and in daily use** — Spaces, Pages, full
 > revision history, authentication & RBAC, the rich editor, attachments,
-> search, and Confluence import/export are all shipped. See
+> search, Confluence import/export, and the optional AI assistant are all
+> shipped. See
 > [Roadmap](#-roadmap) for what's still open.
 
 </div>
@@ -81,17 +82,24 @@ unformatted text.
 
 <div align="center">
 
-<img src="docs/demo/assets/demo-editor.gif" alt="Sign in, open Home, jump into a space, open a page, edit it with the slash menu, and save — end to end" width="700">
+<img src="docs/demo/assets/demo-editor.gif" alt="Sign in, land in a space, open a page from the page tree, edit it with the slash menu, and save — end to end" width="700">
 
-<sub>Sign in → Home → space → page → edit with the <code>/</code> slash menu → save, end to end.</sub>
+<sub>Sign in → space → page → edit with the <code>/</code> slash menu → save, end to end.</sub>
 
 <br>
 
-<img src="docs/demo/assets/demo-mobile.gif" alt="The same sign-in-to-save flow at a Samsung Galaxy-class phone width" width="220">
+<img src="docs/demo/assets/demo-search.gif" alt="Ctrl+K search: finding pages, a Go to shortcut for keyboard shortcuts, the : command list, and :help searching the Help guides" width="700">
+
+<sub><code>Ctrl</code>+<code>K</code>: find pages, jump to a place in the app, or run a <code>:command</code> such as <code>:help change password</code>.</sub>
+
+<br>
+
+<img src="docs/demo/assets/demo-mobile.gif" alt="The same sign-in-to-save flow at a Galaxy S24-class phone width" width="220">
 
 <sub>The same flow at phone width — see <a href="docs/demo#small-screens">docs/demo</a> for details.</sub>
 
 **Full walkthrough with screenshots of every feature: [`docs/demo`](docs/demo).**
+All captures are of the current interface, taken on 18 October 2026.
 
 </div>
 
@@ -149,8 +157,14 @@ unformatted text.
   parent's access and customise it, or keep inheriting and narrow further with a
   page's own list. The foot of every page says how many users and groups can
   actually read it (or *all*, when nothing narrows it).
-- **Full-text search** — one `Ctrl`/`⌘`+`K` search across every space and page you
-  have permission to see.
+- **Search, shortcuts & commands** — one `Ctrl`/`⌘`+`K` box across every space and
+  page you have permission to see (accents optional, English/Vietnamese word pairs
+  matched). It also lists places in the app under **Go to** (*change password* opens
+  your account's password form, *manage users* opens Administration → Users, only for
+  those allowed), and starting with `:` runs a command: `:help <words>` searches the
+  Help guides, `:account`, `:password`, `:users`, `:settings`, `:chat`,
+  `:ask <question>` and more. AI commands stay listed but disabled while the
+  assistant is off.
 - **Theming & branding** — curated color palettes or a custom hex color, logo
   presets or a custom upload, and a live preview before anything goes live.
 - **English & Vietnamese UI** — a top-bar language switch translates the whole
@@ -604,7 +618,7 @@ now — is [`TODO`](TODO).
 
 | Document | Contents |
 |---|---|
-| [`docs/demo/`](docs/demo) | Full feature tour with screenshots and a demo GIF |
+| [`docs/demo/`](docs/demo) | Full feature tour with screenshots and demo GIFs |
 | [`docs/architecture.md`](docs/architecture.md) | System design and module layout |
 | [`docs/development.md`](docs/development.md) | Day-to-day workflow and conventions |
 | [`docs/design-system.md`](docs/design-system.md) | Visual language and layout tokens |
