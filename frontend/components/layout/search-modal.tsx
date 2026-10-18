@@ -11,6 +11,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { guideHref, type GuideMatch } from "@/components/help/help-data";
@@ -23,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { AnswerTimeoutError, askWiki, sourceHref, type AnswerSource } from "@/lib/ai-answer";
 import { openChat } from "@/lib/ai-chat";
+import { openSpaceTrash } from "@/lib/space-trash";
 import { aiStatus } from "@/lib/ai-summary";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -30,6 +32,7 @@ import { matchesShortcut } from "@/lib/keyboard-shortcuts";
 import { highlightRanges } from "@/lib/search-highlight";
 import { isLocalFindActive } from "@/lib/local-find-registry";
 import {
+  spaceKeyFromPath,
   matchCommands,
   matchNavigation,
   parseCommand,
@@ -108,6 +111,7 @@ export function SearchModal({
   user?: Me | null;
 }) {
   const navigate = useNavigate();
+  const pathname = usePathname();
   const themeSettings = useThemeSettings();
   const { t, locale } = useTranslation();
   const siteName = themeSettings?.siteName || "WikiHub";
@@ -208,21 +212,22 @@ export function SearchModal({
   const navMatches = useMemo(
     () =>
       command
-        ? matchCommands(command.name, user, t, aiOn)
+        ? matchCommands(command.name, user, t, aiOn, spaceKeyFromPath(pathname))
         : matchNavigation(query, user, t),
-    [command, query, user, t, aiOn],
+    [command, query, user, t, aiOn, pathname],
   );
   // ":help <words>" looks the words up in the Help guides. They are large, so load them only now.
   const helpQuestion =
     command && "help".startsWith(command.name) && command.name !== ""
       ? command.rest
       : "";
-  const [guides, setGuides] = useState<GuideMatch[] | null>(null);
+  // The guides found, with the question they answer: a later question shows none until
+  // its own arrive.
+  const [found, setFound] = useState<{ question: string; matches: GuideMatch[] } | null>(null);
+  const guides =
+    helpQuestion.length >= 2 && found?.question === helpQuestion ? found.matches : null;
   useEffect(() => {
-    if (helpQuestion.length < 2) {
-      setGuides(null);
-      return;
-    }
+    if (helpQuestion.length < 2) return;
     let live = true;
     void (async () => {
       const [{ searchGuides }, en, vi] = await Promise.all([
@@ -233,7 +238,7 @@ export function SearchModal({
       if (!live) return;
       const [own, other] =
         locale === "vi" ? [vi.sectionsVi, en.sectionsEn] : [en.sectionsEn, vi.sectionsVi];
-      setGuides(searchGuides(own, helpQuestion, 6, other));
+      setFound({ question: helpQuestion, matches: searchGuides(own, helpQuestion, 6, other) });
       setSelectedIndex(navMatchCount.current);
     })();
     return () => {
@@ -260,7 +265,9 @@ export function SearchModal({
     }
     return items;
   }, [results, navMatches, guides]);
-  navMatchCount.current = navMatches.length;
+  useEffect(() => {
+    navMatchCount.current = navMatches.length;
+  }, [navMatches]);
 
   const leaveAnswer = useCallback(() => {
     latestAnswer.current += 1; // whatever is still on its way is out of date
@@ -303,7 +310,10 @@ export function SearchModal({
         navigate(guideHref(item.data.section));
       } else if (item.kind === "nav") {
         if (item.data.entry.id === "chat") openChat();
-        else navigate(item.data.entry.href);
+        else if (item.data.entry.id === "trash") {
+          const key = spaceKeyFromPath(pathname);
+          if (key) openSpaceTrash(key);
+        } else navigate(item.data.entry.href);
       } else if (item.kind === "space") {
         navigate(`/spaces/${encodeURIComponent(item.data.key)}`);
       } else {
@@ -312,7 +322,7 @@ export function SearchModal({
         );
       }
     },
-    [onOpenChange, navigate, ask],
+    [onOpenChange, navigate, ask, pathname],
   );
 
   const openSource = useCallback(
@@ -381,6 +391,9 @@ export function SearchModal({
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
+                // The list changes under what was highlighted (a mouse resting on it can
+                // have moved the highlight): start from the first row again.
+                setSelectedIndex(0);
                 // An answer belongs to the question it was asked for.
                 if (answer) leaveAnswer();
               }}

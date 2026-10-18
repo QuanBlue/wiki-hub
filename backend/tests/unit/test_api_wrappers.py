@@ -30,7 +30,12 @@ def _services():
     page_service.like_status = AsyncMock(return_value=SimpleNamespace(liked=False))
     page_service.set_like = AsyncMock(return_value=SimpleNamespace(liked=True))
     page_service.update = AsyncMock(return_value=page)
-    page_service.delete = AsyncMock()
+    page_service.trash = AsyncMock(return_value="trashed")
+    page_service.list_trash = AsyncMock(return_value="trash")
+    page_service.restore = AsyncMock(return_value="restored")
+    page_service.preview_trashed = AsyncMock(return_value="preview")
+    page_service.purge = AsyncMock()
+    page_service.empty_trash = AsyncMock(return_value=2)
     page_service.list_recent_pages = AsyncMock(return_value=[])
 
     permissions = Mock()
@@ -78,7 +83,20 @@ async def test_page_route_wrappers_delegate_to_services(monkeypatch: pytest.Monk
     assert (
         await pages_api.update_page("ENG", "home", None, user, page_service, space_service)
     ).id == page.id
-    assert await pages_api.delete_page("ENG", "home", user, page_service, space_service) is None
+    assert (
+        await pages_api.delete_page("ENG", "home", user, page_service, space_service) == "trashed"
+    )
+    assert await pages_api.list_trash("ENG", user, page_service, space_service) == "trash"
+    assert (
+        await pages_api.preview_trashed_page("ENG", page.id, user, page_service, space_service)
+        == "preview"
+    )
+    assert (
+        await pages_api.restore_page("ENG", page.id, user, page_service, space_service)
+        == "restored"
+    )
+    assert await pages_api.purge_page("ENG", page.id, user, page_service, space_service) is None
+    assert await pages_api.empty_trash("ENG", user, page_service, space_service) is None
 
     export_service = Mock()
     export_service.export = AsyncMock(
@@ -105,11 +123,15 @@ async def test_page_route_wrappers_delegate_to_services(monkeypatch: pytest.Monk
         == []
     )
     assert (
-        await pages_api.list_page_restriction_users("ENG", "home", user, page_service, space_service)
+        await pages_api.list_page_restriction_users(
+            "ENG", "home", user, page_service, space_service
+        )
         == []
     )
     assert (
-        await pages_api.list_page_restriction_groups("ENG", "home", user, page_service, space_service)
+        await pages_api.list_page_restriction_groups(
+            "ENG", "home", user, page_service, space_service
+        )
         == []
     )
 
@@ -279,15 +301,17 @@ async def test_confluence_import_route_wrappers(monkeypatch: pytest.MonkeyPatch)
             archive.id, SimpleNamespace(part_numbers=[1]), user, importer
         )
     ).urls == {1: "url"}
-    
+
     # Test uploading status direct urls
     archive.status = "uploading"
     res = await imports_api.get_upload_part_urls(
         archive.id, SimpleNamespace(part_numbers=[1]), user, importer
     )
-    assert res.urls == {1: "/api/v1/storage/object?key=imports%2Fa.zip&upload_id=upload&part_number=1"}
+    assert res.urls == {
+        1: "/api/v1/storage/object?key=imports%2Fa.zip&upload_id=upload&part_number=1"
+    }
     archive.status = "scanned"
-    
+
     with pytest.raises(imports_api.NotFoundError):
         await imports_api.get_upload_part_urls(
             archive.id, SimpleNamespace(part_numbers=[3]), user, importer

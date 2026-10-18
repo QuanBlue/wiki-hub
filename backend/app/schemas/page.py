@@ -92,3 +92,46 @@ class PageUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     content: str | None = Field(default=None, max_length=MAX_PAGE_CONTENT_CHARS)
     content_format: Literal["html", "markdown"] | None = None
+
+
+class PageTrashResult(BaseModel):
+    """What deleting a page did: it went to the Trash (`id` restores it)."""
+
+    id: uuid.UUID
+    title: str
+    moved_children: int
+
+
+class TrashedPageRead(BaseModel):
+    id: uuid.UUID
+    title: str
+    slug: str
+    deleted_at: datetime
+    #: When the page leaves the Trash for good.
+    purge_at: datetime
+    deleted_by_username: str | None = None
+    deleted_by_full_name: str | None = None
+    #: The page it was under, if that page is still there; restoring puts it back there.
+    parent_title: str | None = None
+
+
+class TrashedPageDetail(TrashedPageRead):
+    """One page in the Trash with its content, for a read-only preview before restoring."""
+
+    content: str = ""
+    content_format: Literal["html", "markdown"] = "html"
+
+
+class TrashListRead(BaseModel):
+    items: list[TrashedPageRead]
+    retention_days: int
+    #: Whether this person may delete pages for good (space admins).
+    can_purge: bool
+
+
+class PageRestoreResult(BaseModel):
+    id: uuid.UUID
+    title: str
+    slug: str
+    #: False when the page it was under is gone, so it came back at the top of the space.
+    restored_to_parent: bool

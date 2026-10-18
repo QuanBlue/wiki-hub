@@ -9,7 +9,7 @@ import json
 import re
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from bs4 import BeautifulSoup
 from sqlalchemy import func, select
@@ -35,7 +35,12 @@ from app.schemas.page import (
     PageMove,
     PageRead,
     PageRecentItem,
+    PageRestoreResult,
+    PageTrashResult,
     PageUpdate,
+    TrashedPageDetail,
+    TrashedPageRead,
+    TrashListRead,
 )
 from app.schemas.revision import (
     PageRevisionDiffChunk,
@@ -44,6 +49,7 @@ from app.schemas.revision import (
     PageRevisionDiffSegment,
     PageRevisionRead,
 )
+from app.services.site_settings import SiteSettingsService
 
 logger = get_logger(__name__)
 
@@ -650,19 +656,25 @@ class PageService:
         )
         return page
 
-    async def delete(self, space: Space, page: WikiPage, user: User) -> int:
-        """Delete one page while preserving its direct child pages.
+    async def can_trash(self, space: Space, page: WikiPage, user: User) -> bool:
+        """Delete, or Delete own on a page this person created: who may bin a page, and
+        who may see it in the Trash and bring it back."""
+        permissions = await self.spaces.permissions.effective_permissions(space, user)
+        return Permission.delete in permissions or (
+            Permission.delete_own in permissions and page.created_by_id == user.id
+        )
 
-        Moving children to the deleted page's parent avoids silently deleting a
-        branch of documentation when an editor only intended to remove one
-        page. Root children remain root pages.
+    async def trash(self, space: Space, page: WikiPage, user: User) -> PageTrashResult:
+        """Move one page to the space's Trash, moving its direct child pages up.
+
+        Moving children to the deleted page's parent avoids taking a branch of
+        documentation with it when an editor only meant to remove one page. Root
+        children remain root pages. The page keeps its revisions, comments and
+        attachments, and can be restored until it is purged.
         """
         if not await self.spaces.permissions.can_view_page(page, user):
             raise PermissionDeniedError("You do not have access to this page.")
-        permissions = await self.spaces.permissions.effective_permissions(space, user)
-        if Permission.delete not in permissions and (
-            Permission.delete_own not in permissions or page.created_by_id != user.id
-        ):
+        if not await self.can_trash(space, page, user):
             raise PermissionDeniedError("You need Delete or Delete Own permission in this space.")
         children = await self.pages.list_children(page.id)
         for child in children:
@@ -670,16 +682,129 @@ class PageService:
             child.updated_by_id = user.id
 
         moved_children = len(children)
-        await self.pages.delete(page)
+        page.deleted_at = datetime.now(UTC)
+        page.deleted_by_id = user.id
         await self.session.flush()
         logger.info(
-            "page_deleted",
+            "page_trashed",
             space_key=space.key,
             slug=page.slug,
             moved_children=moved_children,
             by=user.username,
         )
-        return moved_children
+        return PageTrashResult(id=page.id, title=page.title, moved_children=moved_children)
+
+    async def trash_retention_days(self) -> int:
+        """How long a deleted page stays in the Trash: the administrators' setting."""
+        return (await SiteSettingsService(self.session).get_effective()).trash_retention_days
+
+    async def list_trash(self, space: Space, user: User) -> TrashListRead:
+        await self.spaces.require_view(space, user)
+        permissions = await self.spaces.permissions.effective_permissions(space, user)
+        retention = await self.trash_retention_days()
+        items: list[TrashedPageRead] = []
+        for page in await self.pages.list_trashed(space.id):
+            if not await self.can_trash(space, page, user):
+                continue
+            if not await self.spaces.permissions.can_view_page(page, user):
+                continue
+            parent = await self.pages.get(page.parent_id) if page.parent_id else None
+            items.append(
+                TrashedPageRead(
+                    id=page.id,
+                    title=page.title,
+                    slug=page.slug,
+                    deleted_at=page.deleted_at,  # type: ignore[arg-type]
+                    purge_at=page.deleted_at + timedelta(days=retention),  # type: ignore[operator]
+                    deleted_by_username=page.deleted_by.username if page.deleted_by else None,
+                    deleted_by_full_name=page.deleted_by.full_name if page.deleted_by else None,
+                    parent_title=parent.title if parent else None,
+                )
+            )
+        return TrashListRead(
+            items=items,
+            retention_days=retention,
+            can_purge=Permission.admin in permissions,
+        )
+
+    async def _trashed_or_404(self, space: Space, page_id: uuid.UUID, user: User) -> WikiPage:
+        page = await self.pages.get_trashed(space.id, page_id)
+        if (
+            page is None
+            or not await self.spaces.permissions.can_view_page(page, user)
+            or not await self.can_trash(space, page, user)
+        ):
+            raise NotFoundError("That page is not in this space's Trash.")
+        return page
+
+    async def preview_trashed(
+        self, space: Space, page_id: uuid.UUID, user: User
+    ) -> TrashedPageDetail:
+        """A page in the Trash, content included, for whoever may restore it."""
+        page = await self._trashed_or_404(space, page_id, user)
+        retention = await self.trash_retention_days()
+        parent = await self.pages.get(page.parent_id) if page.parent_id else None
+        return TrashedPageDetail(
+            id=page.id,
+            title=page.title,
+            slug=page.slug,
+            deleted_at=page.deleted_at,  # type: ignore[arg-type]
+            purge_at=page.deleted_at + timedelta(days=retention),  # type: ignore[operator]
+            deleted_by_username=page.deleted_by.username if page.deleted_by else None,
+            deleted_by_full_name=page.deleted_by.full_name if page.deleted_by else None,
+            parent_title=parent.title if parent else None,
+            content=page.content,
+            content_format=page.content_format,  # type: ignore[arg-type]
+        )
+
+    async def restore(self, space: Space, page_id: uuid.UUID, user: User) -> PageRestoreResult:
+        """Bring a page back from the Trash, under the page it was under if that is still there."""
+        page = await self._trashed_or_404(space, page_id, user)
+        parent = await self.pages.get(page.parent_id) if page.parent_id else None
+        restored_to_parent = page.parent_id is None or parent is not None
+        if parent is None:
+            page.parent_id = None
+        page.deleted_at = None
+        page.deleted_by_id = None
+        page.updated_by_id = user.id
+        await self.session.flush()
+        logger.info("page_restored", space_key=space.key, slug=page.slug, by=user.username)
+        return PageRestoreResult(
+            id=page.id, title=page.title, slug=page.slug, restored_to_parent=restored_to_parent
+        )
+
+    async def _require_purge(self, space: Space, user: User) -> None:
+        await self.spaces.permissions.require(space, user, Permission.admin)
+
+    async def purge(self, space: Space, page_id: uuid.UUID, user: User) -> None:
+        """Delete a page in the Trash for good - space admins only."""
+        await self._require_purge(space, user)
+        page = await self._trashed_or_404(space, page_id, user)
+        await self._purge_pages([page])
+        logger.info("page_purged", space_key=space.key, slug=page.slug, by=user.username)
+
+    async def empty_trash(self, space: Space, user: User) -> int:
+        await self._require_purge(space, user)
+        pages = list(await self.pages.list_trashed(space.id))
+        await self._purge_pages(pages)
+        logger.info("trash_emptied", space_key=space.key, pages=len(pages), by=user.username)
+        return len(pages)
+
+    async def purge_expired(self) -> int:
+        """Remove every page that has been in a Trash longer than the retention period."""
+        cutoff = datetime.now(UTC) - timedelta(days=await self.trash_retention_days())
+        pages = list(await self.pages.list_trashed_before(cutoff))
+        await self._purge_pages(pages)
+        if pages:
+            logger.info("trash_purged_expired", pages=len(pages))
+        return len(pages)
+
+    async def _purge_pages(self, pages: Sequence[WikiPage]) -> None:
+        # A page whose parent is purged keeps living: the parent link is cleared
+        # (`ON DELETE SET NULL`), the same as deleting a page always did.
+        for page in pages:
+            await self.pages.delete(page)
+        await self.session.flush()
 
     async def unique_slug(self, space: Space, title: str) -> str:
         base = SLUG_CHARS.sub("-", title.strip().lower()).strip("-") or "page"

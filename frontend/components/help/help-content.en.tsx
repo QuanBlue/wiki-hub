@@ -864,14 +864,73 @@ export const sectionsEn: HelpSection[] = [
             for exactly what each format preserves.
           </li>
           <li>
-            <strong className="text-danger">Delete page</strong>: permanently removes
-            the page.
+            <strong className="text-danger">Delete page</strong>: moves the page to the
+            space&apos;s Trash, where it can be restored for 30 days (see{" "}
+            <em>Trash: restoring deleted pages</em>).
           </li>
         </ul>
 
         <Callout variant="warning" title="DELETING NEVER ORPHANS CHILD PAGES">
           Deleting a page moves any of its child pages up one level rather than deleting
           them too - their content always stays reachable.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "trash",
+    title: "Trash: restoring deleted pages",
+    category: "Workspace",
+    description:
+      "A deleted page waits in its space's Trash for 30 days, where it can be restored whole.",
+    keywords: [
+      "trash",
+      "recycle bin",
+      "deleted page",
+      "restore",
+      "undo delete",
+      "recover",
+      "empty trash",
+      "delete permanently",
+    ],
+    body: (
+      <>
+        <p>
+          Deleting a page does not remove it straight away. It moves to the{" "}
+          <strong>Trash</strong> of its space, with its revisions, comments, likes and
+          attachments intact, and stays there for <strong>30 days</strong> by default (an administrator
+          can change the period under <strong>Administration → Settings → General &amp;
+          Sessions</strong>). After that it is removed for good, automatically.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Undo straight away</strong>: the confirmation shown after deleting has an{" "}
+            <strong>Undo</strong> button that brings the page back and opens it.
+          </li>
+          <li>
+            <strong>Open the Trash</strong>: <strong>Trash</strong> at the bottom of the
+            space&apos;s sidebar, or type <Code>:trash</Code> in search (<Kbd>Ctrl+K</Kbd>)
+            while you are in the space. Each page shows who deleted it, when, the page it was
+            under, and how many days it has left.
+          </li>
+          <li>
+            <strong>Restore</strong> puts the page back under the page it was under. If that page
+            has been deleted too, it comes back at the top of the space instead. It keeps its
+            address, so old links work again. Its former child pages are not moved back - they
+            were moved up a level when it was deleted and stay where they are.
+          </li>
+          <li>
+            <strong>Delete permanently</strong> and <strong>Empty Trash</strong> remove pages for
+            good, history and attachments included. Only <strong>space admins</strong> see them.
+          </li>
+        </ul>
+        <Callout variant="note" title="WHO SEES WHAT">
+          People with <strong>Delete</strong> in a space see every page in its Trash; people
+          with only <strong>Delete own</strong> see the pages they created. Nobody sees a page
+          they could not read before it was deleted. A page in the Trash is left out of search,
+          the page tree, recent activity and AI answers. Backups include the Trash, so a
+          restored backup still has it.
         </Callout>
       </>
     ),

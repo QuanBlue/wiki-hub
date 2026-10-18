@@ -76,6 +76,17 @@ class WikiPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     inherit_restrictions: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
+    # Set while the page is in its space's Trash. Every ORM query leaves such pages
+    # out unless it asks for them (see `app/db/soft_delete.py`), so a page in the Trash
+    # is gone everywhere except the Trash itself, and comes back whole when restored.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    deleted_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     space: Mapped[Space] = relationship()
     parent: Mapped[WikiPage | None] = relationship(
@@ -84,6 +95,7 @@ class WikiPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     created_by: Mapped[User | None] = relationship(foreign_keys=[created_by_id], lazy="joined")
     updated_by: Mapped[User | None] = relationship(foreign_keys=[updated_by_id], lazy="joined")
+    deleted_by: Mapped[User | None] = relationship(foreign_keys=[deleted_by_id])
 
 
 class PageLike(Base):

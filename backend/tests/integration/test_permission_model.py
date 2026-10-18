@@ -642,8 +642,8 @@ async def test_delete_own_is_limited_to_pages_created_by_the_actor(
     member_page = await pages.create(space, PageCreate(title="Member page"), member)
 
     with pytest.raises(PermissionDeniedError):
-        await pages.delete(space, owner_page, member)
-    await pages.delete(space, member_page, member)
+        await pages.trash(space, owner_page, member)
+    await pages.trash(space, member_page, member)
 
 
 async def test_deactivating_last_space_admin_is_rejected(

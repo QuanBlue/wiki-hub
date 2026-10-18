@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SearchModal } from "@/components/layout/search-modal";
 import { api } from "@/lib/api-client";
 import { markLocalFindActive } from "@/lib/local-find-registry";
-import type { SearchResults } from "@/types/api";
+import type { Me, SearchResults } from "@/types/api";
 
 const navigate = vi.hoisted(() => vi.fn());
 vi.mock("@/components/layout/navigation-progress", () => ({
@@ -59,12 +59,14 @@ const RESULTS: SearchResults = {
   ],
 };
 
-function Harness({ initialOpen = true }: { initialOpen?: boolean }) {
+const USER = { is_superuser: false, global_permissions: [] } as unknown as Me;
+
+function Harness({ initialOpen = true, user }: { initialOpen?: boolean; user?: Me }) {
   const [open, setOpen] = useState(initialOpen);
   return (
     <>
       <span data-testid="state">{open ? "open" : "closed"}</span>
-      <SearchModal open={open} onOpenChange={setOpen} />
+      <SearchModal open={open} onOpenChange={setOpen} user={user} />
     </>
   );
 }
@@ -341,5 +343,19 @@ describe("SearchModal", () => {
     );
     await actor.keyboard("{Enter}");
     expect(navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/help\/[a-z]+#/));
+  });
+
+  it("runs the first command after typing narrows the list, wherever the mouse rested", async () => {
+    const actor = userEvent.setup();
+    navigate.mockClear();
+    render(<Harness user={USER} />);
+    const input = screen.getByPlaceholderText("Search WikiHub...");
+    await actor.type(input, ":");
+    // The pointer rests on a row further down the long list of commands.
+    const rows = await screen.findAllByRole("button", { name: /^(Home|Spaces|Recent|Favorites|Saved)/ });
+    await actor.hover(rows[3]!);
+    await actor.type(input, "help");
+    await actor.keyboard("{Enter}");
+    expect(navigate).toHaveBeenCalledWith("/help");
   });
 });

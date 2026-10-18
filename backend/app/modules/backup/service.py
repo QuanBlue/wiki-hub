@@ -33,6 +33,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.config import settings
 from app.core.exceptions import BadRequestError
 from app.core.logging import get_logger
+from app.db.soft_delete import include_trash
 from app.models.attachment import PageAttachment
 from app.models.audit import AuditAction
 from app.models.backup_job import BackupJob, BackupJobLog
@@ -487,6 +488,9 @@ class BackupService:
         impersonator: User | None = None,
     ) -> None:
         self.session = session
+        # A backup carries the Trash too (and restoring one must see it, or a page in the
+        # Trash would look free to overwrite): see `app/db/soft_delete.py`.
+        include_trash(session)
         self.actor = actor
         self.users = UserRepository(session)
         self.spaces = SpaceRepository(session)
@@ -778,6 +782,12 @@ class BackupService:
                 updated_at=page.updated_at,
                 view_restricted=bool(page.view_restricted),
                 inherit_restrictions=bool(page.inherit_restrictions),
+                deleted_at=page.deleted_at,
+                deleted_by_username=(
+                    users_by_id[page.deleted_by_id].username
+                    if page.deleted_by_id in users_by_id
+                    else None
+                ),
             )
             for page in pages
             if page.space_id in spaces_by_id
@@ -1292,6 +1302,7 @@ class BackupService:
                                     WikiPage.updated_by_id, WikiPage.created_by_label, WikiPage.updated_by_label,
                                     WikiPage.created_at, WikiPage.updated_at,
                                     WikiPage.view_restricted, WikiPage.inherit_restrictions,
+                                    WikiPage.deleted_at, WikiPage.deleted_by_id,
                                 ).where(WikiPage.id.in_(batch_ids))
                             )
                         ).all()
@@ -1311,6 +1322,12 @@ class BackupService:
                             created_at=row.created_at, updated_at=row.updated_at,
                             view_restricted=bool(row.view_restricted),
                             inherit_restrictions=bool(row.inherit_restrictions),
+                            deleted_at=row.deleted_at,
+                            deleted_by_username=(
+                                users_by_id[row.deleted_by_id].username
+                                if row.deleted_by_id in users_by_id
+                                else None
+                            ),
                         )
                         if not first:
                             writer.write(",")
@@ -2348,7 +2365,11 @@ class BackupService:
                 updated_by_label=page_entry.updated_by_label,
                 view_restricted=bool(page_entry.view_restricted),
                 inherit_restrictions=page_entry.inherit_restrictions,
+                deleted_at=page_entry.deleted_at,
             )
+            if page_entry.deleted_by_username:
+                remover = await self.users.get_by_username(page_entry.deleted_by_username)
+                page.deleted_by_id = remover.id if remover else None
             # Otherwise the row's created_at/updated_at default to "now" and
             # every restored page reads as edited at restore time instead of
             # when it actually last changed - mirrors the Confluence importer.

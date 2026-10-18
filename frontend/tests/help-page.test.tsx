@@ -369,4 +369,12 @@ describe("Searching the guides", () => {
     expect(both[0]!.section.title).toBe("Revision History, Visual Diff & Export");
     expect(searchGuides(sectionsEn, "how do the of")).toEqual([]);
   });
+
+  it("sends a deleted page to the Trash guide, in either language", () => {
+    expect(searchGuides(sectionsEn, "restore a deleted page")[0]!.section.id).toBe("trash");
+    expect(searchGuides(sectionsVi, "khôi phục trang đã xóa")[0]!.section.id).toBe("trash");
+    expect(searchGuides(sectionsEn, "lỡ xoá trang, lấy lại", 6, sectionsVi)[0]!.section.id).toBe(
+      "trash",
+    );
+  });
 });

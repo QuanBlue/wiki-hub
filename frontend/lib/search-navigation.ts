@@ -13,6 +13,7 @@ import {
   KeyRound,
   LayoutGrid,
   LifeBuoy,
+  Trash2,
   MessageCircle,
   Mail,
   MessageSquareWarning,
@@ -167,6 +168,12 @@ export function parseCommand(query: string): { name: string; rest: string } | nu
   return match ? { name: match[1]!.toLowerCase(), rest: match[2]!.trim() } : null;
 }
 
+/** The space a path is in (`/spaces/ENG/pages/x` -> "ENG"), for commands about "this space". */
+export function spaceKeyFromPath(pathname: string | null | undefined): string | null {
+  const match = /^\/spaces\/([^/]+)/.exec(pathname ?? "");
+  return match ? decodeURIComponent(match[1]!) : null;
+}
+
 /**
  * The commands whose name starts with what follows ":", for what `user` may open.
  * ":chat" and ":ask" stay listed while the AI assistant is off, but disabled.
@@ -176,10 +183,25 @@ export function matchCommands(
   user: Me | null | undefined,
   t: (key: string) => string,
   aiOn: boolean,
+  /** The space being looked at, if any: ":trash" opens its Trash. */
+  spaceKey: string | null = null,
 ): NavigationMatch[] {
   if (!user) return [];
   const all = [
     ...NAVIGATION_ENTRIES.map((entry) => ({ ...entry, command: COMMANDS[entry.id] })),
+    ...(spaceKey
+      ? [
+          {
+            id: "trash",
+            // Opens the Trash dialog of this space (see `openSpaceTrash`); no page to go to.
+            href: "",
+            icon: Trash2,
+            access: "everyone" as const,
+            keywords: "",
+            command: "trash",
+          },
+        ]
+      : []),
     ...ACTION_ENTRIES,
   ];
   return all

@@ -115,6 +115,13 @@ All captures are of the current interface, taken on 18 October 2026.
   diff and one-click restore that never destroys later history. Unsaved edits
   are kept as a per-user **draft** (auto-saved, or with *Save draft*) that is
   offered back the next time you open the editor.
+- **Trash & restore** — deleting a page moves it to its space's Trash with its
+  revisions, comments and attachments, restorable for 30 days by default (an
+  administrator sets the period under **Administration → Settings**) from the space
+  sidebar, `:trash` in search, or the *Undo* on the delete toast; space admins can
+  delete pages for good. Pages in
+  the Trash are left out of search, the tree, activity and AI answers, and travel
+  with backups.
 - **Page comments** — threaded replies, `@mentions` with notifications, likes
   (click a count to see who liked a page or comment), inline edit and
   delete-with-replies. Sort or narrow a discussion (*Oldest*, *Newest*, *Most

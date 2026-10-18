@@ -47,6 +47,8 @@ class InstanceInfo(BaseModel):
     environment: str
     max_upload_size_bytes: int
     allowed_attachment_types: list[str]
+    #: How long a deleted page can still be restored from its space's Trash.
+    trash_retention_days: int = 30
     features: InstanceFeatures
 
 
@@ -80,6 +82,7 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
         environment=str(settings.env),
         max_upload_size_bytes=effective.max_upload_size_bytes,
         allowed_attachment_types=effective.allowed_attachment_types,
+        trash_retention_days=effective.trash_retention_days,
         features=InstanceFeatures(
             local_auth=settings.auth_provider == "local",
             oidc_auth=False,  # OIDC provider is a documented stub in this build

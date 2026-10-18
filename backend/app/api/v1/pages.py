@@ -25,7 +25,11 @@ from app.schemas.page import (
     PageMove,
     PageRead,
     PageRecentItem,
+    PageRestoreResult,
+    PageTrashResult,
     PageUpdate,
+    TrashedPageDetail,
+    TrashListRead,
 )
 from app.schemas.page_label import PageLabelCreate, PageLabelRead
 from app.schemas.permission import (
@@ -41,6 +45,7 @@ from app.schemas.space import AudienceRead
 
 router = APIRouter(prefix="/spaces/{key}/pages", tags=["pages"])
 standalone_router = APIRouter(prefix="/pages", tags=["pages"])
+trash_router = APIRouter(prefix="/spaces/{key}/trash", tags=["pages"])
 
 
 def get_page_service(session: DbSession) -> PageService:
@@ -388,8 +393,8 @@ async def delete_page_draft(
 
 @router.delete(
     "/{slug}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a page and move its child pages up one level",
+    response_model=PageTrashResult,
+    summary="Move a page to the space's Trash and move its child pages up one level",
 )
 async def delete_page(
     key: str,
@@ -397,10 +402,84 @@ async def delete_page(
     user: CurrentUser,
     page_service: PageServiceDep,
     space_service: SpaceServiceDep,
-) -> None:
+) -> PageTrashResult:
     space = await space_service.get_by_key(key)
     page = await page_service.get_by_slug(space, slug)
-    await page_service.delete(space, page, user)
+    return await page_service.trash(space, page, user)
+
+
+@trash_router.get("", response_model=TrashListRead, summary="List the pages in a space's Trash")
+async def list_trash(
+    key: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> TrashListRead:
+    space = await space_service.get_by_key(key)
+    return await page_service.list_trash(space, user)
+
+
+@trash_router.get(
+    "/{page_id}",
+    response_model=TrashedPageDetail,
+    summary="Read a page in the Trash, for a preview",
+)
+async def preview_trashed_page(
+    key: str,
+    page_id: uuid.UUID,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> TrashedPageDetail:
+    space = await space_service.get_by_key(key)
+    return await page_service.preview_trashed(space, page_id, user)
+
+
+@trash_router.post(
+    "/{page_id}/restore",
+    response_model=PageRestoreResult,
+    summary="Restore a page from the Trash",
+)
+async def restore_page(
+    key: str,
+    page_id: uuid.UUID,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> PageRestoreResult:
+    space = await space_service.get_by_key(key)
+    return await page_service.restore(space, page_id, user)
+
+
+@trash_router.delete(
+    "/{page_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a page in the Trash for good (space admins)",
+)
+async def purge_page(
+    key: str,
+    page_id: uuid.UUID,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    space = await space_service.get_by_key(key)
+    await page_service.purge(space, page_id, user)
+
+
+@trash_router.delete(
+    "",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Empty a space's Trash (space admins)",
+)
+async def empty_trash(
+    key: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    space = await space_service.get_by_key(key)
+    await page_service.empty_trash(space, user)
 
 
 @router.get(

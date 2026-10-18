@@ -25,6 +25,7 @@ def workspace() -> EffectiveSettings:
         allowed_attachment_types=["pdf"],
         sidebar_permissions=SidebarPermissions(),
         session_ttl_hours=12,
+        trash_retention_days=30,
     )
 
 

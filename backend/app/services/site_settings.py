@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.audit import AuditAction
-from app.models.site_settings import SINGLETON_ID, SiteSettings
+from app.models.site_settings import DEFAULT_TRASH_RETENTION_DAYS, SINGLETON_ID, SiteSettings
 from app.models.user import User
 from app.schemas.site_settings import (
     EffectiveSettings,
@@ -46,6 +46,7 @@ AUDITED_FIELDS = (
     "allowed_attachment_types",
     "sidebar_permissions",
     "session_ttl_hours",
+    "trash_retention_days",
 )
 
 
@@ -125,6 +126,9 @@ class SiteSettingsService:
             allowed_attachment_types=list(types),
             sidebar_permissions=sidebar_permissions,
             session_ttl_hours=session_ttl_hours,
+            trash_retention_days=(
+                getattr(row, "trash_retention_days", None) or DEFAULT_TRASH_RETENTION_DAYS
+            ),
         )
 
     async def read(self) -> SiteSettingsRead:
