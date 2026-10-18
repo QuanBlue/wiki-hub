@@ -91,7 +91,11 @@ export function TopBar({
         </div>
       </div>
 
-      <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
+      <SearchModal
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        user={user}
+      />
     </header>
   );
 }

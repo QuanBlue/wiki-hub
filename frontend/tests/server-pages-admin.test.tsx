@@ -138,7 +138,7 @@ describe("AdminIndexPage", () => {
 
 describe("pages that need a signed-in user", () => {
   it.each([
-    ["account", () => AccountPage()],
+    ["account", () => AccountPage({ searchParams: Promise.resolve({}) })],
     ["recently visited", () => RecentlyVisitedPage()],
     ["saved", () => SavedPage()],
   ])("%s redirects anonymous visitors", async (_name, page) => {
@@ -147,7 +147,7 @@ describe("pages that need a signed-in user", () => {
   });
 
   it("renders the account, visited and saved pages", async () => {
-    render(await AccountPage());
+    render(await AccountPage({ searchParams: Promise.resolve({}) }));
     expect(screen.getByText("account-settings")).toBeInTheDocument();
     expect(screen.getByText("account.pageTitle")).toBeInTheDocument();
     document.body.innerHTML = "";

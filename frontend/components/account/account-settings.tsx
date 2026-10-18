@@ -22,10 +22,24 @@ const tabs: { id: AccountTab; labelKey: string; icon: typeof UserRound }[] = [
   { id: "shortcuts", labelKey: "account.tabShortcuts", icon: Keyboard },
 ];
 
-export function AccountSettings({ user }: { user: Me }) {
-  const [activeTab, setActiveTab] = useState<AccountTab>("profile");
+export function AccountSettings({
+  user,
+  initialTab,
+  openChangePassword = false,
+}: {
+  user: Me;
+  /** `?tab=` from a link (the search bar's shortcuts); anything unknown means Profile. */
+  initialTab?: string;
+  /** Opens the change-password form straight away, for the "Change password" shortcut. */
+  openChangePassword?: boolean;
+}) {
+  const [activeTab, setActiveTab] = useState<AccountTab>(
+    tabs.find((tab) => tab.id === initialTab)?.id ?? "profile",
+  );
   const [profileEditing, setProfileEditing] = useState(false);
-  const [passwordEditing, setPasswordEditing] = useState(false);
+  const [passwordEditing, setPasswordEditing] = useState(
+    openChangePassword && initialTab === "security",
+  );
   const { t } = useTranslation();
   const tabRefs = useRef<Record<AccountTab, HTMLButtonElement | null>>({
     profile: null,
