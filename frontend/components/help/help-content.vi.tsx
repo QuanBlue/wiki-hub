@@ -47,6 +47,10 @@ export const sectionsVi: HelpSection[] = [
           theo <strong>ý nghĩa</strong>, kể cả khi không trùng từ nào với bạn gõ. Nó hiện chưa
           tìm trong tên tệp đính kèm hay nội dung tệp đính kèm, và chỉ hiển thị những kết quả
           bạn có quyền xem. Không có bộ lọc theo ngày, space, hay tác giả.
+          Tìm kiếm cũng liệt kê <strong>các trang của ứng dụng</strong> ở mục <strong>Đi tới</strong> -
+          gõ <Code>đổi mật khẩu</Code> để mở thẳng form mật khẩu trong tài khoản, hoặc{" "}
+          <Code>quản lý user</Code> để tới Quản trị &gt; Users. Bắt đầu bằng <Code>:</Code> để dùng lệnh: <Code>:help</Code> mở trang hướng dẫn này (thêm chữ, như <Code>:help đổi mật khẩu</Code>, để tìm trong các hướng dẫn), <Code>:account</Code>, <Code>:password</Code>, <Code>:users</Code>, <Code>:chat</Code>, và <Code>:ask câu hỏi</Code> để nhờ AI trả lời. Lối tắt Quản trị chỉ hiện khi tài khoản
+          của bạn được phép mở.
         </Callout>
 
         <p className="mt-3">
@@ -564,14 +568,14 @@ export const sectionsVi: HelpSection[] = [
     body: (
       <>
         <p>
-          Bên dưới tiêu đề của một trang, thanh công cụ của trang mang theo một số
+          Bên trên tiêu đề của một trang, thanh công cụ của trang mang theo một số
           thao tác nhỏ, tách biệt với việc chỉnh sửa:
         </p>
 
         <Screenshot
           src="/help/page-engagement-row.png"
-          alt="Đầu một trang: breadcrumb, tiêu đề, các nút Create/Edit/Save for later/Pin page/Share, và nút Like ngay dưới tiêu đề"
-          caption="Create/Edit/Save for later/Pin page/Share ở trên cùng, Like ngay dưới tiêu đề."
+          alt="Đầu một trang: breadcrumb, các nút Create, Edit, TL;DR, Save for later, Pin page và Share, rồi tiêu đề cùng thông tin trang và nhãn trên cùng một dòng"
+          caption="Create, Edit, TL;DR, Save for later, Pin page và Share ở trên cùng; Like nằm phía trên phần bình luận."
         />
 
         <ul className="list-disc pl-5 space-y-2 text-sm">
@@ -833,8 +837,8 @@ export const sectionsVi: HelpSection[] = [
 
         <Screenshot
           src="/help/page-actions-menu.png"
-          alt="Menu More page actions đang mở, liệt kê Move page, Page history, Labels, Attachments, View, Export, và Delete page"
-          caption="Move page, Page history, Labels, Attachments, View, Export, Delete page."
+          alt="Menu More page actions đang mở, liệt kê Move page, Page history, Page access, Labels, Attachments, View, Export, và Delete page"
+          caption="Move page, Page history, Page access, Labels, Attachments, View, Export, Delete page."
         />
 
         <ul className="list-disc pl-5 space-y-1.5 text-sm">
@@ -2456,8 +2460,8 @@ export const sectionsVi: HelpSection[] = [
         <p className="mt-3 font-semibold text-foreground">1. Cài đặt hệ thống toàn cục:</p>
         <Screenshot
           src="/help/admin-settings-general.png"
-          alt="Bảng cài đặt General Workspace: các trường Site Name và Session Lifetime, mỗi trường đánh dấu kế thừa từ môi trường cho đến khi được ghi đè"
-          caption="General workspace - Site Name và Session Lifetime, kế thừa cho đến khi bị ghi đè."
+          alt="Cài đặt General & Sessions: Workspace identity (tên workspace và cách hiển thị trên top bar) và các mức Session lifetime, mỗi mục đánh dấu kế thừa từ môi trường cho đến khi được ghi đè"
+          caption="General & Sessions - tên workspace và thời hạn phiên, kế thừa cho đến khi bị ghi đè."
         />
         <ul className="list-disc pl-5 space-y-1.5 text-sm">
           <li>
@@ -2544,8 +2548,8 @@ export const sectionsVi: HelpSection[] = [
 
         <Screenshot
           src="/help/permissions-global-access.png"
-          alt="Tab Global access của Edit user: tóm tắt Currently granted, sau đó bốn dòng quyền (Create spaces, Manage users, Manage groups, System administrator) mỗi dòng có huy hiệu Active/Disabled và menu thả xuống Inherit from groups"
-          caption="Global access override của một tài khoản - mỗi trong bốn quyền, Active hoặc Disabled, theo từng tài khoản."
+          alt="Tab Global access của Edit user: tóm tắt Currently granted, sau đó System administrator cùng Create spaces, Manage users, Manage groups và Manage issues bên dưới, mỗi dòng có huy hiệu Active/Disabled và menu thả xuống Inherit from groups"
+          caption="Global access override của một tài khoản - mỗi quyền Active hoặc Disabled, theo từng tài khoản."
         />
 
         <p className="mt-4 font-semibold text-foreground">1. Vai trò tài khoản:</p>
@@ -3620,7 +3624,7 @@ export const sectionsVi: HelpSection[] = [
         </p>
         <Screenshot
           src="/help/ai-admin-skills.png"
-          alt="Quản lý skill với bốn thẻ: Tóm tắt trang, Tạo page bằng AI, Giải thích phần đã chọn và Dịch phần đã chọn"
+          alt="Quản lý skill với sáu thẻ: Tóm tắt trang, Tạo page bằng AI, Giải thích phần đã chọn, Dịch phần đã chọn, Trợ lý soạn thảo, và Nhãn và page liên quan"
           caption="Quản lý skill: mỗi tính năng AI một thẻ. Bấm vào thẻ để xem hoặc sửa hướng dẫn."
         />
         <Callout variant="tip" title="Nhẹ cho máy chủ">

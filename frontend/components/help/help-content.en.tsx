@@ -47,6 +47,10 @@ export const sectionsEn: HelpSection[] = [
           <strong>meaning</strong>, even when they share none of your words. It does not
           currently search attachment filenames or attachment content, and only ever shows
           results you have permission to see. There are no date, space, or author filters.
+          Search also lists <strong>app pages</strong> under <strong>Go to</strong> - type{" "}
+          <Code>change password</Code> to jump to your account&apos;s password form, or{" "}
+          <Code>manage users</Code> for Administration &gt; Users. Start with <Code>:</Code> for commands: <Code>:help</Code> opens this guide (add words, as in <Code>:help change password</Code>, to search the guides), <Code>:account</Code>, <Code>:password</Code>, <Code>:users</Code>, <Code>:chat</Code>, and <Code>:ask your question</Code> for an AI answer. Administration shortcuts
+          only appear if your account may open them.
         </Callout>
 
         <p className="mt-3">
@@ -560,14 +564,14 @@ export const sectionsEn: HelpSection[] = [
     body: (
       <>
         <p>
-          Below a page&apos;s title, the page toolbar carries a small set of actions
+          Above a page&apos;s title, the page toolbar carries a small set of actions
           separate from editing:
         </p>
 
         <Screenshot
           src="/help/page-engagement-row.png"
-          alt="The top of a page: breadcrumb, title, Create/Edit/Save for later/Pin page/Share buttons, and page metadata with labels on the same line"
-          caption="Create/Edit/Save for later/Pin page/Share along the top, Like just below the title."
+          alt="The top of a page: breadcrumb, the Create, Edit, TL;DR, Save for later, Pin page and Share buttons, then the title and page metadata with labels on the same line"
+          caption="Create, Edit, TL;DR, Save for later, Pin page and Share along the top; Like sits above the comments."
         />
 
         <ul className="list-disc pl-5 space-y-2 text-sm">
@@ -829,8 +833,8 @@ export const sectionsEn: HelpSection[] = [
 
         <Screenshot
           src="/help/page-actions-menu.png"
-          alt="The More page actions menu open, listing Move page, Page history, Labels, Attachments, View, Export, and Delete page"
-          caption="Move page, Page history, Labels, Attachments, View, Export, Delete page."
+          alt="The More page actions menu open, listing Move page, Page history, Page access, Labels, Attachments, View, Export, and Delete page"
+          caption="Move page, Page history, Page access, Labels, Attachments, View, Export, Delete page."
         />
 
         <ul className="list-disc pl-5 space-y-1.5 text-sm">
@@ -2374,8 +2378,8 @@ export const sectionsEn: HelpSection[] = [
         <p className="mt-3 font-semibold text-foreground">1. Global Instance Settings:</p>
         <Screenshot
           src="/help/admin-settings-general.png"
-          alt="The General Workspace settings panel: Site Name and Session Lifetime fields, each marked inherited from environment until overridden"
-          caption="General workspace - Site Name and Session Lifetime, inherited until overridden."
+          alt="The General & Sessions settings: Workspace identity (workspace name and how it looks in the top bar) and Session lifetime presets, each marked inherited from environment until overridden"
+          caption="General & Sessions - workspace name and session lifetime, inherited until overridden."
         />
         <ul className="list-disc pl-5 space-y-1.5 text-sm">
           <li>
@@ -2453,8 +2457,8 @@ export const sectionsEn: HelpSection[] = [
 
         <Screenshot
           src="/help/permissions-global-access.png"
-          alt="The Global access tab of Edit user: a Currently granted summary, then four permission rows (Create spaces, Manage users, Manage groups, System administrator) each with an Active/Disabled badge and an Inherit from groups dropdown"
-          caption="One account's Global access overrides - each of the four permissions, Active or Disabled, per-account."
+          alt="The Global access tab of Edit user: a Currently granted summary, then System administrator with Create spaces, Manage users, Manage groups and Manage issues beneath it, each with an Active/Disabled badge and an Inherit from groups dropdown"
+          caption="One account's Global access overrides - each permission Active or Disabled, per account."
         />
 
         <p className="mt-4 font-semibold text-foreground">1. Account roles:</p>
@@ -3491,7 +3495,7 @@ export const sectionsEn: HelpSection[] = [
         </p>
         <Screenshot
           src="/help/ai-admin-skills.png"
-          alt="Skill management with four cards: Page summary, Create page with AI, Explain a selection and Translate a selection"
+          alt="Skill management with six cards: Page summary, Create page with AI, Explain a selection, Translate a selection, Writing assistant, and Labels and related pages"
           caption="Skill management: one card per AI feature. Click a card to read or edit its instructions."
         />
         <Callout variant="tip" title="Light on this server">
