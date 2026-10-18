@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from pydantic import ValidationError
 
+from app.models.site_settings import DEFAULT_TRASH_RETENTION_DAYS
 from app.schemas.site_settings import SidebarPermissions, SiteSettingsUpdate
 from app.services.site_settings import SiteSettingsService
 
@@ -108,6 +109,8 @@ def test_site_settings_effective_defaults_and_overrides() -> None:
     assert defaults.theme_color == "blue"
     assert defaults.logo_icon == "default"
     assert defaults.custom_logo_url is None
+    # Nobody has chosen a Trash period: a deleted page is kept for 30 days.
+    assert defaults.trash_retention_days == DEFAULT_TRASH_RETENTION_DAYS == 30
     overridden = type(
         "Row",
         (),
@@ -121,6 +124,7 @@ def test_site_settings_effective_defaults_and_overrides() -> None:
             "allowed_attachment_types": ["md"],
             "sidebar_permissions": None,
             "session_ttl_hours": 4,
+            "trash_retention_days": 90,
         },
     )()
     effective = SiteSettingsService._effective(overridden)
@@ -132,6 +136,7 @@ def test_site_settings_effective_defaults_and_overrides() -> None:
     assert effective.max_backup_import_size_mb == 3
     assert effective.allowed_attachment_types == ["md"]
     assert effective.session_ttl_hours == 4
+    assert effective.trash_retention_days == 90
 
 
 @pytest.mark.asyncio
@@ -180,3 +185,55 @@ async def test_site_settings_update_creates_row_and_skips_empty_audit() -> None:
     result = await service.update(SiteSettingsUpdate())
     assert result.overrides.site_name is None
     service.audit.record.assert_not_awaited()
+
+
+@pytest.mark.parametrize("days", [1, 30, 3650])
+def test_trash_retention_accepts_one_day_to_ten_years(days: int) -> None:
+    assert SiteSettingsUpdate(trash_retention_days=days).trash_retention_days == days
+
+
+@pytest.mark.parametrize("days", [0, -1, 3651])
+def test_trash_retention_refuses_nonsense(days: int) -> None:
+    with pytest.raises(ValidationError):
+        SiteSettingsUpdate(trash_retention_days=days)
+
+
+@pytest.mark.asyncio
+async def test_trash_retention_is_stored_audited_and_reset_by_null() -> None:
+    row = SimpleNamespace(
+        site_name=None,
+        theme_color=None,
+        default_font=None,
+        logo_icon=None,
+        custom_logo_url=None,
+        max_upload_size_mb=None,
+        max_backup_import_size_mb=None,
+        allowed_attachment_types=None,
+        sidebar_permissions=None,
+        session_ttl_hours=None,
+        trash_retention_days=None,
+        updated_by_id=None,
+        updated_at=None,
+    )
+    session = Mock()
+    session.execute = AsyncMock(return_value=_Result(row))
+    session.get = AsyncMock(return_value=None)
+    session.flush = AsyncMock()
+    session.refresh = AsyncMock()
+    service = SiteSettingsService(session, actor=SimpleNamespace(id="actor-id"))
+    service.audit.record = AsyncMock()
+
+    result = await service.update(SiteSettingsUpdate(trash_retention_days=90))
+    assert row.trash_retention_days == 90
+    assert result.overrides.trash_retention_days == 90
+    assert result.effective.trash_retention_days == 90
+    changes = service.audit.record.await_args.kwargs["details"]["changes"]
+    assert "trash_retention_days" in changes
+
+    # An explicit null puts the built-in default back; leaving it out changes nothing.
+    await service.update(SiteSettingsUpdate(site_name="Docs"))
+    assert row.trash_retention_days == 90
+    result = await service.update(SiteSettingsUpdate(trash_retention_days=None))
+    assert row.trash_retention_days is None
+    assert result.overrides.trash_retention_days is None
+    assert result.effective.trash_retention_days == DEFAULT_TRASH_RETENTION_DAYS

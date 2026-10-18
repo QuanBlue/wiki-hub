@@ -10,6 +10,7 @@ from sqlalchemy import Select, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.db.soft_delete import INCLUDE_DELETED
 from app.models.page import PageLike, WikiPage
 from app.models.space import Space
 
@@ -22,14 +23,53 @@ class PageRepository:
         return select(WikiPage).where(WikiPage.space_id == space_id)
 
     async def get(self, page_id: uuid.UUID) -> WikiPage | None:
-        return await self.session.get(WikiPage, page_id)
+        page = await self.session.get(WikiPage, page_id)
+        # `get` can answer from the identity map without a query, past the Trash filter.
+        return page if page is not None and page.deleted_at is None else None
 
     async def get_by_slug(self, space_id: uuid.UUID, slug: str) -> WikiPage | None:
         stmt = self._space_query(space_id).where(func.lower(WikiPage.slug) == slug.strip().lower())
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def slug_exists(self, space_id: uuid.UUID, slug: str) -> bool:
-        return await self.get_by_slug(space_id, slug) is not None
+        # A page in the Trash still holds its slug: it gets it back when restored.
+        stmt = (
+            select(WikiPage.id)
+            .where(WikiPage.space_id == space_id, func.lower(WikiPage.slug) == slug.strip().lower())
+            .execution_options(**INCLUDE_DELETED)
+        )
+        return (await self.session.execute(stmt)).first() is not None
+
+    async def get_trashed(self, space_id: uuid.UUID, page_id: uuid.UUID) -> WikiPage | None:
+        stmt = (
+            select(WikiPage)
+            .where(
+                WikiPage.id == page_id,
+                WikiPage.space_id == space_id,
+                WikiPage.deleted_at.is_not(None),
+            )
+            .options(selectinload(WikiPage.deleted_by))
+            .execution_options(**INCLUDE_DELETED)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def list_trashed(self, space_id: uuid.UUID) -> Sequence[WikiPage]:
+        stmt = (
+            select(WikiPage)
+            .where(WikiPage.space_id == space_id, WikiPage.deleted_at.is_not(None))
+            .options(selectinload(WikiPage.deleted_by))
+            .order_by(WikiPage.deleted_at.desc(), WikiPage.id.desc())
+            .execution_options(**INCLUDE_DELETED)
+        )
+        return (await self.session.execute(stmt)).scalars().unique().all()
+
+    async def list_trashed_before(self, cutoff: datetime) -> Sequence[WikiPage]:
+        stmt = (
+            select(WikiPage)
+            .where(WikiPage.deleted_at.is_not(None), WikiPage.deleted_at < cutoff)
+            .execution_options(**INCLUDE_DELETED)
+        )
+        return (await self.session.execute(stmt)).scalars().unique().all()
 
     async def list_for_space(
         self, space_id: uuid.UUID, *, limit: int = 10000, offset: int = 0

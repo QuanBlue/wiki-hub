@@ -97,7 +97,7 @@ async def test_attachment_endpoint_errors_and_success(monkeypatch: pytest.Monkey
     session.get = AsyncMock(side_effect=[attachment, None])
     with pytest.raises(NotFoundError):
         await attachments.read_attachment(uuid.uuid4(), request, user, session, storage)
-    page = SimpleNamespace(space_id=uuid.uuid4())
+    page = SimpleNamespace(space_id=uuid.uuid4(), deleted_at=None)
     session.get = AsyncMock(side_effect=[attachment, page, None])
     with pytest.raises(NotFoundError):
         await attachments.read_attachment(uuid.uuid4(), request, user, session, storage)
@@ -109,7 +109,7 @@ async def test_attachment_endpoint_errors_and_success(monkeypatch: pytest.Monkey
         object_key="k",
         size_bytes=4,
     )
-    page = SimpleNamespace(space_id=uuid.uuid4())
+    page = SimpleNamespace(space_id=uuid.uuid4(), deleted_at=None)
     space = SimpleNamespace(id=page.space_id)
     session.get = AsyncMock(side_effect=[attachment, page, space])
 
@@ -144,7 +144,7 @@ async def test_attachment_endpoint_serves_a_requested_byte_range(
         object_key="k",
         size_bytes=1000,
     )
-    page = SimpleNamespace(space_id=uuid.uuid4())
+    page = SimpleNamespace(space_id=uuid.uuid4(), deleted_at=None)
     space = SimpleNamespace(id=page.space_id)
 
     async def _chunks():
@@ -185,7 +185,7 @@ async def test_attachment_endpoint_rejects_a_range_past_the_end(
         object_key="k",
         size_bytes=1000,
     )
-    page = SimpleNamespace(space_id=uuid.uuid4())
+    page = SimpleNamespace(space_id=uuid.uuid4(), deleted_at=None)
     space = SimpleNamespace(id=page.space_id)
     session = Mock(get=AsyncMock(side_effect=[attachment, page, space]))
     storage = Mock(

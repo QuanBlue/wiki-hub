@@ -83,6 +83,7 @@ class SiteSettingsOverrides(BaseModel):
     allowed_attachment_types: list[str] | None = None
     sidebar_permissions: SidebarPermissions | None = None
     session_ttl_hours: int | None = None
+    trash_retention_days: int | None = None
 
 
 class EffectiveSettings(BaseModel):
@@ -100,6 +101,7 @@ class EffectiveSettings(BaseModel):
     allowed_attachment_types: list[str]
     sidebar_permissions: SidebarPermissions
     session_ttl_hours: int
+    trash_retention_days: int
 
 
 class SiteSettingsRead(BaseModel):
@@ -134,6 +136,7 @@ class SiteSettingsUpdate(BaseModel):
     allowed_attachment_types: list[str] | None = Field(default=None, max_length=100)
     sidebar_permissions: SidebarPermissions | None = None
     session_ttl_hours: int | None = Field(default=None, ge=1, le=8760)
+    trash_retention_days: int | None = Field(default=None, ge=1, le=3650)
 
     @field_validator("site_name")
     @classmethod

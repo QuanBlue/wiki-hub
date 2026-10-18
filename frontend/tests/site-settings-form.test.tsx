@@ -47,6 +47,7 @@ function makeSettings(
       allowed_attachment_types: null,
       sidebar_permissions: null,
       session_ttl_hours: null,
+      trash_retention_days: null,
       ...overrides,
     },
     effective: {
@@ -69,6 +70,7 @@ function makeSettings(
         backups: ["admin"],
       },
       session_ttl_hours: 12,
+      trash_retention_days: 30,
       ...effective,
     },
     updated_at: null,
@@ -91,6 +93,9 @@ async function openTab(actor: ReturnType<typeof userEvent.setup>, name: RegExp) 
 }
 
 const panel = (id: string) => document.getElementById(id) as HTMLElement;
+// The General tab has two number inputs: how long a session lasts, and how long the Trash keeps pages.
+const sessionInput = () => document.getElementById("session-ttl-hours") as HTMLElement;
+const trashInput = () => document.getElementById("trash-retention-days") as HTMLElement;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -286,8 +291,8 @@ describe("SiteSettingsForm general tab", () => {
     await actor.click(within(general).getByRole("button", { name: "-24h" }));
     expect(duration()).toHaveTextContent("1 hour");
 
-    await actor.clear(within(general).getByRole("spinbutton"));
-    await actor.type(within(general).getByRole("spinbutton"), "48");
+    await actor.clear(sessionInput());
+    await actor.type(sessionInput(), "48");
     expect(duration()).toHaveTextContent("2 days (48 hours)");
     expect(within(general).getByText("Admin override")).toBeInTheDocument();
 
@@ -313,7 +318,7 @@ describe("SiteSettingsForm general tab", () => {
     }
 
     expect(within(general).getByLabelText(/Workspace name/i)).toHaveValue("");
-    expect(within(general).getByRole("spinbutton")).toHaveValue(null);
+    expect(sessionInput()).toHaveValue(null);
   });
 
   it("shows nothing for an impossible session length, and uses 12 hours without a configured one", async () => {
@@ -321,9 +326,111 @@ describe("SiteSettingsForm general tab", () => {
     await openTab(actor, /General & Sessions/);
     const general = panel("general-settings");
 
-    expect(within(general).getByRole("spinbutton")).toHaveAttribute("placeholder", "12");
-    await actor.type(within(general).getByRole("spinbutton"), "-5");
+    expect(sessionInput()).toHaveAttribute("placeholder", "12");
+    await actor.type(sessionInput(), "-5");
     expect(within(general).getByText("Admin override").closest("div")?.parentElement).toBeInTheDocument();
+  });
+
+  describe("Trash retention", () => {
+    it("starts on the 30-day default and says so", async () => {
+      const actor = renderForm();
+      await openTab(actor, /General & Sessions/);
+      const general = panel("general-settings");
+
+      expect(within(general).getByText("Trash retention")).toBeInTheDocument();
+      expect(within(general).getByText("Default (30 days)")).toBeInTheDocument();
+      expect(trashInput()).toHaveValue(null);
+      expect(trashInput()).toHaveAttribute("placeholder", "30");
+      expect(within(general).getByRole("button", { name: "30 days" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(within(general).getByRole("button", { name: "7 days" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("saves a preset, a typed period, and resets to the default", async () => {
+      const actor = renderForm();
+      await openTab(actor, /General & Sessions/);
+      const general = panel("general-settings");
+      const save = () => actor.click(within(general).getByRole("button", { name: /Save General/ }));
+
+      await actor.click(within(general).getByRole("button", { name: "90 days" }));
+      expect(trashInput()).toHaveValue(90);
+      expect(within(general).getByText("Customized", { selector: "span, div" })).toBeInTheDocument();
+      await save();
+      await waitFor(() =>
+        expect(mocked.patch).toHaveBeenLastCalledWith(
+          "/api/v1/settings",
+          expect.objectContaining({ trash_retention_days: 90 }),
+        ),
+      );
+
+      await actor.clear(trashInput());
+      await actor.type(trashInput(), "45");
+      expect(within(general).getByText(/stay restorable for 45 days/)).toBeInTheDocument();
+      await save();
+      await waitFor(() =>
+        expect(mocked.patch).toHaveBeenLastCalledWith(
+          "/api/v1/settings",
+          expect.objectContaining({ trash_retention_days: 45 }),
+        ),
+      );
+    });
+
+    it("resets a saved period with an explicit null, not a stored 30", async () => {
+      const actor = renderForm(makeSettings({ trash_retention_days: 14 }, { trash_retention_days: 14 }));
+      await openTab(actor, /General & Sessions/);
+      const general = panel("general-settings");
+
+      await actor.click(
+        within(panel("trash-retention-settings")).getByRole("button", { name: "Reset to default" }),
+      );
+      expect(trashInput()).toHaveValue(null);
+      expect(within(general).getByText("Default (30 days)")).toBeInTheDocument();
+      await actor.click(within(general).getByRole("button", { name: /Save General/ }));
+      await waitFor(() =>
+        expect(mocked.patch).toHaveBeenLastCalledWith(
+          "/api/v1/settings",
+          expect.objectContaining({ trash_retention_days: null }),
+        ),
+      );
+    });
+
+    it("shows a saved period as selected, and refuses nonsense", async () => {
+      const actor = renderForm(makeSettings({ trash_retention_days: 14 }, { trash_retention_days: 14 }));
+      await openTab(actor, /General & Sessions/);
+      const general = panel("general-settings");
+
+      expect(trashInput()).toHaveValue(14);
+      expect(within(general).getByRole("button", { name: "14 days" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      await actor.clear(trashInput());
+      await actor.type(trashInput(), "0");
+      expect(within(general).getByRole("alert")).toHaveTextContent("whole number of days from 1 to 3650");
+      expect(within(general).getByRole("button", { name: /Save General/ })).toBeDisabled();
+
+      await actor.clear(trashInput());
+      await actor.type(trashInput(), "4000");
+      expect(within(general).getByRole("alert")).toBeInTheDocument();
+      expect(within(general).getByRole("button", { name: /Save General/ })).toBeDisabled();
+    });
+
+    it("speaks Vietnamese", async () => {
+      const actor = renderForm(makeSettings(), "vi");
+      await openTab(actor, /Cấu hình chung/);
+      const general = panel("general-settings");
+
+      expect(within(general).getByText("Thời gian giữ thùng rác")).toBeInTheDocument();
+      expect(within(general).getByText("Mặc định (30 ngày)")).toBeInTheDocument();
+      await actor.click(within(general).getByRole("button", { name: "7 ngày" }));
+      expect(within(general).getByText(/giữ khôi phục được 7 ngày/)).toBeInTheDocument();
+    });
   });
 
   it("speaks Vietnamese", async () => {

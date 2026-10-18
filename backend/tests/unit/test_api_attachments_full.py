@@ -86,7 +86,7 @@ async def test_get_attachment_metadata(monkeypatch):
     # NotFound page
     from datetime import datetime, UTC
     att = PageAttachment(id=att_id, page_id=uuid.uuid4(), filename="file.png", content_type="image/png", size_bytes=100, object_key="a/b/c", created_at=datetime.now(UTC))
-    def get_side_effect(model, id):
+    def get_side_effect(model, id, **_options):
         if model == PageAttachment: return att
         if model == WikiPage: return None
     session.get.side_effect = get_side_effect
@@ -95,7 +95,7 @@ async def test_get_attachment_metadata(monkeypatch):
         
     # NotFound space
     page = WikiPage(id=att.page_id, space_id=uuid.uuid4(), slug="home", title="Home")
-    def get_side_effect2(model, id):
+    def get_side_effect2(model, id, **_options):
         if model == PageAttachment: return att
         if model == WikiPage: return page
         if model == Space: return None
@@ -105,7 +105,7 @@ async def test_get_attachment_metadata(monkeypatch):
         
     # Success
     space = Space(id=page.space_id, key="TEST", name="Test")
-    def get_side_effect3(model, id):
+    def get_side_effect3(model, id, **_options):
         if model == PageAttachment: return att
         if model == WikiPage: return page
         if model == Space: return space
@@ -124,3 +124,64 @@ async def test_get_attachment_metadata(monkeypatch):
     
     res = await get_attachment_metadata(att_id, user, session)
     assert res.filename == "file.png"
+
+
+@pytest.mark.asyncio
+async def test_a_trashed_pages_attachments_are_for_whoever_may_use_its_trash(monkeypatch):
+    """The Trash preview draws the page's images; nobody else may see a deleted page's files."""
+    from datetime import UTC, datetime
+
+    from app.api.v1.attachments import _load_attachment_for_view
+
+    att_id = uuid.uuid4()
+    att = PageAttachment(
+        id=att_id,
+        page_id=uuid.uuid4(),
+        filename="diagram.png",
+        content_type="image/png",
+        size_bytes=1,
+        object_key="a/b/c",
+        created_at=datetime.now(UTC),
+    )
+    page = WikiPage(id=att.page_id, space_id=uuid.uuid4(), slug="home", title="Home")
+    page.deleted_at = datetime.now(UTC)
+    space = Space(id=page.space_id, key="ENG", name="Engineering")
+    seen = {}
+
+    async def fake_get(model, ident, **options):
+        seen[model.__name__] = options
+        return {PageAttachment: att, WikiPage: page, Space: space}[model]
+
+    session = AsyncMock()
+    session.get.side_effect = fake_get
+
+    class Permissions:
+        require = AsyncMock()
+
+    class Spaces:
+        def __init__(self, _session):
+            self.permissions = Permissions()
+
+    pages = Mock()
+    pages.require_page_view = AsyncMock()
+    monkeypatch.setattr("app.api.v1.attachments.SpaceService", Spaces)
+    monkeypatch.setattr("app.api.v1.attachments.PageService", lambda _session: pages)
+    user = Mock()
+
+    # It asks for the page even from the Trash.
+    pages.can_trash = AsyncMock(return_value=True)
+    loaded, loaded_page = await _load_attachment_for_view(att_id, user, session)
+    assert (loaded, loaded_page) == (att, page)
+    assert seen["WikiPage"] == {"execution_options": {"include_deleted": True}}
+    pages.can_trash.assert_awaited_once_with(space, page, user)
+
+    # Someone who may not use that Trash gets what a missing page gives.
+    pages.can_trash = AsyncMock(return_value=False)
+    with pytest.raises(NotFoundError):
+        await _load_attachment_for_view(att_id, user, session)
+
+    # A page that is not in the Trash is never asked about the Trash at all.
+    page.deleted_at = None
+    pages.can_trash = AsyncMock(return_value=False)
+    assert (await _load_attachment_for_view(att_id, user, session))[1] is page
+    pages.can_trash.assert_not_awaited()

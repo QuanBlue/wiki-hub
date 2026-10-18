@@ -51,7 +51,7 @@ async def test_auth_route_wrappers(monkeypatch: pytest.MonkeyPatch) -> None:
     service.authenticate = AsyncMock(return_value=user)
     service.begin_impersonation = AsyncMock(return_value=user)
     service.end_impersonation = AsyncMock(return_value=user)
-    effective = SimpleNamespace(session_ttl_hours=2)
+    effective = SimpleNamespace(session_ttl_hours=2, trash_retention_days=30)
     monkeypatch.setattr(auth.rate_limit, "enforce", AsyncMock())
     monkeypatch.setattr(
         auth.SiteSettingsService, "get_effective", AsyncMock(return_value=effective)
@@ -172,7 +172,7 @@ async def test_storage_attachment_backup_and_settings_wrappers(
         object_key="k",
         size_bytes=4,
     )
-    page = SimpleNamespace(space_id=uuid.uuid4())
+    page = SimpleNamespace(space_id=uuid.uuid4(), deleted_at=None)
     space = SimpleNamespace()
     session.get = AsyncMock(side_effect=[attachment, page, space])
     async def _hello():
@@ -261,12 +261,15 @@ async def test_group_user_audit_and_meta_wrappers(monkeypatch: pytest.MonkeyPatc
                 custom_logo_url=None,
                 max_upload_size_bytes=1,
                 allowed_attachment_types=[],
+                trash_retention_days=45,
             )
         ),
     )
     meta_service = Mock(get_effective=AsyncMock(side_effect=OSError()))
     info = await meta.instance_info(meta_service)
     assert info.site_name == "WikiHub"
+    # The Trash period shown to the delete prompt is the administrators' setting.
+    assert info.trash_retention_days == 45
     user_service = Mock()
     user_service.update_own_profile = AsyncMock(return_value=user)
     user_service.change_password = AsyncMock(return_value=user)

@@ -117,3 +117,6 @@ __all__ = [
     "UserTag",
     "WikiPage",
 ]
+
+# Registers the ORM filter that hides pages in the Trash; needs the models above.
+import app.db.soft_delete  # noqa: F401

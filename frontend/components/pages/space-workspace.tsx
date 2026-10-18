@@ -59,6 +59,8 @@ import { PageLabelsDialog } from "@/components/pages/page-labels-dialog";
 import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialog";
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
 import { PageSummaryDialog } from "@/components/pages/page-summary-dialog";
+import { SpaceTrashDialog } from "@/components/pages/space-trash";
+import { TRASH_OPEN_EVENT } from "@/lib/space-trash";
 import { SelectionAssistant } from "@/components/pages/selection-assistant";
 import { aiStatus } from "@/lib/ai-summary";
 import { SharePageDialog } from "@/components/pages/share-page-dialog";
@@ -85,6 +87,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api-client";
+import { escapeHtml, markdownToHtml } from "@/lib/markdown-html";
 import { apiBaseUrl } from "@/lib/env";
 import { formatDate, formatTime } from "@/lib/i18n/format";
 import { useTranslation } from "@/lib/i18n/context";
@@ -110,7 +113,10 @@ import type {
   SpaceMember,
   WikiPage,
   PageLabel,
+  PageRestoreResult,
+  PageTrashResult,
   ShareSummary,
+  InstanceInfo,
 } from "@/types/api";
 import type { CSSProperties } from "react";
 
@@ -264,104 +270,6 @@ function formatForMode(mode: EditMode): PageContentFormat {
   return mode === "markdown" ? "markdown" : "html";
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function renderMarkdownInline(value: string): string {
-  return escapeHtml(value)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/_([^_]+)_/g, "<em>$1</em>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>');
-}
-
-/** A small, predictable Markdown subset for the source editor and preview. */
-function markdownToHtml(markdown: string): string {
-  const lines = markdown.replaceAll("\r\n", "\n").split("\n");
-  const blocks: string[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index].trim();
-    if (!line) {
-      index += 1;
-      continue;
-    }
-    // HTML blocks are valid Markdown. The HTML-to-Markdown conversion emits
-    // them for rich structures that Markdown cannot describe without loss.
-    const htmlBlock = /^<([a-z][\w-]*)\b[^>]*>/i.exec(line);
-    if (htmlBlock) {
-      const tagName = htmlBlock[1].toLowerCase();
-      if (
-        [
-          "area",
-          "base",
-          "br",
-          "col",
-          "embed",
-          "hr",
-          "img",
-          "input",
-          "link",
-          "meta",
-          "source",
-          "wbr",
-        ].includes(tagName)
-      ) {
-        blocks.push(lines[index]);
-        index += 1;
-        continue;
-      }
-      const closingTag = new RegExp(`</${tagName}\\s*>`, "i");
-      const htmlLines = [lines[index]];
-      index += 1;
-      while (index < lines.length && !closingTag.test(htmlLines.join("\n"))) {
-        htmlLines.push(lines[index]);
-        index += 1;
-      }
-      blocks.push(htmlLines.join("\n"));
-      continue;
-    }
-    const heading = /^(#{1,3})\s+(.+)$/.exec(line);
-    if (heading) {
-      const level = heading[1].length;
-      blocks.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`);
-      index += 1;
-      continue;
-    }
-    if (/^[-*]\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^[-*]\s+/.test(lines[index].trim())) {
-        items.push(
-          `<li>${renderMarkdownInline(lines[index].trim().slice(2))}</li>`,
-        );
-        index += 1;
-      }
-      blocks.push(`<ul>${items.join("")}</ul>`);
-      continue;
-    }
-    if (/^\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^\d+\.\s+/.test(lines[index].trim())) {
-        items.push(
-          `<li>${renderMarkdownInline(lines[index].trim().replace(/^\d+\.\s+/, ""))}</li>`,
-        );
-        index += 1;
-      }
-      blocks.push(`<ol>${items.join("")}</ol>`);
-      continue;
-    }
-    blocks.push(`<p>${renderMarkdownInline(line)}</p>`);
-    index += 1;
-  }
-  return blocks.join("");
-}
 
 function htmlToMarkdown(html: string): string {
   const document = new DOMParser().parseFromString(html, "text/html");
@@ -820,7 +728,7 @@ export function SpaceWorkspace({
   const router = useRouter();
   const spaceSidebarScrollRef = useRef<HTMLDivElement>(null);
   const { t, locale } = useTranslation();
-  const { collapsed, setCollapsed, mobileOpen } = useSidebar();
+  const { collapsed, setCollapsed, mobileOpen, setMobileOpen } = useSidebar();
   const sidebarWidth = useSyncExternalStore(
     spaceSidebarWidthStore.subscribe,
     spaceSidebarWidthStore.getSnapshot,
@@ -931,10 +839,23 @@ export function SpaceWorkspace({
   const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
   const [discardDraftPending, setDiscardDraftPending] = useState(false);
   const [deletePageOpen, setDeletePageOpen] = useState(false);
+  // How long a deleted page waits in the Trash: said in the delete prompt. The
+  // instance setting is read the first time the prompt opens.
+  const [trashDays, setTrashDays] = useState(30);
   const [deletePagePending, setDeletePagePending] = useState(false);
   const [movePageOpen, setMovePageOpen] = useState(false);
   const [pageAccessOpen, setPageAccessOpen] = useState(false);
   const [editSpaceModalOpen, setEditSpaceModalOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+  // ":trash" in the search box opens this space's Trash from wherever the person is.
+  useEffect(() => {
+    const open = (event: Event) => {
+      const key = (event as CustomEvent<{ spaceKey?: string }>).detail?.spaceKey;
+      if (key && key.toLowerCase() === space.key.toLowerCase()) setTrashOpen(true);
+    };
+    window.addEventListener(TRASH_OPEN_EVENT, open);
+    return () => window.removeEventListener(TRASH_OPEN_EVENT, open);
+  }, [space.key]);
 
   // "Edit space" (this button, and the modal it opens) is full space
   // administration - visibility, member permissions, archiving, deletion -
@@ -946,6 +867,10 @@ export function SpaceWorkspace({
   // superuser bypass of its own.
   const canAdmin =
     space.my_role === "admin" || space.my_permissions?.includes("admin") === true;
+  // Whoever may delete pages here (all of them, or only their own) has a Trash to look in.
+  const canUseTrash =
+    canAdmin ||
+    space.my_permissions?.some((p) => p === "delete" || p === "delete_own") === true;
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const [reloadPending, setReloadPending] = useState(false);
   const [cancelEditPending, setCancelEditPending] = useState(false);
@@ -1882,15 +1807,46 @@ export function SpaceWorkspace({
     await persistPage({ closeEditor: true });
   }
 
+  useEffect(() => {
+    if (!deletePageOpen) return;
+    let active = true;
+    void api
+      .get<InstanceInfo>("/api/v1/meta")
+      .then((meta) => {
+        if (active && meta.trash_retention_days) setTrashDays(meta.trash_retention_days);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [deletePageOpen]);
+
   async function deletePage() {
     if (!currentPage) return;
 
     setDeletePagePending(true);
     try {
-      await api.delete<void>(
-        `/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}`,
+      const spacePath = `/api/v1/spaces/${encodeURIComponent(space.key)}`;
+      const trashed = await api.delete<PageTrashResult>(
+        `${spacePath}/pages/${encodeURIComponent(currentPage.slug)}`,
       );
-      toast.success(t("workspace.pageDeleted", { title: currentPage.title }));
+      toast.success(t("workspace.pageDeleted", { title: currentPage.title }), {
+        action: {
+          label: t("workspace.undoDelete"),
+          onClick: () => {
+            void api
+              .post<PageRestoreResult>(`${spacePath}/trash/${encodeURIComponent(trashed.id)}/restore`)
+              .then((restored) => {
+                toast.success(t("trash.restored", { title: restored.title }));
+                router.push(
+                  `/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(restored.slug)}`,
+                );
+                router.refresh();
+              })
+              .catch(() => toast.error(t("trash.restoreError")));
+          },
+        },
+      });
       setDeletePageOpen(false);
       router.push(`/spaces/${encodeURIComponent(space.key)}`);
       router.refresh();
@@ -1930,23 +1886,50 @@ export function SpaceWorkspace({
     };
   }, [dragging, setCollapsed]);
 
-  const sidebarVisible = mobileOpen || !collapsed;
+  // On a phone the page tree is a drawer over the page, closed until the top bar's toggle
+  // opens it; it closes again on choosing a page, on Escape, or on a tap outside. From
+  // `md` up it is the rail beside the page, collapsed or not as saved.
+  const showPanel = !collapsed || mobileOpen;
   const desktopSidebarWidth = collapsed ? 0 : sidebarWidth;
+  const currentSlug = currentPage?.slug;
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [currentSlug, setMobileOpen]);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen, setMobileOpen]);
   const favouriteLabel = favorite
     ? t("spaces.removeFavourite")
     : t("spaces.addFavourite");
 
   return (
     <div className="bg-background min-h-[calc(100vh-var(--wh-topbar-height))] max-w-full min-w-0 overflow-x-hidden md:flex md:h-[calc(100vh-var(--wh-topbar-height))] md:overflow-hidden">
+      {mobileOpen ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={t("topbar.collapseSidebar")}
+          onClick={() => setMobileOpen(false)}
+          className="top-topbar fixed inset-x-0 bottom-0 z-30 cursor-default bg-black/40 md:hidden"
+        />
+      ) : null}
       <aside
         id="wikihub-sidebar"
         data-sidebar-kind="space"
         className={cn(
-          "relative shrink-0 overflow-x-hidden",
+          "shrink-0 overflow-x-hidden",
           !dragging &&
             "transition-[width] duration-200 ease-out motion-reduce:transition-none",
+          // A phone: a drawer sliding in from the left, under the top bar.
+          "max-md:top-topbar max-md:fixed max-md:bottom-0 max-md:left-0 max-md:z-40 max-md:w-[min(20rem,85vw)] max-md:shadow-xl",
+          "max-md:transition-[transform,visibility] max-md:duration-200 motion-reduce:max-md:transition-none",
+          mobileOpen ? "max-md:translate-x-0" : "max-md:invisible max-md:-translate-x-full",
           "md:top-topbar md:sticky md:h-[calc(100vh-var(--wh-topbar-height))]",
-          sidebarVisible ? "block" : "hidden md:block",
           "md:w-(--space-sidebar-width)",
         )}
         style={
@@ -1956,7 +1939,7 @@ export function SpaceWorkspace({
           } as CSSProperties
         }
       >
-        {!collapsed ? (
+        {showPanel ? (
           <div className="border-border bg-surface-sunken flex h-full w-full max-w-full flex-col overflow-hidden border-r md:w-(--space-sidebar-panel-width)">
             <div className="flex min-w-0 shrink-0 flex-col px-5 py-4">
               <div className="flex items-start gap-3">
@@ -2032,20 +2015,34 @@ export function SpaceWorkspace({
               </nav>
             </div>
 
-            {/* Sidebar Footer: Edit Space button, shown only to this
-                space's Owner or Admin. */}
-            {canAdmin ? (
-              <div className="border-border border-t p-3 shrink-0">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start gap-2 text-muted-foreground hover:bg-surface-selected! hover:text-foreground! cursor-pointer text-xs h-8"
-                  onClick={() => setEditSpaceModalOpen(true)}
-                >
-                  <Pencil className="size-3.5" />
-                  {t("spaces.edit")}
-                </Button>
+            {/* Sidebar Footer: the space's Trash, for anyone who may delete
+                pages here, and Edit Space for its Owner or Admin. */}
+            {canAdmin || canUseTrash ? (
+              <div className="border-border space-y-0.5 border-t p-3 shrink-0">
+                {canUseTrash ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 text-muted-foreground hover:bg-surface-selected! hover:text-foreground! cursor-pointer text-xs h-8"
+                    onClick={() => setTrashOpen(true)}
+                  >
+                    <Trash2 className="size-3.5" />
+                    {t("trash.link")}
+                  </Button>
+                ) : null}
+                {canAdmin ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 text-muted-foreground hover:bg-surface-selected! hover:text-foreground! cursor-pointer text-xs h-8"
+                    onClick={() => setEditSpaceModalOpen(true)}
+                  >
+                    <Pencil className="size-3.5" />
+                    {t("spaces.edit")}
+                  </Button>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -3250,6 +3247,8 @@ export function SpaceWorkspace({
             onOpenChange={setEditSpaceModalOpen}
           />
 
+          <SpaceTrashDialog space={space} open={trashOpen} onOpenChange={setTrashOpen} />
+
           {/* One controlled instance shared by both entry points: the sidebar
               button and the More-actions item. Nesting a second Radix trigger
               inside the dropdown would fight the menu for focus. */}
@@ -3281,8 +3280,9 @@ export function SpaceWorkspace({
             description={t("workspace.deletePageDescription", {
               title:
                 currentPage?.title ?? t("workspace.deletePageFallback"),
+              days: trashDays,
             })}
-            confirmLabel={t("workspace.deletePage")}
+            confirmLabel={t("workspace.deletePageConfirm")}
             destructive
             pending={deletePagePending}
             onConfirm={() => void deletePage()}

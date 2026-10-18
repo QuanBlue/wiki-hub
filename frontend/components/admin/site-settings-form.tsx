@@ -239,6 +239,10 @@ const SETTINGS_TABS: Array<{
   { id: "sidebar", labelEn: "Sidebar access", labelVi: "Phân quyền thanh bên", icon: ShieldCheck },
 ];
 
+/** Matches the backend's built-in default (`DEFAULT_TRASH_RETENTION_DAYS`). */
+const DEFAULT_TRASH_RETENTION_DAYS = 30;
+const TRASH_RETENTION_PRESETS = [7, 14, 30, 60, 90, 180];
+
 const SESSION_TTL_PRESETS: Array<{
   hours: number;
   labelEn: string;
@@ -308,6 +312,9 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
 
   const [sessionTtlHours, setSessionTtlHours] = useState(
     settings.overrides.session_ttl_hours?.toString() ?? "",
+  );
+  const [trashDays, setTrashDays] = useState(
+    settings.overrides.trash_retention_days?.toString() ?? "",
   );
   const [sidebarPermissions, setSidebarPermissions] =
     useState<SidebarPermissions>(() => ({
@@ -439,6 +446,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
       session_ttl_hours: sessionTtlHours.trim()
         ? Number(sessionTtlHours)
         : null,
+      trash_retention_days: trashDays.trim() ? Number(trashDays) : null,
     });
   }
 
@@ -498,9 +506,18 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     logoIcon !== initialLogoIcon ||
     customLogoUrl !== initialCustomLogoUrl;
 
+  const initialTrashDays = settings.overrides.trash_retention_days?.toString() ?? "";
+  const effectiveTrashDays =
+    settings.effective.trash_retention_days || DEFAULT_TRASH_RETENTION_DAYS;
+  const trashDaysNum = trashDays.trim() ? Number(trashDays) : effectiveTrashDays;
+  const trashDaysValid =
+    !trashDays.trim() ||
+    (Number.isInteger(trashDaysNum) && trashDaysNum >= 1 && trashDaysNum <= 3650);
+
   const isGeneralChanged =
     siteName.trim() !== initialSiteName.trim() ||
-    sessionTtlHours.trim() !== initialSessionTtl.trim();
+    sessionTtlHours.trim() !== initialSessionTtl.trim() ||
+    trashDays.trim() !== initialTrashDays.trim();
 
   const normalizeSidebar = (perms?: SidebarPermissions | null) => ({
     home: [...(perms?.home ?? ["admin", "member"])].sort(),
@@ -887,10 +904,13 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                     variant="ghost"
                     size="sm"
                     className="text-xs h-8"
-                    disabled={pending || (!isGeneralChanged && !siteName && !sessionTtlHours)}
+                    disabled={
+                      pending || (!isGeneralChanged && !siteName && !sessionTtlHours && !trashDays)
+                    }
                     onClick={() => {
                       setSiteName("");
                       setSessionTtlHours("");
+                      setTrashDays("");
                     }}
                   >
                     <RotateCcw className="size-3.5" />
@@ -901,7 +921,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                     variant="primary"
                     size="sm"
                     className="text-xs h-8 font-semibold shadow-xs gap-1.5"
-                    disabled={pending || !isGeneralChanged}
+                    disabled={pending || !isGeneralChanged || !trashDaysValid}
                   >
                     {pending ? (
                       <>
@@ -1172,6 +1192,115 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                     <p className="text-muted-foreground text-[11px] leading-relaxed">
                       {t("adminSettings.sessionLifetimeHelp")}
                     </p>
+                  </div>
+                </div>
+
+                {/* Section 3: how long deleted pages wait in the Trash */}
+                <div
+                  id="trash-retention-settings"
+                  className="border-border bg-surface-sunken/40 rounded-xl border p-5 sm:p-6 space-y-5"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="border-primary/20 bg-primary-subtle text-primary flex size-9 items-center justify-center rounded-lg border shrink-0">
+                        <Trash2 className="size-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-foreground text-sm sm:text-base font-semibold">
+                          {t("adminSettings.trashRetentionTitle")}
+                        </h4>
+                        <p className="text-muted-foreground mt-0.5 text-xs">
+                          {t("adminSettings.trashRetentionDescription")}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={trashDays.trim() === "" ? "neutral" : "info"}
+                      className="text-[11px] font-medium shadow-2xs"
+                    >
+                      {trashDays.trim() === ""
+                        ? t("adminSettings.trashDefaultBadge")
+                        : t("adminSettings.trashCustomBadge")}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+                        {t("adminSettings.sessionPresets")}
+                      </span>
+                      {trashDays.trim() !== "" && (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => setTrashDays("")}
+                          className="text-primary hover:text-primary/80 text-xs font-medium cursor-pointer transition-colors"
+                        >
+                          {t("adminSettings.sessionResetDefault")}
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-6">
+                      {TRASH_RETENTION_PRESETS.map((days) => {
+                        const isSelected =
+                          trashDays.trim() === ""
+                            ? effectiveTrashDays === days
+                            : trashDays.trim() === String(days);
+                        return (
+                          <button
+                            key={days}
+                            type="button"
+                            disabled={pending}
+                            aria-pressed={isSelected}
+                            onClick={() => setTrashDays(String(days))}
+                            className={cn(
+                              "flex items-center justify-between gap-1.5 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition-all duration-150 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                              isSelected
+                                ? "border-primary ring-2 ring-primary/20 bg-surface-selected text-primary shadow-xs"
+                                : "border-border bg-surface hover:border-border-strong hover:bg-surface-hover/80 text-foreground",
+                            )}
+                          >
+                            {t("adminSettings.trashDays", { days })}
+                            {isSelected ? <Check className="size-3.5 shrink-0" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="border-border bg-surface rounded-xl border p-4 space-y-2.5">
+                    <Label
+                      htmlFor="trash-retention-days"
+                      className="text-foreground text-xs font-semibold"
+                    >
+                      {t("adminSettings.trashCustomLabel")}
+                    </Label>
+                    <div className="relative flex max-w-xs items-center">
+                      <Input
+                        id="trash-retention-days"
+                        type="number"
+                        min={1}
+                        max={3650}
+                        value={trashDays}
+                        onChange={(e) => setTrashDays(e.target.value)}
+                        placeholder={String(effectiveTrashDays)}
+                        disabled={pending}
+                        aria-invalid={!trashDaysValid}
+                        className="pr-14 text-sm h-9 font-medium"
+                      />
+                      <span className="text-muted-foreground pointer-events-none absolute right-3 text-xs font-medium">
+                        {t("adminSettings.trashUnitDays")}
+                      </span>
+                    </div>
+                    {!trashDaysValid ? (
+                      <p className="text-danger text-xs" role="alert">
+                        {t("adminSettings.trashInvalid")}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground text-[11px] leading-relaxed">
+                        {t("adminSettings.trashRetentionHelp", { days: trashDaysNum })}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

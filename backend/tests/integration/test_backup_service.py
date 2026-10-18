@@ -944,6 +944,41 @@ class TestRoundTrip:
         assert second_report.skipped["space_owner"] == 2
         assert len((await session.execute(select(SpaceOwner))).scalars().all()) == 2
 
+    async def test_a_page_in_the_trash_comes_back_still_in_the_trash(
+        self, session: AsyncSession
+    ) -> None:
+        seeded = await _seed_instance(session)
+        alice: User = seeded["alice"]  # type: ignore[assignment]
+        space: Space = seeded["space"]  # type: ignore[assignment]
+        pages = PageService(session)
+        await pages.create(space, PageCreate(title="Kept"), alice)
+        binned = await pages.create(space, PageCreate(title="Binned", content="Old notes"), alice)
+        await pages.trash(space, binned, alice)
+
+        document = await BackupService(session, actor=seeded["admin"]).export_document()  # type: ignore[arg-type]
+        exported = {entry.slug: entry for entry in document.pages}
+        assert exported["kept"].deleted_at is None
+        assert exported["binned"].deleted_at is not None
+        assert exported["binned"].deleted_by_username == "alice"
+        # Its history travels with it, so the archive restores cleanly.
+        assert any(rev.page_slug == "binned" for rev in document.page_revisions)
+        await _wipe(session)
+
+        await BackupService(session).import_document(document, dry_run=False)
+        restored_space = await SpaceService(session).get_by_key("ENG")
+        restored_alice = (
+            await session.execute(select(User).where(User.username == "alice"))
+        ).scalar_one()
+        fresh = PageService(session)
+        assert (await fresh.get_by_slug(restored_space, "kept")).title == "Kept"
+        trash = await fresh.list_trash(restored_space, restored_alice)
+        assert [item.slug for item in trash.items] == ["binned"]
+        assert trash.items[0].deleted_by_username == "alice"
+        assert (
+            await fresh.restore(restored_space, trash.items[0].id, restored_alice)
+        ).slug == "binned"
+        assert (await fresh.get_by_slug(restored_space, "binned")).content == "Old notes"
+
     async def test_full_zip_restores_space_owners(
         self, session: AsyncSession, tmp_path: Path
     ) -> None:

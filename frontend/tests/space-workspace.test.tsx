@@ -14,7 +14,7 @@ const { push, refresh, toastSuccess, toastError, toastInfo, ai, sidebar, uploadR
   toastError: vi.fn(),
   toastInfo: vi.fn(),
   ai: { enabled: false },
-  sidebar: { collapsed: false, setCollapsed: vi.fn(), mobileOpen: false },
+  sidebar: { collapsed: false, setCollapsed: vi.fn(), mobileOpen: false, setMobileOpen: vi.fn() },
   uploadResults: [] as unknown[],
 }));
 
@@ -237,6 +237,7 @@ function serve(extra: Record<string, unknown> = {}) {
     if (path.endsWith("/like")) return { liked_by_me: false, like_count: 4 };
     if (path.endsWith("/shares")) return { share_count: 3 };
     if (path === "/api/v1/users/me/pins") return [];
+    if (path === "/api/v1/meta") return { trash_retention_days: 14 };
     throw new Error(`unexpected ${path}`);
   });
 }
@@ -381,9 +382,44 @@ describe("SpaceWorkspace overview", () => {
     expect(screen.queryByRole("button", { name: "Resize space sidebar" })).toBeNull();
     view.unmount();
 
+    // Collapsed on the desktop, yet the phone's drawer still shows the tree when opened.
     sidebar.mobileOpen = true;
     renderWorkspace({ space: makeSpace({ font_family: "roboto" }) });
-    expect(document.getElementById("wikihub-sidebar")).toHaveClass("block");
+    expect(screen.getByRole("navigation", { name: "Engineering page tree" })).toBeInTheDocument();
+    expect(document.getElementById("wikihub-sidebar")).toHaveClass("max-md:translate-x-0");
+  });
+
+  describe("the page tree as a phone drawer", () => {
+    it("stays out of the way until the top bar opens it", () => {
+      renderWorkspace();
+      const aside = document.getElementById("wikihub-sidebar")!;
+      expect(aside).toHaveClass("max-md:-translate-x-full", "max-md:invisible");
+      expect(aside).not.toHaveClass("max-md:translate-x-0");
+      // Nothing to tap outside of while it is closed.
+      expect(screen.queryByRole("button", { name: "Collapse sidebar" })).toBeNull();
+    });
+
+    it("closes when the page changes, on Escape, and on a tap outside", async () => {
+      sidebar.mobileOpen = true;
+      const { actor } = renderWorkspace();
+      // Arriving on (or choosing) a page puts the drawer away.
+      expect(sidebar.setMobileOpen).toHaveBeenCalledWith(false);
+      sidebar.setMobileOpen.mockClear();
+
+      await actor.keyboard("{Escape}");
+      expect(sidebar.setMobileOpen).toHaveBeenCalledWith(false);
+      sidebar.setMobileOpen.mockClear();
+
+      await actor.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+      expect(sidebar.setMobileOpen).toHaveBeenCalledWith(false);
+    });
+
+    it("ignores Escape while it is closed", async () => {
+      const { actor } = renderWorkspace();
+      sidebar.setMobileOpen.mockClear();
+      await actor.keyboard("{Escape}");
+      expect(sidebar.setMobileOpen).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -678,7 +714,7 @@ describe("SpaceWorkspace page view", () => {
       await openMenu(actor, 1);
       await actor.click(screen.getByRole("menuitem", { name: item }));
     }
-    expect(screen.getByRole("alertdialog", { name: "Delete this page?" })).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog", { name: "Move this page to the Trash?" })).toBeInTheDocument();
   });
 
   it("switches between full and normal width from both menus", async () => {
@@ -707,17 +743,33 @@ describe("SpaceWorkspace page view", () => {
 
     await openMenu(actor);
     await actor.click(screen.getByRole("menuitem", { name: "Delete page" }));
+    // The prompt says how long the page can be restored, from the instance setting.
+    await waitFor(() =>
+      expect(screen.getByRole("alertdialog")).toHaveTextContent("restored for 14 days"),
+    );
     mocked.delete.mockRejectedValueOnce(new Error("Has children."));
-    await actor.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete page" }));
+    await actor.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Move to Trash" }));
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("Has children."));
     mocked.delete.mockRejectedValueOnce("odd");
-    await actor.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete page" }));
+    await actor.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Move to Trash" }));
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("Could not delete this page."));
 
-    mocked.delete.mockResolvedValueOnce(undefined);
-    await actor.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete page" }));
+    mocked.delete.mockResolvedValueOnce({ id: GUIDES.id, title: "Guides", moved_children: 0 });
+    await actor.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Move to Trash" }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/spaces/ENG"));
-    expect(toastSuccess).toHaveBeenCalledWith('Deleted "Guides".');
+    expect(toastSuccess).toHaveBeenCalledWith('Moved "Guides" to the Trash.', expect.anything());
+
+    // Undo brings it straight back, and opens it again.
+    const undo = toastSuccess.mock.calls.at(-1)![1].action;
+    expect(undo.label).toBe("Undo");
+    mocked.post.mockResolvedValueOnce({ id: GUIDES.id, title: "Guides", slug: "guides", restored_to_parent: true });
+    undo.onClick();
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/spaces/ENG/pages/guides"));
+    expect(mocked.post).toHaveBeenCalledWith(`/api/v1/spaces/ENG/trash/${GUIDES.id}/restore`);
+    expect(toastSuccess).toHaveBeenCalledWith('Restored "Guides".');
+    mocked.post.mockRejectedValueOnce(new Error("gone"));
+    undo.onClick();
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Could not restore this page."));
   });
 
   it("offers only reading tools to a reader of an archived space", async () => {
@@ -736,6 +788,26 @@ describe("SpaceWorkspace page view", () => {
     expect(screen.queryByRole("menuitem", { name: "Move page" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Export" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Delete page" })).toBeNull();
+  });
+
+  it("links to the space's Trash for whoever may delete pages here", () => {
+    const { view } = renderWorkspace({
+      currentPage: GUIDES,
+      space: makeSpace({ my_role: null, my_permissions: ["view", "delete_own"] }),
+    });
+    expect(screen.getByRole("button", { name: "Trash" })).toBeInTheDocument();
+    // Not a space admin: no Edit space beside it (the page's own Edit opens a menu).
+    expect(
+      screen
+        .queryAllByRole("button", { name: "Edit" })
+        .filter((button) => button.getAttribute("aria-haspopup") !== "menu"),
+    ).toHaveLength(0);
+    view.unmount();
+    renderWorkspace({
+      currentPage: GUIDES,
+      space: makeSpace({ my_role: null, my_permissions: ["view"] }),
+    });
+    expect(screen.queryByRole("button", { name: "Trash" })).toBeNull();
   });
 
   it("offers New on the home page and Create below it", () => {

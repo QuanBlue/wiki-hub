@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -22,11 +23,12 @@ def _scalars(values=()):
 @pytest.mark.asyncio
 async def test_page_and_revision_repositories_cover_reads_and_writes() -> None:
     session = Mock()
-    session.get = AsyncMock(return_value="entity")
+    entity = SimpleNamespace(deleted_at=None)
+    session.get = AsyncMock(return_value=entity)
     session.execute = AsyncMock(
         side_effect=[
             Mock(scalar_one_or_none=Mock(return_value="slug")),
-            Mock(scalar_one_or_none=Mock(return_value="slug")),
+            Mock(first=Mock(return_value=("id",))),
             _scalars(["page"]),
             _scalars(["all"]),
             _scalars(["child"]),
@@ -38,7 +40,7 @@ async def test_page_and_revision_repositories_cover_reads_and_writes() -> None:
     session.delete = AsyncMock()
     pages = PageRepository(session)
     page_id, user_id = uuid.uuid4(), uuid.uuid4()
-    assert await pages.get(page_id) == "entity"
+    assert await pages.get(page_id) is entity
     assert await pages.get_by_slug(page_id, " Slug ") == "slug"
     assert await pages.slug_exists(page_id, "slug")
     assert list(await pages.list_for_space(page_id)) == ["page"]
@@ -133,6 +135,33 @@ async def test_space_repository_covers_memberships_favourites_and_listing() -> N
     space = Mock()
     assert spaces.add(space) is space
     await spaces.delete(space)
+
+
+@pytest.mark.asyncio
+async def test_page_repository_keeps_the_trash_apart() -> None:
+    session = Mock()
+    pages = PageRepository(session)
+    space_id, page_id = uuid.uuid4(), uuid.uuid4()
+    # A page in the Trash answered from the identity map is still not "there".
+    session.get = AsyncMock(return_value=SimpleNamespace(deleted_at="2026-10-01"))
+    assert await pages.get(page_id) is None
+    session.get = AsyncMock(return_value=None)
+    assert await pages.get(page_id) is None
+    session.execute = AsyncMock(
+        side_effect=[
+            Mock(first=Mock(return_value=None)),
+            Mock(scalar_one_or_none=Mock(return_value="trashed")),
+            _scalars(["in-trash"]),
+            _scalars(["expired"]),
+        ]
+    )
+    assert await pages.slug_exists(space_id, "free") is False
+    assert await pages.get_trashed(space_id, page_id) == "trashed"
+    assert list(await pages.list_trashed(space_id)) == ["in-trash"]
+    assert list(await pages.list_trashed_before(datetime.now(UTC))) == ["expired"]
+    # Every one of them looks past the Trash filter.
+    for call in session.execute.await_args_list:
+        assert call.args[0].get_execution_options().get("include_deleted") is True
 
 
 @pytest.mark.asyncio

@@ -112,6 +112,8 @@ export interface InstanceInfo {
   version: string;
   environment: string;
   max_upload_size_bytes: number;
+  /** How long a deleted page can still be restored from its space's Trash. */
+  trash_retention_days?: number;
   features: InstanceFeatures;
 }
 
@@ -694,6 +696,7 @@ export interface SiteSettingsOverrides {
   allowed_attachment_types: string[] | null;
   sidebar_permissions: SidebarPermissions | null;
   session_ttl_hours: number | null;
+  trash_retention_days: number | null;
 }
 
 export interface EffectiveSettings {
@@ -709,6 +712,7 @@ export interface EffectiveSettings {
   allowed_attachment_types: string[];
   sidebar_permissions: SidebarPermissions;
   session_ttl_hours: number;
+  trash_retention_days: number;
 }
 
 export type AppRole = "admin" | "member";
@@ -1176,4 +1180,45 @@ export interface StatsTopContent {
   range_days: number;
   sort: string;
   items: StatsTopItem[];
+}
+
+/** What deleting a page did: it went to the space's Trash, from where `id` restores it. */
+export interface PageTrashResult {
+  id: string;
+  title: string;
+  moved_children: number;
+}
+
+export interface TrashedPage {
+  id: string;
+  title: string;
+  slug: string;
+  deleted_at: string;
+  /** When the page leaves the Trash for good. */
+  purge_at: string;
+  deleted_by_username: string | null;
+  deleted_by_full_name: string | null;
+  /** The page it was under, if that page is still there. */
+  parent_title: string | null;
+}
+
+/** A page in the Trash with its content, for the read-only preview. */
+export interface TrashedPageDetail extends TrashedPage {
+  content: string;
+  content_format: "html" | "markdown";
+}
+
+export interface TrashList {
+  items: TrashedPage[];
+  retention_days: number;
+  /** Space admins may delete pages for good and empty the Trash. */
+  can_purge: boolean;
+}
+
+export interface PageRestoreResult {
+  id: string;
+  title: string;
+  slug: string;
+  /** False when the page it was under is gone and it came back at the top of the space. */
+  restored_to_parent: boolean;
 }

@@ -870,14 +870,73 @@ export const sectionsVi: HelpSection[] = [
             Xuất tệp</em> để biết chính xác mỗi định dạng giữ lại những gì.
           </li>
           <li>
-            <strong className="text-danger">Delete page</strong>: xoá vĩnh viễn
-            trang này.
+            <strong className="text-danger">Delete page</strong>: chuyển trang vào thùng
+            rác của space, có thể khôi phục trong 30 ngày (xem{" "}
+            <em>Thùng rác</em>).
           </li>
         </ul>
 
         <Callout variant="warning" title="XOÁ KHÔNG BAO GIỜ LÀM MỒ CÔI TRANG CON">
           Xoá một trang sẽ đưa các trang con của nó lên một cấp thay vì xoá luôn
           chúng - nội dung của các trang con luôn được giữ và có thể truy cập.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "trash",
+    title: "Thùng rác",
+    category: "Workspace",
+    description:
+      "Trang bị xoá nằm 30 ngày trong thùng rác của space, rồi mới bị xoá hẳn.",
+    keywords: [
+      "trash",
+      "thùng rác",
+      "recycle bin",
+      "trang đã xoá",
+      "khôi phục",
+      "restore",
+      "hoàn tác xoá",
+      "dọn thùng rác",
+      "xoá vĩnh viễn",
+    ],
+    body: (
+      <>
+        <p>
+          Xoá một trang không xoá nó ngay. Trang được chuyển vào <strong>thùng rác</strong>{" "}
+          của space, giữ nguyên lịch sử phiên bản, bình luận, lượt thích và tệp đính kèm, và
+          nằm đó mặc định <strong>30 ngày</strong> (quản trị viên đổi khoảng này tại{" "}
+          <strong>Quản trị → Cài đặt → Cấu hình chung &amp; Phiên</strong>). Sau đó trang tự
+          động bị xoá vĩnh viễn.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Hoàn tác ngay</strong>: thông báo hiện ra sau khi xoá có nút{" "}
+            <strong>Hoàn tác</strong>, đưa trang trở lại và mở nó.
+          </li>
+          <li>
+            <strong>Mở thùng rác</strong>: mục <strong>Thùng rác</strong> ở cuối sidebar của
+            space, hoặc gõ <Code>:trash</Code> trong ô tìm kiếm (<Kbd>Ctrl+K</Kbd>) khi đang ở
+            trong space. Mỗi trang hiện người xoá, ngày xoá, trang cha cũ và số ngày còn lại.
+          </li>
+          <li>
+            <strong>Khôi phục</strong> đưa trang về dưới trang cha cũ. Nếu trang cha cũng đã bị
+            xoá, trang sẽ về cấp cao nhất của space. Trang giữ nguyên địa chỉ nên các link cũ
+            dùng lại được. Các trang con trước đây không bị dời về - chúng đã được đưa lên một
+            cấp khi xoá và giữ nguyên vị trí.
+          </li>
+          <li>
+            <strong>Xoá vĩnh viễn</strong> và <strong>Dọn sạch thùng rác</strong> xoá hẳn trang,
+            kể cả lịch sử và tệp đính kèm. Chỉ <strong>admin của space</strong> thấy hai nút này.
+          </li>
+        </ul>
+        <Callout variant="note" title="AI THẤY GÌ">
+          Người có quyền <strong>Delete</strong> trong space thấy mọi trang trong thùng rác;
+          người chỉ có <strong>Delete own</strong> thấy các trang do mình tạo. Không ai thấy
+          trang mà trước khi xoá họ không được đọc. Trang trong thùng rác không xuất hiện trong
+          tìm kiếm, cây trang, hoạt động gần đây và câu trả lời của AI. Bản sao lưu có kèm thùng
+          rác, nên khôi phục bản sao lưu vẫn còn nguyên thùng rác.
         </Callout>
       </>
     ),

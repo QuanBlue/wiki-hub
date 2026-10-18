@@ -133,7 +133,23 @@
    "reorganize",
    "more actions"
   ],
-  "text": "<>\nClick the ⋯ (More page actions) icon next to\nEdit for everything that isn't inline editing:\nMove page: pick a destination Space and a\nParent page (searchable, or Top-level page) to\nrelocate a page anywhere - even into a different space. Its child pages\nmove with it, and the picker won't let you drop a page inside one of\nits own descendants.\nPage history: opens the revision timeline (see\nRevision History, Visual Diff & Export).\nImport from file…: convert documents into new child pages\n(see Importing documents as new pages in Attachments & Media).\nView → Full width /\nNormal width: widen the reading column, useful for pages\ndense with tables or screenshots.\nExport → HTML / PDF /\nWord: see Revision History, Visual Diff & Export\nfor exactly what each format preserves.\nDelete page: permanently removes\nthe page.\nDeleting a page moves any of its child pages up one level rather than deleting\nthem too - their content always stays reachable.\n),\n},\n// ---------------------------------------------------------------------------\n// WRITING CATEGORY\n// ---------------------------------------------------------------------------"
+  "text": "<>\nClick the ⋯ (More page actions) icon next to\nEdit for everything that isn't inline editing:\nMove page: pick a destination Space and a\nParent page (searchable, or Top-level page) to\nrelocate a page anywhere - even into a different space. Its child pages\nmove with it, and the picker won't let you drop a page inside one of\nits own descendants.\nPage history: opens the revision timeline (see\nRevision History, Visual Diff & Export).\nImport from file…: convert documents into new child pages\n(see Importing documents as new pages in Attachments & Media).\nView → Full width /\nNormal width: widen the reading column, useful for pages\ndense with tables or screenshots.\nExport → HTML / PDF /\nWord: see Revision History, Visual Diff & Export\nfor exactly what each format preserves.\nDelete page: moves the page to the\nspace's Trash, where it can be restored for 30 days (see\nTrash: restoring deleted pages).\nDeleting a page moves any of its child pages up one level rather than deleting\nthem too - their content always stays reachable.\n),\n},"
+ },
+ {
+  "id": "trash",
+  "title": "Trash: restoring deleted pages",
+  "category": "Workspace",
+  "keywords": [
+   "trash",
+   "recycle bin",
+   "deleted page",
+   "restore",
+   "undo delete",
+   "recover",
+   "empty trash",
+   "delete permanently"
+  ],
+  "text": "<>\nDeleting a page does not remove it straight away. It moves to the\nTrash of its space, with its revisions, comments, likes and\nattachments intact, and stays there for 30 days by default (an administrator\ncan change the period under Administration → Settings → General &\nSessions). After that it is removed for good, automatically.\nUndo straight away: the confirmation shown after deleting has an\nUndo button that brings the page back and opens it.\nOpen the Trash: Trash at the bottom of the\nspace's sidebar, or type :trash in search (Ctrl+K)\nwhile you are in the space. Each page shows who deleted it, when, the page it was\nunder, and how many days it has left.\nRestore puts the page back under the page it was under. If that page\nhas been deleted too, it comes back at the top of the space instead. It keeps its\naddress, so old links work again. Its former child pages are not moved back - they\nwere moved up a level when it was deleted and stay where they are.\nDelete permanently and Empty Trash remove pages for\ngood, history and attachments included. Only space admins see them.\nPeople with Delete in a space see every page in its Trash; people\nwith only Delete own see the pages they created. Nobody sees a page\nthey could not read before it was deleted. A page in the Trash is left out of search,\nthe page tree, recent activity and AI answers. Backups include the Trash, so a\nrestored backup still has it.\n),\n},\n// ---------------------------------------------------------------------------\n// WRITING CATEGORY\n// ---------------------------------------------------------------------------"
  },
  {
   "id": "pages",

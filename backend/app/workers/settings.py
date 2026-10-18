@@ -24,6 +24,7 @@ from app.workers.tasks import (
     index_search_pages,
     install_ollama,
     ping,
+    purge_expired_trash,
     reap_backup_jobs,
     schedule_automated_backup,
     run_backup_job,
@@ -92,6 +93,8 @@ class WorkerSettings:
         # this is what turns "a request silently failed to arrive" into a
         # banner in front of the mailbox's owner.
         cron(check_admin_mailboxes, minute=0, second=20, run_at_startup=False),
+        # Daily, at night: pages past the Trash's retention period go for good.
+        cron(purge_expired_trash, hour=3, minute=15, second=0, run_at_startup=False),
     ]
     redis_settings = redis_settings()
     on_startup = startup

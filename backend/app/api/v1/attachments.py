@@ -154,14 +154,21 @@ async def _load_attachment_for_view(
     attachment = await session.get(PageAttachment, attachment_id)
     if attachment is None:
         raise NotFoundError("Attachment not found.")
-    page = await session.get(WikiPage, attachment.page_id)
+    # A page in the Trash is hidden from every query - but its Trash preview still draws its
+    # images, so whoever may use that Trash may read them (everyone else gets a 404).
+    page = await session.get(
+        WikiPage, attachment.page_id, execution_options={"include_deleted": True}
+    )
     if page is None:
         raise NotFoundError("Attachment page not found.")
     space = await session.get(Space, page.space_id)
     if space is None:
         raise NotFoundError("Attachment space not found.")
     await SpaceService(session).permissions.require(space, user, Permission.view)
-    await PageService(session).require_page_view(page, user)
+    pages = PageService(session)
+    if page.deleted_at is not None and not await pages.can_trash(space, page, user):
+        raise NotFoundError("Attachment page not found.")
+    await pages.require_page_view(page, user)
     return attachment, page
 
 

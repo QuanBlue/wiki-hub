@@ -27,6 +27,7 @@ from app.modules.backup.automated import (
 from app.models.backup_job import BackupJob
 from app.modules.document_import.jobs import reap_abandoned_document_imports
 from app.modules.document_import.jobs import run_document_import as execute_document_import
+from app.modules.pages.service import PageService
 from app.modules.search.indexer import index_pending
 from app.modules.import_export.service import reap_abandoned_confluence_imports, run_import
 from app.services.storage import get_storage
@@ -83,6 +84,13 @@ async def run_document_import(ctx: dict[str, Any], job_id: str) -> None:
 
     async with session_scope() as session:
         await execute_document_import(session, get_storage(), uuid.UUID(job_id))
+
+
+async def purge_expired_trash(ctx: dict[str, Any]) -> None:
+    """Daily: delete for good every page that has been in a Trash past the retention period."""
+    async with session_scope() as session:
+        purged = await PageService(session).purge_expired()
+    logger.info("trash_purge_done", purged=purged)
 
 
 async def check_admin_mailboxes(ctx: dict[str, Any]) -> None:

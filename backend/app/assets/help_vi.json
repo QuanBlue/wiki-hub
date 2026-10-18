@@ -155,7 +155,24 @@
    "reorganize",
    "more actions"
   ],
-  "text": "<>\nNhấn biểu tượng ⋯ (More page actions) cạnh\nEdit để thấy mọi thứ không phải chỉnh sửa trực tiếp:\nMove page: chọn một Space đích và một\nParent page (có thể tìm kiếm, hoặc\nTop-level page) để chuyển một trang đến bất kỳ đâu - kể\ncả sang một space khác. Các trang con di chuyển theo, và bộ chọn sẽ\nkhông cho bạn thả một trang vào bên trong một trang con cháu của chính\nnó.\nPage history: mở dòng thời gian các phiên bản (xem\nLịch sử phiên bản, So sánh trực quan & Xuất tệp).\nImport from file…: chuyển tài liệu thành các trang\ncon mới (xem Nhập tài liệu thành trang mới trong Attachments\n& Media).\nView → Full width /\nNormal width: mở rộng cột đọc, hữu ích cho các trang\ndày đặc bảng biểu hoặc ảnh chụp màn hình.\nExport → HTML / PDF\n/ Word: xem Lịch sử phiên bản, So sánh trực quan &\nXuất tệp để biết chính xác mỗi định dạng giữ lại những gì.\nDelete page: xoá vĩnh viễn\ntrang này.\nXoá một trang sẽ đưa các trang con của nó lên một cấp thay vì xoá luôn\nchúng - nội dung của các trang con luôn được giữ và có thể truy cập.\n),\n},\n// ---------------------------------------------------------------------------\n// WRITING CATEGORY\n// ---------------------------------------------------------------------------"
+  "text": "<>\nNhấn biểu tượng ⋯ (More page actions) cạnh\nEdit để thấy mọi thứ không phải chỉnh sửa trực tiếp:\nMove page: chọn một Space đích và một\nParent page (có thể tìm kiếm, hoặc\nTop-level page) để chuyển một trang đến bất kỳ đâu - kể\ncả sang một space khác. Các trang con di chuyển theo, và bộ chọn sẽ\nkhông cho bạn thả một trang vào bên trong một trang con cháu của chính\nnó.\nPage history: mở dòng thời gian các phiên bản (xem\nLịch sử phiên bản, So sánh trực quan & Xuất tệp).\nImport from file…: chuyển tài liệu thành các trang\ncon mới (xem Nhập tài liệu thành trang mới trong Attachments\n& Media).\nView → Full width /\nNormal width: mở rộng cột đọc, hữu ích cho các trang\ndày đặc bảng biểu hoặc ảnh chụp màn hình.\nExport → HTML / PDF\n/ Word: xem Lịch sử phiên bản, So sánh trực quan &\nXuất tệp để biết chính xác mỗi định dạng giữ lại những gì.\nDelete page: chuyển trang vào thùng\nrác của space, có thể khôi phục trong 30 ngày (xem\nThùng rác).\nXoá một trang sẽ đưa các trang con của nó lên một cấp thay vì xoá luôn\nchúng - nội dung của các trang con luôn được giữ và có thể truy cập.\n),\n},"
+ },
+ {
+  "id": "trash",
+  "title": "Thùng rác",
+  "category": "Workspace",
+  "keywords": [
+   "trash",
+   "thùng rác",
+   "recycle bin",
+   "trang đã xoá",
+   "khôi phục",
+   "restore",
+   "hoàn tác xoá",
+   "dọn thùng rác",
+   "xoá vĩnh viễn"
+  ],
+  "text": "<>\nXoá một trang không xoá nó ngay. Trang được chuyển vào thùng rác\ncủa space, giữ nguyên lịch sử phiên bản, bình luận, lượt thích và tệp đính kèm, và\nnằm đó mặc định 30 ngày (quản trị viên đổi khoảng này tại\nQuản trị → Cài đặt → Cấu hình chung & Phiên). Sau đó trang tự\nđộng bị xoá vĩnh viễn.\nHoàn tác ngay: thông báo hiện ra sau khi xoá có nút\nHoàn tác, đưa trang trở lại và mở nó.\nMở thùng rác: mục Thùng rác ở cuối sidebar của\nspace, hoặc gõ :trash trong ô tìm kiếm (Ctrl+K) khi đang ở\ntrong space. Mỗi trang hiện người xoá, ngày xoá, trang cha cũ và số ngày còn lại.\nKhôi phục đưa trang về dưới trang cha cũ. Nếu trang cha cũng đã bị\nxoá, trang sẽ về cấp cao nhất của space. Trang giữ nguyên địa chỉ nên các link cũ\ndùng lại được. Các trang con trước đây không bị dời về - chúng đã được đưa lên một\ncấp khi xoá và giữ nguyên vị trí.\nXoá vĩnh viễn và Dọn sạch thùng rác xoá hẳn trang,\nkể cả lịch sử và tệp đính kèm. Chỉ admin của space thấy hai nút này.\nNgười có quyền Delete trong space thấy mọi trang trong thùng rác;\nngười chỉ có Delete own thấy các trang do mình tạo. Không ai thấy\ntrang mà trước khi xoá họ không được đọc. Trang trong thùng rác không xuất hiện trong\ntìm kiếm, cây trang, hoạt động gần đây và câu trả lời của AI. Bản sao lưu có kèm thùng\nrác, nên khôi phục bản sao lưu vẫn còn nguyên thùng rác.\n),\n},\n// ---------------------------------------------------------------------------\n// WRITING CATEGORY\n// ---------------------------------------------------------------------------"
  },
  {
   "id": "pages",

@@ -172,6 +172,10 @@ class BackupPage(BaseModel):
     view_restricted: bool | None = None
     #: Off when the page stopped following its parent's access.
     inherit_restrictions: bool = True
+    #: Set when the page is in its space's Trash. Additive: older archives have no
+    #: Trash, and every page in them restores as a live page.
+    deleted_at: datetime | None = None
+    deleted_by_username: str | None = None
 
 
 class BackupPageRevision(BaseModel):

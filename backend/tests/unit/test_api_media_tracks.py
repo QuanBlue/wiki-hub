@@ -35,7 +35,7 @@ def _sibling(filename: str) -> SimpleNamespace:
 
 
 def _session(attachment: SimpleNamespace, siblings: list[SimpleNamespace]) -> Mock:
-    page = SimpleNamespace(id=PAGE_ID, space_id=uuid.uuid4())
+    page = SimpleNamespace(id=PAGE_ID, space_id=uuid.uuid4(), deleted_at=None)
     session = Mock()
     session.get = AsyncMock(side_effect=[attachment, page, SimpleNamespace()])
     session.execute = AsyncMock(

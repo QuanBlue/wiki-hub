@@ -27,6 +27,9 @@ from app.models.base import Base, TimestampMixin
 #: The only valid primary key. Exposed so services and tests agree on it.
 SINGLETON_ID = 1
 
+#: How long a deleted page stays in its space's Trash when no administrator has chosen.
+DEFAULT_TRASH_RETENTION_DAYS = 30
+
 
 class SiteSettings(TimestampMixin, Base):
     __tablename__ = "site_settings"
@@ -46,6 +49,8 @@ class SiteSettings(TimestampMixin, Base):
     max_backup_import_size_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     allowed_attachment_types: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     session_ttl_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Days a deleted page can be restored from its space's Trash. NULL = the default above.
+    trash_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: Per-role visibility for the application navigation. NULL keeps the
     #: conservative built-in policy (knowledge navigation for everyone,
     #: administration for administrators only).
