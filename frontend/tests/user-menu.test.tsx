@@ -78,6 +78,16 @@ describe("UserMenu", () => {
     expect(avatar.style.backgroundImage).toContain("/me.png");
   });
 
+  it("carries the Help link the top bar drops on a narrow phone", async () => {
+    const actor = userEvent.setup();
+    render(<UserMenu user={makeUser()} />);
+    await actor.click(trigger("Ann Lee"));
+    const help = screen.getByRole("menuitem", { name: /help/i });
+    expect(help).toHaveAttribute("href", "/help");
+    // Shown only where the top bar's own Help button is hidden (below 401px wide).
+    expect(help).toHaveClass("min-[401px]:hidden");
+  });
+
   it("lets only a non-impersonating administrator switch accounts", async () => {
     const actor = userEvent.setup();
     const first = render(<UserMenu user={makeUser({ is_superuser: true })} />);

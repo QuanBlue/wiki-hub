@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BookOpen,
   Bug,
   ChevronDown,
   ListChecks,
@@ -96,7 +97,7 @@ export function UserMenu({ user }: { user: Me }) {
         </span>
         <ChevronDown
           aria-hidden
-          className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 group-data-[state=open]:rotate-180"
+          className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 group-data-[state=open]:rotate-180 max-sm:hidden"
         />
       </DropdownMenuTrigger>
 
@@ -133,6 +134,14 @@ export function UserMenu({ user }: { user: Me }) {
           <Link href="/account">
             <UserRound />
             {t("userMenu.yourAccount")}
+          </Link>
+        </DropdownMenuItem>
+
+        {/* The top bar's Help button gives way on a narrow phone: it lives here instead. */}
+        <DropdownMenuItem asChild className="text-foreground min-[401px]:hidden">
+          <Link href="/help">
+            <BookOpen />
+            {t("topbar.help")}
           </Link>
         </DropdownMenuItem>
 

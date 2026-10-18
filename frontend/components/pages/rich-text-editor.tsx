@@ -41,7 +41,12 @@ import {
   type Node as PMNode,
   type NodeType,
 } from "@tiptap/pm/model";
-import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
+import {
+  Decoration,
+  DecorationSet,
+  type EditorView,
+  type ViewMutationRecord,
+} from "@tiptap/pm/view";
 import { dropPoint } from "@tiptap/pm/transform";
 import { TableMap } from "@tiptap/pm/tables";
 import dynamic from "next/dynamic";
@@ -2672,6 +2677,38 @@ const CustomBlockquote = Blockquote.extend({
   },
 });
 
+/**
+ * The frame React draws around a block node's editable content (a callout's icon, a code
+ * block's line numbers, a toggle's chevron) appears a moment after ProseMirror inserts the
+ * node, and Tiptap then moves the node's editable content into that frame. On Android,
+ * ProseMirror reads any block element that shows up behind its back as the keyboard's Enter
+ * and runs the Enter command - which lifted a freshly inserted callout straight back out of
+ * existence. Only changes inside the node's own editable content are ProseMirror's to see;
+ * everything else in the node view is ours.
+ */
+export function ignoreNodeViewChrome({ mutation }: { mutation: ViewMutationRecord }): boolean {
+  if (mutation.type === "selection") return false;
+  if (mutation.type === "childList") {
+    // Tiptap putting the editable content element into React's frame (or taking it out).
+    const moved = [...mutation.addedNodes, ...mutation.removedNodes];
+    if (
+      moved.length > 0 &&
+      moved.every((node) => node instanceof Element && node.hasAttribute("data-node-view-content-react"))
+    ) {
+      return true;
+    }
+  }
+  const target =
+    mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
+  if (!target) return true;
+  // This node's view, and the editable content Tiptap keeps inside it. A callout inside a
+  // toggle sits within the toggle's content, not its own, so it must be the nearest ones.
+  const view = target.closest(".react-renderer");
+  const content = target.closest("[data-node-view-content-react]");
+  // Inside this node's own content: ProseMirror's. Anywhere else in its view: ours.
+  return !(view && content && view.contains(content));
+}
+
 const CustomCalloutNode = TiptapNode.create({
   name: "callout",
   group: "block",
@@ -2720,7 +2757,7 @@ const CustomCalloutNode = TiptapNode.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(CalloutComponent);
+    return ReactNodeViewRenderer(CalloutComponent, { ignoreMutation: ignoreNodeViewChrome });
   },
 });
 
@@ -2896,7 +2933,7 @@ const CustomToggleNode = TiptapNode.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(ToggleComponent);
+    return ReactNodeViewRenderer(ToggleComponent, { ignoreMutation: ignoreNodeViewChrome });
   },
 });
 
@@ -3092,7 +3129,7 @@ const CustomCodeBlock = CodeBlockLowlight.extend({
     };
   },
   addNodeView() {
-    return ReactNodeViewRenderer(CodeBlockWithLines);
+    return ReactNodeViewRenderer(CodeBlockWithLines, { ignoreMutation: ignoreNodeViewChrome });
   },
   addKeyboardShortcuts() {
     return {

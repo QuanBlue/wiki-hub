@@ -210,11 +210,14 @@ export function LogoMark({
 export function Wordmark({
   siteName: propSiteName,
   className,
+  nameClassName,
   icon,
   customLogoUrl,
 }: {
   siteName?: string;
   className?: string;
+  /** Classes for the name itself, e.g. to keep only the mark on a narrow screen. */
+  nameClassName?: string;
   icon?: string;
   customLogoUrl?: string | null;
 }) {
@@ -230,7 +233,11 @@ export function Wordmark({
       )}
     >
       <LogoMark icon={icon} customLogoUrl={customLogoUrl} />
-      {effectiveSiteName}
+      {nameClassName ? (
+        <span className={nameClassName}>{effectiveSiteName}</span>
+      ) : (
+        effectiveSiteName
+      )}
     </span>
   );
 }
