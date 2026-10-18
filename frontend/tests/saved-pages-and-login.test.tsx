@@ -149,7 +149,7 @@ describe("LoginPage", () => {
     expect(screen.getByTestId("panels")).toHaveTextContent("login");
     expect(screen.getAllByTestId("wordmark")).toHaveLength(2);
     expect(screen.getByText("auth.headline")).toBeInTheDocument();
-    expect(screen.getByText("auth.highlightControlTitle")).toBeInTheDocument();
+    expect(screen.getByText("auth.featControlTitle")).toBeInTheDocument();
   });
 
   it("opens the contact view when asked", async () => {

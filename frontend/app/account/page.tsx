@@ -11,8 +11,12 @@ export const metadata: Metadata = { title: "Your account" };
 export const dynamic = "force-dynamic";
 
 /** Self-service, so it lives outside /admin, which non-admins cannot reach. */
-export default async function AccountPage() {
-  const user = await getCurrentUser();
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; action?: string }>;
+}) {
+  const [user, params] = await Promise.all([getCurrentUser(), searchParams]);
   if (!user) redirect("/login");
   const { t } = await getServerLocale();
 
@@ -28,7 +32,13 @@ export default async function AccountPage() {
             {t("account.pageDescription")}
           </p>
         </header>
-        <AccountSettings user={user} />
+        <AccountSettings
+          // A shortcut from the search bar can land here while already on /account.
+          key={`${params.tab ?? ""}:${params.action ?? ""}`}
+          user={user}
+          initialTab={params.tab}
+          openChangePassword={params.action === "password"}
+        />
       </div>
     </AppShell>
   );

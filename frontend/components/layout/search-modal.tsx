@@ -1,9 +1,19 @@
 "use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { FileText, Grid2X2, Loader2, Search, Sparkles, X } from "lucide-react";
+import {
+  CornerDownLeft,
+  FileText,
+  Grid2X2,
+  LifeBuoy,
+  Loader2,
+  Search,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { guideHref, type GuideMatch } from "@/components/help/help-data";
 import { useNavigate } from "@/components/layout/navigation-progress";
 import {
   SearchAnswer,
@@ -19,14 +29,23 @@ import { useTranslation } from "@/lib/i18n/context";
 import { matchesShortcut } from "@/lib/keyboard-shortcuts";
 import { highlightRanges } from "@/lib/search-highlight";
 import { isLocalFindActive } from "@/lib/local-find-registry";
+import {
+  matchCommands,
+  matchNavigation,
+  parseCommand,
+  type NavigationMatch,
+} from "@/lib/search-navigation";
 import { cn } from "@/lib/utils";
 import type {
+  Me,
   SearchResultPage,
   SearchResultSpace,
   SearchResults,
 } from "@/types/api";
 
 type SearchItem =
+  | { kind: "guide"; data: GuideMatch }
+  | { kind: "nav"; data: NavigationMatch }
   | { kind: "space"; data: SearchResultSpace }
   | { kind: "page"; data: SearchResultPage };
 
@@ -81,13 +100,16 @@ function HighlightText({
 export function SearchModal({
   open,
   onOpenChange,
+  user,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Who is searching: decides which app pages (admin ones, say) are offered as shortcuts. */
+  user?: Me | null;
 }) {
   const navigate = useNavigate();
   const themeSettings = useThemeSettings();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const siteName = themeSettings?.siteName || "WikiHub";
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
@@ -101,6 +123,8 @@ export function SearchModal({
   const latestAnswer = useRef(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // How many shortcuts head the list: the first guide sits right after them.
+  const navMatchCount = useRef(0);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // Global quick-search shortcut, whatever the user has bound it to.
@@ -146,7 +170,7 @@ export function SearchModal({
 
   // Debounced search query
   useEffect(() => {
-    if (!query.trim()) {
+    if (!query.trim() || parseCommand(query)) {
       setResults(null);
       setLoading(false);
       return;
@@ -178,10 +202,56 @@ export function SearchModal({
     };
   }, [query]);
 
+  // App pages that answer the query ("change password" -> Your account), known without the server.
+  // ":help", ":users"... list commands instead of searching the wiki.
+  const command = useMemo(() => parseCommand(query), [query]);
+  const navMatches = useMemo(
+    () =>
+      command
+        ? matchCommands(command.name, user, t, aiOn)
+        : matchNavigation(query, user, t),
+    [command, query, user, t, aiOn],
+  );
+  // ":help <words>" looks the words up in the Help guides. They are large, so load them only now.
+  const helpQuestion =
+    command && "help".startsWith(command.name) && command.name !== ""
+      ? command.rest
+      : "";
+  const [guides, setGuides] = useState<GuideMatch[] | null>(null);
+  useEffect(() => {
+    if (helpQuestion.length < 2) {
+      setGuides(null);
+      return;
+    }
+    let live = true;
+    void (async () => {
+      const [{ searchGuides }, en, vi] = await Promise.all([
+        import("@/components/help/help-data"),
+        import("@/components/help/help-content.en"),
+        import("@/components/help/help-content.vi"),
+      ]);
+      if (!live) return;
+      const [own, other] =
+        locale === "vi" ? [vi.sectionsVi, en.sectionsEn] : [en.sectionsEn, vi.sectionsVi];
+      setGuides(searchGuides(own, helpQuestion, 6, other));
+      setSelectedIndex(navMatchCount.current);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [helpQuestion, locale]);
+
+  // What the AI is asked: the text after ":ask", or the whole box.
+  const questionText = command ? command.rest : query.trim();
+
   // Flatten items for unified keyboard navigation
   const flatItems = useMemo<SearchItem[]>(() => {
-    if (!results) return [];
-    const items: SearchItem[] = [];
+    const items: SearchItem[] = navMatches.map((data) => ({
+      kind: "nav",
+      data,
+    }));
+    for (const data of guides ?? []) items.push({ kind: "guide", data });
+    if (!results) return items;
     for (const space of results.spaces) {
       items.push({ kind: "space", data: space });
     }
@@ -189,21 +259,8 @@ export function SearchModal({
       items.push({ kind: "page", data: page });
     }
     return items;
-  }, [results]);
-
-  const selectItem = useCallback(
-    (item: SearchItem) => {
-      onOpenChange(false);
-      if (item.kind === "space") {
-        navigate(`/spaces/${encodeURIComponent(item.data.key)}`);
-      } else {
-        navigate(
-          `/spaces/${encodeURIComponent(item.data.space_key)}/pages/${encodeURIComponent(item.data.slug)}`,
-        );
-      }
-    },
-    [onOpenChange, navigate],
-  );
+  }, [results, navMatches, guides]);
+  navMatchCount.current = navMatches.length;
 
   const leaveAnswer = useCallback(() => {
     latestAnswer.current += 1; // whatever is still on its way is out of date
@@ -211,7 +268,7 @@ export function SearchModal({
   }, []);
 
   const ask = useCallback(async () => {
-    const question = query.trim();
+    const question = questionText;
     if (!aiOn || question.length < 2) return;
     const mine = ++latestAnswer.current;
     setAnswer({ status: "loading" });
@@ -231,7 +288,32 @@ export function SearchModal({
               : "search.answerError";
       setAnswer({ status: "error", message: t(key) });
     }
-  }, [aiOn, query, t]);
+  }, [aiOn, questionText, t]);
+
+  const selectItem = useCallback(
+    (item: SearchItem) => {
+      if (item.kind === "nav" && item.data.disabled) return;
+      if (item.kind === "nav" && item.data.entry.id === "ask") {
+        // The answer is shown here, so the box stays open.
+        void ask();
+        return;
+      }
+      onOpenChange(false);
+      if (item.kind === "guide") {
+        navigate(guideHref(item.data.section));
+      } else if (item.kind === "nav") {
+        if (item.data.entry.id === "chat") openChat();
+        else navigate(item.data.entry.href);
+      } else if (item.kind === "space") {
+        navigate(`/spaces/${encodeURIComponent(item.data.key)}`);
+      } else {
+        navigate(
+          `/spaces/${encodeURIComponent(item.data.space_key)}/pages/${encodeURIComponent(item.data.slug)}`,
+        );
+      }
+    },
+    [onOpenChange, navigate, ask],
+  );
 
   const openSource = useCallback(
     (source: AnswerSource) => {
@@ -327,19 +409,19 @@ export function SearchModal({
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {answer ? (
               <SearchAnswer
-                question={query.trim()}
+                question={questionText}
                 state={answer}
                 onBack={leaveAnswer}
                 onRetry={() => void ask()}
                 onOpen={openSource}
                 onContinue={(result) => {
                   onOpenChange(false);
-                  openChat({ question: query.trim(), result });
+                  openChat({ question: questionText, result });
                 }}
               />
             ) : (
               <>
-                {aiOn && query.trim().length >= 2 ? (
+                {aiOn && !command && query.trim().length >= 2 ? (
                   <button
                     type="button"
                     onClick={() => void ask()}
@@ -362,6 +444,114 @@ export function SearchModal({
                     </kbd>
                   </button>
                 ) : null}
+                {navMatches.length > 0 ? (
+                  <div className="mb-3">
+                    <div className="text-muted-foreground px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase">
+                      {t("searchNav.section")}
+                    </div>
+                    <ul className="space-y-1">
+                      {navMatches.map((match, itemIndex) => {
+                        const Icon = match.entry.icon;
+                        const isSelected = itemIndex === selectedIndex;
+                        return (
+                          <li key={match.entry.id}>
+                            <button
+                              ref={(el) => {
+                                itemRefs.current[itemIndex] = el;
+                              }}
+                              type="button"
+                              onClick={() =>
+                                selectItem({ kind: "nav", data: match })
+                              }
+                              onMouseEnter={() => setSelectedIndex(itemIndex)}
+                              aria-disabled={match.disabled || undefined}
+                              className={cn(
+                                "focus-visible:ring-ring flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                                match.disabled && "cursor-not-allowed opacity-50",
+                                isSelected
+                                  ? "bg-surface-selected text-primary"
+                                  : "hover:bg-surface-hover text-foreground",
+                              )}
+                            >
+                              <div className="flex min-w-0 items-center gap-3">
+                                <Icon className="text-muted-foreground size-4 shrink-0" />
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-medium">
+                                    <HighlightText
+                                      text={match.label}
+                                      query={query}
+                                    />
+                                  </div>
+                                  <div className="text-muted-foreground truncate text-xs">
+                                    {match.hint}
+                                  </div>
+                                </div>
+                              </div>
+                              {match.entry.command ? (
+                                <kbd className="border-border text-muted-foreground bg-surface-sunken shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px]">
+                                  :{match.entry.command}
+                                </kbd>
+                              ) : (
+                                <CornerDownLeft
+                                  className="text-muted-foreground size-3.5 shrink-0"
+                                  aria-hidden
+                                />
+                              )}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
+                {helpQuestion.length >= 2 && guides ? (
+                  <div className="mb-3">
+                    <div className="text-muted-foreground px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase">
+                      {t("searchNav.guidesSection")}
+                    </div>
+                    {guides.length === 0 ? (
+                      <p className="text-muted-foreground px-3 py-2 text-sm">
+                        {t("searchNav.noGuides", { query: helpQuestion })}
+                      </p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {guides.map((guide, guideIndex) => {
+                          const itemIndex = navMatches.length + guideIndex;
+                          return (
+                            <li key={guide.section.id}>
+                              <button
+                                ref={(el) => {
+                                  itemRefs.current[itemIndex] = el;
+                                }}
+                                type="button"
+                                onClick={() =>
+                                  selectItem({ kind: "guide", data: guide })
+                                }
+                                onMouseEnter={() => setSelectedIndex(itemIndex)}
+                                className={cn(
+                                  "focus-visible:ring-ring flex w-full cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                                  itemIndex === selectedIndex
+                                    ? "bg-surface-selected text-primary"
+                                    : "hover:bg-surface-hover text-foreground",
+                                )}
+                              >
+                                <LifeBuoy className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-sm font-medium">
+                                    {guide.section.title}
+                                  </div>
+                                  <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
+                                    {guide.snippet}
+                                  </div>
+                                </div>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
                 {loading ? (
                   <div className="text-muted-foreground flex items-center justify-center py-12 text-sm">
                     <Loader2 className="text-primary mr-2 size-5 animate-spin" />
@@ -375,8 +565,11 @@ export function SearchModal({
                     <p className="mt-1 text-xs">
                       {t("search.quickSearchHint")}
                     </p>
+                    <p className="mt-3 text-xs">
+                      {t("search.commandHint")}
+                    </p>
                   </div>
-                ) : results && flatItems.length === 0 ? (
+                ) : (results || command) && flatItems.length === 0 ? (
                   <div className="text-muted-foreground py-12 text-center text-sm">
                     {t("search.noResults", { query })}
                   </div>

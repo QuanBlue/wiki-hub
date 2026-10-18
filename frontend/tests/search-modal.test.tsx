@@ -325,4 +325,21 @@ describe("SearchModal", () => {
     });
     expect(screen.getByPlaceholderText("Search WikiHub...")).toHaveValue("");
   });
+
+  it("searches the Help guides for the words after :help instead of the wiki", async () => {
+    const actor = userEvent.setup();
+    navigate.mockClear();
+    render(<Harness />);
+    await actor.type(
+      screen.getByPlaceholderText("Search WikiHub..."),
+      ":help change password",
+    );
+
+    expect(await screen.findByText("Help guides", {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(mocked.get).not.toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/search"),
+    );
+    await actor.keyboard("{Enter}");
+    expect(navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/help\/[a-z]+#/));
+  });
 });
