@@ -1,1 +1,31 @@
-Thêm Hiển thị các điều hướng khi search bằng search bar (ctrl+k) của ứng dụng, ví dụ đổi mật khẩu thì ra nút điều hướng tới trang cá nhân đẻ đổi mật khẩu, quản lý use -> qua trang user management (nếu người đó có quyền)...
+Nên làm trước: ảnh hưởng hằng ngày và độ tin cậy
+Thùng rác và khôi phục page. Xóa page hiện là xóa vĩnh viễn: hàm delete trong backend/app/modules/pages/service.py xóa hẳn khỏi DB, chỉ giữ lại các page con. Lỡ tay là mất cả nội dung lẫn lịch sử phiên bản. Một khu "Trash" theo space, cho khôi phục trong 30 ngày, là điều người dùng Confluence/Notion mặc định là có.
+Theo dõi page và nhận thông báo khi có thay đổi. Đã có chuông thông báo và @mention, nhưng không có cách "Watch" một page hay một space để biết khi nó được sửa hoặc có bình luận mới. Đây là tính năng giữ chân người đọc. Có thể thêm email tổng hợp, vì SMTP đã có sẵn cho Mailboxes và Roadmap cũng đang ghi email thông báo là "Planned".
+Mẫu page. Không có page template. Space nào cũng phải viết lại runbook, biên bản họp, postmortem từ đầu. Nên có mẫu theo space và mẫu chung, chọn ngay trong hộp "Create page", và dùng được cùng tính năng Write with AI.
+Hoàn thiện tìm kiếm.
+
+Tìm trong nội dung tệp đính kèm (PDF, Word). Trang Help đang ghi rõ là chưa hỗ trợ, mà phần import đã có sẵn bộ chuyển đổi nội dung.
+Bộ lọc theo space, người sửa, khoảng ngày, nhãn. Help cũng ghi là chưa có.
+
+Cho doanh nghiệp: cần nếu muốn đưa cho công ty dùng
+Đăng nhập một lần (SSO/OIDC). Mới làm dở: config.py đã có auth_provider: "oidc" và model user đã chừa chỗ cho tài khoản OIDC, nhưng chưa có luồng đăng nhập. Làm nốt phần này để chạy được với Keycloak, Google Workspace hay Azure AD.
+Xác thực hai lớp (TOTP) cho tài khoản local. Hiện chưa có.
+Màn xem audit log. Roadmap đang ghi là chưa làm, dù log đã được ghi ở server.
+API token cá nhân và webhook, để script hoặc CI đẩy tài liệu vào, và để Slack hay Teams nhận sự kiện "page được cập nhật".
+Cộng tác và trình soạn thảo
+Bình luận gắn vào đoạn văn được chọn, như kiểu Google Docs. Hiện chỉ có bình luận ở cuối page.
+Sơ đồ bằng Mermaid hoặc draw.io trong khối code. Wiki kỹ thuật rất cần, và hiện chưa có.
+Link chia sẻ công khai chỉ đọc, có hạn dùng, để gửi cho người ngoài công ty.
+Nhiều người sửa cùng lúc. Hiện mỗi người có bản nháp riêng, chỉ được báo khi có xung đột. Phần này tốn công nhất (Yjs/Hocuspocus), nên để sau.
+AI
+Phát hiện nội dung lỗi thời. Là phần còn mở duy nhất của AI trong Roadmap: đánh dấu page lâu không sửa, hoặc mâu thuẫn với page mới hơn.
+Chịu được gateway chậm. Lúc chụp ảnh, gateway trả 504 sau khoảng 33 giây. Backend thử lại 3 lần nên người dùng chờ khoảng 97 giây mới thấy lỗi. Nên trả kết quả từng phần (streaming) cho các tác vụ dài như viết bản nháp, và rút ngắn số lần thử lại khi lỗi là 504.
+Vận hành và tài liệu
+CI chạy make check khi push, và Helm chart. Cả hai đều có trong Roadmap.
+Bổ sung tài liệu:
+Các file docs/*.md mà Roadmap liệt kê là chưa viết.
+Sửa vài chỗ trong Help vẫn nói "bốn quyền toàn cục", trong khi giờ đã có thêm Manage issues.
+Đề xuất thứ tự
+Tôi đề xuất làm Thùng rác (1), Watch kèm thông báo (2) và Mẫu page (3) trước. Cả ba đụng tới việc dùng hằng ngày, không phụ thuộc hạ tầng ngoài, và mỗi cái gói gọn trong khoảng một migration cộng một màn hình. Tiếp theo là làm nốt OIDC (6), vì nền móng đã có sẵn.
+
+Bạn muốn tôi ghi danh sách này vào TODO (và cập nhật bảng Roadmap trong README), hay bắt tay làm luôn mục nào?
