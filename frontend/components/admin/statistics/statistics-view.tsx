@@ -2,6 +2,7 @@
 
 import {
   BookOpen,
+  Clock,
   FileText,
   FolderOpen,
   Pencil,
@@ -97,6 +98,23 @@ export function StatisticsView({
   const unitOf = (one: string, many: string) => (count: number) =>
     t(count === 1 ? one : many);
   const ratio = (part: number, total: number) => (total ? part / total : 0);
+  const duration = (minutes: number) => {
+    if (minutes <= 0) return t("adminStats.durationMinutes", { count: "0" });
+    if (minutes < 1) return t("adminStats.durationUnderMinute");
+    const rounded = Math.round(minutes);
+    if (rounded < 60)
+      return t("adminStats.durationMinutes", { count: number.format(rounded) });
+    const hours = Math.floor(rounded / 60);
+    const rest = rounded % 60;
+    return rest
+      ? t("adminStats.durationHours", {
+          hours: number.format(hours),
+          minutes: number.format(rest),
+        })
+      : t("adminStats.durationHoursOnly", { hours: number.format(hours) });
+  };
+  const dayLabel = (day: string) =>
+    dateFormat.format(new Date(`${day}T00:00:00`));
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -171,6 +189,16 @@ export function StatisticsView({
                 tone: "success",
               },
               {
+                icon: Clock,
+                label: t("adminStats.activeTime"),
+                value: totals.active_seconds,
+                display: duration(totals.active_seconds / 60),
+                hint: t("adminStats.hintActivePerDay", {
+                  count: fixed(totals.daily_active_users),
+                }),
+                tone: "info",
+              },
+              {
                 icon: UserPlus,
                 label: t("adminStats.newUsers"),
                 value: totals.new_users,
@@ -215,6 +243,33 @@ export function StatisticsView({
               },
             ]}
           />
+          <div className="grid gap-4 md:grid-cols-2">
+            <TrendChart
+              title={t("adminStats.chartActiveUsers")}
+              unit={unitOf(
+                "adminStats.unitActiveUser",
+                "adminStats.unitActiveUsers",
+              )}
+              tone="info"
+              format={fixed}
+              average={totals.daily_active_users}
+              points={overview.daily.map((d) => ({
+                day: d.day,
+                value: d.active_users,
+              }))}
+            />
+            <TrendChart
+              title={t("adminStats.chartActiveTime")}
+              format={duration}
+              // The axis gutter fits a bare number of minutes, not "1 h 40 min".
+              axisFormat={fixed}
+              average={totals.active_seconds / 60}
+              points={overview.daily.map((d) => ({
+                day: d.day,
+                value: d.active_seconds / 60,
+              }))}
+            />
+          </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <TrendChart
               title={t("adminStats.chartViews")}
@@ -246,11 +301,14 @@ export function StatisticsView({
           <p className="text-muted-foreground text-xs">
             {overview.views_tracked_since
               ? t("adminStats.viewsSince", {
-                  date: dateFormat.format(
-                    new Date(`${overview.views_tracked_since}T00:00:00`),
-                  ),
+                  date: dayLabel(overview.views_tracked_since),
                 })
-              : t("adminStats.viewsNone")}
+              : t("adminStats.viewsNone")}{" "}
+            {overview.activity_tracked_since
+              ? t("adminStats.activitySince", {
+                  date: dayLabel(overview.activity_tracked_since),
+                })
+              : t("adminStats.activityNone")}
           </p>
           <section className="border-border bg-surface rounded-xl border shadow-sm">
             <h3 className="border-border border-b px-4 py-3 text-sm font-semibold">

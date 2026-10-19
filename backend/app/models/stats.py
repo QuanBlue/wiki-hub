@@ -1,6 +1,6 @@
 """Usage records that feed the administrator statistics page.
 
-Both tables are counters written as a side effect of normal use. Neither is
+These tables are counters written as a side effect of normal use. None is
 part of backups: they are derived telemetry, not wiki content.
 """
 
@@ -44,3 +44,17 @@ class ContentViewDaily(Base):
     entity_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     views: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class UserActivityDaily(Base):
+    """One person's time in the app on one day (UTC), fed by the browser's activity heartbeat."""
+
+    __tablename__ = "user_activity_daily"
+    __table_args__ = (Index("ix_user_activity_daily_day", "day"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    active_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

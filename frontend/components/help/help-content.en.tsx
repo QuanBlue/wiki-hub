@@ -2328,6 +2328,9 @@ export const sectionsEn: HelpSection[] = [
       "stars",
       "saves",
       "active users",
+      "daily active users",
+      "active time",
+      "time spent",
     ],
     body: (
       <>
@@ -2343,6 +2346,21 @@ export const sectionsEn: HelpSection[] = [
             Headline cards: users, people active in the range, new users, pages, spaces,
             edits and page views, each with a derived figure underneath (new users in the
             range, share of people who were active, average per day, pages per space).
+          </li>
+          <li>
+            <strong>Avg. active time</strong>: how long one active person spends using
+            WikiHub on a typical day, with the average number of people active each day
+            underneath.
+          </li>
+          <li>
+            Two activity charts: <strong>Active people per day</strong> and{" "}
+            <strong>Active time per person per day</strong>. Their headline is the
+            average over the range rather than a total. Time counts only while WikiHub is
+            open in a visible tab and the person is reading (scrolling), typing or
+            clicking: a tab left open in the background, or a minute without any input,
+            adds nothing. Time spent by an administrator acting as someone else is not
+            counted. Both are recorded from the day this feature was installed; the note
+            under the charts gives that date.
           </li>
           <li>
             Daily charts of page views, edits and new users, each with its total, the

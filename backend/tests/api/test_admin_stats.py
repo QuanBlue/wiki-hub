@@ -1,10 +1,11 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
 
 from app.db.session import get_session_factory
-from app.models.stats import AiUsage
+from app.models.stats import AiUsage, UserActivityDaily
 from app.models.user import User
 from app.modules.stats.recorder import record_ai_usage, record_view
 
@@ -118,3 +119,44 @@ async def test_a_viewed_page_ranks_in_top_pages(
         assert (row["views"], row["stars"], row["saves"]) == (2, 1, 1)
     finally:
         await client.delete(f"/api/v1/spaces/{key}")
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_heartbeats_count_an_active_person_and_their_time(
+    client: AsyncClient, api_user: User, api_access_token: str
+) -> None:
+    client.cookies.set("wikihub_access", api_access_token)
+    today = datetime.now(UTC).date()
+    try:
+        assert (await client.post("/api/v1/users/me/activity")).status_code == 204
+        # Pretend the first heartbeat was 45 seconds ago and the one before that
+        # earlier still: each heartbeat credits the time since the last, at most
+        # one heartbeat interval.
+        async with get_session_factory()() as session:
+            row = await session.get(UserActivityDaily, (api_user.id, today))
+            assert row is not None and row.active_seconds == 0
+            row.last_active_at = datetime.now(UTC) - timedelta(seconds=45)
+            await session.commit()
+        assert (await client.post("/api/v1/users/me/activity")).status_code == 204
+        async with get_session_factory()() as session:
+            row = await session.get(UserActivityDaily, (api_user.id, today))
+            row.last_active_at = datetime.now(UTC) - timedelta(minutes=20)
+            await session.commit()
+        assert (await client.post("/api/v1/users/me/activity")).status_code == 204
+        async with get_session_factory()() as session:
+            row = await session.get(UserActivityDaily, (api_user.id, today))
+            assert 45 + 60 <= row.active_seconds <= 45 + 60 + 1
+
+        body = (await client.get(f"{BASE}/overview", params={"range": "7d"})).json()
+        day = next(item for item in body["daily"] if item["day"] == today.isoformat())
+        assert day["active_users"] >= 1 and day["active_seconds"] > 0
+        assert body["totals"]["daily_active_users"] > 0
+        assert body["totals"]["active_seconds"] > 0
+        assert body["activity_tracked_since"] <= today.isoformat()
+    finally:
+        async with get_session_factory()() as session:
+            await session.execute(
+                UserActivityDaily.__table__.delete().where(UserActivityDaily.user_id == api_user.id)
+            )
+            await session.commit()

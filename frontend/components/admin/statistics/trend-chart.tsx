@@ -49,8 +49,20 @@ export function TrendChart({
   points,
   tone = "primary",
   unit,
+  format,
+  axisFormat,
+  average,
 }: {
   title: string;
+  /** Formats a value for display; defaults to a rounded whole number. */
+  format?: (value: number) => string;
+  /** Formats the narrow y-axis labels; defaults to `format`. */
+  axisFormat?: (value: number) => string;
+  /**
+   * Summarise the series by this average instead of its total, for a series
+   * whose days do not add up (people active per day, minutes per person).
+   */
+  average?: number;
   /** The noun for a count of this series (\"views\"), singular or plural to match. */
   unit?: (count: number) => string;
   points: TrendPoint[];
@@ -66,7 +78,9 @@ export function TrendChart({
     day: "numeric",
     timeZone: "UTC",
   });
+  const show = format ?? ((value: number) => number.format(Math.round(value)));
   const total = points.reduce((sum, point) => sum + point.value, 0);
+  const headline = average ?? total;
   const max = niceMax(Math.max(0, ...points.map((point) => point.value)));
   const innerW = WIDTH - PAD.left - PAD.right;
   const innerH = HEIGHT - PAD.top - PAD.bottom;
@@ -76,7 +90,7 @@ export function TrendChart({
   const y = (value: number) => PAD.top + innerH - (value / max) * innerH;
 
   const delta = halfDelta(points.map((point) => point.value));
-  const average = points.length ? total / points.length : 0;
+  const dailyAverage = points.length ? total / points.length : 0;
   const peakIndex = points.reduce(
     (best, point, index) => (point.value > points[best]!.value ? index : best),
     0,
@@ -93,7 +107,7 @@ export function TrendChart({
   const label = (i: number) =>
     t("adminStats.chartPoint", {
       day: dayFormat.format(new Date(`${points[i].day}T00:00:00Z`)),
-      value: number.format(points[i].value),
+      value: show(points[i].value),
       unit: unit ? ` ${unit(points[i].value)}` : "",
     });
 
@@ -125,10 +139,15 @@ export function TrendChart({
             {title}
           </span>
           <span className="text-foreground mt-1 block text-2xl leading-7 font-semibold tracking-tight tabular-nums">
-            {number.format(total)}
+            {average === undefined ? number.format(total) : show(average)}
             {unit ? (
               <span className="text-muted-foreground ml-1.5 text-sm font-medium">
-                {unit(total)}
+                {unit(headline)}
+              </span>
+            ) : null}
+            {average !== undefined ? (
+              <span className="text-muted-foreground ml-1.5 text-sm font-medium">
+                {t("adminStats.chartOnAverage")}
               </span>
             ) : null}
           </span>
@@ -150,7 +169,11 @@ export function TrendChart({
       <div
         tabIndex={0}
         role="group"
-        aria-label={`${title}. ${t("adminStats.chartTotal", { total: number.format(total) })}. ${t("adminStats.chartHint")}`}
+        aria-label={`${title}. ${
+          average === undefined
+            ? t("adminStats.chartTotal", { total: number.format(total) })
+            : t("adminStats.chartAverageName", { value: show(average) })
+        }. ${t("adminStats.chartHint")}`}
         aria-describedby={active !== null ? `${id}-live` : undefined}
         onKeyDown={onKeyDown}
         onBlur={() => setActive(null)}
@@ -167,7 +190,7 @@ export function TrendChart({
                 top: `${((PAD.top + innerH * (1 - fraction)) / HEIGHT) * 100}%`,
               }}
             >
-              {number.format(Math.round(max * fraction))}
+              {(axisFormat ?? show)(max * fraction)}
             </span>
           ))}
           <svg
@@ -274,7 +297,7 @@ export function TrendChart({
                 aria-hidden="true"
                 className="block text-sm leading-5 font-semibold tabular-nums"
               >
-                {number.format(points[active].value)}
+                {show(points[active].value)}
                 {unit ? (
                   <span className="text-muted-foreground ml-1 text-xs font-medium">
                     {unit(points[active].value)}
@@ -300,15 +323,17 @@ export function TrendChart({
         </div>
       </div>
       <p className="text-muted-foreground border-border mt-3 flex flex-wrap justify-between gap-x-4 gap-y-1 border-t pt-2.5 text-xs">
-        <span>
-          {t("adminStats.chartAverage", {
-            value: number.format(Math.round(average)),
-          })}
-        </span>
-        {points.length ? (
+        {average === undefined ? (
           <span>
+            {t("adminStats.chartAverage", {
+              value: number.format(Math.round(dailyAverage)),
+            })}
+          </span>
+        ) : null}
+        {points.length ? (
+          <span className="ml-auto">
             {t("adminStats.chartPeak", {
-              value: number.format(points[peakIndex]!.value),
+              value: show(points[peakIndex]!.value),
               day: dayFormat.format(
                 new Date(`${points[peakIndex]!.day}T00:00:00Z`),
               ),

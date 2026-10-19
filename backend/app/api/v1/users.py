@@ -19,7 +19,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query, Request, Response, UploadFile, status
 from sqlalchemy import delete, func, select
 
-from app.api.deps import ActingAuthServiceDep, CurrentUser, DbSession
+from app.api.deps import ActingAuthServiceDep, CurrentUser, DbSession, Impersonator
 from app.core.config import settings
 from app.core.exceptions import (
     BadRequestError,
@@ -39,6 +39,7 @@ from app.models.user_session import UserSession
 from app.models.user_tag import UserTag
 from app.modules.pages.service import PageService
 from app.modules.permissions.service import PermissionService
+from app.modules.stats.recorder import record_activity
 from app.repositories.user import UserRepository
 from app.schemas.pagination import Page
 from app.schemas.user import (
@@ -144,6 +145,17 @@ async def delete_own_avatar(
     user.avatar_url = None
     await session.flush()
     return UserRead.model_validate(user)
+
+
+@router.post(
+    "/me/activity",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Report that you are using WikiHub right now",
+)
+async def report_activity(user: CurrentUser, impersonator: Impersonator) -> None:
+    # An administrator acting as someone is not that person using the app.
+    if impersonator is None:
+        await record_activity(user.id)
 
 
 @router.get("/{user_id}/avatar", summary="Read a user profile picture")

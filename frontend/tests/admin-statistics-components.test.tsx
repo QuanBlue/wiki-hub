@@ -205,8 +205,17 @@ const overview: StatsOverview = {
     pages: 9,
     edits: 4,
     views: 7,
+    daily_active_users: 1.7,
+    active_seconds: 754,
   },
-  daily: days.map((day, i) => ({ day, edits: i, views: i * 2, new_users: 0 })),
+  daily: days.map((day, i) => ({
+    day,
+    edits: i,
+    views: i * 2,
+    new_users: 0,
+    active_users: i,
+    active_seconds: [0, 30, 4500][i],
+  })),
   recent_activity: [
     {
       id: "1",
@@ -218,6 +227,7 @@ const overview: StatsOverview = {
     },
   ],
   views_tracked_since: "2026-10-10",
+  activity_tracked_since: "2026-10-12",
 };
 const ai: StatsAi = {
   range_days: 3,
@@ -264,6 +274,9 @@ describe("StatisticsView", () => {
     expect(screen.getByText("Roadmap")).toBeInTheDocument();
     expect(screen.getByText("page created")).toBeInTheDocument();
     expect(screen.getByText(/counted from Oct 10, 2026/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/active time are counted from Oct 12, 2026/),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "30 days" })).toHaveAttribute(
       "aria-current",
       "true",
@@ -281,12 +294,16 @@ describe("StatisticsView", () => {
           ...overview,
           recent_activity: [],
           views_tracked_since: null,
+          activity_tracked_since: null,
         },
       }),
     );
     expect(screen.getByText("No activity recorded yet.")).toBeInTheDocument();
     expect(
-      screen.getByText("No page views have been recorded yet."),
+      screen.getByText(/No activity has been recorded yet\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/No page views have been recorded yet\./),
     ).toBeInTheDocument();
   });
 
@@ -440,5 +457,56 @@ describe("TrendChart units", () => {
     expect(screen.getByText("Oct 13: 3 views")).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("group"), { key: "ArrowLeft" });
     expect(screen.getByText("Oct 12: 1 view")).toBeInTheDocument();
+  });
+});
+
+describe("StatisticsView activity", () => {
+  it("shows active people and time as daily averages", () => {
+    render(view());
+    // 754 s rounds to 13 minutes; 1.7 people a day.
+    expect(screen.getAllByText("13 min").length).toBeGreaterThan(0);
+    expect(screen.getByText("1.7 active per day")).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", {
+        name: /Active people per day\. 1\.7 on average/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", {
+        name: /Active time per person per day\. 13 min on average/,
+      }),
+    ).toBeInTheDocument();
+    // The busiest day: 4500 s is an hour and a quarter.
+    expect(screen.getByText("Peak 1 h 15 min on Oct 14")).toBeInTheDocument();
+  });
+
+  it("reads durations under a minute and whole hours", () => {
+    const { rerender } = render(
+      view({
+        overview: {
+          ...overview,
+          totals: { ...overview.totals, active_seconds: 20 },
+        },
+      }),
+    );
+    expect(screen.getAllByText("< 1 min").length).toBeGreaterThan(0);
+    rerender(
+      view({
+        overview: {
+          ...overview,
+          totals: { ...overview.totals, active_seconds: 7200 },
+        },
+      }),
+    );
+    expect(screen.getAllByText("2 h").length).toBeGreaterThan(0);
+    rerender(
+      view({
+        overview: {
+          ...overview,
+          totals: { ...overview.totals, active_seconds: 0 },
+        },
+      }),
+    );
+    expect(screen.getAllByText("0 min").length).toBeGreaterThan(0);
   });
 });

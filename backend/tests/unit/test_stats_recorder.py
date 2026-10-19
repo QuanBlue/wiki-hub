@@ -23,3 +23,28 @@ async def test_a_failed_ai_usage_write_is_swallowed(monkeypatch) -> None:
 async def test_a_failed_view_write_is_swallowed(monkeypatch) -> None:
     monkeypatch.setattr(recorder, "get_session_factory", _broken_factory)
     await recorder.record_view("page", uuid.uuid4())
+
+
+@pytest.mark.asyncio
+async def test_a_failed_activity_write_is_swallowed(monkeypatch) -> None:
+    monkeypatch.setattr(recorder, "get_session_factory", _broken_factory)
+    await recorder.record_activity(uuid.uuid4())
+
+
+@pytest.mark.asyncio
+async def test_an_impersonated_heartbeat_is_not_recorded(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.api.v1 import users
+
+    seen: list[uuid.UUID] = []
+
+    async def remember(user_id: uuid.UUID) -> None:
+        seen.append(user_id)
+
+    monkeypatch.setattr(users, "record_activity", remember)
+    person = SimpleNamespace(id=uuid.uuid4())
+    await users.report_activity(person, impersonator=SimpleNamespace(id=uuid.uuid4()))
+    assert seen == []
+    await users.report_activity(person, impersonator=None)
+    assert seen == [person.id]

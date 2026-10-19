@@ -11,7 +11,7 @@ from app.models.audit import AuditLog
 from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.revision import PageRevision
 from app.models.space import Space, SpaceFavorite, SpaceStatus
-from app.models.stats import AiUsage, ContentViewDaily
+from app.models.stats import AiUsage, ContentViewDaily, UserActivityDaily
 from app.models.user import User
 from app.models.user_session import UserSession
 from app.schemas.stats import (
@@ -67,6 +67,22 @@ class StatsService:
             .group_by(ContentViewDaily.day)
         )
         views = {row[0]: int(row[1]) for row in view_rows}
+        activity_rows = await self.session.execute(
+            select(
+                UserActivityDaily.day,
+                func.count(),
+                func.sum(UserActivityDaily.active_seconds),
+            )
+            .where(UserActivityDaily.day >= first)
+            .group_by(UserActivityDaily.day)
+        )
+        active = {row[0]: (int(row[1]), int(row[2])) for row in activity_rows}
+        activity_since = await self.session.scalar(select(func.min(UserActivityDaily.day)))
+        # Days before tracking began say nothing about activity, so they must not
+        # dilute the daily average.
+        tracked_days = sum(1 for d in all_days if activity_since and d >= activity_since)
+        person_days = sum(people for people, _seconds in active.values())
+        active_time = sum(seconds for _people, seconds in active.values())
 
         totals = OverviewTotals(
             users=await self._scalar(select(func.count()).select_from(User)),
@@ -87,6 +103,8 @@ class StatsService:
             ),
             edits=sum(edits.values()),
             views=sum(views.values()),
+            daily_active_users=round(person_days / tracked_days, 1) if tracked_days else 0,
+            active_seconds=active_time // person_days if person_days else 0,
         )
         recent = (
             await self.session.scalars(
@@ -103,6 +121,8 @@ class StatsService:
                     edits=edits.get(d, 0),
                     views=views.get(d, 0),
                     new_users=new_users.get(d, 0),
+                    active_users=active.get(d, (0, 0))[0],
+                    active_seconds=active[d][1] // active[d][0] if d in active else 0,
                 )
                 for d in all_days
             ],
@@ -118,6 +138,7 @@ class StatsService:
                 for row in recent
             ],
             views_tracked_since=tracked_since,
+            activity_tracked_since=activity_since,
         )
 
     # -- AI ------------------------------------------------------------------

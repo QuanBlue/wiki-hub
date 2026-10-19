@@ -16,6 +16,10 @@ class OverviewTotals(BaseModel):
     pages: int
     edits: int
     views: int
+    #: Average people active per day, over the days activity was tracked.
+    daily_active_users: float
+    #: Average time one active person spent in the app on a day, in seconds.
+    active_seconds: int
 
 
 class OverviewDay(BaseModel):
@@ -23,6 +27,9 @@ class OverviewDay(BaseModel):
     edits: int
     views: int
     new_users: int
+    active_users: int
+    #: Average time each of that day's active people spent in the app, in seconds.
+    active_seconds: int
 
 
 class ActivityItem(BaseModel):
@@ -41,6 +48,8 @@ class OverviewStats(BaseModel):
     recent_activity: list[ActivityItem]
     #: First day a view was counted; earlier opens were never recorded.
     views_tracked_since: date | None
+    #: First day activity was recorded; earlier days show no active people.
+    activity_tracked_since: date | None
 
 
 class AiTotals(BaseModel):

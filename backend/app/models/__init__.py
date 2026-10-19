@@ -49,7 +49,7 @@ from app.models.space import (
     SpaceVisibility,
     SpaceVisit,
 )
-from app.models.stats import AiUsage, ContentViewDaily
+from app.models.stats import AiUsage, ContentViewDaily, UserActivityDaily
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
 from app.models.user_session import UserSession
@@ -110,6 +110,7 @@ __all__ = [
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
     "User",
+    "UserActivityDaily",
     "UserGlobalPermissionOverride",
     "UserPageLabel",
     "UserPagePin",
