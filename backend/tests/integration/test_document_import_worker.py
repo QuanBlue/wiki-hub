@@ -642,6 +642,80 @@ class TestConflictResolution:
         assert "new" in pages[0].content
 
 
+class TestWorkbookSheets:
+    """A workbook with several sheets: a page named after the file, a child page per sheet."""
+
+    _SHEETS = [
+        ("Doanh thu", "<table><tbody><tr><td><p>revenue</p></td></tr></tbody></table>"),
+        ("Chi phí", "<table><tbody><tr><td><p>costs</p></td></tr></tbody></table>"),
+    ]
+
+    async def test_each_sheet_becomes_a_child_of_the_files_page(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        storage = FakeStorage()
+        job, space, _ = await _make_job(session, storage, ["Báo cáo.xlsx"])
+        _patch_extract(
+            monkeypatch,
+            {"Báo cáo.xlsx": ExtractedDocument(html="", sections=list(self._SHEETS))},
+        )
+
+        await run_document_import(session, storage, job.id)
+
+        pages = await _imported_pages(session, space)
+        [parent] = [page for page in pages if page.parent_id is None]
+        by_title = {page.title: page for page in pages if page.parent_id == parent.id}
+        children = [by_title["Doanh thu"], by_title["Chi phí"]]
+        assert parent.title == "Báo cáo"
+        assert len(by_title) == 2
+        assert "revenue" in children[0].content
+        assert "costs" in children[1].content
+        # The file's page links to every sheet, in the workbook's order.
+        for child in children:
+            assert f"/spaces/{space.key}/pages/{child.slug}" in parent.content
+        assert parent.content.index("Doanh thu") < parent.content.index("Chi phí")
+        # Each child's first revision holds its table, not the empty body it was made with.
+        revision = (
+            await session.execute(
+                select(PageRevision).where(
+                    PageRevision.page_id == children[0].id, PageRevision.version == 1
+                )
+            )
+        ).scalar_one()
+        assert "revenue" in revision.content
+        await session.refresh(job)
+        assert job.status == "complete"
+        [item] = job.items
+        assert item.page_id == parent.id
+
+    async def test_replacing_the_workbook_replaces_its_sheets_instead_of_numbering_them(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        storage = FakeStorage()
+        job, space, user = await _make_job(session, storage, ["Báo cáo.xlsx"])
+        job.conflict_mode = "replace"
+        service = PageService(session)
+        old_parent = await service.create(space, PageCreate(title="Báo cáo", content=""), user)
+        old_sheet = await service.create(
+            space, PageCreate(title="Doanh thu", content="<p>old</p>", parent_id=old_parent.id),
+            user,
+        )
+        await session.commit()
+        _patch_extract(
+            monkeypatch,
+            {"Báo cáo.xlsx": ExtractedDocument(html="", sections=list(self._SHEETS))},
+        )
+
+        await run_document_import(session, storage, job.id)
+
+        pages = await _imported_pages(session, space)
+        children = [page for page in pages if page.parent_id == old_parent.id]
+        assert sorted(child.title for child in children) == ["Chi phí", "Doanh thu"]
+        [revenue] = [child for child in children if child.title == "Doanh thu"]
+        assert revenue.id == old_sheet.id
+        assert "revenue" in revenue.content
+
+
 class TestEmbeddedImagePolicy:
     async def test_an_image_type_the_workspace_no_longer_allows_is_dropped_with_a_warning(
         self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch

@@ -57,6 +57,10 @@ FORMAT_BY_EXTENSION: dict[str, str] = {
     "md": "markdown",
     "markdown": "markdown",
     "pdf": "pdf",
+    # Spreadsheets are read by `spreadsheet.py`, not pandoc. `.xlsm` is left
+    # out for the same reason as `.docm`.
+    "xlsx": "xlsx",
+    "csv": "csv",
 }
 
 #: pandoc reader per format. The `-raw_html` suffix disables pass-through of raw
@@ -105,6 +109,10 @@ class ExtractedDocument:
     media: list[ExtractedMedia] = field(default_factory=list)
     metadata_title: str | None = None
     warnings: list[str] = field(default_factory=list)
+    #: ``(title, html)`` for a document that is several pages rather than one -
+    #: a workbook with several sheets. When set, the file's own page holds an
+    #: index of them and each becomes a child page of it; see ``jobs.py``.
+    sections: list[tuple[str, str]] = field(default_factory=list)
 
 
 def format_for_filename(filename: str) -> str | None:
@@ -167,6 +175,13 @@ async def extract_document(source: Path, *, filename: str, workdir: Path) -> Ext
         raise BadRequestError(f"WikiHub cannot import {Path(filename).suffix or 'this file type'}.")
     if doc_format == "pdf":
         return await extract_pdf(source)
+    if doc_format in {"xlsx", "csv"}:
+        # Imported here: `spreadsheet.py` builds on this module's types.
+        from app.modules.document_import.spreadsheet import extract_spreadsheet
+
+        return await anyio.to_thread.run_sync(
+            lambda: extract_spreadsheet(source, doc_format=doc_format)
+        )
     return await extract_with_pandoc(source, doc_format=doc_format, workdir=workdir)
 
 

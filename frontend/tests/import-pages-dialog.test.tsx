@@ -253,7 +253,7 @@ describe("ImportPagesDialog", () => {
     // A short line is always there; the long account comes with the info button.
     expect(screen.getByText(/checks each page against the original/i)).toBeInTheDocument();
     expect(screen.queryByText(/headings, lists, tables, lost text/i)).not.toBeInTheDocument();
-    await user.hover(screen.getAllByRole("button", { name: /more info/i })[0]);
+    await user.hover(within(box.closest("label")!).getByRole("button", { name: /more info/i }));
     expect(await screen.findAllByText(/headings, lists, tables, lost text/i)).not.toHaveLength(0);
     await user.click(box);
     expect(box).not.toBeChecked();
@@ -505,6 +505,84 @@ describe("ImportPagesDialog", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(screen.getByText("a.docx")).toBeInTheDocument();
+  });
+
+  it("accepts Excel and CSV files", async () => {
+    stubMeta();
+    stubXHR();
+    await openDialog();
+    await choose([file("budget.xlsx"), file("people.csv")]);
+
+    expect(await screen.findByText("budget.xlsx")).toBeInTheDocument();
+    expect(screen.queryByText(/cannot import/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /import 2 files/i })).toBeEnabled();
+  });
+
+  it("imports a Google Sheets link on its own", async () => {
+    stubMeta();
+    stubXHR();
+    const { user } = await openDialog();
+    const link = "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit#gid=0";
+
+    await user.type(screen.getByLabelText("Google Sheets or Docs link"), link);
+    expect(screen.getByText(/a google sheet ready/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+    const sent = FakeXHR.last!.body!;
+    expect(sent.get("google_url")).toBe(link);
+    expect(sent.getAll("files")).toHaveLength(0);
+  });
+
+  it("imports a Google Docs link and names it as a doc", async () => {
+    stubMeta();
+    stubXHR();
+    const { user } = await openDialog();
+    const link = "https://docs.google.com/document/d/195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE/edit";
+
+    await user.type(screen.getByLabelText("Google Sheets or Docs link"), link);
+    expect(screen.getByText(/a google doc ready/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+    expect(FakeXHR.last!.body!.get("google_url")).toBe(link);
+  });
+
+  it("sends a Google Sheets link together with chosen files", async () => {
+    stubMeta();
+    stubXHR();
+    const { user } = await openDialog();
+    await choose([file("a.docx")]);
+    await screen.findByText("a.docx");
+    await user.type(
+      screen.getByLabelText("Google Sheets or Docs link"),
+      "docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+    );
+
+    await user.click(screen.getByRole("button", { name: /import 2 files/i }));
+
+    await waitFor(() => expect(FakeXHR.last).not.toBeNull());
+    expect(FakeXHR.last!.body!.getAll("files")).toHaveLength(1);
+    expect(FakeXHR.last!.body!.get("google_url")).toContain("docs.google.com");
+  });
+
+  it("refuses a link that is not a Google Sheet, even beside valid files", async () => {
+    stubMeta();
+    stubXHR();
+    const { user } = await openDialog();
+    await choose([file("a.docx")]);
+    await screen.findByText("a.docx");
+    const input = screen.getByLabelText("Google Sheets or Docs link");
+
+    await user.type(input, "https://example.com/sheet");
+
+    expect(screen.getByText(/not a google sheets or google docs link/i)).toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("button", { name: /^import$/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /clear the google link/i }));
+    expect(input).toHaveValue("");
+    expect(screen.getByRole("button", { name: /^import$/i })).toBeEnabled();
   });
 });
 

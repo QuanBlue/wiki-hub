@@ -1731,12 +1731,18 @@ export const sectionsVi: HelpSection[] = [
     title: "Nhập tài liệu thành trang mới",
     category: "Attachments & Media",
     description:
-      "Biến các tài liệu Word, PDF, Markdown, và các loại khác đã có thành trang wiki hàng loạt - không cần copy-paste.",
+      "Biến các tài liệu Word, PDF, Excel, Markdown và các loại khác đã có - hoặc một link Google Sheets hay Docs - thành trang wiki hàng loạt, không cần copy-paste.",
     keywords: [
       "import",
       "nhập",
       "docx",
       "pdf",
+      "excel",
+      "xlsx",
+      "csv",
+      "google sheets",
+      "google docs",
+      "bảng tính",
       "markdown",
       "epub",
       "convert",
@@ -1765,8 +1771,37 @@ export const sectionsVi: HelpSection[] = [
             dạng được hỗ trợ: Word (<Code>.docx</Code>), OpenDocument Text (
             <Code>.odt</Code>), Rich Text (<Code>.rtf</Code>), EPUB (
             <Code>.epub</Code>), HTML (<Code>.html</Code>/<Code>.htm</Code>),
-            Markdown (<Code>.md</Code>/<Code>.markdown</Code>), và PDF (
-            <Code>.pdf</Code>).
+            Markdown (<Code>.md</Code>/<Code>.markdown</Code>), PDF (
+            <Code>.pdf</Code>), Excel (<Code>.xlsx</Code>) và CSV (<Code>.csv</Code>).
+          </li>
+          <li>
+            <strong>Excel và CSV</strong>: mỗi sheet thành một <strong>bảng</strong>, dòng đầu tiên
+            là dòng tiêu đề. Workbook một sheet thành một trang; workbook nhiều sheet thành một trang
+            mang tên tệp, liệt kê các sheet, và mỗi sheet là một trang con bên dưới (nhập lại với{" "}
+            <strong>Thay thế page hiện có</strong> sẽ cập nhật các trang sheet đó thay vì tạo bản
+            sao). Ô gộp, in đậm / nghiêng / gạch chân / gạch ngang, màu chữ và màu
+            nền, căn lề, xuống dòng trong ô và liên kết đều được giữ; số và ngày hiển thị như trong
+            sheet (<Code>1,234.50</Code>, <Code>12.5%</Code>, <Code>31/01/2026</Code>).{" "}
+            <strong>Độ rộng cột được tính theo nội dung</strong>, không chép từ sheet: cột chứa đoạn
+            văn được rộng (không bao giờ hẹp hơn một dòng dễ đọc), cột số hoặc mã giữ hẹp, tiêu đề
+            dài thì xuống dòng thay vì làm cột rộng ra, nhờ vậy chiều cao hàng hợp lý. Bảng có nhiều
+            cột chữ sẽ cuộn ngang thay vì bị ép hẹp. Sau đó vẫn có thể kéo chỉnh độ rộng trong
+            trình soạn thảo. Công thức được nhập bằng giá trị đã tính gần nhất. Sheet ẩn,
+            biểu đồ, hình ảnh và ghi chú không được nhập (sheet ẩn được nêu tên trong phần ghi chú
+            của tệp), và sheet quá lớn được cắt bớt cho vừa một trang, kèm ghi chú số dòng đã nhập.
+            Tệp CSV có thể dùng dấu phẩy, chấm phẩy hoặc tab.
+          </li>
+          <li>
+            <strong>Link Google Sheets hoặc Docs</strong>: dán địa chỉ của file (
+            <Code>https://docs.google.com/spreadsheets/d/…</Code> hoặc{" "}
+            <Code>https://docs.google.com/document/d/…</Code>) vào ô{" "}
+            <em>Link Google Sheets hoặc Docs</em> bên dưới vùng thả tệp, riêng lẻ hoặc cùng với các
+            tệp khác. WikiHub tải file về - sheet gồm mọi tab, nhập như một tệp Excel; doc nhập như
+            một tệp Word, nên cũng được review và dịch như Word - và trang được đặt tên theo file. File
+            phải được chia sẻ ở chế độ <strong>Bất kỳ ai có đường liên kết</strong> (Chia sẻ → Quyền
+            truy cập chung) - WikiHub không đăng nhập Google, nên file riêng tư sẽ bị từ chối kèm
+            thông báo hướng dẫn chia sẻ. Trang là một bản sao: sửa trong Google sau đó không tự cập
+            nhật vào trang; hãy nhập lại và chọn <strong>Thay thế page hiện có</strong> để làm mới.
           </li>
           <li>
             Mỗi tệp trở thành một <strong>trang con</strong> mới bên dưới trang

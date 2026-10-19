@@ -242,8 +242,8 @@ async def test_a_long_indexing_pass_keeps_renewing_its_lock(
         async def expire(self, key: str, seconds: int) -> None:
             renewed.append(key)
 
-        async def delete(self, key: str) -> None:
-            return None
+        async def eval(self, *args: object) -> int:
+            return 1
 
     class Scope:
         async def __aenter__(self) -> object:

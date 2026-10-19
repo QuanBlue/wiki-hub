@@ -59,6 +59,9 @@ dependencies = [
   # self-hosted deployment; revisit before distributing WikiHub as a
   # closed-source product. Recorded in docs/licensing.md.
   "pymupdf>=1.24,<2",
+  # Excel import (and Google Sheets, which is fetched as .xlsx). pandoc has no
+  # spreadsheet reader; see app/modules/document_import/spreadsheet.py.
+  "openpyxl>=3.1,<4",
   # --- observability ---
   "structlog>=24.4",
   "orjson>=3.10",

@@ -1,6 +1,16 @@
 "use client";
 
-import { FileUp, Languages, Loader2, Sparkles, Upload, X } from "lucide-react";
+import {
+  FileSpreadsheet,
+  FileText,
+  FileUp,
+  Languages,
+  Link2,
+  Loader2,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
 import type { ChangeEvent, DragEvent, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -14,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatBytes } from "@/components/ui/job-progress";
 import { InfoTip } from "@/components/ui/info-tip";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -41,12 +52,19 @@ const ACCEPTED_EXTENSIONS = [
   "md",
   "markdown",
   "pdf",
+  "xlsx",
+  "csv",
 ] as const;
 
 const ACCEPT_ATTRIBUTE = ACCEPTED_EXTENSIONS.map((e) => `.${e}`).join(",");
 
 /** Mirrors `MAX_DOCUMENT_IMPORT_FILES`. */
 const MAX_FILES = 20;
+
+/** A Google Sheets or Google Docs link. Like the extension check, a
+ *  courtesy: the server parses the link itself and fetches only from Google. */
+const GOOGLE_LINK =
+  /^(?:https?:\/\/)?docs\.google\.com\/(spreadsheets|document)\/d\/(?:e\/)?[A-Za-z0-9_-]{20,}/;
 
 type Candidate = {
   /** Stable across re-renders so removing one does not re-key the list. */
@@ -59,7 +77,7 @@ type ConflictMode = "ask" | "rename" | "replace";
 const REVIEW_KEY = "wikihub:import-review";
 
 /** The kinds of file the importer takes, shown under the drop area. */
-const FORMAT_CHIPS = ["DOCX", "PDF", "HTML", "MD", "EPUB", "ODT", "RTF"];
+const FORMAT_CHIPS = ["DOCX", "PDF", "XLSX", "CSV", "HTML", "MD", "EPUB", "ODT", "RTF"];
 
 /** The short badge for a file in the list: its extension, or a dash for none. */
 function extensionLabel(name: string): string {
@@ -165,6 +183,7 @@ export function ImportPagesDialog({
   // ceiling, and guessing it would reject files the server would have taken.
   const [maxUploadBytes, setMaxUploadBytes] = useState(0);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [googleUrl, setGoogleUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadPercent, setUploadPercent] = useState(0);
   const [importJob, setImportJob] = useState<DocumentImportJob | null>(null);
@@ -207,6 +226,15 @@ export function ImportPagesDialog({
     ),
   }));
   const sendable = inspected.filter((c) => c.problem === null);
+  const googleLink = googleUrl.trim();
+  const googleMatch = googleLink ? GOOGLE_LINK.exec(googleLink) : null;
+  const googleInvalid = googleLink !== "" && googleMatch === null;
+  const hasGoogle = googleMatch !== null;
+  // Product names, the same in every language.
+  const googleKind = googleMatch?.[1] === "document" ? "Google Doc" : "Google Sheet";
+  const GoogleIcon = !hasGoogle ? Link2 : googleMatch?.[1] === "document" ? FileText : FileSpreadsheet;
+  // A typo'd link blocks the import rather than being silently left out.
+  const importCount = googleInvalid ? 0 : sendable.length + (hasGoogle ? 1 : 0);
   const conflicts = sendable.filter((candidate) =>
     existingPages.some(
       (page) =>
@@ -273,6 +301,7 @@ export function ImportPagesDialog({
 
   function reset() {
     setCandidates([]);
+    setGoogleUrl("");
     setUploadPercent(0);
     setUploading(false);
     setImportJob(null);
@@ -302,7 +331,7 @@ export function ImportPagesDialog({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (sendable.length === 0 || uploading) return;
+    if (importCount === 0 || uploading) return;
     if (conflicts.length > 0) {
       // A filename already visible in this page list matches - ask upfront
       // rather than spend a round trip finding out what the server would
@@ -322,6 +351,7 @@ export function ImportPagesDialog({
 
     const form = new FormData();
     for (const candidate of sendable) form.append("files", candidate.file);
+    if (hasGoogle) form.append("google_url", googleLink);
     if (parentPage?.id) form.append("parent_id", parentPage.id);
     form.append("conflict_mode", conflictMode);
     form.append("review", review && !aiOff ? "true" : "false");
@@ -391,6 +421,7 @@ export function ImportPagesDialog({
       });
 
       setCandidates([]);
+      setGoogleUrl("");
       setUploadPercent(0);
       setUploading(false);
       setImportJob(job);
@@ -554,6 +585,56 @@ export function ImportPagesDialog({
             </ul>
           ) : null}
 
+          <div className="space-y-2">
+            <div className="text-muted-foreground flex items-center gap-3 text-xs">
+              <span className="bg-border h-px flex-1" aria-hidden />
+              {t("importDialog.googleDivider")}
+              <span className="bg-border h-px flex-1" aria-hidden />
+            </div>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="import-google-url">{t("importDialog.googleLabel")}</Label>
+              <InfoTip>{t("importDialog.googleHint")}</InfoTip>
+            </div>
+            <div className="relative">
+              <GoogleIcon
+                className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+                aria-hidden
+              />
+              <Input
+                id="import-google-url"
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={t("importDialog.googlePlaceholder")}
+                value={googleUrl}
+                onChange={(event) => setGoogleUrl(event.target.value)}
+                disabled={uploading}
+                aria-invalid={googleInvalid}
+                aria-describedby={googleInvalid ? "import-google-error" : undefined}
+                className={cn("pl-9", googleUrl && "pr-10")}
+              />
+              {googleUrl ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={t("importDialog.googleClearAria")}
+                  onClick={() => setGoogleUrl("")}
+                  disabled={uploading}
+                  className="absolute top-1/2 right-1 h-7 -translate-y-1/2 px-2"
+                >
+                  <X />
+                </Button>
+              ) : null}
+            </div>
+            {googleInvalid ? (
+              <p id="import-google-error" className="text-danger text-xs">
+                {t("importDialog.googleInvalid")}
+              </p>
+            ) : null}
+          </div>
+
           <section aria-label={t("importDialog.aiOptions")} className="space-y-2">
             <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
               {t("importDialog.aiOptions")}
@@ -669,22 +750,25 @@ export function ImportPagesDialog({
           <DialogFooter className="items-center sm:justify-between">
             <p className="text-muted-foreground text-xs">
               {sendable.length > 0
-                ? t("importDialog.summary", {
+                ? t(hasGoogle ? "importDialog.summaryWithGoogle" : "importDialog.summary", {
                     count: sendable.length,
+                    kind: googleKind,
                     size: formatBytes(sendable.reduce((sum, c) => sum + c.file.size, 0)),
                   })
-                : t("importDialog.summaryEmpty")}
+                : hasGoogle
+                  ? t("importDialog.summaryGoogleOnly", { kind: googleKind })
+                  : t("importDialog.summaryEmpty")}
             </p>
             <Button
               type="submit"
               variant="primary"
-              disabled={uploading || sendable.length === 0}
+              disabled={uploading || importCount === 0}
             >
               {uploading ? <Loader2 className="animate-spin" /> : <FileUp />}
               {uploading
                 ? t("importDialog.uploading", { percent: uploadPercent })
-                : sendable.length > 1
-                  ? t("importDialog.importMany", { count: sendable.length })
+                : importCount > 1
+                  ? t("importDialog.importMany", { count: importCount })
                   : t("importDialog.importOne")}
             </Button>
           </DialogFooter>
