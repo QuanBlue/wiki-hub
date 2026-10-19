@@ -7,6 +7,8 @@ export interface StatCardItem {
   icon: LucideIcon;
   label: string;
   value: number;
+  /** Shown instead of the formatted number, for a value that is not a count (a duration). */
+  display?: string;
   /** A derived figure under the label, such as a daily average or a share. */
   hint: string;
   tone?: "primary" | "success" | "warning" | "info" | "neutral";
@@ -38,11 +40,18 @@ export function StatCards({
       aria-label={label}
       className={cn(
         "grid grid-cols-2 gap-2.5 sm:grid-cols-3",
-        items.length >= 7 ? "lg:grid-cols-4 xl:grid-cols-7" : "lg:grid-cols-5",
+        items.length >= 8 ? "lg:grid-cols-4 2xl:grid-cols-8" : "lg:grid-cols-5",
       )}
     >
       {items.map(
-        ({ icon: Icon, label: itemLabel, value, hint, tone = "neutral" }) => (
+        ({
+          icon: Icon,
+          label: itemLabel,
+          value,
+          display,
+          hint,
+          tone = "neutral",
+        }) => (
           <div
             key={itemLabel}
             className="border-border bg-surface flex min-w-0 items-center gap-2.5 rounded-lg border px-3 py-2.5 shadow-sm"
@@ -57,7 +66,7 @@ export function StatCards({
             </span>
             <div className="min-w-0">
               <p className="text-foreground text-lg leading-6 font-semibold tracking-tight tabular-nums">
-                {number.format(value)}
+                {display ?? number.format(value)}
               </p>
               <p className="text-muted-foreground truncate text-xs font-medium">
                 {itemLabel}

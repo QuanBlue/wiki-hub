@@ -78,6 +78,9 @@ vi.mock("@/components/layout/mail-summary-provider", () => ({
 vi.mock("@/components/navigation-loading", () => ({ NavigationLoading: () => <i>nav-loading</i> }));
 vi.mock("@/components/ui/toaster", () => ({ Toaster: () => <i>toaster</i> }));
 vi.mock("@/components/ui/scroll-to-top", () => ({ ScrollToTop: () => <i>scroll-top</i> }));
+vi.mock("@/components/layout/activity-heartbeat", () => ({
+  ActivityHeartbeat: () => <i>heartbeat</i>,
+}));
 
 function user(overrides: Partial<Me> = {}): Me {
   return {
@@ -206,6 +209,7 @@ describe("AppShell", () => {
     expect(m.getMailSummary).not.toHaveBeenCalled();
     expect(screen.getByText("mailbox-banner")).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByText("heartbeat")).toBeInTheDocument();
   });
 
   it("loads the mailbox summary for administrators", async () => {
@@ -235,6 +239,8 @@ describe("AppShell", () => {
     const real = { username: "root" } as unknown as Me["impersonator"];
     await renderShell(user({ impersonator: real } as Partial<Me>));
     expect(screen.getByRole("status")).toHaveTextContent("root");
+    // Time spent acting as someone is not that person's activity.
+    expect(screen.queryByText("heartbeat")).not.toBeInTheDocument();
   });
 });
 

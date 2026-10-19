@@ -1129,8 +1129,20 @@ export interface StatsOverview {
     pages: number;
     edits: number;
     views: number;
+    /** Average people active per day, over the days activity was tracked. */
+    daily_active_users: number;
+    /** Average seconds one active person spent in the app on a day. */
+    active_seconds: number;
   };
-  daily: Array<{ day: string; edits: number; views: number; new_users: number }>;
+  daily: Array<{
+    day: string;
+    edits: number;
+    views: number;
+    new_users: number;
+    active_users: number;
+    /** Average seconds each of that day's active people spent in the app. */
+    active_seconds: number;
+  }>;
   recent_activity: Array<{
     id: string;
     created_at: string;
@@ -1140,6 +1152,8 @@ export interface StatsOverview {
     entity_label: string;
   }>;
   views_tracked_since: string | null;
+  /** First day activity was recorded; earlier days show nobody active. */
+  activity_tracked_since: string | null;
 }
 
 export interface StatsAi {

@@ -2405,6 +2405,9 @@ export const sectionsVi: HelpSection[] = [
       "sao",
       "lưu",
       "người dùng hoạt động",
+      "người hoạt động mỗi ngày",
+      "thời gian hoạt động",
+      "thời gian sử dụng",
     ],
     body: (
       <>
@@ -2421,6 +2424,20 @@ export const sectionsVi: HelpSection[] = [
             page, space, lượt chỉnh sửa và lượt xem page, mỗi thẻ có thêm một số suy ra
             bên dưới (người dùng mới trong khoảng, tỷ lệ người hoạt động, trung bình mỗi
             ngày, số page mỗi space).
+          </li>
+          <li>
+            <strong>Thời gian hoạt động TB</strong>: một người hoạt động dùng WikiHub bao
+            lâu trong một ngày, kèm số người hoạt động trung bình mỗi ngày bên dưới.
+          </li>
+          <li>
+            Hai biểu đồ hoạt động: <strong>Người hoạt động mỗi ngày</strong> và{" "}
+            <strong>Thời gian hoạt động mỗi người mỗi ngày</strong>. Số lớn ở đầu là
+            trung bình trong khoảng, không phải tổng. Thời gian chỉ được tính khi WikiHub
+            đang mở ở tab hiển thị và người đó đang đọc (cuộn trang), gõ phím hoặc bấm
+            chuột: tab để mở ở nền, hoặc một phút không thao tác, không được tính. Thời
+            gian quản trị viên đăng nhập dưới danh nghĩa người khác cũng không được tính.
+            Cả hai được ghi nhận từ ngày tính năng này được cài đặt; dòng ghi chú dưới
+            biểu đồ cho biết ngày đó.
           </li>
           <li>
             Biểu đồ theo ngày cho lượt xem page, chỉnh sửa và người dùng mới, kèm tổng,

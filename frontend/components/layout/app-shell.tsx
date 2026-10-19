@@ -1,4 +1,5 @@
 import { ChatWidget } from "@/components/chat/chat-widget";
+import { ActivityHeartbeat } from "@/components/layout/activity-heartbeat";
 import { AppMain } from "@/components/layout/app-main";
 import { ImpersonationBanner } from "@/components/layout/impersonation-banner";
 import { MailboxPasswordBanner } from "@/components/layout/mailbox-password-banner";
@@ -88,6 +89,8 @@ export async function AppShell({
           {children}
         </AppMain>
         <ChatWidget userId={user.id} />
+        {/* An administrator acting as someone is not that person using the app. */}
+        {user.impersonator ? null : <ActivityHeartbeat />}
         {user.impersonator ? (
           <ImpersonationBanner
             viewingAs={user}
