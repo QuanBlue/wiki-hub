@@ -28,7 +28,8 @@ async def test_the_ai_health_pass_reports_how_many_connections_it_checked() -> N
 def _redis(acquired: bool) -> Mock:
     redis = Mock()
     redis.set = AsyncMock(return_value=acquired)
-    redis.delete = AsyncMock()
+    redis.expire = AsyncMock()
+    redis.eval = AsyncMock(return_value=1)
     return redis
 
 
@@ -36,7 +37,7 @@ async def test_an_indexing_pass_already_running_is_not_doubled_up() -> None:
     redis = _redis(acquired=False)
     with patch.object(tasks, "get_redis", return_value=redis):
         assert await tasks.index_search_pages({}) == 0
-    redis.delete.assert_not_awaited()
+    redis.eval.assert_not_awaited()
 
 
 async def test_the_indexing_pass_indexes_stale_pages_and_releases_its_lock() -> None:
@@ -51,7 +52,10 @@ async def test_the_indexing_pass_indexes_stale_pages_and_releases_its_lock() -> 
         assert await tasks.index_search_pages({}) == 5
 
     assert index.await_args.kwargs["deadline"] > 0
-    redis.delete.assert_awaited_once_with("lock:search_index")
+    # Released only if the lock still holds this pass's own token.
+    token = redis.set.await_args.args[1]
+    _script, keys, key, owner = redis.eval.await_args.args
+    assert (keys, key, owner) == (1, "lock:search_index", token)
 
 
 async def test_the_lock_is_released_even_when_indexing_fails() -> None:
@@ -69,7 +73,30 @@ async def test_the_lock_is_released_even_when_indexing_fails() -> None:
         else:  # pragma: no cover - the failure must surface
             raise AssertionError("the failure was swallowed")
 
-    redis.delete.assert_awaited_once()
+    redis.eval.assert_awaited_once()
+
+
+async def test_a_pass_stuck_on_one_slow_page_keeps_its_lock_alive(monkeypatch) -> None:
+    """One embedding call can outlast the lock; the lock must not lapse meanwhile."""
+    import asyncio
+
+    redis = _redis(acquired=True)
+    monkeypatch.setattr(tasks, "_SEARCH_INDEX_LOCK_RENEW_SECONDS", 0.01)
+
+    async def slow_page(*_args, **_kwargs) -> int:
+        await asyncio.sleep(0.08)
+        return 1
+
+    with (
+        patch.object(tasks, "get_redis", return_value=redis),
+        patch.object(tasks, "session_scope", _scope),
+        patch.object(tasks, "load_config", AsyncMock(return_value=SimpleNamespace())),
+        patch.object(tasks, "index_pending", slow_page),
+    ):
+        assert await tasks.index_search_pages({}) == 1
+
+    assert redis.expire.await_count >= 3
+    redis.expire.assert_awaited_with("lock:search_index", tasks._SEARCH_INDEX_LOCK_TTL_SECONDS)
 
 
 async def test_a_failed_probe_after_saving_never_undoes_the_save() -> None:

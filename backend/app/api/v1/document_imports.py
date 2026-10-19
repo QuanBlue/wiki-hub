@@ -1,4 +1,4 @@
-"""Import Word/PDF/HTML documents as pages.
+"""Import Word/PDF/HTML documents, spreadsheets, Google Sheets and Docs as pages.
 
 Uploads go straight through as one multipart POST rather than through the
 resumable, hash-then-stage machinery the Confluence and backup archives use.
@@ -9,6 +9,12 @@ small file count, and paying for resumability there would be all cost.
 The bytes still land in object storage before the job is queued, because the
 API and the worker are separate containers: a temp file written by uvicorn is
 invisible to arq.
+
+A Google Sheets or Docs link is fetched here, in the request, and staged
+exactly like an uploaded `.xlsx` or `.docx` - from the worker's point of view
+there is no difference. Fetching up front means a file that is not shared
+fails in the dialog, where the user can fix it, rather than minutes later on a
+progress card.
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ from app.models.space import Space
 from app.modules.attachments.limits import limits_for_space
 from app.modules.attachments.store import safe_attachment_filename
 from app.modules.document_import.convert import format_for_filename
+from app.modules.document_import.google_links import fetch_google_file
 from app.modules.document_import.service import (
     StagedDocument,
     create_document_import_job,
@@ -77,6 +84,7 @@ _SNIFFABLE_FORMATS = {
     "odt": {"odt", "zip"},
     "epub": {"epub", "zip"},
     "rtf": {"rtf"},
+    "xlsx": {"xlsx", "zip"},
 }
 
 
@@ -137,7 +145,7 @@ async def create_document_import(
     key: str,
     user: CurrentUser,
     session: DbSession,
-    files: Annotated[list[UploadFile], File(description="Documents to import")],
+    files: Annotated[list[UploadFile] | None, File(description="Documents to import")] = None,
     parent_id: Annotated[str | None, Form(description="Parent page id")] = None,
     # Every new request starts with a conflict check.  The worker only receives
     # ``rename`` or ``replace`` after this endpoint has resolved the choice.
@@ -149,14 +157,18 @@ async def create_document_import(
     # review, which compares it with the file in the file's own language). Empty keeps the
     # document's own language.
     translate: Annotated[Literal["", "en", "vi"], Form()] = "",
+    # A Google Sheets or Docs link, imported as one more document beside any files.
+    google_url: Annotated[str, Form(max_length=2048)] = "",
 ) -> DocumentImportJobRead:
     space = await SpaceService(session).get_by_key(key)
     page_service = PageService(session)
     await page_service.require_editor(space, user)
 
-    if not files or all(not (f.filename or "").strip() for f in files):
+    files = [f for f in files or [] if (f.filename or "").strip()]
+    google_url = google_url.strip()
+    if not files and not google_url:
         raise BadRequestError("Choose at least one document.", code="invalid_document_import")
-    if len(files) > MAX_DOCUMENT_IMPORT_FILES:
+    if len(files) + (1 if google_url else 0) > MAX_DOCUMENT_IMPORT_FILES:
         raise BadRequestError(
             f"Import at most {MAX_DOCUMENT_IMPORT_FILES} documents at a time.",
             code="invalid_document_import",
@@ -196,6 +208,22 @@ async def create_document_import(
                 content_type=(file.content_type or "application/octet-stream").lower(),
                 data=data,
                 source_format=doc_format,
+            )
+        )
+    if google_url:
+        # Last, after the uploads are validated: a bad file should not cost a
+        # round trip to Google first.
+        google_name, google_data, export = await fetch_google_file(
+            google_url,
+            limit_bytes=effective.max_upload_size_bytes,
+            limit_mb=effective.max_upload_size_mb,
+        )
+        documents.append(
+            StagedDocument(
+                filename=safe_attachment_filename(google_name),
+                content_type=export.content_type,
+                data=google_data,
+                source_format=export.source_format,
             )
         )
 

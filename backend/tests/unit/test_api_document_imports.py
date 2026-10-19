@@ -35,10 +35,13 @@ from app.core.exceptions import (
     ServiceUnavailableError,
     UnsupportedMediaTypeError,
 )
+from app.modules.document_import.google_links import export_for
 from app.modules.document_import.service import StagedDocument
 from app.schemas.document_import import MAX_DOCUMENT_IMPORT_FILES
 
 MODULE = "app.api.v1.document_imports"
+SHEET_LINK = "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
+DOC_LINK = "https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
 
 #: A minimal real PDF header, enough for `filetype` to recognise one.
 PDF_BYTES = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n" + b"0" * 200
@@ -377,6 +380,65 @@ class TestCreateEndpoint:
             await create_document_import(
                 "ENG", Mock(), session, [_upload("a.docx", _zip_bytes())], str(uuid.uuid4())
             )
+
+    @pytest.mark.asyncio
+    async def test_a_google_sheets_link_alone_is_staged_as_a_workbook(self, monkeypatch):
+        _stub_services(monkeypatch)
+        fetch = AsyncMock(return_value=("Kế hoạch.xlsx", _zip_bytes(), export_for(SHEET_LINK)))
+        monkeypatch.setattr(f"{MODULE}.fetch_google_file", fetch)
+        session = AsyncMock()
+        session.execute.return_value = Mock(scalars=Mock(return_value=Mock(all=Mock(return_value=[]))))
+
+        await create_document_import(
+            "ENG", Mock(), session, None, None, google_url=f" {SHEET_LINK} "
+        )
+        assert fetch.await_args.args == (SHEET_LINK,)
+        [document] = _job_args(monkeypatch)["documents"]
+        assert (document.filename, document.source_format) == ("Kế hoạch.xlsx", "xlsx")
+        assert document.content_type.endswith("spreadsheetml.sheet")
+
+    @pytest.mark.asyncio
+    async def test_a_google_docs_link_is_staged_as_a_word_file(self, monkeypatch):
+        _stub_services(monkeypatch)
+        monkeypatch.setattr(
+            f"{MODULE}.fetch_google_file",
+            AsyncMock(return_value=("Runbook.docx", _zip_bytes(), export_for(DOC_LINK))),
+        )
+        session = AsyncMock()
+        session.execute.return_value = Mock(scalars=Mock(return_value=Mock(all=Mock(return_value=[]))))
+
+        await create_document_import("ENG", Mock(), session, None, None, google_url=DOC_LINK)
+        [document] = _job_args(monkeypatch)["documents"]
+        assert (document.filename, document.source_format) == ("Runbook.docx", "docx")
+
+    @pytest.mark.asyncio
+    async def test_a_link_rides_along_with_uploaded_files(self, monkeypatch):
+        _stub_services(monkeypatch)
+        monkeypatch.setattr(
+            f"{MODULE}.fetch_google_file",
+            AsyncMock(return_value=("Sheet.xlsx", _zip_bytes(), export_for(SHEET_LINK))),
+        )
+        session = AsyncMock()
+        session.execute.return_value = Mock(scalars=Mock(return_value=Mock(all=Mock(return_value=[]))))
+
+        await create_document_import(
+            "ENG", Mock(), session, [_upload("a.docx", _zip_bytes())], None, google_url="link"
+        )
+        names = [d.filename for d in _job_args(monkeypatch)["documents"]]
+        assert names == ["a.docx", "Sheet.xlsx"]
+
+    @pytest.mark.asyncio
+    async def test_no_files_and_no_link_is_refused(self, monkeypatch):
+        _stub_services(monkeypatch)
+        with pytest.raises(BadRequestError, match="at least one"):
+            await create_document_import("ENG", Mock(), AsyncMock(), None, None, google_url="  ")
+
+    @pytest.mark.asyncio
+    async def test_a_link_counts_towards_the_file_limit(self, monkeypatch):
+        _stub_services(monkeypatch)
+        files = [_upload(f"{i}.md") for i in range(MAX_DOCUMENT_IMPORT_FILES)]
+        with pytest.raises(BadRequestError, match="at most"):
+            await create_document_import("ENG", Mock(), AsyncMock(), files, None, google_url="link")
 
 
 class TestReadAndCancel:

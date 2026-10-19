@@ -1683,11 +1683,17 @@ export const sectionsEn: HelpSection[] = [
     title: "Importing Documents as New Pages",
     category: "Attachments & Media",
     description:
-      "Turn existing Word, PDF, Markdown, and other documents into wiki pages in bulk - no copy-pasting.",
+      "Turn existing Word, PDF, Excel, Markdown, and other documents - or a Google Sheets or Docs link - into wiki pages in bulk, no copy-pasting.",
     keywords: [
       "import",
       "docx",
       "pdf",
+      "excel",
+      "xlsx",
+      "csv",
+      "google sheets",
+      "google docs",
+      "spreadsheet",
       "markdown",
       "epub",
       "convert",
@@ -1713,7 +1719,38 @@ export const sectionsEn: HelpSection[] = [
             Supported formats: Word (<Code>.docx</Code>), OpenDocument Text (
             <Code>.odt</Code>), Rich Text (<Code>.rtf</Code>), EPUB (
             <Code>.epub</Code>), HTML (<Code>.html</Code>/<Code>.htm</Code>), Markdown (
-            <Code>.md</Code>/<Code>.markdown</Code>), and PDF (<Code>.pdf</Code>).
+            <Code>.md</Code>/<Code>.markdown</Code>), PDF (<Code>.pdf</Code>), Excel (
+            <Code>.xlsx</Code>) and CSV (<Code>.csv</Code>).
+          </li>
+          <li>
+            <strong>Excel and CSV</strong>: each sheet becomes a <strong>table</strong>, its first
+            row the header row. A workbook with one sheet is one page; one with several becomes a
+            page named after the file, listing its sheets, with each sheet as a child page under it
+            (re-importing it with <strong>Replace existing</strong> updates those sheet pages
+            rather than adding copies). Merged cells, bold / italic / underline / strike-through, text and fill
+            colours, alignment, line breaks and links carry over, and numbers and dates read as the
+            sheet shows them (<Code>1,234.50</Code>, <Code>12.5%</Code>,{" "}
+            <Code>31/01/2026</Code>). <strong>Column widths are fitted to the content</strong>, not
+            copied from the sheet: a column of paragraphs gets the room (never narrower than a
+            readable line), a column of numbers or codes stays narrow, and a long header wraps
+            rather than widening its column, so rows stay a sensible height. A table with many
+            columns of text scrolls sideways instead of squeezing them. Widths can still be dragged
+            in the editor afterwards. A formula comes in as the value it last calculated. Hidden
+            sheets, charts, pictures and comments are left out (a hidden sheet is named in the
+            file&apos;s notes), and a very large sheet is cut to what one page can hold, with a note
+            saying how many rows came in. A CSV file may use commas, semicolons or tabs.
+          </li>
+          <li>
+            <strong>Google Sheets or Docs link</strong>: paste the file&apos;s address (
+            <Code>https://docs.google.com/spreadsheets/d/…</Code> or{" "}
+            <Code>https://docs.google.com/document/d/…</Code>) into the{" "}
+            <em>Google Sheets or Docs link</em> box under the drop zone, on its own or together with
+            files. WikiHub downloads it - a sheet with every tab, imported like an Excel file; a doc
+            as a Word file, so it can be reviewed and translated like one - and the page is named
+            after the file. It must be shared with <strong>Anyone with the link</strong> (Share →
+            General access) - WikiHub does not sign in to Google, so a private file is refused with a
+            message saying to share it. The page is a copy: later edits in Google do not reach it;
+            import again and choose <strong>Replace existing</strong> to refresh it.
           </li>
           <li>
             Each file becomes a new <strong>child page</strong> under the page you

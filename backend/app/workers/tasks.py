@@ -6,7 +6,10 @@ this module must be idempotent: arq re-runs a task if a worker dies mid-job.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import time
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -170,6 +173,23 @@ async def reap_backup_jobs(ctx: dict[str, Any], *, every_running_job: bool = Fal
 #: be doubled up by the next one (that would embed the same pages twice).
 _SEARCH_INDEX_LOCK = "lock:search_index"
 _SEARCH_INDEX_BUDGET_SECONDS = 50
+#: The lock outlives a crashed worker by at most this long...
+_SEARCH_INDEX_LOCK_TTL_SECONDS = 120
+#: ...and a live pass renews it this often, whatever it is doing. Renewing only
+#: between pages was not enough: on a slow CPU one page's embedding call ran
+#: for twelve minutes, the lock lapsed, and every following minute started
+#: another pass until all of the worker's slots were indexing and document
+#: imports sat queued behind them.
+_SEARCH_INDEX_LOCK_RENEW_SECONDS = 30
+
+#: Delete the lock only if it still holds this pass's token, so a pass whose
+#: lock did lapse can never release the one a newer pass now holds.
+_RELEASE_IF_OWNER = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+end
+return 0
+"""
 
 
 async def index_search_pages(ctx: dict[str, Any]) -> int:
@@ -180,18 +200,25 @@ async def index_search_pages(ctx: dict[str, Any]) -> int:
     traceback if a pass blew up.
     """
     redis = get_redis()
-    if not await redis.set(_SEARCH_INDEX_LOCK, "1", nx=True, ex=_SEARCH_INDEX_BUDGET_SECONDS + 40):
+    token = uuid.uuid4().hex
+    if not await redis.set(
+        _SEARCH_INDEX_LOCK, token, nx=True, ex=_SEARCH_INDEX_LOCK_TTL_SECONDS
+    ):
         logger.info("search_index_busy", detail="previous pass still running; skipped this one")
         return 0
+
+    async def renew_lock() -> None:
+        await redis.expire(_SEARCH_INDEX_LOCK, _SEARCH_INDEX_LOCK_TTL_SECONDS)
+
+    async def keep_lock() -> None:
+        while True:
+            await asyncio.sleep(_SEARCH_INDEX_LOCK_RENEW_SECONDS)
+            await renew_lock()
+
+    keeper = asyncio.create_task(keep_lock())
     try:
         async with session_scope() as session:
             config = await load_config(session)
-
-            async def renew_lock() -> None:
-                # One page can take minutes on a slow CPU; without this the lock
-                # would expire mid-pass and the next minute's pass would start too.
-                await redis.expire(_SEARCH_INDEX_LOCK, _SEARCH_INDEX_BUDGET_SECONDS + 240)
-
             return await index_pending(
                 session,
                 config,
@@ -202,7 +229,10 @@ async def index_search_pages(ctx: dict[str, Any]) -> int:
         logger.error("search_index_crashed", exc_info=True)
         raise
     finally:
-        await redis.delete(_SEARCH_INDEX_LOCK)
+        keeper.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await keeper
+        await redis.eval(_RELEASE_IF_OWNER, 1, _SEARCH_INDEX_LOCK, token)
 
 
 async def install_ollama(ctx: dict[str, Any], model: str) -> bool:

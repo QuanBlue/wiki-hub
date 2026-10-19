@@ -18,10 +18,12 @@ import tempfile
 import time
 import uuid
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from html import escape
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import anyio.to_thread
 from sqlalchemy import or_, select
@@ -227,10 +229,12 @@ async def _run_one_item(
             )
         if imported is not None and job.translate_to:
             # After the review, which reads the file in its own language. The page is made and
-            # safe by now, and what is translated is a revision of its own.
-            await _translate_page(
-                session, job=job, item=item, page=imported.page, creator=creator
-            )
+            # safe by now, and what is translated is a revision of its own. A workbook's text is
+            # in its sheets' pages; its own page is only their names, which stay as they are.
+            for translated in imported.children or [imported.page]:
+                await _translate_page(
+                    session, job=job, item=item, page=translated, creator=creator
+                )
 
 
 @dataclass
@@ -240,6 +244,8 @@ class _Imported:
     page: WikiPage
     html: str
     source: Path
+    #: The pages made from the file's sections (a workbook's sheets), if any.
+    children: list[WikiPage] = field(default_factory=list)
 
 
 async def _import_one(
@@ -307,6 +313,17 @@ async def _import_one(
     )
     warnings.extend(attachment_warnings)
 
+    children: list[WikiPage] = []
+    if extracted.sections:
+        # A workbook with several sheets: this page, named after the file, lists
+        # them, and each sheet is a child page of it.
+        children, section_warnings = await _import_sections(
+            session, space=space, parent=page, sections=extracted.sections,
+            creator=creator, filename=item.filename,
+        )
+        warnings.extend(section_warnings)
+        html = _sections_index_html(space, children)
+
     final_html = sanitize_imported_html(replace_media_tokens(html, urls))
     page.content = final_html
 
@@ -315,19 +332,7 @@ async def _import_one(
             page, creator, f"Replaced by import from {item.filename}"
         )
     else:
-        # `PageService.create` already wrote revision v1 with the empty
-        # body. Back-filling it beats calling `update`, which would leave
-        # an empty v1 in the history and add a v2 that nobody made.
-        revision = (
-            await session.execute(
-                select(PageRevision).where(
-                    PageRevision.page_id == page.id, PageRevision.version == 1
-                )
-            )
-        ).scalar_one_or_none()
-        if revision is not None:
-            revision.content = final_html
-            revision.change_summary = f"Imported from {item.filename}"
+        await _fill_first_revision(session, page, final_html, filename=item.filename)
 
     item.page_id = page.id
     item.page_title = page.title
@@ -337,7 +342,82 @@ async def _import_one(
     item.error = None
     await session.flush()
 
-    return _Imported(page=page, html=final_html, source=source)
+    return _Imported(page=page, html=final_html, source=source, children=children)
+
+
+async def _fill_first_revision(
+    session: AsyncSession, page: WikiPage, content: str, *, filename: str
+) -> None:
+    """Put the imported body into the revision ``PageService.create`` wrote.
+
+    That revision v1 holds the empty body the page was created with.
+    Back-filling it beats calling `update`, which would leave an empty v1 in
+    the history and add a v2 that nobody made.
+    """
+    revision = (
+        await session.execute(
+            select(PageRevision).where(
+                PageRevision.page_id == page.id, PageRevision.version == 1
+            )
+        )
+    ).scalar_one_or_none()
+    if revision is not None:
+        revision.content = content
+        revision.change_summary = f"Imported from {filename}"
+
+
+async def _import_sections(
+    session: AsyncSession,
+    *,
+    space: Space,
+    parent: WikiPage,
+    sections: list[tuple[str, str]],
+    creator: User,
+    filename: str,
+) -> tuple[list[WikiPage], list[str]]:
+    """One child page per section (a workbook's sheet), under ``parent``, in order.
+
+    A child with the same title already under ``parent`` can only be there
+    because the file was imported before and ``parent`` is being replaced, so
+    that child is replaced too - with its old body kept in its history - rather
+    than gaining a numbered twin on every refresh.
+    """
+    service = PageService(session)
+    pages: list[WikiPage] = []
+    warnings: list[str] = []
+    for raw_title, raw_html in sections:
+        title = (raw_title.strip() or "Sheet")[:255]
+        html, _title, normalize_warnings = normalize_document_html(raw_html, filename=filename)
+        warnings.extend(f"{title}: {warning}" for warning in normalize_warnings)
+        content = sanitize_imported_html(html)
+        existing = await _find_page_by_title(
+            session, space=space, parent_id=parent.id, title=title
+        )
+        if existing is not None:
+            existing.content = content
+            existing.updated_by_id = creator.id
+            await service.snapshot_revision(
+                existing, creator, f"Replaced by import from {filename}"
+            )
+            pages.append(existing)
+            continue
+        child = await service.create(
+            space, PageCreate(title=title, content="", parent_id=parent.id), creator
+        )
+        child.content = content
+        await _fill_first_revision(session, child, content, filename=filename)
+        pages.append(child)
+    return pages, warnings
+
+
+def _sections_index_html(space: Space, pages: list[WikiPage]) -> str:
+    """The parent page's body: a link to each child page, in the file's order."""
+    links = "".join(
+        f'<li><p><a href="/spaces/{quote(space.key)}/pages/{quote(page.slug)}">'
+        f"{escape(page.title)}</a></p></li>"
+        for page in pages
+    )
+    return f"<ul>{links}</ul>"
 
 
 def _asker(
