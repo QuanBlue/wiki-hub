@@ -57,6 +57,8 @@ def test_the_verdict_is_read_from_one_line_and_anything_else_keeps_the_reply() -
     assert parse_verdict("\n\nASK: Bạn muốn hỏi ngày nào?") == Verdict(
         "ask", "Bạn muốn hỏi ngày nào?"
     )
+    assert parse_verdict("NOTFOUND") == Verdict("notfound")
+    assert parse_verdict("NOT_FOUND - the wiki lacks it") == Verdict("notfound")
     # Not understood, empty or half-formed: the first reply stands.
     for reply in ("", "   ", "I think so", "SEARCH:", "WEATHER:  ", "ASK:   ", "billing"):
         assert parse_verdict(reply) == Verdict("ok"), reply
@@ -110,6 +112,8 @@ def test_the_decision_is_shown_the_question_and_titles_never_page_text() -> None
     assert "<reply>" in long and len(long) < 1200 and "none" in long
     for rules in (REVIEW_RULES, ROUTE_RULES):
         assert "WEATHER:" in rules and "ASK:" in rules
+    # A plain question is never asked back.
+    assert "Never ASK" in REVIEW_RULES and "NOTFOUND" in REVIEW_RULES
     assert "SEARCH:" in REVIEW_RULES and "WEB:" in ROUTE_RULES and "WIKI" in ROUTE_RULES
 
 
@@ -296,13 +300,44 @@ async def test_a_router_that_fails_leaves_the_question_to_the_first_pass(
 ) -> None:
     owner, _, _ = await _setup(installed)
     look.fail = True
-    model.script = [["NOT_FOUND"]]
+    model.script = [["NOT_FOUND"], ["It is a public tool [w1]."]]
 
     turn = await ChatService(installed, owner).begin(conversation("some question about the world"))
     events = [event async for event in turn.events()]
 
-    assert turn.route == "wiki" and events[-1]["result"]["found"] is False
-    assert web.queries == []
+    assert turn.route == "wiki"
+    # The second look could not be had either: a reply that found nothing in the wiki is
+    # not left a dead end - the internet is tried.
+    assert web.queries == ["some question about the world"]
+    assert events[-1]["result"]["basis"] == "web"
+
+
+async def test_not_in_the_wiki_stands_but_a_name_the_wiki_never_mentions_is_looked_up(
+    installed: AsyncSession, model: Model, web: Web, look: Look
+) -> None:
+    owner, space, pages = await _setup(installed)
+    await _page(pages, space, owner, "Billing server", "Billing server owner rotation notes")
+    await _page(pages, space, owner, "Omnichannel", "How the omnichannel desk works")
+
+    # An internal fact the wiki lacks: said so - nothing is looked up on the internet.
+    look.verdict = "NOTFOUND"
+    model.script = [["NOT_FOUND"]]
+    events = await run(installed, owner, conversation("how does the system handle a request"))
+    assert events[-1]["result"]["found"] is False and web.queries == []
+
+    # "Which 9router?" helps nobody when the wiki never mentions it: it is looked up instead.
+    look.verdict = "ASK: Bạn muốn hỏi 9router nào?"
+    model.script = [["NOT_FOUND"], ["9router is an AI proxy [w1]."]]
+    events = await run(installed, owner, conversation("hướng dẫn sử dụng 9router"))
+    assert web.queries == ["hướng dẫn sử dụng 9router"]
+    assert events[-1]["result"]["basis"] == "web"
+
+    # A name a page partly matches ("omni" and "Omnichannel") is worth asking about.
+    look.verdict = "ASK: Ý bạn là trang Omnichannel?"
+    model.script = [["NOT_FOUND"]]
+    events = await run(installed, owner, conversation("hướng dẫn sử dụng omni"))
+    assert events[-1]["result"]["basis"] == "clarify"
+    assert web.queries == ["hướng dẫn sử dụng 9router"]
 
 
 # ---------------------------------------- the second look, for what is left over

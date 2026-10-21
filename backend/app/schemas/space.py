@@ -86,6 +86,11 @@ class SpaceRead(BaseModel):
     #: to know the current user's id itself.
     is_owner: bool = False
     member_count: int = 0
+    #: Live pages in the space (the Trash is not counted).
+    page_count: int = 0
+    #: Knowledge-graph ties (link, mention, similar) between live pages that
+    #: start in this space; the page tree is not counted.
+    graph_link_count: int = 0
     #: Distinct groups holding an additive permission on this space.
     group_permission_count: int = 0
     #: Distinct non-superuser users holding a direct additive permission on

@@ -324,7 +324,8 @@ FastAPI modular monolith         ── Router → Service → Repository → DB
 Business logic lives in **services**, never in route handlers. SQLAlchemy models
 never cross the API boundary — every response is a Pydantic schema.
 
-Detailed design: [`docs/architecture.md`](docs/architecture.md).
+Detailed design: [`docs/architecture.md`](docs/architecture.md). Search, the knowledge graph and the AI
+assistant's retrieval: [`docs/knowledge-graph-and-rag.md`](docs/knowledge-graph-and-rag.md).
 
 ## 🧰 Tech Stack
 

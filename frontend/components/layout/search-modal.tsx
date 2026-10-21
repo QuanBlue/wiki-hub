@@ -7,6 +7,7 @@ import {
   Grid2X2,
   LifeBuoy,
   Loader2,
+  Paperclip,
   Search,
   Sparkles,
   X,
@@ -697,6 +698,19 @@ export function SearchModal({
                                           terms={results?.terms}
                                         />
                                       </div>
+                                      {page.file_name ? (
+                                        <div className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1 text-[11px]">
+                                          <Paperclip
+                                            className="size-3 shrink-0"
+                                            aria-hidden
+                                          />
+                                          <span className="truncate">
+                                            {t("search.resultInFile", {
+                                              file: page.file_name,
+                                            })}
+                                          </span>
+                                        </div>
+                                      ) : null}
                                       {page.snippet ? (
                                         <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
                                           <HighlightText

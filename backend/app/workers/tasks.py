@@ -17,6 +17,7 @@ from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.db.session import session_scope
 from app.modules.admin_mail.service import AdminMailService
+from app.modules.attachments.text import extract_pending as extract_attachment_pending
 from app.modules.ai.admin import check_all_connections
 from app.modules.ai import ollama
 from app.modules.ai.config import load_config
@@ -30,8 +31,9 @@ from app.modules.backup.automated import (
 from app.models.backup_job import BackupJob
 from app.modules.document_import.jobs import reap_abandoned_document_imports
 from app.modules.document_import.jobs import run_document_import as execute_document_import
+from app.modules.graph.builder import build_pending as build_graph_pending
 from app.modules.pages.service import PageService
-from app.modules.search.indexer import index_pending
+from app.modules.search.indexer import SEARCH_INDEX_LOCK, index_pending, indexing_paused
 from app.modules.import_export.service import reap_abandoned_confluence_imports, run_import
 from app.services.storage import get_storage
 
@@ -171,8 +173,11 @@ async def reap_backup_jobs(ctx: dict[str, Any], *, every_running_job: bool = Fal
 
 #: One indexing pass at a time: cron fires every minute, a slow pass must not
 #: be doubled up by the next one (that would embed the same pages twice).
-_SEARCH_INDEX_LOCK = "lock:search_index"
-_SEARCH_INDEX_BUDGET_SECONDS = 50
+_SEARCH_INDEX_LOCK = SEARCH_INDEX_LOCK
+#: How long one pass keeps embedding before it hands back its worker slot. Batch after
+#: batch while pages are waiting: ending at 50 seconds and waiting for the next minute's
+#: cron left the embedding model idle almost a quarter of the time.
+_SEARCH_INDEX_BUDGET_SECONDS = 280
 #: The lock outlives a crashed worker by at most this long...
 _SEARCH_INDEX_LOCK_TTL_SECONDS = 120
 #: ...and a live pass renews it this often, whatever it is doing. Renewing only
@@ -217,14 +222,29 @@ async def index_search_pages(ctx: dict[str, Any]) -> int:
 
     keeper = asyncio.create_task(keep_lock())
     try:
+        deadline = time.monotonic() + _SEARCH_INDEX_BUDGET_SECONDS
+        total = 0
+
+        async def paused() -> bool:
+            # Its own session, so a pause saved a moment ago is seen.
+            async with session_scope() as check:
+                return await indexing_paused(check)
+
         async with session_scope() as session:
+            if await indexing_paused(session):
+                logger.info("search_index_skipped", reason="paused_by_administrator")
+                return 0
             config = await load_config(session)
-            return await index_pending(
-                session,
-                config,
-                deadline=time.monotonic() + _SEARCH_INDEX_BUDGET_SECONDS,
-                heartbeat=renew_lock,
-            )
+            # One batch is at most "pages per minute" pages; take the next as soon as it is
+            # done. A batch that indexes nothing (no backlog, or the gateway refusing) ends it.
+            while time.monotonic() < deadline:
+                done = await index_pending(
+                    session, config, deadline=deadline, heartbeat=renew_lock, stop=paused
+                )
+                total += done
+                if done == 0:
+                    break
+            return total
     except Exception:
         logger.error("search_index_crashed", exc_info=True)
         raise
@@ -233,6 +253,112 @@ async def index_search_pages(ctx: dict[str, Any]) -> int:
         with contextlib.suppress(asyncio.CancelledError):
             await keeper
         await redis.eval(_RELEASE_IF_OWNER, 1, _SEARCH_INDEX_LOCK, token)
+
+
+async def keep_ollama_running(ctx: dict[str, Any]) -> bool:
+    """Every minute, and when the worker starts: if the self-hosted Ollama is enabled but its
+    container is stopped (Docker or the machine restarted), start it again.
+
+    Independent of indexing, and of pausing it: semantic search needs the model to embed each
+    question, whether or not pages are being indexed. An administrator who disabled Ollama
+    (which removes the container) is not overridden. Returns whether it was started.
+    """
+    try:
+        async with session_scope() as session:
+            config = await load_config(session)
+        if getattr(config, "embedding_source", "") != "ollama" or not config.embeddings_ready:
+            return False
+        return await ollama.ensure_running(config.tuning)
+    except ollama.OllamaError as exc:
+        logger.warning("ollama_restart_failed", error=str(exc)[:300])
+        return False
+
+
+#: One graph pass at a time, for the same reason as indexing.
+_GRAPH_LOCK = "lock:page_graph"
+_GRAPH_BUDGET_SECONDS = 50
+_GRAPH_LOCK_TTL_SECONDS = 120
+
+
+async def build_page_graph(ctx: dict[str, Any]) -> int:
+    """Work out how new and changed pages relate to the others (the knowledge graph).
+
+    Needs no AI for links and mentions; similar pages come from the search index.
+    Returns how many pages were brought up to date.
+    """
+    redis = get_redis()
+    token = uuid.uuid4().hex
+    if not await redis.set(_GRAPH_LOCK, token, nx=True, ex=_GRAPH_LOCK_TTL_SECONDS):
+        logger.info("graph_build_busy", detail="previous pass still running; skipped this one")
+        return 0
+
+    async def renew_lock() -> None:
+        await redis.expire(_GRAPH_LOCK, _GRAPH_LOCK_TTL_SECONDS)
+
+    try:
+        async with session_scope() as session:
+            config = await load_config(session)
+            result = await build_graph_pending(
+                session,
+                config,
+                deadline=time.monotonic() + _GRAPH_BUDGET_SECONDS,
+                heartbeat=renew_lock,
+            )
+            return result.text_pages + result.similar_pages
+    except Exception:
+        logger.error("graph_build_crashed", exc_info=True)
+        raise
+    finally:
+        await redis.eval(_RELEASE_IF_OWNER, 1, _GRAPH_LOCK, token)
+
+
+#: One pass at a time; reading a big PDF or workbook can outlast a minute.
+_ATTACHMENT_TEXT_LOCK = "lock:attachment_text"
+_ATTACHMENT_TEXT_BUDGET_SECONDS = 50
+_ATTACHMENT_TEXT_LOCK_TTL_SECONDS = 600
+
+
+async def extract_attachment_texts(ctx: dict[str, Any]) -> int:
+    """Read the words inside files attached to pages (Word, Excel, HTML, PDF...).
+
+    Needs no AI; the indexer then embeds what was read with the page. Pausing indexing
+    pauses this too, since it is what frees the server. Returns how many files were read.
+    """
+    redis = get_redis()
+    token = uuid.uuid4().hex
+    if not await redis.set(
+        _ATTACHMENT_TEXT_LOCK, token, nx=True, ex=_ATTACHMENT_TEXT_LOCK_TTL_SECONDS
+    ):
+        logger.info("attachment_text_busy", detail="previous pass still running; skipped this one")
+        return 0
+
+    async def renew_lock() -> None:
+        await redis.expire(_ATTACHMENT_TEXT_LOCK, _ATTACHMENT_TEXT_LOCK_TTL_SECONDS)
+
+    async def paused() -> bool:
+        async with session_scope() as check:
+            return await indexing_paused(check)
+
+    try:
+        if await paused():
+            return 0
+        deadline = time.monotonic() + _ATTACHMENT_TEXT_BUDGET_SECONDS
+        total = 0
+        async with session_scope() as session:
+            # Batch after batch while files are waiting, like indexing.
+            while time.monotonic() < deadline:
+                done = await extract_attachment_pending(
+                    session, get_storage(), deadline=deadline, stop=paused, heartbeat=renew_lock
+                )
+                total += done
+                if done == 0:
+                    break
+        return total
+    except Exception:
+        logger.error("attachment_text_crashed", exc_info=True)
+        raise
+    finally:
+        await redis.eval(_RELEASE_IF_OWNER, 1, _ATTACHMENT_TEXT_LOCK, token)
 
 
 async def install_ollama(ctx: dict[str, Any], model: str) -> bool:

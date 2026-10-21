@@ -145,6 +145,34 @@ describe("SearchModal", () => {
     ).toEqual(["Account", "tài khoản", "NUTIFOOD"]);
   });
 
+  it("says when the words were found in a file attached to the page", async () => {
+    mocked.get.mockResolvedValue({
+      query: "zircon",
+      spaces: [],
+      terms: ["zircon"],
+      pages: [
+        {
+          id: "p1",
+          title: "Sales",
+          slug: "sales",
+          space_key: "OPS",
+          space_name: "Operations",
+          snippet: "The zircon licence costs 4200",
+          updated_at: null,
+          file_id: "f1",
+          file_name: "prices.pdf",
+        },
+      ],
+    } satisfies SearchResults);
+    const actor = userEvent.setup();
+    render(<Harness />);
+    await actor.type(screen.getByPlaceholderText("Search WikiHub..."), "zircon");
+
+    expect(
+      await screen.findByText("In the attached file prices.pdf"),
+    ).toBeInTheDocument();
+  });
+
   it("navigates with the arrow keys and Enter", async () => {
     const actor = userEvent.setup();
     render(<Harness />);

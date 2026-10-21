@@ -19,17 +19,17 @@ from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import rate_limit
-from app.core.config import settings
 from app.core.exceptions import ServiceUnavailableError
 from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.models.user import User
 from app.modules.ai.client import chat_with_usage
 from app.modules.ai.config import load_config
+from app.modules.ai.limits import ai_rate_limit
 from app.modules.ai.skills import answer_system_prompt
 from app.modules.search.service import AnswerPassage, SearchService
 from app.modules.stats.recorder import record_ai_usage
-from app.schemas.ai import AnswerRequest, AnswerResult, AnswerSource
+from app.schemas.ai import AnswerFile, AnswerRequest, AnswerResult, AnswerSource
 
 logger = get_logger(__name__)
 
@@ -114,7 +114,7 @@ def answer_messages(query: str, sources: list[tuple[int, str, str]]) -> list[dic
         ]
     )
     return [
-        {"role": "system", "content": answer_system_prompt()},
+        {"role": "system", "content": answer_system_prompt(detail="search")},
         {"role": "user", "content": body},
     ]
 
@@ -183,6 +183,7 @@ def sources_of(passages: list[AnswerPassage]) -> list[AnswerSource]:
             space_key=passage.page.space_key,
             space_name=passage.page.space_name,
             excerpt=_excerpt(passage.text),
+            files=[AnswerFile(id=ref.id, filename=ref.filename) for ref in passage.files],
         )
         for number, passage in enumerate(passages, start=1)
     ]
@@ -234,7 +235,7 @@ class AnswerService:
                 return result
 
         # Only a question that reaches the model counts against the person's quota.
-        await rate_limit.enforce(f"ai:{self.user.id}", settings.ai_rate_limit)
+        await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
         messages = answer_messages(
             query,
             [

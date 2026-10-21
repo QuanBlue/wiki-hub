@@ -91,10 +91,42 @@ class ConfluenceSpaceList(list[ConfluenceSpace]):
         spaces: list[ConfluenceSpace] = (),
         groups: list[ConfluenceGroup] = (),
         users: list[ConfluenceUserInfo] = (),
+        user_keys: dict[str, str] | None = None,
     ) -> None:
         super().__init__(spaces)
         self.groups: list[ConfluenceGroup] = list(groups)
         self.users: list[ConfluenceUserInfo] = list(users)
+        #: Confluence user key / object id / name -> username, for anything that refers to a
+        #: person by reference (comments, likes).
+        self.user_keys: dict[str, str] = dict(user_keys or {})
+
+    def username(self, ref: str | None) -> str | None:
+        """The username a Confluence user reference (key, id or name) stands for."""
+        if not ref:
+            return None
+        return self.user_keys.get(ref) or self.user_keys.get(ref.lower()) or ref
+
+
+@dataclass(slots=True)
+class ConfluenceComment:
+    """One comment on a page (its latest version); ``parent_id`` makes it a reply."""
+
+    source_id: str
+    page_id: str
+    parent_id: str | None
+    #: The commenter as Confluence refers to them (a user key, usually).
+    creator: str | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+@dataclass(slots=True)
+class ConfluenceLike:
+    """A person's like of a page or of a comment (``content_id`` is either)."""
+
+    content_id: str
+    user: str | None
+    created_at: datetime | None
 
 
 @dataclass(slots=True)
@@ -531,7 +563,73 @@ def scan_archive(file_or_path: Path | IO[bytes]) -> ConfluenceSpaceList:
             spaces[page.space_id].pages.append(page)
 
     sorted_spaces = sorted(spaces.values(), key=lambda item: item.key)
-    return ConfluenceSpaceList(sorted_spaces, parsed_groups, parsed_users)
+    return ConfluenceSpaceList(sorted_spaces, parsed_groups, parsed_users, user_names)
+
+
+def _user_ref(props: dict[str, ET.Element], *names: str) -> str | None:
+    """A person in a property: a referenced user's key/id, or a plain username."""
+    for name in names:
+        ref = _reference(props.get(name))
+        if ref:
+            return ref
+        value = _text(props, name)
+        if value:
+            return value
+    return None
+
+
+def read_comments_and_likes(path: Path) -> tuple[list[ConfluenceComment], list[ConfluenceLike]]:
+    """Every live comment and every like in the archive, in one pass over ``entities.xml``.
+
+    A comment edited in Confluence is stored once per version; the older ones point at the
+    newest through ``originalVersion`` and are skipped, as are deleted comments. Their bodies
+    are ``BodyContent`` objects like a page's (see :func:`iter_page_bodies`).
+    """
+    comments: list[ConfluenceComment] = []
+    likes: list[ConfluenceLike] = []
+    with zipfile.ZipFile(path) as archive:
+        try:
+            stream = archive.open("entities.xml")
+        except KeyError as exc:
+            raise BadRequestError("The Confluence archive does not contain entities.xml.") from exc
+        with stream:
+            for _event, element in ET.iterparse(stream, events=("end",)):  # noqa: S314
+                if element.tag != "object":
+                    continue
+                cls_name = element.get("class") or ""
+                if cls_name == "Comment":
+                    props = _properties(element)
+                    source_id = element.findtext("id")
+                    page_id = _reference(props.get("containerContent")) or _reference(
+                        props.get("container")
+                    )
+                    if source_id and page_id and _is_live_attachment(props):
+                        comments.append(
+                            ConfluenceComment(
+                                source_id=source_id,
+                                page_id=page_id,
+                                parent_id=_reference(props.get("parent")),
+                                creator=_user_ref(props, "creator", "creatorName"),
+                                created_at=_timestamp(props, "creationDate", "createdDate"),
+                                updated_at=_timestamp(
+                                    props, "lastModificationDate", "lastModifiedDate"
+                                ),
+                            )
+                        )
+                elif cls_name in {"LikeEntity", "Like"}:
+                    props = _properties(element)
+                    content_id = _reference(props.get("content"))
+                    user = _user_ref(props, "user", "username", "userName")
+                    if content_id and user:
+                        likes.append(
+                            ConfluenceLike(
+                                content_id=content_id,
+                                user=user,
+                                created_at=_timestamp(props, "creationDate"),
+                            )
+                        )
+                element.clear()
+    return comments, likes
 
 
 def iter_page_bodies(path: Path) -> Iterator[tuple[str, str]]:

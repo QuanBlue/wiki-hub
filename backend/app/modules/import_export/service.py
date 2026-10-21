@@ -6,6 +6,7 @@ import tempfile
 import time
 import urllib.parse
 import uuid
+import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Callable
 from contextlib import suppress
@@ -23,8 +24,9 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 from app.models.attachment import PageAttachment
+from app.models.comment import CommentLike, PageComment
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
-from app.models.page import INVALID_IMPORT_ACTOR_LABEL, WikiPage
+from app.models.page import INVALID_IMPORT_ACTOR_LABEL, PageLike, WikiPage
 from app.models.permission import (
     Group,
     GroupMember,
@@ -40,12 +42,17 @@ from app.models.restriction import (
 from app.models.space import Space, SpaceMember, SpaceRole, SpaceVisibility
 from app.modules.pages.tiptap_html import new_task_item, new_task_list
 from app.modules.permissions.service import ROLE_PERMISSIONS
+from app.modules.import_export.comment_markdown import storage_to_markdown
 from app.modules.import_export.confluence import (
+    ConfluenceComment,
+    ConfluenceLike,
     ConfluencePage,
     ConfluencePermission,
     ConfluenceSpace,
+    ConfluenceSpaceList,
     iter_attachments,
     iter_page_bodies,
+    read_comments_and_likes,
     scan_archive,
 )
 from app.services.job_log_recovery import pending_log_entries, restore_log_entries
@@ -1338,6 +1345,131 @@ async def _run_with_heartbeat[T](
             finished.set()
 
 
+def _comments_and_likes(path: Path) -> tuple[list[ConfluenceComment], list[ConfluenceLike]]:
+    """:func:`read_comments_and_likes`, or none when they cannot be read: the pages already
+    imported must not be lost over their comments."""
+    try:
+        return read_comments_and_likes(path)
+    except (BadRequestError, zipfile.BadZipFile, ET.ParseError):
+        logger.warning("confluence_comments_unreadable", exc_info=True)
+        return [], []
+
+
+#: A Confluence comment counts as edited when it was last changed this long after it was made.
+_COMMENT_EDIT_GRACE = timedelta(minutes=1)
+
+
+async def _import_comments_and_likes(
+    session: AsyncSession,
+    service: "ConfluenceImportService",
+    job: ImportJob,
+    scanned: ConfluenceSpaceList | list[ConfluenceSpace],
+    imported_pages: dict[str, WikiPage],
+    source_comments: list[ConfluenceComment],
+    comment_bodies: dict[str, str],
+    source_likes: list[ConfluenceLike],
+    attachment_urls: dict[tuple[str, str], str],
+) -> None:
+    """Bring over the comments on the imported pages (replies kept as replies, with their
+    authors and dates) and who liked each page and comment.
+
+    Comment bodies become the Markdown WikiHub comments use (``comment_markdown``); a file or
+    image of the page a comment shows becomes a link that opens it. No notification is sent:
+    these are history, not new activity.
+    """
+    await log(session, job, "info", "comments", "Importing comments and likes...")
+    await session.commit()
+
+    def attachment_lookup(page_source_id: str) -> Callable[[str], str | None]:
+        def find(filename: str) -> str | None:
+            url = attachment_urls.get((page_source_id, filename))
+            # "/api/v1/attachments/<id>/content"
+            return url.split("/")[4] if url else None
+
+        return find
+
+    user_keys: dict[str, str] = getattr(scanned, "user_keys", {})
+
+    def username(ref: str) -> str | None:
+        name = user_keys.get(ref) or user_keys.get(ref.lower()) or ref
+        return None if not name or _is_invalid_import_username(name) else name
+
+    async def user_id(ref: str | None) -> uuid.UUID | None:
+        name = username(ref) if ref else None
+        return await service._resolve_or_create_user(name) if name else None
+
+    last_beat = time.monotonic()
+    comments: dict[str, PageComment] = {}
+    earliest = datetime.min.replace(tzinfo=UTC)
+    for source in sorted(source_comments, key=lambda c: c.created_at or earliest):
+        last_beat = await _beat(session, job, last_beat)
+        page = imported_pages[source.page_id]
+        converted = storage_to_markdown(
+            comment_bodies.get(source.source_id, ""),
+            username=username,
+            attachment_id=attachment_lookup(source.page_id),
+        )
+        if not converted.body:
+            continue
+        comment = PageComment(
+            page_id=page.id,
+            author_id=await user_id(source.creator),
+            body=converted.body,
+            mentions=converted.mentions,
+        )
+        if source.created_at:
+            comment.created_at = source.created_at
+            comment.updated_at = source.updated_at or source.created_at
+            if source.updated_at and source.updated_at - source.created_at > _COMMENT_EDIT_GRACE:
+                comment.edited_at = source.updated_at
+        session.add(comment)
+        comments[source.source_id] = comment
+    await session.flush()
+    replies = 0
+    for source in source_comments:
+        comment = comments.get(source.source_id)
+        parent = comments.get(source.parent_id or "")
+        if comment is not None and parent is not None:
+            comment.parent_id = parent.id
+            replies += 1
+
+    page_likes = comment_likes = 0
+    seen: set[tuple[str, uuid.UUID]] = set()
+    for like in source_likes:
+        target_page = imported_pages.get(like.content_id)
+        target_comment = comments.get(like.content_id)
+        if target_page is None and target_comment is None:
+            continue
+        liker = await user_id(like.user)
+        if liker is None or (like.content_id, liker) in seen:
+            continue
+        seen.add((like.content_id, liker))
+        if target_page is not None:
+            session.add(PageLike(page_id=target_page.id, user_id=liker))
+            page_likes += 1
+        else:
+            assert target_comment is not None
+            comment_like = CommentLike(comment_id=target_comment.id, user_id=liker)
+            if like.created_at:
+                comment_like.created_at = like.created_at
+            session.add(comment_like)
+            comment_likes += 1
+    job.counters = {
+        **job.counters,
+        "comments_imported": len(comments),
+        "likes_imported": page_likes + comment_likes,
+    }
+    await log(
+        session,
+        job,
+        "info",
+        "comments",
+        f"Imported {len(comments)} comments ({replies} replies) and "
+        f"{page_likes + comment_likes} likes ({page_likes} on pages, {comment_likes} on comments).",
+    )
+    await session.commit()
+
+
 async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid.UUID) -> None:
     service = ConfluenceImportService(session, storage)
     job = await session.get(ImportJob, job_id)
@@ -1890,6 +2022,18 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                 restore_timestamps()
                 await session.commit()
 
+            # The comments and likes of the imported pages, read now so the one pass over the
+            # bodies below also picks up each comment's text.
+            source_comments: list[ConfluenceComment] = []
+            source_likes: list[ConfluenceLike] = []
+            comment_bodies: dict[str, str] = {}
+            if imported_pages:
+                source_comments, source_likes = await _run_with_heartbeat(
+                    session, job, lambda: _comments_and_likes(path)
+                )
+                source_comments = [c for c in source_comments if c.page_id in imported_pages]
+            wanted_comment_ids = {comment.source_id for comment in source_comments}
+
             # Stream all page bodies in a single pass across the entire archive
             if imported_pages:
                 for page_source_id, html_content in await anyio.to_thread.run_sync(
@@ -1898,6 +2042,8 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     body_page: WikiPage | None = imported_pages.get(page_source_id)
                     if body_page:
                         body_page.content = _normalize_confluence_html(html_content)
+                    elif page_source_id in wanted_comment_ids:
+                        comment_bodies[page_source_id] = html_content
                 restore_timestamps()
                 await session.commit()
 
@@ -2071,6 +2217,19 @@ async def run_import(session: AsyncSession, storage: ObjectStorage, job_id: uuid
                     else ""
                 ),
             )
+            if source_comments or source_likes:
+                job.phase = "comments"
+                await _import_comments_and_likes(
+                    session,
+                    service,
+                    job,
+                    scanned,
+                    imported_pages,
+                    source_comments,
+                    comment_bodies,
+                    source_likes,
+                    attachment_urls,
+                )
             restore_timestamps()
             job.status, job.phase = "completed", "completed"
             await session.commit()

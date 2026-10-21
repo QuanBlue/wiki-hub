@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Gauge,
   Globe,
   KeyRound,
   ScanSearch,
@@ -10,14 +11,19 @@ import {
 import { useState } from "react";
 
 import { AiConnectionsPanel } from "@/components/admin/ai-connections-panel";
+import { AiLimitsPanel } from "@/components/admin/ai-limits-panel";
 import { AiSkillsPanel } from "@/components/admin/ai-skills-panel";
 import { SemanticSearchPanel } from "@/components/admin/semantic-search-panel";
 import { WebSearchPanel } from "@/components/admin/web-search-panel";
-import type { AiConnectionList, AiSkill, EmbeddingSettings } from "@/lib/admin-ai";
+import type {
+  AiConnectionList,
+  AiSkill,
+  EmbeddingSettings,
+} from "@/lib/admin-ai";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 
-type SectionId = "keys" | "semantic" | "web" | "skills";
+type SectionId = "keys" | "semantic" | "web" | "skills" | "limits";
 
 /** Semantic search is off until an administrator picks a source and a model. */
 const NO_EMBEDDING: EmbeddingSettings = {
@@ -64,6 +70,7 @@ export function AiSections({
     { id: "semantic", label: t("adminAi.semanticSection"), icon: ScanSearch },
     { id: "web", label: t("adminAi.webSection"), icon: Globe },
     { id: "skills", label: t("adminAi.skillsSection"), icon: Sparkles },
+    { id: "limits", label: t("adminAi.limitsSection"), icon: Gauge },
   ];
 
   return (
@@ -121,7 +128,10 @@ export function AiSections({
           aria-labelledby="ai-tab-semantic"
           hidden={active !== "semantic"}
         >
-          <SemanticSearchPanel initial={embedding} visible={active === "semantic"} />
+          <SemanticSearchPanel
+            initial={embedding}
+            visible={active === "semantic"}
+          />
         </div>
         <div
           id="ai-panel-web"
@@ -146,6 +156,15 @@ export function AiSections({
             initialWriting={writingSkill}
             initialSuggestions={suggestionsSkill}
           />
+        </div>
+        <div
+          id="ai-panel-limits"
+          role="tabpanel"
+          aria-labelledby="ai-tab-limits"
+          hidden={active !== "limits"}
+        >
+          {/* Mounted when first shown: it has nothing to load before then. */}
+          {active === "limits" ? <AiLimitsPanel /> : null}
         </div>
       </div>
     </div>

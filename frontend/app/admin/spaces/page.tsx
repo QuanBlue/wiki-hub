@@ -7,6 +7,7 @@ import {
   ListFilters,
   PaginationControls,
 } from "@/components/admin/list-controls";
+import { PageMapButton } from "@/components/admin/page-map-button";
 import { AdminSpaceRow } from "@/components/admin/space-row-actions";
 import { SummaryMetrics } from "@/components/admin/summary-metrics";
 import { CreateSpaceForm } from "@/components/spaces/create-space-form";
@@ -152,7 +153,10 @@ export default async function AdminSpacesPage({
             Archived spaces ({archivedSpaces.length})
           </TabLink>
         </nav>
-        <CreateSpaceForm users={users} />
+        <div className="flex flex-wrap items-center gap-2">
+          <PageMapButton />
+          <CreateSpaceForm users={users} />
+        </div>
       </div>
 
       <section className="border-border bg-surface overflow-hidden rounded-xl border shadow-sm">
@@ -175,13 +179,13 @@ export default async function AdminSpacesPage({
           </Suspense>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-210 text-sm">
+          <table className="w-full min-w-240 text-sm">
             <thead>
               <tr className="border-border bg-surface-sunken text-muted-foreground border-b text-left">
-                <th rowSpan={2} className="w-[35%] px-4 py-3 align-middle font-medium">
+                <th rowSpan={2} className="w-[30%] px-4 py-3 align-middle font-medium">
                   Space
                 </th>
-                <th rowSpan={2} className="w-[15%] px-4 py-3 align-middle font-medium">
+                <th rowSpan={2} className="w-[12%] px-4 py-3 align-middle font-medium">
                   Visibility
                 </th>
                 <th
@@ -190,12 +194,25 @@ export default async function AdminSpacesPage({
                 >
                   Licensed users
                 </th>
-                <th rowSpan={2} className="w-[12%] py-3 pr-4 pl-8 align-middle font-medium">
+                <th
+                  rowSpan={2}
+                  className="w-[7%] px-2 py-3 text-center align-middle font-medium whitespace-nowrap"
+                >
+                  Pages
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[9%] px-2 py-3 text-center align-middle font-medium whitespace-nowrap"
+                  title="Knowledge-graph ties (links, mentions, similar pages) starting in this space. The page tree is not counted."
+                >
+                  Graph links
+                </th>
+                <th rowSpan={2} className="w-[9%] py-3 pr-4 pl-8 align-middle font-medium">
                   Status
                 </th>
                 <th
                   rowSpan={2}
-                  className="w-[16%] px-4 py-3 text-right align-middle font-medium"
+                  className="w-[11%] px-4 py-3 text-right align-middle font-medium"
                 >
                   Actions
                 </th>
@@ -212,7 +229,7 @@ export default async function AdminSpacesPage({
             <tbody>
               {scopedSpaces.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center">
+                  <td colSpan={8} className="px-4 py-12 text-center">
                     {tab === "archived" ? (
                       <>
                         <Archive className="text-muted-foreground mx-auto size-7" />
@@ -236,7 +253,7 @@ export default async function AdminSpacesPage({
                 </tr>
               ) : filteredSpaces.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center">
+                  <td colSpan={8} className="px-4 py-12 text-center">
                     <p className="font-medium">No spaces found</p>
                     <p className="text-muted-foreground mt-1 text-sm">
                       Try a different name or space key.

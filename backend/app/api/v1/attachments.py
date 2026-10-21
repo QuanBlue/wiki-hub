@@ -24,6 +24,7 @@ from app.core.exceptions import (
 )
 from app.core.logging import get_logger
 from app.models.attachment import PageAttachment
+from app.models.attachment_text import AttachmentText
 from app.models.page import WikiPage
 from app.models.permission import Permission
 from app.models.space import Space
@@ -52,6 +53,8 @@ from app.modules.attachments.store import (
     safe_attachment_filename,
     store_attachment,
 )
+from app.modules.attachments.text import readable
+from app.modules.attachments.text import signature as text_signature
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
 from app.services.site_settings import SiteSettingsService
@@ -83,6 +86,12 @@ class AttachmentMetadataRead(BaseModel):
     content_type: str
     size_bytes: int
     created_at: str
+    #: Whether search and the AI assistant can use the words inside the file: ``waiting`` to
+    #: be read, or one of ``AttachmentText`` statuses; ``None`` for files that are not
+    #: documents (images, videos...).
+    text_status: str | None = None
+    #: Characters of text read from it.
+    text_chars: int = 0
 
 
 class OfficeEditorConfigRead(BaseModel):
@@ -182,6 +191,15 @@ async def get_attachment_metadata(
 ) -> AttachmentMetadataRead:
     """Return file metadata (name, type, size, date) for the attachment details modal."""
     attachment, _ = await _load_attachment_for_view(attachment_id, _user, session)
+    reading = await session.get(AttachmentText, attachment.id)
+    current = reading is not None and reading.signature == text_signature(
+        attachment.filename, attachment.size_bytes, attachment.office_revision
+    )
+    status: str | None = None
+    if current:
+        status = reading.status  # type: ignore[union-attr]
+    elif readable(attachment.filename):
+        status = "waiting"
     return AttachmentMetadataRead(
         id=attachment.id,
         page_id=attachment.page_id,
@@ -189,6 +207,8 @@ async def get_attachment_metadata(
         content_type=attachment.content_type,
         size_bytes=attachment.size_bytes,
         created_at=attachment.created_at.isoformat(),
+        text_status=status,
+        text_chars=reading.chars if current else 0,  # type: ignore[union-attr]
     )
 
 

@@ -470,7 +470,7 @@ export const sectionsEn: HelpSection[] = [
             <Code>New chat</Code> to clear it. <Code>Stop</Code> cancels a reply: the question stays,
             with what was written and a note that you cancelled it, and <Code>Try again</Code> asks
             it once more. Hover a question and press <Code>Answer again</Code> to get a
-            fresh answer; the earlier one stays under the <Code>1 / 2</Code> arrows to go back to. From a search answer, <Code>Continue in chat</Code> carries it on.
+            fresh answer; the earlier one stays under the <Code>1 / 2</Code> arrows to go back to. From a search answer, <Code>Continue in chat</Code> carries it on. The download button next to <Code>New chat</Code> saves the whole conversation as a Markdown file: every question and answer with the pages, files and web pages it was read from - handy to keep, or to share when an answer was wrong. A very long answer that had to stop says so at its end; type <Code>continue</Code> (or point out what is missing) and the rest follows.
           </li>
           <li>
             <strong>Administrators</strong> find the switch under Administration, AI assistant,{" "}
@@ -931,6 +931,78 @@ export const sectionsEn: HelpSection[] = [
           they could not read before it was deleted. A page in the Trash is left out of search,
           the page tree, recent activity and AI answers. Backups include the Trash, so a
           restored backup still has it.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "related-pages",
+    title: "Related pages and the page map",
+    category: "Workspace",
+    description:
+      "WikiHub works out which pages belong together - from links, names and similar content - and shows it under each page and on a map of the space.",
+    keywords: [
+      "related pages",
+      "backlinks",
+      "page map",
+      "knowledge graph",
+      "graph",
+      "links",
+      "mentions",
+      "orphan pages",
+    ],
+    body: (
+      <>
+        <p>
+          Nobody has to link pages for WikiHub to know they belong together. In the background,
+          about a minute after a page changes, it works out how each page ties to the others:
+          a <strong>link</strong> to another page, a page that <strong>names</strong> another by
+          its exact title, pages with <strong>similar content</strong> (when semantic search is on),
+          and the page tree. Pages are never changed by this.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Related pages</strong> appear under a page&apos;s text, each with why: linked
+            from this page, links to this page, named on this page, names this page, or similar
+            content. Pages from other spaces say which space they are in.
+          </li>
+          <li>
+            <strong>Names become links</strong>: when a page names another page by its title, the
+            first place it does so is shown as a link while you read. Headings, code and existing
+            links are left alone, and the stored page is not changed.
+          </li>
+          <li>
+            <strong>Page map</strong>, at the bottom of the space&apos;s sidebar, draws the
+            space&apos;s pages and their ties. Hover a page to light up its neighbours, click it to
+            see what it is tied to and open it, or double-click to open it straight away. Colour the
+            map by <strong>Group</strong> (pages that tie together) or <strong>Branch</strong> (where
+            they sit in the page tree), turn kinds of tie on and off, find a page by name, zoom with
+            the wheel or the buttons and drag to move around. The legend names every group; click
+            one to show only its pages. <strong>Pages on the map</strong> lists them all for the
+            keyboard and screen readers.
+          </li>
+          <li>
+            <strong>All spaces</strong>: switch the map from <strong>This space</strong> to{" "}
+            <strong>All spaces</strong>, or click <strong>Page map</strong> on the{" "}
+            <strong>Spaces</strong> page, to see every space you can open on one map - with the ties
+            between spaces, such as two guides in different spaces about the same tool. It is
+            coloured by <strong>Space</strong>, pages of one space sit together, and the search also
+            matches space names. A page opens in its own space.
+          </li>
+          <li>
+            <strong>Insights</strong>, beside the map, lists pages tied to nothing (worth linking
+            or moving under a related page), pages that join groups otherwise apart, and loosely
+            tied groups - pages held together by a chain of single ties; click one to show only
+            that group. Picking a page shows the start of its text, so you can tell what it is
+            before opening it.
+          </li>
+        </ul>
+        <Callout variant="note" title="WHO SEES WHAT">
+          Related pages and the map only ever show pages you may read: a restricted page never
+          appears, not even as a tie between two pages you can see. Copies of one page (such as{" "}
+          <Code>Page title (1)</Code>) count once. The AI assistant uses the same ties to read a
+          few related pages when it answers - see <em>AI assistant</em>.
         </Callout>
       </>
     ),
@@ -1506,6 +1578,71 @@ export const sectionsEn: HelpSection[] = [
           <Code>config.json</Code>, reviewing a signed PDF contract, or eyeballing a
           design PNG - all without ever leaving the wiki page it&apos;s attached to.
         </p>
+      </>
+    ),
+  },
+  {
+    id: "ask-about-attachments",
+    title: "Searching and Asking About Attached Files",
+    category: "Attachments & Media",
+    description:
+      "The words inside attached Word, Excel, PDF and HTML files are searchable, and the AI assistant can answer from them - or from one file alone.",
+    keywords: [
+      "attachment",
+      "file",
+      "pdf",
+      "word",
+      "excel",
+      "search",
+      "ask",
+      "assistant",
+      "notebook",
+      "scanned",
+      "đính kèm",
+    ],
+    body: (
+      <>
+        <p>
+          You do not have to import a document to make it findable. When a Word, Excel, CSV,
+          PDF, HTML, Markdown, OpenDocument, RTF, EPUB or text file is attached to a page,
+          WikiHub reads the words inside it in the background (usually within a minute or two)
+          and never changes the file.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Search</strong> finds the page by the words in its files. When the words are
+            only in a file, the result says <Code>In the attached file ...</Code> and shows the
+            matching text from it.
+          </li>
+          <li>
+            <strong>The AI assistant</strong> answers from attached files as it does from pages.
+            Under each source page it names the files the answer was read from; click one to
+            open it.
+          </li>
+          <li>
+            <strong>Ask about one file</strong>: open the page&apos;s <Code>Attachments</Code> list
+            and click <Code>Ask about this file</Code>. The chat then answers from that file only
+            (like a notebook with one source) - not from the rest of the wiki or the internet -
+            and shows <Code>Asking about ...</Code> above the box. Try{" "}
+            <Code>Summarise this file</Code>. Click the <Code>×</Code> on that label to ask the
+            whole wiki again.
+          </li>
+          <li>
+            Each file in the <Code>Attachments</Code> list says whether its words could be read:{" "}
+            <Code>Content read</Code>, <Code>Reading…</Code>, <Code>Scanned PDF</Code> (page
+            images with no selectable text; WikiHub does not run text recognition on them),{" "}
+            <Code>Too large to read</Code> (over 50 MB), <Code>Could not read</Code> (damaged or
+            password-protected) or <Code>No text</Code>. Images, videos and archives are not read.
+          </li>
+          <li>
+            Only files the page still links to count: remove a file from the page and its words
+            leave search too. A file edited in the office editor, or replaced, is read again.
+          </li>
+          <li>
+            Nobody finds or hears anything from a file they could not open: a file counts only
+            for people who may read the page it is attached to.
+          </li>
+        </ul>
       </>
     ),
   },
@@ -2422,6 +2559,17 @@ export const sectionsEn: HelpSection[] = [
             the ones that measure use turn amber at 70% and red at 90%.
           </li>
           <li>
+            <strong>Usage by container</strong>: two donut charts, one for memory and one for CPU,
+            show how much of the whole server each container takes. The slices also include{" "}
+            <Code>System and other</Code> (what the server uses outside WikiHub&apos;s containers)
+            and <Code>Free</Code>, so every slice is read against the whole machine. The six biggest
+            containers each get a colour and the rest are one grey slice; a container keeps its
+            colour as others overtake it. Hover or focus a row in the list to see its slice in the
+            middle of the ring. CPU is shown in cores against all the server&apos;s cores. When the
+            containers take only a small part of the server, switch a chart to{" "}
+            <strong>Containers only</strong> to compare them with each other.
+          </li>
+          <li>
             <strong>Containers</strong>: name, short id and image, status (<Code>Healthy</Code>,{" "}
             <Code>Unhealthy</Code>, <Code>Running</Code> or the state it stopped in, plus how
             often Docker restarted it), uptime, CPU and memory. CPU is a share of one core, so
@@ -3064,7 +3212,9 @@ export const sectionsEn: HelpSection[] = [
       <>
         <p>
           <strong>Administration &gt; Spaces</strong> lists every space with Total /
-          Active / Archived tiles. Permanent space deletion is only available here (an
+          Active / Archived tiles, and for each space its live <strong>Pages</strong> (the Trash
+          not counted) and <strong>Graph links</strong> - the links, mentions and similar pages
+          that start in it (see <em>Related pages and the page map</em>). Permanent space deletion is only available here (an
           individual space&apos;s own settings only offer Archive). Open a space&apos;s{" "}
           <strong>Access</strong> panel to manage exactly who can do what:
         </p>
@@ -3262,7 +3412,10 @@ export const sectionsEn: HelpSection[] = [
           <li>
             Confluence import scans the archive for spaces, flags key conflicts, lets
             you pick which spaces to bring in, and runs as a background job with live
-            log output.
+            log output. Page comments come along too - replies stay replies, with their
+            authors and dates, and a file or image a comment showed becomes a link that opens
+            it - as do the likes on pages and on comments. Comments and likes on pages that
+            were deleted in Confluence are left out; no one is notified about them.
           </li>
           <li>
             A large Confluence archive can take hours to upload. The page keeps your
@@ -3526,9 +3679,42 @@ export const sectionsEn: HelpSection[] = [
             for embeddings, for providers that offer none) or <Code>Self-hosted (Ollama)</Code>. Only
             models that can create embeddings are listed, and <Code>Save</Code> checks that the source
             really embeds with the model you pick. WikiHub then indexes every page in the background, a
-            few at a time, keeps the index current as pages change, and shows progress in the section.
-            Changing the model rebuilds the index. Leave the model on <Code>Off</Code> to keep plain
-            keyword search. Results always respect the permissions of whoever searches.
+            few at a time, keeps the index current as pages change, and shows progress in the section,
+            with roughly how long the rest will take at the pace of the last 15 minutes.
+            Changing the model rebuilds the index. <Code>Pause</Code>, beside the progress, stops indexing
+            for a while to free the server (a self-hosted model is unloaded from memory too); pages
+            already indexed are still found by meaning, and <Code>Resume</Code> carries on from where it
+            stopped. Leave the model on <Code>Off</Code> to keep plain
+            keyword search. Results always respect the permissions of whoever searches. The words
+            inside files attached to pages (Word, Excel, PDF, HTML...) are read and indexed too;
+            the section shows <Code>Attached files: ... read, ... waiting</Code>, and{" "}
+            <Code>Pause</Code> pauses reading them as well.
+          </li>
+          <li>
+            <strong>Usage limits</strong> set how many AI calls one person may make an hour, so a busy
+            user or a script cannot use up the provider&apos;s quota for everyone:{" "}
+            <Code>AI requests per person</Code> (questions, chat, summaries, writing help; a web
+            look-up has its own count of the same size) and{" "}
+            <Code>Document translation calls per person</Code> (translating an imported document
+            takes many small calls, so it has its own allowance). Leave a box empty for the
+            server&apos;s default (60 and 1500 an hour unless <Code>WIKIHUB_AI_RATE_LIMIT</Code> /{" "}
+            <Code>WIKIHUB_AI_TRANSLATE_RATE_LIMIT</Code> say otherwise). A change applies within half
+            a minute; someone over the limit is told to wait a moment.
+          </li>
+          <li>
+            <strong>Related pages (knowledge graph)</strong> help the assistant answer questions that
+            need more than one page. WikiHub works out which pages belong together: pages that link to
+            each other, pages that name another page by its exact title (nobody has to insert a link),
+            pages with similar content (from the semantic search index, without calling any model), and
+            their place in the page tree. This runs in the background every minute and never changes a
+            page. In <strong>Semantic search</strong> › the tuning settings,{" "}
+            <Code>Related pages added to answers</Code> lets the assistant also read up to that many pages
+            tied to the ones search found (2 by default; <Code>0</Code> turns it off). They only use what
+            room is left, so they never push out what search found, and only pages the person asking may
+            read are used. <Code>Similar-page threshold</Code> sets how alike two pages must be to count
+            as similar. Copies of one page (such as <Code>Page title (1)</Code>) count once, both among
+            related pages and among the pages search hands the assistant, so a page copied many times
+            never crowds out the others.
           </li>
           <li>
             <strong>Self-hosted Ollama</strong> runs the embedding model on this server when your provider

@@ -13,7 +13,6 @@ import re
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import rate_limit
-from app.core.config import settings
 from app.core.exceptions import ServiceUnavailableError
 from app.models.user import User
 from app.modules.ai.assistant_context import actions_for, match_topics, viewer_of
@@ -21,6 +20,7 @@ from app.modules.ai.client import chat_with_usage
 from app.modules.ai.config import load_config
 from app.modules.ai.help_knowledge import help_block, section_titles
 from app.modules.ai.help_knowledge import search as search_help
+from app.modules.ai.limits import ai_rate_limit
 from app.modules.permissions.service import PermissionService
 from app.modules.stats.recorder import record_ai_usage
 from app.schemas.ai import AnswerAction, HelpAnswer, HelpAskRequest, HelpGuide
@@ -93,7 +93,7 @@ class HelpAnswerService:
         if not passages:
             # Nothing in the manual is about this: no model call, just say so.
             return HelpAnswer(found=False, answer="", guides=guides, actions=actions)
-        await rate_limit.enforce(f"ai:{self.user.id}", settings.ai_rate_limit)
+        await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
         is_admin = await PermissionService(self.session).is_system_admin(self.user)
         reply = await chat_with_usage(
             config,

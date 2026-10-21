@@ -23,6 +23,7 @@ import {
 } from "react";
 
 import { LogsDialog } from "@/components/admin/monitor/logs-dialog";
+import { UsageDonuts } from "@/components/admin/monitor/usage-donuts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/components/ui/job-progress";
@@ -358,6 +359,10 @@ export function MonitorView({ initial }: { initial: MonitorOverview | null }) {
             />
           </div>
         </section>
+      ) : null}
+
+      {host && data ? (
+        <UsageDonuts host={host} containers={data.containers} />
       ) : null}
 
       <section

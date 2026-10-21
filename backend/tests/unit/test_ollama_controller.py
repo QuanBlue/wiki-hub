@@ -472,3 +472,47 @@ async def test_start_rejects_out_of_range_options_and_free_text_over_http(served
         assert too_big.status_code == 422
         no_numbers = await client.post("/start", json={"memory_mb": "lots"})
         assert no_numbers.status_code == 422
+
+
+async def test_a_container_left_on_a_network_that_is_gone_is_made_afresh() -> None:
+    calls: list[tuple[str, str]] = []
+    exists = True
+    started = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal exists, started
+        calls.append((request.method, request.url.path))
+        path = request.url.path
+        if path == f"/containers/{docker_api.CONTAINER}/json":
+            if not exists:
+                return httpx.Response(404)
+            wanted = docker_api.Params.default()
+            return httpx.Response(
+                200,
+                json={
+                    "HostConfig": {"Memory": wanted.memory_mb * 1024**2},
+                    "Config": {"Env": [f"OLLAMA_KEEP_ALIVE={wanted.keep_alive}"]},
+                },
+            )
+        if path.endswith("/json"):
+            return httpx.Response(200, json={"NetworkSettings": {"Networks": {"n": {}}}})
+        if request.method == "DELETE":
+            exists = False
+            return httpx.Response(204)
+        if path == "/containers/create":
+            exists = True
+            return httpx.Response(201)
+        if path.endswith("/start"):
+            started += 1
+            # The first start fails: the old network is gone.
+            return (
+                httpx.Response(204)
+                if started > 1
+                else httpx.Response(404, text="network n not found")
+            )
+        return httpx.Response(204)
+
+    async with docker(handler) as http:
+        await docker_api.start(http, docker_api.Params.default())
+
+    assert ("POST", "/containers/create") in calls and started == 2

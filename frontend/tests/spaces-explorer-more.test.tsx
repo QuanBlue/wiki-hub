@@ -6,15 +6,27 @@ import { SpacesExplorer } from "@/components/spaces/spaces-explorer";
 import { api } from "@/lib/api-client";
 import type { Space } from "@/types/api";
 
-const m = vi.hoisted(() => ({ refresh: vi.fn(), tab: null as string | null, toastError: vi.fn() }));
+const m = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  tab: null as string | null,
+  toastError: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: m.refresh, push: vi.fn() }),
-  useSearchParams: () => ({ get: (key: string) => (key === "tab" ? m.tab : null) }),
+  useSearchParams: () => ({
+    get: (key: string) => (key === "tab" ? m.tab : null),
+  }),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: m.toastError } }));
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
-  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  api: {
+    get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 vi.mock("@/components/admin/edit-space-modal", () => ({
   EditSpaceModal: ({ open, space }: { open: boolean; space: Space }) =>
@@ -55,14 +67,27 @@ beforeEach(() => {
 describe("SpacesExplorer", () => {
   it("opens on the tab named in the URL", () => {
     m.tab = "starred";
-    render(<SpacesExplorer spaces={[space(1, { is_favorite: true }), space(2)]} />);
+    render(
+      <SpacesExplorer spaces={[space(1, { is_favorite: true }), space(2)]} />,
+    );
     expect(screen.getByText("Space 1")).toBeInTheDocument();
     expect(screen.queryByText("Space 2")).not.toBeInTheDocument();
   });
 
   it("filters by name, key or description and offers to clear", async () => {
     const actor = userEvent.setup();
-    render(<SpacesExplorer spaces={[space(1), space(2, { icon: "🚀", visibility: "restricted", status: "archived" })]} />);
+    render(
+      <SpacesExplorer
+        spaces={[
+          space(1),
+          space(2, {
+            icon: "🚀",
+            visibility: "restricted",
+            status: "archived",
+          }),
+        ]}
+      />,
+    );
     const search = screen.getByPlaceholderText("Search spaces");
     await actor.type(search, "docs 2");
     expect(screen.getByText("Space 2")).toBeInTheDocument();
@@ -71,7 +96,9 @@ describe("SpacesExplorer", () => {
     expect(screen.getByText("archived")).toBeInTheDocument();
     expect(screen.getByText("Private")).toBeInTheDocument();
 
-    await actor.click(screen.getByRole("button", { name: "Clear space search" }));
+    await actor.click(
+      screen.getByRole("button", { name: "Clear space search" }),
+    );
     expect(screen.getByText("Space 1")).toBeInTheDocument();
 
     await actor.type(search, "k1");
@@ -90,7 +117,9 @@ describe("SpacesExplorer", () => {
     await actor.click(screen.getByRole("button", { name: /^Favorite/ }));
     expect(screen.getByText("No favorite spaces yet")).toBeInTheDocument();
     await actor.click(screen.getByRole("button", { name: /^Own/ }));
-    expect(screen.getByText("You don't own any spaces yet")).toBeInTheDocument();
+    expect(
+      screen.getByText("You don't own any spaces yet"),
+    ).toBeInTheDocument();
     await actor.click(screen.getByRole("button", { name: /^All/ }));
     rerender(<SpacesExplorer spaces={[]} />);
     expect(screen.getByText("No spaces found")).toBeInTheDocument();
@@ -116,18 +145,34 @@ describe("SpacesExplorer", () => {
 
   it("toggles a favourite and rolls back on failure", async () => {
     const actor = userEvent.setup();
-    render(<SpacesExplorer spaces={[space(1), space(2, { is_favorite: true })]} />);
-    await actor.click(screen.getByRole("button", { name: "Add Space 1 to favourites" }));
-    await waitFor(() => expect(mocked.put).toHaveBeenCalledWith("/api/v1/spaces/K1/favorite"));
+    render(
+      <SpacesExplorer spaces={[space(1), space(2, { is_favorite: true })]} />,
+    );
+    await actor.click(
+      screen.getByRole("button", { name: "Add Space 1 to favourites" }),
+    );
+    await waitFor(() =>
+      expect(mocked.put).toHaveBeenCalledWith("/api/v1/spaces/K1/favorite"),
+    );
     expect(m.refresh).toHaveBeenCalled();
 
-    await actor.click(screen.getByRole("button", { name: "Remove Space 2 from favourites" }));
-    await waitFor(() => expect(mocked.delete).toHaveBeenCalledWith("/api/v1/spaces/K2/favorite"));
+    await actor.click(
+      screen.getByRole("button", { name: "Remove Space 2 from favourites" }),
+    );
+    await waitFor(() =>
+      expect(mocked.delete).toHaveBeenCalledWith("/api/v1/spaces/K2/favorite"),
+    );
 
     mocked.put.mockRejectedValueOnce(new Error("x"));
-    await actor.click(screen.getByRole("button", { name: "Add Space 2 to favourites" }));
-    await waitFor(() => expect(m.toastError).toHaveBeenCalledWith("Could not update favourites."));
-    expect(screen.getByRole("button", { name: "Add Space 2 to favourites" })).toBeInTheDocument();
+    await actor.click(
+      screen.getByRole("button", { name: "Add Space 2 to favourites" }),
+    );
+    await waitFor(() =>
+      expect(m.toastError).toHaveBeenCalledWith("Could not update favourites."),
+    );
+    expect(
+      screen.getByRole("button", { name: "Add Space 2 to favourites" }),
+    ).toBeInTheDocument();
   });
 
   it("opens the edit modal for administrators only", async () => {
@@ -136,14 +181,53 @@ describe("SpacesExplorer", () => {
       <SpacesExplorer
         spaces={[
           space(1),
-          space(2, { my_role: "viewer", my_permissions: ["admin"] } as Partial<Space>),
+          space(2, {
+            my_role: "viewer",
+            my_permissions: ["admin"],
+          } as Partial<Space>),
           space(3, { my_role: "viewer", my_permissions: [] } as Partial<Space>),
         ]}
       />,
     );
     const edits = screen.getAllByRole("button", { name: "Edit" });
-    expect(edits.map((b) => (b as HTMLButtonElement).disabled)).toEqual([false, false, true]);
+    expect(edits.map((b) => (b as HTMLButtonElement).disabled)).toEqual([
+      false,
+      false,
+      true,
+    ]);
     await actor.click(edits[0]);
-    expect(within(screen.getByRole("dialog")).getByText("edit K1")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("dialog")).getByText("edit K1"),
+    ).toBeInTheDocument();
+  });
+
+  it("lists pages but leaves graph links to administrators", () => {
+    render(
+      <SpacesExplorer
+        spaces={[space(1, { page_count: 12, graph_link_count: 40 })]}
+      />,
+    );
+
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.queryByText("40")).not.toBeInTheDocument();
+    expect(screen.queryByText("Graph links")).not.toBeInTheDocument();
+  });
+
+  it("opens the map of every space", async () => {
+    mocked.get.mockResolvedValue({
+      spaces: [],
+      nodes: [],
+      edges: [],
+      total_pages: 0,
+      insights: { orphans: [], bridges: [], sparse_groups: [] },
+    });
+    render(<SpacesExplorer spaces={[space(1)]} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Page map" }));
+
+    expect(
+      await screen.findByText("Page map - all spaces"),
+    ).toBeInTheDocument();
+    expect(mocked.get).toHaveBeenCalledWith("/api/v1/graph");
   });
 });

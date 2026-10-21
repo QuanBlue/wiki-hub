@@ -41,6 +41,12 @@ from app.modules.import_export.service import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_comments(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These archives are stand-ins, not real zips: they hold no comments or likes."""
+    monkeypatch.setattr(import_module, "read_comments_and_likes", lambda _path: ([], []))
+
+
 class _ScalarResult:
     def __init__(self, values):
         self.values = values

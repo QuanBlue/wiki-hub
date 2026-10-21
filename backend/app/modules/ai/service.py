@@ -25,6 +25,7 @@ from app.modules.ai.answer import scrub_secrets
 from app.modules.ai.client import chat_with_usage
 from app.modules.ai.config import AIConfig, load_config
 from app.modules.ai.draft_html import draft_to_html, split_title
+from app.modules.ai.limits import ai_rate_limit
 from app.modules.ai.page_context import (
     find_related,
     parse_questions,
@@ -191,7 +192,7 @@ class AIService:
         space = await self.spaces.get_by_key(key)
         # Only someone who could create the page may spend the model on it.
         await self.pages.require_editor(space, self.user)
-        await rate_limit.enforce(f"ai:{self.user.id}", settings.ai_rate_limit)
+        await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
         return config, space
 
     async def clarify_page(self, key: str, payload: PageDraftRequest) -> PageClarify:
@@ -340,7 +341,7 @@ class AIService:
         text = page_plain_text(page.content, settings.ai_max_input_chars)
         if len(text) < 40:
             return PageSuggestions(labels=[], related=[])
-        await rate_limit.enforce(f"ai:{self.user.id}", settings.ai_rate_limit)
+        await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
         candidates = [
             other
             for other in await find_related(
@@ -451,7 +452,7 @@ class AIService:
         redis = get_redis()
         if cached := await self._read(redis, cache_key):
             return ExplainResult(result=cached, cached=True)
-        await rate_limit.enforce(f"ai:{self.user.id}", settings.ai_rate_limit)
+        await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
         parts = [title] if title else []
         if context:
             parts += ["<surrounding>", context, "</surrounding>"]
@@ -513,7 +514,7 @@ class AIService:
         async def charge() -> None:
             nonlocal charged
             if not charged:
-                await rate_limit.enforce(f"ai:{self.user.id}", settings.ai_rate_limit)
+                await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
                 charged = True
 
         summary = None if refresh else await self._read(redis, base_key)

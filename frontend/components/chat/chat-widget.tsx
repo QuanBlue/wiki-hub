@@ -34,10 +34,12 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  Paperclip,
   RotateCw,
   SendHorizontal,
   Sparkles,
   SquarePen,
+  Download,
   Square,
   TriangleAlert,
   X,
@@ -82,9 +84,15 @@ import {
   type PlanState,
   type ChatFailure,
   type ChatOpenDetail,
+  type ChatFile,
   readDetail,
   saveDetail,
 } from "@/lib/ai-chat";
+import {
+  chatToMarkdown,
+  downloadMarkdown,
+  exportFileName,
+} from "@/lib/chat-export";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 
@@ -850,6 +858,9 @@ function ChatPanel({
   // How long and thorough the answers are; read once, like the width (the panel is drawn only
   // after the AI status is known, long after hydration).
   const [detail, setDetail] = useState<ChatDetail>(readDetail);
+  // The attached file questions are asked about, like a notebook with one source; none asks
+  // the whole wiki.
+  const [file, setFile] = useState<ChatFile | null>(null);
   const {
     entries,
     slots,
@@ -865,7 +876,7 @@ function ChatPanel({
     cancelPlan,
     clear,
     adopt,
-  } = useChat(userId, detail);
+  } = useChat(userId, detail, file?.id ?? null);
   const [draft, setDraft] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
@@ -894,6 +905,10 @@ function ChatPanel({
     adoptRef.current = (detail) => {
       if (detail.question && detail.result)
         adopt(detail.question, detail.result);
+      if (detail.file) {
+        setFile(detail.file);
+        inputRef.current?.focus();
+      }
     };
     return () => {
       adoptRef.current = null;
@@ -967,7 +982,9 @@ function ChatPanel({
     inputRef.current?.focus();
   };
 
-  const examples = [t("chat.example1"), t("chat.example2"), t("chat.example3")];
+  const examples = file
+    ? [t("chat.fileExample1"), t("chat.fileExample2"), t("chat.fileExample3")]
+    : [t("chat.example1"), t("chat.example2"), t("chat.example3")];
   const last = entries[entries.length - 1];
 
   return (
@@ -977,6 +994,38 @@ function ChatPanel({
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
           {t("chat.title")}
         </h2>
+        <Button
+          variant="subtle"
+          size="icon"
+          disabled={entries.length === 0 || busy}
+          onClick={() =>
+            downloadMarkdown(
+              chatToMarkdown(
+                entries,
+                {
+                  title: t("chat.exportTitle"),
+                  exportedAt: t("chat.exportedAt"),
+                  question: t("chat.exportQuestion"),
+                  answer: t("chat.exportAnswer"),
+                  sources: t("chat.exportSources"),
+                  alsoRead: t("search.answerRelated"),
+                  web: t("chat.exportWeb"),
+                  files: t("chat.exportFiles"),
+                  notFound: t("chat.exportNotFound"),
+                  failed: t("chat.exportFailed"),
+                  stopped: t("chat.exportStopped"),
+                  basis: (basis) => t(`chat.exportBasis_${basis}`),
+                },
+                { origin: window.location.origin },
+              ),
+              exportFileName(),
+            )
+          }
+          aria-label={t("chat.export")}
+          title={t("chat.export")}
+        >
+          <Download className="size-4" aria-hidden />
+        </Button>
         <Button
           variant="subtle"
           size="sm"
@@ -1024,7 +1073,11 @@ function ChatPanel({
         }}
         className={cn(
           "min-h-0 flex-1 overflow-y-auto px-4 py-5",
-          "sm:px-[max(1rem,calc((100%-48rem)/2))]",
+          // A comfortable reading column; wider when the panel is expanded, so a wide table or
+          // a long answer uses the room it was given.
+          expanded
+            ? "sm:px-[max(1.5rem,calc((100%-80rem)/2))]"
+            : "sm:px-[max(1rem,calc((100%-48rem)/2))]",
         )}
       >
         {loaded && entries.length === 0 ? (
@@ -1097,7 +1150,11 @@ function ChatPanel({
       <div
         className={cn(
           "relative shrink-0 px-4 pt-1 pb-3",
-          "sm:px-[max(1rem,calc((100%-48rem)/2))]",
+          // A comfortable reading column; wider when the panel is expanded, so a wide table or
+          // a long answer uses the room it was given.
+          expanded
+            ? "sm:px-[max(1.5rem,calc((100%-80rem)/2))]"
+            : "sm:px-[max(1rem,calc((100%-48rem)/2))]",
         )}
       >
         {away ? (
@@ -1115,6 +1172,31 @@ function ChatPanel({
           >
             <ArrowDown className="size-4" aria-hidden />
           </button>
+        ) : null}
+        {file ? (
+          <div className="mb-2 flex items-center gap-2 px-1">
+            <span
+              className="border-primary/40 bg-primary-subtle text-primary inline-flex min-w-0 items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-2.5 text-[11px] font-medium"
+              title={t("chat.fileScopeHint")}
+            >
+              <Paperclip className="size-3.5 shrink-0" aria-hidden />
+              <span className="truncate">
+                {t("chat.fileScope", { file: file.filename })}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setFile(null);
+                  inputRef.current?.focus();
+                }}
+                aria-label={t("chat.fileScopeClear")}
+                title={t("chat.fileScopeClear")}
+                className="hover:bg-primary/15 active:bg-primary/25 focus-visible:ring-ring inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <X className="size-3" aria-hidden />
+              </button>
+            </span>
+          </div>
         ) : null}
         <form
           onSubmit={(event) => {
@@ -1193,8 +1275,12 @@ function ChatPanel({
                 submit(draft);
               }
             }}
-            placeholder={t("chat.placeholder")}
-            aria-label={t("chat.placeholder")}
+            placeholder={
+              file ? t("chat.filePlaceholder") : t("chat.placeholder")
+            }
+            aria-label={
+              file ? t("chat.filePlaceholder") : t("chat.placeholder")
+            }
             className="placeholder:text-muted-foreground max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-5 outline-none"
           />
           {busy ? (

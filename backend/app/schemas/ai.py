@@ -181,6 +181,34 @@ class SearchIndexStatus(BaseModel):
     indexed: int
     #: Why indexing last stopped (refused or unreachable gateway), if it did.
     error: str | None = None
+    #: An administrator paused indexing; the backlog waits until it is resumed.
+    paused: bool = False
+    #: Roughly how long the remaining pages will take at the recent pace; ``None``
+    #: when paused, finished, or too little was indexed lately to tell.
+    eta_seconds: int | None = None
+    #: Files attached to pages whose words were read for search and answers, and how many
+    #: are still waiting to be read.
+    files_read: int = 0
+    files_waiting: int = 0
+
+
+class AiLimitsRead(BaseModel):
+    #: What an administrator set; ``None`` means the default (from the environment) applies.
+    requests_per_hour: int | None
+    translate_requests_per_hour: int | None
+    #: The defaults, as calls an hour.
+    default_requests_per_hour: int
+    default_translate_requests_per_hour: int
+
+
+class AiLimitsUpdate(BaseModel):
+    #: ``None`` goes back to the default.
+    requests_per_hour: int | None = Field(default=None, ge=1, le=100_000)
+    translate_requests_per_hour: int | None = Field(default=None, ge=1, le=100_000)
+
+
+class SearchIndexPause(BaseModel):
+    paused: bool
 
 
 class ConnectionList(BaseModel):
@@ -442,6 +470,13 @@ class HelpAnswer(BaseModel):
     actions: list[AnswerAction] = []
 
 
+class AnswerFile(BaseModel):
+    """A file attached to the source page that the answer was read from."""
+
+    id: uuid.UUID
+    filename: str
+
+
 class AnswerSource(BaseModel):
     #: The number the answer cites it by: ``[1]``.
     n: int
@@ -452,6 +487,8 @@ class AnswerSource(BaseModel):
     space_name: str
     #: The part of the page the answer was read from.
     excerpt: str
+    #: Attached files of the page the excerpt was read from, if any.
+    files: list[AnswerFile] = []
 
 
 class WebSource(BaseModel):
@@ -556,6 +593,9 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=CHAT_MAX_MESSAGES * 2)
     #: How much the person wants in the answer: the gist, the usual, or everything relevant.
     detail: Literal["brief", "normal", "detailed"] = "normal"
+    #: Ask about one file attached to a page ("Ask about this file"): the answer is read from
+    #: that file alone - not the rest of the wiki, Help or the internet.
+    attachment_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def _ends_with_a_question(self) -> ChatRequest:

@@ -28,6 +28,34 @@ async def test_the_index_status_is_for_administrators_and_says_whether_semantic_
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_an_administrator_can_pause_and_resume_indexing(
+    client: AsyncClient, api_user: User, api_access_token: str
+) -> None:
+    client.cookies.set("wikihub_access", api_access_token)
+
+    paused = await client.put("/api/v1/ai/search-index/pause", json={"paused": True})
+    assert paused.status_code == 200, paused.text
+    assert paused.json()["paused"] is True
+    assert (await client.get("/api/v1/ai/search-index")).json()["paused"] is True
+
+    resumed = await client.put("/api/v1/ai/search-index/pause", json={"paused": False})
+    assert resumed.json()["paused"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_member_cannot_pause_indexing(
+    client: AsyncClient, api_member_user: User, api_member_access_token: str
+) -> None:
+    client.cookies.set("wikihub_access", api_member_access_token)
+
+    response = await client.put("/api/v1/ai/search-index/pause", json={"paused": True})
+
+    assert response.status_code == 403
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_a_member_cannot_read_the_index_status(
     client: AsyncClient, api_member_user: User, api_member_access_token: str
 ) -> None:

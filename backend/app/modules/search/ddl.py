@@ -82,6 +82,15 @@ INDEX_STATEMENTS = (
     "ON pages USING gin (wh_title_key(title) gin_trgm_ops)",
 )
 
+#: A passage read from an attached file is stored with the page it is attached to, and
+#: says which file it came from, so an answer can cite the file itself.
+ATTACHMENT_CHUNK_STATEMENTS = (
+    "ALTER TABLE page_chunks ADD COLUMN IF NOT EXISTS attachment_id uuid "
+    "REFERENCES page_attachments(id) ON DELETE CASCADE",
+    "CREATE INDEX IF NOT EXISTS ix_page_chunks_attachment_id ON page_chunks (attachment_id) "
+    "WHERE attachment_id IS NOT NULL",
+)
+
 SEMANTIC_TABLE_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS page_search_state (
@@ -105,6 +114,7 @@ SEMANTIC_TABLE_STATEMENTS = (
         CONSTRAINT uq_page_chunks_page_idx UNIQUE (page_id, chunk_idx)
     )
     """,
+    *ATTACHMENT_CHUNK_STATEMENTS,
 )
 
 #: The page's search vector kept as a column, so a query ranks pages by reading
@@ -115,4 +125,13 @@ STORED_VECTOR_STATEMENTS = (
     "GENERATED ALWAYS AS (wh_search_vector(title, content)) STORED",
     "CREATE INDEX IF NOT EXISTS ix_pages_search_vector_col ON pages USING gin (search_vector)",
     "DROP INDEX IF EXISTS ix_pages_search_vector",
+)
+
+#: The words read from attached files, searchable like a page's (``attachment_texts``,
+#: see ``app.models.attachment_text``). The file name plays the part of the title.
+ATTACHMENT_VECTOR_STATEMENTS = (
+    "ALTER TABLE attachment_texts ADD COLUMN IF NOT EXISTS search_vector tsvector "
+    "GENERATED ALWAYS AS (wh_search_vector(filename, content)) STORED",
+    "CREATE INDEX IF NOT EXISTS ix_attachment_texts_search_vector "
+    "ON attachment_texts USING gin (search_vector)",
 )

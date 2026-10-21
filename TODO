@@ -1,31 +1,348 @@
-Nên làm trước: ảnh hưởng hằng ngày và độ tin cậy
-Thùng rác và khôi phục page. Xóa page hiện là xóa vĩnh viễn: hàm delete trong backend/app/modules/pages/service.py xóa hẳn khỏi DB, chỉ giữ lại các page con. Lỡ tay là mất cả nội dung lẫn lịch sử phiên bản. Một khu "Trash" theo space, cho khôi phục trong 30 ngày, là điều người dùng Confluence/Notion mặc định là có.
-Theo dõi page và nhận thông báo khi có thay đổi. Đã có chuông thông báo và @mention, nhưng không có cách "Watch" một page hay một space để biết khi nó được sửa hoặc có bình luận mới. Đây là tính năng giữ chân người đọc. Có thể thêm email tổng hợp, vì SMTP đã có sẵn cho Mailboxes và Roadmap cũng đang ghi email thông báo là "Planned".
-Mẫu page. Không có page template. Space nào cũng phải viết lại runbook, biên bản họp, postmortem từ đầu. Nên có mẫu theo space và mẫu chung, chọn ngay trong hộp "Create page", và dùng được cùng tính năng Write with AI.
-Hoàn thiện tìm kiếm.
+KNOWLEDGE GRAPH CHO AI TRẢ LỜI CÂU HỎI
+=====================================
 
-Tìm trong nội dung tệp đính kèm (PDF, Word). Trang Help đang ghi rõ là chưa hỗ trợ, mà phần import đã có sẵn bộ chuyển đổi nội dung.
-Bộ lọc theo space, người sửa, khoảng ngày, nhãn. Help cũng ghi là chưa có.
+Tham khảo: https://github.com/nashsu/llm_wiki
 
-Cho doanh nghiệp: cần nếu muốn đưa cho công ty dùng
-Đăng nhập một lần (SSO/OIDC). Mới làm dở: config.py đã có auth_provider: "oidc" và model user đã chừa chỗ cho tài khoản OIDC, nhưng chưa có luồng đăng nhập. Làm nốt phần này để chạy được với Keycloak, Google Workspace hay Azure AD.
-Xác thực hai lớp (TOTP) cho tài khoản local. Hiện chưa có.
-Màn xem audit log. Roadmap đang ghi là chưa làm, dù log đã được ghi ở server.
-API token cá nhân và webhook, để script hoặc CI đẩy tài liệu vào, và để Slack hay Teams nhận sự kiện "page được cập nhật".
-Cộng tác và trình soạn thảo
-Bình luận gắn vào đoạn văn được chọn, như kiểu Google Docs. Hiện chỉ có bình luận ở cuối page.
-Sơ đồ bằng Mermaid hoặc draw.io trong khối code. Wiki kỹ thuật rất cần, và hiện chưa có.
-Link chia sẻ công khai chỉ đọc, có hạn dùng, để gửi cho người ngoài công ty.
-Nhiều người sửa cùng lúc. Hiện mỗi người có bản nháp riêng, chỉ được báo khi có xung đột. Phần này tốn công nhất (Yjs/Hocuspocus), nên để sau.
-AI
-Phát hiện nội dung lỗi thời. Là phần còn mở duy nhất của AI trong Roadmap: đánh dấu page lâu không sửa, hoặc mâu thuẫn với page mới hơn.
-Chịu được gateway chậm. Lúc chụp ảnh, gateway trả 504 sau khoảng 33 giây. Backend thử lại 3 lần nên người dùng chờ khoảng 97 giây mới thấy lỗi. Nên trả kết quả từng phần (streaming) cho các tác vụ dài như viết bản nháp, và rút ngắn số lần thử lại khi lỗi là 504.
-Vận hành và tài liệu
-CI chạy make check khi push, và Helm chart. Cả hai đều có trong Roadmap.
-Bổ sung tài liệu:
-Các file docs/*.md mà Roadmap liệt kê là chưa viết.
-Sửa vài chỗ trong Help vẫn nói "bốn quyền toàn cục", trong khi giờ đã có thêm Manage issues.
-Đề xuất thứ tự
-Tôi đề xuất làm Thùng rác (1), Watch kèm thông báo (2) và Mẫu page (3) trước. Cả ba đụng tới việc dùng hằng ngày, không phụ thuộc hạ tầng ngoài, và mỗi cái gói gọn trong khoảng một migration cộng một màn hình. Tiếp theo là làm nốt OIDC (6), vì nền móng đã có sẵn.
+Mục tiêu: BỔ SUNG graph vào RAG hiện tại (không thay thế). RAG tìm trang khớp nhất,
+graph kéo thêm các trang liên quan để câu trả lời đầy đủ hơn.
 
-Bạn muốn tôi ghi danh sách này vào TODO (và cập nhật bảng Roadmap trong README), hay bắt tay làm luôn mục nào?
+Nguyên tắc:
+- Không bỏ gì: embedding model, bảng page_chunks, tìm kiếm từ khóa + vector, LLM qua
+  Ollama, phần trả lời có trích dẫn đều giữ nguyên.
+- Không sửa nội dung người dùng viết. Quan hệ được lưu riêng trong DB.
+- Không dùng LLM để xây graph (không gọi model khi lưu trang).
+- Mọi trang kéo thêm qua graph PHẢI qua kiểm tra quyền xem của người hỏi.
+- Mỗi phase xong phải chạy được độc lập, có test, rồi mới sang phase sau.
+
+Luồng sau khi xong:
+  Câu hỏi -> Tìm kiếm (từ khóa + vector) -> Các trang khớp nhất
+          -> [MỚI] Mở rộng sang trang lân cận qua graph (lọc quyền)
+          -> LLM trả lời có trích dẫn
+
+Ba loại cạnh trong graph:
+  link     người dùng chèn link nội bộ /spaces/{key}/pages/{slug}   (mạnh nhất)
+  mention  nội dung nhắc đúng tiêu đề một trang khác                (tự phát hiện)
+  similar  nội dung gần nghĩa, tính từ vector trong page_chunks     (tự phát hiện)
+  + cha-con / anh em trong cây trang: lấy trực tiếp từ pages.parent_id, không lưu.
+
+
+-------------------------------------------------------------------------------
+PHASE 0 - Bộ câu hỏi đo chất lượng (làm trước tiên)
+-------------------------------------------------------------------------------
+Lý do: không có số đo thì không biết graph giúp thật hay chỉ thêm nhiễu.
+
+[x] Soạn 20-30 câu hỏi thật trên dữ liệu thật, mỗi câu ghi các trang ĐÁNG LẼ phải
+    được dùng để trả lời. Ưu tiên câu cần ghép nhiều trang (vd "nghỉ phép cần giấy tờ gì").
+    -> Đã soạn 28 câu (VI/EN) trên DEMO, DEVOPS, ABC... ở backend/scripts/eval_questions.local.json
+       (git bỏ qua). Mẫu "SPACE/slug*" chấp nhận bản sao bất kỳ của một trang.
+[x] Lưu thành file dữ liệu (vd backend/tests/eval/graph_questions.json), không chứa
+    nội dung nhạy cảm (xem memory: demo captures leak real data).
+    -> Làm khác: mẫu ở backend/scripts/eval_questions.example.json (chỉ space DEMO);
+       câu hỏi thật để trong *.local.json để không đưa nội dung wiki lên git.
+[x] Script chạy bộ câu hỏi qua SearchService.answer_passages, in ra:
+    - recall: bao nhiêu % trang mong đợi có mặt trong context
+    - số trang / số ký tự đưa cho LLM
+[x] Chạy và ghi lại kết quả baseline của RAG hiện tại.
+    -> Script: python -m scripts.eval_answers <file> --related 0 2 3 -v (chạy trong container
+       backend; không ghi gì vào DB, không gọi LLM). Baseline DEMO: recall 67%, 3/5 câu đủ.
+
+Xong khi: có con số baseline để so sánh ở Phase 5.
+
+
+-------------------------------------------------------------------------------
+PHASE 1 - Bảng page_links
+-------------------------------------------------------------------------------
+[x] Migration alembic mới trong backend/app/alembic/versions/ tạo bảng page_links:
+      source_page_id  uuid FK pages ON DELETE CASCADE
+      target_page_id  uuid FK pages ON DELETE CASCADE
+      kind            'link' | 'mention' | 'similar'
+      weight          float  (similar: độ tương đồng; link/mention: 1.0)
+      updated_at      timestamptz
+      UNIQUE (source_page_id, target_page_id, kind)
+      INDEX trên target_page_id (để tra backlinks)
+      CHECK source_page_id <> target_page_id
+[x] Model SQLAlchemy trong backend/app/models/, đăng ký ở models/__init__.py.
+[x] Module mới backend/app/modules/graph/ với hàm:
+      replace_edges(session, source_id, kind, targets)  # ghi đè toàn bộ cạnh 1 loại của 1 trang
+      neighbors(session, page_ids, kinds) -> list cạnh
+[x] Trang vào Trash (deleted_at) không bị xóa cạnh, nhưng neighbors() phải bỏ qua trang
+    đã xóa và space không active. Khôi phục từ Trash thì cạnh dùng lại được ngay.
+[x] Test unit cho replace_edges / neighbors (gồm trường hợp trang trong Trash).
+
+Xong khi: migration chạy được trên DB thật, test xanh.
+
+
+-------------------------------------------------------------------------------
+PHASE 2 - Cạnh "link" và "mention" (không cần AI)
+-------------------------------------------------------------------------------
+2a. Trích link nội bộ
+[x] Parse nội dung trang (xử lý theo pages.content_format) tìm href dạng
+    /spaces/{key}/pages/{slug} (trình soạn thảo chèn ở
+    frontend/components/pages/rich-text-editor.tsx:5814). Map key+slug -> page_id.
+[x] Bỏ qua link tới chính nó, link ra ngoài, slug không tồn tại.
+
+2b. Phát hiện nhắc tên trang
+[x] Chuẩn hóa chữ: bỏ dấu + chữ thường (dùng lại cách unaccent của module search),
+    so khớp theo ranh giới từ, không khớp giữa chừng một từ.
+[x] Bỏ qua tiêu đề quá ngắn (vd < 2 từ hoặc < 6 ký tự) và tiêu đề chung chung
+    (Tổng quan, Giới thiệu, FAQ, Overview, Home, ...). Danh sách đặt trong code, có test.
+[x] Có nhiều trang trùng tiêu đề: ưu tiên trang cùng space; vẫn trùng thì bỏ qua.
+[x] Cụm dài thắng cụm ngắn ("Mẫu đơn nghỉ phép" thắng "Nghỉ phép").
+[x] Giới hạn số cạnh mention mỗi trang (vd tối đa 30) để không phình bảng.
+
+2c. Khi nào chạy
+[x] Khi tạo / sửa / import / khôi phục trang: tính lại cạnh link + mention của trang đó.
+    Chạy nền trong worker, không làm chậm thao tác lưu.
+[x] Khi tạo trang mới hoặc ĐỔI TIÊU ĐỀ: các trang cũ có thể nhắc tới tên này -> quét
+    lại (tìm bằng search vector có sẵn trên pages để thu hẹp, không quét cả DB).
+[x] Job backfill toàn bộ trang cũ: cron trong backend/app/workers/settings.py, đánh dấu
+    trang đã quét (giống page_search_state của indexer) để chạy dần, chịu được restart.
+    -> Đã chạy trên dữ liệu thật: 81 trang trong 2,3 giây (cron build_page_graph, giây 25).
+
+[x] Test: parse link, chuẩn hóa tiếng Việt, tiêu đề chung chung, trùng tên, đổi tên trang.
+
+Xong khi: backfill chạy hết trên dữ liệu thật; kiểm tra tay vài trang thấy cạnh hợp lý.
+
+
+-------------------------------------------------------------------------------
+PHASE 3 - Cạnh "similar" (dùng vector có sẵn, không gọi model)
+-------------------------------------------------------------------------------
+[x] Sau khi index_pending (backend/app/modules/search/indexer.py) lưu xong vector của
+    một trang, tính 5-10 trang gần nghĩa nhất từ page_chunks (pgvector), chỉ giữ cạnh
+    có độ tương đồng >= ngưỡng (đặt cạnh min_similarity trong AI tuning).
+[x] Chọn cách so trang với trang: trung bình vector các chunk, hoặc lấy max tương đồng
+    giữa các chunk. Thử cả hai trên bộ câu hỏi Phase 0 rồi chọn.
+    -> Chọn trung bình vector (centroid) so với centroid: tách rõ trang cùng chủ đề (0.8-0.9)
+       với trang khác chủ đề (0.4-0.6, bge-m3). Bỏ cặp >= 0.97 (bản sao) và gộp bản sao
+       "Tên (1)", "Tên (2)" thành một suất.
+[x] Đổi embedding model (reset_if_model_changed) -> xóa hết cạnh similar, tính lại.
+    -> Lượt similar tiếp theo xóa cạnh similar của mọi trang không còn được index bằng model
+       hiện tại (builder._forget_other_model), rồi tính lại khi từng trang được embed lại.
+[x] Backfill cho các trang đã được embed từ trước.
+[x] AI chưa bật / chưa embed: không có cạnh similar, mọi thứ khác vẫn chạy.
+[x] Test: ngưỡng, giới hạn số cạnh, reset khi đổi model.
+    -> Có test: ngưỡng, bản sao, giới hạn, và đổi model (cạnh mất rồi quay lại sau khi embed lại).
+
+Xong khi: trang đã embed đều có cạnh similar; đổi model thì cạnh được làm lại.
+
+
+-------------------------------------------------------------------------------
+PHASE 4 - Mở rộng lân cận khi AI trả lời
+-------------------------------------------------------------------------------
+Chỗ sửa: SearchService.answer_passages (backend/app/modules/search/service.py).
+Dùng chung cho cả trả lời câu hỏi (modules/ai/answer.py) và chat (modules/ai/chat.py).
+
+[x] Lấy các trang tìm được làm "hạt giống", tìm lân cận 1 bước qua page_links + cây
+    trang (cha, con, anh em).
+[x] Chấm điểm lân cận: tổng (trọng số loại cạnh x điểm hạt giống). Trọng số khởi đầu:
+    link 3.0, mention 2.0, similar 1.5, cha-con 1.0, anh em 0.5. Cộng dồn khi một trang
+    nối với nhiều hạt giống.
+[x] LỌC QUYỀN bằng PermissionService như _search_pages đang làm; bỏ trang đã xóa,
+    space không active, trang đã có trong kết quả.
+[x] Ngân sách: lân cận chỉ dùng phần ký tự còn dư trong total_chars, tối đa 2-3 trang,
+    luôn xếp SAU các trang tìm được trực tiếp.
+[x] Đoạn văn lấy từ trang lân cận: đoạn gần nghĩa với câu hỏi nhất (_best_passages),
+    không có thì lấy đầu trang.
+[x] Bật/tắt + trọng số đặt trong AI tuning (modules/ai/tuning.py) để admin chỉnh,
+    mặc định TẮT cho tới khi qua Phase 5.
+    -> Tuning: graph_related_pages (0-5, mặc định 2 sau Phase 5; 0 = tắt), graph_min_similarity (0.70).
+       Trọng số cạnh cố định trong code (graph/neighbors.py WEIGHTS) cho gọn màn admin.
+       Thêm ngưỡng điểm tối thiểu 0.75 (_RELATED_MIN_SCORE) để trang chỉ gắn với kết quả
+       yếu không lọt vào. Trang rỗng không bao giờ được đưa vào.
+[x] Cache key trong AnswerService._cache_key đã băm theo trang + nội dung -> kiểm tra
+    vẫn đúng khi có trang lân cận.
+[x] Log thêm số trang lân cận được dùng (không log nội dung câu hỏi).
+[x] Test: lân cận bị chặn quyền không lọt vào context (bắt buộc), ngân sách ký tự,
+    tắt flag thì kết quả giống hệt hiện tại.
+
+Xong khi: bật flag, AI trả lời có trích dẫn cả trang lân cận; test quyền xanh.
+
+
+-------------------------------------------------------------------------------
+PHASE 5 - Đo lại và chỉnh
+-------------------------------------------------------------------------------
+[x] Chạy bộ câu hỏi Phase 0 với graph bật, so với baseline.
+    -> DEMO (5 câu): graph tắt recall 67% (3/5 câu đủ) -> bật 2 trang: 100% (5/5),
+       +1,6 trang / +1.100 ký tự mỗi câu. Còn nhiễu khi chính tìm kiếm xếp trang lạc đề
+       lên đầu (graph kéo theo hàng xóm của nó). Đã chạy lại trên 28 câu thật, xem dưới.
+[x] Chỉnh trọng số / ngưỡng / số trang lân cận. Ghi lại cấu hình tốt nhất.
+    -> Giữ trọng số mặc định; thêm ngưỡng điểm 0.75. 2 và 3 trang cho cùng recall -> chọn 2.
+[x] Kiểm tra tốc độ trả lời không chậm đáng kể (so retrieval_seconds trong log).
+    -> Bước mở rộng: trung vị 18 ms, tối đa 30 ms (tìm kiếm ~510 ms). Không đáng kể.
+[x] Tốt hơn rõ -> bật mặc định. Không hơn -> giữ tắt, ghi lại lý do.
+    -> BẬT mặc định 2 trang. Kết quả 28 câu thật (Ollama bge-m3 bật):
+         trước mọi thay đổi:            recall 78%, 20/28 câu đủ
+         + bỏ bản sao trong kết quả tìm: recall 86%, 22/28
+         + graph 2 trang liên quan:      recall 90%, 24/28 (+~570 ký tự/câu)
+       Đo lại 20/10 sau các sửa cuối (đếm similar 1 lần/cặp, mồ côi liên space): giữ nguyên
+       86% -> 90%, 24/28; bước mở rộng trung vị 20 ms.
+       4 câu còn trượt do xếp hạng của tìm kiếm, không phải graph.
+       Bỏ bản sao (copy_key) là phát hiện phụ: 7 bản sao hồ sơ DMS chiếm 5 suất tìm kiếm.
+
+
+-------------------------------------------------------------------------------
+PHASE 6 - Phần người dùng nhìn thấy (tùy chọn, làm sau)
+-------------------------------------------------------------------------------
+Theo AGENTS.md: đọc docs/design-system.md, dùng token + components/ui, có hover /
+focus / dark mode / mobile.
+
+[x] Mục "Trang liên quan" / Backlinks ở cuối trang (từ page_links, lọc quyền).
+[x] Link tự động khi ĐỌC: tô các cụm nhắc tên trang thành link lúc hiển thị,
+    không sửa nội dung lưu trữ. Chỉ link lần xuất hiện đầu tiên mỗi trang.
+[x] Admin: danh sách trang mồ côi (không có cạnh nào) để gợi ý sắp xếp lại.
+    -> Làm trong bản đồ (mục Gợi ý) thay cho trang admin riêng: theo từng space, ai xem
+       được space đều thấy; trang chỉ có liên kết sang space khác không bị coi là mồ côi.
+[x] Bản đồ graph: xem PHASE 7.
+[x] Viết hướng dẫn trong Help page (help-content.en/vi.tsx), chạy
+    python scripts/build_help_knowledge.py và commit JSON.
+    -> Mục admin "Trang liên quan (knowledge graph)" + mục người đọc "Trang liên quan và bản đồ
+       trang" (EN/VI); đã build lại help_{en,vi}.json.
+
+
+-------------------------------------------------------------------------------
+PHASE 7 - Giao diện bản đồ graph (giống màn Knowledge Graph của llm_wiki)
+-------------------------------------------------------------------------------
+Cần Phase 1-3 xong (có dữ liệu cạnh). Không cần Phase 4-5.
+Theo AGENTS.md: đọc docs/design-system.md trước, giữ top bar 56px + thanh trái,
+dùng token màu (không màu cứng), có hover / focus bàn phím / dark mode / mobile.
+
+Khác llm_wiki: nút của họ là Entity / Concept / Source do LLM tạo. Nút của WikiHub là
+TRANG THẬT, nên tô màu theo nhánh trong cây trang (hoặc theo cụm), không theo loại.
+
+7a. API
+[x] GET /api/v1/spaces/{key}/graph trả về:
+      nodes: id, title, slug, parent_id, số cạnh (degree), cụm (community)
+      edges: source, target, kind, weight
+    Chỉ trả trang người xem có quyền đọc; bỏ trang trong Trash.
+[x] Tham số lọc: kinds=link,mention,similar,tree; giới hạn số nút (vd 500) - space lớn
+    hơn thì lấy các trang nhiều cạnh nhất và báo "đang hiện N/M trang".
+    -> Giới hạn 500 nút. Có tham số ?kinds=link,mention,similar,tree (sai giá trị -> 422);
+       giao diện vẫn tự lọc để bật/tắt không phải gọi lại API.
+[x] Cụm (community): tính bằng Louvain ở backend (networkx) hoặc frontend
+    (graphology-communities-louvain). Chọn 1, ghi lý do.
+    -> Dùng label propagation có trọng số, tất định (Python thuần, không thêm networkx);
+       màu ổn định giữa các lần mở.
+[x] Test API: lọc quyền (bắt buộc), giới hạn nút, space rỗng.
+    -> tests/api/test_graph.py + tests/integration/test_page_graph.py (quyền, giới hạn 500,
+       space rỗng, tham số kinds, cần đăng nhập).
+
+7b. Màn hình
+[x] Route mới frontend/app/spaces/[key]/graph, mục "Bản đồ" trong thanh trái của space.
+    -> Làm khác: dialog "Bản đồ trang" mở từ chân sidebar (cùng kiểu Thùng rác), không route mới.
+[x] Thư viện vẽ: sigma.js + graphology + ForceAtlas2 (như llm_wiki, chịu được vài nghìn
+    nút nhờ WebGL). Ghim đúng version, tải động (dynamic import) để không làm nặng
+    các trang khác.
+    -> Làm khác: SVG tự vẽ, bố cục force-directed theo từng thành phần liên thông rồi xếp hàng
+       (lib/graph-layout.ts), không thêm dependency - design system cấm thư viện chart và
+       WebGL không dùng được token màu / dark mode.
+[x] Nút: kích thước theo số cạnh, màu theo nhánh cây hoặc theo cụm (nút chuyển
+    "Nhánh / Cụm" giống nút Type / Community của llm_wiki).
+    -> Màu: chỉ 3 màu phân loại (--graph-1..3, đã chạy validator CVD ở cả sáng/tối);
+       nhóm còn lại màu --graph-other và được ghi tên trong chú thích.
+[x] Cạnh: độ đậm theo trọng số; mỗi loại (link / mention / similar / cha-con) một kiểu
+    nét; bật/tắt từng loại.
+[x] Hover nút: làm nổi nút + hàng xóm, làm mờ phần còn lại.
+[x] Click nút: mở panel bên phải xem trước trang (tiêu đề, đoạn đầu, trang liên quan),
+    có nút "Mở trang". Double-click: mở trang luôn.
+    -> API trả thêm excerpt (240 ký tự đầu) cho mỗi nút; panel hiện tối đa 6 dòng.
+[x] Thanh công cụ: phóng to / thu nhỏ / vừa màn hình / toàn màn hình / làm mới.
+    -> Không có nút toàn màn hình: dialog đã gần toàn màn. Có phóng to/thu nhỏ/vừa khung/vẽ lại.
+[x] Ô tìm trang trên bản đồ: gõ tên -> bay tới nút đó.
+[x] Chú thích (legend) góc dưới: màu nào là nhánh / cụm nào, kèm số trang.
+    -> Chú thích nằm ở đầu cột phải (đặt góc dưới che mất nút). Bấm một nhóm để chỉ hiện nhóm đó.
+[x] Lưu vị trí bố cục (localStorage) để mở lại không bị xáo trộn.
+    -> Không cần: bố cục tất định nên mỗi lần mở đều giống nhau.
+[x] Dark mode: màu nút, cạnh, chữ lấy từ token; chữ đọc được trên cả hai nền.
+[x] Mobile: bản đồ chiếm toàn màn, panel xem trước thành sheet trượt từ dưới lên.
+    -> Dưới 640px dialog chiếm toàn màn hình; thanh công cụ một hàng cuộn ngang; cột phải
+       thành khung dưới bản đồ (tối đa 42% chiều cao), tự cuộn về đầu khi chọn trang. Không có
+       hiệu ứng trượt. Nút, nét và nhãn tính theo pixel thật; vùng chạm tối thiểu 32px; nhãn
+       không đè nhau và tự rút ngắn khi sát mép. Đã chụp bằng Playwright ở 390x844 (DEMO).
+[x] Bàn phím / trình đọc màn hình: có danh sách trang dạng text thay thế cho canvas
+    (canvas không đọc được), Tab đi qua các nút công cụ.
+[x] Trạng thái rỗng: space chưa có cạnh -> giải thích và gợi ý (chưa backfill / AI chưa bật).
+
+7c. Insights (tùy chọn, giống nút "Insights" của llm_wiki)
+[x] Trang mồ côi (không có cạnh): gợi ý thêm link hoặc chuyển nhánh.
+[x] Trang "cầu nối" giữa hai cụm, cụm quá thưa.
+    -> "Trang nối các nhóm" + "Nhóm gắn kết lỏng" (>= 4 trang, < 30% cặp trang có liên kết
+       trực tiếp); bấm vào để chỉ hiện nhóm đó.
+[x] Đặt trong panel phụ, không chiếm vùng chính.
+
+7d. Hoàn tất
+[x] Test frontend (vitest) cho panel, bộ lọc, trạng thái rỗng; mock thư viện vẽ.
+[x] Kiểm tra trên trình duyệt thật với space DEMO (memory: demo captures leak real data).
+    -> Đã kiểm tra trên DEMO: link tự động, mục Trang liên quan, bản đồ, chọn trang, dark mode,
+       khổ điện thoại 390x844 và máy tính 1400x860.
+[x] Hướng dẫn trong Help page + chạy python scripts/build_help_knowledge.py.
+
+Xong khi: mở /spaces/{key}/graph thấy bản đồ, hover / click / lọc chạy, dark mode và
+mobile ổn, người không có quyền không thấy nút của trang bị hạn chế.
+
+
+-------------------------------------------------------------------------------
+BỔ SUNG SAU (20/10)
+-------------------------------------------------------------------------------
+[x] Bản đồ tất cả space: GET /api/v1/graph?spaces=&kinds= (GraphService.map_for), chỉ các
+    space người xem được mở (SpaceService.list_space_models) và từng trang vẫn lọc quyền.
+    Trong dialog có nút Space này / Tất cả space; trang Spaces có nút Bản đồ trang. Tô màu
+    theo Space, trang cùng space được kéo lại thành cụm, link mở đúng space của trang.
+[x] Admin > Spaces: thêm cột Pages và Graph links. Bảng Spaces của người dùng bỏ cột Graph
+    links (giữ Pages).
+[x] Admin > Server: biểu đồ tròn RAM/CPU theo container (Cả máy chủ / Chỉ các container).
+
+
+[x] Chat: câu hỏi rõ ràng không bị hỏi ngược (chỉ ASK khi câu mơ hồ); "không có trong wiki"
+    chỉ chấp nhận khi wiki khớp tốt, nếu không thì tra web (vd "hướng dẫn sử dụng 9router");
+    bước xem lại bị quá thời gian mà không tìm thấy -> tra web.
+[x] Tìm kiếm hiểu tên space trong câu hỏi ("dms4" -> space 3DMS40) và ưu tiên trang của space đó.
+[x] AI trả lời câu hỏi suy luận (21/10): nhận diện câu cần đếm/so sánh/áp quy tắc -> đọc nhiều
+    trang và nhiều nội dung hơn + quy tắc suy luận trong prompt; file link từ trang khác được đọc;
+    định tuyến web/hỏi lại chặt hơn. Bộ 18 câu có đáp án: 9 -> 14 đúng. Báo cáo:
+    docs/ai-assistant-test-2026-10-21.local.md (git bỏ qua). Còn: dữ liệu dms4 mâu thuẫn giữa các trang.
+[x] Import Confluence mang theo bình luận (giữ trả lời, người viết, ngày giờ; ảnh/tệp trong
+    bình luận thành link mở tệp) và lượt thích của trang + bình luận. Thử trên export thật:
+    110 bình luận (13 trả lời) đọc được hết; 88 khớp tác giả (22 của tài khoản đã mất khỏi
+    danh bạ Confluence); 79 lượt thích vào trang/bình luận, 54 lượt còn lại thuộc trang đã xoá.
+
+
+-------------------------------------------------------------------------------
+HỎI ĐÁP TRÊN FILE ĐÍNH KÈM (kiểu NotebookLM)
+-------------------------------------------------------------------------------
+Bài toán: người dùng hay ĐÍNH KÈM Word / Excel / HTML / PDF vào trang thay vì import thành
+trang, nên nội dung file vô hình với tìm kiếm và với AI. Cần trích chữ từ file, đưa vào tìm
+kiếm (từ khoá + theo nghĩa) và RAG, AI trả lời có trích dẫn tới đúng file.
+
+Nguyên tắc:
+- Không sửa file của người dùng; không gọi LLM khi trích chữ.
+- Mọi đoạn trích từ file đi qua quyền xem trang chứa file (Thùng rác / space lưu trữ bị loại).
+- PDF scan (ảnh, không có chữ chọn được): KHÔNG OCR, chỉ đánh dấu trạng thái rõ ràng.
+
+[x] Phase A - Trích chữ: bảng attachment_texts (status ok/scanned/unsupported/too_large/
+    failed, search_vector), cron extract_attachment_texts dùng lại extract_document của
+    import (docx, odt, rtf, epub, html, md, pdf, xlsx, csv) + txt; tôn trọng nút Tạm dừng.
+[x] Phase B - Tìm kiếm: từ khoá trên attachment_texts; page_chunks thêm attachment_id để
+    embed đoạn của file; graph "similar" chỉ dùng đoạn của trang; kết quả tìm ghi
+    "Khớp trong tệp X"; admin hiện tiến độ tệp đính kèm.
+[x] Phase C - AI trả lời: đoạn văn lấy từ file khi file khớp hơn thân trang; nguồn trích dẫn
+    ghi tên file và mở được file.
+[x] Phase D - Giao diện: chip trạng thái từng file trong hộp Tệp đính kèm; nút
+    "Hỏi về tệp này" mở chat chỉ dựa trên file đó.
+[x] Phase E - Tài liệu: Help EN/VI, docs/knowledge-graph-and-rag.md.
+
+Xong khi: đính kèm một file ở DEMO, sau một phút tìm được theo từ trong file và chat trả lời
+câu hỏi chỉ có trong file, có trích dẫn tới file; người không có quyền xem trang thì không.
+-> Đã chạy trên dữ liệu thật (20/10): lượt đầu đọc 20 file (19 đọc được, 1 PDF scan), còn
+   ~1750 file chờ, worker đọc liên tục ~40 file/phút. Hỏi "EDR agent đẩy log tới forwarder
+   qua những port nào?" -> trả lời từ "Policy ket noi.pdf", trích dẫn đúng file. Chat
+   "Hỏi về tệp này" tóm tắt đúng file; câu ngoài lề (thời tiết) báo không có, không tra web.
+   Mỗi file embed tối đa 20 đoạn (FILE_CHUNKS); toàn văn vẫn tìm được theo từ khoá.
+
+
+-------------------------------------------------------------------------------
+KHÔNG LÀM
+-------------------------------------------------------------------------------
+- Không để LLM tự viết trang thực thể / khái niệm như llm_wiki (wiki do người viết,
+  chạy Ollama sẽ rất chậm).
+- Không để LLM sửa nội dung trang để chèn link.
+- Không thêm graph database riêng (Neo4j...): Postgres đủ dùng.

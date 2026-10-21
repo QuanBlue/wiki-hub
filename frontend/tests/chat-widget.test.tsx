@@ -304,6 +304,37 @@ describe("the chat widget", () => {
     ).toBeInTheDocument();
   });
 
+  it("asks about one attached file until the person goes back to the whole wiki", async () => {
+    ai(true);
+    streamChat.mockResolvedValue({
+      ...FOUND,
+      sources: [{ ...source, files: [{ id: "f-1", filename: "prices.pdf" }] }],
+    });
+    const actor = userEvent.setup();
+    render(<Shell userId="u1" />);
+    await screen.findByRole("button", { name: "Chat with AI" });
+
+    act(() => openChat({ file: { id: "f-1", filename: "prices.pdf" } }));
+
+    expect(await screen.findByText("Asking about prices.pdf")).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Summarise this file" }));
+    expect(streamChat).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ attachmentId: "f-1" }),
+    );
+    // The answer says which file it was read from, and opens it.
+    const file = await screen.findByRole("link", { name: "prices.pdf" });
+    expect(file).toHaveAttribute("href", "/api/v1/attachments/f-1/content");
+
+    await actor.click(screen.getByRole("button", { name: "Ask the whole wiki again" }));
+    expect(screen.queryByText("Asking about prices.pdf")).not.toBeInTheDocument();
+    await actor.type(screen.getByPlaceholderText("Ask a question…"), "anything{Enter}");
+    expect(streamChat).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ attachmentId: null }),
+    );
+  });
+
   it("can be resized with the keyboard on its edge", async () => {
     ai(true);
     const actor = userEvent.setup();

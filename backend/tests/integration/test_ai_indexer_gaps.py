@@ -41,10 +41,10 @@ async def test_a_page_the_gateway_refuses_after_others_went_through_is_marked_ha
 
     real_store = indexer._store
 
-    async def store(session, page_id, updated_at, model, chunks, vectors) -> None:
+    async def store(session, page_id, updated_at, model, chunks, vectors, sources=None) -> None:
         if not chunks:  # the note that a refused page was handled
             raise SQLAlchemyError("the page is gone")
-        await real_store(session, page_id, updated_at, model, chunks, vectors)
+        await real_store(session, page_id, updated_at, model, chunks, vectors, sources)
 
     monkeypatch.setattr(indexer, "embed", embed)
     monkeypatch.setattr(indexer, "_store", store)

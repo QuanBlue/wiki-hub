@@ -32,6 +32,7 @@ import {
   Star,
   Tag,
   ThumbsUp,
+  Network,
   Trash2,
   Users,
   X,
@@ -59,7 +60,10 @@ import { PageLabelsDialog } from "@/components/pages/page-labels-dialog";
 import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialog";
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
 import { PageSummaryDialog } from "@/components/pages/page-summary-dialog";
+import { RelatedPages, usePageRelated } from "@/components/pages/related-pages";
+import { SpaceGraphDialog } from "@/components/pages/space-graph";
 import { SpaceTrashDialog } from "@/components/pages/space-trash";
+import { linkMentions } from "@/lib/page-mentions";
 import { TRASH_OPEN_EVENT } from "@/lib/space-trash";
 import { SelectionAssistant } from "@/components/pages/selection-assistant";
 import { aiStatus } from "@/lib/ai-summary";
@@ -847,6 +851,7 @@ export function SpaceWorkspace({
   const [pageAccessOpen, setPageAccessOpen] = useState(false);
   const [editSpaceModalOpen, setEditSpaceModalOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
   // ":trash" in the search box opens this space's Trash from wherever the person is.
   useEffect(() => {
     const open = (event: Event) => {
@@ -1016,6 +1021,16 @@ export function SpaceWorkspace({
     ? pageHref(space.key, homePage.slug)
     : `/spaces/${encodeURIComponent(space.key)}`;
   const body = currentPage?.content || space.description;
+  // Pages tied to this one, and the pages it names: the words naming them become
+  // links for the reader (the stored page is never changed).
+  const related = usePageRelated(space.key, currentPage?.slug);
+  const readerBody = useMemo(
+    () =>
+      body && related?.mentions.length && currentPage?.content_format !== "markdown"
+        ? linkMentions(body, related.mentions)
+        : body,
+    [body, related, currentPage?.content_format],
+  );
   const activeSlug = currentPage?.slug ?? null;
   const savedPageKey = currentPage ? `${space.key}/${currentPage.slug}` : null;
   const savedForLater = savedPageKey
@@ -2015,36 +2030,51 @@ export function SpaceWorkspace({
               </nav>
             </div>
 
-            {/* Sidebar Footer: the space's Trash, for anyone who may delete
-                pages here, and Edit Space for its Owner or Admin. */}
-            {canAdmin || canUseTrash ? (
-              <div className="border-border space-y-0.5 border-t p-3 shrink-0">
-                {canUseTrash ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start gap-2 text-muted-foreground hover:bg-surface-selected! hover:text-foreground! cursor-pointer text-xs h-8"
-                    onClick={() => setTrashOpen(true)}
-                  >
-                    <Trash2 className="size-3.5" />
-                    {t("trash.link")}
-                  </Button>
-                ) : null}
-                {canAdmin ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start gap-2 text-muted-foreground hover:bg-surface-selected! hover:text-foreground! cursor-pointer text-xs h-8"
-                    onClick={() => setEditSpaceModalOpen(true)}
-                  >
-                    <Pencil className="size-3.5" />
-                    {t("spaces.edit")}
-                  </Button>
-                ) : null}
+            {/* Sidebar Footer: the page map for every reader, the space's Trash
+                for anyone who may delete pages here, and Edit Space for its
+                Owner or Admin. */}
+            <div className="border-border shrink-0 border-t p-3">
+              {/* Equal-width tiles, icon over label, so the row fills the
+                  sidebar however many of the three the reader may use. */}
+              <div className="grid auto-cols-fr grid-flow-col gap-1.5">
+                {[
+                  {
+                    key: "map",
+                    icon: Network,
+                    label: t("graph.mapLink"),
+                    onClick: () => setMapOpen(true),
+                    show: true,
+                  },
+                  {
+                    key: "edit",
+                    icon: Pencil,
+                    label: t("spaces.edit"),
+                    onClick: () => setEditSpaceModalOpen(true),
+                    show: canAdmin,
+                  },
+                  {
+                    key: "trash",
+                    icon: Trash2,
+                    label: t("trash.link"),
+                    onClick: () => setTrashOpen(true),
+                    show: canUseTrash,
+                  },
+                ]
+                  .filter((action) => action.show)
+                  .map(({ key, icon: Icon, label, onClick }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      title={label}
+                      onClick={onClick}
+                      className="text-muted-foreground hover:bg-surface-selected hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex min-w-0 cursor-pointer flex-col items-center gap-1 rounded-md px-1 py-2 text-[11px] font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      <Icon className="size-4 shrink-0" aria-hidden />
+                      <span className="w-full truncate text-center">{label}</span>
+                    </button>
+                  ))}
               </div>
-            ) : null}
+            </div>
           </div>
         ) : null}
         {!collapsed ? (
@@ -3029,7 +3059,7 @@ export function SpaceWorkspace({
                       />
                     ) : (
                       <RichTextContent
-                        content={body}
+                        content={readerBody}
                         canEditAttachments={canEdit && space.status === "active"}
                       />
                     )
@@ -3043,6 +3073,8 @@ export function SpaceWorkspace({
                   )}
                   </SelectionAssistant>
                 </div>
+
+                <RelatedPages related={related} spaceKey={space.key} />
 
                 {currentUser && currentPage ? (
                   <PageComments
@@ -3248,6 +3280,7 @@ export function SpaceWorkspace({
           />
 
           <SpaceTrashDialog space={space} open={trashOpen} onOpenChange={setTrashOpen} />
+          <SpaceGraphDialog space={space} open={mapOpen} onOpenChange={setMapOpen} />
 
           {/* One controlled instance shared by both entry points: the sidebar
               button and the More-actions item. Nesting a second Radix trigger

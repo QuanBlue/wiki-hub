@@ -228,7 +228,9 @@ async def pull_image(http: httpx.AsyncClient) -> AsyncIterator[dict]:
             }
 
 
-async def start(http: httpx.AsyncClient, params: Params | None = None) -> None:
+async def start(
+    http: httpx.AsyncClient, params: Params | None = None, *, _retried: bool = False
+) -> None:
     """Create the container if there is none (or it differs from ``params``), then start it."""
     wanted = params or Params.default()
     existing = await http.get(f"/containers/{CONTAINER}/json")
@@ -263,6 +265,16 @@ async def start(http: httpx.AsyncClient, params: Params | None = None) -> None:
     elif existing.status_code != 200:
         raise DockerError("Docker could not inspect the container.", existing.status_code)
     response = await http.post(f"/containers/{CONTAINER}/start")
+    if response.status_code not in (204, 304) and existing.status_code == 200 and not _retried:
+        # A container left from before the stack was recreated still points at the old
+        # network, which no longer exists: make it afresh on the current one. When that cannot
+        # be done either, the reason the start failed is what is worth reporting.
+        try:
+            await stop(http)
+            await start(http, wanted, _retried=True)
+            return
+        except DockerError:
+            pass
     if response.status_code not in (204, 304):
         raise DockerError(f"Docker could not start the container: {response.text[:300]}")
 

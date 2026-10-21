@@ -468,7 +468,7 @@ export const sectionsVi: HelpSection[] = [
             <Code>Chat mới</Code> để xóa. <Code>Dừng</Code> hủy câu trả lời: câu hỏi vẫn còn, kèm
             phần đã viết và ghi chú bạn đã hủy, và <Code>Thử lại</Code> hỏi lại lần nữa. Rê chuột vào một câu hỏi và bấm <Code>Trả lời lại</Code> để nhận câu trả lời
             mới; câu trả lời cũ vẫn còn, dùng mũi tên <Code>1 / 2</Code> để quay lại. Từ một câu trả lời trong tìm kiếm, <Code>Tiếp tục trong chat</Code> sẽ chuyển
-            sang chat.
+            sang chat. Nút tải xuống cạnh <Code>Chat mới</Code> lưu cả cuộc trò chuyện thành file Markdown: mọi câu hỏi, câu trả lời kèm trang, tệp và trang web đã dùng - để lưu lại, hoặc gửi đi khi một câu trả lời sai. Câu trả lời quá dài phải dừng giữa chừng sẽ ghi rõ ở cuối; gõ <Code>tiếp tục</Code> (hoặc chỉ ra phần còn thiếu) để xem phần còn lại.
           </li>
           <li>
             <strong>Quản trị viên</strong> bật tại Quản trị, Trợ lý AI, <Code>Tìm kiếm web</Code>: chọn
@@ -937,6 +937,78 @@ export const sectionsVi: HelpSection[] = [
           trang mà trước khi xoá họ không được đọc. Trang trong thùng rác không xuất hiện trong
           tìm kiếm, cây trang, hoạt động gần đây và câu trả lời của AI. Bản sao lưu có kèm thùng
           rác, nên khôi phục bản sao lưu vẫn còn nguyên thùng rác.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "related-pages",
+    title: "Trang liên quan và bản đồ trang",
+    category: "Workspace",
+    description:
+      "WikiHub tự tìm những trang thuộc về nhau - từ liên kết, tên trang và nội dung gần nghĩa - rồi hiện dưới mỗi trang và trên bản đồ của space.",
+    keywords: [
+      "trang liên quan",
+      "related pages",
+      "backlinks",
+      "bản đồ trang",
+      "page map",
+      "knowledge graph",
+      "liên kết",
+      "trang mồ côi",
+    ],
+    body: (
+      <>
+        <p>
+          Không ai cần chèn link thì WikiHub mới biết các trang thuộc về nhau. Ở nền, khoảng một
+          phút sau khi một trang thay đổi, WikiHub tìm xem mỗi trang gắn với các trang khác thế nào:
+          một <strong>liên kết</strong> tới trang khác, một trang <strong>nhắc đúng tiêu đề</strong>{" "}
+          của trang khác, các trang có <strong>nội dung gần nghĩa</strong> (khi bật semantic search),
+          và cây trang. Việc này không bao giờ sửa nội dung trang.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Trang liên quan</strong> hiện dưới nội dung trang, kèm lý do: trang này liên
+            kết tới, liên kết tới trang này, được nhắc trong trang này, nhắc tới trang này, hoặc nội
+            dung gần nghĩa. Trang ở space khác ghi rõ thuộc space nào.
+          </li>
+          <li>
+            <strong>Tên trang thành liên kết</strong>: khi một trang nhắc đúng tiêu đề của trang khác,
+            chỗ nhắc đầu tiên hiện thành liên kết lúc bạn đọc. Tiêu đề mục, code và liên kết sẵn có
+            được giữ nguyên, và nội dung lưu trữ không thay đổi.
+          </li>
+          <li>
+            <strong>Bản đồ trang</strong>, ở cuối sidebar của space, vẽ các trang của space và liên kết
+            giữa chúng. Rê chuột lên một trang để làm nổi các trang kề, bấm để xem nó gắn với những
+            trang nào và mở nó, hoặc bấm đúp để mở ngay. Tô màu theo <strong>Nhóm</strong> (các trang
+            gắn với nhau) hoặc <strong>Nhánh</strong> (vị trí trong cây trang), bật/tắt từng loại liên
+            kết, tìm trang theo tên, phóng to bằng con lăn hoặc các nút và kéo để di chuyển. Phần chú
+            thích ghi tên mọi nhóm; bấm vào một nhóm để chỉ hiện các trang của nhóm đó.{" "}
+            <strong>Các trang trên bản đồ</strong> liệt kê tất cả cho người dùng bàn phím và trình
+            đọc màn hình.
+          </li>
+          <li>
+            <strong>Tất cả space</strong>: chuyển bản đồ từ <strong>Space này</strong> sang{" "}
+            <strong>Tất cả space</strong>, hoặc bấm <strong>Bản đồ trang</strong> trên trang{" "}
+            <strong>Spaces</strong>, để xem mọi space bạn được mở trên cùng một bản đồ - kèm liên kết
+            giữa các space, ví dụ hai bài hướng dẫn ở hai space khác nhau về cùng một công cụ. Bản đồ
+            tô màu theo <strong>Space</strong>, các trang của cùng một space nằm gần nhau, và ô tìm
+            kiếm khớp cả tên space. Trang mở ra trong đúng space của nó.
+          </li>
+          <li>
+            <strong>Gợi ý</strong>, cạnh bản đồ, liệt kê các trang không gắn với trang nào (nên thêm
+            liên kết hoặc chuyển vào dưới một trang liên quan), các trang nối những nhóm vốn tách rời
+            nhau, và các nhóm gắn kết lỏng - những trang chỉ nối với nhau qua một chuỗi liên kết đơn
+            lẻ; bấm vào để chỉ hiện nhóm đó. Khi chọn một trang, phần đầu nội dung của nó hiện ra để
+            bạn biết trang nói gì trước khi mở.
+          </li>
+        </ul>
+        <Callout variant="note" title="AI THẤY GÌ">
+          Trang liên quan và bản đồ chỉ hiện trang bạn được phép xem: trang bị hạn chế không bao giờ
+          xuất hiện, kể cả như một liên kết giữa hai trang bạn xem được. Các bản sao của cùng một
+          trang (ví dụ <Code>Tên trang (1)</Code>) chỉ tính một lần. Trợ lý AI dùng chính các liên kết
+          này để đọc thêm vài trang liên quan khi trả lời - xem <em>Trợ lý AI</em>.
         </Callout>
       </>
     ),
@@ -1545,6 +1617,68 @@ export const sectionsVi: HelpSection[] = [
           hoặc lướt qua một ảnh thiết kế PNG - tất cả mà không bao giờ rời khỏi
           trang wiki mà nó được đính kèm.
         </p>
+      </>
+    ),
+  },
+  {
+    id: "ask-about-attachments",
+    title: "Tìm kiếm và hỏi đáp trên tệp đính kèm",
+    category: "Attachments & Media",
+    description:
+      "Chữ bên trong tệp Word, Excel, PDF, HTML đính kèm đều tìm được, và trợ lý AI trả lời được từ chúng - hoặc chỉ từ một tệp.",
+    keywords: [
+      "đính kèm",
+      "tệp",
+      "file",
+      "pdf",
+      "word",
+      "excel",
+      "tìm kiếm",
+      "hỏi",
+      "trợ lý",
+      "notebook",
+      "scan",
+      "attachment",
+    ],
+    body: (
+      <>
+        <p>
+          Không cần import tài liệu mới tìm được nội dung của nó. Khi tệp Word, Excel, CSV, PDF,
+          HTML, Markdown, OpenDocument, RTF, EPUB hoặc tệp văn bản được đính kèm vào trang,
+          WikiHub tự đọc chữ bên trong ở nền (thường trong một hai phút) và không bao giờ sửa tệp.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Tìm kiếm</strong> tìm ra trang theo chữ trong các tệp của nó. Khi chữ chỉ có
+            trong tệp, kết quả ghi <Code>Trong tệp đính kèm ...</Code> và hiện đoạn khớp trong tệp.
+          </li>
+          <li>
+            <strong>Trợ lý AI</strong> trả lời từ tệp đính kèm như từ trang. Dưới mỗi trang nguồn
+            có tên các tệp đã dùng để trả lời; bấm vào để mở tệp.
+          </li>
+          <li>
+            <strong>Hỏi về một tệp</strong>: mở danh sách <Code>Tệp đính kèm</Code> của trang và bấm{" "}
+            <Code>Hỏi về tệp này</Code>. Khung chat khi đó chỉ trả lời dựa trên tệp đó (giống một
+            notebook có một nguồn) - không lấy từ phần còn lại của wiki hay internet - và hiện{" "}
+            <Code>Đang hỏi về ...</Code> phía trên ô nhập. Thử <Code>Tóm tắt tệp này</Code>. Bấm{" "}
+            <Code>×</Code> trên nhãn đó để quay lại hỏi toàn bộ wiki.
+          </li>
+          <li>
+            Mỗi tệp trong danh sách <Code>Tệp đính kèm</Code> cho biết chữ của nó đã đọc được chưa:{" "}
+            <Code>Đã đọc nội dung</Code>, <Code>Đang đọc…</Code>, <Code>PDF scan</Code> (ảnh chụp
+            trang, không có chữ chọn được; WikiHub không nhận dạng chữ trong ảnh),{" "}
+            <Code>Quá lớn để đọc</Code> (trên 50 MB), <Code>Không đọc được</Code> (tệp hỏng hoặc có
+            mật khẩu) hoặc <Code>Không có chữ</Code>. Ảnh, video và tệp nén không được đọc.
+          </li>
+          <li>
+            Chỉ tính các tệp trang vẫn còn liên kết: gỡ tệp khỏi trang thì chữ của nó cũng ra khỏi
+            tìm kiếm. Tệp sửa trong trình soạn thảo văn phòng hoặc được thay sẽ được đọc lại.
+          </li>
+          <li>
+            Không ai tìm thấy hay nghe được gì từ một tệp họ không mở được: tệp chỉ có tác dụng với
+            người được xem trang chứa nó.
+          </li>
+        </ul>
       </>
     ),
   },
@@ -2499,6 +2633,17 @@ export const sectionsVi: HelpSection[] = [
             trăm ở đầu bên phải; các thanh đo mức dùng chuyển sang vàng ở 70% và đỏ ở 90%.
           </li>
           <li>
+            <strong>Mức dùng theo container</strong>: hai biểu đồ tròn, một cho RAM và một cho CPU,
+            cho thấy mỗi container chiếm bao nhiêu so với toàn bộ máy chủ. Các phần còn gồm{" "}
+            <Code>Hệ thống và khác</Code> (phần máy chủ dùng ngoài các container của WikiHub) và{" "}
+            <Code>Còn trống</Code>, nên mỗi phần đều được đọc so với cả máy. Sáu container lớn nhất
+            mỗi cái một màu, phần còn lại gộp thành một phần xám; container giữ nguyên màu khi
+            container khác vượt lên. Rê chuột hoặc chọn một dòng trong danh sách để xem phần của nó
+            ở giữa vòng tròn. CPU tính bằng nhân so với tổng số nhân của máy. Khi các container chỉ
+            chiếm một phần nhỏ của máy, chuyển biểu đồ sang <strong>Chỉ các container</strong> để so
+            sánh chúng với nhau.
+          </li>
+          <li>
             <strong>Container</strong>: tên, id ngắn và image, trạng thái (<Code>Khoẻ</Code>,{" "}
             <Code>Không khoẻ</Code>, <Code>Đang chạy</Code> hoặc trạng thái khi dừng, cùng số lần
             Docker khởi động lại), thời gian chạy, CPU và bộ nhớ. CPU tính theo một nhân nên 100%
@@ -3184,7 +3329,9 @@ export const sectionsVi: HelpSection[] = [
       <>
         <p>
           <strong>Administration &gt; Spaces</strong> liệt kê mọi space với các ô
-          Total / Active / Archived. Xoá space vĩnh viễn chỉ khả dụng ở đây (cài
+          Total / Active / Archived, và với mỗi space có số <strong>Pages</strong> (không tính
+          Thùng rác) và <strong>Graph links</strong> - các liên kết, nhắc tên và trang gần nghĩa
+          bắt đầu từ space đó (xem <em>Trang liên quan và bản đồ trang</em>). Xoá space vĩnh viễn chỉ khả dụng ở đây (cài
           đặt riêng của một space chỉ có tuỳ chọn Archive). Mở bảng{" "}
           <strong>Access</strong> của một space để quản lý chính xác ai được làm
           gì:
@@ -3395,7 +3542,10 @@ export const sectionsVi: HelpSection[] = [
           <li>
             Nhập Confluence quét kho lưu trữ để tìm space, đánh dấu xung đột
             khoá, cho bạn chọn space nào để mang vào, và chạy như một tác vụ nền
-            với log trực tiếp.
+            với log trực tiếp. Bình luận của trang cũng được mang sang - trả lời vẫn là trả
+            lời, giữ người viết và ngày giờ, tệp hoặc ảnh trong bình luận thành link mở được
+            tệp đó - cùng lượt thích của trang và của bình luận. Bình luận và lượt thích của
+            trang đã xoá trong Confluence thì bỏ qua; không ai nhận thông báo về chúng.
           </li>
           <li>
             Một kho lưu trữ Confluence lớn có thể mất hàng giờ để tải lên. Trang
@@ -3657,8 +3807,39 @@ export const sectionsVi: HelpSection[] = [
             embedding, dành cho provider không có) hoặc <Code>Tự host (Ollama)</Code>. Chỉ các model có thể
             tạo embedding mới được liệt kê, và <Code>Lưu</Code> kiểm tra nguồn thật sự tạo được embedding với
             model bạn chọn. WikiHub sẽ lập chỉ mục mọi trang ở nền, từng ít một, giữ chỉ mục cập nhật khi
-            trang thay đổi và hiện tiến độ ngay trong mục này. Đổi model sẽ lập lại chỉ mục. Để model ở{" "}
-            <Code>Tắt</Code> thì chỉ dùng tìm kiếm từ khoá. Kết quả luôn theo quyền của người tìm.
+            trang thay đổi và hiện tiến độ ngay trong mục này, kèm thời gian còn lại ước tính theo tốc độ
+            của 15 phút gần nhất. Đổi model sẽ lập lại chỉ mục.{" "}
+            <Code>Tạm dừng</Code>, cạnh thanh tiến độ, ngừng lập chỉ mục một lúc để giải phóng máy chủ (model
+            tự host cũng được gỡ khỏi bộ nhớ); các trang đã lập chỉ mục vẫn tìm được theo ý nghĩa, và{" "}
+            <Code>Tiếp tục</Code> chạy tiếp từ chỗ đã dừng. Để model ở{" "}
+            <Code>Tắt</Code> thì chỉ dùng tìm kiếm từ khoá. Kết quả luôn theo quyền của người tìm. Chữ
+            bên trong tệp đính kèm trang (Word, Excel, PDF, HTML...) cũng được đọc và lập chỉ mục; mục
+            này hiện <Code>Tệp đính kèm: đã đọc ..., đang chờ ...</Code>, và <Code>Tạm dừng</Code> cũng
+            dừng việc đọc tệp.
+          </li>
+          <li>
+            <strong>Giới hạn sử dụng</strong> đặt mỗi người được gọi AI bao nhiêu lần một giờ, để một
+            người dùng nhiều hay một script không dùng hết hạn mức của nhà cung cấp cho mọi người:{" "}
+            <Code>Lượt gọi AI mỗi người</Code> (câu hỏi, chat, tóm tắt, trợ giúp viết; tra web có bộ
+            đếm riêng cùng mức) và <Code>Lượt gọi khi dịch tài liệu mỗi người</Code> (dịch một tài liệu
+            import cần nhiều lượt gọi nhỏ nên có hạn mức riêng). Để trống để dùng mặc định của máy chủ
+            (60 và 1500 lượt mỗi giờ, trừ khi <Code>WIKIHUB_AI_RATE_LIMIT</Code> /{" "}
+            <Code>WIKIHUB_AI_TRANSLATE_RATE_LIMIT</Code> đặt khác). Thay đổi có hiệu lực trong khoảng
+            nửa phút; ai vượt giới hạn sẽ được báo chờ một lát.
+          </li>
+          <li>
+            <strong>Trang liên quan (knowledge graph)</strong> giúp trợ lý trả lời đầy đủ hơn những câu
+            hỏi cần nhiều trang. WikiHub tự tìm xem trang nào gắn với trang nào: trang liên kết tới trang
+            khác, trang nhắc đúng tiêu đề của trang khác (không ai cần chèn link), trang có nội dung gần
+            nghĩa (từ chỉ mục semantic search, không gọi thêm model nào), và vị trí trong cây trang. Việc này
+            chạy ở nền mỗi phút và không bao giờ sửa nội dung trang. Trong <strong>Semantic search</strong>{" "}
+            › phần chỉnh thông số, <Code>Số trang liên quan đưa vào câu trả lời</Code> cho trợ lý đọc thêm
+            tối đa chừng ấy trang gắn với các trang tìm được (mặc định 2; đặt <Code>0</Code> để tắt). Các trang
+            này chỉ dùng phần chỗ còn trống, nên không đẩy kết quả tìm kiếm ra, và chỉ lấy trang người hỏi
+            được phép xem. <Code>Ngưỡng trang gần nghĩa</Code> quyết định hai trang phải giống nhau đến mức nào
+            mới tính là gần nghĩa. Các bản sao của cùng một trang (ví dụ <Code>Tên trang (1)</Code>) chỉ được
+            tính một lần, cả trong trang liên quan lẫn trong các trang tìm kiếm đưa cho trợ lý, nên một trang
+            bị sao chép nhiều lần không chiếm hết chỗ của các trang khác.
           </li>
           <li>
             <strong>Ollama tự host</strong> chạy model embedding ngay trên máy chủ này khi provider của bạn

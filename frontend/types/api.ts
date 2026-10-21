@@ -18,6 +18,9 @@ export interface SearchResultPage {
   space_name: string;
   snippet: string;
   updated_at: string | null;
+  /** Set when the words are in a file attached to the page, not on the page itself. */
+  file_id?: string | null;
+  file_name?: string | null;
 }
 
 export interface SearchResultSpace {
@@ -495,6 +498,11 @@ export interface Space {
   /** Whether the current user is one of `owners` above. */
   is_owner: boolean;
   member_count: number;
+  /** Live pages in the space (the Trash is not counted). */
+  page_count?: number;
+  /** Knowledge-graph ties (link, mention, similar) between live pages that
+   * start in this space; the page tree is not counted. */
+  graph_link_count?: number;
   /** Distinct groups holding a direct permission on this space. */
   group_permission_count: number;
   /** Distinct non-superuser users holding a direct permission on this space. */
@@ -1235,4 +1243,75 @@ export interface PageRestoreResult {
   slug: string;
   /** False when the page it was under is gone and it came back at the top of the space. */
   restored_to_parent: boolean;
+}
+
+/** Why a page is related to another, seen from that other page. */
+export type RelatedVia =
+  | "link"
+  | "linked_from"
+  | "mention"
+  | "mentioned_by"
+  | "similar";
+
+export interface RelatedPage {
+  id: string;
+  title: string;
+  slug: string;
+  space_key: string;
+  space_name: string;
+  /** Strongest tie first. */
+  via: RelatedVia[];
+}
+
+/** A page this page names by its title, so the words can link to it. */
+export interface MentionedPage {
+  title: string;
+  slug: string;
+  space_key: string;
+}
+
+export interface PageRelated {
+  pages: RelatedPage[];
+  mentions: MentionedPage[];
+}
+
+export type GraphEdgeKind = "link" | "mention" | "similar" | "tree";
+
+export interface GraphNode {
+  id: string;
+  title: string;
+  slug: string;
+  parent_id: string | null;
+  /** The top-level page of its branch of the page tree. */
+  branch_id: string;
+  /** Group of pages tied together, numbered largest first. */
+  community: number;
+  degree: number;
+  /** The start of the page's text, for a preview. */
+  excerpt: string;
+  space_key: string;
+  space_name: string;
+}
+
+export interface GraphEdge {
+  source: string;
+  /** For a `tree` edge, `source` is the parent. */
+  target: string;
+  kind: GraphEdgeKind;
+  weight: number;
+}
+
+export interface SpaceGraph {
+  /** The spaces with pages on the map, by name, with how many. */
+  spaces: { key: string; name: string; pages: number }[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  /** Pages the reader may see; more than `nodes` when the map is capped. */
+  total_pages: number;
+  insights: {
+    orphans: string[];
+    bridges: string[];
+    /** Groups of several pages held together by only a few ties. */
+    sparse_groups: { community: number; size: number }[];
+  };
 }

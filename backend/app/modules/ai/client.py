@@ -193,9 +193,16 @@ def parse_stream_line(line: str) -> tuple[str, Usage | None, bool]:
     return text, usage, False
 
 
+class _CutOff:
+    """Sent at the end of a stream the model had to stop: it ran out of room mid-answer."""
+
+
+CUT_OFF = _CutOff()
+
+
 async def chat_stream(
     config: AIConfig, messages: list[dict[str, str]], *, max_tokens: int = 900
-) -> AsyncIterator[str | Usage]:
+) -> AsyncIterator[str | Usage | _CutOff]:
     """The reply as it is written: text pieces, then (when the gateway reports it) the usage.
 
     A gateway that does not stream sends the whole reply at once; that arrives as one piece.
@@ -247,6 +254,7 @@ async def chat_stream(
                     if usage is not None:
                         yield usage
                     return
+                cut = False
                 async for line in response.aiter_lines():
                     text, usage, finished = parse_stream_line(line)
                     if text:
@@ -254,8 +262,12 @@ async def chat_stream(
                         yield text
                     if usage is not None:
                         yield usage
+                    if '"finish_reason"' in line and '"length"' in line:
+                        cut = True
                     if finished:
                         break
+                if cut and received:
+                    yield CUT_OFF
                 if not received:
                     logger.warning("ai_empty_reply", finish_reason="stream")
                     raise ServiceUnavailableError(

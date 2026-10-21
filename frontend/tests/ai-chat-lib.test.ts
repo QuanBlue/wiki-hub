@@ -150,6 +150,22 @@ describe("streamChat", () => {
     expect(JSON.parse(String((init as RequestInit).body)).detail).toBe("brief");
   });
 
+  it("asks about one attached file only when one is chosen", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => streamed([event("done", { result: RESULT })])),
+    );
+
+    await streamChat([{ role: "user", content: "q" }], { attachmentId: "f-1" });
+    await streamChat([{ role: "user", content: "q" }]);
+
+    const bodies = vi
+      .mocked(fetch)
+      .mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)));
+    expect(bodies[0].attachment_id).toBe("f-1");
+    expect(bodies[1]).not.toHaveProperty("attachment_id");
+  });
+
   it("remembers the level chosen, and falls back to the usual one", () => {
     window.localStorage.clear();
     expect(readDetail()).toBe("normal");

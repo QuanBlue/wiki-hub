@@ -11,13 +11,16 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentSuperuser, CurrentUser, DbSession
 from app.core import rate_limit
 from app.core.config import settings
 from app.core.exceptions import BadRequestError, ServiceUnavailableError
 from app.db.session import get_session_factory
+from app.models.site_settings import SINGLETON_ID, SiteSettings
 from app.models.user import User
+from app.modules.ai import limits as ai_limits
 from app.modules.ai import ollama
 from app.modules.ai.actions import PlanRunner, StepInput
 from app.modules.ai.admin import AIConnectionService
@@ -26,12 +29,16 @@ from app.modules.ai.chat import ChatService
 from app.modules.ai.config import load_config
 from app.modules.ai.embedding_settings import EmbeddingSettingsService
 from app.modules.ai.help_answer import HelpAnswerService
+from app.modules.ai.limits import ai_rate_limit
 from app.modules.ai.service import AIService
 from app.modules.ai.skills import AISkillService
 from app.modules.ai.websearch import WebSearchSettingsService
+from app.modules.attachments.text import files_read, pending_count
 from app.modules.permissions.service import PermissionService
-from app.modules.search.indexer import index_status
+from app.modules.search.indexer import index_status, indexing_paused, set_indexing_paused
 from app.schemas.ai import (
+    AiLimitsRead,
+    AiLimitsUpdate,
     AIStatus,
     AITestRequest,
     AITestResult,
@@ -61,6 +68,7 @@ from app.schemas.ai import (
     PageDraftRequest,
     PageSuggestions,
     PageSummary,
+    SearchIndexPause,
     SearchIndexStatus,
     SkillRead,
     SkillUpdate,
@@ -145,7 +153,7 @@ async def execute_plan(payload: ExecuteRequest, user: CurrentUser) -> StreamingR
     final ``done``. The steps are checked again here: what the browser sends is not trusted.
     """
     # Counted before the first byte, like a chat message, so a refusal is a plain HTTP error.
-    await rate_limit.enforce(f"aiact:{user.id}", settings.ai_rate_limit)
+    await rate_limit.enforce(f"aiact:{user.id}", await ai_rate_limit())
     steps = [StepInput(type=step.type, args=step.args) for step in payload.steps]
     user_id = user.id
     lang = payload.lang or "en"
@@ -255,13 +263,72 @@ ConnectionServiceDep = Annotated[AIConnectionService, Depends(get_connection_ser
 async def search_index_status(session: DbSession, admin: CurrentSuperuser) -> SearchIndexStatus:
     config = await load_config(session)
     status_ = await index_status(session, config)
+    paused = await indexing_paused(session)
     return SearchIndexStatus(
         available=status_.available,
         enabled=config.embeddings_ready,
         total=status_.total,
         indexed=status_.indexed,
         error=status_.error,
+        paused=paused,
+        eta_seconds=None if paused else status_.eta_seconds,
+        files_read=await files_read(session),
+        files_waiting=await pending_count(session),
     )
+
+
+async def _limits_read(session: AsyncSession) -> AiLimitsRead:
+    saved = await ai_limits.read(session)
+    return AiLimitsRead(
+        requests_per_hour=saved.requests_per_hour,
+        translate_requests_per_hour=saved.translate_requests_per_hour,
+        default_requests_per_hour=ai_limits.per_hour(settings.ai_rate_limit),
+        default_translate_requests_per_hour=ai_limits.per_hour(settings.ai_translate_rate_limit),
+    )
+
+
+@router.get(
+    "/limits",
+    response_model=AiLimitsRead,
+    summary="How many AI calls one person may make an hour",
+)
+async def get_ai_limits(session: DbSession, admin: CurrentSuperuser) -> AiLimitsRead:
+    return await _limits_read(session)
+
+
+@router.put(
+    "/limits",
+    response_model=AiLimitsRead,
+    summary="Set how many AI calls one person may make an hour (empty: the default)",
+)
+async def put_ai_limits(
+    payload: AiLimitsUpdate, session: DbSession, admin: CurrentSuperuser
+) -> AiLimitsRead:
+    row = await session.get(SiteSettings, SINGLETON_ID)
+    if row is None:
+        row = SiteSettings(id=SINGLETON_ID)
+        session.add(row)
+    row.ai_requests_per_hour = payload.requests_per_hour
+    row.ai_translate_requests_per_hour = payload.translate_requests_per_hour
+    row.updated_by_id = admin.id
+    await session.commit()
+    ai_limits.forget()
+    return await _limits_read(session)
+
+
+@router.put(
+    "/search-index/pause",
+    response_model=SearchIndexStatus,
+    summary="Pause or resume semantic-search indexing",
+)
+async def pause_search_index(
+    payload: SearchIndexPause, session: DbSession, admin: CurrentSuperuser
+) -> SearchIndexStatus:
+    """Pausing frees the server while pages wait to be embedded (a self-hosted model is
+    unloaded too); resuming carries on from where indexing stopped."""
+    config = await load_config(session)
+    await set_indexing_paused(session, payload.paused, config.embedding_model)
+    return await search_index_status(session, admin)
 
 
 def get_embedding_service(session: DbSession, admin: CurrentSuperuser) -> EmbeddingSettingsService:

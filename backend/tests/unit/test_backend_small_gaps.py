@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import time
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import jwt
@@ -255,14 +256,20 @@ async def test_a_long_indexing_pass_keeps_renewing_its_lock(
     async def load(_session: object) -> object:
         return object()
 
-    async def index(_session: object, _config: object, *, deadline: float, heartbeat) -> int:
+    batches = iter([3, 0])  # one batch, then the backlog is done
+
+    async def index(
+        _session: object, _config: object, *, deadline: float, heartbeat, stop=None
+    ) -> int:
         await heartbeat()
-        return 3
+        return next(batches)
 
     monkeypatch.setattr(tasks, "get_redis", lambda: Redis())
     monkeypatch.setattr(tasks, "session_scope", lambda: Scope())
     monkeypatch.setattr(tasks, "load_config", load)
     monkeypatch.setattr(tasks, "index_pending", index)
+    monkeypatch.setattr(tasks, "indexing_paused", AsyncMock(return_value=False))
 
     assert await tasks.index_search_pages({}) == 3
-    assert renewed == ["lock:search_index"]
+    # Renewed by every batch's heartbeat, and only ever this pass's own lock.
+    assert renewed and set(renewed) == {"lock:search_index"}

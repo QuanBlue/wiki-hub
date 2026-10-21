@@ -197,6 +197,7 @@ export async function streamChat(
     onSearching,
     onReset,
     detail = "normal",
+    attachmentId = null,
     idleTimeoutMs = CHAT_IDLE_TIMEOUT_MS,
   }: {
     signal?: AbortSignal;
@@ -207,6 +208,8 @@ export async function streamChat(
     onReset?: () => void;
     /** How long and thorough the answer should be. */
     detail?: ChatDetail;
+    /** Answer from this one attached file only ("Ask about this file"). */
+    attachmentId?: string | null;
     idleTimeoutMs?: number;
   } = {},
 ): Promise<AnswerResult> {
@@ -234,7 +237,11 @@ export async function streamChat(
           "Content-Type": "application/json",
           Accept: "text/event-stream",
         },
-        body: JSON.stringify({ messages, detail }),
+        body: JSON.stringify({
+          messages,
+          detail,
+          ...(attachmentId ? { attachment_id: attachmentId } : {}),
+        }),
         credentials: "include",
         signal: controller.signal,
       });
@@ -543,10 +550,15 @@ export function saveChat(userId: string, state: ChatState): void {
 export const CHAT_OPEN_EVENT = "wikihub:chat-open";
 export const CHAT_TOGGLE_EVENT = "wikihub:chat-toggle";
 
+/** A file attached to a page that the chat answers from alone, like a notebook's source. */
+export type ChatFile = { id: string; filename: string };
+
 export type ChatOpenDetail = {
   /** A question already answered elsewhere (the search box), to carry on from. */
   question?: string;
   result?: AnswerResult;
+  /** Ask about this one file ("Ask about this file" on an attachment). */
+  file?: ChatFile;
 };
 
 /** Open the chat panel, optionally continuing a question that was answered in the search box. */

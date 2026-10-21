@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app.modules.ai import weather
-from app.modules.ai.weather import clean_place, get_weather, summary
+from app.modules.ai.weather import clean_place, get_weather, place_candidates, summary
 
 CURRENT = {
     "time": "2026-10-16T12:00",
@@ -132,3 +132,84 @@ async def test_a_service_that_fails_gives_no_weather_rather_than_an_error(
     serving(monkeypatch, lambda request: httpx.Response(status))
 
     assert await get_weather("Cam Ranh") == []
+
+
+@pytest.mark.parametrize(
+    ("typed", "names", "in_vietnam"),
+    [
+        ("Ho Chi Minh City", ["Ho Chi Minh City"], False),
+        ("Thành phố Vinh", ["Vinh", "Thành phố Vinh"], True),
+        ("TP. Hồ Chí Minh", ["Hồ Chí Minh", "TP. Hồ Chí Minh"], True),
+        ("Tỉnh Nghệ An", ["Nghệ An", "Tỉnh Nghệ An"], True),
+        ("Paris", ["Paris"], False),
+    ],
+)
+def test_the_word_for_a_places_kind_is_dropped_before_looking_it_up(
+    typed: str, names: list[str], in_vietnam: bool
+) -> None:
+    assert place_candidates(typed) == (names, in_vietnam)
+
+
+async def test_each_name_is_tried_until_one_is_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        if "geocoding" in request.url.host:
+            if request.url.params["name"] == "Vinh":
+                return httpx.Response(
+                    200,
+                    json={
+                        "results": [
+                            {
+                                "name": "Vinh",
+                                "country": "Vietnam",
+                                "country_code": "VN",
+                                "latitude": 18.7,
+                                "longitude": 105.7,
+                            }
+                        ]
+                    },
+                )
+            return httpx.Response(200, json={})
+        return httpx.Response(200, json={"current": CURRENT, "daily": DAILY})
+
+    seen = serving(monkeypatch, respond)
+
+    found = await get_weather("Thành phố Vinh")
+
+    assert found and found[0].title == "Weather in Vinh, Vietnam (Open-Meteo)"
+    asked = [r.url.params["name"] for r in seen if "geocoding" in r.url.host]
+    assert asked == ["Vinh"]
+
+
+async def test_a_vietnamese_name_prefers_the_place_in_vietnam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        if "geocoding" in request.url.host:
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "name": "Sài Gòn",
+                            "country": "Chad",
+                            "country_code": "TD",
+                            "latitude": 1,
+                            "longitude": 1,
+                        },
+                        {
+                            "name": "Ho Chi Minh City",
+                            "country": "Vietnam",
+                            "country_code": "VN",
+                            "latitude": 10.8,
+                            "longitude": 106.6,
+                        },
+                    ]
+                },
+            )
+        return httpx.Response(200, json={"current": CURRENT, "daily": DAILY})
+
+    serving(monkeypatch, respond)
+
+    found = await get_weather("Sài Gòn")
+
+    assert found[0].title == "Weather in Ho Chi Minh City, Vietnam (Open-Meteo)"

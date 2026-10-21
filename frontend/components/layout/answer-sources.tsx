@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, FileText } from "lucide-react";
+import { ChevronRight, FileText, Paperclip } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ export function SourceRow({
   onOpen: (source: AnswerSource) => void;
   numbered: boolean;
 }) {
+  const { t } = useTranslation();
+  const files = source.files ?? [];
   return (
     <li>
       <button
@@ -44,6 +46,20 @@ export function SourceRow({
           {source.space_key}
         </Badge>
       </button>
+      {files.map((file) => (
+        // The answer was read from a file attached to the page: open that file itself.
+        <a
+          key={file.id}
+          href={`/api/v1/attachments/${file.id}/content`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={t("search.answerFile", { file: file.filename })}
+          className="text-muted-foreground hover:text-foreground hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring ml-7 flex max-w-[calc(100%-1.75rem)] items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+        >
+          <Paperclip className="size-3 shrink-0" aria-hidden />
+          <span className="truncate">{file.filename}</span>
+        </a>
+      ))}
     </li>
   );
 }
