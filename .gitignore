@@ -58,3 +58,7 @@ tmp/
 confluence-backup/
 
 TODO
+
+# --- Local evaluation data (real questions describe what the wiki holds) -----
+*.local.json
+*.local.md

@@ -1,0 +1,22 @@
+[
+  {
+    "question": "What should a new engineer do on day one?",
+    "expected": ["DEMO/onboarding-checklist", "DEMO/architecture-overview"]
+  },
+  {
+    "question": "How does a request travel through the system?",
+    "expected": ["DEMO/architecture-overview"]
+  },
+  {
+    "question": "Where do I start in the Product Engineering space?",
+    "expected": ["DEMO/getting-started", "DEMO/onboarding-checklist", "DEMO/architecture-overview"]
+  },
+  {
+    "question": "How are alerts for a high error rate set up?",
+    "expected": ["DEMO/monitoring-with-prometheus-and-grafana"]
+  },
+  {
+    "question": "When do we ship a release?",
+    "expected": ["DEMO/release-process"]
+  }
+]

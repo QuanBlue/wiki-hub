@@ -133,9 +133,7 @@ async def _import_one_space(
         creator="missing-import-user",
         last_modifier=None,
     )
-    space = ConfluenceSpace(
-        source_id="s1", key=key, name="2.team_devops", pages=[source]
-    )
+    space = ConfluenceSpace(source_id="s1", key=key, name="2.team_devops", pages=[source])
     monkeypatch.setattr(import_module, "scan_archive", lambda _path: [space])
     monkeypatch.setattr(import_module, "iter_page_bodies", lambda _path: [("p1", "<p>Body</p>")])
     monkeypatch.setattr(import_module, "iter_attachments", lambda _path: [])
@@ -188,10 +186,14 @@ async def test_confluence_import_skips_a_space_that_differs_only_in_case(
     assert spaces[0].id == restored.id
 
     skipped = (
-        await session.execute(
-            select(ImportLog).where(ImportLog.message.like("Skipped: Space key%"))
+        (
+            await session.execute(
+                select(ImportLog).where(ImportLog.message.like("Skipped: Space key%"))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert [log.entity_label for log in skipped] == ["DEVSECOPS"]
 
     # The whole point: this is what used to raise MultipleResultsFound.
@@ -210,9 +212,7 @@ async def test_confluence_import_replace_collapses_a_case_differing_pair(
     still dies on MultipleResultsFound.
     """
     for key in ("DEVSECOPS", "devsecops"):
-        session.add(
-            Space(key=key, name="2.team_devops", description="", icon="", status="active")
-        )
+        session.add(Space(key=key, name="2.team_devops", description="", icon="", status="active"))
     await session.flush()
 
     user = await AuthService(session).create_user(
@@ -246,12 +246,17 @@ async def test_confluence_import_replace_collapses_a_case_differing_pair(
     session.add(job)
     await session.flush()
     source = ConfluencePage(
-        source_id="p1", space_id="s1", parent_id=None, title="Home", status="current",
-        created_at=None, updated_at=None, creator="missing-import-user", last_modifier=None,
+        source_id="p1",
+        space_id="s1",
+        parent_id=None,
+        title="Home",
+        status="current",
+        created_at=None,
+        updated_at=None,
+        creator="missing-import-user",
+        last_modifier=None,
     )
-    space = ConfluenceSpace(
-        source_id="s1", key="devsecops", name="2.team_devops", pages=[source]
-    )
+    space = ConfluenceSpace(source_id="s1", key="devsecops", name="2.team_devops", pages=[source])
     monkeypatch.setattr(import_module, "scan_archive", lambda _path: [space])
     monkeypatch.setattr(import_module, "iter_page_bodies", lambda _path: [("p1", "<p>Body</p>")])
     monkeypatch.setattr(import_module, "iter_attachments", lambda _path: [])
@@ -402,3 +407,137 @@ async def test_startup_sweep_reaps_even_a_freshly_beating_import(
 
     await session.refresh(job)
     assert job.status == "failed"
+
+
+COMMENTS_XML = (
+    "<hibernate-generic>"
+    '<object class="Comment" package="com.atlassian.confluence.pages"><id name="id">c1</id>'
+    '<property name="creationDate">2021-03-10 14:22:19.000</property>'
+    '<property name="lastModificationDate">2021-03-12 09:00:00.000</property>'
+    '<property name="contentStatus">current</property>'
+    '<property name="creator" class="ConfluenceUserImpl"><id name="key">k-alice</id></property>'
+    '<property name="containerContent" class="ContentEntityObject"><id name="id">p1</id></property>'
+    "</object>"
+    '<object class="Comment" package="com.atlassian.confluence.pages"><id name="id">c2</id>'
+    '<property name="creationDate">2021-03-11 08:00:00.000</property>'
+    '<property name="contentStatus">current</property>'
+    '<property name="creator" class="ConfluenceUserImpl"><id name="key">k-bob</id></property>'
+    '<property name="containerContent" class="ContentEntityObject"><id name="id">p1</id></property>'
+    '<property name="parent" class="Comment"><id name="id">c1</id></property>'
+    "</object>"
+    '<object class="LikeEntity"><id name="id">l1</id>'
+    '<property name="content" class="ContentEntityObject"><id name="id">p1</id></property>'
+    '<property name="user" class="ConfluenceUserImpl"><id name="key">k-bob</id></property>'
+    "</object>"
+    '<object class="LikeEntity"><id name="id">l2</id>'
+    '<property name="creationDate">2021-03-13 10:00:00.000</property>'
+    '<property name="content" class="ContentEntityObject"><id name="id">c1</id></property>'
+    '<property name="user" class="ConfluenceUserImpl"><id name="key">k-bob</id></property>'
+    "</object>"
+    "</hibernate-generic>"
+)
+
+
+class CommentsStorage:
+    async def download_to_file(self, _key: str, destination: str, on_progress=None) -> None:
+        with zipfile.ZipFile(destination, "w") as archive:
+            archive.writestr("entities.xml", COMMENTS_XML)
+
+
+async def test_confluence_import_brings_comments_replies_and_likes(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.models.comment import CommentLike, PageComment
+    from app.models.page import PageLike, WikiPage
+    from app.models.user import User
+    from app.modules.import_export.confluence import ConfluenceSpaceList
+
+    suffix = uuid.uuid4().hex[:6]
+    user = await AuthService(session).create_user(
+        UserCreate(
+            username=f"worker{suffix}",
+            email=f"worker{suffix}@example.com",
+            password="password-1234",
+        )
+    )
+    archive = ImportArchive(
+        object_key=f"imports/{uuid.uuid4()}.zip",
+        filename="export.zip",
+        size_bytes=10,
+        sha256=uuid.uuid4().hex * 2,
+        status="scanned",
+        created_by_id=user.id,
+        spaces=[{"key": "CMT", "name": "Comments", "page_count": 1}],
+    )
+    session.add(archive)
+    await session.flush()
+    job = ImportJob(
+        archive_id=archive.id,
+        created_by_id=user.id,
+        import_all=True,
+        space_keys=[],
+        overwrite_existing=False,
+        status="queued",
+        phase="queued",
+        counters={},
+    )
+    session.add(job)
+    await session.flush()
+    page = ConfluencePage(
+        source_id="p1",
+        space_id="s1",
+        parent_id=None,
+        title="Release notes",
+        status="current",
+        created_at=None,
+        updated_at=None,
+        creator=None,
+        last_modifier=None,
+    )
+    scanned = ConfluenceSpaceList(
+        [ConfluenceSpace(source_id="s1", key="CMT", name="Comments", pages=[page])],
+        user_keys={"k-alice": f"alice{suffix}", "k-bob": f"bob{suffix}"},
+    )
+    monkeypatch.setattr(import_module, "scan_archive", lambda _path: scanned)
+    monkeypatch.setattr(
+        import_module,
+        "iter_page_bodies",
+        lambda _path: [
+            ("p1", "<p>Body</p>"),
+            ("c1", "<p>Looks <strong>good</strong></p>"),
+            ("c2", '<p>Thanks <ac:link><ri:user ri:userkey="k-alice" /></ac:link></p>'),
+        ],
+    )
+    monkeypatch.setattr(import_module, "iter_attachments", lambda _path: [])
+
+    await run_import(session, CommentsStorage(), job.id)
+    await session.refresh(job)
+    assert job.status == "completed", job.error
+
+    target = await session.scalar(select(WikiPage).where(WikiPage.title == "Release notes"))
+    comments = (
+        await session.scalars(
+            select(PageComment)
+            .where(PageComment.page_id == target.id)
+            .order_by(PageComment.created_at)
+        )
+    ).all()
+    assert [c.body for c in comments] == ["Looks **good**", f"Thanks @alice{suffix}"]
+    first, reply = comments
+    assert reply.parent_id == first.id and reply.mentions == [f"alice{suffix}"]
+    alice = await session.scalar(select(User).where(User.username == f"alice{suffix}"))
+    bob = await session.scalar(select(User).where(User.username == f"bob{suffix}"))
+    assert first.author_id == alice.id and reply.author_id == bob.id
+    assert first.created_at == datetime(2021, 3, 10, 14, 22, 19, tzinfo=UTC)
+    assert first.edited_at is not None and reply.edited_at is None
+    assert (
+        await session.scalar(
+            select(PageLike).where(PageLike.page_id == target.id, PageLike.user_id == bob.id)
+        )
+    ) is not None
+    comment_like = await session.scalar(
+        select(CommentLike).where(CommentLike.comment_id == first.id)
+    )
+    assert comment_like.user_id == bob.id
+    assert comment_like.created_at == datetime(2021, 3, 13, 10, 0, tzinfo=UTC)
+    assert job.counters["comments_imported"] == 2 and job.counters["likes_imported"] == 2

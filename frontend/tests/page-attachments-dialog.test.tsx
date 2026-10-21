@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialog";
+import { CHAT_OPEN_EVENT } from "@/lib/ai-chat";
+import { resetAiStatus } from "@/lib/ai-summary";
 import { api } from "@/lib/api-client";
 
 vi.mock("@/lib/api-client", async (importOriginal) => ({
@@ -29,7 +31,9 @@ function renderDialog(props: Partial<React.ComponentProps<typeof PageAttachments
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetAiStatus();
   mocked.get.mockImplementation(async (url: string) => {
+    if (url.includes("/ai/status")) return { enabled: false, can_configure: false };
     if (url.endsWith(A)) return { id: A, filename: "a.pdf", content_type: "application/pdf", size_bytes: 500 };
     return { id: B, filename: "b.zip", content_type: "application/zip", size_bytes: 5 * 1024 * 1024 };
   });
@@ -42,15 +46,55 @@ describe("PageAttachmentsDialog", () => {
     expect(await screen.findByText("a.pdf")).toBeInTheDocument();
     expect(screen.getByText("application/pdf · 500 B")).toBeInTheDocument();
     expect(screen.getByText("application/zip · 5.0 MB")).toBeInTheDocument();
-    expect(mocked.get).toHaveBeenCalledTimes(2);
+    expect(mocked.get).toHaveBeenCalledWith(`/api/v1/attachments/${A}`);
+    expect(mocked.get).toHaveBeenCalledWith(`/api/v1/attachments/${B}`);
     expect(screen.getByRole("link", { name: "Download a.pdf" })).toHaveAttribute(
       "href",
       `/api/v1/attachments/${A}/content`,
     );
   });
 
+  it("says whether search can read each file, and offers to ask about readable ones", async () => {
+    mocked.get.mockImplementation(async (url: string) => {
+      if (url.includes("/ai/status")) return { enabled: true, can_configure: false };
+      if (url.endsWith(A))
+        return { id: A, filename: "a.pdf", content_type: "application/pdf", size_bytes: 500, text_status: "ok" };
+      return { id: B, filename: "scan.pdf", content_type: "application/pdf", size_bytes: 5, text_status: "scanned" };
+    });
+    const onOpenChange = vi.fn();
+    const opened: unknown[] = [];
+    window.addEventListener(CHAT_OPEN_EVENT, (event) => opened.push((event as CustomEvent).detail));
+    renderDialog({ onOpenChange });
+
+    expect(await screen.findByText("Content read")).toBeInTheDocument();
+    expect(screen.getByText("Scanned PDF")).toHaveAttribute(
+      "title",
+      expect.stringContaining("no selectable text"),
+    );
+    // Only the file whose words were read can be asked about.
+    const ask = await screen.findAllByRole("button", { name: /Ask the assistant about/ });
+    expect(ask).toHaveLength(1);
+    await userEvent.click(ask[0]);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(opened).toEqual([{ file: { id: A, filename: "a.pdf" } }]);
+  });
+
+  it("offers no question while the assistant is off", async () => {
+    mocked.get.mockImplementation(async (url: string) => {
+      if (url.includes("/ai/status")) return { enabled: false, can_configure: false };
+      return { id: A, filename: "a.pdf", content_type: "application/pdf", size_bytes: 500, text_status: "ok" };
+    });
+    renderDialog({ content: `/api/v1/attachments/${A}` });
+    expect(await screen.findByText("Content read")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Ask the assistant/ })).not.toBeInTheDocument();
+  });
+
   it("formats kilobyte sizes", async () => {
-    mocked.get.mockImplementation(async () => ({ id: A, filename: "k.txt", content_type: "text/plain", size_bytes: 2048 }));
+    mocked.get.mockImplementation(async (url: string) =>
+      url.includes("/ai/status")
+        ? { enabled: false, can_configure: false }
+        : { id: A, filename: "k.txt", content_type: "text/plain", size_bytes: 2048 },
+    );
     renderDialog({ content: `/api/v1/attachments/${A}` });
     expect(await screen.findByText("text/plain · 2 KB")).toBeInTheDocument();
   });

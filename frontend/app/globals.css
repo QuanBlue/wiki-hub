@@ -566,6 +566,25 @@
   --ring: var(--wh-brand-500);
   --danger: var(--wh-danger);
   --danger-foreground: #ffffff;
+  /* Categorical series for the page map's groups. A map puts any two groups side
+     by side, so only three hues stay apart for every reader (colour-blind
+     included); the rest share --graph-other and are named in the legend. */
+  --graph-1: #2a78d6;
+  --graph-2: #eb6834;
+  --graph-3: #1baf7a;
+  --graph-other: var(--wh-neutral-400);
+  /* Categorical series of the Server page's donut charts: six hues, in this fixed
+     order, that stay apart for every reader (checked for colour-blindness on the
+     card surface). Containers past the sixth share --chart-other; the host's own
+     use is --chart-system. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
+  --chart-6: #008300;
+  --chart-other: var(--wh-neutral-400);
+  --chart-system: var(--wh-neutral-600);
   --scrollbar-thumb: var(--wh-neutral-400);
   --scrollbar-thumb-hover: var(--wh-neutral-500);
   /* Inline `code` in prose: red text on a slightly darker chip so it stands
@@ -619,6 +638,20 @@
   /* --danger is a light pink here, so the light theme's white foreground would
      sit on it at about 2:1. Dark text, as --primary-foreground does. */
   --danger-foreground: #0f172a;
+  /* Same hues, stepped for the dark surface. */
+  --graph-1: #3987e5;
+  --graph-2: #d95926;
+  --graph-3: #199e70;
+  --graph-other: #6b7280;
+  /* The same hues, stepped for the dark surface. */
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-6: #008300;
+  --chart-other: #6b7280;
+  --chart-system: #9ca3af;
   --scrollbar-thumb: #4b5563;
   --scrollbar-thumb-hover: #6b7280;
   --inline-code-fg: #ff9a92;
@@ -654,6 +687,18 @@
   --color-info: var(--wh-info);
   --color-info-bg: var(--wh-info-bg);
   --color-danger-bg: var(--wh-danger-bg);
+  --color-graph-1: var(--graph-1);
+  --color-graph-2: var(--graph-2);
+  --color-graph-3: var(--graph-3);
+  --color-graph-other: var(--graph-other);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-other: var(--chart-other);
+  --color-chart-system: var(--chart-system);
   --color-inline-code: var(--inline-code-fg);
   --color-inline-code-bg: var(--inline-code-bg);
 

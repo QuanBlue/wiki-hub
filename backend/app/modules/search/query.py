@@ -76,9 +76,15 @@ class Concept:
         return [" ".join(self.words), *(" ".join(s) for s in self.synonyms)]
 
 
+#: Filler that only its accents tell apart from a word worth keeping: "đang" ("is ...-ing")
+#: says nothing about a page, but folded it is "dang" - the surname Đặng, and "đăng" in
+#: "đăng nhập". So it is dropped as typed, before folding.
+_ACCENTED_FILLER = re.compile(r"(?<!\w)đang(?!\w)", re.IGNORECASE)
+
+
 def build_concepts(query: str) -> list[Concept]:
     """The meaningful ideas in ``query``, synonyms attached, filler removed."""
-    words = re.findall(r"\w+", fold(query))
+    words = re.findall(r"\w+", fold(_ACCENTED_FILLER.sub(" ", query)))
     concepts: list[Concept] = []
     seen: set[tuple[str, ...]] = set()
     i = 0
@@ -104,6 +110,49 @@ def build_concepts(query: str) -> list[Concept]:
                 seen.add((word,))
                 concepts.append(Concept((word,)))
     return concepts
+
+
+#: Words that say a question needs facts combined - counted, added up, compared, a rule
+#: applied to a case - rather than one fact looked up. Folded, matched as whole words.
+_REASONING_CUES = re.compile(
+    r"(?<![a-z0-9])(bao nhieu|tong cong|tong so|tong|cong lai|tru di|nhieu hon|it hon|"
+    r"lon nhat|nho nhat|cao nhat|thap nhat|nhieu nhat|it nhat|so sanh|khac nhau|giong nhau|"
+    r"dung chung|liet ke|nhung (?:\w+ ){0,3}nao|cac (?:\w+ ){0,3}nao|duoc khong|co nen|nen chon|"
+    r"co dat|dat muc|tuan thu|du khong|vi sao|tai sao|neu|how many|how much|total|sum|"
+    r"more than|less than|fewer|largest|smallest|compare|comparison|difference|differ|"
+    r"which|whether|can i|should i|enough|comply|complies|why|if)(?![a-z0-9])"
+)
+
+
+#: Words that ask for a whole list or every detail: an answer that can run long.
+_FULL_LIST_CUES = re.compile(
+    r"(?<![a-z0-9])(liet ke|day du|tat ca|toan bo|danh sach|chi tiet|cu the|tung (?:\w+ )?mot|"
+    r"list all|list every|full list|complete list|all of|every|in detail|each of)(?![a-z0-9])"
+)
+#: Words that ask about the previous answer itself - it stopped short or left things out.
+_FOLLOW_ON_CUES = re.compile(
+    r"(?<![a-z0-9])(tiep tuc|tiep di|viet tiep|liet ke tiep|phan con lai|con lai|con thieu|"
+    r"thieu (?:\w+ ){0,3}(?:server|muc|dong|cai|phan)|chi liet ke|chi co|sao (?:\w+ ){0,6}chi|"
+    r"continue|go on|the rest|you only|only listed|only gave|missing ones|left out)(?![a-z0-9])"
+)
+
+
+def wants_full_list(question: str) -> bool:
+    """Whether the answer is asked to list everything (and so may need a long reply)."""
+    return bool(_FULL_LIST_CUES.search(fold(question)))
+
+
+def asks_about_last_answer(question: str) -> bool:
+    """Whether a follow-up is about the previous answer itself: "continue", "you only listed
+    22 of 33". Searching its words finds nothing; the previous question is searched instead."""
+    return bool(_FOLLOW_ON_CUES.search(fold(question)))
+
+
+def needs_reasoning(question: str) -> bool:
+    """Whether answering takes more than one fact: counting, adding up, comparing, applying a
+    rule to a case. Such questions are given more of each page and more pages (a count needs
+    the whole table) and are answered under the reasoning rules (``skills.REASONING_RULES``)."""
+    return bool(_REASONING_CUES.search(fold(question)))
 
 
 def query_tokens(query: str) -> list[str]:

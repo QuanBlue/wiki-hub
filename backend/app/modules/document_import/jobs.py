@@ -30,7 +30,6 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import rate_limit
-from app.core.config import settings
 from app.core.exceptions import (
     RateLimitedError,
     ServiceUnavailableError,
@@ -44,6 +43,7 @@ from app.models.space import Space
 from app.models.user import User
 from app.modules.ai.client import chat_with_usage
 from app.modules.ai.config import AIConfig, load_config
+from app.modules.ai.limits import ai_rate_limit, ai_translate_rate_limit
 from app.modules.attachments.limits import limits_for_space
 from app.modules.attachments.store import (
     attachment_content_url,
@@ -433,7 +433,7 @@ def _asker(
 
     async def ask(system: str, user: str) -> str | None:
         try:
-            await rate_limit.enforce(f"{allowance}:{creator.id}", limit or settings.ai_rate_limit)
+            await rate_limit.enforce(f"{allowance}:{creator.id}", limit or await ai_rate_limit())
             reply = await chat_with_usage(
                 config,
                 [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -564,7 +564,7 @@ async def _translate_page(
                 creator,
                 feature="import_translate",
                 allowance="aitranslate",
-                limit=settings.ai_translate_rate_limit,
+                limit=await ai_translate_rate_limit(),
                 max_tokens=_TRANSLATE_TOKENS,
             )
             if config.ready

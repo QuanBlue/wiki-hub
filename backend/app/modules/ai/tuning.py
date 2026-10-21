@@ -79,6 +79,15 @@ def specs() -> tuple[Spec, ...]:
             1.0,
             kind="float",
         ),
+        Spec("graph_related_pages", "Related pages added to answers", 2, 0, 5),
+        Spec(
+            "graph_min_similarity",
+            "Similar-page threshold",
+            0.70,
+            0.0,
+            0.99,
+            kind="float",
+        ),
         Spec(
             "ollama_memory_gb",
             "Ollama memory limit (GB)",
@@ -124,6 +133,11 @@ class Tuning:
     query_timeout_seconds: float = 4.0
     min_similarity: float = 0.30
     margin: float = 0.10
+    #: Pages next to the found ones, in the knowledge graph, added to an answer's
+    #: sources. 0 leaves answers to search alone.
+    graph_related_pages: int = 2
+    #: How alike two pages' embeddings must be for a ``similar`` edge between them.
+    graph_min_similarity: float = 0.70
     ollama_memory_gb: float = 3.0
     #: 0 means "no limit": Ollama may use every core.
     ollama_cpus: int = 0

@@ -12,6 +12,7 @@ from app.models.ai_embedding_settings import AiEmbeddingSettings
 from app.models.ai_skill import AiSkill
 from app.models.ai_web_search_settings import AiWebSearchSettings
 from app.models.attachment import PageAttachment
+from app.models.attachment_text import AttachmentText
 from app.models.audit import AuditAction, AuditLog
 from app.models.backup_job import AutomatedBackupSettings, BackupArchive, BackupJob
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -22,6 +23,7 @@ from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.issue import Issue, IssueAttachment, IssueNote, IssueStatus
 from app.models.notification import Notification
 from app.models.page import PageLike, UserPagePin, WikiPage
+from app.models.page_graph import PageGraphState, PageLink
 from app.models.permission import (
     GlobalPermission,
     Group,
@@ -65,6 +67,7 @@ __all__ = [
     "AiSkill",
     "AiUsage",
     "AiWebSearchSettings",
+    "AttachmentText",
     "AuditAction",
     "AuditLog",
     "AutomatedBackupSettings",
@@ -90,8 +93,10 @@ __all__ = [
     "PageAttachment",
     "PageComment",
     "PageDraft",
+    "PageGraphState",
     "PageGroupRestriction",
     "PageLike",
+    "PageLink",
     "PageRestrictionPermission",
     "PageRevision",
     "PageShare",

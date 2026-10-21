@@ -13,6 +13,7 @@ import httpx
 
 from app.core.logging import get_logger
 from app.modules.ai.websearch import WebResult
+from app.modules.search.query import fold
 
 logger = get_logger(__name__)
 
@@ -63,6 +64,35 @@ def clean_place(text: str) -> str:
     return place if len(re.findall(r"[^\W\d_]", place, re.UNICODE)) >= 2 else ""
 
 
+#: Words before a place name that name its kind, not the place ("TP", "Thành phố"...).
+_KIND_PREFIX = re.compile(
+    r"^(?:thanh pho|tp|tinh|quan|huyen|thi xa|city of|the city of)\s+", re.IGNORECASE
+)
+#: The country a name written in Vietnamese points at.
+_VIETNAM = "VN"
+_VIETNAMESE_LETTERS = re.compile(
+    "[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]",
+    re.IGNORECASE,
+)
+
+
+def place_candidates(place: str) -> tuple[list[str], bool]:
+    """Names to try for ``place``, best first, and whether it is likely in Vietnam.
+
+    The assistant is asked for a city's full English name; this only tidies what still
+    slips through: the name without the word for its kind ("Thành phố Vinh" -> "Vinh"),
+    then the name as written. A name written with Vietnamese letters is looked for in
+    Vietnam first.
+    """
+    folded = " ".join(fold(place).replace(",", " ").split())
+    in_vietnam = bool(_VIETNAMESE_LETTERS.search(place))
+    # The same words dropped from the name as written, accents and all.
+    words = place.split()
+    kind = _KIND_PREFIX.match(folded)
+    stripped = " ".join(words[len(kind.group(0).split()) :]).strip(" ,.") if kind else ""
+    return list(dict.fromkeys(name for name in (stripped, place) if name)), in_vietnam
+
+
 def _number(value: object, unit: str = "") -> str:
     return f"{value}{unit}" if isinstance(value, int | float) else "n/a"
 
@@ -97,14 +127,25 @@ async def get_weather(place_text: str) -> list[WebResult]:
     place = clean_place(place_text)
     if not place:
         return []
+    names, in_vietnam = place_candidates(place)
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http:
-            found = await http.get(_GEOCODE, params={"name": place, "count": 1, "language": "en"})
-            found.raise_for_status()
-            matches = found.json().get("results") or []
-            if not matches:
+            where = None
+            for name in names:
+                found = await http.get(
+                    _GEOCODE, params={"name": name, "count": 5, "language": "en"}
+                )
+                found.raise_for_status()
+                matches = found.json().get("results") or []
+                if not matches:
+                    continue
+                # A Vietnamese name, or a Vietnamese city's nickname, means that city - not
+                # a namesake elsewhere that happens to rank first.
+                local = [m for m in matches if m.get("country_code") == _VIETNAM]
+                where = local[0] if in_vietnam and local else matches[0]
+                break
+            if where is None:
                 return []
-            where = matches[0]
             forecast = await http.get(
                 _FORECAST,
                 params={

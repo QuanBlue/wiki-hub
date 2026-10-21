@@ -6,6 +6,8 @@ import {
   Cpu,
   Download,
   Loader2,
+  Pause,
+  Play,
   ScanSearch,
   Server,
   TriangleAlert,
@@ -99,39 +101,80 @@ function NoteRow({ children, tone }: { children: ReactNode; tone?: "danger" }) {
 }
 
 /** Whether semantic search is on and how far indexing has got (refreshed while it catches up). */
+/** "about 1 h 20 min left": rounded up to whole minutes, so it never promises too soon. */
+function etaText(seconds: number, t: ReturnType<typeof useTranslation>["t"]) {
+  if (seconds < 60) return t("adminAi.semanticEtaSoon");
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return t("adminAi.semanticEtaMinutes", { minutes });
+  return t("adminAi.semanticEtaHours", {
+    hours: Math.floor(minutes / 60),
+    minutes: minutes % 60,
+  });
+}
+
+/** How often the indexing note asks for news: often while work is under way, now and then
+ * otherwise, so pages added meanwhile (3003 -> 3010) show without reloading the page. */
+const BUSY_POLL_MS = 15_000;
+const IDLE_POLL_MS = 60_000;
+
 function IndexStatusNote({
   model,
   onFix,
+  visible = true,
 }: {
   model: string;
   onFix: () => void;
+  /** Whether the section is on screen: a hidden one does not ask. */
+  visible?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, apiErrorText } = useTranslation();
   const [status, setStatus] = useState<SearchIndexStatus | null>(null);
+  const [pausing, setPausing] = useState(false);
+  // Bumped to start polling again after a resume.
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
-    if (!model) return;
+    if (!model || !visible) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     async function load() {
+      if (timer) clearTimeout(timer);
+      let busy = false;
       try {
         const next = await api.get<SearchIndexStatus>(
           "/api/v1/ai/search-index",
         );
         if (cancelled) return;
         setStatus(next);
-        if (next.enabled && next.indexed < next.total)
-          timer = setTimeout(load, 15000);
+        busy =
+          !next.paused &&
+          next.enabled &&
+          (next.indexed < next.total || (next.files_waiting ?? 0) > 0);
       } catch {
-        if (!cancelled) setStatus(null);
+        if (cancelled) return;
+        setStatus(null);
       }
+      // Keep asking while the section is open - also when paused or finished, since pages
+      // keep being added and edited.
+      timer = setTimeout(
+        () => {
+          // A tab in the background is not asked; it catches up when it is shown again.
+          if (document.visibilityState === "visible") void load();
+        },
+        busy ? BUSY_POLL_MS : IDLE_POLL_MS,
+      );
+    }
+    function onShown() {
+      if (document.visibilityState === "visible") void load();
     }
     void load();
+    document.addEventListener("visibilitychange", onShown);
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onShown);
     };
-  }, [model]);
+  }, [model, refresh, visible]);
 
   if (!model) {
     return (
@@ -181,18 +224,67 @@ function IndexStatusNote({
         <p className="text-muted-foreground text-sm">
           {t("adminAi.semanticReady", { total: status.total })}
         </p>
+        <FilesLine status={status} />
       </NoteRow>
     );
   }
   const percent = Math.floor((status.indexed / status.total) * 100);
+  const paused = Boolean(status.paused);
+  async function setPaused(next: boolean) {
+    setPausing(true);
+    try {
+      const updated = await api.put<SearchIndexStatus>(
+        "/api/v1/ai/search-index/pause",
+        { paused: next },
+      );
+      setStatus(updated);
+      // Resumed: keep the progress coming again.
+      if (!next) setRefresh((n) => n + 1);
+    } catch (failure) {
+      toast.error(apiErrorText(failure, "adminAi.semanticPauseError"));
+    } finally {
+      setPausing(false);
+    }
+  }
   return (
     <NoteRow>
-      <div className="text-muted-foreground flex items-center justify-between gap-3 text-sm">
-        <span>{t("adminAi.semanticIndexing")}</span>
-        <span className="tabular-nums">
-          {status.indexed}/{status.total} ({percent}%)
+      <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
+        <span>
+          {paused ? t("adminAi.semanticPaused") : t("adminAi.semanticIndexing")}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="tabular-nums">
+            {status.indexed}/{status.total} ({percent}%)
+          </span>
+          {!paused && status.eta_seconds != null ? (
+            <span className="tabular-nums" title={t("adminAi.semanticEtaHint")}>
+              · {etaText(status.eta_seconds, t)}
+            </span>
+          ) : null}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="gap-1.5"
+            disabled={pausing}
+            onClick={() => void setPaused(!paused)}
+          >
+            {pausing ? (
+              <Loader2 className="motion-safe:animate-spin" aria-hidden />
+            ) : paused ? (
+              <Play aria-hidden />
+            ) : (
+              <Pause aria-hidden />
+            )}
+            {paused ? t("adminAi.semanticResume") : t("adminAi.semanticPause")}
+          </Button>
         </span>
       </div>
+      {paused ? (
+        <p className="text-muted-foreground text-xs">
+          {t("adminAi.semanticPausedHint")}
+        </p>
+      ) : null}
       <div
         role="progressbar"
         aria-label={t("adminAi.semanticIndexingAria", { percent })}
@@ -202,11 +294,31 @@ function IndexStatusNote({
         className="bg-surface border-border h-2 overflow-hidden rounded-full border"
       >
         <div
-          className="bg-info h-full duration-150 motion-safe:transition-[width]"
+          className={cn(
+            "h-full duration-150 motion-safe:transition-[width]",
+            paused ? "bg-muted-foreground" : "bg-info",
+          )}
           style={{ width: `${percent}%` }}
         />
       </div>
+      <FilesLine status={status} />
     </NoteRow>
+  );
+}
+
+/** How many files attached to pages had their words read for search and answers. */
+function FilesLine({ status }: { status: SearchIndexStatus }) {
+  const { t } = useTranslation();
+  const read = status.files_read ?? 0;
+  const waiting = status.files_waiting ?? 0;
+  if (!read && !waiting) return null;
+  return (
+    <p
+      className="text-muted-foreground text-xs tabular-nums"
+      title={t("adminAi.semanticFilesHint")}
+    >
+      {t("adminAi.semanticFiles", { read, waiting })}
+    </p>
   );
 }
 
@@ -593,6 +705,7 @@ export function SemanticSearchPanel({
 
       <IndexStatusNote
         model={saved.model}
+        visible={visible}
         onFix={() => document.getElementById("semantic-model")?.focus()}
       />
 

@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { type CommentNode, MAX_INDENT_DEPTH, countNodes } from "@/lib/comments";
+import { openAttachment } from "@/lib/ai-summary";
 import { useTranslation } from "@/lib/i18n/context";
 import { formatDateTime } from "@/lib/i18n/format";
 import { formatRelative } from "@/lib/relative-time";
@@ -165,6 +166,9 @@ export function CommentItem({
                     <IssueMarkdown
                       source={comment.body}
                       mentions={comment.mentions}
+                      // A file of the page linked from a comment (as one brought over from
+                      // Confluence is) opens in the page's file viewer.
+                      onOpenAttachment={openAttachment}
                       className="text-foreground text-[15px] leading-snug [&_p]:my-0.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
                     />
                   </div>

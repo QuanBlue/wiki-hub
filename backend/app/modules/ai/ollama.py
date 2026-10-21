@@ -248,6 +248,23 @@ async def _step(
         raise Cancelled("Cancelled.")
 
 
+async def ensure_running(tuning: Tuning | None = None) -> bool:
+    """Start the self-hosted Ollama again when it exists but is stopped; True if it was.
+
+    Its container does not restart by itself, so after Docker or the machine restarts it sat
+    stopped and every indexing pass failed ("Name or service not known") until someone
+    opened the admin page. A container that does not exist is left alone: that is Ollama
+    disabled by an administrator (disabling removes it).
+    """
+    status = await controller_status()
+    if not status.get("docker_ok") or status.get("container") in (None, "none", "running"):
+        return False
+    logger.info("ollama_restarting", container=status.get("container"))
+    await _controller_post("/start", json_body=_start_options(tuning))
+    await wait_until_up(60.0)
+    return True
+
+
 async def wait_until_up(wait_seconds: float = 90.0) -> None:
     deadline = time.monotonic() + wait_seconds
     while time.monotonic() < deadline:

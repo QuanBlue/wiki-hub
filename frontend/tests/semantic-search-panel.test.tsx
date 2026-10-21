@@ -107,7 +107,7 @@ const SPECS: TuningSpec[] = [
   },
   {
     key: "ollama_memory_gb",
-    label: "Ollama memory limit (GB)",
+    label: "Ollama memory limit",
     default: 3,
     minimum: 1,
     maximum: 256,
@@ -615,6 +615,132 @@ describe("SemanticSearchPanel indexing status", () => {
     expect(screen.getByText("50/200 (25%)")).toBeInTheDocument();
   });
 
+  it("counts the attached files whose words were read", async () => {
+    serve({
+      index: index({
+        total: 200,
+        indexed: 200,
+        files_read: 12,
+        files_waiting: 3,
+      }),
+      models: models(["m"]),
+    });
+    render(<SemanticSearchPanel initial={settings({ model: "m" })} />);
+    expect(
+      await screen.findByText("Attached files: 12 read, 3 waiting"),
+    ).toBeInTheDocument();
+  });
+
+  it("says roughly how long the rest will take, and not while paused", async () => {
+    serve({
+      index: index({ total: 200, indexed: 50, eta_seconds: 4500 }),
+      models: models(["m"]),
+    });
+    const { unmount } = render(
+      <SemanticSearchPanel initial={settings({ model: "m" })} />,
+    );
+    expect(
+      await screen.findByText("· about 1 h 15 min left"),
+    ).toBeInTheDocument();
+    unmount();
+
+    serve({
+      index: index({
+        total: 200,
+        indexed: 50,
+        eta_seconds: 4500,
+        paused: true,
+      }),
+      models: models(["m"]),
+    });
+    render(<SemanticSearchPanel initial={settings({ model: "m" })} />);
+    await screen.findByText("Indexing is paused.");
+    expect(screen.queryByText(/min left/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the indexing note current while paused, without a reload", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      serve({
+        index: index({ total: 3003, indexed: 3000, paused: true }),
+        models: models(["m"]),
+      });
+      render(<SemanticSearchPanel initial={settings({ model: "m" })} />);
+      expect(
+        await screen.findByText("Indexing is paused."),
+      ).toBeInTheDocument();
+
+      // Pages were added meanwhile: the note shows them within a minute.
+      serve({
+        index: index({ total: 3010, indexed: 3003, paused: true }),
+        models: models(["m"]),
+      });
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(await screen.findByText("3003/3010 (99%)")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pauses indexing to free the server, and resumes it", async () => {
+    serve({ index: index({ total: 200, indexed: 50 }), models: models(["m"]) });
+    vi.mocked(api.put).mockImplementation(
+      async (_path: string, body?: unknown) =>
+        index({
+          total: 200,
+          indexed: 50,
+          paused: (body as { paused: boolean }).paused,
+        }),
+    );
+    render(<SemanticSearchPanel initial={settings({ model: "m" })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Pause" }));
+
+    expect(api.put).toHaveBeenCalledWith("/api/v1/ai/search-index/pause", {
+      paused: true,
+    });
+    expect(await screen.findByText("Indexing is paused.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Pages already indexed are still found/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("50/200 (25%)")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Resume" }));
+
+    expect(api.put).toHaveBeenLastCalledWith("/api/v1/ai/search-index/pause", {
+      paused: false,
+    });
+    expect(
+      await screen.findByText("Indexing pages for semantic search…"),
+    ).toBeInTheDocument();
+  });
+
+  it("opens on a paused index with a Resume button", async () => {
+    serve({
+      index: index({ total: 200, indexed: 80, paused: true }),
+      models: models(["m"]),
+    });
+    render(<SemanticSearchPanel initial={settings({ model: "m" })} />);
+
+    expect(
+      await screen.findByRole("button", { name: "Resume" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Pause" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says when pausing fails, and leaves things as they were", async () => {
+    serve({ index: index({ total: 200, indexed: 50 }), models: models(["m"]) });
+    vi.mocked(api.put).mockRejectedValue(new Error("down"));
+    render(<SemanticSearchPanel initial={settings({ model: "m" })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Pause" }));
+
+    expect(toast.error).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  });
+
   it("explains why indexing stopped, in words, with the reason and a way to fix it", async () => {
     serve({
       index: index({
@@ -703,7 +829,7 @@ describe("SemanticSearchPanel tuning", () => {
       screen.getByLabelText("Margin below the best match"),
     ).toHaveAttribute("placeholder", "Default: 0.1");
     // The Ollama knobs only exist for the Ollama source.
-    expect(screen.queryByLabelText("Ollama memory limit (GB)")).toBeNull();
+    expect(screen.queryByLabelText("Ollama memory limit")).toBeNull();
   });
 
   it("shows the Ollama knobs only for the self-hosted source", async () => {
@@ -714,13 +840,15 @@ describe("SemanticSearchPanel tuning", () => {
       screen.getByRole("radio", { name: /Self-hosted \(Ollama\)/ }),
     );
     expect(
-      await screen.findByLabelText("Ollama memory limit (GB)"),
+      await screen.findByLabelText("Ollama memory limit"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Ollama CPU cores")).toHaveAttribute(
       "placeholder",
       "Default: all cores",
     );
-    expect(screen.getAllByText("restart").length).toBeGreaterThanOrEqual(3);
+    expect(
+      screen.getByText("Applies after Ollama restarts"),
+    ).toBeInTheDocument();
     // Choice knobs are a dropdown of the fixed times.
     await userEvent.click(
       screen.getByRole("button", { name: "Keep the model loaded for" }),

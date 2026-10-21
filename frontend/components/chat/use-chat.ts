@@ -58,7 +58,11 @@ function finished(result: AnswerResult): Partial<Assistant> {
  * back to), try again and start over. It is kept in this browser for this person, and nowhere
  * else.
  */
-export function useChat(userId: string, detail: ChatDetail = "normal") {
+export function useChat(
+  userId: string,
+  detail: ChatDetail = "normal",
+  fileId: string | null = null,
+) {
   const [state, setState] = useState<ChatState>(EMPTY_CHAT);
   const [loaded, setLoaded] = useState(false);
   const stateRef = useRef<ChatState>(EMPTY_CHAT);
@@ -68,6 +72,11 @@ export function useChat(userId: string, detail: ChatDetail = "normal") {
   useEffect(() => {
     detailRef.current = detail;
   }, [detail]);
+  // The file questions are asked about now, if any; read when a question is sent.
+  const fileRef = useRef<string | null>(fileId);
+  useEffect(() => {
+    fileRef.current = fileId;
+  }, [fileId]);
 
   const commit = useCallback((next: ChatState) => {
     stateRef.current = next;
@@ -150,6 +159,7 @@ export function useChat(userId: string, detail: ChatDetail = "normal") {
         const result = await streamChat(toSend, {
           signal: controller.signal,
           detail: detailRef.current,
+          attachmentId: fileRef.current,
           onDelta: (piece) =>
             patchAssistant(reply.id, (entry) => ({
               content: entry.content + piece,

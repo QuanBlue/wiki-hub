@@ -55,6 +55,11 @@ class SiteSettings(TimestampMixin, Base):
     #: conservative built-in policy (knowledge navigation for everyone,
     #: administration for administrators only).
     sidebar_permissions: Mapped[dict[str, list[str]] | None] = mapped_column(JSONB, nullable=True)
+    #: How many AI calls one person may make an hour (questions, chat, writing help...), and
+    #: how many a document translation may. NULL = the value from the environment
+    #: (``WIKIHUB_AI_RATE_LIMIT`` / ``WIKIHUB_AI_TRANSLATE_RATE_LIMIT``). See ``ai.limits``.
+    ai_requests_per_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ai_translate_requests_per_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True),

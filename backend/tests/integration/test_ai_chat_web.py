@@ -346,15 +346,41 @@ async def test_a_weather_request_with_no_usable_place_ends_without_calling_anyth
     assert events[-1]["result"]["found"] is False
 
 
-async def test_when_the_weather_cannot_be_had_the_model_is_told_nothing_was_found(
+async def test_a_place_the_weather_service_does_not_know_is_searched_on_the_web(
     installed: AsyncSession, model: Model, web: Web
 ) -> None:
     owner, space, pages = await _setup(installed)
     await _page(pages, space, owner, "Holiday policy", "Twenty days a year")
-    model.script = [["WEATHER: Atlantis"], ["NOT_FOUND"]]
+    model.script = [["WEATHER: Atlantis"], ["It is 31 degrees there [w1]."]]
     web.no_weather = True
 
     events = await run(installed, owner, conversation("weather in Atlantis"))
 
-    assert "returned no usable pages" in model.streams[1][-1]["content"]
-    assert events[-1]["result"]["found"] is False
+    # The place was not found by name, so an ordinary web search looks for its weather.
+    assert web.weather == ["Atlantis"] and web.queries == ["weather Atlantis"]
+    assert next(e for e in events if e["type"] == "searching")["query"] == "weather Atlantis"
+    assert "<web_sources>" in model.streams[1][-1]["content"]
+    done = events[-1]["result"]
+    assert done["found"] and done["basis"] == "web"
+
+
+async def test_when_no_weather_can_be_had_at_all_it_says_so_in_the_users_language(
+    installed: AsyncSession, model: Model, web: Web
+) -> None:
+    owner, space, pages = await _setup(installed)
+    await _page(pages, space, owner, "Holiday policy", "Twenty days a year")
+    web.no_weather = True
+    web.results = []
+
+    model.script = [["WEATHER: Atlantis"]]
+    english = await run(installed, owner, conversation("weather in Atlantis"))
+    model.script = [["WEATHER: Atlantis"]]
+    vietnamese = await run(installed, owner, conversation("thời tiết ở Atlantis thế nào"))
+
+    for events in (english, vietnamese):
+        done = events[-1]["result"]
+        # Not "the pages found do not contain an answer" with a list of unrelated pages.
+        assert done["found"] and done["basis"] == "clarify" and done["related"] == []
+        assert "Atlantis" in done["answer"]
+    assert "could not get the weather" in english[-1]["result"]["answer"]
+    assert "không lấy được thời tiết" in vietnamese[-1]["result"]["answer"]

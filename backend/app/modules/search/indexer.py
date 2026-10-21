@@ -11,16 +11,22 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import timedelta
 
+import httpx
 import sqlalchemy as sa
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.redis import get_redis
+from app.models.ai_embedding_settings import AiEmbeddingSettings
+from app.models.attachment_text import AttachmentText
 from app.models.page import WikiPage
 from app.models.space import Space, SpaceStatus
 from app.modules.ai.config import AIConfig
@@ -38,6 +44,7 @@ _state = sa.table(
     sa.column("source_updated_at"),
     sa.column("model"),
     sa.column("chunk_count"),
+    sa.column("indexed_at"),
 )
 
 _dimensions_with_index: set[int] = set()
@@ -47,6 +54,10 @@ _dimensions_with_index: set[int] = set()
 #: queue) until the page is edited. ``0`` is never a legitimate count - even an
 #: empty page has its title - so such rows are treated as not indexed.
 SKIPPED = -1
+
+#: Held (in Redis) while an indexing pass runs: one pass at a time, and a sign for
+#: search that the embedding model is loaded but busy.
+SEARCH_INDEX_LOCK = "lock:search_index"
 
 #: Why the last indexing pass stopped, for the administrator to read.
 _ERROR_KEY = "search:index:error"
@@ -170,17 +181,27 @@ async def _store(
     model: str,
     chunks: list[str],
     vectors: list[list[float]],
+    sources: list[uuid.UUID | None] | None = None,
 ) -> None:
+    """Replace the page's passages. ``sources`` names the attached file each passage was read
+    from (``None`` for the page's own text)."""
     await session.execute(text("DELETE FROM page_chunks WHERE page_id = :page"), {"page": page_id})
-    if chunks:
+    if chunks and vectors:
+        files = sources or [None] * len(chunks)
         await session.execute(
             text(
-                "INSERT INTO page_chunks (page_id, chunk_idx, body, embedding) "
-                "VALUES (:page, :idx, :body, CAST(CAST(:vec AS text) AS vector))"
+                "INSERT INTO page_chunks (page_id, chunk_idx, body, embedding, attachment_id) "
+                "VALUES (:page, :idx, :body, CAST(CAST(:vec AS text) AS vector), :file)"
             ),
             [
-                {"page": page_id, "idx": i, "body": body, "vec": vector_literal(vector)}
-                for i, (body, vector) in enumerate(zip(chunks, vectors, strict=True))
+                {
+                    "page": page_id,
+                    "idx": i,
+                    "body": body,
+                    "vec": vector_literal(vector),
+                    "file": file,
+                }
+                for i, (body, vector, file) in enumerate(zip(chunks, vectors, files, strict=True))
             ],
         )
     await session.execute(
@@ -201,10 +222,77 @@ async def _store(
     await session.commit()
 
 
+#: Passages embedded per attached file: its opening, which is what most questions about a
+#: file are answered from. The whole text stays searchable by its words; a 300-page manual
+#: embedded whole would hold up indexing of the rest of the wiki for hours.
+FILE_CHUNKS = 20
+
+
+async def _file_passages(
+    session: AsyncSession, page_id: object, title: str, config: AIConfig
+) -> list[tuple[uuid.UUID, list[str]]]:
+    """Passages of the files attached to the page whose words were read (see
+    ``attachments.text``), each led by "page title - file name" so it says where it is from."""
+    rows = (
+        await session.execute(
+            select(AttachmentText.attachment_id, AttachmentText.filename, AttachmentText.content)
+            .where(AttachmentText.page_id == page_id, AttachmentText.status == "ok")
+            .order_by(AttachmentText.filename)
+        )
+    ).all()
+    return [
+        (
+            file_id,
+            chunk_page(
+                f"{title} - {filename}",
+                content,
+                max_chunks=min(FILE_CHUNKS, config.tuning.max_chunks_per_page),
+            ),
+        )
+        for file_id, filename, content in rows
+    ]
+
+
 async def _backlog(session: AsyncSession, model: str) -> int:
     """Pages still waiting to be indexed for ``model``."""
     stale = _stale_pages(model, 1_000_000).with_only_columns(WikiPage.id).order_by(None)
     return int(await session.scalar(select(sa.func.count()).select_from(stale.subquery())) or 0)
+
+
+async def indexing_paused(session: AsyncSession) -> bool:
+    """Whether an administrator paused indexing (see ``AiEmbeddingSettings.indexing_paused``)."""
+    try:
+        return bool(
+            await session.scalar(
+                select(AiEmbeddingSettings.indexing_paused).where(AiEmbeddingSettings.id == 1)
+            )
+        )
+    except SQLAlchemyError:
+        # A database without the column yet: nothing has been paused.
+        await session.rollback()
+        return False
+
+
+async def set_indexing_paused(session: AsyncSession, paused: bool, model: str = "") -> None:
+    """Pause or resume indexing. Pausing also asks a self-hosted Ollama to unload ``model``,
+    so its memory is free at once instead of after its keep-alive."""
+    row = await session.get(AiEmbeddingSettings, 1)
+    if row is None:
+        row = AiEmbeddingSettings(id=1)
+        session.add(row)
+    row.indexing_paused = paused
+    await session.commit()
+    logger.info("search_index_paused" if paused else "search_index_resumed", by="administrator")
+    if paused and model and row.source == "ollama":
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                await http.post(
+                    settings.ollama_url.rstrip("/") + "/api/embed",
+                    json={"model": model, "input": [], "keep_alive": 0},
+                )
+        except httpx.HTTPError:
+            # Not running, or busy: it unloads by itself after its keep-alive anyway.
+            logger.debug("search_index_unload_failed")
 
 
 async def index_pending(
@@ -213,6 +301,7 @@ async def index_pending(
     *,
     deadline: float | None = None,
     heartbeat: Callable[[], Awaitable[None]] | None = None,
+    stop: Callable[[], Awaitable[bool]] | None = None,
 ) -> int:
     """Embed stale pages, newest first. Returns how many pages were indexed.
 
@@ -220,7 +309,8 @@ async def index_pending(
     unreachable, bad key) rather than hammering it; stops at ``deadline``
     (a ``time.monotonic`` value) so a pass always ends before the next one.
     ``heartbeat`` is awaited after every page, so a caller holding a lock can renew
-    it: one page on a slow gateway can take minutes.
+    it: one page on a slow gateway can take minutes. ``stop`` is asked before every page;
+    ``True`` (indexing was paused) ends the pass there.
 
     Logging, for tuning: every pass that did or attempted anything ends with one
     ``search_index_pass`` line (pages, chunks, time spent waiting on the gateway,
@@ -245,7 +335,14 @@ async def index_pending(
         if deadline is not None and time.monotonic() >= deadline:
             stopped = "time_budget"
             break
+        if stop is not None and await stop():
+            stopped = "paused"
+            break
         chunks = chunk_page(title, content, max_chunks=config.tuning.max_chunks_per_page)
+        sources: list[uuid.UUID | None] = [None] * len(chunks)
+        for file_id, file_chunks in await _file_passages(session, page_id, title, config):
+            chunks.extend(file_chunks)
+            sources.extend([file_id] * len(file_chunks))
         page_started = time.monotonic()
         try:
             vectors = await embed(config, chunks) if chunks else []
@@ -284,7 +381,7 @@ async def index_pending(
         try:
             if vectors:
                 await ensure_vector_index(session, len(vectors[0]))
-            await _store(session, page_id, updated_at, model, chunks, vectors)
+            await _store(session, page_id, updated_at, model, chunks, vectors, sources)
         except SQLAlchemyError:
             # E.g. the page was deleted while it was being embedded.
             await session.rollback()
@@ -359,6 +456,33 @@ class IndexStatus:
     indexed: int
     #: Why indexing last stopped (the gateway refused or was unreachable), if so.
     error: str | None = None
+    #: Roughly how long the rest will take at the recent pace; ``None`` while too
+    #: little has been indexed lately to tell.
+    eta_seconds: int | None = None
+
+
+#: The pace behind the estimate is read from the pages indexed in this window...
+_ETA_WINDOW = timedelta(minutes=15)
+#: ...and only once at least this many were, so one quick page does not promise minutes.
+_ETA_MIN_PAGES = 5
+
+
+async def _recent_pace(session: AsyncSession, model: str) -> float | None:
+    """Pages per second over the last few minutes of indexing, or ``None``."""
+    row = (
+        await session.execute(
+            select(sa.func.count(), sa.func.min(_state.c.indexed_at), sa.func.now()).where(
+                _state.c.model == model,
+                _state.c.chunk_count > 0,
+                _state.c.indexed_at > sa.func.now() - _ETA_WINDOW,
+            )
+        )
+    ).one()
+    count, first, now = row
+    if count < _ETA_MIN_PAGES or first is None:
+        return None
+    span = (now - first).total_seconds()
+    return count / span if span > 0 else None
 
 
 async def index_status(session: AsyncSession, config: AIConfig) -> IndexStatus:
@@ -390,4 +514,12 @@ async def index_status(session: AsyncSession, config: AIConfig) -> IndexStatus:
             or 0
         )
     error = await last_error(config.embedding_model) if config.embeddings_ready else None
-    return IndexStatus(available=True, total=int(total or 0), indexed=indexed, error=error)
+    remaining = int(total or 0) - indexed
+    eta = None
+    if config.embeddings_ready and remaining > 0 and error is None:
+        pace = await _recent_pace(session, config.embedding_model)
+        if pace:
+            eta = round(remaining / pace)
+    return IndexStatus(
+        available=True, total=int(total or 0), indexed=indexed, error=error, eta_seconds=eta
+    )

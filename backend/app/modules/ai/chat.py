@@ -26,7 +26,6 @@ from dataclasses import dataclass, field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import rate_limit
-from app.core.config import settings
 from app.core.exceptions import ServiceUnavailableError
 from app.core.logging import get_logger
 from app.models.user import User
@@ -49,10 +48,11 @@ from app.modules.ai.assistant_context import (
     viewer_of,
     visible_spaces,
 )
-from app.modules.ai.client import Usage, chat_stream, chat_with_usage
+from app.modules.ai.client import CUT_OFF, Usage, chat_stream, chat_with_usage
 from app.modules.ai.config import AIConfig, load_config
 from app.modules.ai.help_knowledge import help_block
 from app.modules.ai.help_knowledge import search as search_help
+from app.modules.ai.limits import ai_rate_limit
 from app.modules.ai.reviewer import (
     OK,
     Verdict,
@@ -72,6 +72,7 @@ from app.modules.ai.websearch import (
     read_pages,
     search_web,
 )
+from app.modules.search.query import asks_about_last_answer, needs_reasoning, wants_full_list
 from app.modules.search.service import SearchService
 from app.modules.stats.recorder import record_ai_usage
 from app.schemas.ai import (
@@ -88,12 +89,21 @@ logger = get_logger(__name__)
 
 #: The longest a reply may take, as for the answer box - the web search and the second try
 #: of an answer that needed it are inside it.
-CHAT_DEADLINE_SECONDS = 60.0
+CHAT_DEADLINE_SECONDS = 150.0
 #: Understanding a follow-up is a small job; when it is slow the question is used as typed.
 REWRITE_DEADLINE_SECONDS = 15.0
 _MAX_TOKENS = 900
 _REWRITE_TOKENS = 120
 _QUERY_CHARS = 300
+#: What a question that needs facts combined reads: more pages, and more of each (a count over
+#: a table cut after 900 characters came out short).
+#: Room for a reply that lists everything, or works something out (whatever the detail chosen).
+LONG_REPLY_TOKENS = 3000
+REASONING_TOKENS = 1500
+#: Said under an answer the model had to stop writing: the person knows to ask for the rest.
+_CUT_SHORT_VI = "\n\n_(Câu trả lời dài nên bị cắt ở đây - gõ **tiếp tục** để xem phần còn lại.)_"
+_CUT_SHORT_EN = "\n\n_(The answer was too long and stops here - type **continue** for the rest.)_"
+REASONING_LIMITS = {"max_pages": 7, "passage_chars": 2400, "total_chars": 20000}
 #: The first characters of a reply are held back until they show what kind of reply it is
 #: (NOT_FOUND, SEARCH_WEB:, GENERAL:), so a marker is never flashed on screen.
 _HOLD_CHARS = 14
@@ -112,6 +122,18 @@ _REWRITE_RULES = (
 #: ``[2]``, ``[1, 3]`` and ``[w1]`` in an earlier answer: their numbers meant that answer's sources.
 _CITATION = re.compile(r"[ ]?\[w?\d{1,2}(?:\s*[,;]\s*w?\d{1,2})*\]")
 #: Told to the model when the search found nothing, so it says so instead of inventing a source.
+#: When no weather can be had for the place asked about.
+_WEATHER_UNKNOWN_EN = (
+    'I could not get the weather for "{place}". Try the city\'s full name, for example '
+    '"Ho Chi Minh City" or "Hanoi".'
+)
+_WEATHER_UNKNOWN_VI = (
+    'Mình không lấy được thời tiết cho "{place}". Bạn thử ghi rõ tên thành phố, ví dụ '
+    '"Hồ Chí Minh" hoặc "Hà Nội".'
+)
+_VIETNAMESE_TEXT = re.compile(
+    "[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]", re.IGNORECASE
+)
 _NO_WEB_RESULTS = (
     "<web_sources>\n</web_sources>\n"
     "(The web search returned no usable pages. If the question is general knowledge answer "
@@ -287,6 +309,8 @@ class _Pass:
     mode: str = "answer"
     text: str = ""
     usage: Usage | None = None
+    #: The model ran out of room and stopped mid-answer.
+    cut: bool = False
 
 
 @dataclass
@@ -338,7 +362,7 @@ class ChatTurn:
             result.actions = self.actions
         return result
 
-    async def _stream(self, messages: list[dict[str, str]]) -> AsyncIterator[str | Usage]:
+    async def _stream(self, messages: list[dict[str, str]]) -> AsyncIterator[object]:
         """The model's reply; once more, with room to think, when it came back with nothing.
 
         A reasoning model can spend its whole budget thinking and stream no words at all (seen
@@ -365,7 +389,9 @@ class ChatTurn:
         """One streamed call: ``delta`` events as it is written; the outcome lands in ``out``."""
         self.calls += 1
         reminder = LENGTH_REMINDER.get(self.detail)
-        if reminder:
+        # A question about the application ends with the reminder to answer from the guide,
+        # where it is remembered best; the usual length does not push it off the last line.
+        if reminder and not (self.app and self.detail == "normal"):
             # Last, where it is remembered best: said only in the rules, the usual length won.
             messages = [
                 *messages[:-1],
@@ -381,6 +407,9 @@ class ChatTurn:
         async for piece in self._stream(messages):
             if isinstance(piece, Usage):
                 out.usage = piece
+                continue
+            if piece is CUT_OFF:
+                out.cut = True
                 continue
             text += piece
             if state == "streaming":
@@ -503,6 +532,11 @@ class ChatTurn:
             text = _after(_APP, final.text)
         else:
             text = final.text
+        if final.cut and final.mode == "answer" and text.strip():
+            note = _CUT_SHORT_VI if _VIETNAMESE_TEXT.search(self.question) else _CUT_SHORT_EN
+            logger.info("ai_chat_reply_cut_off", max_tokens=self.max_tokens)
+            text += note
+            yield {"type": "delta", "text": note}
         result = finish(
             text,
             final.mode,
@@ -559,6 +593,25 @@ class ChatTurn:
             reply=reply,
             titles=[source.title for source in self.sources],
         )
+        if look.kind == "ask" and self.web.ready and self.session is not None:
+            # "Which 9router do you mean?" - when the wiki never mentions the name at all, there
+            # is nothing in it to choose between: the name is looked up instead.
+            unknown = await SearchService(self.session).unknown_terms(
+                self.standalone or self.question
+            )
+            if unknown:
+                logger.info("ai_chat_ask_became_search", unknown=len(unknown))
+                return Verdict("search", self.standalone or self.question)
+        if look.kind == "notfound":
+            # An internal fact the wiki lacks ("how does the system handle a request"): the
+            # internet cannot answer it, so the reply that said so stands.
+            return OK
+        if look.kind == "failed":
+            # No verdict (the model was too slow): a reply that found nothing in the wiki is
+            # worth a look on the internet rather than a dead end.
+            if first.mode == "not_found" and self.standalone:
+                return Verdict("search", self.standalone)
+            return OK
         return look if look.kind != "ok" else OK
 
     async def _plan(self, reply: str) -> AnswerResult:
@@ -588,12 +641,34 @@ class ChatTurn:
             place = clean_place(asked[0] if asked else "")
             if not place:
                 return AnswerResult(found=False, reason="not_in_pages", related=self.sources)
-            await rate_limit.enforce(f"aiweb:{self.user.id}", settings.ai_rate_limit)
-            return f"weather: {place}", await get_weather(place)
+            await rate_limit.enforce(f"aiweb:{self.user.id}", await ai_rate_limit())
+            reading = await get_weather(place)
+            if not reading:
+                vietnamese = bool(_VIETNAMESE_TEXT.search(self.question))
+                if self.web.ready:
+                    # The place was not found by name: an ordinary web search for its
+                    # weather can still find it, under whatever name it goes by.
+                    query = public_query(f"{'thời tiết' if vietnamese else 'weather'} {place}")
+                    try:
+                        results = await search_web(self.web, query)
+                    except ServiceUnavailableError:
+                        results = []
+                    if results:
+                        return query, await read_pages(results, query)
+                # Say what went wrong rather than answer from wiki pages that were never
+                # about the weather.
+                return AnswerResult(
+                    found=True,
+                    basis="clarify",
+                    answer=(_WEATHER_UNKNOWN_VI if vietnamese else _WEATHER_UNKNOWN_EN).format(
+                        place=place
+                    ),
+                )
+            return f"weather: {place}", reading
         query = public_query(asked[0] if asked else "")
         if not query:
             return AnswerResult(found=False, reason="not_in_pages", related=self.sources)
-        await rate_limit.enforce(f"aiweb:{self.user.id}", settings.ai_rate_limit)
+        await rate_limit.enforce(f"aiweb:{self.user.id}", await ai_rate_limit())
         try:
             results = await search_web(self.web, query)
         except ServiceUnavailableError:
@@ -646,13 +721,38 @@ class ChatService:
         spent = False
         if len(turns) > 1:
             # Understanding a follow-up asks the model, so it counts against the quota.
-            await rate_limit.enforce(f"ai:{self.user.id}", settings.ai_rate_limit)
+            await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
             spent = True
             query = await self._standalone(config, turns[:-1], question)
         else:
             query = question[:_QUERY_CHARS].strip()
 
-        context = await SearchService(self.session).answer_context(query, self.user)
+        scoped = request.attachment_id is not None
+        # "Continue" / "you only listed 22 of 33": about the previous answer, whose question is
+        # what has to be searched again - the complaint's own words find nothing.
+        continuing = len(turns) > 1 and asks_about_last_answer(question)
+        if continuing:
+            earlier = [prompt_text(t.content) for t in turns[:-1] if t.role == "user"]
+            if earlier:
+                # The two before it: the one asked just before may itself be a follow-up.
+                query = " ".join(earlier[-2:])[-_QUERY_CHARS:].strip()
+        # A count, a comparison or a rule applied to a case needs whole tables and more pages.
+        reasoning = continuing or needs_reasoning(question) or needs_reasoning(query)
+        # A whole list (33 servers with their addresses) runs long: room for it.
+        long_reply = continuing or wants_full_list(question) or wants_full_list(query)
+        if request.attachment_id is not None:
+            # One file, like a notebook with one source: nothing else is read or searched.
+            context = await SearchService(self.session).file_context(
+                request.attachment_id, query, self.user
+            )
+            web = OFF
+        else:
+            context = await SearchService(self.session).answer_context(
+                query,
+                self.user,
+                # A detailed answer, like one that works something out, needs more to read.
+                **(REASONING_LIMITS if reasoning or request.detail == "detailed" else {}),
+            )
         passages = context.passages
         retrieval = time.perf_counter() - started
 
@@ -662,11 +762,16 @@ class ChatService:
         # The topics come from what was just asked: the rewritten question carries the earlier
         # turns' words, and a follow-up must not inherit their buttons. Only a bare follow-up
         # ("and where is it saved?") falls back to it.
-        topics = match_topics(question, viewer)
-        if not topics and len(turns) > 1:
+        topics = [] if scoped else match_topics(question, viewer)
+        if not topics and len(turns) > 1 and not scoped:
             topics = match_topics(query, viewer)
-        help_passages = search_help(
-            f"{question} {query}" if len(turns) > 1 else question, prefer=help_sections(topics)
+        help_passages = (
+            []
+            if scoped
+            else search_help(
+                f"{question} {query}" if len(turns) > 1 else question,
+                prefer=help_sections(topics),
+            )
         )
         app = bool(topics or help_passages)
         spaces = await visible_spaces(self.session, self.user) if topics else []
@@ -685,7 +790,7 @@ class ChatService:
             )
 
         if not spent:
-            await rate_limit.enforce(f"ai:{self.user.id}", settings.ai_rate_limit)
+            await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
         sources = sources_of(passages)
         # Where it is answered, decided now when it can be: see ``_route``.
         decided, routed_calls = ("wiki", ""), 0
@@ -720,6 +825,8 @@ class ChatService:
                 plan=plan,
                 rich=True,
                 detail=request.detail,
+                reasoning=reasoning,
+                continuing=continuing,
             ),
         }
         messages = [system, *_history(turns[:-1]), messages[-1]]
@@ -739,7 +846,10 @@ class ChatService:
             calls=routed_calls,
             question=question,
             standalone=query,
-            max_tokens=DETAIL_TOKENS[request.detail],
+            max_tokens=max(
+                DETAIL_TOKENS[request.detail],
+                LONG_REPLY_TOKENS if long_reply else REASONING_TOKENS if reasoning else 0,
+            ),
             detail=request.detail,
             app=app,
             topical=bool(topics),

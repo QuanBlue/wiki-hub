@@ -1453,7 +1453,9 @@ export function BackupPanel() {
               ? Math.min(85, 10 + Math.round(jobSpacePercent * 0.75))
               : confluenceJob.phase === "attachments"
                 ? Math.min(99, 85 + Math.round(jobAttachmentPercent * 0.14))
-                : jobSpacePercent;
+                : confluenceJob.phase === "comments"
+                  ? 99
+                  : jobSpacePercent;
   const jobTitle = !confluenceJob
     ? ""
     : confluenceJob.status === "completed"
@@ -1470,7 +1472,9 @@ export function BackupPanel() {
                 ? "Importing spaces and pages"
                 : confluenceJob.phase === "attachments"
                   ? "Importing and linking attachments"
-                  : "Import running";
+                  : confluenceJob.phase === "comments"
+                    ? "Importing comments and likes"
+                    : "Import running";
   const jobPagesSummary = confluenceJob?.counters.pages_total
     ? `${confluenceJob.counters.pages_processed ?? 0}/${confluenceJob.counters.pages_total} pages`
     : `${confluenceJob?.counters.pages_processed ?? 0} pages`;

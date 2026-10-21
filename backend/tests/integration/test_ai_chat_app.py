@@ -240,7 +240,8 @@ async def test_an_empty_reply_is_asked_again_with_more_room(
     events = await run(installed, owner, conversation("tôi có quyền truy cập những space nào"))
 
     assert events[-1]["result"]["answer"] == "Xong."
-    assert budgets == [900, 1800]
+    # Twice the room the second time (whatever the first was: a "which" question gets more).
+    assert len(budgets) == 2 and budgets[1] == 2 * budgets[0]
 
     # A second empty reply is the end of it: the person is told, as before.
     budgets.clear()
@@ -337,12 +338,12 @@ def test_the_detail_the_person_chose_is_part_of_the_request() -> None:
 def test_each_level_of_detail_changes_what_the_model_is_asked() -> None:
     from app.modules.ai.skills import DETAIL_RULES, DETAIL_TOKENS, answer_system_prompt
 
-    usual = answer_system_prompt(rich=True)
-    assert DETAIL_RULES["brief"] in answer_system_prompt(rich=True, detail="brief")
-    assert DETAIL_RULES["detailed"] in answer_system_prompt(rich=True, detail="detailed")
-    # The usual length adds nothing: the rules already say it.
-    assert answer_system_prompt(rich=True, detail="normal") == usual
-    assert "SHORT" in DETAIL_RULES["brief"] and "replaces rule 3" in DETAIL_RULES["detailed"]
+    quick = answer_system_prompt(rich=True)  # the search box: no level chosen
+    for level in ("brief", "normal", "detailed"):
+        prompt = answer_system_prompt(rich=True, detail=level)
+        assert DETAIL_RULES[level] in prompt and prompt != quick
+    assert "SHORT" in DETAIL_RULES["brief"] and "COMPLETE" in DETAIL_RULES["normal"]
+    assert "DETAILED" in DETAIL_RULES["detailed"]
     assert DETAIL_TOKENS["brief"] < DETAIL_TOKENS["normal"] < DETAIL_TOKENS["detailed"]
 
 
@@ -366,8 +367,8 @@ async def test_a_brief_or_detailed_request_reaches_the_model_with_its_room_to_wr
         turn = await chat_module.ChatService(installed, owner).begin(request)
         [event async for event in turn.events()]
 
-    assert [tokens for tokens, _ in seen] == [450, 900, 2000]
-    assert "SHORT" in seen[0][1] and "SHORT" not in seen[1][1] and "DETAILED" in seen[2][1]
+    assert [tokens for tokens, _ in seen] == [700, 1800, 4000]
+    assert "SHORT" in seen[0][1] and "COMPLETE" in seen[1][1] and "DETAILED" in seen[2][1]
 
 
 def test_a_level_of_detail_replaces_the_rule_about_length_it_would_otherwise_lose_to() -> None:
@@ -375,14 +376,17 @@ def test_a_level_of_detail_replaces_the_rule_about_length_it_would_otherwise_los
     # one question came out as 655, 699 and 807 characters.
     from app.modules.ai.skills import LENGTH_REMINDER, RULE_3_USUAL, answer_system_prompt
 
-    usual = answer_system_prompt(rich=True)
-    assert RULE_3_USUAL in usual and "Keep it short" in usual
+    quick = answer_system_prompt(rich=True)  # the search box keeps its short answer
+    assert RULE_3_USUAL in quick and "Keep it short" in quick
     brief = answer_system_prompt(rich=True, detail="brief")
-    assert RULE_3_USUAL not in brief and "Be very brief" in brief and "a line or two" in brief
+    assert RULE_3_USUAL not in brief and "Be short but useful" in brief and "compact" in brief
+    normal = answer_system_prompt(rich=True, detail="normal")
+    assert RULE_3_USUAL not in normal and "Be complete" in normal
+    assert "Keep it short" not in normal
     detailed = answer_system_prompt(rich=True, detail="detailed")
     assert RULE_3_USUAL not in detailed and "Be thorough" in detailed
     assert "Keep it short" not in detailed and "complete rather than short" in detailed
-    assert set(LENGTH_REMINDER) == {"brief", "detailed"}
+    assert set(LENGTH_REMINDER) == {"brief", "normal", "detailed"}
 
 
 async def test_the_level_of_detail_is_said_again_as_the_last_line_of_the_question(
@@ -406,6 +410,8 @@ async def test_the_level_of_detail_is_said_again_as_the_last_line_of_the_questio
         [event async for event in turn.events()]
 
     last = [messages[-1]["content"].rstrip() for messages in seen]
-    assert last[0].endswith("no callout unless it is a warning.)") and "BRIEF" in last[0]
+    assert last[0].endswith("no heading.)") and "SHORT" in last[0]
+    # A question about the application: at the usual length, the reminder to answer from the
+    # guide stays the last line.
     assert "Length:" not in last[1] and last[1].endswith("or reply NOT_FOUND.)")
     assert "DETAILED" in last[2] and last[2].endswith("cite every fact.)")

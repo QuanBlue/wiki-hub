@@ -30,6 +30,7 @@ from app.modules.permissions.service import PermissionService
 from app.modules.search import indexer
 from app.modules.search import service as search_module
 from app.modules.search.ddl import (
+    ATTACHMENT_VECTOR_STATEMENTS,
     SEMANTIC_TABLE_STATEMENTS,
     STORED_VECTOR_STATEMENTS,
     functions_sql,
@@ -111,6 +112,8 @@ async def installed(session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> A
     for statement in STORED_VECTOR_STATEMENTS:
         await session.execute(text(statement))
     for statement in SEMANTIC_TABLE_STATEMENTS:
+        await session.execute(text(statement))
+    for statement in ATTACHMENT_VECTOR_STATEMENTS:
         await session.execute(text(statement))
 
     async def fake_embed(config: AIConfig, texts: list[str]) -> list[list[float]]:
@@ -667,3 +670,61 @@ async def test_passages_per_page_and_per_request_follow_the_saved_settings(
     )
     assert chunks == 3  # cut at the saved maximum, not 60
     assert sizes and max(sizes) <= 2  # requests of at most the saved size
+
+
+async def test_a_paused_index_stops_between_pages_and_resumes_where_it_stopped(
+    installed: AsyncSession,
+) -> None:
+    owner, space, pages = await _wiki(installed)
+    config = await _connect(installed)
+    for i in range(3):
+        await pages.create(space, PageCreate(title=f"Doc {i}", content="<p>payroll</p>"), owner)
+    total = (await indexer.index_status(installed, config)).total
+
+    asked = 0
+
+    async def pause_after_the_first_page() -> bool:
+        nonlocal asked
+        asked += 1
+        return asked > 1
+
+    assert await indexer.index_pending(installed, config, stop=pause_after_the_first_page) == 1
+
+    await indexer.set_indexing_paused(installed, True)
+    assert await indexer.indexing_paused(installed) is True
+    await indexer.set_indexing_paused(installed, False)
+    assert await indexer.indexing_paused(installed) is False
+    # Resumed: the rest is indexed, and nothing twice.
+    assert await indexer.index_pending(installed, config) == total - 1
+
+
+async def test_the_time_left_comes_from_the_recent_pace(installed: AsyncSession) -> None:
+    owner, space, pages = await _wiki(installed)
+    config = await _connect(installed)
+    for i in range(8):
+        await pages.create(space, PageCreate(title=f"Doc {i}", content="<p>payroll</p>"), owner)
+    # Nothing indexed lately: no estimate yet.
+    assert (await indexer.index_status(installed, config)).eta_seconds is None
+
+    calls = 0
+
+    async def stop_after_six() -> bool:
+        nonlocal calls
+        calls += 1
+        return calls > 6
+
+    assert await indexer.index_pending(installed, config, stop=stop_after_six) == 6
+    # Those six took a minute.
+    await installed.execute(
+        text("UPDATE page_search_state SET indexed_at = now() - interval '60 seconds'")
+    )
+    status = await indexer.index_status(installed, config)
+    remaining = status.total - status.indexed
+    assert remaining > 0
+    assert status.eta_seconds == round(remaining * 60 / 6)
+
+    # An hour-old pace says nothing about now.
+    await installed.execute(
+        text("UPDATE page_search_state SET indexed_at = now() - interval '1 hour'")
+    )
+    assert (await indexer.index_status(installed, config)).eta_seconds is None

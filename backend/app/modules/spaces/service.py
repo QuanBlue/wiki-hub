@@ -19,10 +19,12 @@ from collections.abc import Sequence
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.models.page import WikiPage
+from app.models.page_graph import PageLink
 from app.models.permission import Group, Permission, SpaceGroupPermission, SpaceUserPermission
 from app.models.space import Space, SpaceMember, SpaceOwner, SpaceRole, SpaceStatus, SpaceVisibility
 from app.models.user import User
@@ -102,6 +104,35 @@ class SpaceService:
         )
         return int(group_count or 0), int(user_count or 0)
 
+    async def _content_counts(
+        self, space_ids: Sequence[uuid.UUID]
+    ) -> tuple[dict[uuid.UUID, int], dict[uuid.UUID, int]]:
+        """Live pages and knowledge-graph ties (link / mention / similar) per space.
+
+        A tie is counted once, under the space of the page it starts from, and
+        only while both pages are live. The page tree is not a tie here - it is
+        already what the page count shows.
+        """
+        page_rows = await self.session.execute(
+            select(WikiPage.space_id, func.count(WikiPage.id))
+            .where(WikiPage.space_id.in_(space_ids), WikiPage.deleted_at.is_(None))
+            .group_by(WikiPage.space_id)
+        )
+        target = aliased(WikiPage)
+        tie_rows = await self.session.execute(
+            select(WikiPage.space_id, func.count())
+            .select_from(PageLink)
+            .join(WikiPage, WikiPage.id == PageLink.source_page_id)
+            .join(target, target.id == PageLink.target_page_id)
+            .where(
+                WikiPage.space_id.in_(space_ids),
+                WikiPage.deleted_at.is_(None),
+                target.deleted_at.is_(None),
+            )
+            .group_by(WikiPage.space_id)
+        )
+        return dict(page_rows.all()), dict(tie_rows.all())
+
     async def to_read(
         self,
         space: Space,
@@ -111,7 +142,13 @@ class SpaceService:
         group_permission_count: int | None = None,
         direct_user_permission_count: int | None = None,
         owners: list[SpaceOwnerRead] | None = None,
+        page_count: int | None = None,
+        graph_link_count: int | None = None,
     ) -> SpaceRead:
+        if page_count is None or graph_link_count is None:
+            pages, ties = await self._content_counts([space.id])
+            page_count = pages.get(space.id, 0)
+            graph_link_count = ties.get(space.id, 0)
         favorite = (
             is_favorite
             if is_favorite is not None
@@ -142,6 +179,8 @@ class SpaceService:
             owners=owners,
             is_owner=any(owner.user_id == user.id for owner in owners),
             member_count=len(space.members),
+            page_count=page_count,
+            graph_link_count=graph_link_count,
             group_permission_count=group_permission_count,
             direct_user_permission_count=direct_user_permission_count,
             is_favorite=favorite,
@@ -160,7 +199,10 @@ class SpaceService:
         group_counts: dict[uuid.UUID, int] = {}
         user_counts: dict[uuid.UUID, int] = {}
         owners_by_space: dict[uuid.UUID, list[SpaceOwnerRead]] = {}
+        page_counts: dict[uuid.UUID, int] = {}
+        tie_counts: dict[uuid.UUID, int] = {}
         if space_ids:
+            page_counts, tie_counts = await self._content_counts(space_ids)
             group_rows = await self.session.execute(
                 select(
                     SpaceGroupPermission.space_id,
@@ -218,6 +260,8 @@ class SpaceService:
                 group_permission_count=group_counts.get(space.id, 0),
                 direct_user_permission_count=user_counts.get(space.id, 0),
                 owners=owners_by_space.get(space.id, []),
+                page_count=page_counts.get(space.id, 0),
+                graph_link_count=tie_counts.get(space.id, 0),
             )
             for space in spaces
         ]
@@ -248,6 +292,11 @@ class SpaceService:
         if space.key.startswith("~") and not await self.permissions.is_system_admin(user):
             return space.key[1:].lower() == user.username.lower()
         return True
+
+    async def list_space_models(self, user: User) -> list[Space]:
+        """Every active space ``user`` would see listed, as models (no per-space counts)."""
+        spaces = await self.spaces.list_spaces(limit=100_000)
+        return [space for space in spaces if await self._is_listable(space, user)]
 
     async def list_spaces(
         self, user: User, *, include_archived: bool = False, limit: int = 100, offset: int = 0

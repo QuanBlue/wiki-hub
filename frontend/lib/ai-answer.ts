@@ -10,6 +10,8 @@ export type AnswerSource = {
   space_name: string;
   /** The part of the page the answer was read from. */
   excerpt: string;
+  /** Files attached to the page that the excerpt was read from. */
+  files?: { id: string; filename: string }[];
 };
 
 /** An internet page an answer was read from, cited as ``[w1]``. */

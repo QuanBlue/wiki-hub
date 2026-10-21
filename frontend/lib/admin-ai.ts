@@ -27,6 +27,13 @@ export type SearchIndexStatus = {
   indexed: number;
   /** Why indexing last stopped, when it did. */
   error?: string | null;
+  /** An administrator paused indexing; the backlog waits until it is resumed. */
+  paused?: boolean;
+  /** Roughly how long the rest will take at the recent pace; absent when unknown. */
+  eta_seconds?: number | null;
+  /** Files attached to pages whose words were read, and how many wait to be read. */
+  files_read?: number;
+  files_waiting?: number;
 };
 
 export type AiModelInfo = {

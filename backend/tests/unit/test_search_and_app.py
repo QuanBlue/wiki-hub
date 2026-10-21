@@ -69,6 +69,8 @@ async def test_search_returns_visible_spaces_and_pages(monkeypatch: pytest.Monke
         "_keyword_pages",
         AsyncMock(return_value=search_module._Ranked(ids=["page-1", "page-2"], weights={})),
     )
+    monkeypatch.setattr(SearchService, "_file_hits", AsyncMock(return_value={}))
+    monkeypatch.setattr(SearchService, "_named_space_pages", AsyncMock(return_value=[]))
 
     result = await SearchService(session).search(" runbook ", SimpleNamespace(id="u"), limit=5)
     assert result.query == "runbook"

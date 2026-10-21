@@ -132,19 +132,24 @@ describe("formatUptime", () => {
   });
 });
 
+/** The table of containers: the donut charts above it name them too. */
+const containerTable = () => within(screen.getByRole("table"));
+/** The host cards, which the donut charts share figures with ("40%", "N cores"). */
+const hostCards = () => within(screen.getByRole("region", { name: "Server" }));
+
 describe("MonitorView", () => {
   it("shows the server's load, memory, disk and uptime", async () => {
     vi.mocked(api.get).mockResolvedValue(overview(FLEET));
     render(<MonitorView initial={overview(FLEET)} />);
 
-    expect(screen.getByText("6.00 / 12 cores")).toBeInTheDocument(); // load against the cores
+    expect(hostCards().getByText("6.00 / 12 cores")).toBeInTheDocument(); // load against the cores
     // One bar per card (memory also has its swap bar), with the share at its right end.
     expect(
       screen.getByText("Load average: 5 min 4.00 · 15 min 2.00"),
     ).toBeInTheDocument();
     expect(screen.getAllByRole("progressbar")).toHaveLength(3); // load, memory, disk
-    expect(screen.getAllByText("50%").length).toBeGreaterThanOrEqual(2); // load and memory
-    expect(screen.getByText("40%")).toBeInTheDocument(); // disk
+    expect(hostCards().getAllByText("50%").length).toBeGreaterThanOrEqual(2); // load and memory
+    expect(hostCards().getByText("40%")).toBeInTheDocument(); // disk
     expect(screen.getByText("8.00 GB / 16.00 GB")).toBeInTheDocument();
     expect(
       screen.getByText(/free on the disk holding WikiHub/),
@@ -161,26 +166,30 @@ describe("MonitorView", () => {
     vi.mocked(api.get).mockResolvedValue(overview(FLEET));
     render(<MonitorView initial={overview(FLEET)} />);
 
-    const backend = screen.getByText("wikihub-backend-1").closest("tr")!;
+    const backend = containerTable()
+      .getByText("wikihub-backend-1")
+      .closest("tr")!;
     expect(within(backend).getByText("abc123abc123")).toBeInTheDocument();
     expect(within(backend).getByText("3h 2m")).toBeInTheDocument();
     expect(within(backend).getByText("3.5%")).toBeInTheDocument();
     expect(within(backend).getByText("150.0 MB")).toBeInTheDocument();
     expect(within(backend).getByText("Healthy")).toBeInTheDocument();
 
-    const other = screen.getByText("report-control-plane").closest("tr")!;
+    const other = containerTable()
+      .getByText("report-control-plane")
+      .closest("tr")!;
     expect(within(other).queryByText("not WikiHub")).toBeNull();
     expect(within(other).getByText("280.0%")).toBeInTheDocument();
     expect(within(other).getByText("Running")).toBeInTheDocument(); // no health check
 
-    const stopped = screen.getByText("old-job").closest("tr")!;
+    const stopped = containerTable().getByText("old-job").closest("tr")!;
     expect(within(stopped).getByText("exited")).toBeInTheDocument();
     expect(within(stopped).getAllByText("-").length).toBeGreaterThanOrEqual(3);
 
     expect(
-      within(screen.getByText("wikihub-worker-1").closest("tr")!).getByText(
-        "2 restarts",
-      ),
+      within(
+        containerTable().getByText("wikihub-worker-1").closest("tr")!,
+      ).getByText("2 restarts"),
     ).toBeInTheDocument();
   });
 
@@ -248,7 +257,7 @@ describe("MonitorView", () => {
     expect(
       await screen.findByText("Could not read the server state."),
     ).toBeInTheDocument();
-    expect(screen.getByText("wikihub-backend-1")).toBeInTheDocument();
+    expect(containerTable().getByText("wikihub-backend-1")).toBeInTheDocument();
   });
 
   it("starts empty with a message when the monitor cannot be reached at first", async () => {
@@ -256,7 +265,11 @@ describe("MonitorView", () => {
     render(<MonitorView initial={null} />);
 
     expect(screen.getByText("Loading…")).toBeInTheDocument();
-    expect(await screen.findByText("wikihub-backend-1")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        containerTable().getByText("wikihub-backend-1"),
+      ).toBeInTheDocument(),
+    );
   });
 
   it("refreshes on a timer, and not while the tab is hidden", async () => {
@@ -476,7 +489,7 @@ describe("MonitorView in more situations", () => {
     render(<MonitorView initial={unknown} />);
 
     expect(screen.getByText("Docker not reachable")).toBeInTheDocument();
-    expect(screen.queryByText(/cores$/)).toBeNull();
+    expect(hostCards().queryByText(/cores$/)).toBeNull();
   });
 
   it("sorts by memory and by status, the unhealthy ones first", async () => {

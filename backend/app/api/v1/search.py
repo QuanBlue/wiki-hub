@@ -32,6 +32,9 @@ class SearchResultPageSchema(BaseModel):
     space_name: str
     snippet: str
     updated_at: datetime | None = None
+    #: When the words are in a file attached to the page rather than on the page itself.
+    file_id: uuid.UUID | None = None
+    file_name: str | None = None
 
 
 class SearchResultSpaceSchema(BaseModel):

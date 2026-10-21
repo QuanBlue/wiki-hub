@@ -403,3 +403,29 @@ async def test_a_restart_is_needed_when_the_saved_settings_differ_from_what_runs
 
     for change in ({"ollama_memory_gb": 4}, {"ollama_cpus": 4}, {"ollama_keep_alive": "1h"}):
         assert (await ollama.describe(resolve(change)))["restart_needed"] is True
+
+
+async def test_a_stopped_ollama_is_started_again_but_a_disabled_one_is_left_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    posts: list[str] = []
+    state = {"docker_ok": True, "container": "exited"}
+
+    async def status() -> dict:
+        return state
+
+    async def post(path: str, **_: object) -> None:
+        posts.append(path)
+
+    async def up(_wait: float = 0) -> None:
+        return None
+
+    monkeypatch.setattr(ollama, "controller_status", status)
+    monkeypatch.setattr(ollama, "_controller_post", post)
+    monkeypatch.setattr(ollama, "wait_until_up", up)
+
+    assert await ollama.ensure_running() is True and posts == ["/start"]
+    for container in ("running", "none"):
+        state["container"] = container
+        assert await ollama.ensure_running() is False
+    assert posts == ["/start"]

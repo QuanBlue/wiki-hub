@@ -19,9 +19,12 @@ from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine
 from app.workers.tasks import (
+    build_page_graph,
     check_admin_mailboxes,
     check_ai_connections,
+    extract_attachment_texts,
     index_search_pages,
+    keep_ollama_running,
     install_ollama,
     ping,
     purge_expired_trash,
@@ -87,6 +90,12 @@ class WorkerSettings:
         # Keeps the semantic-search index current (a no-op until an embedding
         # model is configured).
         cron(index_search_pages, second=40, run_at_startup=False),
+        # Brings the self-hosted Ollama back after Docker or the machine restarted.
+        cron(keep_ollama_running, second=15, run_at_startup=True),
+        # Keeps the knowledge graph (which pages relate to which) current; needs no AI.
+        cron(build_page_graph, second=25, run_at_startup=False),
+        # Reads the words inside files attached to pages, for search and the assistant.
+        cron(extract_attachment_texts, second=5, run_at_startup=False),
         # Every five minutes: refresh each AI connection's Working/Failing status.
         cron(check_ai_connections, minute=set(range(0, 60, 5)), second=50, run_at_startup=False),
         # Hourly. Mailbox passwords expire on the mail provider's schedule, so

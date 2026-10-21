@@ -21,6 +21,7 @@ from app.api.v1 import (
     confluence_import,
     document_imports,
     export_render,
+    graph,
     groups,
     issues,
     meta,
@@ -45,6 +46,8 @@ api_router.include_router(spaces.router)
 api_router.include_router(pages.router)
 api_router.include_router(pages.standalone_router)
 api_router.include_router(pages.trash_router)
+api_router.include_router(graph.router)
+api_router.include_router(graph.global_router)
 api_router.include_router(revisions.router)
 api_router.include_router(comments.router)
 api_router.include_router(shares.router)
