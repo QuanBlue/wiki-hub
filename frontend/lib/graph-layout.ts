@@ -15,8 +15,28 @@ export type LayoutEdge = { source: string; target: string; weight?: number };
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
+/**
+ * How far apart pages ``i`` and ``j`` are, as ``[dx, dy, distance]``. Two pages on one
+ * spot are nudged apart, the same way every time, so the push between them is finite.
+ */
+export function apart(
+  i: number,
+  j: number,
+  dx: number,
+  dy: number,
+): [number, number, number] {
+  const dist = Math.hypot(dx, dy);
+  if (dist >= 0.01) return [dx, dy, dist];
+  const nx = 0.01 * ((i % 7) - 3 || 1);
+  const ny = 0.01 * ((j % 5) - 2 || 1);
+  return [nx, ny, Math.hypot(nx, ny)];
+}
+
 /** One component laid out in the unit square. */
-function forceLayout(count: number, links: [number, number, number][]): Point[] {
+function forceLayout(
+  count: number,
+  links: [number, number, number][],
+): Point[] {
   if (count === 1) return [{ x: 0.5, y: 0.5 }];
   const size = 1000;
   const xs = new Float64Array(count);
@@ -38,15 +58,7 @@ function forceLayout(count: number, links: [number, number, number][]): Point[] 
     dy.fill(0);
     for (let i = 0; i < count; i++) {
       for (let j = i + 1; j < count; j++) {
-        let ddx = xs[i] - xs[j];
-        let ddy = ys[i] - ys[j];
-        let dist = Math.hypot(ddx, ddy);
-        if (dist < 0.01) {
-          // Two pages on one spot: nudge them apart the same way every time.
-          ddx = 0.01 * ((i % 7) - 3 || 1);
-          ddy = 0.01 * ((j % 5) - 2 || 1);
-          dist = Math.hypot(ddx, ddy);
-        }
+        const [ddx, ddy, dist] = apart(i, j, xs[i] - xs[j], ys[i] - ys[j]);
         const push = (k * k) / dist;
         dx[i] += (ddx / dist) * push;
         dy[i] += (ddy / dist) * push;
@@ -125,7 +137,9 @@ export function layoutGraph(
     if (!members.has(r)) members.set(r, []);
     members.get(r)!.push(i);
   }
-  const components = [...members.values()].sort((a, b) => b.length - a.length || a[0] - b[0]);
+  const components = [...members.values()].sort(
+    (a, b) => b.length - a.length || a[0] - b[0],
+  );
 
   // Each component gets a square cell whose side grows with the root of its size,
   // packed in rows of roughly equal width.
@@ -156,7 +170,10 @@ export function layoutGraph(
     const local = new Map(component.map((i, j) => [i, j]));
     const componentLinks = links
       .filter(([a]) => local.has(a))
-      .map(([a, b, w]) => [local.get(a)!, local.get(b)!, w] as [number, number, number]);
+      .map(
+        ([a, b, w]) =>
+          [local.get(a)!, local.get(b)!, w] as [number, number, number],
+      );
     const points = forceLayout(component.length, componentLinks);
     const cell = cells[c];
     // A margin inside each cell keeps components, and their labels, apart.

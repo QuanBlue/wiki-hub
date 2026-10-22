@@ -126,3 +126,98 @@ def test_file_cards_code_pasted_word_by_word_and_nested_marks() -> None:
         "`select count(id)`\n\n"
         "From **8.5**"
     )
+
+
+def test_every_kind_of_content_a_comment_can_hold_is_turned_into_markdown() -> None:
+    converted = _md(
+        # An unknown user is only the label; the same person twice is named once.
+        '<p><ac:link><ri:user ri:userkey="nobody" /><ac:plain-text-link-body>'
+        "<![CDATA[Bob]]></ac:plain-text-link-body></ac:link> and "
+        '<ac:link><ri:user ri:userkey="nobody" /></ac:link> and '
+        '<ac:link><ri:user ri:userkey="k-alice" /></ac:link> '
+        '<ac:link><ri:user ri:userkey="k-alice" /></ac:link></p>'
+        # A file, a page and a bare link, by label or by name.
+        '<p><ac:link><ri:attachment ri:filename="shot.png" /><ac:plain-text-link-body>'
+        "<![CDATA[the shot]]></ac:plain-text-link-body></ac:link> "
+        '<ac:link><ri:page ri:content-title="Runbook" /></ac:link> '
+        '<ac:link><ri:page ri:content-title="Runbook" /><ac:plain-text-link-body>'
+        "<![CDATA[see this]]></ac:plain-text-link-body></ac:link> "
+        "<ac:link><ac:link-body>just words</ac:link-body></ac:link></p>"
+        # Links that are not web addresses are only their words.
+        '<p><a href="javascript:x()">click</a> <a href="">empty</a></p>'
+        # Images: by URL, by an unsafe URL, and with nothing to show.
+        '<p><ac:image><ri:url ri:value="https://example.com/p.png" /></ac:image>'
+        '<ac:image><ri:url ri:value="ftp://example.com/p.png" /></ac:image>'
+        "<ac:image /></p>"
+        '<p>Nice <ac:emoticon ac:name="smile" /><ac:emoticon ac:name="unknown" /></p>'
+        # Task lists, ordered lists and a list item holding paragraphs and nested lists.
+        "<ac:task-list><ac:task><ac:task-status>complete</ac:task-status>"
+        "<ac:task-body>done</ac:task-body></ac:task><ac:task><ac:task-status>incomplete"
+        "</ac:task-status></ac:task></ac:task-list>"
+        "<ol><li><p>first</p><ol><li>inner</li></ol></li><li>second</li></ol>"
+        "<pre>line one\nline two</pre>"
+        "<blockquote><p>quoted</p><p>twice</p></blockquote>"
+        "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr><tr><td></td></tr></table>"
+        "<h2>Title</h2><h3></h3>"
+        # Macros: code with nothing in it, with text, a panel with a body, a file card with none.
+        '<ac:structured-macro ac:name="noformat"><ac:plain-text-body /></ac:structured-macro>'
+        '<ac:structured-macro ac:name="info"><ac:rich-text-body><p>careful</p>'
+        "</ac:rich-text-body></ac:structured-macro>"
+        '<ac:structured-macro ac:name="viewpdf"></ac:structured-macro>'
+        '<ac:structured-macro ac:name="toc"><ac:parameter ac:name="x">1</ac:parameter>'
+        "</ac:structured-macro>"
+        "<div>plain <span>spans</span> text</div>"
+        # Placeholders say nothing; a block inside a run of words stays on its line.
+        "<p>hint<ac:placeholder>type here</ac:placeholder> <span>in<div>a block</div></span></p>"
+    )
+
+    body = converted.body
+    assert "Bob" in body and "nobody" not in body
+    assert body.count("@alice") == 2
+    assert "[the shot](attachment:11111111-1111-1111-1111-111111111111)" in body
+    assert "Runbook" in body and "see this" in body and "just words" in body
+    assert "click" in body and "javascript" not in body
+    assert "https://example.com/p.png" in body and "ftp://" not in body
+    assert "🙂" in body
+    assert "- [x] done" in body and "- [ ]" in body
+    assert "1. first" in body and "2. second" in body and "  1. inner" in body
+    assert "```\nline one\nline two\n```" in body
+    assert "> quoted" in body and ">\n> twice" in body
+    assert "A | B" in body and "1 | 2" in body
+    assert "**Title**" in body
+    assert "careful" in body and "plain spans text" in body
+    assert "type here" not in body and "in a block" in body
+    assert converted.mentions == ["alice"]
+
+
+def test_a_confluence_person_is_found_by_key_by_lowercase_key_or_left_as_given() -> None:
+    from app.modules.import_export.confluence import ConfluenceSpaceList
+
+    spaces = ConfluenceSpaceList([], [], [], user_keys={"k-alice": "alice", "bob": "bobby"})
+
+    assert spaces.username(None) is None and spaces.username("") is None
+    assert spaces.username("k-alice") == "alice"
+    assert spaces.username("BOB") == "bobby"
+    assert spaces.username("someone-else") == "someone-else"
+
+
+def test_a_person_in_a_property_is_a_reference_or_a_plain_name() -> None:
+    import xml.etree.ElementTree as ET
+
+    from app.modules.import_export.confluence import _user_ref
+
+    def props(**parts: str) -> dict[str, ET.Element]:
+        out = {}
+        for name, value in parts.items():
+            element = ET.Element("property", name=name)
+            if value.startswith("id:"):
+                ET.SubElement(element, "id").text = value[3:]
+            else:
+                element.text = value
+            out[name] = element
+        return out
+
+    assert _user_ref(props(creator="id:k-1"), "creator") == "k-1"
+    assert _user_ref(props(creator="plain-name"), "creator") == "plain-name"
+    assert _user_ref(props(creator="  "), "creator", "other") is None
+    assert _user_ref(props(other="fallback"), "creator", "other") == "fallback"

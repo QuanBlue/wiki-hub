@@ -286,3 +286,31 @@ async def test_with_a_file_beside_it_an_unanswered_question_is_still_noted(
     assert events[-1]["result"]["found"] is False
     gaps = (await installed.execute(select(AiQuestionGap))).scalars().all()
     assert [gap.question for gap in gaps] == ["who owns billing-1?"]
+
+
+async def test_asking_about_one_file_of_a_page_reads_that_file_and_nothing_else(
+    installed: AsyncSession, model: Model, kept: KeptFiles
+) -> None:
+    from app.modules.attachments import text as attachment_text
+    from tests.integration.test_attachment_text import FakeStorage, _attach
+
+    owner, space, pages = await _setup(installed)
+    page = await _page(pages, space, owner, "Sales", "Deals")
+    storage = FakeStorage()
+    attachment = await _attach(
+        installed, storage, page, "prices.txt", b"The zircon licence costs 4200 per seat."
+    )
+    await attachment_text.extract_pending(installed, storage)  # type: ignore[arg-type]
+    model.script = [["It costs 4200 per seat [1]."]]
+
+    turn = await ChatService(installed, owner).begin(
+        ChatRequest(
+            messages=[ChatMessage(role="user", content="what does it cost?")],
+            attachment_id=attachment.id,
+        )
+    )
+    events = [event async for event in turn.events()]
+
+    assert turn.scoped and not turn.web.ready
+    assert "4200 per seat" in model.streams[-1][-1]["content"]
+    assert events[-1]["result"]["found"] is True

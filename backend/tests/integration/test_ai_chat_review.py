@@ -468,3 +468,46 @@ async def test_the_wiki_says_how_sure_it_is_of_a_match(installed: AsyncSession) 
     # Nothing in the wiki is about it: no passages, and no confidence to speak of.
     none = await SearchService(installed).answer_context("zzqx wvrk plmn", owner)
     assert none.confidence == "none" and none.passages == []
+
+
+def _turn(question: str):
+    import uuid
+    from types import SimpleNamespace
+
+    from app.modules.ai.chat import ChatTurn
+
+    return ChatTurn(
+        None,  # type: ignore[arg-type]
+        SimpleNamespace(id=uuid.uuid4()),  # type: ignore[arg-type]
+        None,
+        [],
+        [],
+        0,
+        0.0,
+        0.0,
+        question=question,
+        standalone="haproxy reload",
+    )
+
+
+async def test_a_question_that_says_to_look_on_the_internet_goes_there_without_asking() -> None:
+    from app.modules.ai.chat import _Pass
+
+    turn = _turn("search the internet for haproxy reload")
+
+    assert await turn._second_look(_Pass(mode="not_found")) == Verdict("search", "haproxy reload")
+
+
+async def test_a_second_look_that_cannot_be_had_leaves_an_answer_from_memory_as_it_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.modules.ai.chat import _Pass
+    from app.modules.ai.reviewer import OK
+
+    async def failed(*args, **kwargs):
+        return Verdict("failed")
+
+    monkeypatch.setattr(chat_module, "second_look", failed)
+    turn = _turn("what is haproxy")
+
+    assert await turn._second_look(_Pass(mode="general", text="GENERAL: a proxy")) == OK

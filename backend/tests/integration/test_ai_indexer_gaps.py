@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.ai_embedding_settings import AiEmbeddingSettings
 from app.modules.ai.config import AIConfig
 from app.modules.ai.embeddings import EmbeddingError
 from app.modules.search import indexer
@@ -73,3 +75,64 @@ async def test_a_note_about_why_indexing_stopped_that_cannot_be_kept_or_read_is_
     await indexer._remember_error("model", None)
 
     assert await indexer.last_error("model") is None
+
+
+async def test_a_database_without_the_pause_column_has_nothing_paused(
+    installed: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def refuse(*args, **kwargs):
+        raise SQLAlchemyError("no such column")
+
+    monkeypatch.setattr(installed, "scalar", refuse)
+
+    assert await indexer.indexing_paused(installed) is False
+
+
+async def test_pausing_asks_a_self_hosted_ollama_to_let_go_of_its_memory(
+    installed: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import httpx
+
+    await _connect(installed)
+    await installed.execute(update(AiEmbeddingSettings).values(source="ollama"))
+    await installed.commit()
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        sent.append(json.loads(request.content))
+        return httpx.Response(200)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        indexer.httpx,
+        "AsyncClient",
+        lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
+    )
+
+    await indexer.set_indexing_paused(installed, True, model="bge-m3")
+    assert sent == [{"model": "bge-m3", "input": [], "keep_alive": 0}]
+
+    # An Ollama that is not running is no reason to fail: it lets go by itself later.
+    def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("not running")
+
+    monkeypatch.setattr(
+        indexer.httpx,
+        "AsyncClient",
+        lambda **kw: real(transport=httpx.MockTransport(down), **kw),
+    )
+    await indexer.set_indexing_paused(installed, True, model="bge-m3")
+    assert await indexer.indexing_paused(installed) is True
+
+
+async def test_pausing_with_no_settings_yet_creates_them(installed: AsyncSession) -> None:
+    from sqlalchemy import text
+
+    await installed.execute(text("DELETE FROM ai_embedding_settings"))
+    await installed.commit()
+
+    await indexer.set_indexing_paused(installed, True)
+
+    assert await indexer.indexing_paused(installed) is True

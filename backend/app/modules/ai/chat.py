@@ -510,8 +510,7 @@ class ChatTurn:
                         trigger_text, trigger_mode = prefix + look.text, look.kind
                     elif look.kind == "ask":
                         yield {"type": "reset"}
-                        if first.usage is not None:
-                            await self._record(first.usage)
+                        # The first pass was recorded by the look itself (``_second_look``).
                         result = AnswerResult(found=True, answer=look.text, basis="clarify")
                         yield await self._done("reviewed_ask", result)
                         return

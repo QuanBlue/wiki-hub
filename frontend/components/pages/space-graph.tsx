@@ -99,6 +99,19 @@ function legendFor(
   return { legend, groupOf };
 }
 
+/**
+ * Which side of a page its label is tried on first: the side it fits whole, else the one
+ * with more room (where it will be shortened to fit).
+ */
+export function sidesToTry(
+  width: number,
+  room: { start: number; end: number },
+): ("start" | "end")[] {
+  if (width <= room.start) return ["start", "end"];
+  if (width <= room.end) return ["end", "start"];
+  return room.start >= room.end ? ["start", "end"] : ["end", "start"];
+}
+
 export function SpaceGraphDialog({
   space = null,
   initialScope,
@@ -388,15 +401,7 @@ export function SpaceGraphDialog({
         start: (visibleX[1] - onScreen) / view.k - gap - 4 * unit,
         end: (onScreen - visibleX[0]) / view.k - gap - 4 * unit,
       };
-      const fits = (anchor: "start" | "end") =>
-        full.length * charWidth <= room[anchor];
-      const sides: ("start" | "end")[] = fits("start")
-        ? ["start", "end"]
-        : fits("end")
-          ? ["end", "start"]
-          : room.start >= room.end
-            ? ["start", "end"]
-            : ["end", "start"];
+      const sides = sidesToTry(full.length * charWidth, room);
       for (const anchor of sides) {
         // Where neither side has room for the whole title, it is shortened to fit.
         const chars = Math.floor(room[anchor] / charWidth);

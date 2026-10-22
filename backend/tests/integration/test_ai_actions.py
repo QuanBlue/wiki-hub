@@ -385,3 +385,47 @@ async def test_a_plan_with_nothing_allowed_is_told_to_the_person(
     events = await run(installed, owner, conversation("tôi muốn tạo space abc"))
     assert events[-1]["result"]["found"] is False
     assert chat_module._PLAN.match("PLAN: {}")
+
+
+async def test_two_new_spaces_of_one_name_get_two_keys_and_a_description_is_kept(
+    installed: AsyncSession,
+) -> None:
+    boss = await _admin(installed)
+
+    _, plan = await plan_from_reply(
+        installed,
+        boss,
+        reply(
+            {"type": "create_space", "name": "Billing", "description": "Invoices and plans"},
+            {"type": "create_space", "name": "Billing"},
+        ),
+        may_create_space=True,
+    )
+
+    assert plan is not None
+    first, second = plan.steps
+    assert first.args["description"] == "Invoices and plans"
+    assert "description" not in second.args
+    assert first.args["key"] != second.args["key"]
+
+
+async def test_a_step_that_is_not_an_object_is_ignored_and_a_user_that_is_not_there_fails(
+    installed: AsyncSession,
+) -> None:
+    from app.modules.spaces.service import SpaceService
+
+    boss = await _admin(installed)
+    await SpaceService(installed).create(SpaceCreate(key="TEAM1", name="Team"), boss)
+
+    _, plan = await plan_from_reply(
+        installed,
+        boss,
+        reply("not a step", {"type": "favorite_space", "space": "TEAM1"}),
+        may_create_space=True,
+    )
+    assert plan is not None and [step.type for step in plan.steps] == ["favorite_space"]
+
+    events = await _run(
+        installed, boss, {"type": "add_space_member", "space": "TEAM1", "username": "ghost"}
+    )
+    assert events[0]["ok"] is False and events[0]["error"] == "User not found."

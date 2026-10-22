@@ -258,3 +258,36 @@ async def test_explaining_words_of_a_chat_answer_takes_a_short_text_and_a_known_
     client.cookies.set("wikihub_access", api_access_token)
 
     assert (await client.post("/api/v1/ai/explain", json=body)).status_code == 422
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_confirmed_plan_is_run_step_by_step_as_the_person(
+    client: AsyncClient,
+    api_user: User,
+    api_access_token: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def allow(key: str, rule: str) -> None:
+        return None
+
+    monkeypatch.setattr(chat_module.rate_limit, "enforce", allow)
+    client.cookies.set("wikihub_access", api_access_token)
+    key = f"P{uuid.uuid4().hex[:6]}".upper()
+
+    response = await client.post(
+        "/api/v1/ai/chat/execute",
+        json={
+            "lang": "en",
+            "steps": [
+                {"type": "create_space", "args": {"name": "Planned", "key": key}},
+                {"type": "favorite_space", "args": {"space": "$1"}},
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    events = events_of(response.text)
+    assert [name for name, _ in events] == ["step", "step", "done"]
+    assert all(data["ok"] for name, data in events if name == "step")
+    assert events[-1][1]["ok"] is True

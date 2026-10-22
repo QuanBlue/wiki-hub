@@ -3,8 +3,11 @@ import { act, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { LogoMark } from "@/components/brand/logo";
-import { CommentItem, type CommentThreadContext } from "@/components/comments/comment-item";
+import { LogoMark, Wordmark } from "@/components/brand/logo";
+import {
+  CommentItem,
+  type CommentThreadContext,
+} from "@/components/comments/comment-item";
 import { viewToQuery } from "@/components/comments/comment-filters";
 import { Quote } from "@/components/help/help-ui";
 import {
@@ -17,10 +20,14 @@ import type { PageComment } from "@/types/api";
 
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
-  api: { get: vi.fn().mockResolvedValue({ has_inbox: false, unread_count: 0 }) },
+  api: {
+    get: vi.fn().mockResolvedValue({ has_inbox: false, unread_count: 0 }),
+  },
 }));
 vi.mock("@/components/users/user-profile-trigger", () => ({
-  UserProfileTrigger: ({ username }: { username: string }) => <span>{username}</span>,
+  UserProfileTrigger: ({ username }: { username: string }) => (
+    <span>{username}</span>
+  ),
 }));
 
 describe("viewToQuery", () => {
@@ -52,9 +59,13 @@ describe("PasswordInput", () => {
     render(<PasswordInput aria-label="pw" defaultValue="secret" />);
     const input = screen.getByLabelText("pw");
     expect(input).toHaveAttribute("type", "password");
-    await userEvent.click(screen.getByRole("button", { name: /show password/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /show password/i }),
+    );
     expect(input).toHaveAttribute("type", "text");
-    await userEvent.click(screen.getByRole("button", { name: /hide password/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /hide password/i }),
+    );
     expect(input).toHaveAttribute("type", "password");
   });
 });
@@ -88,7 +99,10 @@ describe("MailSummaryProvider", () => {
     const { result } = renderHook(() => useMailSummary(), {
       wrapper: ({ children }) => (
         <QueryClientProvider client={client}>
-          <MailSummaryProvider initial={{ has_inbox: true, unread_count: 2 } as never} poll={false}>
+          <MailSummaryProvider
+            initial={{ has_inbox: true, unread_count: 2 } as never}
+            poll={false}
+          >
             {children}
           </MailSummaryProvider>
         </QueryClientProvider>
@@ -96,7 +110,9 @@ describe("MailSummaryProvider", () => {
     });
     expect(result.current.summary).toMatchObject({ unread_count: 2 });
     act(() => result.current.refresh());
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin-mail", "summary"] });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["admin-mail", "summary"],
+    });
   });
 });
 
@@ -142,20 +158,46 @@ describe("CommentItem", () => {
   it("shows a placeholder for a deleted author", () => {
     render(
       <ul>
-        <CommentItem node={{ comment: comment({ author: null }), replies: [] }} depth={1} ctx={ctx} />
+        <CommentItem
+          node={{ comment: comment({ author: null }), replies: [] }}
+          depth={1}
+          ctx={ctx}
+        />
       </ul>,
     );
     expect(screen.getByText(/deleted/i)).toBeInTheDocument();
   });
 
   it("collapses a long comment and expands it on See more", async () => {
-    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, value: 500 });
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      value: 500,
+    });
     render(
       <ul>
-        <CommentItem node={{ comment: comment({ body: "x\n".repeat(50) }), replies: [] }} depth={0} ctx={ctx} />
+        <CommentItem
+          node={{ comment: comment({ body: "x\n".repeat(50) }), replies: [] }}
+          depth={0}
+          ctx={ctx}
+        />
       </ul>,
     );
-    await userEvent.click(await screen.findByRole("button", { name: /see more/i }));
-    expect(screen.queryByRole("button", { name: /see more/i })).not.toBeInTheDocument();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /see more/i }),
+    );
+    expect(
+      screen.queryByRole("button", { name: /see more/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("Wordmark", () => {
+  it("keeps the name in a span of its own when asked to style it", () => {
+    render(<Wordmark siteName="Acme Wiki" nameClassName="hidden sm:inline" />);
+    // The site name comes from the theme settings when there are any.
+    expect(screen.getByText(/WikiHub|Acme Wiki/)).toHaveClass(
+      "hidden",
+      "sm:inline",
+    );
   });
 });

@@ -230,3 +230,145 @@ async def test_ollama_is_kept_running_even_while_indexing_is_paused() -> None:
         ):
             assert await tasks.keep_ollama_running({}) is False
             ensure.assert_not_awaited()
+
+
+async def test_a_document_import_job_is_run_with_its_own_id() -> None:
+    import uuid
+
+    job = uuid.uuid4()
+    run = AsyncMock()
+    with (
+        patch.object(tasks, "session_scope", _scope),
+        patch.object(tasks, "get_storage", Mock(return_value="storage")),
+        patch.object(tasks, "execute_document_import", run),
+    ):
+        await tasks.run_document_import({}, str(job))
+
+    assert run.await_args.args[1:] == ("storage", job)
+
+
+async def test_a_graph_pass_already_running_is_not_doubled_up() -> None:
+    redis = _redis(acquired=False)
+    with patch.object(tasks, "get_redis", return_value=redis):
+        assert await tasks.build_page_graph({}) == 0
+    redis.eval.assert_not_awaited()
+
+
+async def test_the_graph_pass_counts_the_pages_it_brought_up_to_date_and_keeps_its_lock_alive() -> (
+    None
+):
+    redis = _redis(acquired=True)
+
+    async def build(session, config, *, deadline, heartbeat):
+        await heartbeat()
+        return SimpleNamespace(text_pages=3, similar_pages=2)
+
+    with (
+        patch.object(tasks, "get_redis", return_value=redis),
+        patch.object(tasks, "session_scope", _scope),
+        patch.object(tasks, "load_config", AsyncMock(return_value=SimpleNamespace())),
+        patch.object(tasks, "build_graph_pending", build),
+    ):
+        assert await tasks.build_page_graph({}) == 5
+
+    redis.expire.assert_awaited_once()
+    redis.eval.assert_awaited_once()
+
+
+async def test_the_graph_pass_releases_its_lock_when_it_crashes() -> None:
+    redis = _redis(acquired=True)
+    with (
+        patch.object(tasks, "get_redis", return_value=redis),
+        patch.object(tasks, "session_scope", _scope),
+        patch.object(tasks, "load_config", AsyncMock(return_value=SimpleNamespace())),
+        patch.object(tasks, "build_graph_pending", AsyncMock(side_effect=RuntimeError("boom"))),
+        pytest.raises(RuntimeError),
+    ):
+        await tasks.build_page_graph({})
+
+    redis.eval.assert_awaited_once()
+
+
+async def test_an_attachment_reading_pass_already_running_is_not_doubled_up() -> None:
+    redis = _redis(acquired=False)
+    with patch.object(tasks, "get_redis", return_value=redis):
+        assert await tasks.extract_attachment_texts({}) == 0
+    redis.eval.assert_not_awaited()
+
+
+async def test_a_paused_index_reads_no_attachments(monkeypatch: pytest.MonkeyPatch) -> None:
+    redis = _redis(acquired=True)
+    monkeypatch.setattr(tasks, "indexing_paused", AsyncMock(return_value=True))
+    read = AsyncMock()
+    with (
+        patch.object(tasks, "get_redis", return_value=redis),
+        patch.object(tasks, "session_scope", _scope),
+        patch.object(tasks, "extract_attachment_pending", read),
+    ):
+        assert await tasks.extract_attachment_texts({}) == 0
+
+    read.assert_not_awaited()
+    redis.eval.assert_awaited_once()
+
+
+async def test_attachments_are_read_batch_after_batch_until_none_are_left() -> None:
+    redis = _redis(acquired=True)
+
+    async def read(session, storage, *, deadline, stop, heartbeat):
+        await heartbeat()
+        assert await stop() is False
+        return next(batches)
+
+    batches = iter([4, 2, 0])
+    with (
+        patch.object(tasks, "get_redis", return_value=redis),
+        patch.object(tasks, "session_scope", _scope),
+        patch.object(tasks, "get_storage", Mock(return_value=None)),
+        patch.object(tasks, "extract_attachment_pending", read),
+    ):
+        assert await tasks.extract_attachment_texts({}) == 6
+
+    assert redis.expire.await_count == 3
+
+
+async def test_the_attachment_pass_releases_its_lock_when_it_crashes() -> None:
+    redis = _redis(acquired=True)
+    with (
+        patch.object(tasks, "get_redis", return_value=redis),
+        patch.object(tasks, "session_scope", _scope),
+        patch.object(tasks, "get_storage", Mock(return_value=None)),
+        patch.object(tasks, "extract_attachment_pending", AsyncMock(side_effect=RuntimeError("x"))),
+        pytest.raises(RuntimeError),
+    ):
+        await tasks.extract_attachment_texts({})
+
+    redis.eval.assert_awaited_once()
+
+
+async def test_a_failure_to_restart_ollama_is_only_logged() -> None:
+    config = SimpleNamespace(
+        embedding_source="ollama", embeddings_ready=True, tuning=SimpleNamespace()
+    )
+    with (
+        patch.object(tasks, "session_scope", _scope),
+        patch.object(tasks, "load_config", AsyncMock(return_value=config)),
+        patch.object(
+            tasks.ollama,
+            "ensure_running",
+            AsyncMock(side_effect=tasks.ollama.OllamaError("the controller is down")),
+        ),
+    ):
+        assert await tasks.keep_ollama_running({}) is False
+
+
+async def test_the_daily_trash_purge_deletes_what_is_past_its_retention() -> None:
+    purge = AsyncMock(return_value=3)
+    service = Mock()
+    service.purge_expired = purge
+    with (
+        patch.object(tasks, "session_scope", _scope),
+        patch.object(tasks, "PageService", Mock(return_value=service)),
+    ):
+        await tasks.purge_expired_trash({})
+
+    purge.assert_awaited_once()
