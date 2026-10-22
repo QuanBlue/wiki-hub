@@ -468,7 +468,7 @@ export const sectionsVi: HelpSection[] = [
             <Code>Chat mới</Code> để xóa. <Code>Dừng</Code> hủy câu trả lời: câu hỏi vẫn còn, kèm
             phần đã viết và ghi chú bạn đã hủy, và <Code>Thử lại</Code> hỏi lại lần nữa. Rê chuột vào một câu hỏi và bấm <Code>Trả lời lại</Code> để nhận câu trả lời
             mới; câu trả lời cũ vẫn còn, dùng mũi tên <Code>1 / 2</Code> để quay lại. Từ một câu trả lời trong tìm kiếm, <Code>Tiếp tục trong chat</Code> sẽ chuyển
-            sang chat. Nút tải xuống cạnh <Code>Chat mới</Code> lưu cả cuộc trò chuyện thành file Markdown: mọi câu hỏi, câu trả lời kèm trang, tệp và trang web đã dùng - để lưu lại, hoặc gửi đi khi một câu trả lời sai. Câu trả lời quá dài phải dừng giữa chừng sẽ ghi rõ ở cuối; gõ <Code>tiếp tục</Code> (hoặc chỉ ra phần còn thiếu) để xem phần còn lại.
+            sang chat. Nút tải xuống cạnh <Code>Chat mới</Code> lưu cả cuộc trò chuyện thành file Markdown: mọi câu hỏi, câu trả lời kèm trang, tệp và trang web đã dùng - để lưu lại, hoặc gửi đi khi một câu trả lời sai. Câu trả lời quá dài phải dừng giữa chừng sẽ ghi rõ ở cuối; gõ <Code>tiếp tục</Code> (hoặc chỉ ra phần còn thiếu) để xem phần còn lại. Muốn hỏi nhiều câu một lúc - dán nguyên một bài kiểm tra hay biểu mẫu - hãy giữ số thứ tự (<Code>Câu hỏi 1</Code>, <Code>Câu 2</Code>...): mỗi câu được tìm riêng và trả lời lần lượt theo đúng số, với phương án đúng của câu trắc nghiệm. Mỗi câu hỏi dài tối đa 4.000 ký tự; gần tới giới hạn sẽ có bộ đếm. Muốn hỏi về tài liệu của riêng bạn, bấm biểu tượng kẹp giấy cạnh ô nhập (hoặc kéo-thả, dán file vào đó): tối đa 3 file mỗi cuộc trò chuyện, dạng Word, PDF, Excel, CSV, HTML, Markdown hoặc văn bản, mỗi file tối đa 20 MB. Trợ lý đọc file <em>cùng với</em> wiki - &ldquo;bản nháp của tôi có đúng quy định không?&rdquo; - và trích dẫn là <Code>[f1]</Code>, <Code>[f2]</Code>; bấm vào để xem đoạn đã đọc. File hiện ngay trên câu hỏi được gửi kèm, và mọi câu hỏi sau trong cuộc trò chuyện đều đọc lại nó, nên chỉ cần đính kèm một lần. File của bạn được ưu tiên: câu trả lời được tìm trong file trước, wiki chỉ dùng để bổ sung hoặc đối chiếu. Với file dài, trợ lý đọc phần đầu và các đoạn hoặc hàng bảng khớp với câu hỏi (mỗi hàng của bảng tính giữ tên dịch vụ hoặc mục mà nó thuộc về). Dán đoạn chữ dài hơn giới hạn của ô nhập thì đoạn đó tự được đính kèm thành file văn bản. Câu hỏi đếm hoặc liệt kê trên một bảng lớn trong trang (&ldquo;QuanNT phụ trách bao nhiêu tiêu chí?&rdquo;) sẽ đọc mọi hàng có nhắc tới điều bạn hỏi, nên con số đếm được tính trên cả bảng. Một cái tên được nhận ra dù bảng viết kiểu nào - <Code>QuanNT</Code>, <Code>QuânNT</Code>, <Code>Quan NT</Code> hay <Code>Quân NT</Code> - và tính là một, câu trả lời cũng nêu các cách viết đã gặp. Chỉ phần chữ được giữ, riêng cho bạn và trong một ngày kể từ câu hỏi cuối, không bao giờ lưu vào wiki; sau đó hãy đính kèm lại. PDF ảnh quét không có chữ để đọc.
           </li>
           <li>
             <strong>Quản trị viên</strong> bật tại Quản trị, Trợ lý AI, <Code>Tìm kiếm web</Code>: chọn
@@ -1009,6 +1009,151 @@ export const sectionsVi: HelpSection[] = [
           xuất hiện, kể cả như một liên kết giữa hai trang bạn xem được. Các bản sao của cùng một
           trang (ví dụ <Code>Tên trang (1)</Code>) chỉ tính một lần. Trợ lý AI dùng chính các liên kết
           này để đọc thêm vài trang liên quan khi trả lời - xem <em>Trợ lý AI</em>.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "content-health",
+    title: "Sức khỏe nội dung của space",
+    category: "Workspace",
+    description:
+      "Dành cho admin của space: nội dung có thể đã cũ, link hỏng, bài không ai trỏ tới và bản trùng - kèm nút để AI so sánh với bài mới hơn.",
+    keywords: [
+      "sức khỏe nội dung",
+      "suc khoe noi dung",
+      "lỗi thời",
+      "loi thoi",
+      "cũ",
+      "link hỏng",
+      "link hong",
+      "mồ côi",
+      "mo coi",
+      "trùng lặp",
+      "trung lap",
+      "vẫn còn đúng",
+      "kiểm tra bằng ai",
+      "content health",
+      "stale",
+      "broken links",
+      "orphan",
+      "duplicate",
+    ],
+    body: (
+      <>
+        <p>
+          <strong>Owner và Admin</strong> của space thấy nút <strong>Sức khỏe</strong> ở cuối thanh bên
+          của space. Nút này mở báo cáo những gì trong space có thể cần xem lại, chia thành bốn danh
+          sách. Bốn mục kiểm tra nằm ở cột trái, mỗi mục có một dòng mô tả và số mục tìm thấy, bên
+          dưới ô tổng số cần xem lại (hoặc <em>Không có gì cần xem lại</em>); danh sách đang chọn hiện
+          ở cột phải, và báo cáo mở ở danh sách đầu tiên có mục. Cửa sổ giữ nguyên kích thước dù đang
+          xem danh sách nào - danh sách dài thì cuộn bên trong. Trên màn hình hẹp, các mục kiểm tra
+          thành một hàng tab phía trên danh sách. Báo cáo được tính lúc
+          bạn mở, từ những gì các trang đang viết - không trang nào bị sửa và không gọi mô hình AI nào.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Có thể lỗi thời</strong>: các trang đã <strong>6 tháng</strong> trở lên không được
+            sửa (chọn <strong>12</strong> hoặc <strong>24 tháng</strong> để xem xa hơn) trong khi các
+            trang gắn với chúng - trang link tới hoặc được link từ chúng, nhắc tên hoặc được nhắc tên,
+            có nội dung giống, trang cha hoặc trang con - vừa được sửa trong 3 tháng gần đây. Nội dung
+            của chúng có thể đã bị thay thế. Mỗi mục liệt kê các trang mới hơn.
+          </li>
+          <li>
+            <strong>Kiểm tra bằng AI</strong> (khi trợ lý AI đang bật) nhờ AI so trang với tối đa ba
+            trang mới hơn và trích ra những chỗ bị mâu thuẫn hoặc thay thế - một con số, địa chỉ,
+            phiên bản, bước làm hay quy định khác đi - hoặc nói rằng không có chỗ nào. Mỗi lần tính là
+            một lượt gọi AI; cùng các trang đó sẽ cho lại kết quả cũ mà không gọi lại. Hãy coi đây là
+            gợi ý, không phải kết luận: kiểm tra lại trước khi sửa.
+          </li>
+          <li>
+            <strong>Vẫn còn đúng</strong>: khi bạn đã đọc một trang bị đánh dấu và thấy nó vẫn đúng, hãy
+            bấm nút này. Trang sẽ rời danh sách cho tới khi lại đủ lâu không được sửa.
+          </li>
+          <li>
+            <strong>Link hỏng</strong>: link trên các trang của space tới một trang không còn ở đó -
+            chưa từng có hoặc đã đổi địa chỉ (<em>Không tìm thấy trang</em>), đang ở Thùng rác, hoặc
+            space của nó đã được lưu trữ. Mở trang chứa link để sửa hoặc bỏ link.
+          </li>
+          <li>
+            <strong>Trang mồ côi</strong>: các trang không được trang nào khác link tới hoặc nhắc tên;
+            người đọc chỉ tìm thấy chúng qua cây trang. Hãy link tới chúng từ một trang liên quan. Trang
+            cấp cao nhất và trang trống không được tính.
+          </li>
+          <li>
+            <strong>Trùng lặp</strong>: bản sao của cùng một trang (cùng tiêu đề, chỉ khác số, ví dụ{" "}
+            <Code>Checklist (2)</Code>) và, khi bật tìm kiếm ngữ nghĩa, các trang có nội dung gần như
+            giống nhau, kèm mức độ giống. Nên gộp lại và chuyển bản thừa vào Thùng rác.
+          </li>
+        </ul>
+        <Callout variant="note" title="AI THẤY GÌ">
+          Chỉ Owner và Admin của space mở được báo cáo. Trang của space khác chỉ hiện nếu bạn có quyền
+          đọc - trang mới hơn hay trang trùng mà bạn không mở được sẽ bị bỏ qua. Danh sách dài hiện 200
+          mục đầu kèm tổng số.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "unanswered-questions",
+    title: "Câu hỏi chưa được giải đáp: wiki đang thiếu gì",
+    category: "Administration",
+    description:
+      "Những câu hỏi trợ lý AI chưa giải đáp được bằng wiki, hoặc bị đánh dấu Không hữu ích, gom theo từng câu để bạn biết cần viết thêm tài liệu nào.",
+    keywords: [
+      "câu hỏi chưa trả lời",
+      "cau hoi chua tra loi",
+      "không hữu ích",
+      "khong huu ich",
+      "phản hồi",
+      "thiếu tài liệu",
+      "thieu tai lieu",
+      "unanswered questions",
+      "not helpful",
+      "feedback",
+      "knowledge gaps",
+    ],
+    body: (
+      <>
+        <p>
+          Những trang mọi người cần mà chưa ai viết sẽ hiện ra dưới dạng câu hỏi trợ lý không trả lời
+          được. <strong>Quản trị → Trợ lý AI → Câu hỏi chưa trả lời</strong> gom chúng lại, câu được
+          hỏi nhiều nhất ở trên cùng, để bạn biết nên viết trang nào. Chỉ quản trị viên hệ thống xem
+          được.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Những gì được ghi</strong>: câu hỏi trong chat hoặc ô tìm kiếm khi không có trang nào
+            khớp, các trang tìm được không nói tới, câu trả lời không dẫn trang nào, hoặc câu trả lời đến
+            từ internet hay kiến thức của AI thay vì wiki - và mọi câu trả lời bị đánh dấu{" "}
+            <strong>Không hữu ích</strong>. Câu hỏi về chính ứng dụng, về một tệp đính kèm, hoặc gửi
+            thẳng lên internet (tin tức, thời tiết) không được ghi. Câu hỏi gửi kèm file đính kèm
+            trong chat vẫn được ghi như mọi câu khác khi wiki không trả lời được.
+          </li>
+          <li>
+            <strong>Không hữu ích</strong> nằm dưới mỗi câu trả lời trong chat và ô tìm kiếm. Nút này gửi
+            câu hỏi và phần đầu câu trả lời về đây; mỗi câu trả lời chỉ bấm được một lần.
+          </li>
+          <li>
+            <strong>Mỗi câu hỏi một mục</strong>: cùng một câu gõ khác nhau (chữ hoa, dấu, dấu câu) là
+            một mục, kèm số lần được hỏi, người hỏi, các cách hỏi khác, lý do chưa trả lời được và các
+            trang gần đúng. Câu hỏi nối tiếp như <em>còn bao lâu?</em> được hiện theo nghĩa đã hiểu.
+          </li>
+          <li>
+            <strong>Đánh dấu đã trả lời</strong> khi đã có trang trả lời: tìm và chọn trang đó, mọi
+            người đã hỏi sẽ nhận thông báo kèm link - nếu họ được đọc trang. Không chọn trang thì mục chỉ
+            được đóng lại. <strong>Bỏ qua</strong> đóng câu hỏi không đáng viết trang;{" "}
+            <strong>Mở lại</strong> (trong <strong>Đã xử lý</strong>) đưa nó về danh sách chưa xử lý, và{" "}
+            <strong>Xóa</strong> bỏ hẳn mục đó. Nếu sau này có người hỏi tiếp, câu hỏi sẽ thành một mục mới.
+          </li>
+        </ul>
+        <Callout variant="note" title="QUYỀN RIÊNG TƯ">
+          Mỗi câu hỏi được lưu kèm tên người hỏi, để báo cho họ khi đã có câu trả lời, và tự động xóa
+          sau <strong>90 ngày</strong>. Chỉ quản trị viên hệ thống xem được. Tắt{" "}
+          <strong>Ghi lại câu hỏi</strong> để ngừng thu thập; những gì đã thu sẽ còn tới khi hết hạn
+          hoặc bị bỏ đi.
         </Callout>
       </>
     ),
@@ -1918,7 +2063,9 @@ export const sectionsVi: HelpSection[] = [
             sheet (<Code>1,234.50</Code>, <Code>12.5%</Code>, <Code>31/01/2026</Code>).{" "}
             <strong>Độ rộng cột được tính theo nội dung</strong>, không chép từ sheet: cột chứa đoạn
             văn được rộng (không bao giờ hẹp hơn một dòng dễ đọc), cột số hoặc mã giữ hẹp, tiêu đề
-            dài thì xuống dòng thay vì làm cột rộng ra, nhờ vậy chiều cao hàng hợp lý. Bảng có nhiều
+            dài thì xuống dòng thay vì làm cột rộng ra, nhờ vậy chiều cao hàng hợp lý. Độ rộng cột
+            theo độ dài thường gặp của các ô, không theo ô dài nhất: vài ô dài lẻ loi (như phần ghi chú
+            phía trên bảng) sẽ xuống dòng thay vì kéo rộng cả cột mã ngắn. Bảng có nhiều
             cột chữ sẽ cuộn ngang thay vì bị ép hẹp. Sau đó vẫn có thể kéo chỉnh độ rộng trong
             trình soạn thảo. Công thức được nhập bằng giá trị đã tính gần nhất. Sheet ẩn,
             biểu đồ, hình ảnh và ghi chú không được nhập (sheet ẩn được nêu tên trong phần ghi chú
@@ -3826,6 +3973,11 @@ export const sectionsVi: HelpSection[] = [
             (60 và 1500 lượt mỗi giờ, trừ khi <Code>WIKIHUB_AI_RATE_LIMIT</Code> /{" "}
             <Code>WIKIHUB_AI_TRANSLATE_RATE_LIMIT</Code> đặt khác). Thay đổi có hiệu lực trong khoảng
             nửa phút; ai vượt giới hạn sẽ được báo chờ một lát.
+          </li>
+          <li>
+            <strong>Câu hỏi chưa trả lời</strong> liệt kê những câu mọi người hỏi mà wiki chưa trả lời
+            được, hoặc câu trả lời bị đánh dấu <Code>Không hữu ích</Code>, câu hỏi nhiều nhất ở trên,
+            kèm người hỏi - xem <em>Câu hỏi chưa trả lời</em>.
           </li>
           <li>
             <strong>Trang liên quan (knowledge graph)</strong> giúp trợ lý trả lời đầy đủ hơn những câu

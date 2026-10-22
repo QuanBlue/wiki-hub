@@ -173,6 +173,26 @@ describe("asking the AI from the search box", () => {
     expect(screen.getByTestId("state")).toHaveTextContent("closed");
   });
 
+  it("tells the administrators an answer from the search box did not help", async () => {
+    serve();
+    const actor = await typeQuestion();
+    await actor.click(
+      await screen.findByRole("button", { name: /Ask AI: billing server address/ }),
+    );
+    expect(await screen.findByText("AI answer")).toBeInTheDocument();
+    mocked.post.mockResolvedValueOnce(undefined);
+
+    await actor.click(screen.getByRole("button", { name: "Not helpful" }));
+
+    expect(mocked.post).toHaveBeenLastCalledWith("/api/v1/ai/feedback", {
+      surface: "search",
+      question: "billing server address",
+      answer: FOUND.answer,
+      page_ids: FOUND.sources.map((page) => page.id),
+    });
+    expect(await screen.findByText(/the administrators will see/)).toBeInTheDocument();
+  });
+
   it("asks with Ctrl+Enter, while plain Enter still opens the highlighted result", async () => {
     serve();
     const actor = await typeQuestion();

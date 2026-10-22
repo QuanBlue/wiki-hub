@@ -1,3 +1,4 @@
+import { api, ApiError } from "@/lib/api-client";
 import { apiBaseUrl } from "@/lib/env";
 import type {
   AnswerAction,
@@ -5,6 +6,7 @@ import type {
   AnswerPlanStep,
   AnswerResult,
   AnswerSource,
+  FileSource,
   WebSource,
 } from "@/lib/ai-answer";
 
@@ -38,8 +40,17 @@ export function saveDetail(detail: ChatDetail): void {
 }
 
 /** What the server accepts of one message, and of a whole conversation. */
-export const CHAT_MAX_CHARS = 2000;
+export const CHAT_MAX_CHARS = 4000;
 export const CHAT_MAX_MESSAGES = 20;
+/** An earlier turn is sent cut to this: the question asked now is what needs the room. */
+export const CHAT_HISTORY_CHARS = 2000;
+/** Files a conversation may have attached from the person's computer. */
+export const CHAT_MAX_FILES = 3;
+/** What the server can read words from (``attachments.text.readable``). */
+export const CHAT_FILE_TYPES =
+  ".docx,.odt,.rtf,.epub,.html,.htm,.md,.markdown,.pdf,.xlsx,.csv,.txt,.text,.log";
+/** The largest file the server reads, in bytes. */
+export const CHAT_FILE_MAX_BYTES = 20 * 1024 * 1024;
 /** The most turns kept in the browser. */
 const STORED_MAX = 30;
 /**
@@ -49,14 +60,18 @@ const STORED_MAX = 30;
 export const CHAT_IDLE_TIMEOUT_MS = 75_000;
 
 /** Why a reply did not come, as far as the person needs to tell: each has its own words. */
-export type ChatFailure = "timeout" | "unavailable" | "rate_limited" | "error";
+export type ChatFailure =
+  "timeout" | "unavailable" | "rate_limited" | "file_expired" | "error";
 
 export class ChatStreamError extends Error {
   readonly failure: ChatFailure;
-  constructor(failure: ChatFailure) {
+  /** For ``file_expired``: the attached file the server no longer has. */
+  readonly fileId?: string;
+  constructor(failure: ChatFailure, fileId?: string) {
     super(`The chat failed: ${failure}`);
     this.name = "ChatStreamError";
     this.failure = failure;
+    this.fileId = fileId;
   }
 }
 
@@ -79,6 +94,8 @@ export type ChatEntry =
       content: string;
       /** Shared by every version of this question, once it has been edited. */
       slot?: string;
+      /** Files attached with this question; read again by every question after it. */
+      files?: AttachedFile[];
     }
   | {
       id: string;
@@ -94,6 +111,8 @@ export type ChatEntry =
       /** What the answer stands on, and the internet pages it cites. */
       basis?: "wiki" | "web" | "general" | "clarify" | "app" | "plan";
       webSources?: WebSource[];
+      /** The files attached in the chat that the answer cites. */
+      fileSources?: FileSource[];
       /** Steps proposed, to confirm before they run. */
       plan?: PlanState;
       /** Buttons to the pages the answer is about. */
@@ -123,9 +142,13 @@ export function messagesToSend(entries: ChatEntry[]): ChatSend[] {
     } else if (entry.status === "done" && entry.found && entry.content.trim()) {
       sent.push({
         role: "assistant",
-        content: entry.content.slice(0, CHAT_MAX_CHARS),
+        content: entry.content.slice(0, CHAT_HISTORY_CHARS),
       });
     }
+  }
+  // The earlier questions are cut short too; only the one asked now is sent whole.
+  for (let index = 0; index < sent.length - 1; index += 1) {
+    sent[index].content = sent[index].content.slice(0, CHAT_HISTORY_CHARS);
   }
   const recent = sent.slice(-CHAT_MAX_MESSAGES);
   // The server wants the conversation to open with a question.
@@ -180,6 +203,27 @@ function failureOf(status: number): ChatFailure {
   return "error";
 }
 
+/** Why a refused question was refused: an attached file that expired has its own words. */
+async function refusalOf(response: Response): Promise<ChatStreamError> {
+  if (response.status === 400) {
+    try {
+      const body = (await response.json()) as {
+        error?: { code?: string; details?: { file_id?: unknown } };
+      };
+      if (body.error?.code === "chat_file_expired") {
+        const fileId = body.error.details?.file_id;
+        return new ChatStreamError(
+          "file_expired",
+          typeof fileId === "string" ? fileId : undefined,
+        );
+      }
+    } catch {
+      // Not the usual error body: the plain failure below.
+    }
+  }
+  return new ChatStreamError(failureOf(response.status));
+}
+
 /**
  * Ask the next question of a conversation and read the reply as it arrives.
  *
@@ -198,6 +242,7 @@ export async function streamChat(
     onReset,
     detail = "normal",
     attachmentId = null,
+    fileIds = [],
     idleTimeoutMs = CHAT_IDLE_TIMEOUT_MS,
   }: {
     signal?: AbortSignal;
@@ -210,6 +255,8 @@ export async function streamChat(
     detail?: ChatDetail;
     /** Answer from this one attached file only ("Ask about this file"). */
     attachmentId?: string | null;
+    /** Files attached in the chat (``uploadChatFile``): read together with the wiki. */
+    fileIds?: string[];
     idleTimeoutMs?: number;
   } = {},
 ): Promise<AnswerResult> {
@@ -241,6 +288,7 @@ export async function streamChat(
           messages,
           detail,
           ...(attachmentId ? { attachment_id: attachmentId } : {}),
+          ...(fileIds.length ? { file_ids: fileIds } : {}),
         }),
         credentials: "include",
         signal: controller.signal,
@@ -252,8 +300,8 @@ export async function streamChat(
     }
 
     if (!response.ok) {
-      // A refusal before the stream starts (not signed in, quota, AI off).
-      throw new ChatStreamError(failureOf(response.status));
+      // A refusal before the stream starts (not signed in, quota, AI off, a file expired).
+      throw await refusalOf(response);
     }
     if (!response.body) throw new ChatStreamError("error");
 
@@ -415,6 +463,8 @@ export const EMPTY_CHAT: ChatState = { entries: [], slots: {} };
 
 const CHAT_KEY_PREFIX = "wikihub:chat:v1:";
 const storageKey = (userId: string) => `${CHAT_KEY_PREFIX}${userId}`;
+/** The files attached to the conversation: under the same prefix, so signing out clears them. */
+const filesKey = (userId: string) => `${CHAT_KEY_PREFIX}files:${userId}`;
 
 /** Set once the chats were wiped (signing out, changing account): nothing is written back. */
 let wiped = false;
@@ -433,10 +483,10 @@ let wiped = false;
 export function clearStoredChats(keep?: string): void {
   try {
     const store = window.localStorage;
-    const spared = keep === undefined ? undefined : storageKey(keep);
+    const spared = keep === undefined ? [] : [storageKey(keep), filesKey(keep)];
     for (let index = store.length - 1; index >= 0; index -= 1) {
       const key = store.key(index);
-      if (key?.startsWith(CHAT_KEY_PREFIX) && key !== spared) {
+      if (key?.startsWith(CHAT_KEY_PREFIX) && !spared.includes(key)) {
         store.removeItem(key);
       }
     }
@@ -542,6 +592,94 @@ export function saveChat(userId: string, state: ChatState): void {
     );
   } catch {
     // Private windows and full storage: the conversation just is not kept.
+  }
+}
+
+// ------------------------------------------------------------ files attached in the chat
+
+/** A file from the person's computer whose words the server keeps for a day. */
+export type AttachedFile = {
+  id: string;
+  filename: string;
+  /** The server no longer has its words (a day without a question): shown, not sent. */
+  expired?: boolean;
+};
+
+/**
+ * The files attached in this conversation, in the order they were sent, each once: every
+ * question reads all of them, not only the files sent with it.
+ */
+export function conversationFiles(entries: ChatEntry[]): AttachedFile[] {
+  const seen = new Map<string, AttachedFile>();
+  for (const entry of entries) {
+    if (entry.role !== "user") continue;
+    for (const file of entry.files ?? []) {
+      if (!seen.has(file.id)) seen.set(file.id, file);
+    }
+  }
+  return [...seen.values()];
+}
+
+/** Why a file could not be attached: the server's code, and its words when it gave any. */
+export class ChatFileError extends Error {
+  readonly code: string;
+  constructor(code: string, message = "") {
+    super(message || code);
+    this.name = "ChatFileError";
+    this.code = code;
+  }
+}
+
+/** Send a file to be read. Only its words are kept, for this person, for a day. */
+export async function uploadChatFile(file: File): Promise<AttachedFile> {
+  if (file.size > CHAT_FILE_MAX_BYTES) throw new ChatFileError("too_large");
+  const form = new FormData();
+  form.append("file", file, file.name);
+  try {
+    const read = await api.post<{ id: string; filename: string }>(
+      "/api/v1/ai/chat/files",
+      undefined,
+      { rawBody: form },
+    );
+    return { id: read.id, filename: read.filename };
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw new ChatFileError("error");
+    if (error.status === 413) throw new ChatFileError("too_large");
+    if (error.status === 429) throw new ChatFileError("rate_limited");
+    if (error.status === 503) throw new ChatFileError("unavailable");
+    throw new ChatFileError(error.code, error.message);
+  }
+}
+
+/** The files attached to this person's conversation in this browser. */
+export function loadAttached(userId: string): AttachedFile[] {
+  try {
+    const raw = window.localStorage.getItem(filesKey(userId));
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (file): file is AttachedFile =>
+          !!file &&
+          typeof file === "object" &&
+          typeof (file as AttachedFile).id === "string" &&
+          typeof (file as AttachedFile).filename === "string",
+      )
+      .slice(0, CHAT_MAX_FILES);
+  } catch {
+    return [];
+  }
+}
+
+export function saveAttached(userId: string, files: AttachedFile[]): void {
+  try {
+    if (files.length) {
+      window.localStorage.setItem(filesKey(userId), JSON.stringify(files));
+    } else {
+      window.localStorage.removeItem(filesKey(userId));
+    }
+  } catch {
+    // Private windows and full storage: the files are just not remembered.
   }
 }
 

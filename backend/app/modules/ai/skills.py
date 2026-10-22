@@ -245,6 +245,37 @@ CONTINUE_RULES = (
 )
 
 
+#: Added when the message asks several numbered questions (see ``search.query.split_questions``).
+SEVERAL_QUESTIONS_RULES = (
+    "SEVERAL QUESTIONS - the message, or a file attached to it, asks several numbered "
+    "questions (a test, a quiz, a form). "
+    "Answer every one of them, in their order and under their own number (for example **Câu 1** "
+    "or **Question 1**), never only the first. For a multiple-choice question, give the option "
+    "that is right, quoting it as written, then why in one or two sentences with its citation; "
+    "do not restate the question or discuss each wrong option. When the sources do not settle a "
+    "question, say so under its number and go on with the next: NOT_FOUND is for a message none "
+    "of whose questions the sources answer. A question cut off at the end of the message is "
+    "answered as far as it can be, or said to be incomplete."
+)
+
+
+#: Added in the chat when the person attached files of their own (``ai.chat_files``).
+ATTACHED_FILE_RULES = (
+    "ATTACHED FILES - the person attached files of their own, given between <file_sources> "
+    "tags; they replace rules 1, 2 and 5 above where they conflict. The attached files come "
+    "FIRST: look for the answer in them before anything else, and answer from them whenever "
+    "they hold it; use the numbered <sources> of the wiki only to complete what the files leave "
+    "out, or to check them. Cite a fact from an attached file as [f1], [f2]... (its n), a fact "
+    "from the wiki as [1], [2]... A long file is given in part: its opening, then the lines "
+    "(a paragraph, or a table row as 'cell | cell | ...', the first cells naming what the row is "
+    "about) that match the question, with '...' where lines were left out - so never say the "
+    "file lacks something only because the part given does not show it; say what the part "
+    "given holds. Where the file and the wiki disagree, give the file's answer and say plainly "
+    "what the wiki says instead. NOT_FOUND is only for when neither the files nor the sources "
+    "answer the question."
+)
+
+
 #: Added in the chat when an administrator allows the internet. It replaces rules 1 and 5 above
 #: for the cases it names; the markers (SEARCH_WEB:, GENERAL:) are what the code reads.
 WEB_RULES = (
@@ -465,6 +496,8 @@ def answer_system_prompt(
     detail: str = "search",
     reasoning: bool = False,
     continuing: bool = False,
+    several: bool = False,
+    files: bool = False,
 ) -> str:
     base = ANSWER_RULES
     if detail in RULE_3_BY_DETAIL:
@@ -472,6 +505,10 @@ def answer_system_prompt(
     rules = [base]
     if reasoning:
         rules.append(REASONING_RULES)
+    if several:
+        rules.append(SEVERAL_QUESTIONS_RULES)
+    if files:
+        rules.append(ATTACHED_FILE_RULES)
     if continuing:
         rules.append(CONTINUE_RULES)
     if conversation:

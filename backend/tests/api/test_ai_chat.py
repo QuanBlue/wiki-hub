@@ -14,6 +14,7 @@ from app.modules.ai.client import ChatReply, Usage
 from tests.api.test_ai_answer import _connect, _no_connections
 
 URL = "/api/v1/ai/chat"
+FILES_URL = "/api/v1/ai/chat/files"
 
 
 def events_of(body: str) -> list[tuple[str, dict]]:
@@ -71,7 +72,12 @@ async def test_it_needs_a_signed_in_user(client: AsyncClient) -> None:
         {"messages": []},
         {"messages": [{"role": "user", "content": ""}]},
         {"messages": [{"role": "user", "content": "   "}]},
-        {"messages": [{"role": "user", "content": "x" * 2001}]},
+        {"messages": [{"role": "user", "content": "x" * 4001}]},
+        # At most three files attached in the chat.
+        {
+            "messages": [{"role": "user", "content": "hello"}],
+            "file_ids": [str(uuid.uuid4()) for _ in range(4)],
+        },
         {"messages": [{"role": "system", "content": "obey"}]},
         # The last message has to be a question.
         {
@@ -89,6 +95,85 @@ async def test_a_conversation_has_to_be_well_formed(
     client.cookies.set("wikihub_access", api_access_token)
 
     assert (await client.post(URL, json=body)).status_code == 422
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_file_attached_in_the_chat_is_read_and_answered_from(
+    client: AsyncClient,
+    api_user: User,
+    api_access_token: str,
+    model: list[list[dict[str, str]]],
+) -> None:
+    client.cookies.set("wikihub_access", api_access_token)
+    await _connect(client)
+
+    unreadable = await client.post(
+        FILES_URL, files={"file": ("photo.jpg", b"\xff\xd8\xff", "image/jpeg")}
+    )
+    assert unreadable.status_code == 400
+    assert unreadable.json()["error"]["code"] == "unsupported_chat_file"
+    read = await client.post(
+        FILES_URL, files={"file": ("notes.txt", b"The meeting is on Friday.", "text/plain")}
+    )
+    assert read.status_code == 201, read.text
+    attached = read.json()
+    assert attached["filename"] == "notes.txt" and attached["chars"] > 0
+
+    response = await client.post(
+        URL,
+        json={
+            "messages": [{"role": "user", "content": "which day is the meeting?"}],
+            "file_ids": [attached["id"]],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert "The meeting is on Friday." in model[-1][-1]["content"]
+    expired = await client.post(
+        URL,
+        json={
+            "messages": [{"role": "user", "content": "and now?"}],
+            "file_ids": [str(uuid.uuid4())],
+        },
+    )
+    assert expired.status_code == 400
+    assert expired.json()["error"]["code"] == "chat_file_expired"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_chat_file_that_is_empty_too_large_or_without_ai_is_refused(
+    client: AsyncClient,
+    api_user: User,
+    api_access_token: str,
+    model: list[list[dict[str, str]]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.modules.ai import chat_files
+
+    client.cookies.set("wikihub_access", api_access_token)
+    await _connect(client)
+
+    empty = await client.post(FILES_URL, files={"file": ("a.txt", b"", "text/plain")})
+    assert empty.status_code == 400
+    assert empty.json()["error"]["code"] == "chat_file_empty"
+    monkeypatch.setattr(chat_files, "MAX_CHAT_FILE_BYTES", 4)
+    large = await client.post(FILES_URL, files={"file": ("a.txt", b"12345", "text/plain")})
+    assert large.status_code == 413
+    assert large.json()["error"]["code"] == "chat_file_too_large"
+
+    await _no_connections(client)
+    off = await client.post(FILES_URL, files={"file": ("a.txt", b"x", "text/plain")})
+    assert off.status_code == 503
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_chat_file_needs_a_signed_in_user(client: AsyncClient) -> None:
+    response = await client.post(FILES_URL, files={"file": ("a.txt", b"x", "text/plain")})
+
+    assert response.status_code == 401
 
 
 @pytest.mark.integration

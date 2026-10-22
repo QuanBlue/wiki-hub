@@ -470,7 +470,7 @@ export const sectionsEn: HelpSection[] = [
             <Code>New chat</Code> to clear it. <Code>Stop</Code> cancels a reply: the question stays,
             with what was written and a note that you cancelled it, and <Code>Try again</Code> asks
             it once more. Hover a question and press <Code>Answer again</Code> to get a
-            fresh answer; the earlier one stays under the <Code>1 / 2</Code> arrows to go back to. From a search answer, <Code>Continue in chat</Code> carries it on. The download button next to <Code>New chat</Code> saves the whole conversation as a Markdown file: every question and answer with the pages, files and web pages it was read from - handy to keep, or to share when an answer was wrong. A very long answer that had to stop says so at its end; type <Code>continue</Code> (or point out what is missing) and the rest follows.
+            fresh answer; the earlier one stays under the <Code>1 / 2</Code> arrows to go back to. From a search answer, <Code>Continue in chat</Code> carries it on. The download button next to <Code>New chat</Code> saves the whole conversation as a Markdown file: every question and answer with the pages, files and web pages it was read from - handy to keep, or to share when an answer was wrong. A very long answer that had to stop says so at its end; type <Code>continue</Code> (or point out what is missing) and the rest follows. To ask several things at once - a test or a form pasted whole - keep them numbered (<Code>Question 1</Code>, <Code>Câu 2</Code>...): each is looked up on its own and answered in order under its number, with the right option of a multiple-choice question. A question can be up to 4,000 characters; a counter shows near the end. To ask about a document of your own, attach it with the paper clip next to the box (or drop or paste it there): up to 3 files per conversation, in Word, PDF, Excel, CSV, HTML, Markdown or text, 20 MB each. The assistant reads them <em>together with</em> the wiki - &ldquo;does my draft follow the policy?&rdquo; - and cites them as <Code>[f1]</Code>, <Code>[f2]</Code>; click a mark to see what was read. A file shows on the question it was sent with, and every later question of the conversation reads it too, so you attach it once. Your files come first: the answer is looked for in them before the wiki, which only completes or checks them. In a long file the assistant reads its opening and the paragraphs or table rows that match the question (a spreadsheet row keeps the service or item it belongs to). Pasting more words than the box takes attaches them as a text file instead. A count or a list over a large table on a page (&ldquo;how many criteria is QuanNT responsible for?&rdquo;) reads every row that names what you asked about, so the count covers the whole table. A name is found however the table writes it - <Code>QuanNT</Code>, <Code>QuânNT</Code>, <Code>Quan NT</Code> or <Code>Quân NT</Code> - and counted as one, and the answer says which spellings it found. Only the words are kept, for you alone and for a day after your last question, never in the wiki; after that, attach the file again. A scanned PDF has no text to read.
           </li>
           <li>
             <strong>Administrators</strong> find the switch under Administration, AI assistant,{" "}
@@ -1003,6 +1003,144 @@ export const sectionsEn: HelpSection[] = [
           appears, not even as a tie between two pages you can see. Copies of one page (such as{" "}
           <Code>Page title (1)</Code>) count once. The AI assistant uses the same ties to read a
           few related pages when it answers - see <em>AI assistant</em>.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "content-health",
+    title: "Content health: stale pages, broken links, orphans and duplicates",
+    category: "Workspace",
+    description:
+      "For space admins: pages that may be out of date, links that lead nowhere, pages nothing points to and pages that repeat each other - with an AI check of a stale page.",
+    keywords: [
+      "content health",
+      "stale",
+      "out of date",
+      "outdated",
+      "broken links",
+      "dead links",
+      "orphan pages",
+      "duplicates",
+      "duplicate pages",
+      "still correct",
+      "review",
+      "check with ai",
+    ],
+    body: (
+      <>
+        <p>
+          Space <strong>Owners and Admins</strong> see <strong>Health</strong> at the bottom of the
+          space&apos;s sidebar. It opens a report of what in the space may need attention, in four
+          lists. The four checks are listed on the left, each with a line on what it looks for and
+          how many it found, under the total of things to look at (or <em>Nothing needs
+          attention</em>); the list chosen is shown on the right, and the report opens on the first
+          one with something in it. The window keeps one size whichever list is shown - a long list
+          scrolls inside it. On a narrow screen the checks become a row of tabs above the list. It
+          is worked out when you open it, from what the pages already say - nothing is changed and
+          no AI model is called.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Out of date</strong>: pages not edited for <strong>6 months</strong> or more (choose{" "}
+            <strong>12</strong> or <strong>24 months</strong> to look further back) although pages tied
+            to them - pages linking to them or linked from them, naming them or named by them, with
+            similar content, their parent or a child page - were edited in the last 3 months. What they
+            say may have been overtaken. Each one lists the newer pages.
+          </li>
+          <li>
+            <strong>Check with AI</strong> (when the AI assistant is on) asks the AI to compare the page
+            with up to three of the newer pages and quote what in it they contradict or replace - a
+            different number, address, version, step or rule - or to say that nothing does. It counts as
+            one AI call; the same pages give the same answer without asking again. Read it as a pointer,
+            not a verdict: check before you change anything.
+          </li>
+          <li>
+            <strong>Still correct</strong>: when you read a flagged page and it is still right, mark it so.
+            It leaves the list until it has gone that long again without an edit.
+          </li>
+          <li>
+            <strong>Broken links</strong>: links on the space&apos;s pages to a page that is not there -
+            it never existed or its address changed (<em>Page not found</em>), it is in the Trash, or its
+            space is archived. Open the page holding the link to fix or remove it.
+          </li>
+          <li>
+            <strong>Orphans</strong>: pages no other page links to or names; readers find them only
+            through the page tree. Link to them from a related page. Top-level and empty pages are left
+            out.
+          </li>
+          <li>
+            <strong>Duplicates</strong>: copies of one page (the same title but for a number, such as{" "}
+            <Code>Checklist (2)</Code>) and, when semantic search is on, pages saying nearly the same
+            thing, with how alike they are. Consider merging them and moving the copy to the Trash.
+          </li>
+        </ul>
+        <Callout variant="note" title="WHO SEES WHAT">
+          Only the space&apos;s Owners and Admins can open the report. A page from another space is
+          listed only if you may read it - a newer page or a duplicate you cannot open is left out.
+          Long lists show their first 200 entries with the total.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "unanswered-questions",
+    title: "Unanswered questions: what the wiki is missing",
+    category: "Administration",
+    description:
+      "Questions the AI assistant could not answer from the pages, or whose answer was marked Not helpful, grouped so you can write the pages people need.",
+    keywords: [
+      "unanswered questions",
+      "not helpful",
+      "thumbs down",
+      "feedback",
+      "missing documentation",
+      "knowledge gaps",
+      "questions",
+      "ai assistant",
+    ],
+    body: (
+      <>
+        <p>
+          The pages people need but nobody has written show up as questions the assistant cannot
+          answer. <strong>Administration → AI assistant → Unanswered questions</strong> collects them,
+          most asked first, so you know which pages to write. System administrators only.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>What is collected</strong>: a question asked in the chat or the search box when
+            nothing in the pages matched, the pages found did not say, the reply cited no page, or the
+            answer came from the internet or the AI&apos;s own knowledge instead of the wiki - and any
+            answer someone marked <strong>Not helpful</strong>. Questions about the application itself,
+            about one attached file, or sent to the internet from the start (the news, the weather) are
+            not. A question asked with files attached in the chat is collected like any other when
+            the wiki did not answer it.
+          </li>
+          <li>
+            <strong>Not helpful</strong> sits under each answer in the chat and in the search box. It
+            sends the question and the start of the answer here; it can be pressed once per answer.
+          </li>
+          <li>
+            <strong>One entry per question</strong>: the same question typed differently (capitals,
+            accents, punctuation) is one entry, with how many times it was asked, who asked, the other
+            wordings, why it went unanswered, and the pages that came close. A follow-up such as{" "}
+            <em>and how long?</em> is shown as it was understood.
+          </li>
+          <li>
+            <strong>Mark answered</strong> once a page answers it: search for the page and pick it, and
+            everyone who asked gets a notification with a link to it - if they may read it. Without a
+            page the entry is just closed. <strong>Dismiss</strong> closes a question not worth a page;{" "}
+            <strong>Reopen</strong> (under <strong>Resolved</strong>) brings it back, and{" "}
+            <strong>Delete</strong> removes it for good. Asked again later, it comes back as a new entry.
+          </li>
+        </ul>
+        <Callout variant="note" title="PRIVACY">
+          Each question is kept with the name of whoever asked it, so they can be told when it is
+          answered, and removed automatically after <strong>90 days</strong>. Only system administrators
+          see them. Switch <strong>Record questions</strong> off to stop collecting; what was collected
+          stays until it expires or is deleted.
         </Callout>
       </>
     ),
@@ -1870,7 +2008,9 @@ export const sectionsEn: HelpSection[] = [
             <Code>31/01/2026</Code>). <strong>Column widths are fitted to the content</strong>, not
             copied from the sheet: a column of paragraphs gets the room (never narrower than a
             readable line), a column of numbers or codes stays narrow, and a long header wraps
-            rather than widening its column, so rows stay a sensible height. A table with many
+            rather than widening its column, so rows stay a sensible height. A column follows the
+            length most of its cells have, not its longest: a few long cells (notes above the
+            table) wrap rather than widening a whole column of short codes. A table with many
             columns of text scrolls sideways instead of squeezing them. Widths can still be dragged
             in the editor afterwards. A formula comes in as the value it last calculated. Hidden
             sheets, charts, pictures and comments are left out (a hidden sheet is named in the
@@ -3700,6 +3840,11 @@ export const sectionsEn: HelpSection[] = [
             server&apos;s default (60 and 1500 an hour unless <Code>WIKIHUB_AI_RATE_LIMIT</Code> /{" "}
             <Code>WIKIHUB_AI_TRANSLATE_RATE_LIMIT</Code> say otherwise). A change applies within half
             a minute; someone over the limit is told to wait a moment.
+          </li>
+          <li>
+            <strong>Unanswered questions</strong> lists what people asked that the wiki did not answer,
+            or whose answer they marked <Code>Not helpful</Code>, most asked first, with who asked - see{" "}
+            <em>Unanswered questions</em>.
           </li>
           <li>
             <strong>Related pages (knowledge graph)</strong> help the assistant answer questions that

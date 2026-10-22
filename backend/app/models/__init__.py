@@ -9,6 +9,7 @@ from __future__ import annotations
 from app.models.admin_mail import AdminMailbox, AdminRequest, AdminRequestRecipient
 from app.models.ai_connection import AiConnection
 from app.models.ai_embedding_settings import AiEmbeddingSettings
+from app.models.ai_question import AiQuestionGap
 from app.models.ai_skill import AiSkill
 from app.models.ai_web_search_settings import AiWebSearchSettings
 from app.models.attachment import PageAttachment
@@ -24,6 +25,7 @@ from app.models.issue import Issue, IssueAttachment, IssueNote, IssueStatus
 from app.models.notification import Notification
 from app.models.page import PageLike, UserPagePin, WikiPage
 from app.models.page_graph import PageGraphState, PageLink
+from app.models.page_review import PageReview
 from app.models.permission import (
     GlobalPermission,
     Group,
@@ -64,6 +66,7 @@ __all__ = [
     "AdminRequestRecipient",
     "AiConnection",
     "AiEmbeddingSettings",
+    "AiQuestionGap",
     "AiSkill",
     "AiUsage",
     "AiWebSearchSettings",
@@ -98,6 +101,7 @@ __all__ = [
     "PageLike",
     "PageLink",
     "PageRestrictionPermission",
+    "PageReview",
     "PageRevision",
     "PageShare",
     "PageUserRestriction",

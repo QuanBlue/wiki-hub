@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -86,3 +88,77 @@ class SpaceGraphRead(BaseModel):
     #: Pages the reader may see in the space; more than ``nodes`` when capped.
     total_pages: int
     insights: GraphInsights
+
+
+class HealthPage(BaseModel):
+    """A page as the content health report lists it."""
+
+    id: uuid.UUID
+    title: str
+    slug: str
+    space_key: str
+    space_name: str
+    updated_at: datetime
+
+
+class StalePage(BaseModel):
+    page: HealthPage
+    #: When someone last marked it still correct, if ever.
+    reviewed_at: datetime | None = None
+    #: Pages tied to it edited recently, after it: the most recent first.
+    newer: list[HealthPage]
+    newer_count: int
+
+
+class BrokenLink(BaseModel):
+    #: The page holding the link.
+    page: HealthPage
+    href: str
+    target_space_key: str
+    target_slug: str
+    #: The page it pointed at, when there is one the reader may see.
+    target_title: str | None = None
+    #: ``missing`` (no such page: never was, or its address changed), ``trashed`` or
+    #: ``archived_space``.
+    reason: Literal["missing", "trashed", "archived_space"]
+
+
+class DuplicateGroup(BaseModel):
+    #: ``title`` (the same title but for a "(2)") or ``content`` (nearly the same text).
+    kind: Literal["title", "content"]
+    #: How alike, for ``content``.
+    similarity: float | None = None
+    #: The most recently edited first.
+    pages: list[HealthPage]
+
+
+class SpaceHealthRead(BaseModel):
+    stale_days: int
+    recent_days: int
+    stale: list[StalePage]
+    stale_total: int
+    broken_links: list[BrokenLink]
+    broken_total: int
+    orphans: list[HealthPage]
+    orphans_total: int
+    duplicates: list[DuplicateGroup]
+    duplicates_total: int
+    #: Whether nearly identical content was looked for (semantic search is on).
+    semantic: bool
+
+
+class PageReviewRead(BaseModel):
+    reviewed_at: datetime
+
+
+class StaleCheckRequest(BaseModel):
+    #: The language the answer is written in: the reader's.
+    locale: Literal["en", "vi"] = "en"
+
+
+class StaleCheckRead(BaseModel):
+    #: Markdown: what in the page the newer pages contradict or replace, or that nothing does.
+    result: str
+    #: The newer pages it was compared with.
+    compared: list[HealthPage]
+    cached: bool = False

@@ -148,6 +148,45 @@ def asks_about_last_answer(question: str) -> bool:
     return bool(_FOLLOW_ON_CUES.search(fold(question)))
 
 
+#: "Câu hỏi 1", "Câu 2:", "Question 3", "Bài 4", "Q5" - a numbered question of a test or a form,
+#: with the "Trả lời" / "Answer" label an e-learning page puts after it. Folded.
+_QUESTION_MARK = re.compile(
+    r"(?<![a-z0-9])(?:(?:cau hoi|cau|question|bai)\s*|q)(\d{1,2})(?!\d)\s*(?:tra loi|answer)?"
+)
+#: The labels an e-learning page puts around a question, which say nothing about it. Folded.
+_QUESTION_LABELS = re.compile(r"(?<![a-z0-9])(?:hint icon|noi dung cau hoi|question text)")
+
+
+def split_questions(message: str, limit: int = 8) -> list[str]:
+    """The numbered questions of a message that asks several (a test pasted whole), each as
+    its own words; ``[]`` for a message asking one. Only the first ``limit`` are returned.
+
+    A question starts where its number does, and only a number above the last one starts a new
+    question: "Câu hỏi 1 ... Câu hỏi 1Trả lời ..." is one question, and "câu 2" quoted inside
+    question 5 is not a question of its own.
+    """
+    folded = fold(message)
+    starts: list[tuple[int, int]] = []
+    for match in _QUESTION_MARK.finditer(folded):
+        number = int(match.group(1))
+        if not starts or number > starts[-1][1]:
+            starts.append((match.start(), number))
+    if len(starts) < 2:
+        return []
+    questions = []
+    for (start, _), (end, _) in zip(starts, [*starts[1:], (len(message), 0)], strict=True):
+        text, plain = message[start:end], folded[start:end]
+        # fold() keeps every character in place, so what is found in it is cut from the words.
+        cuts = [m.span() for m in _QUESTION_MARK.finditer(plain)]
+        cuts += [m.span() for m in _QUESTION_LABELS.finditer(plain)]
+        for left, right in sorted(cuts, reverse=True):
+            text = text[:left] + " " + text[right:]
+        words = " ".join(text.split()).strip(" :.-")
+        if words:
+            questions.append(words)
+    return questions[:limit]
+
+
 def needs_reasoning(question: str) -> bool:
     """Whether answering takes more than one fact: counting, adding up, comparing, applying a
     rule to a case. Such questions are given more of each page and more pages (a count needs

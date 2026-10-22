@@ -18,11 +18,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import itertools
 import json
 import math
 import re
 import time
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import reduce
@@ -44,6 +46,7 @@ from app.models.space import Space, SpaceStatus
 from app.models.user import User
 from app.modules.ai.config import AIConfig, load_config
 from app.modules.ai.embeddings import EmbeddingError, embed
+from app.modules.attachments.text import table_row_cells
 from app.modules.graph.extract import copy_key
 from app.modules.graph.neighbors import related_pages
 from app.modules.permissions.service import PermissionService
@@ -403,8 +406,13 @@ class SearchService:
         max_pages: int = 5,
         passage_chars: int = 900,
         total_chars: int = 6000,
+        table_rows: bool = False,
     ) -> list[AnswerPassage]:
         """The text a question should be answered from, best page first.
+
+        ``table_rows``: a page's table rows that name what the question asks about are added,
+        each one short, with how many there are - a count or a list over a table of 85 rows
+        cannot be done from a stretch of it (see ``_matching_rows``).
 
         The pages are the ones search lists for ``user`` - so a page they may not read is
         never among them - and the text of each is what matched: the best passages by
@@ -487,6 +495,11 @@ class SearchService:
                 if hit is not None and all(ref.id != hit.id for ref in files):
                     files.append(FileRef(hit.id, hit.filename))
             body = "\n\n".join(part for part in parts if part)[: passage_chars * 2]
+            if table_rows:
+                rows = _matching_rows(
+                    contents.get(result.id, ""), [term for term, _ in weighted], passage_chars * 2
+                )
+                body = "\n\n".join(part for part in (body, rows) if part)
             if not body:
                 continue
             if passages and used + len(body) > total_chars:
@@ -683,10 +696,41 @@ class SearchService:
             logger.warning("search_semantic_unavailable", exc_info=True)
             return []
 
-    async def answer_context(self, query: str, user: User, **limits: int) -> AnswerContext:
+    async def answer_context(
+        self, query: str, user: User, *, table_rows: bool = False, **limits: int
+    ) -> AnswerContext:
         """:meth:`answer_passages` with how well the wiki matched the question."""
-        passages = await self.answer_passages(query, user, **limits)
+        passages = await self.answer_passages(query, user, table_rows=table_rows, **limits)
         return AnswerContext(passages, self.last_confidence if passages else "none")
+
+    async def answer_context_each(
+        self, questions: list[str], user: User, *, total_chars: int = 20000
+    ) -> AnswerContext:
+        """:meth:`answer_context` for a message asking several questions (a test pasted whole).
+
+        Searched as one, the message finds the pages of its first question only; each question
+        is searched on its own instead, with an equal share of ``total_chars``. A page found for
+        several questions is one source holding the passages of each.
+        """
+        share = total_chars // max(len(questions), 1)
+        merged: dict[uuid.UUID, AnswerPassage] = {}
+        rank = {"none": 0, "low": 1, "high": 2}
+        confidence: Literal["high", "low", "none"] = "none"
+        for question in questions:
+            context = await self.answer_context(
+                question, user, max_pages=3, passage_chars=min(1500, share), total_chars=share
+            )
+            if rank[context.confidence] > rank[confidence]:
+                confidence = context.confidence
+            for passage in context.passages:
+                kept = merged.get(passage.page.id)
+                if kept is None:
+                    merged[passage.page.id] = passage
+                    continue
+                if passage.text not in kept.text:
+                    kept.text = f"{kept.text}\n\n...\n\n{passage.text}"
+                kept.files.extend(f for f in passage.files if f not in kept.files)
+        return AnswerContext(list(merged.values()), confidence)
 
     async def _best_passages(
         self, query: str, ids: list[uuid.UUID], config: AIConfig, per_page: int = 2
@@ -1217,6 +1261,158 @@ def _holds(passage: str, terms: list[tuple[str, float]]) -> float:
     """How much of the question a stretch of text holds: the weight of the terms in it."""
     folded = fold(passage)
     return sum(weight for term, weight in terms if term and term in folded)
+
+
+#: A word on more than this share of a table's rows names the table, not the rows asked about.
+_ROW_TERM_SHARE = 0.5
+#: How much more often than the rarest word of the question another may be found and still
+#: pick rows: "Thy" on 2 rows and "Tuân" on 3 both do, "trách" on 9 beside "QuanNT" on 5 not.
+_ROW_RARER = 1.5
+#: A cell this short holds a name, a code or an owner rather than a sentence.
+_ROW_SHORT_CELL = 80
+#: Of a matching row, its first cells (what the row is) and the cells naming the word are kept.
+_ROW_LEAD_CELLS = 4
+_ROW_CELL_CHARS = 200
+#: Words that ask for a count or a list, not about a row ("liệt kê", "đếm", "list"). Folded.
+_ROW_ASKING = frozenset(["liet", "ke", "dem", "tong", "list", "count", "many", "number"])
+
+
+def _squashed(text: str) -> tuple[str, list[int]]:
+    """``text`` folded with all but its letters and digits taken out, and where each one left
+    stands in ``text`` (``fold`` keeps one character for each character)."""
+    folded = fold(text)
+    where = [index for index, char in enumerate(folded) if char.isalnum()]
+    return "".join(folded[index] for index in where), where
+
+
+def _spellings(text: str, term: str) -> list[str]:
+    """Each place ``term`` begins a word of ``text``, as ``text`` writes it there.
+
+    Accents, case and spaces or dashes inside it aside: "quannt" is found in "QuanNT",
+    "QuânNT", "Quan NT" and "Quân - NT" - the one name, written as people happen to - but
+    not inside "ThuQuanNT", where it does not begin a word.
+    """
+    squashed, where = _squashed(text)
+    found: list[str] = []
+    start = squashed.find(term)
+    while start >= 0:
+        first, last = where[start], where[start + len(term) - 1] + 1
+        spelt = text[first:last]
+        begins = first == 0 or not text[first - 1].isalnum()
+        # Run over a space only to end a word there: "Quan NT" is the name, while "tra ch"
+        # cut out of "kiểm tra chéo" is two words that happen to spell it.
+        whole = all(char.isalnum() for char in spelt) or (
+            last == len(text) or not text[last].isalnum()
+        )
+        if begins and whole:
+            found.append(spelt)
+        start = squashed.find(term, start + 1)
+    return found
+
+
+def _joined_terms(terms: list[str], cells: list[str]) -> list[tuple[str, str]]:
+    """Words of the question that a table writes as one: "Quan NT" asked, "QuanNT" there.
+
+    Two neighbouring words, one of them a short initial or two, are joined - and kept only
+    when some cell has the joined word as a word of its own, so "chi bo" never becomes the
+    "chibo" that only the squashed text of "chí bổ sung" would hold.
+    """
+    joined: list[tuple[str, str]] = []
+    for first, second in itertools.pairwise(terms):
+        if min(len(first), len(second)) > 2:
+            continue
+        word = re.compile(rf"(?<![a-z0-9]){re.escape(first + second)}(?![a-z0-9])")
+        if any(word.search(fold(cell)) for cell in cells):
+            joined.append((first, second))
+    return joined
+
+
+def _matching_rows(content: str, terms: list[str], budget: int) -> str:
+    """The rows of a page's tables that hold the question's rarer words, a line each.
+
+    "How many criteria is QuanNT responsible for" over a table of 85 criteria: the answer is
+    the rows naming QuanNT - all of them, and how many - not the stretch of the table that a
+    snippet happens to show. A word on most rows ("criteria" in a table of criteria) picks out
+    nothing and is left out. A name is found however a cell writes it (see ``_spellings``),
+    and the ways it was written are said, so "QuânNT" and "Quan NT" are counted as the one
+    QuanNT they are. Each row keeps its first cells, which say what it is (its number, code,
+    name), and the cells naming the word; within ``budget`` characters, with the number of
+    rows found said first so a count is right even when not all of them fit.
+    """
+    if "<table" not in content or not terms:
+        return ""
+    rows = table_row_cells(content)
+    if len(rows) < 3:
+        return ""
+    asked = [
+        squashed
+        for squashed in dict.fromkeys(re.sub(r"[^a-z0-9]", "", term) for term in terms)
+        if squashed and squashed not in _ROW_ASKING
+    ]
+    every_cell = [cell for row in rows for cell in row if cell]
+    # A name joined back together stands for its pieces: "nt" alone finds every "N/T".
+    for first, second in _joined_terms(asked, every_cell):
+        asked = [term for term in asked if term not in (first, second)] + [first + second]
+    # For each row, each word: the cells naming it, and how they write it.
+    named: list[dict[str, dict[int, list[str]]]] = []
+    for row in rows:
+        by_term: dict[str, dict[int, list[str]]] = {}
+        for term in asked:
+            cells = {k: spelt for k, cell in enumerate(row) if (spelt := _spellings(cell, term))}
+            if cells:
+                by_term[term] = cells
+        named.append(by_term)
+    # A word on most rows names the table, not the rows asked about.
+    found = Counter(
+        {
+            term: count
+            for term, count in Counter(t for by_term in named for t in by_term).items()
+            if count <= len(rows) * _ROW_TERM_SHARE
+        }
+    )
+    if not found:
+        return ""
+    # A name, a code or an owner sits in short cells ("- Quân NT + Thy"), a common word in
+    # the long ones ("trách nhiệm" in a paragraph): when the question names one, it picks the
+    # rows - "quannt" on 20 rows, not "trach" on 8 that are about something else.
+    short = Counter(
+        term
+        for index, by_term in enumerate(named)
+        for term, cells in by_term.items()
+        if any(len(rows[index][k]) <= _ROW_SHORT_CELL for k in cells)
+    )
+    naming = {term: count for term, count in found.items() if 2 * short[term] >= count}
+    pool = naming or dict(found)
+    # The rarest of them pick the rows, with any about as rare ("Thy và Tuân").
+    ceiling = max(_ROW_RARER * min(pool.values()), 2)
+    rare = [term for term in asked if 0 < pool.get(term, 0) <= ceiling]
+    hits = [index for index, by_term in enumerate(named) if any(t in by_term for t in rare)]
+    shown: list[str] = []
+    used = 0
+    for index in hits:
+        cells = rows[index]
+        keep = [k for k, cell in enumerate(cells) if cell][:_ROW_LEAD_CELLS]
+        keep += sorted({k for term in rare for k in named[index].get(term, {})} - set(keep))
+        line = " | ".join(cells[k][:_ROW_CELL_CHARS] for k in sorted(keep))
+        if used + len(line) > budget:
+            break
+        shown.append(line)
+        used += len(line)
+    names = []
+    for term in rare:
+        written = dict.fromkeys(
+            spelt
+            for by_term in named
+            for spelt_in_cells in by_term.get(term, {}).values()
+            for spelt in spelt_in_cells
+        )
+        names.append(" / ".join(written))
+    head = f"Table rows naming {'; '.join(names)}: {len(hits)}"
+    if len(shown) < len(hits):
+        head += f" ({len(shown)} shown)"
+    if any(" / " in name for name in names):
+        head += " - one name written in several ways (accents, case or spacing), counted once"
+    return "\n".join([head, *shown])
 
 
 def _readable_text(markup: str) -> str:

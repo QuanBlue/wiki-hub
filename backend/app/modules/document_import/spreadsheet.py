@@ -73,6 +73,10 @@ _READABLE_CHARS = 32
 #: How much wider than its columns' minimums a table that has to scroll anyway
 #: is allowed to be, so its text columns are not all left at the bare minimum.
 _SCROLLING_ROOM = 1.3
+#: A column's width follows its usual cell, not its longest: the longest this
+#: share of its cells wrap instead. Below ``_FEW_CELLS`` cells, all count.
+_OUTLIER_SHARE = 0.15
+_FEW_CELLS = 8
 
 _HEX_RGB = re.compile(r"^(?:[0-9A-Fa-f]{2})?([0-9A-Fa-f]{6})$")
 _LINK_SCHEMES = ("http://", "https://", "mailto:")
@@ -324,10 +328,16 @@ def fit_column_widths(grid: list[list[_Cell | None]]) -> list[int]:
     The header row counts only towards the minimum: a long title over a column
     of short values should wrap, not widen the column. Cells merged across
     columns are left out, since their text belongs to no one column.
+
+    A column is as wide as its cells usually are, not as its longest one: in
+    a column of codes ("GG-LEG-01"), the few notes above the table ("Gởi kết
+    quả Rà soát/đánh giá") or a second header row wrap onto two lines rather
+    than widening every row of codes to their length.
     """
     columns = max((len(row) for row in grid), default=0)
     least = [0] * columns
-    most = [0] * columns
+    titles = [0] * columns
+    lines: list[list[int]] = [[] for _ in range(columns)]
     volume = [0] * columns
     for index, row in enumerate(grid):
         for column, cell in enumerate(row):
@@ -336,11 +346,11 @@ def fit_column_widths(grid: list[list[_Cell | None]]) -> list[int]:
             longest_word = max(len(word) for word in cell.text.split())
             least[column] = max(least[column], min(longest_word, _MAX_WORD_CHARS))
             if index == 0:
-                most[column] = max(most[column], longest_word)
+                titles[column] = max(titles[column], longest_word)
                 continue
-            longest_line = max(len(line) for line in cell.text.split("\n"))
-            most[column] = max(most[column], longest_line)
+            lines[column].append(max(len(line) for line in cell.text.split("\n")))
             volume[column] += len(cell.text)
+    most = [max(title, _usual(found)) for title, found in zip(titles, lines, strict=True)]
     minimum = [
         _chars_px(max(word, min(line, _READABLE_CHARS)))
         for word, line in zip(least, most, strict=True)
@@ -367,6 +377,20 @@ def fit_column_widths(grid: list[list[_Cell | None]]) -> list[int]:
                 growing.discard(column)
         spare -= given
     return [round(width) for width in widths]
+
+
+def _usual(lengths: list[int]) -> int:
+    """The line length most of a column's cells stay within: all but the longest few.
+
+    With a handful of cells every one counts (a short table has no outliers to
+    speak of); with more, the longest ``_OUTLIER_SHARE`` of them are let wrap.
+    """
+    if not lengths:
+        return 0
+    ordered = sorted(lengths)
+    if len(ordered) < _FEW_CELLS:
+        return ordered[-1]
+    return ordered[min(len(ordered) - 1, int(len(ordered) * (1 - _OUTLIER_SHARE)))]
 
 
 def _rgb(color: Any) -> str | None:

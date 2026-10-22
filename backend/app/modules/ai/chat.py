@@ -29,10 +29,12 @@ from app.core import rate_limit
 from app.core.exceptions import ServiceUnavailableError
 from app.core.logging import get_logger
 from app.models.user import User
+from app.modules.ai import chat_files, question_gaps
 from app.modules.ai.actions import plan_from_reply
 from app.modules.ai.answer import (
     _FRAMING_TAGS,
     _NOT_FOUND,
+    _excerpt,
     answer_messages,
     normalise_citations,
     prompt_text,
@@ -72,16 +74,23 @@ from app.modules.ai.websearch import (
     read_pages,
     search_web,
 )
-from app.modules.search.query import asks_about_last_answer, needs_reasoning, wants_full_list
+from app.modules.search.query import (
+    asks_about_last_answer,
+    needs_reasoning,
+    split_questions,
+    wants_full_list,
+)
 from app.modules.search.service import SearchService
 from app.modules.stats.recorder import record_ai_usage
 from app.schemas.ai import (
+    CHAT_HISTORY_CHARS,
     CHAT_MAX_MESSAGES,
     AnswerAction,
     AnswerResult,
     AnswerSource,
     ChatMessage,
     ChatRequest,
+    FileSource,
     WebSource,
 )
 
@@ -178,15 +187,18 @@ _BLOCK_MARK = re.compile(r"[ ]?\[(?:app_guide|account|space_keys|topic|help)\]",
 #: The kinds of reply that are shown as they are written (the others are read by the server).
 _SHOWN = ("answer", "general", "ask", "app")
 _WEB_CITATION = re.compile(r"[ ]?\[w(\d{1,2})\]")
+#: ``[f1]``: a file the person attached in the chat.
+_FILE_CITATION = re.compile(r"[ ]?\[f(\d{1,2})\]")
 
 
 def _history(turns: list[ChatMessage]) -> list[dict[str, str]]:
-    """Earlier turns as chat messages: cleaned, alternating, starting with the user."""
+    """Earlier turns as chat messages: cleaned, alternating, starting with the user, each cut
+    to ``CHAT_HISTORY_CHARS`` - the question being asked now is what needs the room."""
     messages: list[dict[str, str]] = []
     for turn in turns[-CHAT_MAX_MESSAGES:]:
-        text = prompt_text(turn.content)
+        text = prompt_text(turn.content)[:CHAT_HISTORY_CHARS]
         if turn.role == "assistant":
-            text = _CITATION.sub("", text)
+            text = _FILE_CITATION.sub("", _CITATION.sub("", text))
         if not text:
             continue
         if messages and messages[-1]["role"] == turn.role:
@@ -248,12 +260,20 @@ def finish(
     web_sources: list[WebSource],
     *,
     searched: bool = False,
+    files: list[FileSource] | None = None,
 ) -> AnswerResult:
-    """Turn the model's reply into a result - an answer only when it stands on something."""
+    """Turn the model's reply into a result - an answer only when it stands on something.
+
+    ``files`` are the files the person attached in the chat: a fact cited to one of them
+    (``[f1]``) stands on it as one cited to a page does.
+    """
+    files = files or []
     if mode == "not_found":
         return AnswerResult(found=False, reason="not_in_pages", related=sources)
     if mode in ("general", "ask", "app"):
-        cleaned = scrub_secrets(_BLOCK_MARK.sub("", _CITATION.sub("", text))).strip()
+        cleaned = scrub_secrets(
+            _BLOCK_MARK.sub("", _FILE_CITATION.sub("", _CITATION.sub("", text)))
+        ).strip()
         if not cleaned:
             return AnswerResult(found=False, reason="ungrounded")
         if mode == "app":
@@ -276,11 +296,29 @@ def finish(
             cited_web.append(number)
         return match.group(0)
 
-    without_bad_marks = _WEB_CITATION.sub(keep_web, text)
+    offered_files = {source.n for source in files}
+    cited_files: list[int] = []
+
+    def keep_file(match: re.Match[str]) -> str:
+        number = int(match.group(1))
+        if number not in offered_files:
+            return ""
+        if number not in cited_files:
+            cited_files.append(number)
+        return match.group(0)
+
+    without_bad_marks = _FILE_CITATION.sub(keep_file, _WEB_CITATION.sub(keep_web, text))
     cleaned, cited = normalise_citations(without_bad_marks, {source.n for source in sources})
     cleaned = scrub_secrets(cleaned).strip()
     if not cleaned:
         return AnswerResult(found=False, reason="ungrounded", related=sources)
+    file_by_number = {source.n: source for source in files}
+    cited_file_sources = [file_by_number[n] for n in cited_files]
+    if not cited and not cited_web and cited_files:
+        # Read from the person's own file alone: grounded, though no page says it.
+        return AnswerResult(
+            found=True, answer=cleaned, related=sources, file_sources=cited_file_sources
+        )
     if not cited and not cited_web:
         if web_sources:
             # Written from the pages the search found, but without marks: they are still the
@@ -299,6 +337,7 @@ def finish(
         sources=[by_number[n] for n in cited],
         related=[source for source in sources if source.n not in cited],
         web_sources=[web_by_number[n] for n in cited_web],
+        file_sources=cited_file_sources,
     )
 
 
@@ -355,6 +394,10 @@ class ChatTurn:
     may_create_space: bool = False
     #: Buttons for the pages the question is about; shown with an answer that is not from the wiki.
     actions: list[AnswerAction] = field(default_factory=list)
+    #: Asked about one attached file ("Ask about this file"), not the wiki.
+    scoped: bool = False
+    #: The files the person attached in the chat that the model was given, as ``[f1]``...
+    file_sources: list[FileSource] = field(default_factory=list)
 
     def _with_actions(self, result: AnswerResult) -> AnswerResult:
         """Add the buttons - unless pages answered, when they would only be noise."""
@@ -435,9 +478,7 @@ class ChatTurn:
     async def events(self) -> AsyncIterator[dict]:
         """What the browser is sent: ``start``, ``delta``, maybe ``searching``, then the end."""
         if self.finished is not None:
-            self._log("no_match")
-            finished = self._with_actions(self.finished)
-            yield {"type": "done", "result": finished.model_dump(mode="json")}
+            yield await self._done("no_match", self._with_actions(self.finished))
             return
 
         yield {"type": "start", "pages": len(self.sources)}
@@ -447,8 +488,7 @@ class ChatTurn:
         trigger_text, trigger_mode = "", ""
         if self.route == "ask":
             result = AnswerResult(found=True, answer=self.route_text, basis="clarify")
-            self._log("routed_ask", result)
-            yield {"type": "done", "result": result.model_dump(mode="json")}
+            yield await self._done("routed_ask", result)
             return
         try:
             async with asyncio.timeout(CHAT_DEADLINE_SECONDS):
@@ -473,15 +513,12 @@ class ChatTurn:
                         if first.usage is not None:
                             await self._record(first.usage)
                         result = AnswerResult(found=True, answer=look.text, basis="clarify")
-                        self._log("reviewed_ask", result)
-                        yield {"type": "done", "result": result.model_dump(mode="json")}
+                        yield await self._done("reviewed_ask", result)
                         return
                 if trigger_mode in ("search", "weather"):
                     searched = await self._search(trigger_text, weather=trigger_mode == "weather")
                     if isinstance(searched, AnswerResult):
-                        self._log(searched.reason)
-                        searched = self._with_actions(searched)
-                        yield {"type": "done", "result": searched.model_dump(mode="json")}
+                        yield await self._done(searched.reason, self._with_actions(searched))
                         return
                     query, results = searched
                     yield {"type": "searching", "query": query}
@@ -521,8 +558,7 @@ class ChatTurn:
                 await self._record(used)
         if final.mode == "plan":
             result = await self._plan(_after(_PLAN, final.text))
-            self._log(result.reason or result.basis, result)
-            yield {"type": "done", "result": result.model_dump(mode="json")}
+            yield await self._done(result.reason or result.basis, result)
             return
         if final.mode == "general":
             text = _after(_GENERAL, final.text)
@@ -543,15 +579,38 @@ class ChatTurn:
             self.sources,
             web_sources,
             searched=trigger_mode in ("search", "weather"),
+            files=self.file_sources,
         )
         if final.mode == "answer" and self.topical and result.reason == "ungrounded":
             # Nothing cites a page, but the question is about the application and its account and
             # guide were offered: an answer from them that left out the APP: marker, not a guess
             # about the wiki. (Words that merely also occur in Help do not count as a topic.)
-            result = finish(text, "app", self.sources, web_sources)
+            result = finish(text, "app", self.sources, web_sources, files=self.file_sources)
         result = self._with_actions(result)
-        self._log(result.reason or result.basis, result)
-        yield {"type": "done", "result": result.model_dump(mode="json")}
+        yield await self._done(result.reason or result.basis, result)
+
+    async def _done(self, outcome: str, result: AnswerResult) -> dict:
+        """Log how the turn went, note a question the wiki did not answer, and end the reply.
+
+        A question about one attached file says nothing about what the wiki lacks, and one sent
+        to the internet from the start (the news, the weather, "search the web") was never the
+        wiki's to answer; neither is noted unless nothing at all came back.
+        """
+        self._log(outcome, result)
+        if (
+            self.session is not None
+            and not self.scoped
+            and (self.route == "wiki" or not result.found)
+        ):
+            await question_gaps.record(
+                self.session,
+                self.user,
+                question=self.question,
+                standalone=self.standalone if self.standalone != self.question else None,
+                surface="chat",
+                result=result,
+            )
+        return {"type": "done", "result": result.model_dump(mode="json")}
 
     def _worth_a_second_look(self, first: _Pass) -> bool:
         """Whether the first pass ended somewhere a person would be let down.
@@ -564,7 +623,10 @@ class ChatTurn:
             return False
         if first.mode in ("not_found", "general"):
             return True
-        return not self.topical and not finish(first.text, "answer", self.sources, []).found
+        return (
+            not self.topical
+            and not finish(first.text, "answer", self.sources, [], files=self.file_sources).found
+        )
 
     async def _second_look(self, first: _Pass) -> Verdict:
         """What a second look at the reply says to do: keep it, search the web, or ask."""
@@ -736,24 +798,62 @@ class ChatService:
             if earlier:
                 # The two before it: the one asked just before may itself be a follow-up.
                 query = " ".join(earlier[-2:])[-_QUERY_CHARS:].strip()
+        # A test pasted whole: each question is searched, and answered, on its own.
+        several = [] if continuing else split_questions(question)
+        # Files the person attached in the chat: read with the pages, never instead of them.
+        # Refused here, before anything is searched or sent, when one has expired.
+        files = (
+            []
+            if scoped or not request.file_ids
+            else await chat_files.load(self.user, request.file_ids)
+        )
+        # What the files ask, or are about, is searched in the wiki too: "answer the questions
+        # in the attached file" names none of them itself. Only when the question is about the
+        # files: they stay with the conversation, and a later question about something else
+        # must not search for a spreadsheet attached three questions ago.
+        on_files = bool(files) and (
+            chat_files.mentions_files(question) or chat_files.mentions_files(query)
+        )
+        about_files = chat_files.queries(files, _QUERY_CHARS) if on_files else []
+        # A file holding a test is answered question by question, as a test pasted whole is.
+        file_test = on_files and any(split_questions(file.text) for file in files)
         # A count, a comparison or a rule applied to a case needs whole tables and more pages.
         reasoning = continuing or needs_reasoning(question) or needs_reasoning(query)
         # A whole list (33 servers with their addresses) runs long: room for it.
-        long_reply = continuing or wants_full_list(question) or wants_full_list(query)
+        long_reply = (
+            continuing
+            or bool(several)
+            or file_test
+            or wants_full_list(question)
+            or wants_full_list(query)
+        )
         if request.attachment_id is not None:
             # One file, like a notebook with one source: nothing else is read or searched.
             context = await SearchService(self.session).file_context(
                 request.attachment_id, query, self.user
             )
             web = OFF
+        elif several or about_files:
+            context = await SearchService(self.session).answer_context_each(
+                list(dict.fromkeys([*(several or [query]), *about_files]))[:10],
+                self.user,
+                total_chars=REASONING_LIMITS["total_chars"],
+            )
         else:
             context = await SearchService(self.session).answer_context(
                 query,
                 self.user,
+                # A count or a list over a table needs the rows that name what is asked about.
+                table_rows=reasoning or long_reply,
                 # A detailed answer, like one that works something out, needs more to read.
                 **(REASONING_LIMITS if reasoning or request.detail == "detailed" else {}),
             )
         passages = context.passages
+        attached = chat_files.passages(files, several or list(dict.fromkeys([question, query])))
+        file_sources = [
+            FileSource(n=number, filename=filename, excerpt=_excerpt(text))
+            for number, (filename, text) in enumerate(attached, start=1)
+        ]
         retrieval = time.perf_counter() - started
 
         # What the question is about in the application itself (the person's own account, a
@@ -777,7 +877,7 @@ class ChatService:
         spaces = await visible_spaces(self.session, self.user) if topics else []
         actions = actions_for(topics, viewer, spaces)
 
-        if not passages and not web.ready and not app:
+        if not passages and not attached and not web.ready and not app:
             return ChatTurn(
                 config,
                 self.user,
@@ -787,6 +887,10 @@ class ChatService:
                 len(query),
                 started,
                 retrieval,
+                question=question,
+                standalone=query,
+                session=self.session,
+                scoped=scoped,
             )
 
         if not spent:
@@ -794,13 +898,18 @@ class ChatService:
         sources = sources_of(passages)
         # Where it is answered, decided now when it can be: see ``_route``.
         decided, routed_calls = ("wiki", ""), 0
-        if web.ready and not topics:
+        # A question with files attached is about them: the first pass reads them, and only a
+        # reply that finds nothing is looked at again.
+        if web.ready and not topics and not attached:
             decided, routed_calls = await self._route(
                 config, question, query, context.confidence, sources
             )
         messages = answer_messages(
-            query,
+            # The search query is cut short; a long message (a test of six questions) is read
+            # whole, or only its first question is answered. The earlier turns are in history.
+            question if several or len(question) > _QUERY_CHARS else query,
             [(s.n, s.title, p.text) for s, p in zip(sources, passages, strict=True)],
+            [(f.n, f.filename, text) for f, (_, text) in zip(file_sources, attached, strict=True)],
         )
         plan = any(topic.plan for topic in topics)
         if app:
@@ -827,6 +936,8 @@ class ChatService:
                 detail=request.detail,
                 reasoning=reasoning,
                 continuing=continuing,
+                several=bool(several) or file_test,
+                files=bool(attached),
             ),
         }
         messages = [system, *_history(turns[:-1]), messages[-1]]
@@ -848,7 +959,12 @@ class ChatService:
             standalone=query,
             max_tokens=max(
                 DETAIL_TOKENS[request.detail],
-                LONG_REPLY_TOKENS if long_reply else REASONING_TOKENS if reasoning else 0,
+                LONG_REPLY_TOKENS
+                if long_reply
+                # A file is often to be summarised or checked whole: room to say so.
+                else REASONING_TOKENS
+                if reasoning or attached
+                else 0,
             ),
             detail=request.detail,
             app=app,
@@ -857,6 +973,8 @@ class ChatService:
             session=self.session,
             may_create_space=viewer.may("create_space"),
             actions=actions,
+            scoped=scoped,
+            file_sources=file_sources,
         )
 
     async def _route(

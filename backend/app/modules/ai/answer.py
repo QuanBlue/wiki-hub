@@ -23,6 +23,7 @@ from app.core.exceptions import ServiceUnavailableError
 from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.models.user import User
+from app.modules.ai import question_gaps
 from app.modules.ai.client import chat_with_usage
 from app.modules.ai.config import load_config
 from app.modules.ai.limits import ai_rate_limit
@@ -86,7 +87,9 @@ def scrub_secrets(text: str) -> str:
 
 #: The tags that frame the question and the sources: text from a page must not be able to
 #: close them and open its own.
-_FRAMING_TAGS = re.compile(r"</?\s*(?:web_sources?|sources?|question)\b[^>]*>", re.IGNORECASE)
+_FRAMING_TAGS = re.compile(
+    r"</?\s*(?:web_sources?|file_sources?|sources?|question)\b[^>]*>", re.IGNORECASE
+)
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
@@ -95,19 +98,31 @@ def prompt_text(text: str) -> str:
     return _FRAMING_TAGS.sub(" ", _CONTROL.sub("", scrub_secrets(text))).strip()
 
 
-def answer_messages(query: str, sources: list[tuple[int, str, str]]) -> list[dict[str, str]]:
-    """The chat messages for one question: ``sources`` are ``(number, page title, passage)``."""
+def answer_messages(
+    query: str,
+    sources: list[tuple[int, str, str]],
+    files: list[tuple[int, str, str]] | None = None,
+) -> list[dict[str, str]]:
+    """The chat messages for one question: ``sources`` are ``(number, page title, passage)``,
+    ``files`` the files attached in the chat as ``(number, file name, text)``."""
     blocks = []
     for number, title, passage in sources:
         safe_title = _FRAMING_TAGS.sub(" ", title).replace('"', "'")
         blocks.append(
             f'<source n="{number}" title="{safe_title}">\n{prompt_text(passage)}\n</source>'
         )
+    attached = []
+    for number, filename, text in files or []:
+        safe_name = _FRAMING_TAGS.sub(" ", filename).replace('"', "'")
+        attached.append(
+            f'<file_source n="f{number}" title="{safe_name}">\n{prompt_text(text)}\n</file_source>'
+        )
     body = "\n".join(
         [
             "<question>",
             _FRAMING_TAGS.sub(" ", query),
             "</question>",
+            *(["<file_sources>", *attached, "</file_sources>"] if attached else []),
             "<sources>",
             *blocks,
             "</sources>",
@@ -216,7 +231,7 @@ class AnswerService:
         retrieval = time.perf_counter() - started
         if not passages:
             self._log("no_match", query, 0, retrieval, started)
-            return AnswerResult(found=False, reason="no_match")
+            return await self._noted(query, AnswerResult(found=False, reason="no_match"))
 
         sources = sources_of(passages)
         key = self._cache_key(query, config.model, passages)
@@ -232,7 +247,7 @@ class AnswerService:
             if result is not None:
                 result.cached = True
                 self._log("cached", query, len(sources), retrieval, started)
-                return result
+                return await self._noted(query, result)
 
         # Only a question that reaches the model counts against the person's quota.
         await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
@@ -271,6 +286,18 @@ class AnswerService:
         except (RedisError, OSError):
             logger.debug("ai_answer_cache_write_failed")
         self._log(result.reason or "answered", query, len(sources), retrieval, started, result)
+        return await self._noted(query, result)
+
+    async def _noted(self, query: str, result: AnswerResult) -> AnswerResult:
+        """Keep a question the wiki did not answer for the administrators (see question_gaps)."""
+        await question_gaps.record(
+            self.session,
+            self.user,
+            question=query,
+            standalone=None,
+            surface="search",
+            result=result,
+        )
         return result
 
     @staticmethod

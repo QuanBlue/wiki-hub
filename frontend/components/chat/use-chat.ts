@@ -6,6 +6,7 @@ import type { AnswerResult } from "@/lib/ai-answer";
 import {
   ChatStreamError,
   clearStoredChats,
+  conversationFiles,
   EMPTY_CHAT,
   executePlan,
   type ChatDetail,
@@ -13,6 +14,7 @@ import {
   messagesToSend,
   saveChat,
   streamChat,
+  type AttachedFile,
   type ChatEntry,
   type ChatState,
 } from "@/lib/ai-chat";
@@ -36,6 +38,7 @@ function finished(result: AnswerResult): Partial<Assistant> {
     related: result.related,
     basis: result.basis ?? "wiki",
     webSources: result.web_sources ?? [],
+    fileSources: result.file_sources ?? [],
     actions: result.actions ?? [],
     plan: result.plan
       ? {
@@ -129,8 +132,35 @@ export function useChat(
     (entry) => entry.role === "assistant" && entry.status === "streaming",
   );
 
+  /** The server no longer has this file (or, unnamed, any of them): shown as expired, not sent. */
+  const expire = useCallback(
+    (fileId: string | undefined) => {
+      const { entries, slots } = stateRef.current;
+      commit({
+        slots,
+        entries: entries.map((entry) =>
+          entry.role === "user" && entry.files?.length
+            ? {
+                ...entry,
+                files: entry.files.map((file) =>
+                  !fileId || file.id === fileId
+                    ? { ...file, expired: true }
+                    : file,
+                ),
+              }
+            : entry,
+        ),
+      });
+    },
+    [commit],
+  );
+
+  /**
+   * Ask a question. ``files`` are the ones attached with it; the files of the questions before
+   * it are read again too, so a follow-up still knows them.
+   */
   const send = useCallback(
-    async (text: string, slot?: string) => {
+    async (text: string, slot?: string, files: AttachedFile[] = []) => {
       const question = text.trim();
       if (!question || controllerRef.current) return;
 
@@ -148,9 +178,13 @@ export function useChat(
           role: "user",
           content: question,
           ...(slot ? { slot } : {}),
+          ...(files.length ? { files } : {}),
         },
       ];
       const toSend = messagesToSend(withQuestion);
+      const fileIds = conversationFiles(withQuestion)
+        .filter((file) => !file.expired)
+        .map((file) => file.id);
       commit({ entries: [...withQuestion, reply], slots });
 
       const controller = new AbortController();
@@ -160,6 +194,7 @@ export function useChat(
           signal: controller.signal,
           detail: detailRef.current,
           attachmentId: fileRef.current,
+          fileIds: fileRef.current ? [] : fileIds,
           onDelta: (piece) =>
             patchAssistant(reply.id, (entry) => ({
               content: entry.content + piece,
@@ -177,17 +212,22 @@ export function useChat(
         settle(slot);
       } catch (error) {
         if (controller.signal.aborted) return; // stopped on purpose: stop() has tidied up
+        const failure =
+          error instanceof ChatStreamError ? error.failure : "error";
+        if (failure === "file_expired") {
+          expire(error instanceof ChatStreamError ? error.fileId : undefined);
+        }
         patchAssistant(reply.id, () => ({
           status: "error",
           content: "",
-          failure: error instanceof ChatStreamError ? error.failure : "error",
+          failure,
         }));
         settle(slot);
       } finally {
         if (controllerRef.current === controller) controllerRef.current = null;
       }
     },
-    [commit, patchAssistant, settle],
+    [commit, expire, patchAssistant, settle],
   );
 
   /**
@@ -224,7 +264,8 @@ export function useChat(
           },
         },
       });
-      void send(text, slotId);
+      // The edited question keeps the files the first version was sent with.
+      void send(text, slotId, first.role === "user" ? first.files : undefined);
     },
     [commit, send],
   );
@@ -289,7 +330,7 @@ export function useChat(
       return;
     }
     commit({ entries: entries.slice(0, -2), slots });
-    void send(asked.content, asked.slot);
+    void send(asked.content, asked.slot, asked.files);
   }, [commit, send]);
 
   /**

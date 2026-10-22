@@ -131,7 +131,13 @@ All captures are of the current interface, taken on 18 October 2026.
   and Picture-in-Picture), PDFs, and in-place editing of Word/Excel/PowerPoint via
   an embedded ONLYOFFICE Document Server.
 - **Document import with a review** — turn Word, PDF, HTML, Markdown, EPUB, ODT or RTF
-  files into pages, up to 20 at a time, in a background job with per-file progress. Optionally
+  files into pages, up to 20 at a time, in a background job with per-file progress. Excel and
+  CSV files become tables (a workbook of several sheets becomes a page with a child page per
+  sheet; merged cells, bold, colours, links and number formats carry over), and a Google Sheet or
+  Google Doc shared by link is imported from its link alone. Column widths are fitted to what a
+  column usually holds rather than copied from the sheet: a column of codes stays narrow even
+  when a few notes above the table are long (they wrap), a column of paragraphs gets the room,
+  and a table of many text columns scrolls sideways instead of squeezing them. Optionally
   (on by default) each page is then **reviewed against its file**: the original is read again
   on its own (Word paragraphs and styles, HTML blocks, PDF text blocks) and compared with the
   page — lost text, heading levels, lists, code and quotes that became paragraphs, broken
@@ -228,6 +234,33 @@ All captures are of the current interface, taken on 18 October 2026.
     be copied or edited, and an edited question keeps its earlier versions to switch back
     to (`‹ 1 / 2 ›`), each with what followed it. Select any words to explain or translate
     them, as on a page.
+  - **Files, tests and long questions in the chat** — a question can be up to 4,000
+    characters (a counter shows near the end), and pasting more than the box takes attaches
+    the words as a text file instead. The paper clip (or dropping files anywhere on the panel,
+    which shows a drop area, or pasting a file) attaches up to 3 files a conversation — Word,
+    PDF, Excel, CSV, HTML, Markdown or text, 20 MB each. Only their words are kept, for the person
+    alone and for a day after the last question, never in the wiki. The files show on the
+    question they were sent with, every later question reads them too, and the answer looks in
+    them **first**, using the wiki to complete or check them; they are cited `[f1]`, `[f2]`, a
+    mark opening what was read. A long file gives its opening and the paragraphs or table rows
+    (one line per row, a merged cell repeated on every row it covers) that match the question.
+    A test pasted whole, or attached, with numbered questions (*Câu hỏi 1*, *Question 2*…) is
+    searched and answered question by question, in order, with the right option of each
+    multiple-choice question.
+  - **Counting and listing over a table** — *how many criteria is QuanNT responsible for?*
+    over a table of 85 rows reads every row naming what was asked and the number found, not a
+    stretch of the table. A name is found however it is written (QuanNT, QuânNT, Quan NT, Quân NT
+    are one), preferring a name in short cells (an owner column) to a rarer word of prose.
+  - **Related pages and a page map** — WikiHub works out which pages belong together from
+    links, names and similar content, lists them under each page, shows them on a map of the
+    space, and the assistant reads a found page's neighbours too.
+  - **Content health** — space Owners and Admins open a report of pages that may be out of
+    date (not edited while pages tied to them were, with *Check with AI* and *Still correct*),
+    broken links, orphan pages and duplicates: the four checks on the left with their counts
+    and a total, the chosen list on the right in a window of one size.
+  - **Unanswered questions** — what the chat and the search box could not answer from the
+    pages, or whose answer was marked *Not helpful*, grouped by question with who asked and the
+    pages that came close; *Mark answered* with a page notifies everyone who asked.
   - **A chat that knows you and WikiHub** — *which spaces can I open?*, *what is my role in
     OPS?*, *how do I change my password?*, *can it back up on a schedule?* are answered from
     your own spaces, roles and permissions (read on the server, only yours) and from the
@@ -282,7 +315,10 @@ All captures are of the current interface, taken on 18 October 2026.
     enables and disables from the UI (a card shows install progress, memory and CPU; models
     are downloaded and chosen in one dropdown; memory, cores and keep-alive are tunable).
     Ollama is controlled by a tiny sidecar that alone holds the Docker socket and does
-    only five fixed things; an unused Ollama costs no memory.
+    only five fixed things; an unused Ollama costs no memory. The words inside files attached
+    to pages (Word, Excel, PDF, HTML…) are read and indexed with their page, so search finds
+    them and the assistant answers from them — or, with *Ask about this file*, from one file
+    alone.
   - **Not set up yet?** Every AI control stays visible and explains what is missing:
     an administrator gets the three steps and a link to the settings, everyone else
     is told to ask an administrator (the settings link is never shown to them).
@@ -291,11 +327,16 @@ All captures are of the current interface, taken on 18 October 2026.
     a connection and pick a model from what it offers; and edit the instructions
     behind each feature as *skills* (summary, create page, explain, translate, writing assistant, labels and related pages)
     with one-click reset to the built-in wording. *Semantic search* and *Web search* have
-    their own tabs.
+    their own tabs, and *Usage limits* set how many AI calls one person may make an hour
+    (and, separately, document translation calls).
   - **Server monitor** — *Administration → Server* shows the machine's load, memory,
     swap, disk and uptime and WikiHub's own Docker containers (never other services on the
     host) with uptime, CPU, memory and health, sortable by header, plus their last log lines
     with credentials hidden. Read-only: nothing there can stop or change anything.
+- **Statistics** — *Administration → Statistics* shows, for 7, 30 or 90 days, users, people
+  active, edits, page views and AI token use, people active per day and how long one spends
+  using WikiHub (only while a visible tab is read, typed in or clicked), and the most viewed,
+  starred and saved pages and spaces.
 - **Issue tracker** — anyone reports a problem (with screenshots and labels);
   issue managers claim, assign, note and close it, one at a time or in bulk.
   **Export Word** turns one issue, or every ticked issue in one file with a
@@ -617,7 +658,7 @@ What's genuinely still open:
 | Kubernetes manifests / Helm chart | Not written — only the Dockerfiles in [`deploy/docker/`](deploy/docker) exist today |
 | `docs/import-confluence.md`, `docs/export.md`, `docs/deployment.md`, `docs/database.md`, `docs/api.md`, `docs/authentication.md`, `docs/permissions.md` | Not written yet |
 | E-mail notifications (password changes, access requests, deactivation) | Planned |
-| AI-assisted search & authoring — **done:** TL;DR summaries, create page with AI, explain/translate a selection, an in-editor writing assistant, label and related-page suggestions, cited Q&A in search, a multi-turn chat (with optional web search, weather and page reading), hybrid and semantic search with an optional self-hosted Ollama. **Still open:** stale-content detection | Partly shipped — see [`TODO`](TODO) |
+| AI-assisted search & authoring — **done:** TL;DR summaries, create page with AI, explain/translate a selection, an in-editor writing assistant, label and related-page suggestions, cited Q&A in search, a multi-turn chat (with optional web search, weather and page reading), hybrid and semantic search with an optional self-hosted Ollama, a knowledge graph of related pages, a per-space content health report (stale pages with an AI check, broken links, orphans, duplicates) and the unanswered questions the wiki is missing | Done |
 
 The live, actively-worked list — including whatever is in progress right
 now — is [`TODO`](TODO).

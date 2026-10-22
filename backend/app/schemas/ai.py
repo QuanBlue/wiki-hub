@@ -500,6 +500,25 @@ class WebSource(BaseModel):
     snippet: str
 
 
+class FileSource(BaseModel):
+    """A file attached in the chat that the answer was read from."""
+
+    #: The number the answer cites it by: ``[f1]``.
+    n: int
+    filename: str
+    #: The part of the file the answer was read from.
+    excerpt: str
+
+
+class ChatFileRead(BaseModel):
+    """A file attached in the chat, read and kept for a day (only its words, never the file)."""
+
+    id: uuid.UUID
+    filename: str
+    #: How many characters of text were read from it.
+    chars: int
+
+
 class AnswerAction(BaseModel):
     """A button under an answer that opens a page of the application."""
 
@@ -564,6 +583,8 @@ class AnswerResult(BaseModel):
     basis: Literal["wiki", "web", "general", "clarify", "app", "plan"] = "wiki"
     #: The internet pages the answer cites, as ``[w1]``, ``[w2]``...
     web_sources: list[WebSource] = []
+    #: The files attached in the chat that the answer cites, as ``[f1]``, ``[f2]``...
+    file_sources: list[FileSource] = []
     #: Buttons that open the pages the answer is about (settings, account, the user guide).
     actions: list[AnswerAction] = []
     #: Steps the assistant proposes to carry out once the person confirms (``basis`` is ``plan``).
@@ -572,7 +593,13 @@ class AnswerResult(BaseModel):
 
 #: How much of a conversation goes to the model: the latest turns, each kept short.
 CHAT_MAX_MESSAGES = 10
-CHAT_MAX_CHARS = 2000
+#: The longest message: room for a test of twenty questions pasted whole.
+CHAT_MAX_CHARS = 4000
+#: An earlier turn is cut to this before it goes to the model again, so a long conversation
+#: does not crowd out the pages (a small self-hosted model has little room).
+CHAT_HISTORY_CHARS = 2000
+#: Files the person attaches to a conversation from their computer.
+CHAT_MAX_FILES = 3
 
 
 class ChatMessage(BaseModel):
@@ -596,6 +623,8 @@ class ChatRequest(BaseModel):
     #: Ask about one file attached to a page ("Ask about this file"): the answer is read from
     #: that file alone - not the rest of the wiki, Help or the internet.
     attachment_id: uuid.UUID | None = None
+    #: Files attached in the chat itself (``POST /ai/chat/files``): read together with the wiki.
+    file_ids: list[uuid.UUID] = Field(default_factory=list, max_length=CHAT_MAX_FILES)
 
     @model_validator(mode="after")
     def _ends_with_a_question(self) -> ChatRequest:
@@ -622,3 +651,72 @@ class WebSearchTestResult(BaseModel):
     ok: bool
     error: str | None = None
     results: int = 0
+
+
+class QuestionPage(BaseModel):
+    id: uuid.UUID
+    title: str
+    slug: str
+    space_key: str
+
+
+class QuestionAsker(BaseModel):
+    id: uuid.UUID
+    username: str
+    name: str
+
+
+class QuestionGroup(BaseModel):
+    """One question the wiki did not answer, however many times and by whom it was asked."""
+
+    #: What the entry is acted on by.
+    key: str
+    #: The most recent wording, and that follow-up rewritten to stand alone.
+    question: str
+    standalone: str | None = None
+    #: Other wordings that fold to the same question.
+    variants: list[str]
+    count: int
+    askers: list[QuestionAsker]
+    first_asked_at: datetime
+    last_asked_at: datetime
+    #: ``no_match``, ``not_in_pages``, ``ungrounded``, ``web_failed``, ``general``, ``web``,
+    #: ``disliked``.
+    reasons: list[str]
+    #: ``chat`` and/or ``search``.
+    surfaces: list[str]
+    #: Pages the search found that came close.
+    near_pages: list[QuestionPage]
+    #: The start of an answer marked unhelpful.
+    answer_excerpt: str | None = None
+    resolution: Literal["answered", "dismissed"] | None = None
+    resolved_at: datetime | None = None
+    answer_page: QuestionPage | None = None
+
+
+class QuestionGroupList(BaseModel):
+    items: list[QuestionGroup]
+    #: Whether questions are being recorded.
+    recording: bool
+    retention_days: int
+
+
+class QuestionResolve(BaseModel):
+    resolution: Literal["answered", "dismissed"]
+    #: The page that answers it now; whoever asked is told.
+    space_key: str | None = Field(default=None, max_length=255)
+    slug: str | None = Field(default=None, max_length=255)
+
+
+class QuestionRecording(BaseModel):
+    enabled: bool
+
+
+class AnswerFeedback(BaseModel):
+    """An answer the person marked unhelpful."""
+
+    surface: Literal["chat", "search"]
+    question: str = Field(min_length=1, max_length=CHAT_MAX_CHARS)
+    answer: str = Field(default="", max_length=20_000)
+    #: The pages the answer cited.
+    page_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)

@@ -32,6 +32,7 @@ import {
   Star,
   Tag,
   ThumbsUp,
+  HeartPulse,
   Network,
   Trash2,
   Users,
@@ -62,6 +63,7 @@ import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dia
 import { PageSummaryDialog } from "@/components/pages/page-summary-dialog";
 import { RelatedPages, usePageRelated } from "@/components/pages/related-pages";
 import { SpaceGraphDialog } from "@/components/pages/space-graph";
+import { SpaceHealthDialog } from "@/components/pages/space-health";
 import { SpaceTrashDialog } from "@/components/pages/space-trash";
 import { linkMentions } from "@/lib/page-mentions";
 import { TRASH_OPEN_EVENT } from "@/lib/space-trash";
@@ -852,6 +854,7 @@ export function SpaceWorkspace({
   const [editSpaceModalOpen, setEditSpaceModalOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  const [healthOpen, setHealthOpen] = useState(false);
   // ":trash" in the search box opens this space's Trash from wherever the person is.
   useEffect(() => {
     const open = (event: Event) => {
@@ -2031,11 +2034,11 @@ export function SpaceWorkspace({
             </div>
 
             {/* Sidebar Footer: the page map for every reader, the space's Trash
-                for anyone who may delete pages here, and Edit Space for its
-                Owner or Admin. */}
+                for anyone who may delete pages here, and its content health
+                and Edit Space for its Owner or Admin. */}
             <div className="border-border shrink-0 border-t p-3">
               {/* Equal-width tiles, icon over label, so the row fills the
-                  sidebar however many of the three the reader may use. */}
+                  sidebar however many of the four the reader may use. */}
               <div className="grid auto-cols-fr grid-flow-col gap-1.5">
                 {[
                   {
@@ -2044,6 +2047,13 @@ export function SpaceWorkspace({
                     label: t("graph.mapLink"),
                     onClick: () => setMapOpen(true),
                     show: true,
+                  },
+                  {
+                    key: "health",
+                    icon: HeartPulse,
+                    label: t("health.link"),
+                    onClick: () => setHealthOpen(true),
+                    show: canAdmin,
                   },
                   {
                     key: "edit",
@@ -3281,6 +3291,9 @@ export function SpaceWorkspace({
 
           <SpaceTrashDialog space={space} open={trashOpen} onOpenChange={setTrashOpen} />
           <SpaceGraphDialog space={space} open={mapOpen} onOpenChange={setMapOpen} />
+          {canAdmin ? (
+            <SpaceHealthDialog space={space} open={healthOpen} onOpenChange={setHealthOpen} />
+          ) : null}
 
           {/* One controlled instance shared by both entry points: the sidebar
               button and the More-actions item. Nesting a second Radix trigger

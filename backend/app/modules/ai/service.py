@@ -48,6 +48,7 @@ from app.modules.ai.skills import (
     writing_instructions,
 )
 from app.modules.ai.text import page_plain_text
+from app.modules.graph.health import ContentHealthService, health_page
 from app.modules.pages.service import PageService
 from app.modules.permissions.service import PermissionService
 from app.modules.spaces.service import SpaceService
@@ -66,6 +67,7 @@ from app.schemas.ai import (
     SuggestedLabel,
     SummaryAttachment,
 )
+from app.schemas.graph import StaleCheckRead
 
 logger = get_logger(__name__)
 
@@ -552,3 +554,74 @@ class AIService:
         )
         await self._write(redis, wanted_key, translated)
         return answer(translated)
+
+    async def check_stale(self, key: str, slug: str, locale: str) -> StaleCheckRead:
+        """Compare a page with the pages tied to it that were edited after it.
+
+        For a space administrator going through the content health report: what in the page
+        the newer pages now contradict or replace. Only pages the administrator may read are
+        sent to the model.
+        """
+        config = await load_config(self.session)
+        if not config.ready:
+            raise ServiceUnavailableError("The AI assistant is not enabled.")
+        space = await self.spaces.get_by_key(key)
+        await self.spaces.require_admin(space, self.user)
+        page = await self.pages.get_by_slug(space, slug)
+        await self.pages.require_page_view(page, self.user)
+        health = ContentHealthService(self.session)
+        newer = await health.newer_neighbours(page, self.user)
+        compared = [health_page(other) for other in newer]
+        if not newer:
+            return StaleCheckRead(result="", compared=[])
+        lang = LANGUAGES.get(locale, "English")
+        parts = [
+            f'<older_page title="{page.title}" edited="{page.updated_at:%Y-%m-%d}">',
+            scrub_secrets(page_plain_text(page.content, _STALE_PAGE_CHARS)),
+            "</older_page>",
+        ]
+        for other in newer:
+            parts += [
+                f'<newer_page title="{other.title}" edited="{other.updated_at:%Y-%m-%d}">',
+                scrub_secrets(page_plain_text(other.content, _STALE_NEWER_CHARS)),
+                "</newer_page>",
+            ]
+        message = "\n".join(parts)
+        fingerprint = hashlib.sha256(f"{lang}|{message}".encode()).hexdigest()[:24]
+        cache_key = f"ai:stale:{page.id}:{fingerprint}"
+        redis = get_redis()
+        if cached := await self._read(redis, cache_key):
+            return StaleCheckRead(result=cached, compared=compared, cached=True)
+        await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
+        result = await self._chat(
+            "stale_check",
+            config,
+            [
+                {"role": "system", "content": _STALE_SYSTEM_PROMPT.format(language=lang)},
+                {"role": "user", "content": message},
+            ],
+            max_tokens=1200,
+        )
+        result = result.strip()
+        await self._write(redis, cache_key, result)
+        return StaleCheckRead(result=result, compared=compared)
+
+
+#: Characters of the page checked, and of each newer page it is compared with.
+_STALE_PAGE_CHARS = 8000
+_STALE_NEWER_CHARS = 5000
+
+_STALE_SYSTEM_PROMPT = """You help keep a company wiki up to date.
+You are given an OLDER page and one or more NEWER pages that are related to it and were
+edited after it. Find statements in the older page that the newer pages contradict, replace
+or make out of date: a different number, date, name, address, version, step or rule.
+
+Rules:
+- Use only what the pages say. Do not guess, and do not judge style or completeness.
+- For each finding write one bullet: quote the older page's words in quotes, then say what
+  the newer page says instead and name that page in **bold**.
+- At most 8 bullets, most important first.
+- If nothing in the older page conflicts with the newer pages, answer with one short
+  sentence saying so, and nothing else.
+- Write in {language}, whatever language the pages are written in. Markdown only, no
+  headings."""

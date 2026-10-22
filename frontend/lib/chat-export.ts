@@ -11,6 +11,8 @@ export type ChatExportLabels = {
   alsoRead: string;
   web: string;
   files: string;
+  /** The heading over the files the person attached in the chat that an answer cites. */
+  attached?: string;
   notFound: string;
   failed: string;
   stopped: string;
@@ -48,6 +50,9 @@ export function chatToMarkdown(
     if (entry.role === "user") {
       number += 1;
       lines.push("", "---", "", `## ${number}. ${labels.question}`, "", entry.content.trim());
+      if (entry.files?.length) {
+        lines.push("", `_${labels.files}: ${entry.files.map((file) => file.filename).join(", ")}_`);
+      }
       continue;
     }
     const basis = entry.basis ? ` (${labels.basis(entry.basis)})` : "";
@@ -74,6 +79,11 @@ export function chatToMarkdown(
       lines.push(
         ...entry.webSources.map((page) => `[w${page.n}] [${page.title}](${page.url})`),
       );
+    }
+    if (entry.fileSources?.length) {
+      // Kept nowhere but in the person's own conversation: named, never linked.
+      lines.push("", `**${labels.attached ?? "Attached files"}**`, "");
+      lines.push(...entry.fileSources.map((file) => `[f${file.n}] ${file.filename}`));
     }
     if (entry.related?.length) {
       lines.push("", `**${labels.alsoRead}**`, "");

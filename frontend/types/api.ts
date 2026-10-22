@@ -1315,3 +1315,106 @@ export interface SpaceGraph {
     sparse_groups: { community: number; size: number }[];
   };
 }
+
+/** A page as the content health report lists it. */
+export interface HealthPage {
+  id: string;
+  title: string;
+  slug: string;
+  space_key: string;
+  space_name: string;
+  updated_at: string;
+}
+
+export interface StalePage {
+  page: HealthPage;
+  /** When someone last marked it still correct, if ever. */
+  reviewed_at: string | null;
+  /** Pages tied to it edited recently, after it, most recent first. */
+  newer: HealthPage[];
+  newer_count: number;
+}
+
+export type BrokenLinkReason = "missing" | "trashed" | "archived_space";
+
+export interface BrokenLink {
+  /** The page holding the link. */
+  page: HealthPage;
+  href: string;
+  target_space_key: string;
+  target_slug: string;
+  /** The page it pointed at, when there is one the reader may see. */
+  target_title: string | null;
+  reason: BrokenLinkReason;
+}
+
+export interface DuplicateGroup {
+  /** `title`: the same title but for a "(2)"; `content`: nearly the same text. */
+  kind: "title" | "content";
+  similarity: number | null;
+  /** The most recently edited first. */
+  pages: HealthPage[];
+}
+
+export interface SpaceHealth {
+  stale_days: number;
+  recent_days: number;
+  stale: StalePage[];
+  stale_total: number;
+  broken_links: BrokenLink[];
+  broken_total: number;
+  orphans: HealthPage[];
+  orphans_total: number;
+  duplicates: DuplicateGroup[];
+  duplicates_total: number;
+  /** Whether nearly identical content was looked for (semantic search is on). */
+  semantic: boolean;
+}
+
+export interface StaleCheck {
+  /** Markdown; empty when no newer page was there to compare with. */
+  result: string;
+  compared: HealthPage[];
+  cached: boolean;
+}
+
+export interface QuestionPage {
+  id: string;
+  title: string;
+  slug: string;
+  space_key: string;
+}
+
+export type QuestionReason =
+  | "no_match"
+  | "not_in_pages"
+  | "ungrounded"
+  | "web_failed"
+  | "general"
+  | "web"
+  | "disliked";
+
+/** One question the wiki did not answer, however often and by whom it was asked. */
+export interface QuestionGroup {
+  key: string;
+  question: string;
+  standalone: string | null;
+  variants: string[];
+  count: number;
+  askers: { id: string; username: string; name: string }[];
+  first_asked_at: string;
+  last_asked_at: string;
+  reasons: QuestionReason[];
+  surfaces: ("chat" | "search")[];
+  near_pages: QuestionPage[];
+  answer_excerpt: string | null;
+  resolution: "answered" | "dismissed" | null;
+  resolved_at: string | null;
+  answer_page: QuestionPage | null;
+}
+
+export interface QuestionGroupList {
+  items: QuestionGroup[];
+  recording: boolean;
+  retention_days: number;
+}

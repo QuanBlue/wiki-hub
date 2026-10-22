@@ -417,6 +417,21 @@ class TestColumnWidths:
         assert number >= spreadsheet._chars_px(2)
         assert owner >= spreadsheet._chars_px(4)
 
+    def test_a_few_long_cells_wrap_rather_than_widening_a_column_of_codes(self):
+        # Notes above the table, then the table: a column of short codes keeps
+        # to the codes' width, and the notes wrap onto two lines.
+        notes = [["Gởi kết quả Rà soát/đánh giá", "31/10"], ["Kết quả & kế hoạch khắc phục", "20/11"]]
+        codes = [[f"GG-LEG-{n:02}", "Pháp lý"] for n in range(1, 20)]
+        grid = [
+            [spreadsheet._Cell(text=t) for t in ("Plan", "Date")],
+            *[[spreadsheet._Cell(text=t) for t in row] for row in notes + codes],
+        ]
+        code, _ = fit_column_widths(grid)
+        assert code == spreadsheet._chars_px(len("GG-LEG-01"))
+        # With only a few cells, each still counts: nothing in them is an outlier.
+        few = [[spreadsheet._Cell(text="Code")], *[[spreadsheet._Cell(text=t)] for t in notes[0]]]
+        assert fit_column_widths(few) == [spreadsheet._chars_px(len(notes[0][0]))]
+
     def test_a_column_stops_growing_at_the_width_it_would_like(self):
         # The second column has by far the most text, but in lines of forty
         # characters: it stops at that width and the rest goes to the others.

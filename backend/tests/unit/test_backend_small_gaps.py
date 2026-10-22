@@ -273,3 +273,30 @@ async def test_a_long_indexing_pass_keeps_renewing_its_lock(
     assert await tasks.index_search_pages({}) == 3
     # Renewed by every batch's heartbeat, and only ever this pass's own lock.
     assert renewed and set(renewed) == {"lock:search_index"}
+
+
+async def test_the_daily_purge_forgets_old_unanswered_questions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.modules.ai import question_gaps
+
+    used: list[object] = []
+    session = object()
+
+    class Scope:
+        async def __aenter__(self) -> object:
+            return session
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+    async def purge(given: object) -> int:
+        used.append(given)
+        return 3
+
+    monkeypatch.setattr(tasks, "session_scope", lambda: Scope())
+    monkeypatch.setattr(question_gaps, "purge_expired", purge)
+
+    await tasks.purge_unanswered_questions({})
+
+    assert used == [session]

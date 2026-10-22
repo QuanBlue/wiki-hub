@@ -45,3 +45,26 @@ def test_a_whole_list_and_a_complaint_about_the_last_answer_are_recognised() -> 
         assert asks_about_last_answer(question), question
     # "Thiếu kinh phí" (a lack of funds) is a question of its own, not a complaint.
     assert not asks_about_last_answer("Thiếu kinh phí trong tờ trình phương án kinh doanh")
+
+
+def test_a_pasted_test_is_split_into_its_numbered_questions() -> None:
+    from app.modules.search.query import split_questions
+
+    pasted = (
+        'Giúp tôi trả lời các câu hỏi này "Câu hỏi 1\n\nHint icon\nNội dung câu hỏi\n'
+        "Vai trò của công cụ số?\n\nCâu hỏi 1Trả lời\n\nNâng cao hiệu quả\n\nThay thế con người\n"
+        "Câu hỏi 2\n\nHint icon\nNội dung câu hỏi\nNêu mẹo quản lý tập tin, như câu 1 đã hỏi.\n"
+        "Câu hỏi 2Trả lời\n\nGhim thư mục quan trọng\n\nCâu 3: Khi trích dẫn hình ảnh, cần ghi:"
+    )
+    assert split_questions(pasted) == [
+        "Vai trò của công cụ số? Nâng cao hiệu quả Thay thế con người",
+        "Nêu mẹo quản lý tập tin, như đã hỏi. Ghim thư mục quan trọng",
+        "Khi trích dẫn hình ảnh, cần ghi",
+    ]
+    assert split_questions("Question 1: what is A? Question 2: what is B?") == [
+        "what is A?",
+        "what is B?",
+    ]
+    # One question, or a number in passing, is not a test.
+    for message in ("Câu hỏi 1: Vai trò của Excel?", "Q3 doanh thu tăng bao nhiêu?", "VPN SSL"):
+        assert split_questions(message) == [], message
