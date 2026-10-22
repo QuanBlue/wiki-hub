@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AnswerFeedback } from "@/components/chat/answer-feedback";
 import { IssueMarkdown } from "@/components/issues/issue-markdown";
 import {
   AlsoRead,
@@ -183,9 +184,18 @@ export function SearchAnswer({
             ) : null}
           </section>
 
-          <p className="text-muted-foreground/70 px-3 text-[10px]">
-            {t("search.answerCheck")}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <p className="text-muted-foreground/70 px-2 text-[10px]">
+              {t("search.answerCheck")}
+            </p>
+            <AnswerFeedback
+              key={question}
+              surface="search"
+              question={question}
+              answer={result.answer}
+              pageIds={result.sources.map((source) => source.id)}
+            />
+          </div>
         </div>
       ) : null}
 

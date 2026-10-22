@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, SmallInteger, String, Text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, SmallInteger, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -60,6 +60,9 @@ class SiteSettings(TimestampMixin, Base):
     #: (``WIKIHUB_AI_RATE_LIMIT`` / ``WIKIHUB_AI_TRANSLATE_RATE_LIMIT``). See ``ai.limits``.
     ai_requests_per_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ai_translate_requests_per_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Whether questions the wiki could not answer are kept for Administration > AI assistant >
+    #: Unanswered questions. NULL = on. See ``ai.question_gaps``.
+    record_unanswered_questions: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True),

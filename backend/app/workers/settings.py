@@ -28,6 +28,7 @@ from app.workers.tasks import (
     install_ollama,
     ping,
     purge_expired_trash,
+    purge_unanswered_questions,
     reap_backup_jobs,
     schedule_automated_backup,
     run_backup_job,
@@ -104,6 +105,8 @@ class WorkerSettings:
         cron(check_admin_mailboxes, minute=0, second=20, run_at_startup=False),
         # Daily, at night: pages past the Trash's retention period go for good.
         cron(purge_expired_trash, hour=3, minute=15, second=0, run_at_startup=False),
+        # Daily: unanswered questions, and who asked them, are kept 90 days at most.
+        cron(purge_unanswered_questions, hour=3, minute=25, second=0, run_at_startup=False),
     ]
     redis_settings = redis_settings()
     on_startup = startup

@@ -68,3 +68,31 @@ async def test_a_complaint_about_the_last_answer_searches_the_question_before_it
     assert [s["title"] for s in result["sources"]] == ["Billing servers"]
     system = model.streams[-1][0]["content"]
     assert CONTINUE_RULES in system
+
+
+async def test_a_pasted_test_searches_and_answers_every_question(
+    installed: AsyncSession, model: Model
+) -> None:
+    from app.modules.ai.skills import SEVERAL_QUESTIONS_RULES
+
+    owner, space, pages = await _setup(installed)
+    await _page(pages, space, owner, "Billing servers", "billing-1 10.0.0.5, billing-2 10.0.0.6")
+    await _page(pages, space, owner, "Backup schedule", "Nightly backups run at 02:00 to MinIO")
+    pasted = (
+        "Help me answer these. Question 1\nWhere is billing-1?\n"
+        + "Question 1 Answer\n10.0.0.5\n\n10.0.0.9\n\n" * 20  # past the 300 characters searched
+        + "Question 2\nWhen do the nightly backups run?\nQuestion 2 Answer\n02:00\n\n14:00"
+    )
+    model.script = [["**Question 1** - 10.0.0.5 [1]. **Question 2** - 02:00 [2]."]]
+
+    turn = await ChatService(installed, owner).begin(conversation(pasted))
+    assert turn.max_tokens == LONG_REPLY_TOKENS
+    events = await run(installed, owner, conversation(pasted))
+
+    result = events[-1]["result"]
+    # Each question found its own page, the second as well as the first.
+    assert {s["title"] for s in result["sources"]} == {"Billing servers", "Backup schedule"}
+    system, *_, asked = model.streams[-1]
+    assert SEVERAL_QUESTIONS_RULES in system["content"]
+    # The model reads the whole message, not the first 300 characters.
+    assert "When do the nightly backups run?" in asked["content"]

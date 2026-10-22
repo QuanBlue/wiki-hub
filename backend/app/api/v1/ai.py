@@ -9,19 +9,25 @@ from typing import Annotated, Literal
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, File, Path, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentSuperuser, CurrentUser, DbSession
 from app.core import rate_limit
 from app.core.config import settings
-from app.core.exceptions import BadRequestError, ServiceUnavailableError
+from app.core.exceptions import (
+    BadRequestError,
+    NotFoundError,
+    PayloadTooLargeError,
+    ServiceUnavailableError,
+)
 from app.db.session import get_session_factory
+from app.models.ai_question import RETENTION_DAYS
 from app.models.site_settings import SINGLETON_ID, SiteSettings
 from app.models.user import User
+from app.modules.ai import chat_files, ollama, question_gaps
 from app.modules.ai import limits as ai_limits
-from app.modules.ai import ollama
 from app.modules.ai.actions import PlanRunner, StepInput
 from app.modules.ai.admin import AIConnectionService
 from app.modules.ai.answer import AnswerService
@@ -30,22 +36,27 @@ from app.modules.ai.config import load_config
 from app.modules.ai.embedding_settings import EmbeddingSettingsService
 from app.modules.ai.help_answer import HelpAnswerService
 from app.modules.ai.limits import ai_rate_limit
+from app.modules.ai.question_gaps import QuestionGapService
 from app.modules.ai.service import AIService
 from app.modules.ai.skills import AISkillService
 from app.modules.ai.websearch import WebSearchSettingsService
 from app.modules.attachments.text import files_read, pending_count
+from app.modules.pages.service import PageService
 from app.modules.permissions.service import PermissionService
 from app.modules.search.indexer import index_status, indexing_paused, set_indexing_paused
+from app.modules.spaces.service import SpaceService
 from app.schemas.ai import (
     AiLimitsRead,
     AiLimitsUpdate,
     AIStatus,
     AITestRequest,
     AITestResult,
+    AnswerFeedback,
     AnswerRequest,
     AnswerResult,
     AssistRequest,
     AssistResult,
+    ChatFileRead,
     ChatRequest,
     ConnectionCreate,
     ConnectionList,
@@ -68,6 +79,9 @@ from app.schemas.ai import (
     PageDraftRequest,
     PageSuggestions,
     PageSummary,
+    QuestionGroupList,
+    QuestionRecording,
+    QuestionResolve,
     SearchIndexPause,
     SearchIndexStatus,
     SkillRead,
@@ -116,6 +130,30 @@ async def answer_help(payload: HelpAskRequest, session: DbSession, user: Current
     return await HelpAnswerService(session, user).answer(payload)
 
 
+#: Answers one person may mark unhelpful in an hour.
+FEEDBACK_RATE_LIMIT = "60/hour"
+
+
+@router.post(
+    "/feedback",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Mark an answer unhelpful, so administrators see what the wiki is missing",
+)
+async def answer_feedback(
+    payload: AnswerFeedback, session: DbSession, user: CurrentUser
+) -> Response:
+    await rate_limit.enforce(f"ai-feedback:{user.id}", FEEDBACK_RATE_LIMIT)
+    await question_gaps.record_feedback(
+        session,
+        user,
+        question=payload.question,
+        answer=payload.answer,
+        surface=payload.surface,
+        page_ids=payload.page_ids,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 def _sse(event: dict) -> str:
     return f"event: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
 
@@ -139,6 +177,39 @@ async def chat(payload: ChatRequest, session: DbSession, user: CurrentUser) -> S
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post(
+    "/chat/files",
+    response_model=ChatFileRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Read a file attached in the chat, to be answered from together with the wiki",
+)
+async def attach_chat_file(
+    file: Annotated[UploadFile, File(description="A document from the person's computer")],
+    session: DbSession,
+    user: CurrentUser,
+) -> ChatFileRead:
+    """Only the words are kept, for this person and for a day; the file itself is not stored."""
+    if not (await load_config(session)).ready:
+        raise ServiceUnavailableError("The AI assistant is not enabled.")
+    await rate_limit.enforce(f"aichatfile:{user.id}", await ai_rate_limit())
+    chunks: list[bytes] = []
+    total = 0
+    # Read in bounded pieces: never the whole of an unbounded upload into memory.
+    while chunk := await file.read(1024 * 1024):
+        total += len(chunk)
+        if total > chat_files.MAX_CHAT_FILE_BYTES:
+            raise PayloadTooLargeError(
+                f"{file.filename or 'This file'} is larger than "
+                f"{chat_files.MAX_CHAT_FILE_BYTES // (1024 * 1024)} MB.",
+                code="chat_file_too_large",
+            )
+        chunks.append(chunk)
+    filename = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()[:255]
+    if not filename or not total:
+        raise BadRequestError("The file is empty.", code="chat_file_empty")
+    return await chat_files.read_upload(user, filename, b"".join(chunks))
 
 
 @router.post(
@@ -314,6 +385,99 @@ async def put_ai_limits(
     await session.commit()
     ai_limits.forget()
     return await _limits_read(session)
+
+
+async def _questions(session: AsyncSession, admin: User, resolved: bool) -> QuestionGroupList:
+    return QuestionGroupList(
+        items=await QuestionGapService(session, admin).groups(resolved=resolved),
+        recording=await question_gaps.recording_on(session),
+        retention_days=RETENTION_DAYS,
+    )
+
+
+@router.get(
+    "/questions",
+    response_model=QuestionGroupList,
+    summary="Questions the wiki could not answer, grouped, most asked first",
+)
+async def list_questions(
+    session: DbSession,
+    admin: CurrentSuperuser,
+    state: Annotated[Literal["open", "resolved"], Query(alias="status")] = "open",
+) -> QuestionGroupList:
+    return await _questions(session, admin, state == "resolved")
+
+
+@router.post(
+    "/questions/{key}/resolve",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Mark a question answered (telling whoever asked) or dismiss it",
+)
+async def resolve_question(
+    key: Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")],
+    payload: QuestionResolve,
+    session: DbSession,
+    admin: CurrentSuperuser,
+) -> Response:
+    page = None
+    if payload.resolution == "answered" and payload.space_key and payload.slug:
+        spaces = SpaceService(session)
+        space = await spaces.get_by_key(payload.space_key)
+        await spaces.require_view(space, admin)
+        pages = PageService(session)
+        page = await pages.get_by_slug(space, payload.slug)
+        await pages.require_page_view(page, admin)
+    if not await QuestionGapService(session, admin).resolve(key, payload.resolution, page):
+        raise NotFoundError("No open question with that key.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/questions/{key}/reopen",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Put a resolved question back on the open list",
+)
+async def reopen_question(
+    key: Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")],
+    session: DbSession,
+    admin: CurrentSuperuser,
+) -> Response:
+    if not await QuestionGapService(session, admin).reopen(key):
+        raise NotFoundError("No resolved question with that key.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/questions/{key}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a question and every time it was asked",
+)
+async def delete_question(
+    key: Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")],
+    session: DbSession,
+    admin: CurrentSuperuser,
+) -> Response:
+    if not await QuestionGapService(session, admin).delete(key):
+        raise NotFoundError("No question with that key.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put(
+    "/questions/recording",
+    response_model=QuestionRecording,
+    summary="Turn recording of unanswered questions on or off",
+)
+async def put_question_recording(
+    payload: QuestionRecording, session: DbSession, admin: CurrentSuperuser
+) -> QuestionRecording:
+    row = await session.get(SiteSettings, SINGLETON_ID)
+    if row is None:
+        row = SiteSettings(id=SINGLETON_ID)
+        session.add(row)
+    row.record_unanswered_questions = payload.enabled
+    row.updated_by_id = admin.id
+    await session.commit()
+    return QuestionRecording(enabled=payload.enabled)
 
 
 @router.put(

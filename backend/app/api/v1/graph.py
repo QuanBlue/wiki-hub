@@ -1,4 +1,5 @@
-"""The knowledge graph for readers: a page's related pages and a space's page map."""
+"""The knowledge graph for readers - a page's related pages, a space's page map - and the
+space's content health report for its administrators."""
 
 from __future__ import annotations
 
@@ -7,10 +8,19 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import CurrentUser, DbSession
+from app.modules.ai.service import AIService
+from app.modules.graph.health import RECENT_DAYS, STALE_DAYS, ContentHealthService
 from app.modules.graph.service import GraphService
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
-from app.schemas.graph import PageRelatedRead, SpaceGraphRead
+from app.schemas.graph import (
+    PageRelatedRead,
+    PageReviewRead,
+    SpaceGraphRead,
+    SpaceHealthRead,
+    StaleCheckRead,
+    StaleCheckRequest,
+)
 
 router = APIRouter(prefix="/spaces/{key}", tags=["graph"])
 #: Maps across spaces.
@@ -106,3 +116,59 @@ async def all_spaces_graph(
         wanted = {key.strip().upper() for key in space_keys.split(",") if key.strip()}
         listed = [space for space in listed if space.key.upper() in wanted]
     return await graph.map_for(listed, user, kinds=set(kinds.split(",")) if kinds else None)
+
+
+@router.get(
+    "/health",
+    response_model=SpaceHealthRead,
+    summary="The space's content health: stale pages, broken links, orphans and duplicates",
+)
+async def space_health(
+    key: str,
+    user: CurrentUser,
+    session: DbSession,
+    spaces: SpaceServiceDep,
+    stale_days: Annotated[int, Query(ge=30, le=3650)] = STALE_DAYS,
+    recent_days: Annotated[int, Query(ge=1, le=3650)] = RECENT_DAYS,
+) -> SpaceHealthRead:
+    space = await spaces.get_by_key(key)
+    await spaces.require_admin(space, user)
+    return await ContentHealthService(session).report(
+        space, user, stale_days=stale_days, recent_days=recent_days
+    )
+
+
+@router.post(
+    "/pages/{slug}/review",
+    response_model=PageReviewRead,
+    summary="Mark a page still correct, so the health report stops flagging it as stale",
+)
+async def review_page(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    session: DbSession,
+    pages: PageServiceDep,
+    spaces: SpaceServiceDep,
+) -> PageReviewRead:
+    space = await spaces.get_by_key(key)
+    await spaces.require_admin(space, user)
+    page = await pages.get_by_slug(space, slug)
+    await pages.require_page_view(page, user)
+    reviewed_at = await ContentHealthService(session).mark_reviewed(page, user)
+    return PageReviewRead(reviewed_at=reviewed_at)
+
+
+@router.post(
+    "/pages/{slug}/stale-check",
+    response_model=StaleCheckRead,
+    summary="Ask the AI what in a page the newer pages tied to it contradict or replace",
+)
+async def stale_check(
+    key: str,
+    slug: str,
+    payload: StaleCheckRequest,
+    user: CurrentUser,
+    session: DbSession,
+) -> StaleCheckRead:
+    return await AIService(session, user).check_stale(key, slug, payload.locale)

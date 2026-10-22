@@ -71,6 +71,7 @@ describe("AiSections", () => {
       "Web search",
       "Skill management",
       "Usage limits",
+      "Unanswered questions",
     ]);
     // Hidden until chosen, and doing nothing in the meantime (no request for models).
     expect(screen.queryByRole("heading", { name: "Semantic search", level: 3 })).toBeNull();

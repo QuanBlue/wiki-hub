@@ -23,6 +23,14 @@ export type WebSource = {
   snippet: string;
 };
 
+/** A file the person attached in the chat that an answer was read from, cited as ``[f1]``. */
+export type FileSource = {
+  n: number;
+  filename: string;
+  /** The part of the file the answer was read from. */
+  excerpt: string;
+};
+
 /** A button under an answer that opens a page of the application. */
 export type AnswerAction = {
   id: string;
@@ -64,6 +72,8 @@ export type AnswerResult = {
   basis?: "wiki" | "web" | "general" | "clarify" | "app" | "plan";
   /** The internet pages the answer cites. */
   web_sources?: WebSource[];
+  /** The files attached in the chat that the answer cites. */
+  file_sources?: FileSource[];
   /** Buttons to the pages the answer is about: settings, the account, the user guide. */
   actions?: AnswerAction[];
   /** Steps to carry out once the person confirms (basis is "plan"). */
@@ -100,7 +110,7 @@ export function askWiki(
 
 /** Turn each ``[n]`` of an answer into a link the Markdown renderer shows as a clickable mark. */
 export function citeLinks(answer: string): string {
-  return answer.replace(/\[(w?\d{1,2})\]/g, "[$1](cite:$1)");
+  return answer.replace(/\[([wf]?\d{1,2})\]/g, "[$1](cite:$1)");
 }
 
 /** The page address of a source. */

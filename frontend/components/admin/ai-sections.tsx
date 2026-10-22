@@ -4,6 +4,7 @@ import {
   Gauge,
   Globe,
   KeyRound,
+  MessageCircleQuestion,
   ScanSearch,
   Sparkles,
   type LucideIcon,
@@ -12,6 +13,7 @@ import { useState } from "react";
 
 import { AiConnectionsPanel } from "@/components/admin/ai-connections-panel";
 import { AiLimitsPanel } from "@/components/admin/ai-limits-panel";
+import { AiQuestionsPanel } from "@/components/admin/ai-questions-panel";
 import { AiSkillsPanel } from "@/components/admin/ai-skills-panel";
 import { SemanticSearchPanel } from "@/components/admin/semantic-search-panel";
 import { WebSearchPanel } from "@/components/admin/web-search-panel";
@@ -23,7 +25,7 @@ import type {
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 
-type SectionId = "keys" | "semantic" | "web" | "skills" | "limits";
+type SectionId = "keys" | "semantic" | "web" | "skills" | "limits" | "questions";
 
 /** Semantic search is off until an administrator picks a source and a model. */
 const NO_EMBEDDING: EmbeddingSettings = {
@@ -38,10 +40,11 @@ const NO_EMBEDDING: EmbeddingSettings = {
 };
 
 /**
- * Admin > AI assistant in three sections, laid out like Admin > Storage: key
+ * Admin > AI assistant in sections, laid out like Admin > Storage: key
  * management (the providers and their API keys), semantic search (where page text
- * is turned into vectors) and skill management (the instructions the AI follows). Both panels stay mounted and are only hidden,
- * so switching never refetches or loses an edit in progress.
+ * is turned into vectors), web search, skill management (the instructions the AI
+ * follows), usage limits, and the questions the wiki could not answer. Panels stay
+ * mounted once shown and are only hidden, so switching never loses an edit in progress.
  */
 export function AiSections({
   connections,
@@ -71,6 +74,11 @@ export function AiSections({
     { id: "web", label: t("adminAi.webSection"), icon: Globe },
     { id: "skills", label: t("adminAi.skillsSection"), icon: Sparkles },
     { id: "limits", label: t("adminAi.limitsSection"), icon: Gauge },
+    {
+      id: "questions",
+      label: t("adminAi.questionsSection"),
+      icon: MessageCircleQuestion,
+    },
   ];
 
   return (
@@ -165,6 +173,15 @@ export function AiSections({
         >
           {/* Mounted when first shown: it has nothing to load before then. */}
           {active === "limits" ? <AiLimitsPanel /> : null}
+        </div>
+        <div
+          id="ai-panel-questions"
+          role="tabpanel"
+          aria-labelledby="ai-tab-questions"
+          hidden={active !== "questions"}
+        >
+          {/* Mounted when first shown, so it reads the questions as they are then. */}
+          {active === "questions" ? <AiQuestionsPanel /> : null}
         </div>
       </div>
     </div>

@@ -30,6 +30,7 @@ import {
   Users,
   type LucideIcon,
   ExternalLink,
+  FileText,
   Info,
   Loader2,
   Maximize2,
@@ -42,6 +43,7 @@ import {
   Download,
   Square,
   TriangleAlert,
+  Upload,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -57,6 +59,7 @@ import {
 
 import { useChat } from "@/components/chat/use-chat";
 import { IssueMarkdown } from "@/components/issues/issue-markdown";
+import { AnswerFeedback } from "@/components/chat/answer-feedback";
 import { SelectionAssistant } from "@/components/pages/selection-assistant";
 import {
   AlsoRead,
@@ -71,13 +74,22 @@ import {
   sourceHref,
   type AnswerAction,
   type AnswerSource,
+  type FileSource,
   type WebSource,
 } from "@/lib/ai-answer";
 import {
   CHAT_DETAILS,
+  CHAT_FILE_TYPES,
   CHAT_MAX_CHARS,
+  CHAT_MAX_FILES,
   CHAT_OPEN_EVENT,
   CHAT_TOGGLE_EVENT,
+  ChatFileError,
+  conversationFiles,
+  loadAttached,
+  saveAttached,
+  uploadChatFile,
+  type AttachedFile,
   type ChatEntry,
   type ChatDetail,
   type ChatSlots,
@@ -135,8 +147,88 @@ const FAILURE_KEY: Record<ChatFailure, string> = {
   timeout: "search.answerTimeout",
   unavailable: "search.answerUnavailable",
   rate_limited: "search.answerRateLimited",
+  file_expired: "chat.fileExpired",
   error: "search.answerError",
 };
+
+/** Why a file could not be attached, by the server's code; anything else is the general one. */
+const FILE_ERROR_KEY: Record<string, string> = {
+  too_large: "chat.fileTooLarge",
+  unsupported_chat_file: "chat.fileUnsupported",
+  chat_file_scanned: "chat.fileScanned",
+  chat_file_empty: "chat.fileEmpty",
+  chat_file_too_large: "chat.fileTooLarge",
+  rate_limited: "search.answerRateLimited",
+  unavailable: "search.answerUnavailable",
+};
+
+/** A file in the chat box: being read, ready to be asked about, or refused with a reason. */
+type FileChip = {
+  key: string;
+  filename: string;
+  status: "reading" | "ready" | "failed";
+  id?: string;
+  error?: string;
+};
+
+/** The name of a text file made from words pasted into the box: "pasted-text-0930.txt". */
+function pastedName(now: Date = new Date()): string {
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `pasted-text-${two(now.getHours())}${two(now.getMinutes())}.txt`;
+}
+
+/** The kind of a file, as its extension says it: "XLSX", "PDF"... ("File" without one). */
+function fileKind(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0 && dot < filename.length - 1
+    ? filename.slice(dot + 1).toUpperCase()
+    : "File";
+}
+
+/** A file the person attached that an answer was read from; opens to show what was read. */
+function FileSourceRow({
+  file,
+  open,
+  onToggle,
+}: {
+  file: FileSource;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+      >
+        <span className="bg-surface-sunken text-muted-foreground inline-flex min-w-5 shrink-0 items-center justify-center rounded px-1 text-[11px] leading-5 font-semibold">
+          f{file.n}
+        </span>
+        <FileText
+          className="text-muted-foreground size-3.5 shrink-0"
+          aria-hidden
+        />
+        <span className="text-foreground/90 min-w-0 flex-1 truncate text-[13px]">
+          {file.filename}
+        </span>
+        <ChevronRight
+          className={cn(
+            "text-muted-foreground size-3.5 shrink-0 transition-transform duration-150",
+            open && "rotate-90",
+          )}
+          aria-hidden
+        />
+      </button>
+      {open && file.excerpt ? (
+        <p className="text-muted-foreground bg-surface-sunken mx-2 mt-1 mb-1.5 rounded-md px-2.5 py-1.5 text-xs leading-5 whitespace-pre-line">
+          {file.excerpt}
+        </p>
+      ) : null}
+    </li>
+  );
+}
 
 const NOT_FOUND_KEY: Record<string, string> = {
   no_match: "search.answerNoMatch",
@@ -393,6 +485,7 @@ function PlanCard({
 
 function AssistantMessage({
   entry,
+  question,
   onOpen,
   onRunPlan,
   onCancelPlan,
@@ -400,6 +493,8 @@ function AssistantMessage({
   canRetry,
 }: {
   entry: Assistant;
+  /** The question this answers, for "Not helpful". */
+  question: string;
   onOpen: (source: AnswerSource) => void;
   onRunPlan: () => void;
   onCancelPlan: () => void;
@@ -407,6 +502,12 @@ function AssistantMessage({
   canRetry: boolean;
 }) {
   const { t } = useTranslation();
+  // The attached files whose excerpt is shown (a [f1] mark, or the row, opens it).
+  const [openFiles, setOpenFiles] = useState<number[]>([]);
+  const toggleFile = (n: number) =>
+    setOpenFiles((open) =>
+      open.includes(n) ? open.filter((m) => m !== n) : [...open, n],
+    );
 
   if (entry.status === "streaming" && !entry.content) {
     return <Waiting searching={entry.searching} />;
@@ -500,6 +601,7 @@ function AssistantMessage({
   const sources = entry.sources ?? [];
   const related = entry.related ?? [];
   const webSources = entry.webSources ?? [];
+  const fileSources = entry.fileSources ?? [];
   const byNumber = new Map(sources.map((source) => [source.n, source]));
   const webByNumber = new Map(webSources.map((source) => [source.n, source]));
   return (
@@ -507,7 +609,14 @@ function AssistantMessage({
       <IssueMarkdown
         source={citeLinks(entry.content)}
         autolink
-        onCite={(n, web) => {
+        onCite={(n, web, file) => {
+          if (file) {
+            // The file is kept nowhere to open: what was read from it is shown instead.
+            if (fileSources.some((source) => source.n === n)) {
+              setOpenFiles((open) => (open.includes(n) ? open : [...open, n]));
+            }
+            return;
+          }
           if (web) {
             const page = webByNumber.get(n);
             if (page) window.open(page.url, "_blank", "noopener,noreferrer");
@@ -531,6 +640,21 @@ function AssistantMessage({
           <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           {t("chat.generalNote")}
         </p>
+      ) : null}
+      {fileSources.length ? (
+        <section aria-label={t("chat.fileSources")}>
+          <SectionLabel>{t("chat.fileSources")}</SectionLabel>
+          <ul className="space-y-0.5">
+            {fileSources.map((file) => (
+              <FileSourceRow
+                key={file.n}
+                file={file}
+                open={openFiles.includes(file.n)}
+                onToggle={() => toggleFile(file.n)}
+              />
+            ))}
+          </ul>
+        </section>
       ) : null}
       {webSources.length ? (
         <section aria-label={t("chat.webSources")}>
@@ -559,6 +683,15 @@ function AssistantMessage({
         </section>
       ) : null}
       <ActionButtons actions={entry.actions} />
+      {entry.basis !== "clarify" && entry.basis !== "plan" ? (
+        <AnswerFeedback
+          key={entry.id}
+          surface="chat"
+          question={question}
+          answer={entry.content}
+          pageIds={sources.map((source) => source.id)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -705,6 +838,49 @@ function UserMessage({
       // What the panel keeps in place when another version is shown (see ChatPanel).
       data-slot={entry.slot}
     >
+      {entry.files?.length ? (
+        <ul
+          aria-label={t("chat.attachedFiles")}
+          className="flex max-w-[80%] flex-wrap justify-end gap-1.5"
+        >
+          {entry.files.map((sent) => (
+            <li
+              key={sent.id}
+              title={sent.expired ? t("chat.fileExpiredShort") : sent.filename}
+              className={cn(
+                "border-border bg-surface inline-flex max-w-full min-w-0 items-center gap-2 rounded-xl border py-1.5 pr-3 pl-2 text-[13px]",
+                sent.expired && "text-muted-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "grid size-7 shrink-0 place-items-center rounded-lg",
+                  sent.expired
+                    ? "bg-surface-sunken"
+                    : "bg-primary/10 text-primary",
+                )}
+              >
+                <FileText className="size-4" aria-hidden />
+              </span>
+              <span className="flex min-w-0 flex-col">
+                <span
+                  className={cn(
+                    "text-foreground truncate font-medium",
+                    sent.expired && "text-muted-foreground line-through",
+                  )}
+                >
+                  {sent.filename}
+                </span>
+                <span className="text-muted-foreground text-[11px] leading-4">
+                  {sent.expired
+                    ? t("chat.fileExpiredShort")
+                    : fileKind(sent.filename)}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <p className="bg-primary-subtle text-foreground max-w-[80%] rounded-3xl px-4 py-2.5 text-[15px] leading-6 wrap-break-word whitespace-pre-wrap">
         {entry.content}
       </p>
@@ -770,6 +946,7 @@ function UserMessage({
 
 function Message({
   entry,
+  question,
   onOpen,
   onRunPlan,
   onCancelPlan,
@@ -782,6 +959,8 @@ function Message({
   onSwitch,
 }: {
   entry: ChatEntry;
+  /** For an answer: the question before it. */
+  question: string;
   onOpen: (source: AnswerSource) => void;
   onRunPlan: (id: string) => void;
   onCancelPlan: (id: string) => void;
@@ -809,6 +988,7 @@ function Message({
     <div className="px-1">
       <AssistantMessage
         entry={entry}
+        question={question}
         onOpen={onOpen}
         onRunPlan={() => onRunPlan(entry.id)}
         onCancelPlan={() => onCancelPlan(entry.id)}
@@ -817,6 +997,15 @@ function Message({
       />
     </div>
   );
+}
+
+/** The question an answer replies to: the nearest one asked before it. */
+function questionBefore(entries: ChatEntry[], index: number): string {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const entry = entries[i];
+    if (entry.role === "user") return entry.content;
+  }
+  return "";
 }
 
 /** Which version of an edited question this is, among how many; nothing for one never edited. */
@@ -861,6 +1050,31 @@ function ChatPanel({
   // The attached file questions are asked about, like a notebook with one source; none asks
   // the whole wiki.
   const [file, setFile] = useState<ChatFile | null>(null);
+  // Files attached from the person's computer, read together with the wiki. The ready ones are
+  // remembered with the conversation in this browser; the server keeps their words for a day.
+  // Read once, like the width: the panel is drawn only long after hydration.
+  const [chips, setChips] = useState<FileChip[]>(() =>
+    loadAttached(userId).map((kept) => ({
+      key: kept.id,
+      filename: kept.filename,
+      status: "ready" as const,
+      id: kept.id,
+    })),
+  );
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const readyFiles = useMemo<AttachedFile[]>(
+    () =>
+      chips.flatMap((chip) =>
+        chip.status === "ready" && chip.id
+          ? [{ id: chip.id, filename: chip.filename }]
+          : [],
+      ),
+    [chips],
+  );
+  useEffect(() => {
+    saveAttached(userId, readyFiles);
+  }, [userId, readyFiles]);
   const {
     entries,
     slots,
@@ -877,6 +1091,59 @@ function ChatPanel({
     clear,
     adopt,
   } = useChat(userId, detail, file?.id ?? null);
+  // Files already sent in this conversation: every question reads them again.
+  const sentFiles = useMemo(
+    () => conversationFiles(entries).filter((sent) => !sent.expired),
+    [entries],
+  );
+  const reading = chips.some((chip) => chip.status === "reading");
+  // Three per conversation, counting the ones sent and the ones in the box - a refused file
+  // too, until it is dismissed.
+  const roomForFiles = CHAT_MAX_FILES - sentFiles.length - chips.length;
+  const attach = useCallback(
+    (picked: File[]) => {
+      const taken = picked.slice(0, Math.max(roomForFiles, 0));
+      if (!taken.length) return;
+      const added = taken.map((one, index) => ({
+        key: `${Date.now().toString(36)}-${index}-${one.name}`,
+        filename: one.name,
+        status: "reading" as const,
+      }));
+      setChips((current) => [...current, ...added]);
+      added.forEach((chip, index) => {
+        uploadChatFile(taken[index]).then(
+          (read) =>
+            setChips((current) =>
+              current.map((c) =>
+                c.key === chip.key
+                  ? {
+                      ...c,
+                      status: "ready",
+                      id: read.id,
+                      filename: read.filename,
+                    }
+                  : c,
+              ),
+            ),
+          (error: unknown) => {
+            const code = error instanceof ChatFileError ? error.code : "error";
+            setChips((current) =>
+              current.map((c) =>
+                c.key === chip.key
+                  ? {
+                      ...c,
+                      status: "failed",
+                      error: t(FILE_ERROR_KEY[code] ?? "chat.fileFailed"),
+                    }
+                  : c,
+              ),
+            );
+          },
+        );
+      });
+    },
+    [roomForFiles, t],
+  );
   const [draft, setDraft] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
@@ -965,13 +1232,17 @@ function ChatPanel({
 
   const submit = useCallback(
     (text: string) => {
-      if (!text.trim() || busy) return;
+      // A file still being read would be left out of the answer: wait for it.
+      if (!text.trim() || busy || reading) return;
       stickRef.current = true;
       browsing.current = null;
       setDraft("");
-      void send(text);
+      // The files in the box go with the question and show on it; the box is empty again.
+      const withFiles = file ? [] : readyFiles;
+      if (!file) setChips([]);
+      void send(text, undefined, withFiles);
     },
-    [busy, send],
+    [busy, file, readyFiles, reading, send],
   );
 
   const onStop = (event: React.MouseEvent) => {
@@ -988,7 +1259,28 @@ function ChatPanel({
   const last = entries[entries.length - 1];
 
   return (
-    <>
+    <div
+      className="relative flex min-h-0 flex-1 flex-col"
+      // Files dragged anywhere onto the panel are attached when let go, as with the paper clip.
+      onDragOver={(event) => {
+        if (file || !event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDragging(false);
+        }
+      }}
+      onDrop={(event) => {
+        if (file || !event.dataTransfer.files.length) return;
+        event.preventDefault();
+        setDragging(false);
+        attach(Array.from(event.dataTransfer.files));
+        inputRef.current?.focus();
+      }}
+    >
+      {dragging ? <DropOverlay full={roomForFiles <= 0} /> : null}
       <header className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-3">
         <Sparkles className="text-primary size-4" aria-hidden />
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
@@ -1011,6 +1303,7 @@ function ChatPanel({
                   alsoRead: t("search.answerRelated"),
                   web: t("chat.exportWeb"),
                   files: t("chat.exportFiles"),
+                  attached: t("chat.fileSources"),
                   notFound: t("chat.exportNotFound"),
                   failed: t("chat.exportFailed"),
                   stopped: t("chat.exportStopped"),
@@ -1107,10 +1400,11 @@ function ChatPanel({
             endpoint="/api/v1/ai/explain"
             className="space-y-6"
           >
-            {entries.map((entry) => (
+            {entries.map((entry, index) => (
               <Message
                 key={entry.id}
                 entry={entry}
+                question={questionBefore(entries, index)}
                 onOpen={open}
                 onRunPlan={(id) =>
                   void runPlan(id, locale).then(() => router.refresh())
@@ -1198,13 +1492,119 @@ function ChatPanel({
             </span>
           </div>
         ) : null}
+        {!file && chips.length ? (
+          <ul
+            aria-label={t("chat.attachedFiles")}
+            className="mb-2 flex flex-wrap items-start gap-1.5 px-1"
+          >
+            {chips.map((chip) => (
+              <li key={chip.key} className="max-w-full min-w-0">
+                <span
+                  title={chip.error ?? chip.filename}
+                  className={cn(
+                    "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-2.5 text-[11px] font-medium",
+                    chip.status === "failed"
+                      ? "border-danger/40 bg-danger-bg text-danger"
+                      : "border-border bg-surface-sunken text-foreground",
+                  )}
+                >
+                  {chip.status === "reading" ? (
+                    <Loader2
+                      className="text-primary size-3.5 shrink-0 animate-spin"
+                      aria-hidden
+                    />
+                  ) : chip.status === "failed" ? (
+                    <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+                  ) : (
+                    <FileText
+                      className="text-muted-foreground size-3.5 shrink-0"
+                      aria-hidden
+                    />
+                  )}
+                  <span className="truncate">{chip.filename}</span>
+                  {chip.status === "reading" ? (
+                    <span className="text-muted-foreground shrink-0">
+                      {t("chat.fileReading")}
+                    </span>
+                  ) : null}
+                  {chip.status === "failed" && chip.error ? (
+                    <span className="sr-only">{chip.error}</span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChips((current) =>
+                        current.filter((c) => c.key !== chip.key),
+                      );
+                      inputRef.current?.focus();
+                    }}
+                    aria-label={t("chat.fileRemove", { file: chip.filename })}
+                    title={t("chat.fileRemove", { file: chip.filename })}
+                    className="hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                  >
+                    <X className="size-3" aria-hidden />
+                  </button>
+                </span>
+                {chip.status === "failed" && chip.error ? (
+                  <p
+                    className="text-danger mt-0.5 px-2.5 text-[11px]"
+                    aria-hidden
+                  >
+                    {chip.error}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <form
           onSubmit={(event) => {
             event.preventDefault();
             submit(draft);
           }}
-          className="border-border bg-surface focus-within:border-border-strong flex items-end gap-2 rounded-3xl border py-1.5 pr-1.5 pl-3 shadow-sm transition-shadow duration-150 focus-within:shadow-md"
+          className={cn(
+            "border-border bg-surface focus-within:border-border-strong flex items-end gap-2 rounded-3xl border py-1.5 pr-1.5 pl-1.5 shadow-sm transition-shadow duration-150 focus-within:shadow-md",
+          )}
         >
+          {file ? (
+            <span className="w-1.5 shrink-0" aria-hidden />
+          ) : (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                accept={CHAT_FILE_TYPES}
+                onChange={(event) => {
+                  attach(Array.from(event.target.files ?? []));
+                  // The same file can be picked again after it was removed.
+                  event.target.value = "";
+                  inputRef.current?.focus();
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={roomForFiles <= 0}
+                onClick={() => fileInputRef.current?.click()}
+                aria-label={
+                  roomForFiles <= 0
+                    ? t("chat.attachLimit", { count: CHAT_MAX_FILES })
+                    : t("chat.attach")
+                }
+                title={
+                  roomForFiles <= 0
+                    ? t("chat.attachLimit", { count: CHAT_MAX_FILES })
+                    : t("chat.attach")
+                }
+                className="text-muted-foreground hover:text-foreground size-9 shrink-0 rounded-full"
+              >
+                <Paperclip className="size-4" aria-hidden />
+              </Button>
+            </>
+          )}
           <textarea
             ref={inputRef}
             value={draft}
@@ -1213,6 +1613,27 @@ function ChatPanel({
             onChange={(event) => {
               browsing.current = null;
               setDraft(event.target.value);
+            }}
+            onPaste={(event) => {
+              if (file) return;
+              // A file copied from the computer is attached.
+              const pasted = Array.from(event.clipboardData.files);
+              if (pasted.length) {
+                event.preventDefault();
+                attach(pasted);
+                return;
+              }
+              // Words too many for the box would be cut off at its limit: they go in as a
+              // text file instead, read whole, and the box stays free for the question.
+              const words = event.clipboardData.getData("text/plain");
+              const box = event.currentTarget;
+              const kept =
+                draft.length - (box.selectionEnd - box.selectionStart);
+              if (kept + words.length <= CHAT_MAX_CHARS || roomForFiles <= 0) {
+                return;
+              }
+              event.preventDefault();
+              attach([new File([words], pastedName(), { type: "text/plain" })]);
             }}
             onKeyDown={(event) => {
               // Up and Down walk through the questions asked before, as in a terminal.
@@ -1302,9 +1723,9 @@ function ChatPanel({
               type="submit"
               variant="primary"
               size="icon"
-              disabled={!draft.trim()}
-              aria-label={t("chat.send")}
-              title={t("chat.send")}
+              disabled={!draft.trim() || reading}
+              aria-label={reading ? t("chat.fileWait") : t("chat.send")}
+              title={reading ? t("chat.fileWait") : t("chat.send")}
               className="size-9 rounded-full"
             >
               <SendHorizontal className="size-4" aria-hidden />
@@ -1346,9 +1767,28 @@ function ChatPanel({
             );
           })}
         </div>
-        <p className="text-muted-foreground/70 mt-1.5 px-1 text-[10px]">
-          {t("search.answerCheck")}
-        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-3 px-1">
+          <p className="text-muted-foreground/70 text-[10px]">
+            {t("search.answerCheck")}
+          </p>
+          {/* Near the limit, how much room is left: the box stops taking more at the end. */}
+          {draft.length >= CHAT_MAX_CHARS * 0.9 ? (
+            <span
+              aria-live="polite"
+              className={cn(
+                "shrink-0 text-[10px] tabular-nums",
+                draft.length >= CHAT_MAX_CHARS
+                  ? "text-danger font-semibold"
+                  : "text-warning",
+              )}
+            >
+              {t("chat.charCount", {
+                count: draft.length.toLocaleString(locale),
+                max: CHAT_MAX_CHARS.toLocaleString(locale),
+              })}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <ConfirmDialog
@@ -1361,12 +1801,78 @@ function ChatPanel({
         destructive
         onConfirm={() => {
           clear();
+          setChips([]);
           setDraft("");
           setConfirmClear(false);
           inputRef.current?.focus();
         }}
       />
-    </>
+    </div>
+  );
+}
+
+/** The chat's own formats, as the import's drop area lists them. */
+const DROP_FORMATS = [
+  "DOCX",
+  "PDF",
+  "XLSX",
+  "CSV",
+  "HTML",
+  "MD",
+  "EPUB",
+  "ODT",
+  "RTF",
+  "TXT",
+];
+
+/** Shown over the whole panel while files are dragged onto it: let go anywhere to attach. */
+function DropOverlay({ full }: { full: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      // Never the target itself: the panel under it takes the drop, so leaving is seen once.
+      className="bg-primary-subtle/95 border-primary pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 text-center backdrop-blur-sm"
+      role="status"
+    >
+      <span
+        className={cn(
+          "grid size-11 place-items-center rounded-full",
+          full
+            ? "bg-surface-sunken text-muted-foreground"
+            : "bg-primary/10 text-primary",
+        )}
+      >
+        {full ? (
+          <Ban className="size-5" aria-hidden />
+        ) : (
+          <Upload className="size-5" aria-hidden />
+        )}
+      </span>
+      <div className="space-y-0.5">
+        <p className="text-foreground text-sm font-medium">
+          {full
+            ? t("chat.dropFull", { count: CHAT_MAX_FILES })
+            : t("chat.dropTitle")}
+        </p>
+        <p className="text-muted-foreground text-xs">
+          {full
+            ? t("chat.dropFullHint")
+            : t("chat.dropHint", { count: CHAT_MAX_FILES })}
+        </p>
+      </div>
+      {full ? null : (
+        <div className="flex flex-wrap justify-center gap-1" aria-hidden>
+          {DROP_FORMATS.map((format) => (
+            <span
+              key={format}
+              className="bg-surface-sunken text-muted-foreground rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wide"
+            >
+              {format}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

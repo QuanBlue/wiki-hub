@@ -98,6 +98,15 @@ async def purge_expired_trash(ctx: dict[str, Any]) -> None:
     logger.info("trash_purge_done", purged=purged)
 
 
+async def purge_unanswered_questions(ctx: dict[str, Any]) -> None:
+    """Daily: forget the unanswered questions (and who asked them) past their retention."""
+    from app.modules.ai.question_gaps import purge_expired
+
+    async with session_scope() as session:
+        purged = await purge_expired(session)
+    logger.info("unanswered_questions_purge_done", purged=purged)
+
+
 async def check_admin_mailboxes(ctx: dict[str, Any]) -> None:
     """Hourly: sign in to every active administrator mailbox.
 

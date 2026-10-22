@@ -161,7 +161,9 @@ describe("streamChat", () => {
 
     const bodies = vi
       .mocked(fetch)
-      .mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)));
+      .mock.calls.map(([, init]) =>
+        JSON.parse(String((init as RequestInit).body)),
+      );
     expect(bodies[0].attachment_id).toBe("f-1");
     expect(bodies[1]).not.toHaveProperty("attachment_id");
   });
@@ -308,7 +310,19 @@ describe("messagesToSend", () => {
       { id: "1", role: "user", content: "x".repeat(5000) },
     ]);
 
-    expect(only.content).toHaveLength(2000);
+    expect(only.content).toHaveLength(4000);
+  });
+
+  it("sends the question asked now whole, and the earlier turns cut short", () => {
+    const sent = messagesToSend([
+      { id: "1", role: "user", content: "a".repeat(3500) },
+      done("2", "b".repeat(3500)),
+      { id: "3", role: "user", content: "c".repeat(3500) },
+    ]);
+
+    expect(sent.map((message) => message.content.length)).toEqual([
+      2000, 2000, 3500,
+    ]);
   });
 });
 

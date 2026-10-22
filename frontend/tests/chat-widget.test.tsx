@@ -149,6 +149,37 @@ describe("the chat widget", () => {
     expect(messages).toEqual([{ role: "user", content: "billing address" }]);
   });
 
+  it("tells the administrators an answer did not help, with the question it answered", async () => {
+    ai(true);
+    streamChat.mockResolvedValue(FOUND);
+    vi.mocked(api.post).mockResolvedValue(undefined);
+    const actor = userEvent.setup();
+    render(<Shell userId="u1" />);
+
+    await actor.type(await openPanel(actor), "billing address{Enter}");
+    await actor.click(await screen.findByRole("button", { name: "Not helpful" }));
+
+    expect(api.post).toHaveBeenCalledWith("/api/v1/ai/feedback", {
+      surface: "chat",
+      question: "billing address",
+      answer: FOUND.answer,
+      page_ids: ["id-1"],
+    });
+    expect(await screen.findByText(/the administrators will see/)).toBeInTheDocument();
+  });
+
+  it("offers no Not helpful under a question put back to the person", async () => {
+    ai(true);
+    streamChat.mockResolvedValue({ ...FOUND, sources: [], basis: "clarify", answer: "Which one?" });
+    const actor = userEvent.setup();
+    render(<Shell userId="u1" />);
+
+    await actor.type(await openPanel(actor), "billing{Enter}");
+
+    expect(await screen.findByText("Which one?")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Not helpful" })).not.toBeInTheDocument();
+  });
+
   it("opens a source in the app", async () => {
     ai(true);
     streamChat.mockResolvedValue(FOUND);

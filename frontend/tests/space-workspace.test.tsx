@@ -92,6 +92,7 @@ function dialogStub(name: string) {
     ) : null;
 }
 vi.mock("@/components/admin/edit-space-modal", () => ({ EditSpaceModal: dialogStub("Edit space") }));
+vi.mock("@/components/pages/space-health", () => ({ SpaceHealthDialog: dialogStub("Content health") }));
 vi.mock("@/components/pages/page-history-modal", () => ({
   PageHistoryModal: (props: { open: boolean; onOpenChange: (open: boolean) => void; onRestored?: () => void }) =>
     props.open ? (
@@ -808,6 +809,22 @@ describe("SpaceWorkspace page view", () => {
       space: makeSpace({ my_role: null, my_permissions: ["view"] }),
     });
     expect(screen.queryByRole("button", { name: "Trash" })).toBeNull();
+  });
+
+  it("offers the content health report to the space's admins only", async () => {
+    const actor = userEvent.setup();
+    const { view } = renderWorkspace({ currentPage: GUIDES });
+    await actor.click(screen.getByRole("button", { name: "Health" }));
+    expect(screen.getByRole("dialog", { name: "Content health" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Close Content health" }));
+    expect(screen.queryByRole("dialog", { name: "Content health" })).toBeNull();
+    view.unmount();
+
+    renderWorkspace({
+      currentPage: GUIDES,
+      space: makeSpace({ my_role: null, my_permissions: ["view", "delete"] }),
+    });
+    expect(screen.queryByRole("button", { name: "Health" })).toBeNull();
   });
 
   it("offers New on the home page and Create below it", () => {

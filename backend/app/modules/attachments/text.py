@@ -23,6 +23,7 @@ from pathlib import Path
 
 import anyio
 import sqlalchemy as sa
+from bs4 import BeautifulSoup, Tag
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -120,15 +121,93 @@ def to_markup(sections: list[tuple[str, str]]) -> tuple[str, int]:
     return "".join(out), chars
 
 
-async def read_file(path: Path, filename: str, workdir: Path) -> Reading:
-    """Read one downloaded file. Never raises for a bad file: the reason is the status."""
+def _span(cell: Tag, attribute: str) -> int:
+    """How many rows or columns a cell covers: 1 unless it says a whole number above that."""
+    value = str(cell.get(attribute) or "1").strip()
+    return max(int(value), 1) if value.isdigit() else 1
+
+
+def _cell_text(cell: Tag) -> str:
+    """A cell's words on one line: its own lines (a list in one cell) joined by "; "."""
+    for br in cell.find_all("br"):
+        br.replace_with("\n")
+    lines = (" ".join(line.split()) for line in cell.get_text("\n").split("\n"))
+    return "; ".join(line for line in lines if line)
+
+
+def table_rows(markup: str) -> str:
+    """``markup`` with each table row as one paragraph, its cells joined by " | ".
+
+    Read cell by cell, a table loses its rows: "integration-configmap" and the parameters
+    beside it end up lines apart, and a service named once in a merged cell owns none of
+    them. Here a cell merged down several rows (``rowspan``) is repeated on each of them, so
+    every row says whose it is, and a row can be found and read on its own.
+    """
+    soup = BeautifulSoup(markup, "html.parser")
+    for table in soup.find_all("table"):
+        lines = [
+            f"<p>{html.escape(' | '.join(text for text in cells if text))}</p>"
+            for cells in _grid(table)
+        ]
+        table.replace_with(BeautifulSoup("".join(lines), "html.parser"))
+    return str(soup)
+
+
+def table_row_cells(markup: str) -> list[list[str]]:
+    """The rows of every table in ``markup``, each as its cells' words (see ``table_rows``)."""
+    soup = BeautifulSoup(markup, "html.parser")
+    return [cells for table in soup.find_all("table") for cells in _grid(table)]
+
+
+def _grid(table: Tag) -> list[list[str]]:
+    """A table's rows as cell words, a cell merged down repeated on every row it covers, and a
+    row that says nothing new (only cells merged down from the one above) left out."""
+    # Cells still to repeat below, by column: (text, rows left).
+    carried: dict[int, tuple[str, int]] = {}
+    rows: list[list[str]] = []
+    for row in table.find_all("tr"):
+        cells: list[str] = []
+        column = 0
+        own = iter(row.find_all(["td", "th"], recursive=False))
+        while True:
+            if column in carried:
+                text, left = carried[column]
+                cells.append(text)
+                if left > 1:
+                    carried[column] = (text, left - 1)
+                else:
+                    del carried[column]
+                column += 1
+                continue
+            cell = next(own, None)
+            if cell is None:
+                break
+            text = _cell_text(cell)
+            down = _span(cell, "rowspan")
+            if down > 1:
+                carried[column] = (text, down - 1)
+            cells.append(text)
+            column += _span(cell, "colspan")
+        if any(cells) and (not rows or rows[-1] != cells):
+            rows.append(cells)
+    return rows
+
+
+async def read_file(path: Path, filename: str, workdir: Path, *, rows: bool = False) -> Reading:
+    """Read one downloaded file. Never raises for a bad file: the reason is the status.
+
+    ``rows``: tables as one paragraph per row and plain text as one per line (``table_rows``),
+    for reading a file whole rather than indexing it.
+    """
     suffix = Path(filename).suffix.lower().lstrip(".")
     try:
         if suffix in _PLAIN_TEXT:
             raw = (await anyio.Path(path).read_bytes())[: MAX_INDEXED_CHARS * 4].decode(
                 "utf-8", errors="replace"
             )
-            paragraphs = "".join(f"<p>{html.escape(p)}</p>" for p in raw.split("\n\n"))
+            paragraphs = "".join(
+                f"<p>{html.escape(p)}</p>" for p in raw.split("\n" if rows else "\n\n")
+            )
             sections = [("", paragraphs)]
         else:
             extracted = await asyncio.wait_for(
@@ -138,6 +217,8 @@ async def read_file(path: Path, filename: str, workdir: Path) -> Reading:
             if any("appears to be scanned" in warning for warning in extracted.warnings):
                 return Reading("scanned", detail="No selectable text: the PDF is scanned images.")
             sections = [("", extracted.html), *extracted.sections]
+            if rows:
+                sections = [(title, table_rows(markup)) for title, markup in sections]
     except DocumentTooComplexError as exc:
         return Reading("too_large", detail=str(exc)[:_MAX_DETAIL])
     except BadRequestError as exc:
