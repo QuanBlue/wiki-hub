@@ -35,7 +35,13 @@ ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
     NEXT_PUBLIC_SITE_NAME=$NEXT_PUBLIC_SITE_NAME \
     NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL=$NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL
 
-RUN npm run build
+# next/font/google downloads every font family from Google while building, so one
+# dropped request on a CI runner fails an otherwise good build (seen on GitHub
+# Actions). Try twice more before giving up: a real error fails every time and
+# still stops the build.
+RUN npm run build \
+    || { echo "next build failed - retrying in 15s"; sleep 15; npm run build; } \
+    || { echo "next build failed again - retrying in 30s"; sleep 30; npm run build; }
 
 # --- dev ---------------------------------------------------------------------
 # Hot-reload stage used by docker-compose.dev.yml. Source is bind-mounted over

@@ -1008,6 +1008,30 @@ describe("SemanticSearchPanel when things go wrong", () => {
     expect(screen.queryByText(/pages are ready/i)).toBeNull();
   });
 
+  it("asks for the indexing status again when the tab is shown again", async () => {
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/ai/search-index") return index();
+      return ollama();
+    });
+    vi.mocked(api.post).mockResolvedValue(models([]));
+    render(
+      <SemanticSearchPanel
+        initial={settings({ source: "provider", model: "x/bge-m3" })}
+      />,
+    );
+    const asked = () =>
+      vi
+        .mocked(api.get)
+        .mock.calls.filter(([path]) => path === "/api/v1/ai/search-index")
+        .length;
+    await waitFor(() => expect(asked()).toBeGreaterThan(0));
+    const before = asked();
+
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await waitFor(() => expect(asked()).toBeGreaterThan(before));
+  });
+
   it("says why the models could not be listed when the request itself fails", async () => {
     vi.mocked(api.get).mockImplementation(async (path: string) => {
       if (path === "/api/v1/ai/search-index") return index();

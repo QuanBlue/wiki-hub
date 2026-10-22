@@ -486,6 +486,7 @@ describe("Confluence import job", () => {
     ["running", "scanning", "Scanning archive", /10% complete/],
     ["running", "importing", "Importing spaces and pages", /48% complete/],
     ["running", "attachments", "Importing and linking attachments", /92% complete/],
+    ["running", "comments", "Importing comments and likes", /99% complete/],
     ["running", "finishing", "Import running", /50% complete/],
   ])("narrates a %s job in the %s phase", async (status, phase, title, progress) => {
     await openPanel(jobRoutes(confluenceJob({ status, phase })));

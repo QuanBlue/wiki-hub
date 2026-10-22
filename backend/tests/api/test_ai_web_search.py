@@ -90,7 +90,7 @@ async def test_the_test_button_tries_a_real_search_with_the_key_entered(
     await _reset(client)
     used: list[str] = []
 
-    async def search(config, query: str):
+    async def search(config, query: str, **_: object):
         used.append(config.api_key)
         if config.api_key == "bad":
             raise ServiceUnavailableError("no")

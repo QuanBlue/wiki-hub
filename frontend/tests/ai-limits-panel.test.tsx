@@ -80,4 +80,26 @@ describe("AiLimitsPanel", () => {
     expect(screen.getByRole("button", { name: "Save limits" })).toBeDisabled();
     expect(api.put).not.toHaveBeenCalled();
   });
+
+  it("says when the limits cannot be loaded", async () => {
+    vi.mocked(api.get).mockRejectedValue(new Error("down"));
+    render(<AiLimitsPanel />);
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByLabelText("AI requests per person")).toBeNull();
+  });
+
+  it("keeps what was typed and says so when saving fails", async () => {
+    const { toast } = await import("sonner");
+    vi.mocked(api.put).mockRejectedValue(new Error("down"));
+    const actor = userEvent.setup();
+    render(<AiLimitsPanel />);
+
+    const requests = await screen.findByLabelText("AI requests per person");
+    await actor.type(requests, "200");
+    await actor.click(screen.getByRole("button", { name: "Save limits" }));
+
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(requests).toHaveValue("200");
+  });
 });

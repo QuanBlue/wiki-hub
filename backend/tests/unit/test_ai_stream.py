@@ -218,3 +218,23 @@ async def test_a_reply_that_is_not_what_a_gateway_sends_is_an_error_not_a_retry(
     with pytest.raises(ServiceUnavailableError):
         await _read()
     assert len(calls) == 1
+
+
+async def test_a_reply_stopped_for_length_is_marked_as_cut_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.modules.ai.client import CUT_OFF
+
+    _gateway(
+        monkeypatch,
+        lambda request: _sse(
+            _chunk("Part of a long ans"),
+            'data: {"choices": [{"delta": {}, "finish_reason": "length"}]}\n\n',
+            "data: [DONE]\n\n",
+        ),
+    )
+
+    pieces = await _read()
+
+    assert pieces[0] == "Part of a long ans"
+    assert pieces[-1] is CUT_OFF

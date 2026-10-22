@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
@@ -57,7 +63,12 @@ function job(overrides: Partial<DocumentImportJob> = {}): DocumentImportJob {
     parent_id: null,
     status: "running",
     phase: "converting",
-    counters: { items_total: 2, items_processed: 1, pages_created: 1, items_failed: 0 },
+    counters: {
+      items_total: 2,
+      items_processed: 1,
+      pages_created: 1,
+      items_failed: 0,
+    },
     cancel_requested: false,
     error: null,
     percent: 50,
@@ -123,8 +134,19 @@ describe("DocumentImportProgress", () => {
     renderProgress(
       job({
         items: [
-          item({ id: "a", filename: "done.docx", status: "complete", page_slug: "done", page_title: "Done" }),
-          item({ id: "b", filename: "broken.pdf", status: "failed", error: "This PDF is password-protected." }),
+          item({
+            id: "a",
+            filename: "done.docx",
+            status: "complete",
+            page_slug: "done",
+            page_title: "Done",
+          }),
+          item({
+            id: "b",
+            filename: "broken.pdf",
+            status: "failed",
+            error: "This PDF is password-protected.",
+          }),
           item({ id: "c", filename: "waiting.docx", status: "queued" }),
         ],
       }),
@@ -132,7 +154,9 @@ describe("DocumentImportProgress", () => {
 
     expect(screen.getByText("done.docx")).toBeInTheDocument();
     expect(screen.getByText("broken.pdf")).toBeInTheDocument();
-    expect(screen.getByText("This PDF is password-protected.")).toBeInTheDocument();
+    expect(
+      screen.getByText("This PDF is password-protected."),
+    ).toBeInTheDocument();
     expect(screen.getByText("waiting.docx")).toBeInTheDocument();
   });
 
@@ -141,7 +165,11 @@ describe("DocumentImportProgress", () => {
     renderProgress(
       job({
         items: [
-          item({ status: "complete", page_slug: "quarterly-report", page_title: "Quarterly Report" }),
+          item({
+            status: "complete",
+            page_slug: "quarterly-report",
+            page_title: "Quarterly Report",
+          }),
         ],
       }),
     );
@@ -164,7 +192,9 @@ describe("DocumentImportProgress", () => {
       }),
     );
 
-    expect(screen.getByText("This PDF appears to be scanned.")).toBeInTheDocument();
+    expect(
+      screen.getByText("This PDF appears to be scanned."),
+    ).toBeInTheDocument();
   });
 
   it("says what the review of a page found, with its notes", () => {
@@ -182,17 +212,28 @@ describe("DocumentImportProgress", () => {
       ...over,
     });
     const done = (id: string, extra: Partial<DocumentImportItem> = {}) =>
-      item({ id, filename: `${id}.docx`, status: "complete", page_slug: id, ...extra });
+      item({
+        id,
+        filename: `${id}.docx`,
+        status: "complete",
+        page_slug: id,
+        ...extra,
+      });
     renderProgress(
       job({
         status: "complete",
         items: [
           done("a", {
             review: review("fixed", {
-              notes: ["set 1 heading level", "the AI assistant mended 2 blocks"],
+              notes: [
+                "set 1 heading level",
+                "the AI assistant mended 2 blocks",
+              ],
             }),
           }),
-          done("b", { review: review("partial", { fixes: 2, issues_after: 1 }) }),
+          done("b", {
+            review: review("partial", { fixes: 2, issues_after: 1 }),
+          }),
           done("c", { review: review("clean") }),
           done("d", { review: review("kept") }),
           done("e", { review: review("skipped") }),
@@ -206,11 +247,15 @@ describe("DocumentImportProgress", () => {
       screen.getByText("Reviewed: 3 fix(es), now it matches the original"),
     ).toBeInTheDocument();
     expect(screen.getByText("set 1 heading level")).toBeInTheDocument();
-    expect(screen.getByText("the AI assistant mended 2 blocks")).toBeInTheDocument();
+    expect(
+      screen.getByText("the AI assistant mended 2 blocks"),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("Reviewed: 2 fix(es), 1 difference(s) left"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Reviewed: the page matches the original")).toBeInTheDocument();
+    expect(
+      screen.getByText("Reviewed: the page matches the original"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Reviewed: left as converted")).toBeInTheDocument();
     expect(screen.getByText("Review skipped")).toBeInTheDocument();
     expect(
@@ -229,21 +274,34 @@ describe("DocumentImportProgress", () => {
       fixes: 0,
       ai_calls: 0,
       notes: [],
-      log: ["Reading the original file again, on its own...", "Compared 8 blocks."],
+      log: [
+        "Reading the original file again, on its own...",
+        "Compared 8 blocks.",
+      ],
     };
     renderProgress(
       job({
         status: "running",
         items: [
-          item({ id: "a", filename: "a.docx", status: "complete", page_slug: "a", review: base }),
+          item({
+            id: "a",
+            filename: "a.docx",
+            status: "complete",
+            page_slug: "a",
+            review: base,
+          }),
         ],
       }),
     );
 
-    expect(screen.getByText("Reviewing the page against the original...")).toBeInTheDocument();
+    expect(
+      screen.getByText("Reviewing the page against the original..."),
+    ).toBeInTheDocument();
     // While it runs the log is open, so the steps can be followed.
     expect(screen.getByText("Compared 8 blocks.")).toBeVisible();
-    expect(screen.getByText("Review log (2 steps)").closest("details")).toHaveAttribute("open");
+    expect(
+      screen.getByText("Review log (2 steps)").closest("details"),
+    ).toHaveAttribute("open");
 
     cleanup();
     renderProgress(
@@ -255,7 +313,12 @@ describe("DocumentImportProgress", () => {
             filename: "a.docx",
             status: "complete",
             page_slug: "a",
-            review: { ...base, status: "fixed", fixes: 2, log: [...(base.log ?? []), "Done."] },
+            review: {
+              ...base,
+              status: "fixed",
+              fixes: 2,
+              log: [...(base.log ?? []), "Done."],
+            },
           }),
         ],
       }),
@@ -264,6 +327,34 @@ describe("DocumentImportProgress", () => {
     const summary = screen.getByText("Review log (3 steps)");
     expect(summary.closest("details")).not.toHaveAttribute("open");
     expect(screen.getByText("Done.")).toBeInTheDocument();
+  });
+
+  it("names a translation language it has no word for by its code", () => {
+    stubFetch({});
+    renderProgress(
+      job({
+        status: "running",
+        items: [
+          item({
+            id: "f",
+            filename: "f.docx",
+            status: "complete",
+            page_slug: "f",
+            translation: {
+              status: "done",
+              language: "fr",
+              units_total: 1,
+              units_done: 1,
+              units_left: 0,
+              ai_calls: 1,
+              notes: [],
+              log: [],
+            },
+          }),
+        ],
+      }),
+    );
+    expect(screen.getAllByText(/fr/).length).toBeGreaterThan(0);
   });
 
   it("shows a translation as it runs, and what it did afterwards", () => {
@@ -283,14 +374,23 @@ describe("DocumentImportProgress", () => {
       ...over,
     });
     const done = (id: string, extra: Partial<DocumentImportItem>) =>
-      item({ id, filename: `${id}.docx`, status: "complete", page_slug: id, ...extra });
+      item({
+        id,
+        filename: `${id}.docx`,
+        status: "complete",
+        page_slug: id,
+        ...extra,
+      });
     renderProgress(
       job({
         status: "running",
         items: [
           done("a", {
             translation: translation("running", {
-              log: ["Found 10 pieces of text.", "Step 1 of 2: 5 of 5 pieces translated."],
+              log: [
+                "Found 10 pieces of text.",
+                "Step 1 of 2: 5 of 5 pieces translated.",
+              ],
             }),
           }),
           done("b", { translation: translation("done", { log: ["Done."] }) }),
@@ -301,7 +401,11 @@ describe("DocumentImportProgress", () => {
               notes: ["3 of 10 pieces were left in the original language"],
             }),
           }),
-          done("d", { translation: translation("skipped", { notes: ["already in English"] }) }),
+          done("d", {
+            translation: translation("skipped", {
+              notes: ["already in English"],
+            }),
+          }),
           done("e", { translation: translation("failed") }),
           done("f", {}),
         ],
@@ -310,21 +414,27 @@ describe("DocumentImportProgress", () => {
 
     expect(screen.getByText("Translating into English...")).toBeInTheDocument();
     // Open while it runs, so the steps can be followed.
-    expect(screen.getByText("Step 1 of 2: 5 of 5 pieces translated.")).toBeVisible();
+    expect(
+      screen.getByText("Step 1 of 2: 5 of 5 pieces translated."),
+    ).toBeVisible();
     expect(
       screen.getByText("Translation log (2 steps)").closest("details"),
     ).toHaveAttribute("open");
     expect(screen.getByText("Translated into English")).toBeInTheDocument();
-    expect(screen.getByText("Translation log (1 steps)").closest("details")).not.toHaveAttribute(
-      "open",
-    );
     expect(
-      screen.getByText("Translated into Tiếng Việt; 3 piece(s) left as they were"),
+      screen.getByText("Translation log (1 steps)").closest("details"),
+    ).not.toHaveAttribute("open");
+    expect(
+      screen.getByText(
+        "Translated into Tiếng Việt; 3 piece(s) left as they were",
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText("Not translated")).toBeInTheDocument();
     expect(screen.getByText("already in English")).toBeInTheDocument();
     expect(
-      screen.getByText("The translation could not finish; the page is in its own language"),
+      screen.getByText(
+        "The translation could not finish; the page is in its own language",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -350,7 +460,9 @@ describe("DocumentImportProgress", () => {
 
     await user.click(screen.getByRole("button", { name: /cancel import/i }));
     const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: /^cancel import$/i }));
+    await user.click(
+      within(dialog).getByRole("button", { name: /^cancel import$/i }),
+    );
 
     await waitFor(() => {
       const call = spy.mock.calls.find(([url]) =>
@@ -374,8 +486,12 @@ describe("DocumentImportProgress", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
 
-    expect(screen.queryByRole("button", { name: /cancel import/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /dismiss/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /cancel import/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /dismiss/i }),
+    ).toBeInTheDocument();
   });
 
   it("reports success and hands the finished job back exactly once", async () => {
@@ -384,11 +500,18 @@ describe("DocumentImportProgress", () => {
       job({
         status: "complete",
         percent: 100,
-        counters: { items_total: 2, items_processed: 2, pages_created: 2, items_failed: 0 },
+        counters: {
+          items_total: 2,
+          items_processed: 2,
+          pages_created: 2,
+          items_failed: 0,
+        },
       }),
     );
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Imported 2 page(s)."));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Imported 2 page(s)."),
+    );
     expect(props.onFinished).toHaveBeenCalledTimes(1);
   });
 
@@ -398,7 +521,12 @@ describe("DocumentImportProgress", () => {
       job({
         status: "complete",
         percent: 100,
-        counters: { items_total: 3, items_processed: 3, pages_created: 2, items_failed: 1 },
+        counters: {
+          items_total: 3,
+          items_processed: 3,
+          pages_created: 2,
+          items_failed: 1,
+        },
       }),
     );
 
@@ -412,11 +540,17 @@ describe("DocumentImportProgress", () => {
   it("reports the server's own reason when the whole job failed", async () => {
     stubFetch({});
     renderProgress(
-      job({ status: "failed", error: "No document could be imported.", percent: null }),
+      job({
+        status: "failed",
+        error: "No document could be imported.",
+        percent: null,
+      }),
     );
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("No document could be imported."),
+      expect(toast.error).toHaveBeenCalledWith(
+        "No document could be imported.",
+      ),
     );
   });
 
@@ -428,10 +562,25 @@ describe("DocumentImportProgress", () => {
       job({
         status: "complete",
         percent: 100,
-        counters: { items_total: 2, items_processed: 2, pages_created: 2, items_failed: 0 },
+        counters: {
+          items_total: 2,
+          items_processed: 2,
+          pages_created: 2,
+          items_failed: 0,
+        },
         items: [
-          item({ id: "a", status: "complete", page_slug: "one", page_title: "One" }),
-          item({ id: "b", status: "complete", page_slug: "two", page_title: "Two" }),
+          item({
+            id: "a",
+            status: "complete",
+            page_slug: "one",
+            page_title: "One",
+          }),
+          item({
+            id: "b",
+            status: "complete",
+            page_slug: "two",
+            page_title: "Two",
+          }),
         ],
       }),
     );
@@ -441,7 +590,9 @@ describe("DocumentImportProgress", () => {
       "href",
       "/spaces/ENG/pages/one",
     );
-    expect(within(dialog).getByRole("link", { name: "Two" })).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("link", { name: "Two" }),
+    ).toBeInTheDocument();
   });
 
   it("names the files that failed, and why, in the summary", async () => {
@@ -450,10 +601,25 @@ describe("DocumentImportProgress", () => {
       job({
         status: "complete",
         percent: 100,
-        counters: { items_total: 2, items_processed: 2, pages_created: 1, items_failed: 1 },
+        counters: {
+          items_total: 2,
+          items_processed: 2,
+          pages_created: 1,
+          items_failed: 1,
+        },
         items: [
-          item({ id: "a", status: "complete", page_slug: "one", page_title: "One" }),
-          item({ id: "b", filename: "bad.pdf", status: "failed", error: "This PDF is password-protected." }),
+          item({
+            id: "a",
+            status: "complete",
+            page_slug: "one",
+            page_title: "One",
+          }),
+          item({
+            id: "b",
+            filename: "bad.pdf",
+            status: "failed",
+            error: "This PDF is password-protected.",
+          }),
         ],
       }),
     );
@@ -484,7 +650,9 @@ describe("DocumentImportProgress", () => {
     // The component is still rendering the *running* job it was given, so it
     // keeps polling - what matters is that it asked, and asked the right URL.
     expect(spy.mock.calls.length).toBeGreaterThanOrEqual(callsAfterFinish);
-    expect(String(spy.mock.calls[0][0])).toContain("/api/v1/document-imports/job-1");
+    expect(String(spy.mock.calls[0][0])).toContain(
+      "/api/v1/document-imports/job-1",
+    );
   });
 
   it("keeps polling through a failed request rather than giving up", async () => {
@@ -496,9 +664,12 @@ describe("DocumentImportProgress", () => {
     vi.stubGlobal("fetch", spy);
     renderProgress(job());
 
-    await waitFor(() => expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2), {
-      timeout: 4000,
-    });
+    await waitFor(
+      () => expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2),
+      {
+        timeout: 4000,
+      },
+    );
   });
 
   it("says how many pages were kept when the import was cancelled", async () => {
@@ -506,20 +677,29 @@ describe("DocumentImportProgress", () => {
     renderProgress(job({ status: "cancelled", percent: null }));
 
     await waitFor(() =>
-      expect(toast).toHaveBeenCalledWith("Import cancelled. 1 page(s) were kept."),
+      expect(toast).toHaveBeenCalledWith(
+        "Import cancelled. 1 page(s) were kept.",
+      ),
     );
   });
 
   it("shows the server's reason when the cancellation is refused", async () => {
-    stubFetch({ error: { code: "conflict", message: "Already finished." } }, 409);
+    stubFetch(
+      { error: { code: "conflict", message: "Already finished." } },
+      409,
+    );
     const user = userEvent.setup();
     renderProgress(job());
 
     await user.click(screen.getByRole("button", { name: /cancel import/i }));
     const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: /^cancel import$/i }));
+    await user.click(
+      within(dialog).getByRole("button", { name: /^cancel import$/i }),
+    );
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Already finished."));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Already finished."),
+    );
   });
 
   it("falls back to a general message for a failure that is not the server's", async () => {
@@ -533,9 +713,13 @@ describe("DocumentImportProgress", () => {
 
     await user.click(screen.getByRole("button", { name: /cancel import/i }));
     const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: /^cancel import$/i }));
+    await user.click(
+      within(dialog).getByRole("button", { name: /^cancel import$/i }),
+    );
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Could not cancel the import."));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Could not cancel the import."),
+    );
   });
 
   it("shows the import as cancelling once a cancel has been requested", () => {

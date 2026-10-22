@@ -634,3 +634,16 @@ async def test_the_results_of_a_paid_service_are_not_second_guessed(
     found = await search_web(WebConfig(True, "tavily", "k"), "so sánh Air Blade 2026 và 2025")
 
     assert [r.url for r in found] == ["https://t.example"]
+
+
+def test_a_protocol_relative_result_address_is_made_https() -> None:
+    page = (
+        '<html><body><table><tr><td><a class="result-link" href="//news.example/a">'
+        "Headline</a></td></tr></table></body></html>"
+    )
+    assert [r.url for r in websearch.parse_duckduckgo(page)] == ["https://news.example/a"]
+
+
+async def test_a_search_that_is_not_set_up_is_refused_before_any_request() -> None:
+    with pytest.raises(ServiceUnavailableError):
+        await websearch._configured_search(websearch.OFF, "anything")

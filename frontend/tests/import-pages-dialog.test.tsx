@@ -1,11 +1,19 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 
 const ai = vi.hoisted(() => ({ enabled: vi.fn() }));
 vi.mock("@/lib/ai-summary", () => ({
-  aiStatus: () => Promise.resolve({ enabled: ai.enabled(), can_configure: false }),
+  aiStatus: () =>
+    Promise.resolve({ enabled: ai.enabled(), can_configure: false }),
   resetAiStatus: () => {},
 }));
 
@@ -88,7 +96,9 @@ function stubXHR(
 ) {
   FakeXHR.last = null;
   FakeXHR.status = options.status ?? 201;
-  FakeXHR.responseBody = JSON.stringify(options.body ?? { id: "job-1", items: [] });
+  FakeXHR.responseBody = JSON.stringify(
+    options.body ?? { id: "job-1", items: [] },
+  );
   FakeXHR.failWith = options.fail ?? null;
   FakeXHR.hold = false;
   FakeXHR.rawBody = null;
@@ -98,11 +108,15 @@ function stubXHR(
 function stubMeta(maxUploadBytes = 50 * 1024 * 1024) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () =>
-      new Response(JSON.stringify({ max_upload_size_bytes: maxUploadBytes }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ max_upload_size_bytes: maxUploadBytes }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
     ),
   );
 }
@@ -156,7 +170,9 @@ describe("ImportPagesDialog", () => {
     stubXHR();
     await openDialog();
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByRole("button", { name: /^import$/i })).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: /^import$/i }),
+    ).toBeDisabled();
   });
 
   it("rejects an unsupported file inline, beside the file it means", async () => {
@@ -168,7 +184,9 @@ describe("ImportPagesDialog", () => {
 
     expect(await screen.findByText(/cannot import \.exe/i)).toBeInTheDocument();
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByRole("button", { name: /^import$/i })).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: /^import$/i }),
+    ).toBeDisabled();
   });
 
   it("rejects a file larger than the workspace ceiling", async () => {
@@ -188,7 +206,9 @@ describe("ImportPagesDialog", () => {
 
     await screen.findByText("good.docx");
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByRole("button", { name: /^import$/i })).toBeEnabled();
+    expect(
+      within(dialog).getByRole("button", { name: /^import$/i }),
+    ).toBeEnabled();
   });
 
   it("lets a chosen file be removed again", async () => {
@@ -248,13 +268,23 @@ describe("ImportPagesDialog", () => {
     await choose([file("a.docx")]);
     await screen.findByText("a.docx");
 
-    const box = screen.getByRole("checkbox", { name: /review with ai after importing/i });
+    const box = screen.getByRole("checkbox", {
+      name: /review with ai after importing/i,
+    });
     expect(box).toBeChecked();
     // A short line is always there; the long account comes with the info button.
-    expect(screen.getByText(/checks each page against the original/i)).toBeInTheDocument();
-    expect(screen.queryByText(/headings, lists, tables, lost text/i)).not.toBeInTheDocument();
-    await user.hover(within(box.closest("label")!).getByRole("button", { name: /more info/i }));
-    expect(await screen.findAllByText(/headings, lists, tables, lost text/i)).not.toHaveLength(0);
+    expect(
+      screen.getByText(/checks each page against the original/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/headings, lists, tables, lost text/i),
+    ).not.toBeInTheDocument();
+    await user.hover(
+      within(box.closest("label")!).getByRole("button", { name: /more info/i }),
+    );
+    expect(
+      await screen.findAllByText(/headings, lists, tables, lost text/i),
+    ).not.toHaveLength(0);
     await user.click(box);
     expect(box).not.toBeChecked();
     expect(window.localStorage.getItem("wikihub:import-review")).toBe("false");
@@ -274,7 +304,9 @@ describe("ImportPagesDialog", () => {
     await screen.findByText("a.docx");
 
     // Nothing is translated by default.
-    const select = screen.getByRole("button", { name: /language to translate/i });
+    const select = screen.getByRole("button", {
+      name: /language to translate/i,
+    });
     expect(select).toHaveTextContent("Original language");
     await user.click(screen.getByRole("button", { name: /^import$/i }));
     await waitFor(() => expect(FakeXHR.last).not.toBeNull());
@@ -290,15 +322,21 @@ describe("ImportPagesDialog", () => {
     await screen.findByText("a.docx");
 
     // Neither can be used: the switch and the language list are disabled, with the reason.
-    const select = await screen.findByRole("button", { name: /language to translate/i });
+    const select = await screen.findByRole("button", {
+      name: /language to translate/i,
+    });
     await waitFor(() => expect(select).toBeDisabled());
     const box = screen.getByRole("checkbox", { name: /review with ai/i });
     expect(box).toBeDisabled();
     expect(box).not.toBeChecked();
-    expect(screen.getAllByText(/needs the AI assistant, which is not set up/i)).toHaveLength(2);
+    expect(
+      screen.getAllByText(/needs the AI assistant, which is not set up/i),
+    ).toHaveLength(2);
     // Both rows look switched off, not only the controls in them.
     expect(box.closest("label")!.className).toContain("opacity-60");
-    expect(select.closest("div.opacity-60, div[class*='opacity-60']")).not.toBeNull();
+    expect(
+      select.closest("div.opacity-60, div[class*='opacity-60']"),
+    ).not.toBeNull();
     await user.click(screen.getByRole("button", { name: /^import$/i }));
 
     await waitFor(() => expect(FakeXHR.last).not.toBeNull());
@@ -314,15 +352,60 @@ describe("ImportPagesDialog", () => {
     await choose([file("a.docx")]);
     await screen.findByText("a.docx");
 
-    await user.click(screen.getByRole("button", { name: /language to translate/i }));
-    await user.click(await screen.findByRole("menuitemradio", { name: "Tiếng Việt" }));
-    expect(screen.getByRole("button", { name: /language to translate/i })).toHaveTextContent(
-      "Tiếng Việt",
+    await user.click(
+      screen.getByRole("button", { name: /language to translate/i }),
     );
+    await user.click(
+      await screen.findByRole("menuitemradio", { name: "Tiếng Việt" }),
+    );
+    expect(
+      screen.getByRole("button", { name: /language to translate/i }),
+    ).toHaveTextContent("Tiếng Việt");
     await user.click(screen.getByRole("button", { name: /^import$/i }));
 
     await waitFor(() => expect(FakeXHR.last).not.toBeNull());
     expect(FakeXHR.last!.body!.get("translate")).toBe("vi");
+  });
+
+  it("names English as the language chosen, and works with storage that refuses", async () => {
+    const get = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("blocked");
+      });
+    const set = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("blocked");
+      });
+    try {
+      stubMeta();
+      stubXHR();
+      const { user } = await openDialog();
+      await choose([file("a.docx")]);
+      await screen.findByText("a.docx");
+
+      // The review is on when it cannot be read back, and turning it off is not kept.
+      const box = screen.getByRole("checkbox", {
+        name: /review with ai after importing/i,
+      });
+      expect(box).toBeChecked();
+      await user.click(box);
+      expect(box).not.toBeChecked();
+
+      await user.click(
+        screen.getByRole("button", { name: /language to translate/i }),
+      );
+      await user.click(
+        await screen.findByRole("menuitemradio", { name: "English" }),
+      );
+      expect(
+        screen.getByRole("button", { name: /language to translate/i }),
+      ).toHaveTextContent("English");
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
   });
 
   it("starts with the review off when it was turned off before", async () => {
@@ -331,7 +414,9 @@ describe("ImportPagesDialog", () => {
     stubXHR();
     await openDialog();
 
-    expect(screen.getByRole("checkbox", { name: /review with ai/i })).not.toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: /review with ai/i }),
+    ).not.toBeChecked();
     window.localStorage.removeItem("wikihub:import-review");
   });
 
@@ -390,7 +475,9 @@ describe("ImportPagesDialog", () => {
     );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText(/Importing/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancel import" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cancel import" }),
+    ).toBeInTheDocument();
   });
 
   it("asks before importing over a page with the same filename title", async () => {
@@ -408,7 +495,9 @@ describe("ImportPagesDialog", () => {
     await choose([file("a.docx")]);
     await user.click(screen.getByRole("button", { name: /^import$/i }));
 
-    expect(await screen.findByRole("heading", { name: "Page already exists" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Page already exists" }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Replace existing" }));
     await waitFor(() => expect(FakeXHR.last).not.toBeNull());
     expect(FakeXHR.last!.body!.get("conflict_mode")).toBe("replace");
@@ -429,8 +518,12 @@ describe("ImportPagesDialog", () => {
     await choose([file("a (1).pdf")]);
     await user.click(screen.getByRole("button", { name: /^import$/i }));
 
-    expect(await screen.findByRole("heading", { name: "Page already exists" })).toBeInTheDocument();
-    expect(screen.getByText(/matching “a \(1\)” already exists/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Page already exists" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/matching “a \(1\)” already exists/i),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Keep both" }));
     await waitFor(() => expect(FakeXHR.last).not.toBeNull());
     expect(FakeXHR.last!.body!.get("conflict_mode")).toBe("rename");
@@ -449,7 +542,9 @@ describe("ImportPagesDialog", () => {
     await user.click(screen.getByRole("button", { name: /^import$/i }));
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("A WikiHub restore is still running."),
+      expect(toast.error).toHaveBeenCalledWith(
+        "A WikiHub restore is still running.",
+      ),
     );
     // The dialog stays open so the files do not have to be chosen again.
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -475,8 +570,12 @@ describe("ImportPagesDialog", () => {
     await choose([file("a.pdf")]);
     await user.click(screen.getByRole("button", { name: /^import$/i }));
 
-    expect(await screen.findByRole("heading", { name: "Page already exists" })).toBeInTheDocument();
-    expect(screen.getByText(/matching “a” already exists/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Page already exists" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/matching “a” already exists/i),
+    ).toBeInTheDocument();
   });
 
   it("imports straight through when the space has no conflicting page", async () => {
@@ -491,7 +590,9 @@ describe("ImportPagesDialog", () => {
 
     await waitFor(() => expect(FakeXHR.last).not.toBeNull());
     expect(FakeXHR.last!.body!.get("conflict_mode")).toBe("ask");
-    expect(screen.queryByRole("heading", { name: "Page already exists" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Page already exists" }),
+    ).not.toBeInTheDocument();
   });
 
   it("reports a network failure without losing the chosen files", async () => {
@@ -515,14 +616,17 @@ describe("ImportPagesDialog", () => {
 
     expect(await screen.findByText("budget.xlsx")).toBeInTheDocument();
     expect(screen.queryByText(/cannot import/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /import 2 files/i })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /import 2 files/i }),
+    ).toBeEnabled();
   });
 
   it("imports a Google Sheets link on its own", async () => {
     stubMeta();
     stubXHR();
     const { user } = await openDialog();
-    const link = "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit#gid=0";
+    const link =
+      "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit#gid=0";
 
     await user.type(screen.getByLabelText("Google Sheets or Docs link"), link);
     expect(screen.getByText(/a google sheet ready/i)).toBeInTheDocument();
@@ -538,7 +642,8 @@ describe("ImportPagesDialog", () => {
     stubMeta();
     stubXHR();
     const { user } = await openDialog();
-    const link = "https://docs.google.com/document/d/195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE/edit";
+    const link =
+      "https://docs.google.com/document/d/195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE/edit";
 
     await user.type(screen.getByLabelText("Google Sheets or Docs link"), link);
     expect(screen.getByText(/a google doc ready/i)).toBeInTheDocument();
@@ -576,11 +681,15 @@ describe("ImportPagesDialog", () => {
 
     await user.type(input, "https://example.com/sheet");
 
-    expect(screen.getByText(/not a google sheets or google docs link/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/not a google sheets or google docs link/i),
+    ).toBeInTheDocument();
     expect(input).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByRole("button", { name: /^import$/i })).toBeDisabled();
 
-    await user.click(screen.getByRole("button", { name: /clear the google link/i }));
+    await user.click(
+      screen.getByRole("button", { name: /clear the google link/i }),
+    );
     expect(input).toHaveValue("");
     expect(screen.getByRole("button", { name: /^import$/i })).toBeEnabled();
   });
@@ -603,7 +712,9 @@ describe("ImportPagesDialog edge cases", () => {
 
     expect(await screen.findByText("doc-19.docx")).toBeInTheDocument();
     expect(screen.queryByText("doc-20.docx")).toBeNull();
-    expect(toast.error).toHaveBeenCalledWith("Import at most 20 documents at a time.");
+    expect(toast.error).toHaveBeenCalledWith(
+      "Import at most 20 documents at a time.",
+    );
   });
 
   it("takes files dropped on the drop zone", async () => {
@@ -659,13 +770,21 @@ describe("ImportPagesDialog edge cases", () => {
     FakeXHR.rawBody = "<html>";
     await startWith();
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The server sent a response WikiHub could not read."));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "The server sent a response WikiHub could not read.",
+      ),
+    );
   });
 
   it.each([
     ["a plain detail", { detail: "Plain detail." }, "Plain detail."],
     ["a top-level message", { message: "Top message." }, "Top message."],
-    ["an unusable message", { detail: { message: 42 } }, "The import could not be started."],
+    [
+      "an unusable message",
+      { detail: { message: 42 } },
+      "The import could not be started.",
+    ],
   ])("explains a refusal that carries %s", async (_label, body, text) => {
     stubMeta();
     stubXHR({ status: 400, body });
@@ -680,7 +799,11 @@ describe("ImportPagesDialog edge cases", () => {
     FakeXHR.rawBody = "Bad gateway";
     await startWith();
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The import could not be started."));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "The import could not be started.",
+      ),
+    );
   });
 
   it("counts several conflicts the server found, and none it did not name", async () => {
@@ -691,24 +814,40 @@ describe("ImportPagesDialog edge cases", () => {
         error: {
           code: "document_import_conflict",
           message: "Exists.",
-          details: { conflicts: [{ filename: "a.pdf" }, { filename: "b.pdf" }, { other: 1 }] },
+          details: {
+            conflicts: [
+              { filename: "a.pdf" },
+              { filename: "b.pdf" },
+              { other: 1 },
+            ],
+          },
         },
       },
     });
     await startWith("a.pdf");
 
-    expect(await screen.findByText(/2 pages with the same names already exist/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/2 pages with the same names already exist/),
+    ).toBeInTheDocument();
   });
 
   it("offers the general conflict wording when the server names no file", async () => {
     stubMeta();
     stubXHR({
       status: 409,
-      body: { error: { code: "document_import_conflict", message: "Exists.", details: {} } },
+      body: {
+        error: {
+          code: "document_import_conflict",
+          message: "Exists.",
+          details: {},
+        },
+      },
     });
     await startWith("a.pdf");
 
-    expect(await screen.findByRole("heading", { name: "Page already exists" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Page already exists" }),
+    ).toBeInTheDocument();
   });
 
   it("closes the dialog and tells the caller when a finished import is dismissed", async () => {
@@ -719,7 +858,12 @@ describe("ImportPagesDialog edge cases", () => {
         space_key: "ENG",
         status: "complete",
         phase: "done",
-        counters: { items_total: 1, items_processed: 1, pages_created: 1, items_failed: 0 },
+        counters: {
+          items_total: 1,
+          items_processed: 1,
+          pages_created: 1,
+          items_failed: 0,
+        },
         cancel_requested: false,
         error: null,
         percent: 100,
@@ -746,7 +890,11 @@ describe("ImportPagesDialog edge cases", () => {
 
     await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1));
     const summary = await screen.findAllByRole("dialog");
-    await user.click(within(summary[summary.length - 1]).getByRole("button", { name: /done/i }));
+    await user.click(
+      within(summary[summary.length - 1]).getByRole("button", {
+        name: /done/i,
+      }),
+    );
     await user.click(await screen.findByRole("button", { name: /dismiss/i }));
 
     expect(onDismiss).toHaveBeenCalled();
@@ -767,7 +915,11 @@ describe("ImportPagesDialog refusals without a message", () => {
     stubXHR({ status: 400, body: {} });
     await importOne();
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The import could not be started."));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "The import could not be started.",
+      ),
+    );
   });
 
   it("speaks of this file when the server reports a conflict without naming it", async () => {

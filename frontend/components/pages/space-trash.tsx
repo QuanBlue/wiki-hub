@@ -221,6 +221,7 @@ export function SpaceTrashDialog({
   const [pending, setPending] = useState(false);
   const [filter, setFilter] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const leftLabel = useLeftLabel();
   const base = `/api/v1/spaces/${encodeURIComponent(space.key)}/trash`;
   const spaceHref = `/spaces/${encodeURIComponent(space.key)}`;
 
@@ -442,11 +443,7 @@ export function SpaceTrashDialog({
                                 )}
                               >
                                 <Clock className="size-3" aria-hidden />
-                                {left === 0
-                                  ? t("trash.purgeToday")
-                                  : left === 1
-                                    ? t("trash.purgeInOne")
-                                    : t("trash.purgeIn", { days: left })}
+                                {leftLabel(item.purge_at)}
                               </span>
                             </span>
                             <span

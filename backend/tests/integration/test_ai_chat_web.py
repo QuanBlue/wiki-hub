@@ -384,3 +384,19 @@ async def test_when_no_weather_can_be_had_at_all_it_says_so_in_the_users_languag
         assert "Atlantis" in done["answer"]
     assert "could not get the weather" in english[-1]["result"]["answer"]
     assert "không lấy được thời tiết" in vietnamese[-1]["result"]["answer"]
+
+
+async def test_a_weather_place_unknown_to_the_service_and_a_failing_search_says_so(
+    installed: AsyncSession, model: Model, web: Web
+) -> None:
+    owner, space, pages = await _setup(installed)
+    await _page(pages, space, owner, "Holiday policy", "Twenty days a year")
+    web.no_weather = True
+    web.fail = True
+    model.script = [["WEATHER: Atlantis"]]
+
+    events = await run(installed, owner, conversation("weather in Atlantis"))
+
+    done = events[-1]["result"]
+    assert done["found"] and done["basis"] == "clarify"
+    assert "could not get the weather" in done["answer"]
