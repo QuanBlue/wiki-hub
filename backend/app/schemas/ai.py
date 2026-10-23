@@ -565,7 +565,8 @@ class ExecuteRequest(BaseModel):
 class AnswerResult(BaseModel):
     #: ``False`` when the wiki does not answer the question; the pages in ``related`` may help.
     found: bool
-    #: Markdown with ``[n]`` marks, each naming one of ``sources``. Empty when not found.
+    #: Markdown with ``[n]`` marks, each naming one of ``sources``. When not found, empty, or the
+    #: chat assistant's own words: that it found nothing, and where to look.
     answer: str = ""
     #: ``no_match`` (nothing relevant), ``not_in_pages`` (relevant pages, but no answer in
     #: them) or ``ungrounded`` (the model answered without pointing at a page).

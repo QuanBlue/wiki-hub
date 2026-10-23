@@ -158,6 +158,24 @@ describe("an answer from the internet or from general knowledge", () => {
       /web search found nothing/,
     );
   });
+
+  it("shows the assistant's own words when it found nothing, with where to look", async () => {
+    streamChat.mockResolvedValue({
+      found: false,
+      answer: "I could not find this. Try the company's careers page.",
+      reason: "not_in_pages",
+      sources: [],
+      related: [],
+      cached: false,
+      basis: "wiki",
+      web_sources: [],
+    } satisfies AnswerResult);
+    await ask("viettel core values");
+
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("Try the company's careers page.");
+    expect(status).not.toHaveTextContent(/pages found do not answer/);
+  });
 });
 
 describe("marks and events", () => {

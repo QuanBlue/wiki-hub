@@ -37,6 +37,8 @@ class Web:
         self.read: list[str] = []
         self.weather: list[str] = []
         self.no_weather = False
+        #: What of each page is left unread after the part given: the model may read on.
+        self.unread = ""
 
 
 @pytest.fixture
@@ -55,7 +57,9 @@ def web(monkeypatch: pytest.MonkeyPatch) -> Web:
     async def read(results, query: str):
         # No network in tests: the pages "say" something the model can use.
         fake.read.append(query)
-        return [replace(r, content="The page says 31 degrees.") for r in results]
+        return [
+            replace(r, content="The page says 31 degrees.", unread=fake.unread) for r in results
+        ]
 
     monkeypatch.setattr(chat_module, "load_web_config", load)
     monkeypatch.setattr(chat_module, "search_web", search)
@@ -164,6 +168,68 @@ async def test_a_search_that_finds_nothing_and_a_model_with_no_answer_says_not_f
 
     assert events[-1]["result"]["found"] is False
     assert events[-1]["result"]["reason"] == "not_in_pages"
+    assert events[-1]["result"]["answer"] == ""
+
+
+async def test_not_found_says_so_in_its_own_words_and_suggests_where_to_look(
+    installed: AsyncSession, model: Model, web: Web
+) -> None:
+    owner, space, pages = await _setup(installed)
+    await _page(pages, space, owner, "Holiday policy", "Twenty days a year")
+    model.script = [
+        ["SEARCH_WEB: viettel core values"],
+        ["NOT_FOUND: ", "I could not find them [w1]. Try the company's own careers page."],
+    ]
+
+    events = await run(installed, owner, conversation("viettel core values?"))
+
+    result = events[-1]["result"]
+    assert result["found"] is False and result["reason"] == "not_in_pages"
+    assert result["answer"] == "I could not find them. Try the company's own careers page."
+    # Never shown while written: it is not an answer.
+    assert not [e for e in events if e["type"] == "delta"]
+    assert "NEVER INVENT" in model.streams[0][0]["content"]
+    assert "NOT_FOUND:" in model.streams[0][0]["content"]
+
+
+async def test_a_page_given_in_part_is_read_on_before_the_answer(
+    installed: AsyncSession, model: Model, web: Web
+) -> None:
+    owner, space, pages = await _setup(installed)
+    await _page(pages, space, owner, "Holiday policy", "Twenty days a year")
+    web.unread = "4. Creativity is vitality. 5. Systems thinking."
+    model.script = [
+        ["SEARCH_WEB: viettel core values"],
+        ["READ_MORE: w1"],
+        ["The values are 1 to 5 [w1]."],
+    ]
+
+    events = await run(installed, owner, conversation("viettel core values?"))
+
+    shown = "".join(e["text"] for e in events if e["type"] == "delta")
+    assert shown == "The values are 1 to 5 [w1]."
+    assert events[-1]["result"]["found"] and events[-1]["result"]["basis"] == "web"
+    # The page was marked as given in part, and the rest of it came with the next turn.
+    assert "READ_MORE: w1" in model.streams[1][-1]["content"]
+    assert model.streams[2][-2] == {"role": "assistant", "content": "READ_MORE: w1"}
+    given = model.streams[2][-1]["content"]
+    assert "4. Creativity is vitality." in given and "end of the page" in given
+
+
+async def test_reading_on_stops_after_a_few_turns(
+    installed: AsyncSession, model: Model, web: Web
+) -> None:
+    owner, space, pages = await _setup(installed)
+    await _page(pages, space, owner, "Holiday policy", "Twenty days a year")
+    web.unread = "more " * 30000
+    model.script = [["SEARCH_WEB: viettel core values"]] + [["READ_MORE: w1"]] * 5
+
+    events = await run(installed, owner, conversation("viettel core values?"))
+
+    # The first search pass, the answer pass, three turns of reading on - then no more.
+    assert len(model.streams) == 2 + chat_module._READ_ROUNDS
+    assert events[-1]["result"]["found"] is False
+    assert events[-1]["result"]["answer"] == ""
 
 
 async def test_an_answer_from_web_pages_without_marks_lists_the_pages_it_was_read_from(

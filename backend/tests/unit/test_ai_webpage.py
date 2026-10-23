@@ -13,7 +13,9 @@ from app.modules.ai.webpage import (
     best_excerpt,
     check,
     fetch_text,
+    next_part,
     readable_text,
+    split_excerpt,
 )
 from app.modules.ai.websearch import WebResult, read_pages
 
@@ -265,6 +267,46 @@ def test_a_long_page_is_cut_to_the_part_with_the_facts() -> None:
     excerpt = best_excerpt(menu + facts + fine_print, "Cam Ranh temperature today", chars=600)
 
     assert "31°" in excerpt and len(excerpt) <= 600
+
+
+def test_a_list_is_kept_whole_even_when_the_menu_repeats_the_question() -> None:
+    # The page the question was answered wrongly from: a menu naming "Giá trị cốt lõi" over
+    # and over, then the eight values. Half the list given, the model made up the other half.
+    menu = "Trang Chủ Giới Thiệu Giá trị cốt lõi Lịch sử phát triển Viettel " * 12
+    values = (
+        "Giá trị cốt lõi của Viettel: 1. Thực tiễn là tiêu chuẩn kiểm nghiệm chân lý. "
+        "2. Trưởng thành qua những thách thức và thất bại. 3. Thích ứng nhanh là sức mạnh "
+        "cạnh tranh. 4. Sáng tạo là sức sống. 5. Tư duy hệ thống. 6. Kết hợp Đông - Tây. "
+        "7. Truyền thống và cách làm người lính. 8. Viettel là ngôi nhà chung. "
+    )
+    fine_print = "Điều khoản sử dụng Chính sách bảo mật Liên hệ " * 40
+
+    excerpt = best_excerpt(menu + values + fine_print, "giá trị cốt lõi Viettel", chars=600)
+
+    assert "1. Thực tiễn" in excerpt and "8. Viettel là ngôi nhà chung" in excerpt
+    assert len(excerpt) <= 600
+
+
+def test_what_the_excerpt_leaves_out_is_kept_to_read_on_with() -> None:
+    text = "intro words " * 100 + "the answer is 42 here " + "closing words " * 100
+
+    excerpt, unread = split_excerpt(text, "answer", chars=600)
+
+    assert "42" in excerpt
+    # Nothing is lost: what was given and what is left hold the whole page between them.
+    assert len(excerpt.replace(" ... ", " ")) + len(unread.replace(" ... ", " ")) >= len(text) - 20
+    assert split_excerpt("short page", "anything") == ("short page", "")
+
+
+def test_reading_on_goes_part_by_part_to_the_end_cut_at_words() -> None:
+    unread = ("word " * 50).strip()
+
+    part, rest = next_part(unread, 60)
+    assert len(part) <= 60 and part.endswith("word") and rest.startswith("word")
+    while rest:
+        part, rest = next_part(rest, 60)
+    assert part.endswith("word")
+    assert next_part("x" * 100, 40) == ("x" * 40, "x" * 60)
 
 
 # ---------------------------------------------------------------- adding the text to results

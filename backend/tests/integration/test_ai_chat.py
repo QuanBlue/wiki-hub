@@ -349,4 +349,4 @@ async def test_a_gateway_failure_ends_in_an_error_event(
 
     events = await run(installed, owner, conversation("address of the billing server"))
 
-    assert events[-1] == {"type": "error", "code": "unavailable"}
+    assert events[-1] == {"type": "error", "code": "gateway"}

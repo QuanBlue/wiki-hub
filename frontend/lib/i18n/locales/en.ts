@@ -409,6 +409,7 @@ export const en = {
     answerVerySlow: "The AI service is slow right now. You can keep waiting or go back to the results.",
     answerRateLimited: "You have asked a lot in a short time. Please wait a moment and try again.",
     answerUnavailable: "The AI assistant is not available right now.",
+    answerGateway: "The AI service had an error or sent back an empty reply. Please press Try again to ask again.",
     answerError: "The answer could not be written. Please try again.",
   },
 

@@ -61,7 +61,12 @@ export const CHAT_IDLE_TIMEOUT_MS = 75_000;
 
 /** Why a reply did not come, as far as the person needs to tell: each has its own words. */
 export type ChatFailure =
-  "timeout" | "unavailable" | "rate_limited" | "file_expired" | "error";
+  | "timeout"
+  | "unavailable"
+  | "gateway"
+  | "rate_limited"
+  | "file_expired"
+  | "error";
 
 export class ChatStreamError extends Error {
   readonly failure: ChatFailure;
@@ -330,8 +335,11 @@ export async function streamChat(
           else if (event.type === "reset") onReset?.();
           else if (event.type === "done") return event.result;
           else if (event.type === "error") {
+            // ``gateway``: a call to the AI failed or came back empty - asking again mends it.
             throw new ChatStreamError(
-              event.code === "timeout" ? "timeout" : "unavailable",
+              event.code === "timeout" || event.code === "gateway"
+                ? event.code
+                : "unavailable",
             );
           }
         }

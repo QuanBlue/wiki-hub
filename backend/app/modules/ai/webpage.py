@@ -46,6 +46,8 @@ _WORD = re.compile(r"\w{3,}", re.UNICODE)
 _MEASURE = re.compile(
     r"\d[\d.,]*\s?(?:°|%|km|mm|cm|kg|gb|mb|mph|h|m/s|usd|vnd|\$|€|đ)", re.IGNORECASE
 )
+#: The start of a numbered item, ``2.`` or ``3)``: "what are the N ..." is answered by a list.
+_ITEM = re.compile(r"(?<![\w.,])\d{1,2}[.)]\s+[^\W\d]")
 
 
 class Blocked(Exception):
@@ -111,26 +113,69 @@ def readable_text(markup: str) -> str:
     return _SPACE.sub(" ", text).strip()
 
 
-def best_excerpt(text: str, query: str, chars: int = 1200) -> str:
-    """The part of ``text`` that most looks like the answer to ``query``.
+def best_excerpt(text: str, query: str, chars: int = 3000) -> str:
+    """The part of ``text`` that most looks like the answer to ``query``: :func:`split_excerpt`."""
+    return split_excerpt(text, query, chars)[0]
+
+
+def _joined(stretches: list[str], indexes: list[int]) -> str:
+    """The stretches at ``indexes``, in page order: neighbours run on, a gap is marked."""
+    pieces: list[str] = []
+    previous = -2
+    for index in indexes:
+        pieces.append(stretches[index] if index == previous + 1 else " ... " + stretches[index])
+        previous = index
+    return " ".join("".join(pieces).split()).removeprefix("... ")
+
+
+def split_excerpt(text: str, query: str, chars: int = 3000) -> tuple[str, str]:
+    """The part of ``text`` that most looks like the answer to ``query``, and the rest of it.
 
     Pages open with menus and close with fine print; the facts are in the middle. The text is
-    cut into stretches, each scored by the query's words it holds and by the measurements in it
-    (a temperature, a price, a percentage), and the best ones are joined, in page order.
+    cut into stretches, each scored - together with the one after it - by the query's words it
+    holds, the measurements in it (a temperature, a price, a percentage) and the numbered items
+    in it, and the best ones are joined, in page order. Each chosen stretch brings the one after
+    it: "the 8 values" is followed by the eight, and a list cut in two at a stretch's end, half
+    of it given to the model, is a list the model completes on its own.
+
+    The rest - what was left out, in page order - is what the model reads on with when the
+    excerpt does not hold the whole answer. ``""`` when the page fits whole.
     """
     if len(text) <= chars:
-        return text
+        return text, ""
     words = {w.lower() for w in _WORD.findall(query)}
-    size = max(200, chars // 3)
-    stretches = [(i, text[i : i + size]) for i in range(0, len(text), size)]
+    size = max(200, chars // 6)
+    stretches = [text[i : i + size] for i in range(0, len(text), size)]
 
-    def score(stretch: str) -> float:
-        lowered = stretch.lower()
-        return sum(lowered.count(w) for w in words) + 2 * len(_MEASURE.findall(stretch))
+    def score(index: int) -> float:
+        run = "".join(stretches[index : index + 2])
+        lowered = run.lower()
+        # A word counts once: a menu repeating the page's title is not the page.
+        return (
+            sum(w in lowered for w in words)
+            + 2 * len(_MEASURE.findall(run))
+            + len(_ITEM.findall(run))
+        )
 
-    ranked = sorted(stretches, key=lambda item: score(item[1]), reverse=True)
-    chosen = sorted(ranked[: max(1, chars // size)])
-    return " ... ".join(piece.strip() for _, piece in chosen)[:chars]
+    room = max(1, chars // size)
+    chosen: set[int] = set()
+    for best in sorted(range(len(stretches)), key=score, reverse=True):
+        for index in (best, best + 1):
+            if index < len(stretches) and len(chosen) < room:
+                chosen.add(index)
+        if len(chosen) >= room:
+            break
+    left = [index for index in range(len(stretches)) if index not in chosen]
+    return _joined(stretches, sorted(chosen))[:chars], _joined(stretches, left)
+
+
+def next_part(unread: str, chars: int) -> tuple[str, str]:
+    """The next ``chars`` of what is left of a page, ended at a word, and what is left after."""
+    if len(unread) <= chars:
+        return unread, ""
+    cut = unread.rfind(" ", chars // 2, chars)
+    cut = cut if cut > 0 else chars
+    return unread[:cut].rstrip(), unread[cut:].lstrip()
 
 
 async def fetch_text(url: str) -> str:

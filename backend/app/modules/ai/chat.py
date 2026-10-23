@@ -71,6 +71,7 @@ from app.modules.ai.websearch import (
     WebResult,
     load_web_config,
     public_query,
+    read_on,
     read_pages,
     search_web,
 )
@@ -145,14 +146,29 @@ _VIETNAMESE_TEXT = re.compile(
 )
 _NO_WEB_RESULTS = (
     "<web_sources>\n</web_sources>\n"
-    "(The web search returned no usable pages. If the question is general knowledge answer "
-    "from your own knowledge starting with GENERAL:, otherwise reply NOT_FOUND.)"
+    "(The web search returned no usable pages. Unless the question is only a greeting, simple "
+    "arithmetic or the definition of a general concept (GENERAL:), reply NOT_FOUND: - say you "
+    "could not find it and suggest where to look. Never answer it from memory.)"
 )
 #: Told to the model with the pages, so it answers from them instead of asking for the search again.
 _USE_WEB_RESULTS = (
     "\n(These are the results of the search you asked for. Answer now from them, in the user's "
-    "language, citing [w1]; do not reply with WEATHER: or SEARCH_WEB: again.)"
+    "language, citing [w1]; do not reply with WEATHER: or SEARCH_WEB: again. State only what "
+    "the pages say: copy a list, a name or a number exactly as a page gives it, and never "
+    "complete a list the pages give only part of. When a page is marked as shown only in part "
+    "and the answer is not complete in what is shown (a list that stops, a heading with nothing "
+    "under it), do not answer yet: reply with exactly one line, READ_MORE: and the pages to "
+    "read on (READ_MORE: w1 w2), and nothing else. When the pages do not answer it, reply "
+    "NOT_FOUND: as the rules say.)"
 )
+#: Given with the next part of the pages the model asked to read on.
+_AFTER_READ_MORE = (
+    "\n(This is the next part of the pages you asked to read on. If the answer is still not "
+    "complete and a page has more unread, reply READ_MORE: again; otherwise answer now from all "
+    "the pages given, citing [w1], or reply NOT_FOUND: as the rules say.)"
+)
+#: How many times the model may read on before it has to answer from what it has.
+_READ_ROUNDS = 3
 #: The last line of a question that carries the account or the guide.
 _APP_REMINDER = (
     "(If the question is about WikiHub itself - this app, its features, settings or the "
@@ -167,6 +183,9 @@ _ASK = re.compile(r"(\*\*|__|`)?\s*ASK\s*:", re.IGNORECASE)
 _WEATHER = re.compile(r"WEATHER\s*:", re.IGNORECASE)
 _APP = re.compile(r"(\*\*|__|`)?\s*APP\s*:", re.IGNORECASE)
 _PLAN = re.compile(r"(\*\*|__|`)?\s*PLAN\s*:", re.IGNORECASE)
+_READ_MORE = re.compile(r"(\*\*|__|`)?\s*READ_MORE\s*:", re.IGNORECASE)
+#: ``NOT_FOUND:`` and what follows it: the model saying it found nothing, and where to look.
+_NOT_FOUND_LEAD = re.compile(r"^\W*NOT[_ ]FOUND\s*[:.\-]?(?:\*\*|__|`)?\s*", re.IGNORECASE)
 
 
 def _after(marker: re.Pattern[str], text: str) -> str:
@@ -223,19 +242,61 @@ def web_block(results: list[WebResult]) -> str:
             f'<web_source n="w{number}" site="{result.host}" title="{title}">\n'
             f"{prompt_text(result.snippet)}\n"
             + (f"Page text: {prompt_text(result.content)}\n" if result.content else "")
+            + _unread_note(number, result)
             + "</web_source>"
         )
     return "<web_sources>\n" + "\n".join(blocks) + "\n</web_sources>"
 
 
+def _unread_note(number: int, result: WebResult) -> str:
+    if not result.unread:
+        return ""
+    return (
+        f"(Shown in part: about {len(result.unread)} more characters of this page are unread. "
+        f"If the answer is not complete in what is shown, reply READ_MORE: w{number}.)\n"
+    )
+
+
+def read_more(results: list[WebResult], reply: str) -> tuple[list[WebResult], str]:
+    """The pages with the parts the model asked to read on marked read, and the message with them.
+
+    ``reply`` is ``READ_MORE: w1 w3``. A page with nothing left unread is said to be ended, so
+    the model answers from what it has rather than asking again.
+    """
+    asked = _READ_MORE.split(reply.strip(), maxsplit=1)[-1].strip().splitlines()
+    wanted = {int(n) for n in re.findall(r"w(\d{1,2})", asked[0] if asked else "", re.IGNORECASE)}
+    read: list[WebResult] = []
+    blocks: list[str] = []
+    for number, result in enumerate(results, start=1):
+        if number in wanted and result.unread:
+            result, part = read_on(result)
+            blocks.append(
+                f'<web_more n="w{number}" site="{result.host}">\n{prompt_text(part)}\n'
+                + (_unread_note(number, result) or "(This is the end of the page.)\n")
+                + "</web_more>"
+            )
+        read.append(result)
+    if not blocks:
+        blocks.append("(Nothing more to read on those pages: everything they hold was given.)")
+    return read, "\n".join(blocks) + _AFTER_READ_MORE
+
+
 def _classify(
-    held: str, web: bool, may_search: bool, app: bool = False, plan: bool = False
+    held: str,
+    web: bool,
+    may_search: bool,
+    app: bool = False,
+    plan: bool = False,
+    may_read: bool = False,
 ) -> tuple[str, str]:
     """What kind of reply this is, and the part of ``held`` that is to be shown."""
     stripped = held.lstrip()
     if not may_search and (_SEARCH.match(stripped) or _WEATHER.match(stripped)):
         # Asking again for what was just fetched: there is no answer to show, only the marker.
         return "not_found", ""
+    if _READ_MORE.match(stripped):
+        # Reading on is for pages just given; out of turns, it is an answer not found.
+        return ("more" if may_read else "not_found"), ""
     if plan and _PLAN.match(stripped):
         return "plan", ""
     if app and _APP.match(stripped):
@@ -269,7 +330,13 @@ def finish(
     """
     files = files or []
     if mode == "not_found":
-        return AnswerResult(found=False, reason="not_in_pages", related=sources)
+        # ``NOT_FOUND: <that it was not found, and where to look>`` is shown as written; the
+        # bare marker, or a marker misused, gets the usual words.
+        said = ""
+        if _NOT_FOUND_LEAD.match(text):
+            said = _NOT_FOUND_LEAD.sub("", text.strip(), count=1)
+            said = scrub_secrets(_FILE_CITATION.sub("", _CITATION.sub("", said))).strip()
+        return AnswerResult(found=False, reason="not_in_pages", answer=said, related=sources)
     if mode in ("general", "ask", "app"):
         cleaned = scrub_secrets(
             _BLOCK_MARK.sub("", _FILE_CITATION.sub("", _CITATION.sub("", text)))
@@ -427,7 +494,12 @@ class ChatTurn:
                 logger.info("ai_chat_retry_empty")
 
     async def _pass(
-        self, messages: list[dict[str, str]], *, may_search: bool, out: _Pass
+        self,
+        messages: list[dict[str, str]],
+        *,
+        may_search: bool,
+        out: _Pass,
+        may_read: bool = False,
     ) -> AsyncIterator[dict]:
         """One streamed call: ``delta`` events as it is written; the outcome lands in ``out``."""
         self.calls += 1
@@ -460,7 +532,9 @@ class ChatTurn:
             elif state == "holding":
                 held += piece
                 if len(held) >= _HOLD_CHARS:
-                    out.mode, visible = _classify(held, web, may_search, self.app, self.plan)
+                    out.mode, visible = _classify(
+                        held, web, may_search, self.app, self.plan, may_read
+                    )
                     if out.mode in _SHOWN:
                         state = "streaming"
                         shown_from = len(held)
@@ -469,7 +543,7 @@ class ChatTurn:
                     else:
                         state = "suppressed"
         if state == "holding":  # a reply shorter than the hold
-            out.mode, visible = _classify(held, web, may_search, self.app, self.plan)
+            out.mode, visible = _classify(held, web, may_search, self.app, self.plan, may_read)
             if out.mode in _SHOWN and visible:
                 yield {"type": "delta", "text": visible}
         del shown_from
@@ -541,15 +615,37 @@ class ChatTurn:
                         + (web_block(results) + _USE_WEB_RESULTS if results else _NO_WEB_RESULTS),
                     }
                     final = _Pass()
-                    async for event in self._pass(again, may_search=False, out=final):
+                    async for event in self._pass(
+                        again, may_search=False, out=final, may_read=True
+                    ):
                         yield event
+                    rounds = 0
+                    while final.mode == "more":
+                        # A page given in part did not hold the whole answer: the next part of
+                        # it, rather than an answer completed from memory.
+                        rounds += 1
+                        if final.usage is not None:
+                            await self._record(final.usage)
+                        results, more = read_more(results, final.text)
+                        again = [
+                            *again,
+                            {"role": "assistant", "content": final.text.strip()},
+                            {"role": "user", "content": more},
+                        ]
+                        final = _Pass()
+                        async for event in self._pass(
+                            again, may_search=False, out=final, may_read=rounds < _READ_ROUNDS
+                        ):
+                            yield event
         except TimeoutError:
             self._log("timeout")
             yield {"type": "error", "code": "timeout"}
             return
         except ServiceUnavailableError:
-            self._log("unavailable")
-            yield {"type": "error", "code": "unavailable"}
+            # The AI being off was refused before the stream began; here the gateway failed a
+            # call (an error, or a reply with nothing in it), which asking again usually mends.
+            self._log("gateway")
+            yield {"type": "error", "code": "gateway"}
             return
 
         for used in (first.usage, final.usage if final is not first else None):

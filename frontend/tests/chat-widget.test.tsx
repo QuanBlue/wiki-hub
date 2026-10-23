@@ -227,6 +227,23 @@ describe("the chat widget", () => {
     expect(screen.getAllByText("billing")).toHaveLength(1); // not asked twice on screen
   });
 
+  it("says the AI service failed, not that the assistant is off, and offers Try again", async () => {
+    ai(true);
+    streamChat.mockRejectedValueOnce(new ChatStreamError("gateway"));
+    streamChat.mockResolvedValueOnce(FOUND);
+    const actor = userEvent.setup();
+    render(<Shell userId="u1" />);
+
+    await actor.type(await openPanel(actor), "billing{Enter}");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/empty reply\. Please press Try again/);
+    expect(alert).not.toHaveTextContent(/not available/);
+
+    await actor.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByText("10.0.0.5")).toBeInTheDocument();
+  });
+
   it("stopping keeps the question and says the answer was cancelled", async () => {
     ai(true);
     streamChat.mockImplementation(
