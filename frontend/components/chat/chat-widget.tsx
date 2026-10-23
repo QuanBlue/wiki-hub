@@ -146,6 +146,7 @@ const VERY_SLOW_AFTER_MS = 20000;
 const FAILURE_KEY: Record<ChatFailure, string> = {
   timeout: "search.answerTimeout",
   unavailable: "search.answerUnavailable",
+  gateway: "search.answerGateway",
   rate_limited: "search.answerRateLimited",
   file_expired: "chat.fileExpired",
   error: "search.answerError",
@@ -575,9 +576,21 @@ function AssistantMessage({
     const related = entry.related ?? [];
     return (
       <div className="space-y-2">
-        <p className="text-muted-foreground text-sm" role="status">
-          {t(NOT_FOUND_KEY[entry.reason ?? ""] ?? "search.answerNotInPages")}
-        </p>
+        {entry.content.trim() ? (
+          // The assistant's own words: that it found nothing, and where to look.
+          <div role="status">
+            <IssueMarkdown
+              source={entry.content}
+              autolink
+              rich
+              className="text-foreground text-[15px] leading-7"
+            />
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-sm" role="status">
+            {t(NOT_FOUND_KEY[entry.reason ?? ""] ?? "search.answerNotInPages")}
+          </p>
+        )}
         {related.length ? (
           <section aria-label={t("search.answerMayHelp")}>
             <SectionLabel>{t("search.answerMayHelp")}</SectionLabel>

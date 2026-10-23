@@ -394,9 +394,20 @@ export const sectionsEn: HelpSection[] = [
             public addresses.
           </li>
           <li>
-            <strong>General knowledge</strong>: when neither the wiki nor the web answers and the
-            question is general, the AI may answer from its own knowledge. Such an answer is always
-            marked <Code>Not checked against your wiki or any web page</Code>; treat it as a hint.
+            <strong>General knowledge</strong>: only for a greeting, simple arithmetic or the
+            definition of a general concept, the AI may answer from its own knowledge. Such an answer
+            is always marked <Code>Not checked against your wiki or any web page</Code>; treat it as a
+            hint. It never answers from memory about a particular company, person, product or event,
+            nor gives a list, name, figure or date that way.
+          </li>
+          <li>
+            <strong>Nothing made up</strong>: every fact, list item, number and example in an answer
+            must be written in a cited source. A list the sources give only part of is not completed:
+            the answer gives the items found and says the rest are missing. When a web page is long,
+            the assistant reads the part that bears on the question first and reads on through the
+            page when that part does not hold the whole answer. When nothing answers the question,
+            it says plainly that it could not find it and suggests where to look (other words to ask
+            with, the kind of page or team that would know) instead of guessing.
           </li>
           <li>
             <strong>Explain or translate</strong>: select a word, phrase or sentence in a question or

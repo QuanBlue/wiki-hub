@@ -253,7 +253,7 @@ async def test_an_empty_reply_is_asked_again_with_more_room(
 
     monkeypatch.setattr(chat_module, "chat_stream", always_empty)
     events = await run(installed, owner, conversation("tôi có quyền truy cập những space nào"))
-    assert events[-1] == {"type": "error", "code": "unavailable"} and len(budgets) == 2
+    assert events[-1] == {"type": "error", "code": "gateway"} and len(budgets) == 2
 
 
 async def test_an_answer_from_the_guide_that_forgot_its_marker_is_still_an_answer(

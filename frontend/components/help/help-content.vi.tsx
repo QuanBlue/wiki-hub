@@ -397,9 +397,19 @@ export const sectionsVi: HelpSection[] = [
             thể trích được số liệu trên đó. Chỉ tải trang từ địa chỉ công khai.
           </li>
           <li>
-            <strong>Kiến thức chung</strong>: khi cả wiki lẫn web đều không trả lời được và câu hỏi
-            mang tính tổng quát, AI có thể trả lời bằng kiến thức của nó. Câu trả lời như vậy luôn có
-            nhãn <Code>Chưa được kiểm chứng với wiki hay trang web nào</Code>; hãy xem như gợi ý.
+            <strong>Kiến thức chung</strong>: chỉ với lời chào, phép tính đơn giản hoặc định nghĩa
+            của một khái niệm chung, AI mới có thể trả lời bằng kiến thức của nó. Câu trả lời như vậy
+            luôn có nhãn <Code>Chưa được kiểm chứng với wiki hay trang web nào</Code>; hãy xem như gợi
+            ý. AI không bao giờ trả lời theo trí nhớ về một công ty, con người, sản phẩm hay sự kiện
+            cụ thể, cũng không đưa ra danh sách, tên, số liệu hay ngày tháng theo cách đó.
+          </li>
+          <li>
+            <strong>Không bịa đặt</strong>: mọi thông tin, mục trong danh sách, con số và ví dụ trong
+            câu trả lời phải có trong một nguồn được dẫn. Danh sách mà nguồn chỉ có một phần sẽ không
+            được tự điền thêm: câu trả lời đưa ra các mục tìm thấy và nói rõ phần còn thiếu. Với trang
+            web dài, trợ lý đọc phần liên quan đến câu hỏi trước, và đọc tiếp trang khi phần đó chưa
+            đủ câu trả lời. Khi không có gì trả lời được câu hỏi, trợ lý nói thẳng là không tìm thấy
+            và gợi ý nơi nên tìm (cách hỏi khác, loại trang hay nhóm có thể biết) thay vì đoán.
           </li>
           <li>
             <strong>Giải thích và dịch</strong>: bôi đen một từ, cụm từ hay câu trong câu hỏi hoặc câu

@@ -31,7 +31,8 @@ function newId(): string {
 function finished(result: AnswerResult): Partial<Assistant> {
   return {
     status: "done",
-    content: result.found ? result.answer : "",
+    // Not found: empty, or the assistant saying so in its own words, with where to look.
+    content: result.answer ?? "",
     found: result.found,
     reason: result.reason,
     sources: result.sources,

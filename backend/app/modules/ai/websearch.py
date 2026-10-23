@@ -30,7 +30,7 @@ from app.modules.admin_mail.crypto import (
 from app.modules.ai.admin import mask_key
 from app.modules.ai.answer import scrub_secrets
 from app.modules.ai.config import load_config
-from app.modules.ai.webpage import best_excerpt, fetch_text
+from app.modules.ai.webpage import fetch_text, next_part, split_excerpt
 from app.schemas.ai import WebSearchRead, WebSearchTestResult, WebSearchUpdate
 
 logger = get_logger(__name__)
@@ -85,6 +85,8 @@ class WebResult:
     snippet: str
     #: What the page itself says (the part that bears on the query), when it could be read.
     content: str = ""
+    #: What of the page has not been given yet, in page order: read on with :func:`read_on`.
+    unread: str = ""
 
     @property
     def host(self) -> str:
@@ -198,6 +200,17 @@ async def _gateway_search(
 #: How many of the top results are opened, and for how long all of them together may take.
 _PAGES_READ = 3
 _PAGES_BUDGET_SECONDS = 9.0
+#: How much of a page is given at once. Most articles fit whole; a longer page is given its
+#: part that bears on the question first, and the model reads on (:func:`read_on`) when that
+#: part does not hold the whole answer. Not the whole of every page at once: five long pages
+#: of menus, comments and fine print would crowd the wiki out of what the model can read.
+PAGE_CHARS = 10000
+
+
+def read_on(result: WebResult) -> tuple[WebResult, str]:
+    """The next part of a page the model has not read yet, and the result with it marked read."""
+    part, rest = next_part(result.unread, PAGE_CHARS)
+    return replace(result, unread=rest), part
 
 
 async def read_pages(results: list[WebResult], query: str) -> list[WebResult]:
@@ -217,10 +230,12 @@ async def read_pages(results: list[WebResult], query: str) -> list[WebResult]:
         )
     except TimeoutError:
         return results
-    read = [
-        replace(result, content=best_excerpt(text, query)) if text else result
-        for result, text in zip(head, texts, strict=True)
-    ]
+    read = []
+    for result, text in zip(head, texts, strict=True):
+        if text:
+            excerpt, unread = split_excerpt(text, query, PAGE_CHARS)
+            result = replace(result, content=excerpt, unread=unread)
+        read.append(result)
     return [*read, *results[_PAGES_READ:]]
 
 

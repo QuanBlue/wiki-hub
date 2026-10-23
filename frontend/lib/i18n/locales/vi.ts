@@ -419,6 +419,7 @@ export const vi: Dictionary = {
     answerVerySlow: "Dịch vụ AI đang chậm. Bạn có thể đợi thêm hoặc quay lại kết quả.",
     answerRateLimited: "Bạn đã hỏi nhiều trong thời gian ngắn. Vui lòng đợi một lát rồi thử lại.",
     answerUnavailable: "Trợ lý AI hiện không khả dụng.",
+    answerGateway: "Dịch vụ AI vừa gặp lỗi hoặc trả về câu trả lời rỗng. Vui lòng bấm Thử lại để hỏi lại.",
     answerError: "Chưa viết được câu trả lời. Vui lòng thử lại.",
   },
 

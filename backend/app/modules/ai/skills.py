@@ -208,6 +208,34 @@ ANSWER_RULES = (
 )
 
 
+#: Added to every answer, last, where it is remembered best. The wiki is the company's knowledge:
+#: a plausible answer that is made up does more harm than none.
+NO_INVENTION_RULES = (
+    "NEVER INVENT - this assistant is the company's source of knowledge, so a made-up fact does "
+    "real harm; this overrides every other rule. Every fact you state - a name, a number, a "
+    "date, a list item, a quotation, a step, an example - must be written in what you were "
+    "given (the numbered sources, attached files, web pages, <account>, <app_guide>) and cited "
+    "as those rules say; a GENERAL: reply is held to its own narrow limits. Never fill a gap "
+    "from memory or by guessing, and never complete, extend or round out a list, a count or a "
+    "table: if a source says there are 8 items and shows 3, give those 3 and say the others "
+    "are not in what you were given. Copy names, list items, numbers and quotations exactly as "
+    "written. Give only the examples and scenarios the sources contain; if the question asks "
+    "for examples and the sources have none, say so instead of making them up. When you are "
+    "not sure a source says something, leave it out. An honest 'not found' is always better "
+    "than an answer that only sounds right."
+)
+
+#: Added in the chat, with :data:`NO_INVENTION_RULES`: what to say when nothing answers.
+NOT_FOUND_RULES = (
+    "WHEN NOTHING ANSWERS - wherever the rules above say to reply with exactly NOT_FOUND, reply "
+    "instead starting with exactly NOT_FOUND: and then, in the user's language, say plainly "
+    "that you could not find the answer, then give one to three useful suggestions: other words "
+    "to ask or search with, the kind of page, team or document that would hold it, or a source "
+    "to check (a web page you were given, by its address). Suggestions only: no facts about the "
+    "answer itself, and nothing presented as if it were found."
+)
+
+
 #: Added when the question needs facts combined (see ``search.query.needs_reasoning``).
 REASONING_RULES = (
     "REASONING - this question needs facts combined, counted, compared or a rule applied to a "
@@ -298,10 +326,12 @@ WEB_RULES = (
     "Cite wiki facts as [n]. Do not reply SEARCH_WEB when <web_sources> is already given. "
     "D) Prefer searching (rule B) for anything that is checkable and may change or be "
     "misremembered: commands and options, versions, how a tool behaves, comparisons, "
-    "requirements, errors. Answer from your own knowledge only when searching would add "
-    "nothing (a plain definition, a greeting, simple arithmetic) or when a search was already "
-    "made and found nothing useful: start the reply with exactly GENERAL: and then a short "
-    "answer with no citations; say so when you are unsure. "
+    "requirements, errors. Answer from your own knowledge only for a greeting, simple "
+    "arithmetic or the settled definition of a general concept, where searching would add "
+    "nothing: start the reply with exactly GENERAL: and then a short answer with no citations. "
+    "Never answer from your own knowledge about a particular organisation, company, person, "
+    "product, place or event, and never give from it a list, a count, a name, a figure, a date "
+    "or a quotation: search, and when the search finds nothing, say so (NOT_FOUND). "
     "E) Write the query as the fact you want, in the words a page would use: 'Cam Ranh current "
     "temperature and weather now', not 'Cam Ranh weather'. "
     "F) When a web source has a 'Page text:' part, use the numbers and facts in it (values, "
@@ -524,6 +554,9 @@ def answer_system_prompt(
         rules.append(FORMAT_RULES.replace(_FORMAT_END["normal"], end))
     if detail in DETAIL_RULES:
         rules.append(DETAIL_RULES[detail])
+    rules.append(NO_INVENTION_RULES)
+    if detail in RULE_3_BY_DETAIL:  # the chat: the search box shows its own "not found"
+        rules.append(NOT_FOUND_RULES)
     return "\n\n".join(rules)
 
 

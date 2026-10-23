@@ -206,6 +206,23 @@ describe("streamChat", () => {
     ).rejects.toMatchObject({ failure: "timeout" });
   });
 
+  it("a gateway error in the stream is its own failure, and an unknown code is unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(streamed([event("error", { code: "gateway" })]))
+        .mockResolvedValueOnce(streamed([event("error", { code: "other" })])),
+    );
+
+    await expect(
+      streamChat([{ role: "user", content: "hello" }]),
+    ).rejects.toMatchObject({ failure: "gateway" });
+    await expect(
+      streamChat([{ role: "user", content: "hello" }]),
+    ).rejects.toMatchObject({ failure: "unavailable" });
+  });
+
   it("a stream that ends without a result is a failure, not an empty answer", async () => {
     vi.stubGlobal(
       "fetch",
