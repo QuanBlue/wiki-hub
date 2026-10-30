@@ -6,9 +6,10 @@ Requires ``WIKIHUB_TEST_DATABASE_URL``; skipped otherwise.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, PermissionDeniedError
@@ -19,6 +20,7 @@ from app.models.space import Space, SpaceVisibility
 from app.models.user import User
 from app.modules.auth.service import AuthService
 from app.modules.comments.service import CommentService, extract_mention_names
+from app.modules.notifications.service import NotificationService
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
 from app.schemas.comment import CommentCreate, CommentUpdate
@@ -221,6 +223,84 @@ class TestAccess:
             await service.delete("CMT", other.slug, comment.id)
         with pytest.raises(NotFoundError):
             await service.set_like("CMT", other.slug, uuid.uuid4(), True)
+
+
+class TestNotificationsOfDeletedComments:
+    async def test_deleting_a_comment_removes_its_notifications(
+        self, session: AsyncSession
+    ) -> None:
+        owner, _, slug = await _setup(session)
+        author = await _user(session)
+        alice = await _user(session, unique("alice"))
+        root = await CommentService(session, author).create(
+            "CMT", slug, CommentCreate(body=f"cc @{alice.username}")
+        )
+        await CommentService(session, owner).create(
+            "CMT", slug, CommentCreate(body=f"@{alice.username} too", parent_id=root.id)
+        )
+        assert await _kinds(session, alice) == ["comment_mention", "comment_mention"]
+
+        await CommentService(session, author).delete("CMT", slug, root.id)
+
+        assert await _kinds(session, alice) == []
+        assert await _kinds(session, owner) == []
+
+    async def test_a_notification_whose_comment_vanished_is_not_listed(
+        self, session: AsyncSession
+    ) -> None:
+        owner, _, slug = await _setup(session)
+        author = await _user(session)
+        comment = await CommentService(session, author).create(
+            "CMT", slug, CommentCreate(body="hello")
+        )
+        # Removed behind the notification's back, e.g. by a cascade.
+        await session.execute(delete(PageComment).where(PageComment.id == comment.id))
+
+        listed = await NotificationService(session, owner).list(
+            unread_only=False, limit=20, offset=0
+        )
+
+        assert listed.items == []
+        assert await _kinds(session, owner) == []
+
+    async def test_opening_a_gone_target_removes_it_and_reports_it(
+        self, session: AsyncSession
+    ) -> None:
+        owner, _, slug = await _setup(session)
+        author = await _user(session)
+        comment = await CommentService(session, author).create(
+            "CMT", slug, CommentCreate(body="hello")
+        )
+        notification = await session.scalar(
+            select(Notification).where(Notification.user_id == owner.id)
+        )
+        assert notification is not None
+        service = NotificationService(session, owner)
+        opened = await service.open(notification.id)
+        assert opened.read_at is not None
+
+        await session.execute(delete(PageComment).where(PageComment.id == comment.id))
+        with pytest.raises(NotFoundError) as caught:
+            await service.open(notification.id)
+
+        assert caught.value.code == "notification_target_gone"
+        assert await _kinds(session, owner) == []
+        with pytest.raises(NotFoundError):
+            await service.open(notification.id)
+
+    async def test_a_page_in_the_trash_counts_as_gone(self, session: AsyncSession) -> None:
+        owner, space, slug = await _setup(session)
+        author = await _user(session)
+        await CommentService(session, author).create("CMT", slug, CommentCreate(body="hello"))
+        page = await PageService(session).get_by_slug(space, slug)
+        page.deleted_at = datetime.now(UTC)
+        await session.flush()
+
+        listed = await NotificationService(session, owner).list(
+            unread_only=False, limit=20, offset=0
+        )
+
+        assert listed.items == []
 
 
 class TestMentionsAndNotifications:

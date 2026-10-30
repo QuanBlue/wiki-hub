@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Search, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
@@ -40,9 +40,9 @@ function useParamWriter() {
   // back in, blanking the search box and filters for a moment each time:
   // exactly the flicker this was reported for. Marking the navigation as a
   // transition keeps the current UI on screen while the next one loads.
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
 
-  return useCallback(
+  const write = useCallback(
     (updates: Record<string, string | null>) => {
       const next = new URLSearchParams(searchParams.toString());
       for (const [key, value] of Object.entries(updates)) {
@@ -53,11 +53,14 @@ function useParamWriter() {
       if (!("offset" in updates)) next.delete("offset");
       const qs = next.toString();
       startTransition(() => {
-        router.push(qs ? `${pathname}?${qs}` : pathname);
+        const navigate = (router.replace ?? router.push).bind(router);
+        navigate(qs ? `${pathname}?${qs}` : pathname);
       });
     },
     [router, pathname, searchParams],
   );
+
+  return Object.assign(write, { isPending });
 }
 
 export function ListFilters({
@@ -70,41 +73,58 @@ export function ListFilters({
   filters?: FilterOption[];
 }) {
   const write = useParamWriter();
+  const isPending = (write as { isPending?: boolean }).isPending ?? false;
+  const writeRef = useRef(write);
+  writeRef.current = write;
+
   const [term, setTerm] = useState(searchValue);
-  const [lastFromUrl, setLastFromUrl] = useState(searchValue);
+  const [prevSearchValue, setPrevSearchValue] = useState(searchValue);
+  const lastDispatchedRef = useRef<string>(searchValue);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
   // Keep the box in step when the URL changes from elsewhere (back button, a
-  // filter reset) without fighting the user while they type.
-  if (searchValue !== lastFromUrl) {
-    setLastFromUrl(searchValue);
-    setTerm(searchValue);
+  // filter reset, or external navigation) without fighting the user while they type.
+  // If the new searchValue equals what we just dispatched, it's an echo from our
+  // own typing/debouncing and must NOT overwrite the user's active input.
+  if (searchValue !== prevSearchValue) {
+    setPrevSearchValue(searchValue);
+    if (searchValue !== lastDispatchedRef.current) {
+      lastDispatchedRef.current = searchValue;
+      setTerm(searchValue);
+    }
   }
 
-  // Realtime search: debounce URL updates so typing filters automatically
+  // Realtime search: debounce URL updates so typing filters automatically.
+  // Using writeRef ensures an in-flight server response arriving does not
+  // restart or cancel the user's pending debounce timer.
   useEffect(() => {
-    if (term.trim() === (searchValue || "").trim()) return;
+    const trimmed = term.trim();
+    if (trimmed === (searchValue || "").trim()) return;
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
-      write({ q: term.trim() || null });
+      lastDispatchedRef.current = trimmed;
+      writeRef.current({ q: trimmed || null });
     }, 300);
 
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
-  }, [term, searchValue, write]);
+  }, [term, searchValue]);
 
   const handleClear = () => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     setTerm("");
-    write({ q: null });
+    lastDispatchedRef.current = "";
+    writeRef.current({ q: null });
   };
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    write({ q: term.trim() || null });
+    const trimmed = term.trim();
+    lastDispatchedRef.current = trimmed;
+    writeRef.current({ q: trimmed || null });
   };
 
   return (
@@ -114,7 +134,11 @@ export function ListFilters({
         onSubmit={handleSubmit}
       >
         <div className="relative">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+          {isPending ? (
+            <Loader2 className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 animate-spin" />
+          ) : (
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+          )}
           <Input
             value={term}
             onChange={(e) => setTerm(e.target.value)}

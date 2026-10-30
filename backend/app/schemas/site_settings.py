@@ -8,12 +8,90 @@ cannot tell a deliberate setting from an inherited default.
 
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AppRole = Literal["admin", "member"]
+AnnouncementLevel = Literal["info", "warning", "danger", "success"]
+
+
+def _strip_empty_html(value: str) -> str:
+    """Return plain text extracted from HTML to detect visually empty editor output."""
+    text = re.sub(r"<[^>]+>", "", value).replace("&nbsp;", " ").strip()
+    return text
+
+
+class SystemAnnouncement(BaseModel):
+    """Top-of-page system announcement banner configured by an administrator."""
+
+    enabled: bool = False
+    level: AnnouncementLevel = "info"
+    title: str | None = Field(default=None, max_length=255)
+    content_html: str = Field(default="", max_length=50_000)
+    starts_at: datetime | None = None
+    expires_at: datetime | None = None
+    dismissible: bool = True
+    show_on_login: bool = True
+    updated_at: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _clean_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("content_html")
+    @classmethod
+    def _clean_content_html(cls, value: str | None) -> str:
+        if not value:
+            return ""
+        stripped = value.strip()
+        if not _strip_empty_html(stripped) and "<img" not in stripped.lower():
+            return ""
+        return stripped
+
+    @field_validator("starts_at", "expires_at", "updated_at")
+    @classmethod
+    def _ensure_tz_aware(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def _validate_schedule(self) -> SystemAnnouncement:
+        if (
+            self.starts_at is not None
+            and self.expires_at is not None
+            and self.expires_at <= self.starts_at
+        ):
+            raise ValueError("Announcement expiry time must be after the start time.")
+        return self
+
+    def has_content(self) -> bool:
+        return bool(
+            (self.title and self.title.strip())
+            or _strip_empty_html(self.content_html)
+            or "<img" in self.content_html.lower()
+        )
+
+    def is_currently_active(self, now: datetime | None = None) -> bool:
+        if not self.enabled or not self.has_content():
+            return False
+        current = now or datetime.now(UTC)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=UTC)
+        if self.starts_at is not None and current < self.starts_at:
+            return False
+        if self.expires_at is not None and current >= self.expires_at:
+            return False
+        return True
 
 
 def _all_app_roles() -> list[AppRole]:
@@ -82,6 +160,7 @@ class SiteSettingsOverrides(BaseModel):
     max_backup_import_size_mb: int | None = None
     allowed_attachment_types: list[str] | None = None
     sidebar_permissions: SidebarPermissions | None = None
+    announcement: SystemAnnouncement | None = None
     session_ttl_hours: int | None = None
     trash_retention_days: int | None = None
 
@@ -100,6 +179,7 @@ class EffectiveSettings(BaseModel):
     max_backup_import_size_bytes: int
     allowed_attachment_types: list[str]
     sidebar_permissions: SidebarPermissions
+    announcement: SystemAnnouncement = Field(default_factory=SystemAnnouncement)
     session_ttl_hours: int
     trash_retention_days: int
 
@@ -115,6 +195,12 @@ class SidebarPermissionsRead(BaseModel):
     """The effective navigation policy, safe for every signed-in user to read."""
 
     permissions: SidebarPermissions
+
+
+class AnnouncementRead(BaseModel):
+    """The currently active system announcement (if any), safe for signed-in users."""
+
+    announcement: SystemAnnouncement | None = None
 
 
 class SiteSettingsUpdate(BaseModel):
@@ -135,6 +221,7 @@ class SiteSettingsUpdate(BaseModel):
     max_backup_import_size_mb: int | None = Field(default=None, ge=1, le=102_400)
     allowed_attachment_types: list[str] | None = Field(default=None, max_length=100)
     sidebar_permissions: SidebarPermissions | None = None
+    announcement: SystemAnnouncement | None = None
     session_ttl_hours: int | None = Field(default=None, ge=1, le=8760)
     trash_retention_days: int | None = Field(default=None, ge=1, le=3650)
 

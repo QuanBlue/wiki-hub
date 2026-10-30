@@ -1,3 +1,5 @@
+"use client";
+
 import {
   CircleAlert,
   Info,
@@ -9,6 +11,7 @@ import {
 import type { ReactNode } from "react";
 
 import { CodeBlock } from "@/components/issues/code-block";
+import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { cn } from "@/lib/utils";
 
 /**
@@ -110,9 +113,9 @@ function withMentions(
     const trailing = part.slice(1 + name.length);
     return (
       <span key={`${keyPrefix}-m${index}`}>
-        <span className="bg-primary-subtle text-primary rounded px-1 font-medium">
-          @{name}
-        </span>
+        <UserProfileTrigger username={name} variant="mention" openOnHover>
+          <span className="text-primary font-bold">@{name}</span>
+        </UserProfileTrigger>
         {trailing}
       </span>
     );

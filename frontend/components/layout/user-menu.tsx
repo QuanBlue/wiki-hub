@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ListChecks,
   LogOut,
+  Volume2,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -50,6 +51,8 @@ export function UserMenu({ user }: { user: Me }) {
 
   const displayName = user.full_name || user.username;
   const impersonator = user.impersonator;
+  const isSystemAdmin =
+    user.is_superuser || user.global_permissions?.includes("system_admin");
 
   async function signOut() {
     setPending(true);
@@ -136,6 +139,15 @@ export function UserMenu({ user }: { user: Me }) {
             {t("userMenu.yourAccount")}
           </Link>
         </DropdownMenuItem>
+
+        {isSystemAdmin ? (
+          <DropdownMenuItem asChild className="text-foreground">
+            <Link href="/admin/settings?tab=announcement">
+              <Volume2 />
+              {t("userMenu.systemAnnouncement")}
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
 
         {/* The top bar's Help button gives way on a narrow phone: it lives here instead. */}
         <DropdownMenuItem asChild className="text-foreground min-[401px]:hidden">

@@ -8,10 +8,12 @@ import { NavigationProgressProvider } from "@/components/layout/navigation-progr
 import { NotificationsProvider } from "@/components/layout/notifications-provider";
 import { Sidebar } from "@/components/layout/sidebar";
 import { SidebarProvider } from "@/components/layout/sidebar-context";
+import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
+import { SystemAnnouncementProvider } from "@/components/layout/system-announcement-provider";
 import { TopBar } from "@/components/layout/top-bar";
 import { getMailSummary, NO_MAILBOX } from "@/lib/admin-mail";
 import { getNotificationSummary } from "@/lib/notifications";
-import { getSidebarPermissions } from "@/lib/navigation";
+import { getSidebarPermissions, getSystemAnnouncement } from "@/lib/navigation";
 import { getSidebarPreferences } from "@/lib/sidebar-preferences";
 import { listFavoriteSpaces } from "@/lib/spaces";
 import { listOwnPinnedPages } from "@/lib/pages";
@@ -51,6 +53,7 @@ export async function AppShell({
     pinnedPages,
     mailSummary,
     notificationSummary,
+    systemAnnouncement,
   ] = await Promise.all([
     getSidebarPermissions(),
     getSidebarPreferences(),
@@ -60,6 +63,7 @@ export async function AppShell({
     hideSidebar ? Promise.resolve([]) : listOwnPinnedPages().catch(() => []),
     isSystemAdmin ? getMailSummary() : Promise.resolve(NO_MAILBOX),
     getNotificationSummary(),
+    getSystemAnnouncement(),
   ]);
   return (
     <SidebarProvider
@@ -68,6 +72,10 @@ export async function AppShell({
     >
       <NotificationsProvider initial={notificationSummary}>
       <MailSummaryProvider initial={mailSummary} poll={isSystemAdmin}>
+      <SystemAnnouncementProvider
+        announcement={systemAnnouncement}
+        isAdmin={isSystemAdmin}
+      >
       <NavigationProgressProvider>
       <div className="bg-background min-h-screen">
         <TopBar siteName={siteName} user={user} />
@@ -81,7 +89,17 @@ export async function AppShell({
         )}
         <AppMain
           hasBanner={user.impersonator !== null}
-          banner={<MailboxPasswordBanner />}
+          banner={
+            hideSidebar ? null : (
+              <>
+                <SystemAnnouncementBanner
+                  announcement={systemAnnouncement}
+                  isAdmin={isSystemAdmin}
+                />
+                <MailboxPasswordBanner />
+              </>
+            )
+          }
           contentClassName={contentClassName}
           disableSidebarOffset={hideSidebar}
           fullWidth={fullWidth}
@@ -99,6 +117,7 @@ export async function AppShell({
         ) : null}
       </div>
       </NavigationProgressProvider>
+      </SystemAnnouncementProvider>
       </MailSummaryProvider>
       </NotificationsProvider>
     </SidebarProvider>

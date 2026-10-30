@@ -1,11 +1,15 @@
 "use client";
 
 import {
+  AlertCircle,
+  AlertTriangle,
   ArrowUpRight,
   Bell,
   BookOpen,
   Bookmark,
+  Calendar,
   Check,
+  CheckCircle2,
   CheckSquare,
   ChevronDown,
   Clock,
@@ -33,6 +37,7 @@ import {
   LayoutGrid,
   Loader2,
   Lock,
+  Megaphone,
   Moon,
   MoreHorizontal,
   Network,
@@ -54,6 +59,8 @@ import {
   Type,
   User,
   Users,
+  Volume2,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -84,6 +91,8 @@ import {
 } from "@/components/ui/select";
 import { FontPicker } from "@/components/admin/font-picker";
 import { FontSpecimenModal } from "@/components/admin/font-specimen-modal";
+import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
+import { RichTextEditor } from "@/components/pages/rich-text-editor";
 import { api, ApiError } from "@/lib/api-client";
 import {
   FONT_PRESETS,
@@ -97,7 +106,13 @@ import {
   getPresetOrCustomPalette,
 } from "@/lib/theme-presets";
 import { cn } from "@/lib/utils";
-import type { AppRole, SidebarPermissions, SiteSettings } from "@/types/api";
+import type {
+  AnnouncementLevel,
+  AppRole,
+  SidebarPermissions,
+  SiteSettings,
+  SystemAnnouncement,
+} from "@/types/api";
 
 const LOGO_ICON_MAP: Record<string, LucideIcon> = {
   default: Layers,
@@ -229,7 +244,7 @@ const ROLE_OPTIONS: Array<{
 ];
 
 const SETTINGS_TABS: Array<{
-  id: "appearance" | "general" | "sidebar";
+  id: "appearance" | "general" | "sidebar" | "announcement";
   labelEn: string;
   labelVi: string;
   icon: LucideIcon;
@@ -237,7 +252,89 @@ const SETTINGS_TABS: Array<{
   { id: "appearance", labelEn: "Theme & Branding", labelVi: "Giao diện & Thương hiệu", icon: Palette },
   { id: "general", labelEn: "General & Sessions", labelVi: "Cấu hình chung & Phiên", icon: SlidersHorizontal },
   { id: "sidebar", labelEn: "Sidebar access", labelVi: "Phân quyền thanh bên", icon: ShieldCheck },
+  { id: "announcement", labelEn: "System Announcement", labelVi: "Thông báo hệ thống", icon: Volume2 },
 ];
+
+const ANNOUNCEMENT_LEVEL_OPTIONS: Array<{
+  value: AnnouncementLevel;
+  labelEn: string;
+  labelVi: string;
+  descEn: string;
+  descVi: string;
+  icon: LucideIcon;
+  toneClass: string;
+  activeClass: string;
+}> = [
+  {
+    value: "info",
+    labelEn: "Information",
+    labelVi: "Thông tin chung",
+    descEn: "Release notes, admin contacts, general updates",
+    descVi: "Lịch release, đầu mối liên hệ Admin, thông báo chung",
+    icon: Volume2,
+    toneClass: "text-info",
+    activeClass: "border-info ring-2 ring-info/20 bg-info-bg/60",
+  },
+  {
+    value: "warning",
+    labelEn: "Warning",
+    labelVi: "Cảnh báo / Lưu ý",
+    descEn: "Scheduled maintenance, upcoming changes",
+    descVi: "Bảo trì định kỳ, thay đổi hệ thống sắp tới",
+    icon: AlertTriangle,
+    toneClass: "text-warning",
+    activeClass: "border-warning ring-2 ring-warning/20 bg-warning-bg/60",
+  },
+  {
+    value: "danger",
+    labelEn: "Critical / Urgent",
+    labelVi: "Khẩn cấp / Quan trọng",
+    descEn: "Service outage, urgent security action",
+    descVi: "Sự cố dịch vụ, yêu cầu bảo mật khẩn cấp",
+    icon: AlertCircle,
+    toneClass: "text-danger",
+    activeClass: "border-danger ring-2 ring-danger/20 bg-danger-bg/60",
+  },
+  {
+    value: "success",
+    labelEn: "Completed / Resolved",
+    labelVi: "Hoàn tất / Thành công",
+    descEn: "Release completed, issue resolved",
+    descVi: "Đã hoàn tất nâng cấp, hệ thống hoạt động ổn định",
+    icon: CheckCircle2,
+    toneClass: "text-success",
+    activeClass: "border-success ring-2 ring-success/20 bg-success-bg/60",
+  },
+];
+
+const ANNOUNCEMENT_DURATION_PRESETS: Array<{
+  hours: number | null;
+  labelEn: string;
+  labelVi: string;
+}> = [
+  { hours: 1, labelEn: "+1 hour", labelVi: "+1 giờ" },
+  { hours: 4, labelEn: "+4 hours", labelVi: "+4 giờ" },
+  { hours: 24, labelEn: "+24 hours (1 day)", labelVi: "+24 giờ (1 ngày)" },
+  { hours: 72, labelEn: "+3 days", labelVi: "+3 ngày" },
+  { hours: 168, labelEn: "+7 days (1 week)", labelVi: "+7 ngày (1 tuần)" },
+  { hours: null, labelEn: "No expiry", labelVi: "Không giới hạn" },
+];
+
+function toLocalDatetimeInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function fromLocalDatetimeInput(val: string): string | null {
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
 
 /** Matches the backend's built-in default (`DEFAULT_TRASH_RETENTION_DAYS`). */
 const DEFAULT_TRASH_RETENTION_DAYS = 30;
@@ -325,15 +422,60 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
       settings: settings.effective.sidebar_permissions?.settings ?? ["admin"],
       backups: settings.effective.sidebar_permissions?.backups ?? ["admin"],
     }));
+  const initialAnnouncement: SystemAnnouncement =
+    settings.overrides.announcement ??
+    settings.effective.announcement ?? {
+      enabled: false,
+      level: "info",
+      title: null,
+      content_html: "",
+      starts_at: null,
+      expires_at: null,
+      dismissible: true,
+      show_on_login: true,
+      updated_at: null,
+    };
+
+  const [announcementEnabled, setAnnouncementEnabled] = useState<boolean>(
+    Boolean(initialAnnouncement.enabled),
+  );
+  const [announcementLevel, setAnnouncementLevel] = useState<AnnouncementLevel>(
+    initialAnnouncement.level || "info",
+  );
+  const [announcementTitle, setAnnouncementTitle] = useState<string>(
+    initialAnnouncement.title ?? "",
+  );
+  const [announcementContentHtml, setAnnouncementContentHtml] = useState<string>(
+    initialAnnouncement.content_html ?? "",
+  );
+  const [announcementStartsAt, setAnnouncementStartsAt] = useState<string>(() =>
+    toLocalDatetimeInput(initialAnnouncement.starts_at),
+  );
+  const [announcementExpiresAt, setAnnouncementExpiresAt] = useState<string>(() =>
+    toLocalDatetimeInput(initialAnnouncement.expires_at),
+  );
+  const [announcementDismissible, setAnnouncementDismissible] = useState<boolean>(
+    initialAnnouncement.dismissible ?? true,
+  );
+  const [announcementShowOnLogin, setAnnouncementShowOnLogin] = useState<boolean>(
+    initialAnnouncement.show_on_login ?? true,
+  );
+  const [announcementEditorKey, setAnnouncementEditorKey] = useState(0);
+
   const [activeTab, setActiveTab] = useState<
-    "appearance" | "general" | "sidebar"
+    "appearance" | "general" | "sidebar" | "announcement"
   >("appearance");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab") || window.location.hash.replace("#", "");
-      if (tabParam === "general" || tabParam === "sidebar" || tabParam === "appearance") {
+      if (
+        tabParam === "general" ||
+        tabParam === "sidebar" ||
+        tabParam === "appearance" ||
+        tabParam === "announcement"
+      ) {
         setActiveTab(tabParam);
       }
     }
@@ -427,6 +569,17 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const effectiveThemeColor = isCustomHex ? customHex.trim() : themeColor;
+    const announcementPayload: SystemAnnouncement = {
+      enabled: announcementEnabled,
+      level: announcementLevel,
+      title: announcementTitle.trim() || null,
+      content_html: announcementContentHtml,
+      starts_at: fromLocalDatetimeInput(announcementStartsAt),
+      expires_at: fromLocalDatetimeInput(announcementExpiresAt),
+      dismissible: announcementDismissible,
+      show_on_login: announcementShowOnLogin,
+      updated_at: initialAnnouncement.updated_at ?? null,
+    };
     void save({
       site_name: siteName.trim() || null,
       theme_color:
@@ -443,6 +596,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
           : logoIcon || null,
       custom_logo_url: customLogoUrl || null,
       sidebar_permissions: sidebarPermissions,
+      announcement: announcementPayload,
       session_ttl_hours: sessionTtlHours.trim()
         ? Number(sessionTtlHours)
         : null,
@@ -531,6 +685,47 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const isSidebarChanged =
     JSON.stringify(normalizeSidebar(sidebarPermissions)) !==
     JSON.stringify(normalizeSidebar(initialSidebarPermissions));
+
+  const draftStartsIso = fromLocalDatetimeInput(announcementStartsAt);
+  const draftExpiresIso = fromLocalDatetimeInput(announcementExpiresAt);
+  const announcementScheduleValid =
+    !draftStartsIso ||
+    !draftExpiresIso ||
+    new Date(draftExpiresIso).getTime() > new Date(draftStartsIso).getTime();
+
+  const draftAnnouncement: SystemAnnouncement = {
+    enabled: announcementEnabled,
+    level: announcementLevel,
+    title: announcementTitle.trim() || null,
+    content_html: announcementContentHtml,
+    starts_at: draftStartsIso,
+    expires_at: draftExpiresIso,
+    dismissible: announcementDismissible,
+    show_on_login: announcementShowOnLogin,
+    updated_at: initialAnnouncement.updated_at ?? null,
+  };
+
+  const isAnnouncementChanged =
+    announcementEnabled !== Boolean(initialAnnouncement.enabled) ||
+    announcementLevel !== (initialAnnouncement.level || "info") ||
+    announcementTitle.trim() !== (initialAnnouncement.title ?? "").trim() ||
+    announcementContentHtml.trim() !== (initialAnnouncement.content_html ?? "").trim() ||
+    announcementStartsAt !== toLocalDatetimeInput(initialAnnouncement.starts_at) ||
+    announcementExpiresAt !== toLocalDatetimeInput(initialAnnouncement.expires_at) ||
+    announcementDismissible !== (initialAnnouncement.dismissible ?? true) ||
+    announcementShowOnLogin !== (initialAnnouncement.show_on_login ?? true);
+
+  function applyAnnouncementDurationPreset(hours: number | null) {
+    if (hours === null) {
+      setAnnouncementExpiresAt("");
+      return;
+    }
+    const baseMs = draftStartsIso
+      ? Math.max(Date.now(), new Date(draftStartsIso).getTime())
+      : Date.now();
+    const targetIso = new Date(baseMs + hours * 3600 * 1000).toISOString();
+    setAnnouncementExpiresAt(toLocalDatetimeInput(targetIso));
+  }
 
   return (
     <>
@@ -1527,6 +1722,450 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                         ? "Quyền truy cập không gian và quyền riêng tư của tài liệu vẫn được bảo vệ nghiêm ngặt theo danh sách thành viên của từng không gian, độc lập với việc lối tắt có hiển thị trên thanh bên hay không."
                         : "Space permissions and page privacy remain strictly protected by space membership rules regardless of whether navigation shortcuts are shown or hidden on the sidebar."}
                     </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Card 4: System Announcement Banner */}
+            <section
+              id="announcement-settings"
+              role="tabpanel"
+              className={cn(activeTab !== "announcement" && "hidden")}
+            >
+              {/* Sticky Header with Toggle Switch, Clear & Save Buttons */}
+              <div className="border-border bg-surface/98 backdrop-blur-md sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b py-3.5 transition-all">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Volume2 className="text-primary size-5 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-foreground font-semibold text-sm sm:text-base">
+                        {locale === "vi"
+                          ? "Thông báo hệ thống"
+                          : "System Announcement"}
+                      </h3>
+                      {(() => {
+                        const now = Date.now();
+                        const startMs = draftStartsIso
+                          ? Date.parse(draftStartsIso)
+                          : null;
+                        const endMs = draftExpiresIso
+                          ? Date.parse(draftExpiresIso)
+                          : null;
+                        if (!announcementEnabled) {
+                          return (
+                            <Badge variant="neutral" className="text-[11px]">
+                              {locale === "vi" ? "Đang tắt" : "Disabled"}
+                            </Badge>
+                          );
+                        }
+                        if (endMs && now >= endMs) {
+                          return (
+                            <Badge variant="warning" className="text-[11px]">
+                              {locale === "vi" ? "Đã hết hạn" : "Expired"}
+                            </Badge>
+                          );
+                        }
+                        if (startMs && now < startMs) {
+                          return (
+                            <Badge variant="info" className="text-[11px]">
+                              {locale === "vi" ? "Đã lên lịch" : "Scheduled"}
+                            </Badge>
+                          );
+                        }
+                        return (
+                          <Badge variant="success" className="text-[11px]">
+                            {locale === "vi" ? "Đang hiển thị" : "Active"}
+                          </Badge>
+                        );
+                      })()}
+                    </div>
+                    <p className="text-muted-foreground mt-0.5 text-xs hidden sm:block">
+                      {locale === "vi"
+                        ? "Treo thông báo ở trên cùng màn hình (lịch release, bảo trì, liên hệ Admin...)."
+                        : "Pin a rich-text announcement banner across the top of the workspace."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Unified Toggle Switch (matches backup-panel.tsx) */}
+                  <label
+                    className={cn(
+                      "border-border bg-surface has-disabled:opacity-60 flex h-8 cursor-pointer items-center gap-2 rounded-md border px-2.5 text-xs font-medium transition-colors duration-150 select-none",
+                      "has-disabled:cursor-not-allowed",
+                      "has-not-disabled:hover:bg-surface-hover has-not-disabled:hover:border-border-strong",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      aria-checked={announcementEnabled}
+                      aria-label={
+                        locale === "vi"
+                          ? "Bật thông báo hệ thống"
+                          : "Enable system announcement"
+                      }
+                      checked={announcementEnabled}
+                      disabled={pending}
+                      onChange={(event) =>
+                        setAnnouncementEnabled(event.target.checked)
+                      }
+                      className="peer sr-only"
+                    />
+                    <span
+                      aria-hidden
+                      className="bg-border-strong peer-checked:bg-success relative h-4 w-7 shrink-0 rounded-full transition-colors duration-150"
+                    >
+                      <span className="bg-surface absolute top-0.5 left-0.5 size-3 rounded-full shadow-sm transition-transform duration-150 peer-checked:translate-x-3" />
+                    </span>
+                    <span>
+                      {announcementEnabled
+                        ? locale === "vi"
+                          ? "Đang bật"
+                          : "Enabled"
+                        : locale === "vi"
+                          ? "Đang tắt"
+                          : "Disabled"}
+                    </span>
+                  </label>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-8"
+                    disabled={
+                      pending ||
+                      (!isAnnouncementChanged &&
+                        !announcementEnabled &&
+                        !announcementTitle.trim() &&
+                        !announcementContentHtml.trim())
+                    }
+                    onClick={() => {
+                      setAnnouncementEnabled(false);
+                      setAnnouncementLevel("info");
+                      setAnnouncementTitle("");
+                      setAnnouncementContentHtml("");
+                      setAnnouncementStartsAt("");
+                      setAnnouncementExpiresAt("");
+                      setAnnouncementDismissible(true);
+                      setAnnouncementShowOnLogin(true);
+                      setAnnouncementEditorKey((k) => k + 1);
+                    }}
+                  >
+                    <RotateCcw className="size-3.5" />
+                    {locale === "vi" ? "Đặt lại" : "Clear"}
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    className="text-xs h-8 font-semibold shadow-xs gap-1.5"
+                    disabled={
+                      pending ||
+                      !isAnnouncementChanged ||
+                      !announcementScheduleValid
+                    }
+                  >
+                    {pending ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" />
+                        {locale === "vi" ? "Đang lưu..." : "Saving..."}
+                      </>
+                    ) : (
+                      <>
+                        <Check className="size-3.5" />
+                        {locale === "vi" ? "Lưu thông báo" : "Save"}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="pt-5">
+                <div className="border-border bg-surface divide-border divide-y overflow-hidden rounded-xl border shadow-2xs">
+                  {/* 1. Compact Live Banner Preview Bar (always looks like a real top bar, never a dashed file box) */}
+                  <div className="bg-surface-sunken/50 p-3 sm:px-4">
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <span className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">
+                        {locale === "vi" ? "Xem trước thanh thông báo" : "Live Banner Preview"}
+                      </span>
+                      <span className="text-muted-foreground text-[11px]">
+                        {announcementEnabled
+                          ? locale === "vi"
+                            ? "Hiển thị ở trên cùng màn hình"
+                            : "Pinned to top of screen"
+                          : locale === "vi"
+                            ? "Đang tắt — bật công tắc phía trên để xuất bản"
+                            : "Currently disabled — toggle on above to publish"}
+                      </span>
+                    </div>
+                    <div className="border-border overflow-hidden rounded-lg border shadow-2xs">
+                      <SystemAnnouncementBanner
+                        announcement={draftAnnouncement}
+                        previewMode
+                        className="border-b-0"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 2. Tone + Title + Rich Text Composer */}
+                  <div className="p-4 sm:p-5 space-y-4">
+                    <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)] md:items-end">
+                      {/* Compact Segmented Tone Picker */}
+                      <div className="space-y-1.5">
+                        <Label className="text-foreground text-xs font-semibold block">
+                          {locale === "vi" ? "Mức độ / Màu sắc" : "Banner Tone"}
+                        </Label>
+                        <div
+                          role="radiogroup"
+                          aria-label={locale === "vi" ? "Mức độ thông báo" : "Banner tone"}
+                          className="border-border bg-surface-sunken inline-flex flex-wrap items-center gap-1 rounded-lg border p-1"
+                        >
+                          {ANNOUNCEMENT_LEVEL_OPTIONS.map((opt) => {
+                            const IconComp = opt.icon;
+                            const selected = announcementLevel === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                role="radio"
+                                aria-checked={selected}
+                                onClick={() => setAnnouncementLevel(opt.value)}
+                                title={locale === "vi" ? opt.descVi : opt.descEn}
+                                className={cn(
+                                  "focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                                  selected
+                                    ? "bg-surface text-foreground font-semibold shadow-2xs"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-surface/60",
+                                )}
+                              >
+                                <IconComp className={cn("size-3.5 shrink-0", opt.toneClass)} />
+                                <span>{locale === "vi" ? opt.labelVi : opt.labelEn}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Headline Input */}
+                      <div className="space-y-1.5">
+                        <Label
+                          htmlFor="announcement-title"
+                          className="text-foreground text-xs font-semibold block"
+                        >
+                          {locale === "vi"
+                            ? "Tiêu đề ngắn (Tùy chọn)"
+                            : "Headline / Title (Optional)"}
+                        </Label>
+                        <Input
+                          id="announcement-title"
+                          value={announcementTitle}
+                          onChange={(e) => setAnnouncementTitle(e.target.value)}
+                          placeholder={
+                            locale === "vi"
+                              ? "VD: Lịch Release v2.5 & Đầu mối liên hệ Admin"
+                              : "e.g. Scheduled Release v2.5 & Admin Contact"
+                          }
+                          maxLength={255}
+                          disabled={pending}
+                          className="h-9 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Rich Text Content Editor */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-foreground text-xs font-semibold">
+                          {locale === "vi"
+                            ? "Nội dung thông báo"
+                            : "Announcement Message"}
+                        </Label>
+                        <span className="text-muted-foreground text-[11px]">
+                          {locale === "vi"
+                            ? "Hỗ trợ định dạng in đậm, màu chữ, liên kết, danh sách..."
+                            : "Supports bold, colors, links, lists, inline code..."}
+                        </span>
+                      </div>
+                      <div className="wikihub-announcement-editor min-w-0">
+                        {activeTab === "announcement" ? (
+                          <RichTextEditor
+                            key={announcementEditorKey}
+                            content={announcementContentHtml}
+                            onChange={setAnnouncementContentHtml}
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Compact Schedule & Display Toggles Footer */}
+                  <div className="bg-surface-sunken/35 p-4 sm:p-5 space-y-4">
+                    {/* Schedule Row */}
+                    <div className="space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                          <Calendar className="text-primary size-3.5 shrink-0" />
+                          <span>
+                            {locale === "vi"
+                              ? "Thời gian hiển thị"
+                              : "Display Schedule"}
+                          </span>
+                        </div>
+
+                        {/* Quick Duration Chips */}
+                        <div className="flex flex-wrap items-center gap-1">
+                          {ANNOUNCEMENT_DURATION_PRESETS.map((preset) => {
+                            const isUnlimitedSelected =
+                              preset.hours === null && !announcementExpiresAt;
+                            return (
+                              <button
+                                key={String(preset.hours)}
+                                type="button"
+                                disabled={pending}
+                                onClick={() =>
+                                  applyAnnouncementDurationPreset(preset.hours)
+                                }
+                                className={cn(
+                                  "focus-visible:ring-ring cursor-pointer rounded-md border px-2 py-1 text-[11px] font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                                  isUnlimitedSelected
+                                    ? "border-primary bg-surface-selected text-primary font-semibold"
+                                    : "border-border bg-surface text-muted-foreground hover:border-border-strong hover:text-foreground hover:bg-surface-hover",
+                                )}
+                              >
+                                {locale === "vi" ? preset.labelVi : preset.labelEn}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <Label
+                              htmlFor="announcement-starts-at"
+                              className="text-muted-foreground text-[11px] font-medium"
+                            >
+                              {locale === "vi"
+                                ? "Bắt đầu hiển thị (Tùy chọn)"
+                                : "Start time (Optional)"}
+                            </Label>
+                            {announcementStartsAt ? (
+                              <button
+                                type="button"
+                                onClick={() => setAnnouncementStartsAt("")}
+                                className="text-primary hover:text-primary/80 cursor-pointer text-[11px] font-medium"
+                              >
+                                {locale === "vi" ? "Hiển thị ngay" : "Now"}
+                              </button>
+                            ) : null}
+                          </div>
+                          <Input
+                            id="announcement-starts-at"
+                            type="datetime-local"
+                            value={announcementStartsAt}
+                            onChange={(e) => setAnnouncementStartsAt(e.target.value)}
+                            disabled={pending}
+                            className="bg-surface h-8 text-xs"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <Label
+                              htmlFor="announcement-expires-at"
+                              className="text-muted-foreground text-[11px] font-medium"
+                            >
+                              {locale === "vi"
+                                ? "Tự động gỡ lúc (Tùy chọn)"
+                                : "End / Expiry time (Optional)"}
+                            </Label>
+                            {announcementExpiresAt ? (
+                              <button
+                                type="button"
+                                onClick={() => setAnnouncementExpiresAt("")}
+                                className="text-primary hover:text-primary/80 cursor-pointer text-[11px] font-medium"
+                              >
+                                {locale === "vi" ? "Xóa hạn" : "Clear"}
+                              </button>
+                            ) : null}
+                          </div>
+                          <Input
+                            id="announcement-expires-at"
+                            type="datetime-local"
+                            value={announcementExpiresAt}
+                            onChange={(e) => setAnnouncementExpiresAt(e.target.value)}
+                            disabled={pending}
+                            aria-invalid={!announcementScheduleValid}
+                            className="bg-surface h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      {!announcementScheduleValid ? (
+                        <p className="text-danger text-xs font-medium" role="alert">
+                          {locale === "vi"
+                            ? "Thời gian kết thúc phải sau thời gian bắt đầu."
+                            : "Expiry time must be after the start time."}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {/* Behaviour Toggle Switches Row */}
+                    <div className="border-border/60 flex flex-wrap items-center gap-x-6 gap-y-2.5 border-t pt-3.5">
+                      <label className="flex cursor-pointer items-center gap-2.5 text-xs select-none">
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          aria-checked={announcementDismissible}
+                          checked={announcementDismissible}
+                          disabled={pending}
+                          onChange={(e) =>
+                            setAnnouncementDismissible(e.target.checked)
+                          }
+                          className="peer sr-only"
+                        />
+                        <span
+                          aria-hidden
+                          className="bg-border-strong peer-checked:bg-primary relative h-4 w-7 shrink-0 rounded-full transition-colors duration-150"
+                        >
+                          <span className="bg-surface absolute top-0.5 left-0.5 size-3 rounded-full shadow-sm transition-transform duration-150 peer-checked:translate-x-3" />
+                        </span>
+                        <span className="text-foreground font-medium">
+                          {locale === "vi"
+                            ? "Cho phép người dùng đóng (X)"
+                            : "Allow users to dismiss (X)"}
+                        </span>
+                      </label>
+
+                      <label className="flex cursor-pointer items-center gap-2.5 text-xs select-none">
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          aria-checked={announcementShowOnLogin}
+                          checked={announcementShowOnLogin}
+                          disabled={pending}
+                          onChange={(e) =>
+                            setAnnouncementShowOnLogin(e.target.checked)
+                          }
+                          className="peer sr-only"
+                        />
+                        <span
+                          aria-hidden
+                          className="bg-border-strong peer-checked:bg-primary relative h-4 w-7 shrink-0 rounded-full transition-colors duration-150"
+                        >
+                          <span className="bg-surface absolute top-0.5 left-0.5 size-3 rounded-full shadow-sm transition-transform duration-150 peer-checked:translate-x-3" />
+                        </span>
+                        <span className="text-foreground font-medium">
+                          {locale === "vi"
+                            ? "Hiển thị cả trên trang Đăng nhập (/login)"
+                            : "Also show on Sign-in page (/login)"}
+                        </span>
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>

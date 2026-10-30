@@ -1905,3 +1905,42 @@ html[data-export="true"] .wh-toaster {
   --primary-foreground: var(--tb-bg);
   color: var(--tb-fg);
 }
+
+/* System announcement banner rich-text overrides: keep rich formatting
+   (bold, links, colours, lists, inline code, callouts) while collapsing
+   document-level vertical margins so the top banner stays compact. */
+.wikihub-announcement-content .wikihub-editor {
+  min-height: 0 !important;
+  padding: 0 !important;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.wikihub-announcement-content .wikihub-editor > * + * {
+  margin-top: 0.2rem;
+}
+
+.wikihub-announcement-content .wikihub-editor p {
+  margin: 0;
+}
+
+.wikihub-announcement-content .wikihub-editor h1,
+.wikihub-announcement-content .wikihub-editor h2,
+.wikihub-announcement-content .wikihub-editor h3,
+.wikihub-announcement-content .wikihub-editor h4 {
+  margin: 0.125rem 0;
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.wikihub-announcement-content .wikihub-editor ul,
+.wikihub-announcement-content .wikihub-editor ol {
+  margin: 0.2rem 0;
+  padding-left: 1.25rem;
+}
+
+.wikihub-announcement-editor .wikihub-editor {
+  min-height: 6.5rem !important;
+  padding: 0.625rem 0.875rem !important;
+  font-size: 0.875rem;
+}

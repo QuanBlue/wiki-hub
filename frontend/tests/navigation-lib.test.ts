@@ -13,7 +13,7 @@ vi.mock("@/lib/server-api", () => ({
   },
 }));
 
-import { getSidebarPermissions } from "@/lib/navigation";
+import { getSidebarPermissions, getSystemAnnouncement } from "@/lib/navigation";
 
 describe("getSidebarPermissions", () => {
   beforeEach(() => serverGetMock.mockReset());
@@ -25,5 +25,24 @@ describe("getSidebarPermissions", () => {
 
     expect(result).toEqual({ admin: true });
     expect(serverGetMock).toHaveBeenCalledWith("/api/v1/settings/sidebar-permissions");
+  });
+
+  it("fetches the active system announcement and falls back to null on error", async () => {
+    const ann = {
+      enabled: true,
+      level: "info",
+      title: "Release v2.5",
+      content_html: "<p>Scheduled maintenance</p>",
+      starts_at: null,
+      expires_at: null,
+      dismissible: true,
+      show_on_login: true,
+      updated_at: "2026-10-30T10:00:00Z",
+    };
+    serverGetMock.mockResolvedValueOnce({ announcement: ann });
+    expect(await getSystemAnnouncement()).toEqual(ann);
+
+    serverGetMock.mockRejectedValueOnce(new Error("unavailable"));
+    expect(await getSystemAnnouncement()).toBeNull();
   });
 });

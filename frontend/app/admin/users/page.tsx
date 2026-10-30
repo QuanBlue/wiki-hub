@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { AdministratorsSummary, AdministratorsTable } from "@/components/admin/administrators-table";
+import { AddAdminDialog } from "@/components/admin/add-admin-dialog";
 import { BulkDeleteBar, BulkSelectionProvider, SelectionCell, SelectionColumn, SelectionHeaderCell, SelectModeButton } from "@/components/admin/bulk-select";
 import { CreateUserDialog } from "@/components/admin/create-user-dialog";
 import { ListFilters, PaginationControls } from "@/components/admin/list-controls";
@@ -213,7 +214,16 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
               {t("adminUsers.administratorsHint")}
             </p>
           </div>
-          <AdministratorsSummary count={admins.length} />
+          <div className="flex items-center gap-3">
+            <AdministratorsSummary count={admins.length} />
+            {viewerIsSystemAdmin ? (
+              <AddAdminDialog
+                viewerIsSystemAdmin={!!viewerIsSystemAdmin}
+                variant="primary"
+                size="sm"
+              />
+            ) : null}
+          </div>
         </div>
         <AdministratorsTable admins={admins} meId={me?.id} viewerIsProtected={me?.is_protected ?? false} />
       </section>

@@ -181,4 +181,38 @@ describe("CommentComposer", () => {
       vi.useRealTimers();
     }
   });
+
+  it("renders picked valid mention styled in bold, blue and opens profile popover on hover", async () => {
+    mocked.get.mockImplementation(async (url: string) => {
+      if (url === "/mentions") return PEOPLE;
+      if (url.includes("/profile")) {
+        return {
+          username: "ann",
+          full_name: "Ann Lee",
+          avatar_url: null,
+          bio: "Software Engineer",
+          pronouns: "she/her",
+          profile_url: "",
+          social_links: [],
+          company: "Acme",
+        };
+      }
+      return [];
+    });
+    const actor = userEvent.setup();
+    const { box } = setup();
+    await typeMention(actor, box, "@a");
+    await actor.keyboard("{Enter}");
+    expect(box).toHaveValue("@ann ");
+
+    const mentionTrigger = screen.getByRole("button", { name: "@ann", hidden: true });
+    expect(mentionTrigger).toBeInTheDocument();
+    expect(mentionTrigger).toHaveClass("bg-primary-subtle");
+    expect(mentionTrigger).toHaveClass("text-primary");
+    expect(mentionTrigger).toHaveClass("font-bold");
+
+    await actor.hover(mentionTrigger);
+    expect(await screen.findByText("Ann Lee")).toBeInTheDocument();
+    expect(screen.getByText("View profile")).toBeInTheDocument();
+  });
 });

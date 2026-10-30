@@ -230,6 +230,7 @@ export const vi: Dictionary = {
     someone: "Một quản trị viên",
     loadError: "Không tải được thông báo của bạn.",
     openNotification: "Mở",
+    targetGone: "Bình luận, trang hoặc yêu cầu này không còn tồn tại nên thông báo đã được gỡ.",
     openInbox: "Mở Yêu cầu",
     role: {
       viewer: "người xem",
@@ -314,6 +315,7 @@ export const vi: Dictionary = {
   userMenu: {
     accountMenuAria: "Menu tài khoản của {name}",
     yourAccount: "Tài khoản",
+    systemAnnouncement: "Thông báo hệ thống",
     reportIssue: "Báo lỗi",
     myIssues: "Issue của tôi",
     signOut: "Đăng xuất",
@@ -2107,6 +2109,40 @@ export const vi: Dictionary = {
     adminBadge: "Quản trị viên",
     notSetDirectlyTitle:
       "Không được đặt trực tiếp làm Administrator - được cấp thông qua một nhóm hoặc một ghi đè quyền. Xem tab Quản trị viên để biết chi tiết.",
+    columnReceiveMail: "Nhận email",
+    receiveMailOn: "Bật",
+    receiveMailOff: "Tắt",
+    receiveMailToggleOn: "Bật nhận email cho {username}",
+    receiveMailToggleOff: "Tắt nhận email cho {username} (tránh spam hộp thư)",
+    receiveMailHelp:
+      "Gửi email thông báo khi có yêu cầu mới từ người dùng hoặc báo cáo sự cố. Tắt đi để tránh spam hộp thư cho cấp trên hoặc sếp.",
+    receiveMailEnabledToast: "Đã bật nhận email cho {username}.",
+    receiveMailDisabledToast: "Đã tắt nhận email cho {username}.",
+    receiveMailError: "Không thể cập nhật cài đặt nhận email.",
+    receiveMailPeerBlocked:
+      "Chỉ super admin mặc định mới được đổi cài đặt của quản trị viên khác.",
+    formReceiveAdminEmails: "Nhận email thông báo quản trị",
+    formReceiveAdminEmailsHelp:
+      "Gửi email cho quản trị viên này khi có yêu cầu trợ giúp hoặc báo cáo sự cố. Tắt đi để tránh spam hộp thư cho cấp trên hoặc sếp.",
+    addAdmin: "Thêm quản trị viên",
+    addAdminShort: "Thêm admin",
+    addAdminTitle: "Thêm quản trị viên",
+    addAdminDesc:
+      "Nâng cấp một thành viên hiện có thành quản trị viên hoặc tạo tài khoản quản trị viên mới.",
+    tabPromoteMember: "Nâng cấp thành viên",
+    tabCreateAdmin: "Tạo quản trị viên mới",
+    selectMemberLabel: "Thành viên trong hệ thống",
+    selectMemberPlaceholder: "Chọn thành viên để nâng cấp…",
+    selectMemberSearchPlaceholder: "Tìm theo tên hoặc username…",
+    selectMemberEmpty: "Không tìm thấy thành viên phù hợp.",
+    noEligibleMembers:
+      "Tất cả người dùng đang hoạt động đều đã là quản trị viên hệ thống.",
+    promoteSuccessToast: "{username} hiện đã là quản trị viên hệ thống.",
+    promoteError: "Không thể nâng cấp người dùng thành quản trị viên.",
+    submitPromote: "Thêm làm quản trị viên",
+    submitCreateAdmin: "Tạo quản trị viên",
+    promoteWarning:
+      "Quản trị viên có toàn quyền truy cập không giới hạn vào tất cả không gian, tài liệu và cài đặt hệ thống.",
   },
 
   adminMail: {

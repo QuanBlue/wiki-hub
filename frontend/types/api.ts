@@ -117,6 +117,7 @@ export interface InstanceInfo {
   max_upload_size_bytes: number;
   /** How long a deleted page can still be restored from its space's Trash. */
   trash_retention_days?: number;
+  announcement?: SystemAnnouncement | null;
   features: InstanceFeatures;
 }
 
@@ -144,6 +145,8 @@ export interface User {
   is_effective_admin: boolean;
   /** The built-in administrator: immutable and undeletable through the API. */
   is_protected: boolean;
+  /** Whether this administrator receives notification emails for user requests and issues. */
+  receive_admin_emails: boolean;
   last_login_at: string | null;
   /** Only filled in by the People directory list (`GET /users`). */
   last_active_at?: string | null;
@@ -343,6 +346,7 @@ export interface AdminMailbox {
   username: string;
   user_full_name: string | null;
   user_is_active: boolean;
+  user_receive_admin_emails?: boolean;
   email: string;
   display_name: string | null;
   smtp_host: string;
@@ -693,6 +697,24 @@ export interface Page<T> {
   offset: number;
 }
 
+export type AnnouncementLevel = "info" | "warning" | "danger" | "success";
+
+export interface SystemAnnouncement {
+  enabled: boolean;
+  level: AnnouncementLevel;
+  title: string | null;
+  content_html: string;
+  starts_at: string | null;
+  expires_at: string | null;
+  dismissible: boolean;
+  show_on_login: boolean;
+  updated_at: string | null;
+}
+
+export interface AnnouncementRead {
+  announcement: SystemAnnouncement | null;
+}
+
 export interface SiteSettingsOverrides {
   site_name: string | null;
   theme_color: string | null;
@@ -703,6 +725,7 @@ export interface SiteSettingsOverrides {
   max_backup_import_size_mb: number | null;
   allowed_attachment_types: string[] | null;
   sidebar_permissions: SidebarPermissions | null;
+  announcement?: SystemAnnouncement | null;
   session_ttl_hours: number | null;
   trash_retention_days: number | null;
 }
@@ -719,6 +742,7 @@ export interface EffectiveSettings {
   max_backup_import_size_bytes: number;
   allowed_attachment_types: string[];
   sidebar_permissions: SidebarPermissions;
+  announcement?: SystemAnnouncement;
   session_ttl_hours: number;
   trash_retention_days: number;
 }

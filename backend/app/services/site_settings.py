@@ -14,6 +14,8 @@ document the staleness window here.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,12 +25,14 @@ from app.models.audit import AuditAction
 from app.models.site_settings import DEFAULT_TRASH_RETENTION_DAYS, SINGLETON_ID, SiteSettings
 from app.models.user import User
 from app.schemas.site_settings import (
+    AnnouncementRead,
     EffectiveSettings,
     SidebarPermissions,
     SidebarPermissionsRead,
     SiteSettingsOverrides,
     SiteSettingsRead,
     SiteSettingsUpdate,
+    SystemAnnouncement,
 )
 from app.services.audit import AuditService, ClientInfo
 
@@ -45,6 +49,7 @@ AUDITED_FIELDS = (
     "max_backup_import_size_mb",
     "allowed_attachment_types",
     "sidebar_permissions",
+    "announcement",
     "session_ttl_hours",
     "trash_retention_days",
 )
@@ -83,6 +88,12 @@ class SiteSettingsService:
     async def read_sidebar_permissions(self) -> SidebarPermissionsRead:
         return SidebarPermissionsRead(permissions=(await self.get_effective()).sidebar_permissions)
 
+    async def read_announcement(self) -> AnnouncementRead:
+        announcement = (await self.get_effective()).announcement
+        return AnnouncementRead(
+            announcement=announcement if announcement.is_currently_active() else None
+        )
+
     @classmethod
     def env_defaults(cls) -> EffectiveSettings:
         """Effective settings with no database involved.
@@ -110,6 +121,12 @@ class SiteSettingsService:
             if sidebar_perms_raw is not None
             else SidebarPermissions()
         )
+        announcement_raw = getattr(row, "announcement", None)
+        announcement = (
+            SystemAnnouncement.model_validate(announcement_raw)
+            if announcement_raw is not None
+            else SystemAnnouncement()
+        )
         session_ttl_hours = getattr(row, "session_ttl_hours", None) or (
             settings.access_token_ttl_seconds // 3600
         )
@@ -125,6 +142,7 @@ class SiteSettingsService:
             max_backup_import_size_bytes=import_mb * 1024 * 1024,
             allowed_attachment_types=list(types),
             sidebar_permissions=sidebar_permissions,
+            announcement=announcement,
             session_ttl_hours=session_ttl_hours,
             trash_retention_days=(
                 getattr(row, "trash_retention_days", None) or DEFAULT_TRASH_RETENTION_DAYS
@@ -158,6 +176,11 @@ class SiteSettingsService:
         # `in data` rather than `is not None`: an explicit null is meaningful
         # here - it resets the setting back to the environment default.
         data = payload.model_dump(exclude_unset=True)
+        if "announcement" in data and payload.announcement is not None:
+            stamped = payload.announcement.model_copy(
+                update={"updated_at": datetime.now(UTC)}
+            )
+            data["announcement"] = stamped.model_dump(mode="json")
         for field in AUDITED_FIELDS:
             if field in data:
                 setattr(row, field, data[field])
@@ -172,12 +195,13 @@ class SiteSettingsService:
         diff = AuditService.changes(before, after, AUDITED_FIELDS)
         if diff:
             logger.info("site_settings_updated", changed=sorted(diff))
+            action = AuditAction.site_settings_updated
+            if set(diff) == {"sidebar_permissions"}:
+                action = AuditAction.sidebar_permissions_updated
+            elif set(diff) == {"announcement"}:
+                action = AuditAction.announcement_updated
             await self.audit.record(
-                (
-                    AuditAction.sidebar_permissions_updated
-                    if set(diff) == {"sidebar_permissions"}
-                    else AuditAction.site_settings_updated
-                ),
+                action,
                 entity_type="site_settings",
                 entity_label="Site settings",
                 details={"changes": diff},

@@ -52,6 +52,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api, ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { GlobalPermission, User, UserGroupMembership } from "@/types/api";
 
@@ -499,8 +500,12 @@ export function EditUserDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabKey>("general");
   const [role, setRole] = useState(user.is_superuser ? "admin" : "member");
+  const [receiveAdminEmails, setReceiveAdminEmails] = useState(
+    user.receive_admin_emails ?? true,
+  );
   const [statusValue, setStatusValue] = useState(
     user.is_active ? "active" : "disabled",
   );
@@ -538,6 +543,7 @@ export function EditUserDialog({
 
   function seedFieldsFrom(source: User) {
     setRole(source.is_superuser ? "admin" : "member");
+    setReceiveAdminEmails(source.receive_admin_emails ?? true);
     setStatusValue(source.is_active ? "active" : "disabled");
     setOverrides(overridesFromUser(source));
     setPreAdminOverrides(null);
@@ -582,6 +588,7 @@ export function EditUserDialog({
   }, [open, user]);
 
   const initialRole = detail.is_superuser ? "admin" : "member";
+  const initialReceiveAdminEmails = detail.receive_admin_emails ?? true;
   const initialStatus = detail.is_active ? "active" : "disabled";
   const initialOverrides = overridesFromUser(detail);
 
@@ -601,9 +608,15 @@ export function EditUserDialog({
     (p) => overrides[p] !== initialOverrides[p],
   );
   const roleChanged = role !== initialRole;
+  const receiveAdminEmailsChanged =
+    receiveAdminEmails !== initialReceiveAdminEmails;
   const statusChanged = statusValue !== initialStatus;
   const hasChanges =
-    roleChanged || statusChanged || overridesChanged || changingPassword;
+    roleChanged ||
+    receiveAdminEmailsChanged ||
+    statusChanged ||
+    overridesChanged ||
+    changingPassword;
 
   // Live preview of what each permission would actually be if saved right
   // now - not just what's currently saved - so both the "Currently granted"
@@ -725,6 +738,8 @@ export function EditUserDialog({
     try {
       const patch: Record<string, unknown> = {};
       if (roleChanged) patch.is_superuser = role === "admin";
+      if (receiveAdminEmailsChanged)
+        patch.receive_admin_emails = receiveAdminEmails;
       if (statusChanged) patch.is_active = statusValue === "active";
       if (overridesChanged) {
         const changedOverrides: Record<string, boolean | null> = {};
@@ -921,6 +936,24 @@ export function EditUserDialog({
                         Already an effective admin via a group or override -
                         see the Global access tab.
                       </p>
+                    ) : null}
+                    {isAdminDraft || systemAdminEffective ? (
+                      <div className="pt-1">
+                        <label className="hover:bg-surface-hover flex w-fit cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-sm transition-colors duration-150">
+                          <input
+                            type="checkbox"
+                            checked={receiveAdminEmails}
+                            onChange={(e) =>
+                              setReceiveAdminEmails(e.target.checked)
+                            }
+                            className="accent-primary focus-visible:ring-ring size-4 cursor-pointer rounded focus-visible:ring-2 focus-visible:outline-none"
+                          />
+                          <span>{t("adminUsers.formReceiveAdminEmails")}</span>
+                        </label>
+                        <p className="text-muted-foreground mt-0.5 px-1 text-xs">
+                          {t("adminUsers.formReceiveAdminEmailsHelp")}
+                        </p>
+                      </div>
                     ) : null}
                     {isAdminDraft && initialRole !== "admin" ? (
                       canEmailAccounts ? (

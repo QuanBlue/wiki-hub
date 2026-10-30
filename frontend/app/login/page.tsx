@@ -5,8 +5,11 @@ import { FolderTree, ShieldCheck, Sparkles } from "lucide-react";
 
 import { AuthPanels } from "@/components/auth/auth-panels";
 import { Wordmark } from "@/components/brand/logo";
+import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
 import { SITE_NAME } from "@/lib/env";
 import { getServerLocale } from "@/lib/i18n/server";
+import { serverGet } from "@/lib/server-api";
+import type { InstanceInfo, SystemAnnouncement } from "@/types/api";
 
 export const metadata: Metadata = { title: "Sign in" };
 
@@ -21,6 +24,13 @@ export default async function LoginPage({
 }) {
   const { view } = await searchParams;
   const { t } = await getServerLocale();
+  let publicAnnouncement: SystemAnnouncement | null = null;
+  try {
+    const meta = await serverGet<InstanceInfo>("/api/v1/meta");
+    publicAnnouncement = meta?.announcement ?? null;
+  } catch {
+    // Backend unreachable during SSR: render login form without banner.
+  }
 
   const features = [
     {
@@ -122,19 +132,22 @@ export default async function LoginPage({
         </div>
       </section>
 
-      <section className="bg-surface-sunken flex min-h-screen items-center justify-center px-6 py-12 sm:px-10">
-        <div className="w-full max-w-md">
-          <div className="mb-8 flex justify-center lg:hidden">
-            <Wordmark siteName={SITE_NAME} className="text-base" />
-          </div>
+      <section className="bg-surface-sunken flex min-h-screen flex-col">
+        <SystemAnnouncementBanner announcement={publicAnnouncement} />
+        <div className="flex flex-1 items-center justify-center px-6 py-12 sm:px-10">
+          <div className="w-full max-w-md">
+            <div className="mb-8 flex justify-center lg:hidden">
+              <Wordmark siteName={SITE_NAME} className="text-base" />
+            </div>
 
-          {/* useSearchParams needs a Suspense boundary during prerender. */}
-          <Suspense fallback={null}>
-            <AuthPanels
-              siteName={SITE_NAME}
-              initialView={view === "contact" ? "contact" : "login"}
-            />
-          </Suspense>
+            {/* useSearchParams needs a Suspense boundary during prerender. */}
+            <Suspense fallback={null}>
+              <AuthPanels
+                siteName={SITE_NAME}
+                initialView={view === "contact" ? "contact" : "login"}
+              />
+            </Suspense>
+          </div>
         </div>
       </section>
     </main>

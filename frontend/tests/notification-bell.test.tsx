@@ -1,17 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MailSummaryProvider } from "@/components/layout/mail-summary-provider";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { NotificationsProvider } from "@/components/layout/notifications-provider";
-import { api } from "@/lib/api-client";
+import { api, ApiError } from "@/lib/api-client";
 import { translate } from "@/lib/i18n/core";
 import { describeNotification, notificationMeta } from "@/lib/notification-meta";
 import { formatRelative } from "@/lib/relative-time";
 import type { AppNotification, MailSummary, NotificationSummary } from "@/types/api";
 
+const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }));
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), {
     success: vi.fn(),
@@ -22,7 +24,7 @@ vi.mock("sonner", () => ({
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/",
-  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ refresh: vi.fn(), push: routerPush }),
 }));
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
@@ -85,6 +87,8 @@ beforeEach(() => {
   vi.mocked(api.get).mockReset();
   vi.mocked(api.post).mockReset();
   vi.mocked(api.patch).mockReset();
+  routerPush.mockReset();
+  vi.mocked(toast.warning).mockReset();
 });
 
 describe("the bell", () => {
@@ -137,15 +141,48 @@ describe("the bell", () => {
     expect(within(reset).queryByRole("img", { name: "Unread" })).toBeNull();
   });
 
-  it("marks a notification read when it is opened", async () => {
+  it("marks a notification read when it is opened, then goes to it", async () => {
     mount([note()]);
-    vi.mocked(api.patch).mockResolvedValue(note({ read_at: new Date().toISOString() }));
+    vi.mocked(api.post).mockResolvedValue(note({ read_at: new Date().toISOString() }));
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Notifications/ }));
 
     await user.click(await screen.findByRole("link", { name: /added you to the space/ }));
 
-    expect(api.patch).toHaveBeenCalledWith("/api/v1/notifications/n-1", { read: true });
+    expect(api.post).toHaveBeenCalledWith("/api/v1/notifications/n-1/open");
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/spaces/docs"));
+  });
+
+  it("says the target is gone, drops the row and does not navigate when it was deleted", async () => {
+    mount([note(), note({ id: "n-2", link: "/spaces/other" })]);
+    vi.mocked(api.post).mockRejectedValue(
+      new ApiError(404, "notification_target_gone", "This item no longer exists."),
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+    const links = await screen.findAllByRole("link", { name: /added you to the space/ });
+    expect(links).toHaveLength(2);
+
+    await user.click(links[0]);
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        "That comment, page or request no longer exists, so the notification was removed.",
+      ),
+    );
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it("still navigates when confirming the target fails for another reason", async () => {
+    mount([note()]);
+    vi.mocked(api.post).mockRejectedValue(new ApiError(500, "boom", "boom"));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+
+    await user.click(await screen.findByRole("link", { name: /added you to the space/ }));
+
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/spaces/docs"));
+    expect(toast.warning).not.toHaveBeenCalled();
   });
 
   it("marks everything read in one go, and offers that only while something is unread", async () => {
@@ -308,15 +345,15 @@ describe("the bell - links on the page already open", () => {
 
     const link = await screen.findByRole("link", { name: /added you to the space/ });
     await user.click(link);
-    expect(push).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(push).toHaveBeenCalledTimes(1));
     expect(window.location.hash).toBe("#comment-9");
     expect(seen).toHaveBeenCalledTimes(1);
 
     await waitFor(() => expect(screen.queryByRole("link", { name: /added you to the space/ })).not.toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /Notifications/ }));
     await user.click(await screen.findByRole("link", { name: /added you to the space/ }));
+    await waitFor(() => expect(seen).toHaveBeenCalledTimes(2));
     expect(push).toHaveBeenCalledTimes(1);
-    expect(seen).toHaveBeenCalledTimes(2);
     window.removeEventListener("hashchange", seen);
     window.history.replaceState(null, "", window.location.pathname);
   });

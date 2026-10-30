@@ -54,6 +54,7 @@ class AuditAction(StrEnum):
 
     site_settings_updated = "site_settings_updated"
     sidebar_permissions_updated = "sidebar_permissions_updated"
+    announcement_updated = "announcement_updated"
     backup_exported = "backup_exported"
     backup_imported = "backup_imported"
 

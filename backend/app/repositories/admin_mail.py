@@ -50,12 +50,15 @@ class AdminMailRepository:
 
     async def active_mailboxes(self) -> list[AdminMailbox]:
         """Mailboxes that receive requests: switched on, and the linked account
-        is still active. Disabling the account disables its mailbox with no
-        further step, because this is evaluated live rather than copied."""
+        is still active and has not opted out of admin emails."""
         rows = await self.session.execute(
             select(AdminMailbox)
             .join(User, User.id == AdminMailbox.user_id)
-            .where(AdminMailbox.is_enabled.is_(True), User.is_active.is_(True))
+            .where(
+                AdminMailbox.is_enabled.is_(True),
+                User.is_active.is_(True),
+                User.receive_admin_emails.is_(True),
+            )
             .order_by(AdminMailbox.email)
         )
         return list(rows.scalars())
@@ -96,7 +99,9 @@ class AdminMailRepository:
         query: Select[tuple[AdminRequestRecipient, AdminRequest]], status: InboxStatus
     ) -> Select[tuple[AdminRequestRecipient, AdminRequest]]:
         if status == "unread":
-            return query.where(AdminRequestRecipient.read_at.is_(None))
+            return query.where(
+                AdminRequestRecipient.read_at.is_(None), AdminRequest.resolved_at.is_(None)
+            )
         if status == "open":
             return query.where(AdminRequest.resolved_at.is_(None))
         if status == "resolved":
@@ -114,7 +119,9 @@ class AdminMailRepository:
         query = (
             select(
                 func.count(),
-                func.count().filter(AdminRequestRecipient.read_at.is_(None)),
+                func.count().filter(
+                    AdminRequestRecipient.read_at.is_(None), AdminRequest.resolved_at.is_(None)
+                ),
                 func.count().filter(AdminRequest.resolved_at.is_(None)),
                 func.count().filter(AdminRequest.resolved_at.is_not(None)),
             )
@@ -179,9 +186,11 @@ class AdminMailRepository:
                 await self.session.execute(
                     select(func.count())
                     .select_from(AdminRequestRecipient)
+                    .join(AdminRequest, AdminRequest.id == AdminRequestRecipient.request_id)
                     .where(
                         AdminRequestRecipient.user_id == user_id,
                         AdminRequestRecipient.read_at.is_(None),
+                        AdminRequest.resolved_at.is_(None),
                     )
                 )
             ).scalar_one()

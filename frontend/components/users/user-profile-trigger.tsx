@@ -2,7 +2,7 @@
 
 import { Building2, Loader2, UserRound } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,14 +29,19 @@ export function UserProfileTrigger({
   fullName,
   variant = "name",
   className,
-  openOnHover = false,
+  openOnHover = variant === "mention",
+  children,
+  asSpan = false,
 }: {
   username: string;
   fullName?: string | null;
-  variant?: "name" | "avatar";
+  variant?: "name" | "avatar" | "mention";
   className?: string;
   /** Also open the card when the pointer rests on the name (and close it after leaving). */
   openOnHover?: boolean;
+  children?: ReactNode;
+  /** Render as an inline <span> instead of <button> for tight inline text integration. */
+  asSpan?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<PublicUser | null>(null);
@@ -105,6 +110,33 @@ export function UserProfileTrigger({
               <UserRound className="size-4" aria-hidden />
             )}
           </button>
+        ) : variant === "mention" ? (
+          asSpan ? (
+            <span
+              role="button"
+              tabIndex={0}
+              onMouseEnter={() => hoverTo(true)}
+              onMouseLeave={() => hoverTo(false)}
+              className={cn(
+                "bg-primary-subtle text-primary hover:bg-surface-selected focus-visible:ring-ring inline cursor-pointer rounded px-1 align-baseline font-bold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                className,
+              )}
+            >
+              {children ?? <span className="text-primary font-bold">@{username}</span>}
+            </span>
+          ) : (
+            <button
+              type="button"
+              onMouseEnter={() => hoverTo(true)}
+              onMouseLeave={() => hoverTo(false)}
+              className={cn(
+                "bg-primary-subtle text-primary hover:bg-surface-selected focus-visible:ring-ring inline-flex cursor-pointer items-center rounded px-1 align-baseline font-bold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                className,
+              )}
+            >
+              {children ?? <span className="text-primary font-bold">@{username}</span>}
+            </button>
+          )
         ) : (
           <button
             type="button"
@@ -115,7 +147,7 @@ export function UserProfileTrigger({
               className,
             )}
           >
-            {label}
+            {children ?? label}
           </button>
         )}
       </PopoverTrigger>

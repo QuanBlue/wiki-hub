@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldAlert, ShieldCheck, UserMinus, Users2 } from "lucide-react";
+import { Loader2, Mail, MailX, ShieldAlert, ShieldCheck, UserMinus, Users2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -9,7 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
-import type { AdminAccount } from "@/types/api";
+import { useTranslation } from "@/lib/i18n/context";
+import { cn } from "@/lib/utils";
+import type { AdminAccount, User } from "@/types/api";
 
 const SOURCE_LABEL: Record<AdminAccount["admin_source"], string> = {
   superuser: "Administrator role",
@@ -49,8 +51,10 @@ export function AdministratorsTable({
   meId: string | undefined;
   viewerIsProtected: boolean;
 }) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingMailId, setPendingMailId] = useState<string | null>(null);
   const [target, setTarget] = useState<AdminAccount | null>(null);
   // Mirrored from the `admins` prop rather than read directly, so a
   // successful demote can drop the row the instant the server confirms it -
@@ -67,6 +71,32 @@ export function AdministratorsTable({
   }
 
   const isLastAdmin = rows.length <= 1;
+
+  async function toggleReceiveMail(account: AdminAccount) {
+    const next = !account.receive_admin_emails;
+    setPendingMailId(account.id);
+    try {
+      await api.patch<User>(`/api/v1/users/${account.id}`, {
+        receive_admin_emails: next,
+      });
+      setRows((current) =>
+        current.map((item) =>
+          item.id === account.id ? { ...item, receive_admin_emails: next } : item,
+        ),
+      );
+      toast.success(
+        next
+          ? t("adminUsers.receiveMailEnabledToast", { username: account.username })
+          : t("adminUsers.receiveMailDisabledToast", { username: account.username }),
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof ApiError ? error.message : t("adminUsers.receiveMailError"),
+      );
+    } finally {
+      setPendingMailId(null);
+    }
+  }
 
   async function demote(account: AdminAccount) {
     setPendingId(account.id);
@@ -109,10 +139,13 @@ export function AdministratorsTable({
         <table className="w-full min-w-[640px] text-sm">
           <thead>
             <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left">
-              <th className="w-[32%] px-4 py-3 font-medium">User</th>
-              <th className="w-[26%] px-4 py-3 font-medium">E-mail</th>
-              <th className="w-[26%] px-4 py-3 font-medium">Granted via</th>
-              <th className="w-[16%] px-4 py-3 text-right font-medium">Actions</th>
+              <th className="w-[30%] px-4 py-3 font-medium">User</th>
+              <th className="w-[22%] px-4 py-3 font-medium">E-mail</th>
+              <th className="w-[18%] px-4 py-3 font-medium" title={t("adminUsers.receiveMailHelp")}>
+                {t("adminUsers.columnReceiveMail")}
+              </th>
+              <th className="w-[18%] px-4 py-3 font-medium">Granted via</th>
+              <th className="w-[12%] px-4 py-3 text-right font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -136,6 +169,9 @@ export function AdministratorsTable({
                     : peerAdminBlocked
                       ? "Only the built-in super administrator can demote another administrator."
                       : undefined;
+              const mailTitle = account.receive_admin_emails
+                ? t("adminUsers.receiveMailToggleOff", { username: account.username })
+                : t("adminUsers.receiveMailToggleOn", { username: account.username });
               return (
                 <tr key={account.id} className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0">
                   <td className="px-4 py-3">
@@ -159,6 +195,61 @@ export function AdministratorsTable({
                   </td>
                   <td className="text-muted-foreground truncate px-4 py-3" title={account.email}>
                     {account.email}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={account.receive_admin_emails}
+                      disabled={pendingMailId === account.id}
+                      title={mailTitle}
+                      aria-label={
+                        account.receive_admin_emails
+                          ? t("adminUsers.receiveMailToggleOff", { username: account.username })
+                          : t("adminUsers.receiveMailToggleOn", { username: account.username })
+                      }
+                      onClick={() => void toggleReceiveMail(account)}
+                      className={cn(
+                        "focus-visible:ring-ring group inline-flex cursor-pointer items-center gap-2 rounded-full py-1 pr-2.5 pl-1 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+                        account.receive_admin_emails
+                          ? "hover:bg-success-bg/40 text-foreground"
+                          : "hover:bg-surface-hover text-muted-foreground",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent transition-colors duration-200 ease-in-out",
+                          account.receive_admin_emails
+                            ? "bg-success"
+                            : "bg-muted-foreground/30 group-hover:bg-muted-foreground/45",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "bg-surface pointer-events-none inline-flex size-3.5 transform items-center justify-center rounded-full shadow-sm ring-0 transition-transform duration-200 ease-in-out",
+                            account.receive_admin_emails
+                              ? "translate-x-4.5"
+                              : "translate-x-0.5",
+                          )}
+                        >
+                          {pendingMailId === account.id ? (
+                            <Loader2 className="size-2.5 animate-spin text-muted-foreground" />
+                          ) : null}
+                        </span>
+                      </span>
+                      <span
+                        className={cn(
+                          "select-none font-medium text-xs",
+                          account.receive_admin_emails
+                            ? "text-success"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {account.receive_admin_emails
+                          ? t("adminUsers.receiveMailOn")
+                          : t("adminUsers.receiveMailOff")}
+                      </span>
+                    </button>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5" title={SOURCE_HINT[account.admin_source]}>

@@ -194,6 +194,21 @@ class TestWhoReceives:
         assert result == "no_mailbox"
         assert smtp_server.envelopes == []
 
+    async def test_disabling_receive_admin_emails_stops_its_mailbox_receiving(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+    ) -> None:
+        admin = await _admin(session)
+        await _mailbox(session, admin, smtp_server)
+
+        admin.receive_admin_emails = False
+        await session.flush()
+        result = await AdminMailService(session).submit_request(_request(), client_ip=None)
+
+        assert result == "no_mailbox"
+        assert smtp_server.envelopes == []
+
     async def test_switching_the_mailbox_off_stops_it_receiving(
         self,
         session: AsyncSession,

@@ -42,6 +42,7 @@ Thumbs.db
 
 # --- Local runtime artifacts -------------------------------------------------
 *.log
+cookies.txt
 tmp/
 .tmp/
 
