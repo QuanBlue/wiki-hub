@@ -29,6 +29,7 @@ const user: Me = {
   is_superuser: false,
   is_effective_admin: false,
   is_protected: false,
+  receive_admin_emails: true,
   last_login_at: null,
   created_at: "2026-01-01T00:00:00Z",
   groups: [],

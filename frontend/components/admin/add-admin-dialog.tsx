@@ -380,7 +380,7 @@ export function AddAdminDialog({
               <DialogFooter className="mt-6 flex items-center justify-end gap-2">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => setOpen(false)}
                   disabled={promotePending}
                 >
@@ -553,7 +553,7 @@ export function AddAdminDialog({
               <DialogFooter className="mt-6 flex items-center justify-end gap-2">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => setOpen(false)}
                   disabled={createPending}
                 >
