@@ -2,6 +2,8 @@
 
 import { Bell, BellRing, CheckCheck, Inbox } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   type MouseEvent,
   useEffect,
@@ -20,6 +22,7 @@ import {
 } from "@/components/ui/popover";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
+import { openNotificationTarget } from "@/lib/notification-open";
 import {
   describeNotification,
   notificationMeta,
@@ -46,9 +49,7 @@ export function formatBadgeCount(count: number): string {
  * the page's comments open the thread and scroll to it. Other links, and
  * new-tab clicks, navigate as usual.
  */
-function revealOnSamePage(event: MouseEvent, link: string) {
-  if (event.defaultPrevented || event.button !== 0) return;
-  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+function revealOnSamePage(link: string): boolean {
   const target = new URL(link, window.location.href);
   if (
     !target.hash ||
@@ -56,15 +57,27 @@ function revealOnSamePage(event: MouseEvent, link: string) {
     target.pathname !== window.location.pathname ||
     target.search !== window.location.search
   ) {
-    return;
+    return false;
   }
-  event.preventDefault();
   // Keep Next's history state so Back still works within the app; the same
   // link twice does not stack identical history entries.
   if (target.hash !== window.location.hash) {
     window.history.pushState(window.history.state, "", target.hash);
   }
   window.dispatchEvent(new HashChangeEvent("hashchange"));
+  return true;
+}
+
+/** Plain left-click: not a new-tab / new-window gesture the browser should handle. */
+function isPlainClick(event: MouseEvent): boolean {
+  return (
+    !event.defaultPrevented &&
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey
+  );
 }
 
 const TONE_CLASSES: Record<NotificationTone, string> = {
@@ -80,6 +93,7 @@ const TONE_CLASSES: Record<NotificationTone, string> = {
  */
 export function NotificationBell() {
   const { t, locale } = useTranslation();
+  const router = useRouter();
   const { summary, refresh } = useNotifications();
   const { summary: mail } = useMailSummary();
   const [open, setOpen] = useState(false);
@@ -99,6 +113,8 @@ export function NotificationBell() {
         if (!active) return;
         setItems(page.items);
         setFailed(false);
+        // The server drops notifications whose target was deleted while listing.
+        refresh();
       })
       .catch(() => {
         if (active) setFailed(true);
@@ -106,7 +122,7 @@ export function NotificationBell() {
     return () => {
       active = false;
     };
-  }, [open, summary.latest_at, unread]);
+  }, [open, summary.latest_at, unread, refresh]);
 
   // Cap the list at exactly MAX_VISIBLE_ROWS rows' worth of real, rendered
   // height (not a guessed pixel figure) before it scrolls - rows are not a
@@ -138,6 +154,38 @@ export function NotificationBell() {
     observer.observe(el);
     return () => observer.disconnect();
   }, [items]);
+
+  /**
+   * Open a notification's destination - but only after the server confirms it
+   * still exists. If the comment/page/request was deleted meanwhile, say so in a
+   * toast and drop the row rather than landing on a 404 page.
+   */
+  async function openItem(event: MouseEvent, item: AppNotification) {
+    const link = item.link;
+    if (!link) return;
+    if (!isPlainClick(event)) {
+      // New tab / window: the browser navigates; just record that it was read.
+      void markRead(item);
+      return;
+    }
+    event.preventDefault();
+    setOpen(false);
+    const exists = await openNotificationTarget(item.id);
+    if (!exists) {
+      setItems((current) => current?.filter((row) => row.id !== item.id) ?? null);
+      toast.warning(t("notifications.targetGone"));
+      refresh();
+      return;
+    }
+    setItems(
+      (current) =>
+        current?.map((row) =>
+          row.id === item.id ? { ...row, read_at: row.read_at ?? new Date().toISOString() } : row,
+        ) ?? null,
+    );
+    refresh();
+    if (!revealOnSamePage(link)) router.push(link);
+  }
 
   async function markRead(item: AppNotification) {
     if (item.read_at) return;
@@ -304,11 +352,7 @@ export function NotificationBell() {
                       <Link
                         href={item.link}
                         className={rowClass}
-                        onClick={(event) => {
-                          void markRead(item);
-                          setOpen(false);
-                          revealOnSamePage(event, item.link!);
-                        }}
+                        onClick={(event) => void openItem(event, item)}
                       >
                         {body}
                       </Link>

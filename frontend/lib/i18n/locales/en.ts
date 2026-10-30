@@ -225,6 +225,7 @@ export const en = {
     someone: "An administrator",
     loadError: "Could not load your notifications.",
     openNotification: "Open",
+    targetGone: "That comment, page or request no longer exists, so the notification was removed.",
     openInbox: "Open Requests",
     role: {
       viewer: "viewer",
@@ -304,6 +305,7 @@ export const en = {
   userMenu: {
     accountMenuAria: "Account menu for {name}",
     yourAccount: "Account",
+    systemAnnouncement: "System announcement",
     reportIssue: "Report issue",
     myIssues: "My issues",
     signOut: "Sign out",
@@ -2089,6 +2091,39 @@ export const en = {
     adminBadge: "Admin",
     notSetDirectlyTitle:
       "Not set as Administrator directly - granted through a group or a permission override. See the Administrators tab for which.",
+    columnReceiveMail: "Email notifications",
+    receiveMailOn: "Enabled",
+    receiveMailOff: "Disabled",
+    receiveMailToggleOn: "Enable email notifications for {username}",
+    receiveMailToggleOff: "Disable email notifications for {username} (avoid mailbox spam)",
+    receiveMailHelp:
+      "Send email notifications for new user requests and issue reports. Turn off to avoid mailbox spam for executive or supervisor accounts.",
+    receiveMailEnabledToast: "Enabled email notifications for {username}.",
+    receiveMailDisabledToast: "Disabled email notifications for {username}.",
+    receiveMailError: "Could not update email notification preferences.",
+    receiveMailPeerBlocked:
+      "Only the built-in super administrator can change settings for another administrator.",
+    formReceiveAdminEmails: "Receive administrator email notifications",
+    formReceiveAdminEmailsHelp:
+      "Email this administrator when users submit help requests or report issues. Turn off to prevent inbox spam for supervisors or executives.",
+    addAdmin: "Add administrator",
+    addAdminShort: "Add admin",
+    addAdminTitle: "Add administrator",
+    addAdminDesc:
+      "Promote an existing workspace member to administrator or create a new administrator account.",
+    tabPromoteMember: "Promote member",
+    tabCreateAdmin: "Create new administrator",
+    selectMemberLabel: "Workspace member",
+    selectMemberPlaceholder: "Select a member to promote…",
+    selectMemberSearchPlaceholder: "Search members by name or username…",
+    selectMemberEmpty: "No matching members found.",
+    noEligibleMembers: "All active workspace users are already system administrators.",
+    promoteSuccessToast: "{username} is now a system administrator.",
+    promoteError: "Could not promote user to administrator.",
+    submitPromote: "Add as administrator",
+    submitCreateAdmin: "Create administrator",
+    promoteWarning:
+      "Administrators hold unconditional access across all spaces, content, and system settings.",
   },
 
   adminMail: {

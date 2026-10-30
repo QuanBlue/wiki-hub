@@ -132,6 +132,16 @@ describe("IssueMarkdown", () => {
     );
     expect(container.querySelectorAll("span.text-primary")).toHaveLength(4);
   });
+
+  it("renders mentions as interactive bold blue triggers with profile hover capability", () => {
+    const { container } = render(
+      <IssueMarkdown source="hello @alice" mentions={["alice"]} />,
+    );
+    const trigger = container.querySelector("button");
+    expect(trigger).not.toBeNull();
+    expect(trigger).toHaveClass("text-primary", "font-bold");
+    expect(trigger?.textContent).toBe("@alice");
+  });
 });
 
 function issue(overrides: Partial<Issue> = {}): Issue {

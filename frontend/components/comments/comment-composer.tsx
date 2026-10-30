@@ -13,6 +13,7 @@ import {
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { api } from "@/lib/api-client";
 import { mentionQueryAt } from "@/lib/comments";
 import { useTranslation } from "@/lib/i18n/context";
@@ -20,6 +21,7 @@ import { cn } from "@/lib/utils";
 import type { MentionCandidate } from "@/types/api";
 
 const MAX_LENGTH = 5000;
+const MENTION_REGEX = /(?<![\w@.])(@[A-Za-z0-9][A-Za-z0-9_.-]*)/g;
 
 /**
  * A comment box with ``@mention`` suggestions: typing ``@`` lists the people
@@ -29,6 +31,7 @@ const MAX_LENGTH = 5000;
 export function CommentComposer({
   mentionsUrl,
   initialValue = "",
+  initialMentions,
   placeholder,
   submitLabel,
   autoFocus = false,
@@ -40,6 +43,7 @@ export function CommentComposer({
   /** ``…/comments/mentionable`` for the page being commented on. */
   mentionsUrl: string;
   initialValue?: string;
+  initialMentions?: readonly string[];
   placeholder: string;
   submitLabel: string;
   autoFocus?: boolean;
@@ -52,6 +56,12 @@ export function CommentComposer({
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState(initialValue);
+  const [validMentions, setValidMentions] = useState<Set<string>>(
+    () => new Set((initialMentions || []).map((m) => m.toLowerCase())),
+  );
+  const [candidateMap, setCandidateMap] = useState<Map<string, MentionCandidate>>(
+    () => new Map(),
+  );
   const [pending, setPending] = useState(false);
   const [suggestions, setSuggestions] = useState<MentionCandidate[] | null>(null);
   const [active, setActive] = useState(0);
@@ -59,8 +69,20 @@ export function CommentComposer({
     null,
   );
   const ref = useRef<HTMLTextAreaElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
   const listId = useId();
   const requestId = useRef(0);
+
+  const syncScroll = useCallback(() => {
+    if (ref.current && mirrorRef.current) {
+      mirrorRef.current.scrollTop = ref.current.scrollTop;
+      mirrorRef.current.scrollLeft = ref.current.scrollLeft;
+    }
+  }, []);
+
+  useEffect(() => {
+    syncScroll();
+  }, [value, syncScroll]);
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -95,6 +117,16 @@ export function CommentComposer({
         if (id === requestId.current) {
           setSuggestions(found);
           setActive(Math.max(0, found.findIndex((candidate) => candidate.can_view)));
+          const exact = found.find(
+            (candidate) =>
+              candidate.can_view &&
+              candidate.username.toLowerCase() === mention.query.toLowerCase(),
+          );
+          if (exact) {
+            const lower = exact.username.toLowerCase();
+            setValidMentions((prev) => new Set(prev).add(lower));
+            setCandidateMap((prev) => new Map(prev).set(lower, exact));
+          }
         }
       } catch {
         if (id === requestId.current) setSuggestions([]);
@@ -128,6 +160,9 @@ export function CommentComposer({
     const caret = box.selectionStart;
     const next = `${value.slice(0, mention.start)}@${candidate.username} ${value.slice(caret)}`;
     const position = mention.start + candidate.username.length + 2;
+    const lower = candidate.username.toLowerCase();
+    setValidMentions((prev) => new Set(prev).add(lower));
+    setCandidateMap((prev) => new Map(prev).set(lower, candidate));
     setValue(next);
     closeSuggestions();
     requestAnimationFrame(() => {
@@ -143,6 +178,7 @@ export function CommentComposer({
     try {
       if (await onSubmit(body)) {
         setValue("");
+        setValidMentions(new Set());
         closeSuggestions();
       }
     } finally {
@@ -185,45 +221,102 @@ export function CommentComposer({
 
   const empty = !value.trim();
 
+  const hasValidMention = Array.from(validMentions).some((u) => {
+    const regex = new RegExp(`(?<![\\w@.])@${u}\\b`, "i");
+    return regex.test(value);
+  });
+
+  function renderMirroredContent() {
+    if (!value) return null;
+    const textToRender = value.endsWith("\n") ? value + "\u200B" : value;
+    const parts = textToRender.split(MENTION_REGEX);
+
+    return parts.map((part, index) => {
+      if (!part) return null;
+      if (part.startsWith("@")) {
+        const rawName = part.slice(1).replace(/[.-]+$/, "");
+        const lowerName = rawName.toLowerCase();
+        if (validMentions.has(lowerName)) {
+          const trailing = part.slice(1 + rawName.length);
+          const candidate = candidateMap.get(lowerName);
+          return (
+            <span key={`mention-${index}`} className="inline">
+              <UserProfileTrigger
+                username={rawName}
+                fullName={candidate?.full_name}
+                variant="mention"
+                openOnHover
+                asSpan
+                className="pointer-events-auto inline -mx-1 px-1 tracking-[-0.035em]"
+              >
+                @{rawName}
+              </UserProfileTrigger>
+              {trailing}
+            </span>
+          );
+        }
+      }
+      return (
+        <span key={`text-${index}`} className="inline">
+          {part}
+        </span>
+      );
+    });
+  }
+
   return (
     <div className="relative min-w-0 flex-1">
       {/* The send button sits inside the box, at its bottom-right, as in a
           chat - the textarea keeps room for it on the right. */}
       <div className="relative">
-      <Textarea
-        ref={ref}
-        value={value}
-        rows={1}
-        maxLength={MAX_LENGTH}
-        placeholder={placeholder}
-        aria-label={placeholder}
-        aria-autocomplete="list"
-        aria-controls={suggestions ? listId : undefined}
-        aria-expanded={suggestions !== null}
-        disabled={pending}
-        className={cn(
-          // `block`: an inline textarea leaves a few pixels of line-box
-          // gap under it, which pushed the send button below the box.
-          "block min-h-9 resize-none rounded-lg py-2 pr-11",
-          compact ? "text-[13px]" : "text-sm",
+        {hasValidMention && (
+          <div
+            ref={mirrorRef}
+            aria-hidden="true"
+            className={cn(
+              "pointer-events-none absolute inset-0 z-10 select-none overflow-hidden rounded-lg border border-transparent px-3 py-2 pr-11 leading-5 break-words whitespace-pre-wrap text-foreground",
+              compact ? "text-[13px]" : "text-sm",
+            )}
+          >
+            {renderMirroredContent()}
+          </div>
         )}
-        onChange={(event) => {
-          setValue(event.target.value);
-          track(event.target.value, event.target.selectionStart);
-        }}
-        onKeyDown={onKeyDown}
-        onClick={(event) =>
-          track(value, (event.target as HTMLTextAreaElement).selectionStart)
-        }
-        onBlur={() => setTimeout(closeSuggestions, 120)}
-      />
+        <Textarea
+          ref={ref}
+          value={value}
+          rows={1}
+          maxLength={MAX_LENGTH}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          aria-autocomplete="list"
+          aria-controls={suggestions ? listId : undefined}
+          aria-expanded={suggestions !== null}
+          disabled={pending}
+          onScroll={syncScroll}
+          className={cn(
+            // `block`: an inline textarea leaves a few pixels of line-box
+            // gap under it, which pushed the send button below the box.
+            "block min-h-9 resize-none rounded-lg py-2 pr-11 leading-5",
+            compact ? "text-[13px]" : "text-sm",
+            hasValidMention && "text-transparent caret-foreground selection:bg-primary/20",
+          )}
+          onChange={(event) => {
+            setValue(event.target.value);
+            track(event.target.value, event.target.selectionStart);
+          }}
+          onKeyDown={onKeyDown}
+          onClick={(event) =>
+            track(value, (event.target as HTMLTextAreaElement).selectionStart)
+          }
+          onBlur={() => setTimeout(closeSuggestions, 120)}
+        />
         <button
           type="button"
           onClick={() => void submit()}
           disabled={empty || pending}
           aria-label={submitLabel}
           title={submitLabel}
-          className="text-primary hover:bg-primary-subtle active:bg-surface-selected focus-visible:ring-ring absolute right-1.5 bottom-1 flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:text-muted-foreground disabled:cursor-not-allowed disabled:bg-transparent disabled:opacity-60"
+          className="text-primary hover:bg-primary-subtle active:bg-surface-selected focus-visible:ring-ring absolute right-1.5 bottom-1 z-20 flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:text-muted-foreground disabled:cursor-not-allowed disabled:bg-transparent disabled:opacity-60"
         >
           {pending ? (
             <Loader2 className="size-4 animate-spin" aria-hidden />

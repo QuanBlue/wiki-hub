@@ -1,5 +1,3 @@
-"use client";
-
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
@@ -63,7 +61,18 @@ export function Pagination({
           ? off
           : idle,
     );
-    if (hrefFor && !options.disabled) {
+    if (hrefFor) {
+      if (options.disabled) {
+        return (
+          <span
+            aria-disabled="true"
+            aria-label={options.label}
+            className={classes}
+          >
+            {content}
+          </span>
+        );
+      }
       return (
         <Link
           href={hrefFor(target)}
@@ -81,7 +90,7 @@ export function Pagination({
         disabled={options.disabled}
         aria-label={options.label}
         aria-current={options.active ? "page" : undefined}
-        onClick={() => onPageChange?.(target)}
+        onClick={onPageChange ? () => onPageChange(target) : undefined}
         className={classes}
       >
         {content}

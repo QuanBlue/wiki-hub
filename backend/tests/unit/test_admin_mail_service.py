@@ -71,6 +71,7 @@ def _user(**overrides: object) -> SimpleNamespace:
         "full_name": "Ada Admin",
         "is_active": True,
         "is_protected": False,
+        "receive_admin_emails": True,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -510,6 +511,52 @@ class TestManagingMailboxes:
 
         assert read.is_enabled is True
         assert read.effective_enabled is False
+
+    async def test_an_account_with_emails_disabled_makes_the_mailbox_ineffective(
+        self, svc: AdminMailService
+    ) -> None:
+        mailbox, muted = _mailbox(), _user(receive_admin_emails=False)
+        read = svc._read(mailbox, muted)
+
+        assert read.is_enabled is True
+        assert read.user_receive_admin_emails is False
+        assert read.effective_enabled is False
+
+    async def test_send_issue_created_email_skips_muted_admins(
+        self, svc: AdminMailService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        reporter = _user(username="reporter", email="reporter@corp.com")
+        active_admin = _user(
+            username="active", email="active@corp.com", receive_admin_emails=True
+        )
+        muted_admin = _user(
+            username="boss", email="boss@corp.com", receive_admin_emails=False
+        )
+
+        pool_mailbox = _mailbox()
+        svc.repo.working_mailboxes = AsyncMock(return_value=[pool_mailbox])
+        svc._deliver = AsyncMock(return_value=Mock(email_sent=True))
+        monkeypatch.setattr(
+            "app.services.site_settings.SiteSettingsService.get_effective",
+            AsyncMock(
+                return_value=Mock(
+                    site_name="Wiki", theme_color=None, custom_logo_url=None
+                )
+            ),
+        )
+
+        sent = await svc.send_issue_created_email(
+            reporter=reporter,
+            issue_id=uuid.uuid4(),
+            issue_title="Bug",
+            description="Details",
+            recipients=[reporter, active_admin, muted_admin],
+        )
+
+        assert sent == 1
+        assert svc._deliver.await_count == 1
+        call_kwargs = svc._deliver.await_args.kwargs
+        assert call_kwargs["to"] == "active@corp.com"
 
     async def test_changing_the_connection_re_checks_it_but_renaming_does_not(
         self, svc: AdminMailService, monkeypatch: pytest.MonkeyPatch

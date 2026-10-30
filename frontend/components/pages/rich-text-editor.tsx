@@ -694,32 +694,34 @@ function persistTableColumnWidths(
 ) {
   const map = TableMap.get(table);
   const transaction = view.state.tr;
+  const seen = new Set<number>();
 
-  widths.forEach((width, column) => {
-    for (let row = 0; row < map.height; row += 1) {
-      const mapIndex = row * map.width + column;
-      if (row && map.map[mapIndex] === map.map[mapIndex - map.width]) {
-        continue;
-      }
-      const cellOffset = map.map[mapIndex];
-      const cell = table.nodeAt(cellOffset);
-      if (!cell) continue;
-      const attributes = cell.attrs;
-      const widthIndex =
-        attributes.colspan === 1 ? 0 : column - map.colCount(cellOffset);
-      if (widthIndex < 0 || widthIndex >= attributes.colspan) continue;
+  for (const cellOffset of map.map) {
+    if (seen.has(cellOffset)) continue;
+    seen.add(cellOffset);
+    const cell = table.nodeAt(cellOffset);
+    if (!cell) continue;
+    const attributes = cell.attrs;
+    const startColumn = map.colCount(cellOffset);
+    const span = Math.max(1, Number(attributes.colspan) || 1);
+    const columnWidths = widths.slice(startColumn, startColumn + span);
+    if (columnWidths.length !== span) continue;
 
-      const columnWidths = attributes.colwidth
-        ? attributes.colwidth.slice()
-        : Array(attributes.colspan).fill(0);
-      if (columnWidths[widthIndex] === width) continue;
-      columnWidths[widthIndex] = width;
-      transaction.setNodeMarkup(tableStart + cellOffset, undefined, {
-        ...attributes,
-        colwidth: columnWidths,
-      });
-    }
-  });
+    const currentWidths = Array.isArray(attributes.colwidth)
+      ? attributes.colwidth
+      : null;
+    const widthsUnchanged =
+      currentWidths !== null &&
+      currentWidths.length === columnWidths.length &&
+      currentWidths.every((value, index) => value === columnWidths[index]);
+    if (widthsUnchanged && !attributes.widthPercent) continue;
+
+    transaction.setNodeMarkup(tableStart + cellOffset, undefined, {
+      ...attributes,
+      colwidth: columnWidths,
+      widthPercent: null,
+    });
+  }
 
   if (transaction.docChanged) view.dispatch(transaction);
 }
@@ -731,6 +733,7 @@ function persistTableColumnWidths(
  */
 const TableColumnResize = Extension.create({
   name: "tableColumnResize",
+  priority: 1000,
   addProseMirrorPlugins() {
     let activeResize: TableColumnResizeState | undefined;
     let disposeDrag = () => undefined;
@@ -805,7 +808,12 @@ const TableColumnResize = Extension.create({
       const { map, context } = target;
       const widths: number[] = Array(map.width).fill(0);
       const seen = new Set<number>();
-      const spanning: { column: number; span: number; width: number }[] = [];
+      const spanning: {
+        column: number;
+        span: number;
+        width: number;
+        colwidth: number[] | null;
+      }[] = [];
       for (const offset of map.map) {
         if (seen.has(offset)) continue;
         seen.add(offset);
@@ -815,11 +823,25 @@ const TableColumnResize = Extension.create({
         const width = dom.getBoundingClientRect().width;
         const column = map.colCount(offset);
         if (cellNode.attrs.colspan === 1) widths[column] = width;
-        else spanning.push({ column, span: cellNode.attrs.colspan, width });
+        else
+          spanning.push({
+            column,
+            span: cellNode.attrs.colspan,
+            width,
+            colwidth: Array.isArray(cellNode.attrs.colwidth)
+              ? cellNode.attrs.colwidth
+              : null,
+          });
       }
-      for (const { column, span, width } of spanning) {
+      for (const { column, span, width, colwidth } of spanning) {
         for (let index = column; index < column + span; index += 1) {
-          if (!widths[index]) widths[index] = width / span;
+          if (!widths[index]) {
+            const savedWidth = colwidth?.[index - column];
+            widths[index] =
+              typeof savedWidth === "number" && savedWidth > 0
+                ? savedWidth
+                : width / span;
+          }
         }
       }
       return widths.map((width) =>
@@ -854,13 +876,12 @@ const TableColumnResize = Extension.create({
 
               event.preventDefault();
               clearColumnHover(view);
-              const tableWidth = Math.round(
-                target.table.getBoundingClientRect().width,
-              );
+              const tableWidth = widths.reduce((sum, width) => sum + width, 0);
               target.table.style.width = `${tableWidth}px`;
               target.table.style.minWidth = "";
               columns.forEach((column, index) => {
                 column.style.width = `${widths[index]}px`;
+                column.style.minWidth = "";
               });
 
               activeResize = {
@@ -885,39 +906,64 @@ const TableColumnResize = Extension.create({
                 const delta = moveEvent.clientX - activeResize.startX;
                 const minDelta =
                   TABLE_CELL_MIN_WIDTH - activeResize.startLeftWidth;
-                // Dragging the outer right edge widens the table instead of
-                // borrowing from a neighbour, so nothing caps how far it goes.
-                const maxDelta =
-                  rightColumn === null
-                    ? Number.POSITIVE_INFINITY
-                    : activeResize.startRightWidth - TABLE_CELL_MIN_WIDTH;
-                const boundedDelta = Math.max(
-                  minDelta,
-                  Math.min(maxDelta, delta),
+                const columns = activeResize.table.querySelectorAll("col");
+
+                if (rightColumn === null) {
+                  const boundedDelta = Math.max(minDelta, delta);
+                  activeResize.widths[leftColumn] = Math.round(
+                    activeResize.startLeftWidth + boundedDelta,
+                  );
+                  columns[leftColumn].style.width =
+                    `${activeResize.widths[leftColumn]}px`;
+                  activeResize.table.style.width = `${Math.round(
+                    activeResize.startTableWidth + boundedDelta,
+                  )}px`;
+                  return;
+                }
+
+                // When stretching right, trade width with the right neighbour
+                // while it has room above the minimum width; any further
+                // rightward drag (or any drag when the neighbour is already at
+                // minimum width, as in Excel imports) widens the column and
+                // table. When shrinking left, shrink the column and table
+                // directly instead of inflating the right neighbour.
+                const rightSpare = Math.max(
+                  0,
+                  activeResize.startRightWidth - TABLE_CELL_MIN_WIDTH,
                 );
+                const boundedDelta = Math.max(minDelta, delta);
+                const tradedDelta = Math.max(
+                  0,
+                  Math.min(boundedDelta, rightSpare),
+                );
+                const extraDelta = boundedDelta - tradedDelta;
+
                 activeResize.widths[leftColumn] = Math.round(
                   activeResize.startLeftWidth + boundedDelta,
                 );
-                const columns = activeResize.table.querySelectorAll("col");
+                activeResize.widths[rightColumn] = Math.round(
+                  activeResize.startRightWidth - tradedDelta,
+                );
                 columns[leftColumn].style.width =
                   `${activeResize.widths[leftColumn]}px`;
-                if (rightColumn === null) {
-                  activeResize.table.style.width = `${
-                    activeResize.startTableWidth + boundedDelta
-                  }px`;
-                  return;
-                }
-                activeResize.widths[rightColumn] = Math.round(
-                  activeResize.startRightWidth - boundedDelta,
-                );
                 columns[rightColumn].style.width =
                   `${activeResize.widths[rightColumn]}px`;
+                activeResize.table.style.width = `${Math.round(
+                  activeResize.startTableWidth + extraDelta,
+                )}px`;
               };
               const end = () => {
                 if (!activeResize) return;
                 const { tableNode, tableStart, widths } = activeResize;
-                if (tableNode) {
-                  persistTableColumnWidths(view, tableNode, tableStart, widths);
+                const currentTable =
+                  view.state.doc.nodeAt(tableStart - 1) ?? tableNode;
+                if (currentTable) {
+                  persistTableColumnWidths(
+                    view,
+                    currentTable,
+                    tableStart,
+                    widths,
+                  );
                 }
                 activeResize = undefined;
                 document.body.style.cursor = initialCursor;
@@ -993,6 +1039,7 @@ function measureTableRowContentHeight(row: HTMLTableRowElement) {
  */
 const TableRowResize = Extension.create({
   name: "tableRowResize",
+  priority: 1000,
   addProseMirrorPlugins() {
     let activeResize:
       | {
@@ -4197,6 +4244,8 @@ function buildEditorExtensions({
     BlockIndent,
     EmptyLineHint,
     TableCellTripleClick,
+    TableColumnResize,
+    TableRowResize,
     Table.configure({
       resizable: false,
       cellMinWidth: TABLE_CELL_MIN_WIDTH,
@@ -4204,8 +4253,6 @@ function buildEditorExtensions({
     TableRowWithHeight,
     TableHeaderWithBackground,
     TableCellWithBackground,
-    TableColumnResize,
-    TableRowResize,
     Placeholder.configure({
       placeholder: placeholder ?? translate("en", "editor.editorPlaceholder"),
     }),

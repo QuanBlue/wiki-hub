@@ -61,6 +61,11 @@ vi.mock("@/components/admin/create-user-dialog", () => ({
     <button>create-user {String(viewerIsSystemAdmin)}</button>
   ),
 }));
+vi.mock("@/components/admin/add-admin-dialog", () => ({
+  AddAdminDialog: ({ viewerIsSystemAdmin }: { viewerIsSystemAdmin: boolean }) => (
+    <button>add-admin {String(viewerIsSystemAdmin)}</button>
+  ),
+}));
 vi.mock("@/components/admin/refresh-button", () => ({
   RefreshButton: ({ label }: { label: string }) => <button>{label}</button>,
 }));

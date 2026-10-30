@@ -3365,6 +3365,18 @@ export const sectionsVi: HelpSection[] = [
             có quyền này từ trước khi việc theo dõi này tồn tại.
           </li>
           <li>
+            <strong>Thêm quản trị viên</strong>: Quản trị viên hệ thống có thể bấm{" "}
+            <strong>Thêm quản trị viên</strong> để nâng cấp một thành viên hiện có hoặc tạo tài khoản
+            quản trị viên mới trực tiếp, kèm theo tuỳ chọn nhận email thông báo.
+          </li>
+          <li>
+            <strong>Nhận email thông báo</strong>: mỗi quản trị viên có một công
+            tắc bật/tắt (Enable/Disable) nhận email thông báo khi có yêu cầu trợ giúp hoặc báo cáo
+            sự cố mới (mặc định mở cho admin được thêm mới). Tắt tính năng này giúp
+            tránh spam hộp thư cho cấp trên hoặc tài khoản sếp trong khi vẫn giữ
+            nguyên quyền quản trị đầy đủ và thông báo trong ứng dụng.
+          </li>
+          <li>
             <strong>Demote to Member</strong> hoàn tác lại đúng cách nó đã được
             cấp: nó chuyển <Code>Role</Code> về lại Member với một Administrator
             trực tiếp, hoặc thêm một override force-disabled với một tài khoản

@@ -248,4 +248,67 @@ describe("table column resize with merged cells", () => {
     await drag(215);
     expect(onChange.mock.calls.at(-1)![0]).not.toBe(first);
   });
+
+  it("stretches and shrinks inner columns in Excel-imported tables without reverting or selecting cells", async () => {
+    const onChange = vi.fn();
+    const excelHtml =
+      '<table><thead><tr><th colspan="3" colwidth="96,96,96"><p>Sheet Title</p></th></tr></thead><tbody><tr><td colwidth="96"><p>1</p></td><td colwidth="96"><p>Item</p></td><td colwidth="96"><p>Note</p></td></tr></tbody></table>';
+    const { table } = await renderTable(excelHtml, onChange);
+
+    // Lay out as 96px columns (matching spreadsheet.py _MIN_COLUMN_PX = 96).
+    rect(table, 0, 288);
+    const header = table.querySelector("th")!;
+    rect(header, 0, 288, 0, 40);
+    const bodyCells = cellsOf(table);
+    bodyCells.forEach((cell, idx) => rect(cell, idx * 96, 96, 40, 40));
+
+    // Drag the inner boundary between column 0 and column 1 to the right,
+    // dispatching mouseMove on the neighbouring cell so it bubbles through
+    // document to window like a real browser drag.
+    fireEvent.mouseDown(bodyCells[0]!, { button: 0, clientX: 95, clientY: 60 });
+    fireEvent.mouseMove(bodyCells[1]!, { clientX: 155, clientY: 60 });
+
+    const columns = table.querySelectorAll("col");
+    expect(columns[0]!.style.width).toBe("156px");
+    expect(columns[1]!.style.width).toBe("96px");
+    expect(table.style.width).toBe("348px");
+    expect(table.querySelectorAll(".selectedCell")).toHaveLength(0);
+
+    fireEvent.mouseUp(bodyCells[1]!);
+
+    await waitFor(() => {
+      const latestHtml = onChange.mock.calls.at(-1)?.[0] as string | undefined;
+      expect(latestHtml).toContain('colwidth="156,96,96"');
+    });
+    expect(columns[0]!.style.width).toBe("156px");
+    expect(table.style.width).toBe("348px");
+
+    // Now shrink the inner column 0 back from 156px to 116px and ensure
+    // column 1 stays at 96px instead of inflating.
+    const updatedBodyCells = cellsOf(table);
+    rect(table, 0, 348);
+    rect(table.querySelector("th")!, 0, 348, 0, 40);
+    rect(updatedBodyCells[0]!, 0, 156, 40, 40);
+    rect(updatedBodyCells[1]!, 156, 96, 40, 40);
+    rect(updatedBodyCells[2]!, 252, 96, 40, 40);
+
+    fireEvent.mouseDown(updatedBodyCells[0]!, {
+      button: 0,
+      clientX: 155,
+      clientY: 60,
+    });
+    fireEvent.mouseMove(updatedBodyCells[0]!, { clientX: 115, clientY: 60 });
+
+    const updatedColumns = table.querySelectorAll("col");
+    expect(updatedColumns[0]!.style.width).toBe("116px");
+    expect(updatedColumns[1]!.style.width).toBe("96px");
+    expect(table.style.width).toBe("308px");
+
+    fireEvent.mouseUp(updatedBodyCells[0]!);
+
+    await waitFor(() => {
+      const latestHtml = onChange.mock.calls.at(-1)?.[0] as string | undefined;
+      expect(latestHtml).toContain('colwidth="116,96,96"');
+    });
+  });
 });

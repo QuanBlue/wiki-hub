@@ -17,6 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.v1.site_settings import SiteSettingsServiceDep
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.schemas.site_settings import SystemAnnouncement
 from app.services.site_settings import SiteSettingsService
 
 logger = get_logger(__name__)
@@ -49,6 +50,8 @@ class InstanceInfo(BaseModel):
     allowed_attachment_types: list[str]
     #: How long a deleted page can still be restored from its space's Trash.
     trash_retention_days: int = 30
+    #: Active announcement shown on public pages (/login, /contact-admin) when enabled.
+    announcement: SystemAnnouncement | None = None
     features: InstanceFeatures
 
 
@@ -83,6 +86,12 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
         max_upload_size_bytes=effective.max_upload_size_bytes,
         allowed_attachment_types=effective.allowed_attachment_types,
         trash_retention_days=effective.trash_retention_days,
+        announcement=(
+            effective.announcement
+            if effective.announcement.is_currently_active()
+            and effective.announcement.show_on_login
+            else None
+        ),
         features=InstanceFeatures(
             local_auth=settings.auth_provider == "local",
             oidc_auth=False,  # OIDC provider is a documented stub in this build

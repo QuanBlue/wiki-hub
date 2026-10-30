@@ -20,6 +20,7 @@ function admin(id: string, overrides: Partial<AdminAccount> = {}): AdminAccount 
     full_name: `User ${id}`,
     is_superuser: false,
     is_protected: false,
+    receive_admin_emails: true,
     admin_source: "override",
     granted_by: "someone",
     granted_via_group: null,

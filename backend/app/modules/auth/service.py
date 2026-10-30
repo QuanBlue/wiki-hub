@@ -52,6 +52,7 @@ AUDITED_USER_FIELDS = (
     "company",
     "is_active",
     "is_superuser",
+    "receive_admin_emails",
 )
 
 
@@ -329,6 +330,7 @@ class AuthService:
             is_active=True,
             is_superuser=payload.is_superuser or is_protected,
             is_protected=is_protected,
+            receive_admin_emails=payload.receive_admin_emails,
         )
         self.users.add(user)
         await self.session.flush()
@@ -347,11 +349,21 @@ class AuthService:
         if user is None:
             raise NotFoundError("User not found.")
 
-        # The protected account is immutable even for a superuser.
-        self.assert_mutable(user)
-        self.assert_peer_admin_editable(user)
-
         data = payload.model_dump(exclude_unset=True)
+
+        # The protected account is immutable for structural/identity changes
+        # (role, status, deletion, demotion, username, overrides). Toggling email
+        # notification preference (`receive_admin_emails`) alone is permitted for
+        # administrators (including the protected bootstrap administrator) so that
+        # executive/supervisor accounts can opt out of notification emails.
+        structural_keys = set(data.keys()) - {"receive_admin_emails"}
+        if structural_keys:
+            self.assert_mutable(user)
+            self.assert_peer_admin_editable(user)
+        else:
+            await self.assert_actor_is_system_admin(
+                "change administrator email notification preferences"
+            )
 
         # Both a Role change and a Global Access override can hand out power
         # the actor may not themselves hold (an override can grant
@@ -400,6 +412,8 @@ class AuthService:
             user.is_active = bool(data["is_active"])
         if data.get("is_superuser") is not None:
             user.is_superuser = bool(data["is_superuser"])
+        if data.get("receive_admin_emails") is not None:
+            user.receive_admin_emails = bool(data["receive_admin_emails"])
 
         overrides = data.get("global_permission_overrides")
         if overrides:
@@ -494,6 +508,8 @@ class AuthService:
             user.social_links = [
                 str(link).strip() for link in data["social_links"] if str(link).strip()
             ]
+        if "receive_admin_emails" in data and data["receive_admin_emails"] is not None:
+            user.receive_admin_emails = bool(data["receive_admin_emails"])
 
         await self.session.flush()
         after = {field: getattr(user, field, None) for field in AUDITED_USER_FIELDS}

@@ -54,6 +54,8 @@ import {
 import { toast } from "sonner";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
+import { MailboxPasswordBanner } from "@/components/layout/mailbox-password-banner";
+import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
 import { EditSpaceModal } from "@/components/admin/edit-space-modal";
 import { PageContentLoading } from "@/components/pages/page-content-loading";
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
@@ -1207,19 +1209,32 @@ export function SpaceWorkspace({
     if (!page || !pageEditDirtyRef.current) return true;
 
     const savedContent = mode === "markdown" ? markdownSource : htmlDraft;
+    const contentFormat = formatForMode(mode);
     const request = savePageDraft(
       space.key,
       page.slug,
       {
         content: savedContent,
-        content_format: formatForMode(mode),
+        content_format: contentFormat,
         edit_mode: mode,
         base_updated_at: page.updated_at,
       },
       { keepalive },
     )
-      .then(() => {
+      .then((savedDraft) => {
         setDraftSavedContent(savedContent);
+        setRecoveryDraft(
+          savedDraft ?? {
+            id: `local-${page.id}`,
+            page_id: page.id,
+            content: savedContent,
+            content_format: contentFormat,
+            edit_mode: mode,
+            base_updated_at: page.updated_at,
+            updated_at: new Date().toISOString(),
+            is_conflict: false,
+          },
+        );
         return true;
       })
       .catch(() => false);
@@ -1242,6 +1257,7 @@ export function SpaceWorkspace({
     try {
       await discardPageDraft(space.key, page.slug);
       clearLocalPageDraft(space.key, page.slug);
+      setRecoveryDraft(null);
     } catch {
       toast.error(t("workspace.discardDraftError"));
     }
@@ -1286,7 +1302,6 @@ export function SpaceWorkspace({
     setEditMode(mode);
     setPreviewing(false);
     setEditing(true);
-    setRecoveryDraft(null);
   }
 
   function updateTitleDraft(nextTitle: string) {
@@ -1374,6 +1389,10 @@ export function SpaceWorkspace({
   // Cancel dialog: keep the edits as a draft, then close the editor. A failed
   // save keeps the dialog open so nothing is lost.
   async function saveDraftAndCancel() {
+    if (draftSaveTimer.current !== null) {
+      window.clearTimeout(draftSaveTimer.current);
+      draftSaveTimer.current = null;
+    }
     if (draftDirty && !(await saveDraftNow())) return;
     setCancelEditPending(false);
     cancelEditing();
@@ -1926,7 +1945,7 @@ export function SpaceWorkspace({
     : t("spaces.addFavourite");
 
   return (
-    <div className="bg-background min-h-[calc(100vh-var(--wh-topbar-height))] max-w-full min-w-0 overflow-x-hidden md:flex md:h-[calc(100vh-var(--wh-topbar-height))] md:overflow-hidden">
+    <div className="bg-background min-h-[calc(100vh-var(--wh-topbar-height)-var(--wh-banner-height,0px))] max-w-full min-w-0 overflow-x-hidden md:flex md:h-[calc(100vh-var(--wh-topbar-height)-var(--wh-banner-height,0px))] md:overflow-hidden">
       {mobileOpen ? (
         <button
           type="button"
@@ -1947,7 +1966,7 @@ export function SpaceWorkspace({
           "max-md:top-topbar max-md:fixed max-md:bottom-0 max-md:left-0 max-md:z-40 max-md:w-[min(20rem,85vw)] max-md:shadow-xl",
           "max-md:transition-[transform,visibility] max-md:duration-200 motion-reduce:max-md:transition-none",
           mobileOpen ? "max-md:translate-x-0" : "max-md:invisible max-md:-translate-x-full",
-          "md:top-topbar md:sticky md:h-[calc(100vh-var(--wh-topbar-height))]",
+          "md:top-topbar md:sticky md:h-[calc(100vh-var(--wh-topbar-height)-var(--wh-banner-height,0px))]",
           "md:w-(--space-sidebar-width)",
         )}
         style={
@@ -2125,6 +2144,8 @@ export function SpaceWorkspace({
         }
       >
         <PageContentLoading />
+        <SystemAnnouncementBanner />
+        <MailboxPasswordBanner />
         <div
           className={cn(
             "mx-auto max-w-full min-w-0 px-6 pb-5 sm:px-8 lg:px-10",

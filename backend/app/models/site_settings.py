@@ -16,6 +16,7 @@ migration per new setting, which ``alembic check`` then keeps honest.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, SmallInteger, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -55,6 +56,9 @@ class SiteSettings(TimestampMixin, Base):
     #: conservative built-in policy (knowledge navigation for everyone,
     #: administration for administrators only).
     sidebar_permissions: Mapped[dict[str, list[str]] | None] = mapped_column(JSONB, nullable=True)
+    #: Top-of-page system announcement banner (rich HTML content, level, schedule,
+    #: dismissibility). NULL = no announcement configured.
+    announcement: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     #: How many AI calls one person may make an hour (questions, chat, writing help...), and
     #: how many a document translation may. NULL = the value from the environment
     #: (``WIKIHUB_AI_RATE_LIMIT`` / ``WIKIHUB_AI_TRANSLATE_RATE_LIMIT``). See ``ai.limits``.

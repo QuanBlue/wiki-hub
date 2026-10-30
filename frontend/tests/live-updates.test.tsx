@@ -116,7 +116,7 @@ describe("noticing something new without a reload", () => {
     expect(markup(message as ReactNode)).toContain("<code>Docs</code>");
     expect(options?.action).toMatchObject({ label: "Open" });
     (options!.action as unknown as { onClick: () => void }).onClick();
-    expect(push).toHaveBeenCalledWith("/spaces/docs");
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/spaces/docs"));
   });
 
   it("colours the toast by what happened", async () => {

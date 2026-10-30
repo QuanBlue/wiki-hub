@@ -16,6 +16,7 @@ const m = vi.hoisted(() => ({
   getMailSummary: vi.fn(),
   getNotificationSummary: vi.fn(),
   getSidebarPermissions: vi.fn(),
+  getSystemAnnouncement: vi.fn(),
   getSidebarPreferences: vi.fn(),
   listFavoriteSpaces: vi.fn(),
   listOwnPinnedPages: vi.fn(),
@@ -27,7 +28,10 @@ vi.mock("@/lib/admin-mail", () => ({
   NO_MAILBOX: { has_inbox: false, unread_count: 0 },
 }));
 vi.mock("@/lib/notifications", () => ({ getNotificationSummary: m.getNotificationSummary }));
-vi.mock("@/lib/navigation", () => ({ getSidebarPermissions: m.getSidebarPermissions }));
+vi.mock("@/lib/navigation", () => ({
+  getSidebarPermissions: m.getSidebarPermissions,
+  getSystemAnnouncement: m.getSystemAnnouncement,
+}));
 vi.mock("@/lib/sidebar-preferences", () => ({ getSidebarPreferences: m.getSidebarPreferences }));
 vi.mock("@/lib/spaces", () => ({ listFavoriteSpaces: m.listFavoriteSpaces }));
 vi.mock("@/lib/pages", () => ({ listOwnPinnedPages: m.listOwnPinnedPages }));
@@ -183,6 +187,7 @@ describe("AppMain", () => {
 describe("AppShell", () => {
   beforeEach(() => {
     m.getSidebarPermissions.mockResolvedValue({});
+    m.getSystemAnnouncement.mockResolvedValue(null);
     m.getSidebarPreferences.mockResolvedValue({ collapsed: false, appWidth: 256 });
     m.listFavoriteSpaces.mockResolvedValue([{}, {}]);
     m.listOwnPinnedPages.mockResolvedValue([{}]);

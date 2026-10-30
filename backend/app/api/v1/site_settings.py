@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import ClientInfoDep, CurrentSuperuser, CurrentUser, DbSession, Impersonator
 from app.schemas.site_settings import (
+    AnnouncementRead,
     SidebarPermissionsRead,
     SiteSettingsRead,
     SiteSettingsUpdate,
@@ -49,6 +50,18 @@ async def read_sidebar_permissions(
 ) -> SidebarPermissionsRead:
     """Expose only navigation visibility to signed-in users, not instance settings."""
     return await service.read_sidebar_permissions()
+
+
+@router.get(
+    "/announcement",
+    response_model=AnnouncementRead,
+    summary="Read active system announcement",
+)
+async def read_announcement(
+    _user: CurrentUser, service: SiteSettingsServiceDep
+) -> AnnouncementRead:
+    """Expose the active top-of-page system announcement to signed-in users."""
+    return await service.read_announcement()
 
 
 @router.get("", response_model=SiteSettingsRead, summary="Read instance settings")

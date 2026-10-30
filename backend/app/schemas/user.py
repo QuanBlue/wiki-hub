@@ -73,6 +73,7 @@ class UserRead(BaseModel):
     #: this field is the cheap yes/no version for everywhere else.
     is_effective_admin: bool = False
     is_protected: bool
+    receive_admin_emails: bool = True
     last_login_at: datetime | None
     #: Latest request seen on any live, non-impersonated session. Only filled
     #: in by `list_users`, which is what the People directory's Online column
@@ -249,6 +250,7 @@ class UserCreate(BaseModel):
     full_name: str = Field(default="", max_length=255)
     password: str = Field(min_length=8, max_length=128)
     is_superuser: bool = False
+    receive_admin_emails: bool = True
 
 
 class UserUpdate(BaseModel):
@@ -256,6 +258,7 @@ class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     is_active: bool | None = None
     is_superuser: bool | None = None
+    receive_admin_emails: bool | None = None
     #: Keyed by permission; `True`/`False` sets that permission's override,
     #: `None` clears it back to "inherit from groups". Only the permissions
     #: present are touched - omit a key to leave its current override alone.
@@ -276,6 +279,7 @@ class SelfProfileUpdate(BaseModel):
     profile_url: AnyHttpUrl | None = Field(default=None, max_length=2048)
     social_links: list[AnyHttpUrl] | None = Field(default=None, max_length=2)
     company: str | None = Field(default=None, max_length=255)
+    receive_admin_emails: bool | None = None
 
     @field_validator("email")
     @classmethod

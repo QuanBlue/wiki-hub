@@ -1737,6 +1737,7 @@ describe("SpaceWorkspace leaving with unsaved changes", () => {
     await waitFor(() =>
       expect(screen.queryByLabelText("Page title")).toBeNull(),
     );
+    expect(screen.getByText("Draft not released")).toBeInTheDocument();
   });
 
   it("saves and then cancels", async () => {

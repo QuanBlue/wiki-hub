@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { describeNotification, notificationMeta } from "@/lib/notification-meta";
+import { openNotificationTarget } from "@/lib/notification-open";
 import { richText } from "@/lib/rich-text";
 import type { AppNotification, NotificationSummary, Page } from "@/types/api";
 
@@ -102,7 +103,18 @@ export function NotificationsProvider({
           const link = item.link;
           toast[notificationMeta(item.kind).tone](richText(describeNotification(t, item)), {
             action: link
-              ? { label: t("notifications.openNotification"), onClick: () => router.push(link) }
+              ? {
+                  label: t("notifications.openNotification"),
+                  onClick: () => {
+                    void openNotificationTarget(item.id).then((exists) => {
+                      if (exists) router.push(link);
+                      else {
+                        toast.warning(t("notifications.targetGone"));
+                        refresh();
+                      }
+                    });
+                  },
+                }
               : undefined,
           });
         }
@@ -111,7 +123,7 @@ export function NotificationsProvider({
     return () => {
       active = false;
     };
-  }, [latest, router, t]);
+  }, [latest, refresh, router, t]);
 
   const value = useMemo(() => ({ summary, refresh }), [summary, refresh]);
 

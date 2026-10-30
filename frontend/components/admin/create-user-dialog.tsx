@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
 import type { Page, User } from "@/types/api";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -62,6 +63,7 @@ export function CreateUserDialog({
   viewerIsSystemAdmin: boolean;
 }) {
   const router = useRouter();
+  const { t } = useTranslation();
   const [internalOpen, setInternalOpen] = useState(false);
   const controlled = controlledOpen !== undefined;
   const open = controlled ? controlledOpen : internalOpen;
@@ -75,6 +77,7 @@ export function CreateUserDialog({
   const [email, setEmail] = useState(initial?.email ?? "");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("member");
+  const [receiveAdminEmails, setReceiveAdminEmails] = useState(true);
   const canEmailAccounts = useCanEmailAccounts();
   // A prefilled username (from an Inbox request) is checked as soon as the
   // dialog mounts, so it starts as "checking" rather than blank.
@@ -125,6 +128,7 @@ export function CreateUserDialog({
     setEmail("");
     setPassword("");
     setRole("member");
+    setReceiveAdminEmails(true);
     setUsernameCheck("idle");
     setError(null);
   }
@@ -135,13 +139,17 @@ export function CreateUserDialog({
     setPending(true);
     setError(null);
     try {
-      const created = await api.post<User>("/api/v1/users", {
+      const payload: Record<string, unknown> = {
         username: username.trim(),
         email: email.trim(),
         full_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
         password,
         is_superuser: role === "admin",
-      });
+      };
+      if (role === "admin") {
+        payload.receive_admin_emails = receiveAdminEmails;
+      }
+      const created = await api.post<User>("/api/v1/users", payload);
       toast.success(`User ${created.username} created.`);
       setOpen(false);
       reset();
@@ -354,9 +362,25 @@ export function CreateUserDialog({
                   </SelectContent>
                 </Select>
                 {role === "admin" ? (
-                  <p className="text-muted-foreground text-xs">
-                    Administrators can manage every user, space and setting.
-                  </p>
+                  <>
+                    <p className="text-muted-foreground text-xs">
+                      Administrators can manage every user, space and setting.
+                    </p>
+                    <div className="pt-1">
+                      <label className="hover:bg-surface-hover flex w-fit cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-sm transition-colors duration-150">
+                        <input
+                          type="checkbox"
+                          checked={receiveAdminEmails}
+                          onChange={(e) => setReceiveAdminEmails(e.target.checked)}
+                          className="accent-primary focus-visible:ring-ring size-4 cursor-pointer rounded focus-visible:ring-2 focus-visible:outline-none"
+                        />
+                        <span>{t("adminUsers.formReceiveAdminEmails")}</span>
+                      </label>
+                      <p className="text-muted-foreground mt-0.5 px-1 text-xs">
+                        {t("adminUsers.formReceiveAdminEmailsHelp")}
+                      </p>
+                    </div>
+                  </>
                 ) : !viewerIsSystemAdmin ? (
                   <p className="text-muted-foreground text-xs">
                     Only a System Administrator can create a new account as

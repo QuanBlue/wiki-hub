@@ -21,7 +21,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -251,6 +251,7 @@ class AdminMailService:
             username=user.username,
             user_full_name=user.full_name,
             user_is_active=user.is_active,
+            user_receive_admin_emails=getattr(user, "receive_admin_emails", True),
             email=mailbox.email,
             display_name=mailbox.display_name,
             smtp_host=mailbox.smtp_host,
@@ -259,7 +260,11 @@ class AdminMailService:
             smtp_username=mailbox.smtp_username,
             has_password=bool(mailbox.smtp_password_enc),
             is_enabled=mailbox.is_enabled,
-            effective_enabled=mailbox.is_enabled and user.is_active,
+            effective_enabled=(
+                mailbox.is_enabled
+                and user.is_active
+                and getattr(user, "receive_admin_emails", True)
+            ),
             health_status=mailbox.health_status,
             health_checked_at=mailbox.health_checked_at,
             health_error=mailbox.health_error,
@@ -903,7 +908,9 @@ class AdminMailService:
         targets = [
             user
             for user in recipients
-            if is_deliverable_address(user.email) and user.id != reporter.id
+            if is_deliverable_address(user.email)
+            and user.id != reporter.id
+            and getattr(user, "receive_admin_emails", True)
         ]
         if not targets:
             return 0
@@ -1045,6 +1052,7 @@ class AdminMailService:
         if has_inbox:
             # So the sidebar/bell count is right before the page is opened.
             await self._backfill_inbox(user)
+            await self._clear_resolved_request_notifications(user.id)
             inbox_fields["unread_count"] = await self.repo.unread_count(user.id)
             inbox_fields["latest_request_at"] = await self.repo.latest_request_at(user.id)
         found = await self.repo.get_mailbox_for_user(user.id)
@@ -1196,6 +1204,23 @@ class AdminMailService:
                 Notification.kind == "admin_request",
                 Notification.link == f"/admin/inbox?request={request_id}",
                 Notification.read_at.is_(None),
+            )
+            .values(read_at=_now())
+        )
+
+    async def _clear_resolved_request_notifications(self, user_id: uuid.UUID) -> None:
+        """Mark bell notifications read for requests that are already resolved
+        (e.g. resolved by another administrator), so they stop counting."""
+        resolved_links = select(
+            func.concat("/admin/inbox?request=", cast(AdminRequest.id, String))
+        ).where(AdminRequest.resolved_at.is_not(None))
+        await self.session.execute(
+            sa_update(Notification)
+            .where(
+                Notification.user_id == user_id,
+                Notification.kind == "admin_request",
+                Notification.read_at.is_(None),
+                Notification.link.in_(resolved_links),
             )
             .values(read_at=_now())
         )

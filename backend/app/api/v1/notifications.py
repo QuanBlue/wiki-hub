@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query, Response, status
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.exceptions import NotFoundError
 from app.modules.notifications.service import NotificationService
 from app.schemas.notification import NotificationRead, NotificationSummary
 from app.schemas.pagination import Page
@@ -45,6 +46,24 @@ async def list_notifications(
 async def mark_all_read(user: CurrentUser, session: DbSession) -> Response:
     await NotificationService(session, user).mark_all_read()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{notification_id}/open",
+    response_model=NotificationRead,
+    summary="Open a notification: mark it read, or report that its target is gone",
+)
+async def open_notification(
+    notification_id: uuid.UUID, user: CurrentUser, session: DbSession
+) -> NotificationRead:
+    """404 ``notification_target_gone`` (and the notification is removed) when the
+    comment, page, space or request it points at no longer exists."""
+    try:
+        return await NotificationService(session, user).open(notification_id)
+    except NotFoundError:
+        # The request's transaction is rolled back on an error; keep the removal.
+        await session.commit()
+        raise
 
 
 @router.patch("/{notification_id}", response_model=NotificationRead, summary="Mark read or unread")

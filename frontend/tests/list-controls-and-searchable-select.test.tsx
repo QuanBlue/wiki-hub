@@ -67,6 +67,40 @@ describe("ListFilters", () => {
     expect(screen.getByRole("textbox")).toHaveValue("two");
   });
 
+  it("preserves active typing without resetting or flickering when server responds to earlier query", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const view = render(<ListFilters searchValue="" searchPlaceholder="Search" />);
+      const box = screen.getByRole("textbox", { name: "Search" });
+
+      // User types "a"
+      fireEvent.change(box, { target: { value: "a" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350);
+      });
+      expect(nav.push).toHaveBeenCalledWith("/admin/users?q=a");
+
+      // While server is processing "a", user continues typing "lex"
+      fireEvent.change(box, { target: { value: "alex" } });
+      expect(box).toHaveValue("alex");
+
+      // Server finishes and re-renders component with searchValue="a"
+      view.rerender(<ListFilters searchValue="a" searchPlaceholder="Search" />);
+
+      // The input must NOT be reverted back to "a"! It must keep "alex"
+      expect(box).toHaveValue("alex");
+
+      // Once the user finishes typing and pauses, debounce for "alex" fires
+      nav.push.mockClear();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350);
+      });
+      expect(nav.push).toHaveBeenCalledWith("/admin/users?q=alex");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("writes a chosen filter and removes it when set back to all", async () => {
     const actor = userEvent.setup();
     const filters = [

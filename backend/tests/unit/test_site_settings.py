@@ -1,11 +1,17 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from pydantic import ValidationError
 
+from app.models.audit import AuditAction
 from app.models.site_settings import DEFAULT_TRASH_RETENTION_DAYS
-from app.schemas.site_settings import SidebarPermissions, SiteSettingsUpdate
+from app.schemas.site_settings import (
+    SidebarPermissions,
+    SiteSettingsUpdate,
+    SystemAnnouncement,
+)
 from app.services.site_settings import SiteSettingsService
 
 
@@ -237,3 +243,82 @@ async def test_trash_retention_is_stored_audited_and_reset_by_null() -> None:
     assert row.trash_retention_days is None
     assert result.overrides.trash_retention_days is None
     assert result.effective.trash_retention_days == DEFAULT_TRASH_RETENTION_DAYS
+
+
+def test_system_announcement_schedule_and_content_validation() -> None:
+    now = datetime(2026, 10, 30, 10, 0, tzinfo=UTC)
+
+    # Disabled or empty content is never active
+    assert not SystemAnnouncement(enabled=True, content_html="<p>   </p>").is_currently_active(now)
+    assert not SystemAnnouncement(enabled=False, content_html="<p>Hello</p>").is_currently_active(now)
+
+    # Active when enabled, non-empty, and within schedule
+    active = SystemAnnouncement(
+        enabled=True,
+        level="warning",
+        title="  Release v2.5  ",
+        content_html="<p>Deploying at <strong>18:00</strong></p>",
+        starts_at=now - timedelta(hours=1),
+        expires_at=now + timedelta(hours=2),
+        dismissible=False,
+        show_on_login=True,
+    )
+    assert active.title == "Release v2.5"
+    assert active.is_currently_active(now)
+    assert not active.is_currently_active(now - timedelta(hours=2))
+    assert not active.is_currently_active(now + timedelta(hours=2))
+
+    # Rejects expiry before or equal to start
+    with pytest.raises(ValidationError, match="after the start time"):
+        SystemAnnouncement(
+            enabled=True,
+            content_html="<p>Notice</p>",
+            starts_at=now,
+            expires_at=now - timedelta(minutes=5),
+        )
+
+
+@pytest.mark.asyncio
+async def test_system_announcement_update_records_audit_and_reads_active() -> None:
+    row = SimpleNamespace(
+        site_name=None,
+        theme_color=None,
+        default_font=None,
+        logo_icon=None,
+        custom_logo_url=None,
+        max_upload_size_mb=None,
+        max_backup_import_size_mb=None,
+        allowed_attachment_types=None,
+        sidebar_permissions=None,
+        announcement=None,
+        session_ttl_hours=None,
+        trash_retention_days=None,
+        updated_by_id=None,
+        updated_at=None,
+    )
+    session = Mock()
+    session.execute = AsyncMock(return_value=_Result(row))
+    session.get = AsyncMock(return_value=None)
+    session.flush = AsyncMock()
+    session.refresh = AsyncMock()
+    service = SiteSettingsService(session, actor=SimpleNamespace(id="actor-id"))
+    service.audit.record = AsyncMock()
+
+    announcement = SystemAnnouncement(
+        enabled=True,
+        level="info",
+        title="Release Notice",
+        content_html="<p>Contact admin@example.com</p>",
+    )
+    result = await service.update(SiteSettingsUpdate(announcement=announcement))
+    assert row.announcement is not None
+    assert row.announcement["updated_at"] is not None
+    assert result.effective.announcement.enabled is True
+    assert result.effective.announcement.title == "Release Notice"
+    service.audit.record.assert_awaited_once()
+    assert service.audit.record.await_args.args[0] == AuditAction.announcement_updated
+
+    active_read = await service.read_announcement()
+    assert active_read.announcement is not None
+    assert active_read.announcement.title == "Release Notice"
+

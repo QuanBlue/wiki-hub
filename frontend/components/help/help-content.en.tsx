@@ -3252,6 +3252,20 @@ export const sectionsEn: HelpSection[] = [
             that has held its access since before this tracking existed.
           </li>
           <li>
+            <strong>Add administrator</strong>: System administrators can click{" "}
+            <strong>Add administrator</strong> to promote an existing workspace member or
+            create a new administrator account directly, with the option to set their
+            email notification preference.
+          </li>
+          <li>
+            <strong>Email notifications</strong>: each administrator has an Enable/Disable toggle
+            controlling whether they receive email notifications for incoming user
+            requests and issue reports (enabled by default for newly added
+            administrators). Turning it off avoids inbox spam for executive or
+            supervisor accounts while preserving full administrative access and
+            in-app notifications.
+          </li>
+          <li>
             <strong>Demote to Member</strong> undoes whichever of those it was: it
             flips <Code>Role</Code> back to Member for a direct Administrator, or adds
             a force-disabled override for one granted through a group or an existing

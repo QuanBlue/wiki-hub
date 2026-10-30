@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,18 @@ export function AppMain({
   fullWidth?: boolean;
 }) {
   const { collapsed, sidebarWidth } = useSidebar();
+  const bannerWrapRef = useRef<HTMLDivElement>(null);
+  const [bannerHeight, setBannerHeight] = useState(0);
+
+  useEffect(() => {
+    const el = bannerWrapRef.current;
+    if (!el) return;
+    const measure = () => setBannerHeight(el.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [banner]);
 
   return (
     <main
@@ -41,10 +53,11 @@ export function AppMain({
       style={
         {
           "--app-sidebar-width": `${sidebarWidth}px`,
+          "--wh-banner-height": `${bannerHeight}px`,
         } as CSSProperties
       }
     >
-      {banner}
+      {banner ? <div ref={bannerWrapRef}>{banner}</div> : null}
       <div
         className={cn(
           fullWidth ? "w-full px-6 py-8 sm:px-10 sm:py-10" : "max-w-content mx-auto w-full px-5 py-8 sm:px-8 sm:py-10",

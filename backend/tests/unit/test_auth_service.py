@@ -35,6 +35,7 @@ def user(**overrides):
         "is_active": True,
         "is_superuser": False,
         "is_protected": False,
+        "receive_admin_emails": True,
         "last_login_at": None,
     }
     values.update(overrides)
@@ -165,6 +166,18 @@ async def test_create_update_profile_and_password_operations(
         UserCreate(username="New", email="NEW@example.com", full_name=" Name ", password="password")
     )
     assert created.username == "New" and created.email == "new@example.com"
+    assert created.receive_admin_emails is True
+
+    created_muted = await svc.create_user(
+        UserCreate(
+            username="Muted",
+            email="muted@example.com",
+            full_name="Muted Admin",
+            password="password",
+            receive_admin_emails=False,
+        )
+    )
+    assert created_muted.receive_admin_emails is False
 
     target = user()
     svc.users.get = AsyncMock(return_value=target)
@@ -203,7 +216,7 @@ async def test_create_update_profile_and_password_operations(
 
 @pytest.mark.asyncio
 async def test_mutation_guards_delete_and_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
-    protected = user(is_protected=True)
+    protected = user(is_protected=True, is_superuser=True)
     svc = service(actor=protected)
     with pytest.raises(PermissionDeniedError):
         svc.assert_mutable(protected)
@@ -215,6 +228,16 @@ async def test_mutation_guards_delete_and_bootstrap(monkeypatch: pytest.MonkeyPa
         await svc.delete_user(uuid.uuid4())
     with pytest.raises(NotFoundError):
         await svc.change_password(uuid.uuid4(), "old", "new")
+
+    # Protected account allows toggling email receiving preference
+    protected_admin = user(is_protected=True, is_superuser=True, receive_admin_emails=True)
+    svc.users.get = AsyncMock(return_value=protected_admin)
+    await svc.update_user(protected_admin.id, UserUpdate(receive_admin_emails=False))
+    assert protected_admin.receive_admin_emails is False
+
+    # Structural changes against protected account remain blocked
+    with pytest.raises(PermissionDeniedError):
+        await svc.update_user(protected_admin.id, UserUpdate(full_name="Renamed"))
 
     # An existing protected admin whose configured identity and password
     # already match is returned completely untouched - no rehash, no rename.
@@ -396,6 +419,13 @@ async def test_auth_conflict_and_failure_branches(monkeypatch: pytest.MonkeyPatc
     assert target.is_superuser is True
     await svc.update_user(target.id, UserUpdate(is_superuser=False))
     assert target.is_superuser is False
+    await svc.update_user(target.id, UserUpdate(receive_admin_emails=False))
+    assert target.receive_admin_emails is False
+
+    svc.actor = target
+    await svc.update_own_profile(target.id, SelfProfileUpdate(receive_admin_emails=True))
+    assert target.receive_admin_emails is True
+    svc.actor = None
 
     svc.actor = None
     with pytest.raises(PermissionDeniedError):

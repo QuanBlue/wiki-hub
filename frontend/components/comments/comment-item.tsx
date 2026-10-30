@@ -130,6 +130,7 @@ export function CommentItem({
             <CommentComposer
               mentionsUrl={ctx.mentionsUrl}
               initialValue={comment.body}
+              initialMentions={comment.mentions}
               placeholder={t("comments.placeholder")}
               submitLabel={t("comments.save")}
               autoFocus

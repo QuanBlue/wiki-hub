@@ -149,4 +149,19 @@ describe("UserProfileTrigger details", () => {
     });
     expect(mocked.get).not.toHaveBeenCalled();
   });
+
+  it("renders a mention tag with bold blue text that opens on hover by default", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<UserProfileTrigger username="alice" variant="mention" />);
+    const button = screen.getByRole("button", { name: "@alice" });
+    expect(button).toHaveClass("text-primary", "font-bold");
+    expect(button).toHaveTextContent("@alice");
+
+    fireEvent.mouseEnter(button);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(await screen.findByRole("link", { name: "View profile" })).toBeInTheDocument();
+    expect(mocked.get).toHaveBeenCalledWith("/api/v1/users/alice/profile");
+  });
 });

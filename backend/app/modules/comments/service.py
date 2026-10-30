@@ -15,7 +15,7 @@ from app.models.page import WikiPage
 from app.models.permission import Permission
 from app.models.space import Space
 from app.models.user import User
-from app.modules.notifications.service import notify
+from app.modules.notifications.service import forget_comment_notifications, notify
 from app.modules.pages.people import people_for_page
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
@@ -260,7 +260,18 @@ class CommentService:
         comment = await self._get(page, comment_id)
         if comment.author_id != self.user.id and not await self._moderates(space):
             raise PermissionDeniedError("You cannot delete this comment.")
-        # The replies and likes go with it through the FK cascades.
+        # The replies and likes go with it through the FK cascades; so do the
+        # notifications that led to the comment or to any of its replies.
+        gone = [comment.id]
+        frontier = [comment.id]
+        while frontier:
+            frontier = list(
+                await self.session.scalars(
+                    select(PageComment.id).where(PageComment.parent_id.in_(frontier))
+                )
+            )
+            gone.extend(frontier)
+        await forget_comment_notifications(self.session, gone)
         await self.session.execute(delete(PageComment).where(PageComment.id == comment.id))
         self.session.expire_all()
 

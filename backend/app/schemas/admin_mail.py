@@ -67,6 +67,7 @@ class MailboxRead(BaseModel):
     username: str
     user_full_name: str | None = None
     user_is_active: bool
+    user_receive_admin_emails: bool = True
     email: str
     display_name: str | None = None
     smtp_host: str

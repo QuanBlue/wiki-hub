@@ -319,7 +319,7 @@ export function InboxList({ openId }: { openId?: string }) {
                   >
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-2">
-                        {!item.read_at ? (
+                        {!item.read_at && !item.resolved_at ? (
                           <span
                             className="bg-primary size-2 shrink-0 rounded-full"
                             title={t("adminInbox.unread")}
@@ -330,7 +330,7 @@ export function InboxList({ openId }: { openId?: string }) {
                         <span
                           className={cn(
                             "font-medium",
-                            !item.read_at && "font-semibold",
+                            !item.read_at && !item.resolved_at && "font-semibold",
                           )}
                         >
                           {item.requester_name}

@@ -66,6 +66,9 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_superuser: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    receive_admin_emails: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
 
     #: Marks the built-in bootstrap administrator. A protected account cannot be
     #: renamed, deactivated, deleted, or have its password changed through the
