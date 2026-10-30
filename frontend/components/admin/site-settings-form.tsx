@@ -1910,68 +1910,66 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                     </div>
                   </div>
 
-                  {/* 2. Tone + Title + Rich Text Composer */}
+                  {/* 2. Headline + Tone + Rich Text Composer */}
                   <div className="p-4 sm:p-5 space-y-4">
-                    <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)] md:items-end">
-                      {/* Compact Segmented Tone Picker */}
-                      <div className="space-y-1.5">
-                        <Label className="text-foreground text-xs font-semibold block">
-                          {locale === "vi" ? "Mức độ / Màu sắc" : "Banner Tone"}
-                        </Label>
-                        <div
-                          role="radiogroup"
-                          aria-label={locale === "vi" ? "Mức độ thông báo" : "Banner tone"}
-                          className="border-border bg-surface-sunken inline-flex flex-wrap items-center gap-1 rounded-lg border p-1"
-                        >
-                          {ANNOUNCEMENT_LEVEL_OPTIONS.map((opt) => {
-                            const IconComp = opt.icon;
-                            const selected = announcementLevel === opt.value;
-                            return (
-                              <button
-                                key={opt.value}
-                                type="button"
-                                role="radio"
-                                aria-checked={selected}
-                                onClick={() => setAnnouncementLevel(opt.value)}
-                                title={locale === "vi" ? opt.descVi : opt.descEn}
-                                className={cn(
-                                  "focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                                  selected
-                                    ? "bg-surface text-foreground font-semibold shadow-2xs"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-surface/60",
-                                )}
-                              >
-                                <IconComp className={cn("size-3.5 shrink-0", opt.toneClass)} />
-                                <span>{locale === "vi" ? opt.labelVi : opt.labelEn}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                    {/* Headline Input */}
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="announcement-title"
+                        className="text-foreground text-xs font-semibold block"
+                      >
+                        {locale === "vi"
+                          ? "Tiêu đề ngắn (Tùy chọn)"
+                          : "Headline / Title (Optional)"}
+                      </Label>
+                      <Input
+                        id="announcement-title"
+                        value={announcementTitle}
+                        onChange={(e) => setAnnouncementTitle(e.target.value)}
+                        placeholder={
+                          locale === "vi"
+                            ? "VD: Lịch Release v2.5 & Đầu mối liên hệ Admin"
+                            : "e.g. Scheduled Release v2.5 & Admin Contact"
+                        }
+                        maxLength={255}
+                        disabled={pending}
+                        className="h-9 text-sm"
+                      />
+                    </div>
 
-                      {/* Headline Input */}
-                      <div className="space-y-1.5">
-                        <Label
-                          htmlFor="announcement-title"
-                          className="text-foreground text-xs font-semibold block"
-                        >
-                          {locale === "vi"
-                            ? "Tiêu đề ngắn (Tùy chọn)"
-                            : "Headline / Title (Optional)"}
-                        </Label>
-                        <Input
-                          id="announcement-title"
-                          value={announcementTitle}
-                          onChange={(e) => setAnnouncementTitle(e.target.value)}
-                          placeholder={
-                            locale === "vi"
-                              ? "VD: Lịch Release v2.5 & Đầu mối liên hệ Admin"
-                              : "e.g. Scheduled Release v2.5 & Admin Contact"
-                          }
-                          maxLength={255}
-                          disabled={pending}
-                          className="h-9 text-sm"
-                        />
+                    {/* Banner Tone Picker (between headline and message) */}
+                    <div className="space-y-1.5">
+                      <Label className="text-foreground text-xs font-semibold block">
+                        {locale === "vi" ? "Mức độ / Màu sắc" : "Banner Tone"}
+                      </Label>
+                      <div
+                        role="radiogroup"
+                        aria-label={locale === "vi" ? "Mức độ thông báo" : "Banner tone"}
+                        className="border-border bg-surface-sunken inline-flex flex-wrap items-center gap-1 rounded-lg border p-1"
+                      >
+                        {ANNOUNCEMENT_LEVEL_OPTIONS.map((opt) => {
+                          const IconComp = opt.icon;
+                          const selected = announcementLevel === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={selected}
+                              onClick={() => setAnnouncementLevel(opt.value)}
+                              title={locale === "vi" ? opt.descVi : opt.descEn}
+                              className={cn(
+                                "focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                                selected
+                                  ? "bg-surface text-foreground font-semibold shadow-2xs"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-surface/60",
+                              )}
+                            >
+                              <IconComp className={cn("size-3.5 shrink-0", opt.toneClass)} />
+                              <span>{locale === "vi" ? opt.labelVi : opt.labelEn}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 

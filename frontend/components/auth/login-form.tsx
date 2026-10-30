@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowRight, Loader2, Lock, User } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -65,9 +65,13 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      <div className="space-y-1.5">
-        <label htmlFor="username" className="text-sm font-medium">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-3.5 [@media(max-height:800px)]:space-y-2.5"
+      noValidate
+    >
+      <div className="space-y-1 sm:space-y-1.5">
+        <label htmlFor="username" className="text-foreground text-xs sm:text-sm font-medium">
           {t("auth.usernameLabel")}
         </label>
         <Input
@@ -77,14 +81,17 @@ export function LoginForm() {
           autoComplete="username"
           autoFocus
           required
+          leadingIcon={<User className="size-4 text-muted-foreground/80" aria-hidden="true" />}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           disabled={pending}
+          placeholder="username"
+          className="h-10 sm:h-10.5 rounded-lg border-border/80 bg-surface shadow-2xs hover:border-border-strong focus-visible:border-primary focus-visible:ring-primary/20 text-sm"
         />
       </div>
 
-      <div className="space-y-1.5">
-        <label htmlFor="password" className="text-sm font-medium">
+      <div className="space-y-1 sm:space-y-1.5">
+        <label htmlFor="password" className="text-foreground text-xs sm:text-sm font-medium">
           {t("auth.passwordLabel")}
         </label>
         <PasswordInput
@@ -92,41 +99,49 @@ export function LoginForm() {
           name="password"
           autoComplete="current-password"
           required
+          leadingIcon={<Lock className="size-4 text-muted-foreground/80" aria-hidden="true" />}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           disabled={pending}
+          placeholder="••••••••"
+          className="h-10 sm:h-10.5 rounded-lg border-border/80 bg-surface shadow-2xs hover:border-border-strong focus-visible:border-primary focus-visible:ring-primary/20 text-sm"
         />
       </div>
 
       {error ? (
-        <p
+        <div
           role="alert"
           className={
             accountInactive
-              ? "border-warning/30 bg-warning-bg text-warning flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
-              : "border-danger/30 bg-danger/10 text-danger rounded-md border px-3 py-2 text-sm"
+              ? "border-warning/30 bg-warning-bg text-warning flex items-start gap-2.5 rounded-lg border px-3 py-2 text-xs sm:text-sm"
+              : "border-danger/30 bg-danger/10 text-danger flex items-start gap-2.5 rounded-lg border px-3 py-2 text-xs sm:text-sm"
           }
         >
           {accountInactive ? (
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-          ) : null}
-          {error}
-        </p>
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          ) : (
+            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          )}
+          <span className="leading-snug">{error}</span>
+        </div>
       ) : null}
 
       <Button
         type="submit"
         variant="primary"
-        className="w-full"
+        className="h-10 sm:h-10.5 w-full rounded-lg font-medium shadow-sm transition-all duration-150 active:scale-[0.99] mt-0.5 sm:mt-1"
         disabled={pending || !username || !password}
       >
         {pending ? (
           <>
-            <Loader2 className="animate-spin" />
-            {t("auth.signingIn")}
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            <span>{t("auth.signingIn")}</span>
           </>
         ) : (
-          t("auth.signIn")
+          <span className="flex items-center justify-center gap-2">
+            <span>{t("auth.signIn")}</span>
+            <ArrowRight className="size-4 opacity-75" aria-hidden="true" />
+          </span>
         )}
       </Button>
     </form>

@@ -152,12 +152,24 @@ describe("CreateUserDialog", () => {
 
   it("offers the Administrator role only to a System Administrator", async () => {
     const user = await open(true);
+    await fill(user);
     await user.click(screen.getByRole("button", { name: "Role" }));
     await user.click(await screen.findByRole("menuitemradio", { name: "Administrator" }));
 
     expect(
       screen.getByText("Administrators can manage every user, space and setting."),
     ).toBeInTheDocument();
+
+    await screen.findByText("Username is available.");
+    await user.click(submit());
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("User jdoe created."));
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/v1/users",
+      expect.objectContaining({
+        is_superuser: true,
+        receive_admin_emails: true,
+      }),
+    );
   });
 
   it("explains why a Manage-users grant alone can only create Members", async () => {

@@ -594,4 +594,15 @@ describe("EditUserDialog small paths", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(mocked.delete).not.toHaveBeenCalled();
   });
+
+  it("toggles receiving administrator email notifications for an administrator", async () => {
+    const adminUser = makeUser({ is_superuser: true, is_effective_admin: true });
+    const { actor } = renderDialog(adminUser);
+    await waitFor(() => expect(screen.queryByText("Refreshing...")).toBeNull());
+
+    const checkbox = screen.getByRole("checkbox", { name: "Receive administrator email notifications" });
+    expect(checkbox).toBeInTheDocument();
+    await actor.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+  });
 });

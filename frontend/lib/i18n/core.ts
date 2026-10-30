@@ -50,6 +50,10 @@ export function persistLocale(locale: Locale): void {
 }
 
 export function readStoredLocale(): Locale | null {
-  const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-  return isLocale(stored) ? stored : null;
+  try {
+    const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+    return isLocale(stored) ? stored : null;
+  } catch {
+    return null;
+  }
 }

@@ -88,7 +88,8 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
         trash_retention_days=effective.trash_retention_days,
         announcement=(
             effective.announcement
-            if effective.announcement.is_currently_active()
+            if effective.announcement is not None
+            and effective.announcement.is_currently_active()
             and effective.announcement.show_on_login
             else None
         ),

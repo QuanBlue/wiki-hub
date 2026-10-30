@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from app.api.v1 import comments, notifications, pages, shares, spaces
+from app.core.exceptions import NotFoundError
 from app.workers import tasks
 
 
@@ -128,6 +129,14 @@ async def test_notification_routes_delegate_to_the_service() -> None:
         updated = await notifications.update_notification(
             notification_id, notifications.NotificationUpdate(read=False), user, session
         )
+        service.open = AsyncMock(return_value="opened")
+        assert await notifications.open_notification(notification_id, user, session) == "opened"
+
+        service.open = AsyncMock(side_effect=NotFoundError("Gone", code="notification_target_gone"))
+        session.commit = AsyncMock()
+        with pytest.raises(NotFoundError):
+            await notifications.open_notification(notification_id, user, session)
+        session.commit.assert_awaited_once()
 
     service.list.assert_awaited_once_with(unread_only=True, limit=5, offset=0)
     assert response.status_code == 204

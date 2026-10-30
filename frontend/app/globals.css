@@ -517,19 +517,13 @@
   --wh-info: #1f6592;
   --wh-info-bg: #e8f2f9;
 
-  /* --- code block theme: Monokai Pro (Filter Octagon) ---
-     Fixed, not theme-dependent - the filter is a dark-only editor theme with
-     no official light counterpart, and re-deriving a "light Monokai" per
-     role only ever produced washed-out or hue-mismatched approximations. A
-     code block instead opts out of the app's light/dark mode entirely and
-     always renders on this dark surface, the same as it would in an editor,
-     so these are declared once here rather than repeated under .dark below.
-     Role-to-hue assignment (keyword/attr/tag = red, string/value = yellow,
-     number = purple, function/type = teal, comment = muted lavender-grey,
-     italic) matches the real extension, not a generic
-     "keyword/string/number" guess - confirmed against the theme running in
-     VS Code across YAML, Python and Dockerfile samples, not reconstructed
-     from a token-role table. */
+  /* --- default dark code block palette ---
+     Fixed, not theme-dependent - code blocks default to a high-contrast dark
+     surface regardless of the app's light/dark mode so syntax colours stay
+     consistent without washed-out light-mode approximations. Role-to-hue
+     assignment: keyword/attr/tag = warm red, string/value = yellow,
+     number = purple, function/builtin = teal, comment = muted slate-grey
+     (italic), meta = orange. */
   --wh-code-bg: #282a3a;
   --wh-code-bg-inset: #2f3247;
   --wh-code-border: #3d4056;
@@ -768,8 +762,6 @@
   html {
     /* Scroll targets must clear the fixed top bar. */
     scroll-padding-top: calc(var(--wh-topbar-height) + 1rem);
-    /* Keep the viewport width stable while portalled menus open. */
-    scrollbar-gutter: stable;
   }
 
   body {
@@ -1909,32 +1901,52 @@ html[data-export="true"] .wh-toaster {
 /* System announcement banner rich-text overrides: keep rich formatting
    (bold, links, colours, lists, inline code, callouts) while collapsing
    document-level vertical margins so the top banner stays compact. */
-.wikihub-announcement-content .wikihub-editor {
+.wikihub-announcement-content .wikihub-editor,
+.wikihub-announcement-content .wikihub-reader {
   min-height: 0 !important;
   padding: 0 !important;
   font-size: 0.8125rem;
-  line-height: 1.45;
+  line-height: 1.375;
 }
 
-.wikihub-announcement-content .wikihub-editor > * + * {
-  margin-top: 0.2rem;
+.wikihub-announcement-content .wikihub-editor > * + *,
+.wikihub-announcement-content .wikihub-reader > * + * {
+  margin-top: 0.25rem !important;
 }
 
-.wikihub-announcement-content .wikihub-editor p {
-  margin: 0;
+.wikihub-announcement-content .wikihub-editor p,
+.wikihub-announcement-content .wikihub-reader p {
+  margin: 0.25rem 0 !important;
+  line-height: 1.375;
+}
+
+.wikihub-announcement-content .wikihub-editor p:first-child,
+.wikihub-announcement-content .wikihub-reader p:first-child {
+  margin-top: 0 !important;
+}
+
+.wikihub-announcement-content .wikihub-editor p:last-child,
+.wikihub-announcement-content .wikihub-reader p:last-child {
+  margin-bottom: 0 !important;
 }
 
 .wikihub-announcement-content .wikihub-editor h1,
 .wikihub-announcement-content .wikihub-editor h2,
 .wikihub-announcement-content .wikihub-editor h3,
-.wikihub-announcement-content .wikihub-editor h4 {
+.wikihub-announcement-content .wikihub-editor h4,
+.wikihub-announcement-content .wikihub-reader h1,
+.wikihub-announcement-content .wikihub-reader h2,
+.wikihub-announcement-content .wikihub-reader h3,
+.wikihub-announcement-content .wikihub-reader h4 {
   margin: 0.125rem 0;
   font-size: 0.875rem;
   line-height: 1.35;
 }
 
 .wikihub-announcement-content .wikihub-editor ul,
-.wikihub-announcement-content .wikihub-editor ol {
+.wikihub-announcement-content .wikihub-editor ol,
+.wikihub-announcement-content .wikihub-reader ul,
+.wikihub-announcement-content .wikihub-reader ol {
   margin: 0.2rem 0;
   padding-left: 1.25rem;
 }

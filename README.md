@@ -65,13 +65,13 @@ If WikiHub is useful to you, a ⭐ on the repo helps other teams find it.
 |---|:---:|:---:|:---:|
 | Self-hosted | ✅ always | Data Center only, paid | ❌ |
 | Open source | ✅ Apache-2.0 | ❌ | ❌ |
-| Per-seat pricing | ❌ free | ✅ | ✅ |
+| Per-seat pricing | ❌ free | ✅ (paid plans) | ✅ (paid plans) |
 | Your data stays on your infrastructure | ✅ | Data Center only | ❌ |
 | One-command migration from Confluence | ✅ | — | ❌ |
 | Full revision history & restore | ✅ | ✅ | ✅ |
-| Space/page-level permissions | ✅ | ✅ | Limited |
+| Space & page-level permissions | ✅ | ✅ | ✅ (varies by plan) |
 
-WikiHub exists for teams who want Confluence-style documentation — Spaces,
+WikiHub exists for teams who want structured enterprise documentation — Spaces,
 nested Pages, a rich editor, permissions — without a per-seat bill or their
 knowledge base living on someone else's servers. Migrating off Confluence is
 a first-class flow, not an afterthought: point WikiHub at a real Confluence
@@ -696,11 +696,14 @@ This software is built on the following open source projects:
 
 ## 📜 License
 
-Apache-2.0.
+[`Apache-2.0`](LICENSE).
 
-WikiHub is an independent project. It is not affiliated with, endorsed by, or
-derived from Atlassian, and contains no Atlassian branding or proprietary
-assets. "Confluence" is referenced only to name a supported import format.
+WikiHub is an independent project and is not affiliated with, endorsed by,
+sponsored by, or derived from Atlassian or Notion Labs, Inc. It contains no
+third-party branding or proprietary assets. "Confluence" and "Notion" are
+trademarks of their respective owners and are used here strictly for
+comparative and interoperability purposes (such as naming supported import and
+export formats).
 
 ---
 

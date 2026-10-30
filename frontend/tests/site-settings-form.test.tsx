@@ -631,3 +631,131 @@ describe("SiteSettingsForm font specimen", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });
+
+describe("SiteSettingsForm announcement tab", () => {
+  it("edits, previews, configures schedule and saves system announcement", async () => {
+    const actor = renderForm();
+    await openTab(actor, /System Announcement/);
+
+    expect(screen.getByText("Live Banner Preview")).toBeInTheDocument();
+    expect(screen.getAllByText("Disabled").length).toBeGreaterThan(0);
+
+    // Toggle enabled switch
+    const enableSwitch = screen.getByRole("switch", { name: "Enable system announcement" });
+    expect(enableSwitch).not.toBeChecked();
+    await actor.click(enableSwitch);
+    expect(enableSwitch).toBeChecked();
+    expect(screen.getByText("Active")).toBeInTheDocument();
+
+    // Change Headline
+    const headlineInput = screen.getByLabelText(/Headline/);
+    await actor.type(headlineInput, "Scheduled Downtime");
+
+    // Change Tone / Level
+    await actor.click(screen.getByRole("radio", { name: /Warning/ }));
+
+    // Apply quick duration preset (e.g. 24 hours) without draftStartsIso
+    await actor.click(screen.getByRole("button", { name: /\+24 hours/ }));
+    const expiresInput = screen.getByLabelText(/End \/ Expiry time/);
+    expect((expiresInput as HTMLInputElement).value).not.toBe("");
+
+    // Test "Clear" expiry button
+    const clearExpiryBtn = screen.getAllByRole("button", { name: "Clear" })[1]!;
+    await actor.click(clearExpiryBtn);
+    expect((expiresInput as HTMLInputElement).value).toBe("");
+
+    // Set startsAt and apply duration preset with draftStartsIso (covering baseMs calculation with draftStartsIso)
+    const startsInput = screen.getByLabelText(/Start time/);
+    fireEvent.change(startsInput, { target: { value: "2030-01-01T10:00" } });
+    await actor.click(screen.getByRole("button", { name: /\+24 hours/ }));
+    expect((expiresInput as HTMLInputElement).value).not.toBe("");
+    expect(screen.getByText("Scheduled")).toBeInTheDocument();
+
+    const nowBtn = screen.getByRole("button", { name: "Now" });
+    await actor.click(nowBtn);
+    expect((startsInput as HTMLInputElement).value).toBe("");
+
+    // Invalid schedule: startsAt > expiresAt
+    fireEvent.change(startsInput, { target: { value: "2030-01-02T10:00" } });
+    fireEvent.change(expiresInput, { target: { value: "2030-01-01T10:00" } });
+    expect(screen.getByText("Expiry time must be after the start time.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    // Fix schedule
+    fireEvent.change(expiresInput, { target: { value: "2030-01-03T10:00" } });
+    expect(screen.queryByText("Expiry time must be after the start time.")).toBeNull();
+
+    // Toggle dismissible and showOnLogin
+    const dismissSwitch = screen.getByRole("switch", { name: "Allow users to dismiss (X)" });
+    await actor.click(dismissSwitch);
+    expect(dismissSwitch).not.toBeChecked();
+
+    const loginSwitch = screen.getByRole("switch", { name: /Sign-in page/ });
+    await actor.click(loginSwitch);
+    expect(loginSwitch).not.toBeChecked();
+
+    // Save
+    const saveBtn = screen.getByRole("button", { name: "Save" });
+    expect(saveBtn).toBeEnabled();
+    await actor.click(saveBtn);
+
+    await waitFor(() => {
+      expect(mocked.patch).toHaveBeenCalledWith(
+        "/api/v1/settings",
+        expect.objectContaining({
+          announcement: expect.objectContaining({
+            enabled: true,
+            level: "warning",
+            title: "Scheduled Downtime",
+            dismissible: false,
+            show_on_login: false,
+          }),
+        }),
+      );
+    });
+  });
+
+  it("handles status badges, clear button, and Vietnamese locale", async () => {
+    // Expired announcement in Vietnamese
+    const expiredSettings = makeSettings(
+      {},
+      {
+        announcement: {
+          enabled: true,
+          level: "danger",
+          title: "Bảo trì",
+          content_html: "<p>Nội dung</p>",
+          starts_at: "2020-01-01T00:00:00Z",
+          expires_at: "2020-01-02T00:00:00Z",
+          dismissible: true,
+          show_on_login: true,
+          updated_at: null,
+        },
+      },
+    );
+
+    const actor = renderForm(expiredSettings, "vi");
+    await openTab(actor, /Thông báo hệ thống/);
+
+    expect(screen.getByText("Đã hết hạn")).toBeInTheDocument();
+    expect(screen.getByText("Đang bật")).toBeInTheDocument();
+
+    // Clear preset button (Unlimited / Không giới hạn)
+    await actor.click(screen.getByRole("button", { name: "Không giới hạn" }));
+    expect(screen.getByText("Đang hiển thị")).toBeInTheDocument();
+
+    // Invalid schedule in Vietnamese to cover locale === "vi" error message (line 2109)
+    const viStarts = screen.getByLabelText(/Bắt đầu hiển thị/);
+    const viExpires = screen.getByLabelText(/Tự động gỡ lúc/);
+    fireEvent.change(viStarts, { target: { value: "2030-01-02T10:00" } });
+    fireEvent.change(viExpires, { target: { value: "2030-01-01T10:00" } });
+    expect(
+      screen.getByText("Thời gian kết thúc phải sau thời gian bắt đầu."),
+    ).toBeInTheDocument();
+
+    // Reset button in header
+    const clearBtn = screen.getByRole("button", { name: "Đặt lại" });
+    await actor.click(clearBtn);
+    expect(screen.getAllByText("Đang tắt").length).toBeGreaterThan(0);
+  });
+});

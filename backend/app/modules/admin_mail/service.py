@@ -20,6 +20,7 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import inspect
 
 from sqlalchemy import String, cast, func, select
 from sqlalchemy import update as sa_update
@@ -484,9 +485,15 @@ class AdminMailService:
 
         Disabled mailboxes are skipped: nobody is meant to be reading their
         banner, and a mailbox someone switched off on purpose should not keep
-        making outbound connections.
+        making outbound connections. Mailboxes whose owner opted out of
+        incoming admin emails (`receive_admin_emails=False`) are still checked
+        so they remain available in the outbound relay pool.
         """
-        mailboxes = await self.repo.active_mailboxes()
+        enabled_fn = getattr(self.repo, "enabled_mailboxes", None)
+        if inspect.iscoroutinefunction(enabled_fn):
+            mailboxes = await enabled_fn()
+        else:
+            mailboxes = await self.repo.active_mailboxes()
         readable: list[tuple[AdminMailbox, smtp.SmtpConfig]] = []
         outcomes: dict[uuid.UUID, smtp.SmtpOutcome] = {}
         for mailbox in mailboxes:
@@ -572,17 +579,48 @@ class AdminMailService:
         # the email goes, not who may see or act on the request.
         mailboxes = await self.repo.active_mailboxes()
         mailbox_by_user = {mailbox.user_id: mailbox for mailbox in mailboxes}
-        audience = {admin.id for admin in await self._system_administrators()}
+        admins = await self._system_administrators()
+        audience = {admin.id for admin in admins}
         audience |= set(mailbox_by_user)
+
+        # System administrators who opted in to admin emails (`receive_admin_emails=True`)
+        # and have a deliverable address on their account - but no personal
+        # `AdminMailbox` row configured in Mailboxes - still receive request
+        # emails relayed through the workspace's working mailbox pool.
+        pool = await self.repo.working_mailboxes() or list(mailboxes)
+        covered_emails = {mailbox.email.strip().lower() for mailbox in mailboxes}
+        relay_admins: list[User] = []
+        if pool:
+            for admin in admins:
+                if (
+                    admin.id in mailbox_by_user
+                    or not getattr(admin, "receive_admin_emails", True)
+                    or not is_deliverable_address(admin.email)
+                ):
+                    continue
+                if await self.repo.get_mailbox_for_user(admin.id) is not None:
+                    # Has their own mailbox row (e.g. intentionally switched off).
+                    continue
+                normalized_email = admin.email.strip().lower()
+                if normalized_email in covered_emails:
+                    continue
+                covered_emails.add(normalized_email)
+                relay_admins.append(admin)
+        relay_by_user = {admin.id: admin for admin in relay_admins}
+
         rows: dict[uuid.UUID, AdminRequestRecipient] = {}
         for user_id in audience:
             mailbox = mailbox_by_user.get(user_id)
+            relayed = relay_by_user.get(user_id)
+            target_email = mailbox.email if mailbox else (relayed.email if relayed else "")
             rows[user_id] = AdminRequestRecipient(
                 request_id=request.id,
                 user_id=user_id,
-                mailbox_email=mailbox.email if mailbox else "",
+                mailbox_email=target_email,
                 delivery_status=(
-                    DeliveryStatus.failed.value if mailbox else DeliveryStatus.none.value
+                    DeliveryStatus.failed.value
+                    if (mailbox or relayed)
+                    else DeliveryStatus.none.value
                 ),
             )
             self.repo.add(rows[user_id])
@@ -594,7 +632,7 @@ class AdminMailService:
                 link=f"/admin/inbox?request={request.id}",
             )
         await self.session.flush()
-        if not mailboxes:
+        if not mailboxes and not relay_admins:
             return "no_mailbox"
         recipients = {mailbox.id: rows[mailbox.user_id] for mailbox in mailboxes}
 
@@ -607,8 +645,13 @@ class AdminMailService:
         )
         subject = f"[{site_name}] {_KIND_LABELS[payload.kind]}: {payload.requester_name}"
         body, html_body = self._render_body(brand, request)
+        reply_to = (
+            request.requester_email
+            if is_deliverable_address(request.requester_email)
+            else None
+        )
 
-        async def deliver(mailbox: AdminMailbox) -> smtp.SmtpOutcome:
+        async def deliver(mailbox: AdminMailbox, *, to: str | None = None) -> smtp.SmtpOutcome:
             try:
                 config = self._config(mailbox)
             except CredentialUnreadableError:
@@ -618,7 +661,8 @@ class AdminMailService:
                 subject=subject,
                 body=body,
                 html=html_body,
-                reply_to=request.requester_email,
+                to=to,
+                reply_to=reply_to,
                 timeout_seconds=settings.mail_send_timeout_seconds,
             )
 
@@ -637,10 +681,27 @@ class AdminMailService:
             # banner now instead of up to an hour later.
             self._apply(mailbox, outcome)
             delivered += int(outcome.ok)
+
+        if relay_admins and pool:
+            relay_box = secrets.choice(pool)
+            for admin in relay_admins:
+                outcome = await deliver(relay_box, to=admin.email)
+                recipient = rows[admin.id]
+                recipient.delivery_status = (
+                    DeliveryStatus.sent.value if outcome.ok else DeliveryStatus.failed.value
+                )
+                recipient.delivery_error = None if outcome.ok else outcome.error
+                self._apply(relay_box, outcome)
+                delivered += int(outcome.ok)
+
         await self.session.flush()
 
         if delivered == 0:
-            logger.warning("admin_request_not_delivered", mailboxes=len(mailboxes))
+            logger.warning(
+                "admin_request_not_delivered",
+                mailboxes=len(mailboxes),
+                relayed=len(relay_admins),
+            )
         return "sent" if delivered else "failed"
 
     @staticmethod
@@ -748,6 +809,11 @@ class AdminMailService:
         """
         found = await self.repo.get_mailbox_for_user(actor.id)
         if found is not None and found[1].is_active:
+            if found[0].health_status in ("ok", "unknown"):
+                return found[0], True
+            pool = [box for box in await self.repo.working_mailboxes() if box.user_id != actor.id]
+            if pool:
+                return secrets.choice(pool), False
             return found[0], True
         pool = [box for box in await self.repo.working_mailboxes() if box.user_id != actor.id]
         if not pool:
@@ -755,6 +821,12 @@ class AdminMailService:
                 "No administrator mailbox is available to send from.", code="no_admin_mailbox"
             )
         return secrets.choice(pool), False
+
+    @staticmethod
+    def _actor_reply_to(actor: User, *, own: bool) -> str | None:
+        if own:
+            return None
+        return actor.email if is_deliverable_address(actor.email) else None
 
     async def _brand_and_signature(
         self, actor: User, mailbox: AdminMailbox, *, own: bool
@@ -783,7 +855,9 @@ class AdminMailService:
             if own
             else (actor.full_name or actor.username),
             title=f"Administrator, {site_name}",
-            email=mailbox.email if own else actor.email,
+            email=mailbox.email
+            if own
+            else (actor.email if is_deliverable_address(actor.email) else None),
             url=public_link(""),
         )
         return site_name, brand, signature
@@ -846,7 +920,7 @@ class AdminMailService:
             text=text,
             html=html,
             to=to_user.email,
-            reply_to=None if own else actor.email,
+            reply_to=self._actor_reply_to(actor, own=own),
         )
         logger.info(
             "account_email_sent",
@@ -878,7 +952,7 @@ class AdminMailService:
             text=text,
             html=html,
             to=to_user.email,
-            reply_to=None if own else actor.email,
+            reply_to=self._actor_reply_to(actor, own=own),
         )
         logger.info(
             "admin_granted_email_sent",
@@ -905,13 +979,30 @@ class AdminMailService:
         sent; zero when nobody has an email address or no mailbox works, which
         is not an error: the bell still told them.
         """
-        targets = [
-            user
-            for user in recipients
-            if is_deliverable_address(user.email)
-            and user.id != reporter.id
-            and getattr(user, "receive_admin_emails", True)
-        ]
+        targets: list[tuple[User, str]] = []
+        seen_addresses: set[str] = set()
+        for user in recipients:
+            if not getattr(user, "is_active", True) or not getattr(
+                user, "receive_admin_emails", True
+            ):
+                continue
+            target_email = user.email if is_deliverable_address(user.email) else None
+            if target_email is None:
+                found = await self.repo.get_mailbox_for_user(user.id)
+                if (
+                    found is not None
+                    and found[0].is_enabled
+                    and is_deliverable_address(found[0].email)
+                ):
+                    target_email = found[0].email
+            if target_email is None:
+                continue
+            normalized = target_email.strip().lower()
+            if normalized in seen_addresses:
+                continue
+            seen_addresses.add(normalized)
+            targets.append((user, target_email))
+
         if not targets:
             return 0
         pool = await self.repo.working_mailboxes()
@@ -926,8 +1017,10 @@ class AdminMailService:
             custom_logo_url=getattr(effective, "custom_logo_url", None),
         )
         reporter_name = " ".join((reporter.full_name or reporter.username).split())
+        reply_to = reporter.email if is_deliverable_address(reporter.email) else None
 
-        async def send(user: User) -> bool:
+        sent = 0
+        for user, target_email in targets:
             text, html = email_templates.issue_created(
                 brand,
                 name=user.full_name or user.username,
@@ -937,18 +1030,20 @@ class AdminMailService:
                 description=description,
                 issue_url=public_link(f"/admin/issues?issue={issue_id}"),
             )
-            result = await self._deliver(
-                mailbox,
-                subject=f"[{effective.site_name}] New issue: {issue_title}",
-                text=text,
-                html=html,
-                to=user.email,
-                reply_to=reporter.email,
-            )
-            return result.email_sent
+            try:
+                result = await self._deliver(
+                    mailbox,
+                    subject=f"[{effective.site_name}] New issue: {issue_title}",
+                    text=text,
+                    html=html,
+                    to=target_email,
+                    reply_to=reply_to,
+                )
+                if result.email_sent:
+                    sent += 1
+            except Exception:
+                logger.exception("issue_created_recipient_send_error", to=target_email)
 
-        outcomes = await asyncio.gather(*(send(user) for user in targets), return_exceptions=True)
-        sent = sum(1 for outcome in outcomes if outcome is True)
         logger.info("issue_created_email_sent", recipients=len(targets), sent=sent)
         return sent
 
@@ -979,13 +1074,18 @@ class AdminMailService:
             issues_url=public_link("/issues"),
             signature=signature,
         )
+        to_address = to_user.email
+        if not is_deliverable_address(to_address):
+            found = await self.repo.get_mailbox_for_user(to_user.id)
+            if found is not None and is_deliverable_address(found[0].email):
+                to_address = found[0].email
         result = await self._deliver(
             mailbox,
             subject=f"[{site_name}] Your issue was closed: {issue_title}",
             text=text,
             html=html,
-            to=to_user.email,
-            reply_to=None if own else actor.email,
+            to=to_address,
+            reply_to=self._actor_reply_to(actor, own=own),
         )
         logger.info(
             "issue_closed_email_sent",
@@ -1027,7 +1127,7 @@ class AdminMailService:
             subject=f"[{site_name}] {subject_line}",
             text=text,
             html=html,
-            reply_to=None if own else actor.email,
+            reply_to=self._actor_reply_to(actor, own=own),
             to=to_user.email,
         )
         logger.info(

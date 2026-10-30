@@ -8,24 +8,20 @@ import {
   ChevronUp,
   Clock,
   Info,
-  Loader2,
   Pencil,
-  PowerOff,
   Volume2,
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { RichTextContent } from "@/components/pages/rich-text-editor";
 import { useSystemAnnouncement } from "@/components/layout/system-announcement-provider";
-import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { formatDateTime } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
-import type { AnnouncementLevel, SiteSettings, SystemAnnouncement } from "@/types/api";
+import type { AnnouncementLevel, SystemAnnouncement } from "@/types/api";
 
 const DISMISSED_STORAGE_KEY = "wikihub:dismissed-announcement";
 
@@ -104,18 +100,19 @@ export function SystemAnnouncementBanner({
   announcement: propAnnouncement,
   isAdmin: propIsAdmin,
   previewMode = false,
+  allowDismiss = true,
   className,
 }: {
   announcement?: SystemAnnouncement | null;
   isAdmin?: boolean;
   previewMode?: boolean;
+  allowDismiss?: boolean;
   className?: string;
 } = {}) {
   const context = useSystemAnnouncement();
   const announcement =
     propAnnouncement !== undefined ? propAnnouncement : context.announcement;
   const isAdmin = propIsAdmin !== undefined ? propIsAdmin : context.isAdmin;
-  const router = useRouter();
   const { locale } = useTranslation();
   const isVi = locale === "vi";
 
@@ -123,8 +120,6 @@ export function SystemAnnouncementBanner({
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
-  const [disabling, setDisabling] = useState(false);
-  const [locallyDisabled, setLocallyDisabled] = useState(false);
   const contentWrapRef = useRef<HTMLDivElement>(null);
 
   const signature = useMemo(() => {
@@ -134,10 +129,6 @@ export function SystemAnnouncementBanner({
       `${announcement.level}:${announcement.title ?? ""}:${announcement.content_html}:${announcement.starts_at ?? ""}:${announcement.expires_at ?? ""}`
     );
   }, [announcement]);
-
-  useEffect(() => {
-    setLocallyDisabled(false);
-  }, [signature]);
 
   useEffect(() => {
     if (previewMode || typeof window === "undefined") return;
@@ -171,7 +162,7 @@ export function SystemAnnouncementBanner({
     return () => observer.disconnect();
   }, [announcement?.content_html, expanded]);
 
-  if (!announcement || locallyDisabled) return null;
+  if (!announcement) return null;
 
   const hasTitle = Boolean(announcement.title?.trim());
   const hasBody =
@@ -181,7 +172,7 @@ export function SystemAnnouncementBanner({
 
   if (!previewMode) {
     if (!isAnnouncementActiveAt(announcement, nowMs)) return null;
-    if (announcement.dismissible && dismissedKey && dismissedKey === signature) {
+    if (allowDismiss && announcement.dismissible && dismissedKey && dismissedKey === signature) {
       return null;
     }
   }
@@ -196,34 +187,6 @@ export function SystemAnnouncementBanner({
       window.localStorage.setItem(DISMISSED_STORAGE_KEY, signature);
     } catch {
       // Ignore storage errors.
-    }
-  }
-
-  async function handleQuickDisable() {
-    if (!announcement || disabling || previewMode) return;
-    setDisabling(true);
-    try {
-      await api.patch<SiteSettings>("/api/v1/settings", {
-        announcement: {
-          ...announcement,
-          enabled: false,
-        },
-      });
-      setLocallyDisabled(true);
-      toast.success(
-        isVi ? "Đã tắt thông báo hệ thống." : "System announcement turned off.",
-      );
-      router.refresh();
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError
-          ? err.message
-          : isVi
-            ? "Không thể tắt thông báo."
-            : "Could not turn off the announcement.",
-      );
-    } finally {
-      setDisabling(false);
     }
   }
 
@@ -251,9 +214,9 @@ export function SystemAnnouncementBanner({
                 : "Type a headline or message below — your top announcement bar will look like this."}
             </p>
           ) : (
-            <div className="space-y-0.5">
+            <div className="flex flex-col gap-1.5">
               {hasTitle ? (
-                <p className="m-0 font-semibold leading-snug text-foreground">
+                <p className="m-0 text-[14px] sm:text-[15px] font-bold leading-snug tracking-tight text-foreground">
                   {announcement.title}
                 </p>
               ) : null}
@@ -312,43 +275,22 @@ export function SystemAnnouncementBanner({
           ) : null}
 
           {isAdmin && !previewMode ? (
-            <>
-              <Link
-                href="/admin/settings?tab=announcement"
-                title={isVi ? "Chỉnh sửa thông báo" : "Edit announcement"}
-                className={cn(
-                  "focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                  style.actionBtn,
-                )}
-              >
-                <Pencil aria-hidden className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {isVi ? "Sửa" : "Edit"}
-                </span>
-              </Link>
-              <button
-                type="button"
-                onClick={() => void handleQuickDisable()}
-                disabled={disabling}
-                title={isVi ? "Tắt thông báo này" : "Turn off announcement"}
-                className={cn(
-                  "focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
-                  style.actionBtn,
-                )}
-              >
-                {disabling ? (
-                  <Loader2 aria-hidden className="size-3.5 animate-spin" />
-                ) : (
-                  <PowerOff aria-hidden className="size-3.5" />
-                )}
-                <span className="hidden sm:inline">
-                  {isVi ? "Tắt" : "Turn off"}
-                </span>
-              </button>
-            </>
+            <Link
+              href="/admin/settings?tab=announcement"
+              title={isVi ? "Chỉnh sửa thông báo" : "Edit announcement"}
+              className={cn(
+                "focus-visible:ring-ring inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                style.actionBtn,
+              )}
+            >
+              <Pencil aria-hidden className="size-3.5" />
+              <span className="hidden sm:inline">
+                {isVi ? "Sửa" : "Edit"}
+              </span>
+            </Link>
           ) : null}
 
-          {announcement.dismissible ? (
+          {allowDismiss && announcement.dismissible && (!isAdmin || previewMode) ? (
             <button
               type="button"
               onClick={handleDismiss}

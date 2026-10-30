@@ -63,20 +63,44 @@ class AdminMailRepository:
         )
         return list(rows.scalars())
 
+    async def enabled_mailboxes(self) -> list[AdminMailbox]:
+        """Every enabled mailbox whose owner account is active - including
+        accounts that opted out of incoming admin notification emails
+        (`receive_admin_emails=False`) so the hourly healthcheck still keeps
+        their SMTP connection ready for the outbound relay pool."""
+        rows = await self.session.execute(
+            select(AdminMailbox)
+            .join(User, User.id == AdminMailbox.user_id)
+            .where(AdminMailbox.is_enabled.is_(True), User.is_active.is_(True))
+            .order_by(AdminMailbox.email)
+        )
+        return list(rows.scalars())
+
     async def working_mailboxes(self) -> list[AdminMailbox]:
         """The pool a send falls back to when the acting administrator has no
         mailbox of their own: connected right now (the send would just fail
         otherwise) and its account still active. Deliberately not filtered by
-        `is_enabled` ("Receive requests") - see `AdminMailService`'s
-        `_require_sendable_mailbox`, which a pool candidate has to meet the
-        same bar as."""
+        `is_enabled` ("Receive requests") or `receive_admin_emails` - see
+        `AdminMailService`'s `_resolve_sender`, which a pool candidate has to
+        meet the same bar as. If no mailbox is currently marked `ok` (e.g.
+        after a transient network timeout), falls back to any active owner's
+        mailbox whose credentials have not been rejected."""
         rows = await self.session.execute(
             select(AdminMailbox)
             .join(User, User.id == AdminMailbox.user_id)
             .where(AdminMailbox.health_status == "ok", User.is_active.is_(True))
             .order_by(AdminMailbox.email)
         )
-        return list(rows.scalars())
+        healthy = list(rows.scalars())
+        if healthy:
+            return healthy
+        fallback = await self.session.execute(
+            select(AdminMailbox)
+            .join(User, User.id == AdminMailbox.user_id)
+            .where(AdminMailbox.health_status != "auth_failed", User.is_active.is_(True))
+            .order_by(AdminMailbox.email)
+        )
+        return list(fallback.scalars())
 
     def add(self, entity: AdminMailbox | AdminRequest | AdminRequestRecipient) -> None:
         self.session.add(entity)

@@ -30,8 +30,9 @@ The intended feeling is trustworthy and focused, not a generic admin dashboard:
 
 **Every visual value is WikiHub's own.** Do not copy third-party palettes,
 typefaces, iconography, logos, component metrics, UI copy, or pixel-for-pixel
-layouts. "Confluence" is referenced in this repository only as a supported
-import format.
+layouts. "Confluence" and "Notion" are referenced in this repository strictly
+for interoperability (such as naming supported import/export formats) and
+comparative descriptions.
 
 ### Application patterns
 

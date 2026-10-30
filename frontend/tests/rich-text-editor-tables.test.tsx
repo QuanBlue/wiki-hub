@@ -311,4 +311,31 @@ describe("table column resize with merged cells", () => {
       expect(latestHtml).toContain('colwidth="116,96,96"');
     });
   });
+
+  it("computes column widths when table contains only spanning cells", async () => {
+    // 1. Spanning cell with no saved colwidth (hits width / span branch in gridColumnWidths)
+    const htmlNoColwidth =
+      '<table><tbody><tr><td colspan="2"><p>Span 1</p></td></tr></tbody></table>';
+    const { table: table1 } = await renderTable(htmlNoColwidth);
+    layOut(table1);
+    const cells1 = cellsOf(table1);
+    rect(table1, 0, 400);
+    rect(cells1[0]!, 0, 400, 0, 40);
+
+    // clientX: 398 is within TABLE_COLUMN_RESIZE_ZONE of the right edge (400)
+    fireEvent.mouseDown(cells1[0]!, { button: 0, clientX: 398, clientY: 20 });
+    fireEvent.mouseUp(cells1[0]!);
+
+    // 2. Spanning cell with saved colwidth (hits savedWidth branch in gridColumnWidths)
+    const htmlWithColwidth =
+      '<table><tbody><tr><td colspan="2" colwidth="120,120"><p>Span 2</p></td></tr></tbody></table>';
+    const { table: table2 } = await renderTable(htmlWithColwidth);
+    layOut(table2);
+    const cells2 = cellsOf(table2);
+    rect(table2, 0, 400);
+    rect(cells2[0]!, 0, 400, 0, 40);
+
+    fireEvent.mouseDown(cells2[0]!, { button: 0, clientX: 398, clientY: 20 });
+    fireEvent.mouseUp(cells2[0]!);
+  });
 });

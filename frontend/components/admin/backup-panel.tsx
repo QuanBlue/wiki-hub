@@ -482,6 +482,7 @@ export async function sha256File(
 ): Promise<string> {
   const SAMPLE_CHUNK_SIZE = 2 * 1024 * 1024; // 2 MB per sample slice
   const FAST_HASH_THRESHOLD = 8 * 1024 * 1024; // 8 MB threshold
+  onProgress(0);
 
   if (typeof window !== "undefined" && window.crypto?.subtle) {
     try {
@@ -5357,7 +5358,8 @@ export function BackupPanel() {
                     {confluenceUploadError}
                   </p>
                 ) : null}
-
+
+
 
                 <div className="flex flex-wrap gap-2">
                   {isUploading || isHashingArchive ? (
