@@ -550,13 +550,71 @@ class TestManagingMailboxes:
             issue_id=uuid.uuid4(),
             issue_title="Bug",
             description="Details",
-            recipients=[reporter, active_admin, muted_admin],
+            recipients=[active_admin, muted_admin],
         )
 
         assert sent == 1
         assert svc._deliver.await_count == 1
         call_kwargs = svc._deliver.await_args.kwargs
         assert call_kwargs["to"] == "active@corp.com"
+
+    async def test_send_issue_created_email_falls_back_to_mailbox_for_local_admin(
+        self, svc: AdminMailService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        reporter = _user(username="admin", email="admin@wikihub.local", receive_admin_emails=True)
+        muted_admin = _user(
+            username="quannt39", email="quannt39@viettel.com.vn", receive_admin_emails=False
+        )
+        admin_mailbox = _mailbox("ops@viettel.com.vn", user_id=reporter.id, is_enabled=True)
+        svc.repo.working_mailboxes = AsyncMock(return_value=[admin_mailbox])
+        svc.repo.get_mailbox_for_user = AsyncMock(
+            side_effect=lambda uid: (admin_mailbox, reporter) if uid == reporter.id else None
+        )
+        svc._deliver = AsyncMock(return_value=Mock(email_sent=True))
+        monkeypatch.setattr(
+            "app.services.site_settings.SiteSettingsService.get_effective",
+            AsyncMock(
+                return_value=Mock(
+                    site_name="Wiki", theme_color=None, custom_logo_url=None
+                )
+            ),
+        )
+
+        sent = await svc.send_issue_created_email(
+            reporter=reporter,
+            issue_id=uuid.uuid4(),
+            issue_title="Test issue",
+            description="Testing issue mail",
+            recipients=[reporter, muted_admin],
+        )
+
+        assert sent == 1
+        call_kwargs = svc._deliver.await_args.kwargs
+        assert call_kwargs["to"] == "ops@viettel.com.vn"
+        assert call_kwargs["reply_to"] is None
+
+    async def test_submit_request_relays_to_enabled_admin_when_mailbox_owner_is_muted(
+        self, svc: AdminMailService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        muted_owner = _user(
+            username="admin", email="admin@wikihub.local", receive_admin_emails=False
+        )
+        enabled_admin = _user(
+            username="quannt39", email="quannt39@viettel.com.vn", receive_admin_emails=True
+        )
+        pool_mailbox = _mailbox("relay@viettel.com.vn", user_id=muted_owner.id)
+        svc.repo.active_mailboxes = AsyncMock(return_value=[])
+        svc.repo.working_mailboxes = AsyncMock(return_value=[pool_mailbox])
+        svc.repo.get_mailbox_for_user = AsyncMock(return_value=None)
+        svc._system_administrators = AsyncMock(return_value=[muted_owner, enabled_admin])
+        send = AsyncMock(return_value=OK)
+        monkeypatch.setattr(smtp, "send", send)
+
+        result = await svc.submit_request(_payload(), client_ip=None)
+
+        assert result == "sent"
+        assert send.await_count == 1
+        assert send.await_args.kwargs["to"] == "quannt39@viettel.com.vn"
 
     async def test_changing_the_connection_re_checks_it_but_renaming_does_not(
         self, svc: AdminMailService, monkeypatch: pytest.MonkeyPatch
@@ -1087,3 +1145,92 @@ class TestMailboxPool:
             )
 
         assert caught.value.code == "no_admin_mailbox"
+
+    async def test_submit_request_duplicate_admin_relay_emails_deduped(
+        self, svc: AdminMailService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        admin1 = _user(username="admin1", email="shared@example.com", receive_admin_emails=True)
+        admin2 = _user(username="admin2", email="SHARED@example.com", receive_admin_emails=True)
+        pool_mailbox = _mailbox("pool@example.com")
+        svc.repo.active_mailboxes = AsyncMock(return_value=[])
+        svc.repo.working_mailboxes = AsyncMock(return_value=[pool_mailbox])
+        svc.repo.get_mailbox_for_user = AsyncMock(return_value=None)
+        svc._system_administrators = AsyncMock(return_value=[admin1, admin2])
+        send = AsyncMock(return_value=OK)
+        monkeypatch.setattr(smtp, "send", send)
+
+        result = await svc.submit_request(_payload(), client_ip=None)
+        assert result == "sent"
+        assert send.await_count == 1
+
+    async def test_pick_outbound_mailbox_broken_own_mailbox_with_and_without_pool(
+        self, svc: AdminMailService
+    ) -> None:
+        actor = _user()
+        broken_box = _mailbox("broken@example.com", user_id=actor.id, health_status="error")
+        svc.repo.get_mailbox_for_user = AsyncMock(return_value=(broken_box, actor))
+
+        # Case 1: working pool has other mailboxes
+        other_box = _mailbox("other@example.com", user_id=uuid.uuid4(), health_status="ok")
+        svc.repo.working_mailboxes = AsyncMock(return_value=[other_box])
+        chosen, own = await svc._resolve_sender(actor)
+        assert chosen.id == other_box.id
+        assert own is False
+
+        # Case 2: working pool is empty -> falls back to own broken mailbox
+        svc.repo.working_mailboxes = AsyncMock(return_value=[])
+        chosen2, own2 = await svc._resolve_sender(actor)
+        assert chosen2.id == broken_box.id
+        assert own2 is True
+
+    async def test_notify_administrators_new_issue_uncovered_branches(
+        self, svc: AdminMailService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        admin_undeliverable = _user(username="undeliv", email="undeliverable", receive_admin_emails=True)
+        admin_dup1 = _user(username="dup1", email="dup@example.org", receive_admin_emails=True)
+        admin_dup2 = _user(username="dup2", email="DUP@example.org", receive_admin_emails=True)
+
+        pool_mailbox = _mailbox("sender@example.com")
+        svc.repo.working_mailboxes = AsyncMock(return_value=[pool_mailbox])
+        svc.repo.get_mailbox_for_user = AsyncMock(return_value=None)
+
+        deliver_mock = AsyncMock(side_effect=Exception("Delivery connection dropped"))
+        svc._deliver = deliver_mock
+
+        sent = await svc.send_issue_created_email(
+            issue_id=uuid.uuid4(),
+            issue_title="Test Issue",
+            description="Details",
+            reporter=_user(username="reporter", email="reporter@example.org"),
+            recipients=[admin_undeliverable, admin_dup1, admin_dup2],
+        )
+        assert sent == 0
+        deliver_mock.assert_awaited_once()
+
+    async def test_send_issue_closed_email_reporter_email_fallback_to_mailbox(
+        self, svc: AdminMailService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        actor = _user(username="closer")
+        actor_box = _mailbox("closer@example.com", user_id=actor.id, health_status="ok")
+        svc.repo.get_mailbox_for_user = AsyncMock(
+            side_effect=lambda uid: (actor_box, actor)
+            if uid == actor.id
+            else (
+                _mailbox("reporter-mailbox@example.org", user_id=uid, health_status="ok"),
+                _user(id=uid),
+            )
+        )
+        send = AsyncMock(return_value=OK)
+        monkeypatch.setattr(smtp, "send", send)
+
+        reporter = _user(username="reporter", email="undeliverable")
+        res = await svc.send_issue_closed_email(
+            actor,
+            to_user=reporter,
+            issue_title="Bug",
+            taken_by="closer",
+            note="Done",
+        )
+        assert res.email_sent is True
+        assert send.await_args.kwargs["to"] == "reporter-mailbox@example.org"
+

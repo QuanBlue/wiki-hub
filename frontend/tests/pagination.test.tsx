@@ -39,4 +39,22 @@ describe("Pagination", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "2" }));
     expect(onPageChange).toHaveBeenCalledWith(2);
   });
+
+  it("renders links when hrefFor is provided and disabled span for disabled targets", () => {
+    render(
+      <Pagination
+        page={1}
+        pageCount={4}
+        hrefFor={(p) => `/items?page=${p}`}
+        previousLabel="Previous"
+        nextLabel="Next"
+      />,
+    );
+    const prevSpan = screen.getByText("Previous").closest("span[aria-disabled='true']");
+    expect(prevSpan).toBeInTheDocument();
+    expect(prevSpan).toHaveAttribute("aria-disabled", "true");
+
+    const page2Link = screen.getByRole("link", { name: "2" });
+    expect(page2Link).toHaveAttribute("href", "/items?page=2");
+  });
 });

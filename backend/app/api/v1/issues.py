@@ -230,10 +230,15 @@ async def _email_reporter(
     if issue.reporter.id == actor.id:
         return "skipped"
     reporter = await session.get(User, issue.reporter.id)
-    if reporter is None or not reporter.is_active or not is_deliverable_address(reporter.email):
+    if reporter is None or not reporter.is_active:
         return "skipped"
+    mail_service = AdminMailService(session, actor=actor)
+    if not is_deliverable_address(reporter.email):
+        found = await mail_service.repo.get_mailbox_for_user(reporter.id)
+        if found is None or not is_deliverable_address(found[0].email):
+            return "skipped"
     try:
-        sent = await AdminMailService(session, actor=actor).send_issue_closed_email(
+        sent = await mail_service.send_issue_closed_email(
             actor,
             to_user=reporter,
             issue_title=issue.title,

@@ -262,6 +262,7 @@ async def test_group_user_audit_and_meta_wrappers(monkeypatch: pytest.MonkeyPatc
                 max_upload_size_bytes=1,
                 allowed_attachment_types=[],
                 trash_retention_days=45,
+                announcement=None,
             )
         ),
     )

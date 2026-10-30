@@ -215,4 +215,14 @@ describe("CommentComposer", () => {
     expect(await screen.findByText("Ann Lee")).toBeInTheDocument();
     expect(screen.getByText("View profile")).toBeInTheDocument();
   });
+
+  it("automatically marks exact username match as valid when typed", async () => {
+    const actor = userEvent.setup();
+    const { box } = setup();
+    await actor.type(box, "hi @ann");
+    expect(await screen.findByRole("listbox")).toBeInTheDocument();
+    fireEvent.blur(box);
+    const mentionTrigger = screen.getByRole("button", { name: "@ann", hidden: true });
+    expect(mentionTrigger).toBeInTheDocument();
+  });
 });

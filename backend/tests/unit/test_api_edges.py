@@ -285,10 +285,12 @@ async def test_simple_read_endpoints_and_backup_validation() -> None:
     assert site_settings.get_acting_site_settings_service(Mock(), _user(), None, None)
     settings_service = Mock(
         read_sidebar_permissions=AsyncMock(return_value=SimpleNamespace(permissions={})),
+        read_announcement=AsyncMock(return_value="announcement"),
         read=AsyncMock(return_value="read"),
         update=AsyncMock(return_value="updated"),
     )
     assert await site_settings.read_sidebar_permissions(_user(), settings_service)
+    assert await site_settings.read_announcement(_user(), settings_service) == "announcement"
     assert await site_settings.read_settings(_user(), settings_service) == "read"
     assert (
         await site_settings.update_settings(SimpleNamespace(), settings_service, _user())

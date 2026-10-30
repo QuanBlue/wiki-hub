@@ -1,6 +1,6 @@
 # Third-party licensing notes
 
-WikiHub itself is Apache-2.0 (`backend/pyproject.toml`). Most dependencies are
+WikiHub itself is Apache-2.0 ([`LICENSE`](../LICENSE), `backend/pyproject.toml`). Most dependencies are
 permissive and need no comment. This file records the ones that carry an
 obligation, so the decision is written down somewhere other than a commit
 message.
@@ -58,3 +58,29 @@ licences:
   GPL-licensed Python binding.
 - **nh3** (MIT) bundles the Rust `ammonia` and `html5ever` crates, which are
   MIT/Apache-2.0 dual-licensed.
+
+## Containerised infrastructure services (`docker-compose*.yml`)
+
+The Compose files start companion services alongside WikiHub over network
+protocols (HTTP, S3 REST, Redis TCP, PostgreSQL wire protocol). Because WikiHub
+communicates with them strictly over network boundaries and neither links nor
+modifies their source code, their licences do not govern WikiHub's own repository
+code. Keep these obligations in mind if packaging a commercial appliance or
+offering a hosted SaaS:
+
+- **ONLYOFFICE Document Server** (`onlyoffice/documentserver`, **AGPL-3.0**) —
+  runs as a standalone container integrated via browser iframe + signed JWT
+  callbacks. Modifying the Document Server image or bundling it into a
+  proprietary redistributable installer requires either complying with AGPL-3.0
+  for that component or obtaining a commercial licence from Ascensio System SIA.
+- **MinIO** (`bitnamilegacy/minio`, **AGPL-3.0**) — used for local S3-compatible
+  storage in Compose. Production deployments can substitute any S3-compatible
+  object store (AWS S3, Cloudflare R2, Ceph RGW, SeaweedFS, Garage) via
+  `WIKIHUB_S3_*` environment variables without code changes.
+- **Redis 7.4** (`redis:7.4-alpine`, dual-licensed **RSALv2 / SSPLv1**) —
+  permissible for self-hosted deployments and as an internal cache/queue backing
+  an application, provided Redis itself is not offered as a managed database
+  service to third parties. For a strictly OSI-approved BSD-3-Clause deployment,
+  `redis:7.2-alpine` or `valkey/valkey:8-alpine` is a drop-in replacement.
+- **PostgreSQL 16 + pgvector** (`pgvector/pgvector:0.8.1-pg16-bookworm`,
+  **PostgreSQL Licence**) — permissive, OSI-approved.

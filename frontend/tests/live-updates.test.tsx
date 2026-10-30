@@ -119,6 +119,40 @@ describe("noticing something new without a reload", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/spaces/docs"));
   });
 
+  it("warns and refreshes when clicking a toast whose target was deleted", async () => {
+    let now: NotificationSummary = { unread_count: 0, latest_at: T0 };
+    let items: AppNotification[] = [];
+    serve(
+      () => now,
+      () => items,
+    );
+    render(
+      <QueryClientProvider client={client()}>
+        <NotificationsProvider initial={now}>
+          <NotificationBell />
+        </NotificationsProvider>
+      </QueryClientProvider>,
+    );
+
+    now = { unread_count: 1, latest_at: T1 };
+    items = [note({ id: "gone-note", link: "/spaces/docs/deleted" })];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_500);
+    });
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    const [, options] = vi.mocked(toast.success).mock.calls[0]!;
+    const { ApiError } = await import("@/lib/api-client");
+    vi.mocked(api.post).mockRejectedValueOnce(new ApiError(404, "gone", "not_found"));
+    (options!.action as unknown as { onClick: () => void }).onClick();
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        "That comment, page or request no longer exists, so the notification was removed.",
+      ),
+    );
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("colours the toast by what happened", async () => {
     let now: NotificationSummary = { unread_count: 0, latest_at: T0 };
     let items: AppNotification[] = [];

@@ -5,7 +5,7 @@ import { FolderTree, ShieldCheck, Sparkles } from "lucide-react";
 
 import { AuthPanels } from "@/components/auth/auth-panels";
 import { Wordmark } from "@/components/brand/logo";
-import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
+import { LanguageToggle } from "@/components/layout/language-toggle";
 import { SITE_NAME } from "@/lib/env";
 import { getServerLocale } from "@/lib/i18n/server";
 import { serverGet } from "@/lib/server-api";
@@ -51,8 +51,8 @@ export default async function LoginPage({
   ];
 
   return (
-    <main className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,32rem)] xl:grid-cols-[minmax(0,1fr)_minmax(0,36rem)]">
-      <section className="bg-primary text-primary-foreground relative hidden overflow-hidden px-12 py-12 lg:sticky lg:top-0 lg:flex lg:h-screen lg:items-center xl:px-16">
+    <main className="grid min-h-dvh lg:h-dvh lg:overflow-hidden lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)]">
+      <section className="bg-primary text-primary-foreground relative hidden overflow-hidden px-8 py-8 lg:sticky lg:top-0 lg:flex lg:h-full lg:items-center xl:px-14 xl:py-12">
         {/* Decorative echo of the brand mark's three converging layers - purely
             atmospheric, so it is hidden from assistive tech. */}
         <svg
@@ -81,36 +81,36 @@ export default async function LoginPage({
           />
         </svg>
 
-        <div className="relative mx-auto flex h-full max-h-[56rem] w-full max-w-2xl flex-col justify-between gap-8">
+        <div className="relative mx-auto flex h-full max-h-[52rem] w-full max-w-2xl flex-col justify-between gap-4 lg:gap-6 [@media(max-height:850px)]:gap-3">
           <Wordmark siteName={SITE_NAME} className="text-lg" />
 
           <div>
             <p className="text-primary-foreground/70 text-sm font-medium">
               {t("auth.tagline")}
             </p>
-            <h1 className="mt-3 text-4xl leading-tight font-semibold tracking-tight text-balance">
+            <h1 className="mt-2.5 sm:mt-3 text-3xl xl:text-4xl leading-tight font-semibold tracking-tight text-balance">
               {t("auth.headline")}
             </h1>
-            <p className="text-primary-foreground/70 mt-4 max-w-xl text-[0.9375rem] leading-6 [@media(max-height:600px)]:hidden">
+            <p className="text-primary-foreground/70 mt-3 sm:mt-4 max-w-xl text-[0.875rem] xl:text-[0.9375rem] leading-6 [@media(max-height:680px)]:hidden">
               {t("auth.subheading")}
             </p>
           </div>
 
           {/* A real capture of the application (docs/demo/assets), cropped to its top-left corner:
               top bar, page tree and the start of a page. */}
-          <div className="border-primary-foreground/20 aspect-[16/8.5] overflow-hidden rounded-xl border shadow-2xl [@media(max-height:700px)]:hidden">
+          <div className="border-primary-foreground/20 aspect-[16/8.5] overflow-hidden rounded-xl border shadow-2xl [@media(max-height:720px)]:hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/login/workspace.png"
               alt={t("auth.previewAlt")}
-              width={1430}
+              width={1420}
               height={900}
               className="bg-surface w-full object-cover object-left-top"
             />
           </div>
 
           <div>
-            <ul className="grid grid-cols-3 gap-x-6 gap-y-2">
+            <ul className="grid grid-cols-3 gap-x-4 xl:gap-x-6 gap-y-2">
               {features.map(({ icon: Icon, title, description }) => (
                 <li key={title}>
                   <div className="flex items-center gap-2.5">
@@ -119,36 +119,94 @@ export default async function LoginPage({
                     </span>
                     <p className="text-sm leading-tight font-semibold">{title}</p>
                   </div>
-                  <p className="text-primary-foreground/65 mt-2 text-xs leading-5 [@media(max-height:820px)]:hidden">
+                  <p className="text-primary-foreground/65 mt-2 text-xs leading-5 [@media(max-height:800px)]:hidden">
                     {description}
                   </p>
                 </li>
               ))}
             </ul>
-            <p className="text-primary-foreground/50 border-primary-foreground/15 mt-5 border-t pt-4 text-xs [@media(max-height:640px)]:hidden">
+            <p className="text-primary-foreground/50 border-primary-foreground/15 mt-4 sm:mt-5 border-t pt-3 sm:pt-4 text-xs [@media(max-height:650px)]:hidden">
               {t("auth.footerTagline")}
             </p>
           </div>
         </div>
       </section>
 
-      <section className="bg-surface-sunken flex min-h-screen flex-col">
-        <SystemAnnouncementBanner announcement={publicAnnouncement} />
-        <div className="flex flex-1 items-center justify-center px-6 py-12 sm:px-10">
-          <div className="w-full max-w-md">
-            <div className="mb-8 flex justify-center lg:hidden">
+      <section className="bg-surface-sunken/60 relative flex min-h-full flex-col justify-between overflow-x-hidden overflow-y-auto lg:overflow-hidden">
+        {/* Subtle dot matrix texture across the canvas */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 [background-image:radial-gradient(var(--border)_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_50%,transparent_100%)] opacity-70"
+        />
+
+        {/* Ambient atmospheric lighting */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-32 right-0 size-96 rounded-full bg-primary/6 blur-3xl"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-32 left-0 size-96 rounded-full bg-primary/4 blur-3xl"
+        />
+
+        {/* Decorative isometric geometry mirroring the left panel's motif */}
+        <svg
+          viewBox="0 0 400 400"
+          fill="none"
+          aria-hidden="true"
+          className="text-primary/10 pointer-events-none absolute -bottom-16 -right-16 h-80 w-80 max-sm:hidden"
+        >
+          <path
+            d="M90 150 200 95 310 150 200 205Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeDasharray="4 4"
+          />
+          <path
+            d="M90 205 200 260 310 205"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+          <path
+            d="M90 260 200 315 310 260"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeDasharray="2 4"
+          />
+        </svg>
+
+        {/* Floating utility: language switcher in top right corner */}
+        <div className="absolute top-3.5 right-4 sm:top-5 sm:right-6 z-20">
+          <LanguageToggle />
+        </div>
+
+        {/* Center content: Login Card */}
+        <div className="relative z-10 flex flex-1 items-center justify-center px-4 py-3 sm:px-6">
+          <div className="w-full max-w-[27rem] [@media(max-height:760px)]:max-w-[25.5rem]">
+            <div className="mb-4 sm:mb-6 flex justify-center lg:hidden">
               <Wordmark siteName={SITE_NAME} className="text-base" />
             </div>
 
-            {/* useSearchParams needs a Suspense boundary during prerender. */}
-            <Suspense fallback={null}>
-              <AuthPanels
-                siteName={SITE_NAME}
-                initialView={view === "contact" ? "contact" : "login"}
-              />
-            </Suspense>
+            <div className="border-border/80 bg-surface rounded-2xl border p-5 sm:p-7 [@media(max-height:850px)]:p-5.5 [@media(max-height:750px)]:p-4.5 shadow-lg shadow-black/[0.03]">
+              {/* useSearchParams needs a Suspense boundary during prerender. */}
+              <Suspense fallback={null}>
+                <AuthPanels
+                  siteName={SITE_NAME}
+                  initialView={view === "contact" ? "contact" : "login"}
+                  announcement={publicAnnouncement}
+                />
+              </Suspense>
+            </div>
           </div>
         </div>
+
+        {/* Footer info */}
+        <footer className="relative z-10 shrink-0 py-3 sm:py-4 [@media(max-height:760px)]:py-2 text-center">
+          <div className="text-muted-foreground/75 inline-flex items-center gap-1.5 text-xs">
+            <ShieldCheck className="size-3.5" aria-hidden="true" />
+            <span>{SITE_NAME} &middot; Enterprise Workspace</span>
+          </div>
+        </footer>
       </section>
     </main>
   );

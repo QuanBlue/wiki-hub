@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { useCanEmailAccounts } from "@/components/admin/account-email-option";
+import {
+  notifyAccountEmail,
+  notifyAdminGranted,
+  useCanEmailAccounts,
+} from "@/components/admin/account-email-option";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
@@ -156,6 +160,7 @@ export function AddAdminDialog({
     if (!selectedUserId || !selectedMember) return;
     setPromotePending(true);
     setPromoteError(null);
+    const targetMember = selectedMember;
     try {
       await api.patch<User>(`/api/v1/users/${selectedUserId}`, {
         is_superuser: true,
@@ -163,12 +168,20 @@ export function AddAdminDialog({
       });
       toast.success(
         t("adminUsers.promoteSuccessToast", {
-          username: selectedMember.full_name || selectedMember.username,
+          username: targetMember.full_name || targetMember.username,
         }),
       );
       setOpen(false);
       reset();
       router.refresh();
+      if (canEmailAccounts) {
+        const outcome = await notifyAdminGranted(targetMember.id);
+        if (outcome?.email_sent) {
+          toast.success(`Told ${targetMember.email} they're now an administrator.`);
+        } else {
+          toast.error(`Could not email ${targetMember.email} about the new role.`);
+        }
+      }
     } catch (err) {
       setPromoteError(
         err instanceof ApiError ? err.message : t("adminUsers.promoteError"),
@@ -190,14 +203,14 @@ export function AddAdminDialog({
     if (usernameCheck !== "available") return;
     setCreatePending(true);
     setCreateError(null);
+    const submittedPassword = password;
     try {
       const created = await api.post<User>("/api/v1/users", {
-        first_name: firstName.trim(),
-        last_name: lastName.trim() || undefined,
         username: username.trim(),
         email: email.trim(),
-        password,
-        role: "admin",
+        full_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+        password: submittedPassword,
+        is_superuser: true,
         receive_admin_emails: createReceiveEmails,
       });
       toast.success(
@@ -208,6 +221,20 @@ export function AddAdminDialog({
       setOpen(false);
       reset();
       router.refresh();
+      if (canEmailAccounts) {
+        const outcome = await notifyAccountEmail(
+          "created",
+          created.id,
+          submittedPassword,
+        );
+        if (outcome?.email_sent) {
+          toast.success(`Sign-in details emailed to ${created.email}.`);
+        } else {
+          toast.error(
+            `Could not email the sign-in details to ${created.email}. Share the password another way.`,
+          );
+        }
+      }
     } catch (err) {
       setCreateError(
         err instanceof ApiError ? err.message : "Could not create the administrator.",

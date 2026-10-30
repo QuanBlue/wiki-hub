@@ -2162,14 +2162,15 @@ describe("SpaceWorkspace hooks from elsewhere", () => {
     serve({
       "/api/v1/spaces/ENG/pages/guides/related": {
         pages: [],
-        mentions: [{ title: "Setup", slug: "setup", space_key: "ENG" }],
+        mentions: [{ title: "Glossary", slug: "glossary", space_key: "ENG" }],
       },
     });
     renderWorkspace({
-      currentPage: { ...GUIDES, content: "<p>Read the Setup notes first.</p>" },
+      currentPage: { ...GUIDES, content: "<p>Read the Glossary notes first.</p>" },
     });
 
-    const link = await screen.findByRole("link", { name: "Setup" });
-    expect(link).toHaveAttribute("href", "/spaces/ENG/pages/setup");
+    const rendered = screen.getByTestId("rendered");
+    const link = await within(rendered).findByRole("link", { name: "Glossary" });
+    expect(link).toHaveAttribute("href", "/spaces/ENG/pages/glossary");
   });
 });

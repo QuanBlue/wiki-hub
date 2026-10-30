@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import io
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import UploadFile
@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import Headers
 
 from app.api.v1 import issues as routes
+from app.models.admin_mail import AdminMailbox
 from app.core.exceptions import (
     BadRequestError,
     ConflictError,
@@ -215,6 +216,39 @@ class TestEmailReporter:
         await session.flush()
 
         assert await routes._email_reporter(session, admin, done, None) == "skipped"
+
+    async def test_an_undeliverable_email_reporter_checks_mailbox(
+        self, session: AsyncSession
+    ) -> None:
+        admin = await _superuser(session)
+        reporter = await _user(session)
+        reporter.email = "undeliverable"
+        await session.flush()
+        issue = await _report(session, reporter)
+        done = await IssueService(session, admin).set_status(issue.id, "done")
+
+        # No mailbox -> skipped
+        assert await routes._email_reporter(session, admin, done, None) == "skipped"
+
+        # Mailbox present with deliverable email -> sent
+        mailbox = AdminMailbox(
+            user_id=reporter.id,
+            email="mailbox-reporter@example.org",
+            display_name="Mailbox",
+            smtp_host="localhost",
+            smtp_port=587,
+            smtp_username="user",
+            smtp_password_enc="pass",
+            is_enabled=True,
+        )
+        session.add(mailbox)
+        await session.flush()
+
+        with patch(
+            "app.api.v1.issues.AdminMailService.send_issue_closed_email",
+            AsyncMock(return_value=Mock(email_sent=True)),
+        ):
+            assert await routes._email_reporter(session, admin, done, None) == "sent"
 
     async def test_an_unexpected_mail_error_is_reported_as_failed(
         self, session: AsyncSession

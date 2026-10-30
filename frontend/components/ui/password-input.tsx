@@ -20,29 +20,39 @@ import { cn } from "@/lib/utils";
  *   control legible to a screen reader; duplicating that at every call site
  *   invites getting it wrong.
  */
-export type PasswordInputProps = Omit<
-  React.ComponentPropsWithoutRef<"input">,
-  "type"
->;
+export interface PasswordInputProps
+  extends Omit<React.ComponentPropsWithoutRef<"input">, "type"> {
+  leadingIcon?: React.ReactNode;
+}
 
 export const PasswordInput = React.forwardRef<
   HTMLInputElement,
   PasswordInputProps
->(function PasswordInput({ className, disabled, ...props }, ref) {
+>(function PasswordInput({ className, disabled, leadingIcon, ...props }, ref) {
   const [visible, setVisible] = React.useState(false);
 
   // Never leave a password on screen in a field the user can no longer edit.
   const revealed = visible && !disabled;
 
   return (
-    <div className="relative">
+    <div className="relative flex items-center">
+      {leadingIcon ? (
+        <span className="text-muted-foreground pointer-events-none absolute left-3.5 flex items-center justify-center">
+          {leadingIcon}
+        </span>
+      ) : null}
       <input
         ref={ref}
         type={revealed ? "text" : "password"}
         disabled={disabled}
         // Shares the exact input styling; only the right padding differs, to
         // leave room for the reveal button.
-        className={cn(inputClassName, "pr-10", className)}
+        className={cn(
+          inputClassName,
+          "pr-10",
+          leadingIcon && "pl-10",
+          className,
+        )}
         {...props}
       />
       <button

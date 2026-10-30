@@ -347,3 +347,14 @@ async def test_pages_that_take_too_long_are_given_up_on(monkeypatch: pytest.Monk
     results = [WebResult("A", "https://a.example", "s")]
 
     assert await read_pages(results, "query") == results
+
+
+def test_read_more_reports_when_no_blocks_found() -> None:
+    from app.modules.ai import chat as chat_module
+    from app.modules.ai.websearch import WebResult
+
+    _read, text = chat_module.read_more(
+        [WebResult("Title", "https://example.com", "snippet")],
+        "READ_MORE: w99",
+    )
+    assert "(Nothing more to read on those pages: everything they hold was given.)" in text

@@ -23,10 +23,26 @@ export const inputClassName = cn(
   "aria-[invalid=true]:border-danger aria-[invalid=true]:focus-visible:ring-danger",
 );
 
-export type InputProps = React.ComponentPropsWithoutRef<"input">;
+export interface InputProps extends React.ComponentPropsWithoutRef<"input"> {
+  leadingIcon?: React.ReactNode;
+}
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  function Input({ className, ...props }, ref) {
+  function Input({ className, leadingIcon, ...props }, ref) {
+    if (leadingIcon) {
+      return (
+        <div className="relative flex items-center">
+          <span className="text-muted-foreground pointer-events-none absolute left-3.5 flex items-center justify-center">
+            {leadingIcon}
+          </span>
+          <input
+            ref={ref}
+            className={cn(inputClassName, "pl-10", className)}
+            {...props}
+          />
+        </div>
+      );
+    }
     return (
       <input ref={ref} className={cn(inputClassName, className)} {...props} />
     );

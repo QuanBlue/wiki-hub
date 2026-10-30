@@ -53,9 +53,16 @@ async def _setup(session: AsyncSession) -> tuple[User, Space, str]:
     return owner, space, page.slug
 
 
-async def _kinds(session: AsyncSession, user: User) -> list[str]:
+async def _kinds(session: AsyncSession, user: User | uuid.UUID) -> list[str]:
+    if isinstance(user, uuid.UUID):
+        user_id = user
+    elif "id" in user.__dict__:
+        user_id = user.__dict__["id"]
+    else:
+        await session.refresh(user, ["id"])
+        user_id = user.id
     rows = await session.scalars(
-        select(Notification.kind).where(Notification.user_id == user.id).order_by(Notification.kind)
+        select(Notification.kind).where(Notification.user_id == user_id).order_by(Notification.kind)
     )
     return list(rows)
 

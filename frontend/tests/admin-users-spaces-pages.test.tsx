@@ -336,6 +336,15 @@ describe("AdminUsersPage", () => {
     expect(screen.getByText("admins-summary 2")).toBeInTheDocument();
   });
 
+  it("shows the administrators tab for non-system admin without AddAdminDialog", async () => {
+    m.getCurrentUser.mockResolvedValue(
+      admin({ is_superuser: false, global_permissions: ["manage_users"] } as Partial<Me>),
+    );
+    await renderUsers({ tab: "administrators" });
+    expect(screen.getByText("admins-table 2")).toBeInTheDocument();
+    expect(screen.getByText("admins-summary 2")).toBeInTheDocument();
+  });
+
   it("shows the permission overrides tab", async () => {
     await renderUsers({ tab: ["overrides"] });
     expect(screen.getByText("overrides-table 1")).toBeInTheDocument();

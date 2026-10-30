@@ -278,7 +278,8 @@ export function MailboxPanel({
                           </Badge>
                         ) : null}
                       </div>
-                      {mailbox.effective_enabled && mailbox.health_error ? (
+                      {(mailbox.effective_enabled || (mailbox.is_enabled && mailbox.user_is_active)) &&
+                      mailbox.health_error ? (
                         <div className="text-muted-foreground mt-1 max-w-64 text-xs break-words">
                           <MailError raw={mailbox.health_error} />
                         </div>

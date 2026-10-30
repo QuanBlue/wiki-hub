@@ -210,7 +210,7 @@ function fileOf(bytes: Uint8Array, name = "archive.zip", lastModified = 1_700_00
 
 function nativeCrypto() {
   vi.stubGlobal("crypto", {
-    subtle: { digest: (algorithm: string, data: BufferSource) => webcrypto.subtle.digest(algorithm, data) },
+    subtle: { digest: (algorithm: string, data: BufferSource) => webcrypto.subtle.digest(algorithm, Buffer.from(data as any)) },
   });
 }
 
@@ -259,7 +259,7 @@ describe("sha256File", () => {
       subtle: {
         digest: async (algorithm: string, data: BufferSource) => {
           late.abort();
-          return webcrypto.subtle.digest(algorithm, data);
+          return webcrypto.subtle.digest(algorithm, Buffer.from(data as any));
         },
       },
     });
@@ -285,7 +285,7 @@ describe("sha256File", () => {
       subtle: {
         digest: async (algorithm: string, data: BufferSource) => {
           late.abort();
-          return webcrypto.subtle.digest(algorithm, data);
+          return webcrypto.subtle.digest(algorithm, Buffer.from(data as any));
         },
       },
     });
@@ -342,6 +342,17 @@ describe("sha256File", () => {
     const small = fileOf(new Uint8Array(10));
     await expect(
       sha256File(small, () => late.abort(), late.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    const postLoop = new AbortController();
+    await expect(
+      sha256File(
+        fileOf(new Uint8Array(10)),
+        (loaded) => {
+          if (loaded === 10) postLoop.abort();
+        },
+        postLoop.signal,
+      ),
     ).rejects.toMatchObject({ name: "AbortError" });
 
     const large = new AbortController();

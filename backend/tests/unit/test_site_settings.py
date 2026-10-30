@@ -277,6 +277,17 @@ def test_system_announcement_schedule_and_content_validation() -> None:
             expires_at=now - timedelta(minutes=5),
         )
 
+    # title=None, content_html="" / None cleanups
+    ann_none = SystemAnnouncement(title=None, content_html="")
+    assert ann_none.title is None
+    assert ann_none.content_html == ""
+
+    # naive starts_at converted to UTC and is_currently_active with naive now
+    naive_dt = datetime(2026, 10, 30, 10, 0)
+    ann_naive = SystemAnnouncement(starts_at=naive_dt)
+    assert ann_naive.starts_at.tzinfo == UTC
+    assert not ann_naive.is_currently_active(now=naive_dt)
+
 
 @pytest.mark.asyncio
 async def test_system_announcement_update_records_audit_and_reads_active() -> None:
@@ -321,4 +332,27 @@ async def test_system_announcement_update_records_audit_and_reads_active() -> No
     active_read = await service.read_announcement()
     assert active_read.announcement is not None
     assert active_read.announcement.title == "Release Notice"
+
+    # Only sidebar_permissions updated audits with sidebar_permissions_updated action
+    service.audit.record.reset_mock()
+    await service.update(SiteSettingsUpdate(sidebar_permissions={"home": ["admin"]}))
+    assert service.audit.record.await_args.args[0] == AuditAction.sidebar_permissions_updated
+
+
+def test_announcement_is_currently_active_naive_timezone() -> None:
+    ann = SystemAnnouncement(
+        enabled=True,
+        title="Notice",
+        content_html="<p>Test</p>",
+        starts_at=datetime(2025, 1, 1, tzinfo=UTC),
+        expires_at=datetime(2025, 1, 10, tzinfo=UTC),
+    )
+    # Passing naive datetime should be converted to UTC
+    naive_within = datetime(2025, 1, 5)
+    assert ann.is_currently_active(now=naive_within) is True
+    naive_before = datetime(2024, 12, 31)
+    assert ann.is_currently_active(now=naive_before) is False
+    naive_after = datetime(2025, 1, 11)
+    assert ann.is_currently_active(now=naive_after) is False
+
 

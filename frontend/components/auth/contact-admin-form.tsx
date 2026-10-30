@@ -213,15 +213,20 @@ export function ContactAdminForm({
   }
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="space-y-4">
-      <div className="space-y-1.5">
-        <Label htmlFor="contact-kind">{t("contactAdmin.kind")}</Label>
+    <form
+      onSubmit={(event) => void submit(event)}
+      className="space-y-2.5 [@media(max-height:800px)]:space-y-2"
+    >
+      <div className="space-y-1">
+        <Label htmlFor="contact-kind" className="text-xs sm:text-sm font-medium">
+          {t("contactAdmin.kind")}
+        </Label>
         <Select
           value={kind}
           onValueChange={(value) => setKind(value as AdminRequestKind)}
           disabled={pending}
         >
-          <SelectTrigger id="contact-kind" aria-label={t("contactAdmin.kind")}>
+          <SelectTrigger id="contact-kind" aria-label={t("contactAdmin.kind")} className="h-9.5 sm:h-10 text-sm">
             <SelectValue>
               {t(KINDS.find((item) => item.value === kind)?.labelKey ?? "")}
             </SelectValue>
@@ -237,8 +242,8 @@ export function ContactAdminForm({
       </div>
 
       {!isPasswordReset ? (
-        <div className="space-y-1.5">
-          <Label htmlFor="contact-name">
+        <div className="space-y-1">
+          <Label htmlFor="contact-name" className="text-xs sm:text-sm font-medium">
             {t("contactAdmin.name")} <RequiredMark />
           </Label>
           <Input
@@ -249,12 +254,13 @@ export function ContactAdminForm({
             disabled={pending}
             maxLength={120}
             required
+            className="h-9.5 sm:h-10 text-sm"
           />
         </div>
       ) : null}
 
-      <div className="space-y-1.5">
-        <Label htmlFor="contact-email">
+      <div className="space-y-1">
+        <Label htmlFor="contact-email" className="text-xs sm:text-sm font-medium">
           {t("contactAdmin.email")} <RequiredMark />
         </Label>
         <Input
@@ -267,19 +273,20 @@ export function ContactAdminForm({
           maxLength={320}
           aria-invalid={emailInvalid || undefined}
           required
+          className="h-9.5 sm:h-10 text-sm"
         />
         {emailInvalid ? (
           <p className="text-danger text-xs">{t("contactAdmin.emailInvalid")}</p>
         ) : (
-          <p className="text-muted-foreground text-xs">
+          <p className="text-muted-foreground text-[11px]">
             {t("contactAdmin.emailHelp")}
           </p>
         )}
       </div>
 
       {kind !== "account" ? (
-        <div className="space-y-1.5">
-          <Label htmlFor="contact-username">
+        <div className="space-y-1">
+          <Label htmlFor="contact-username" className="text-xs sm:text-sm font-medium">
             {t("contactAdmin.username")}{" "}
             {isPasswordReset ? <RequiredMark /> : <OptionalNote />}
           </Label>
@@ -291,8 +298,9 @@ export function ContactAdminForm({
             disabled={pending}
             maxLength={64}
             required={isPasswordReset}
+            className="h-9.5 sm:h-10 text-sm"
           />
-          <p className="text-muted-foreground text-xs">
+          <p className="text-muted-foreground text-[11px]">
             {isPasswordReset
               ? t("contactAdmin.usernameHelpRequired")
               : t("contactAdmin.usernameHelp")}
@@ -300,18 +308,19 @@ export function ContactAdminForm({
         </div>
       ) : null}
 
-      <div className="space-y-1.5">
-        <Label htmlFor="contact-message">
+      <div className="space-y-1">
+        <Label htmlFor="contact-message" className="text-xs sm:text-sm font-medium">
           {t("contactAdmin.message")} <OptionalNote />
         </Label>
         <Textarea
           id="contact-message"
-          rows={5}
+          rows={2}
           placeholder={t("contactAdmin.messagePlaceholder")}
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           disabled={pending}
           maxLength={MAX_MESSAGE}
+          className="min-h-[3.75rem] text-sm resize-none"
         />
       </div>
 
@@ -341,10 +350,10 @@ export function ContactAdminForm({
       <Button
         type="submit"
         variant="primary"
-        className="w-full"
+        className="h-10 sm:h-10.5 w-full mt-1"
         disabled={!valid || pending}
       >
-        {pending ? <Loader2 className="animate-spin" /> : <Send />}
+        {pending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
         {pending ? t("contactAdmin.sending") : t("contactAdmin.submit")}
       </Button>
     </form>

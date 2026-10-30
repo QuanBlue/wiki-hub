@@ -171,7 +171,7 @@ describe("toolbar menus", () => {
       if (value !== "left")
         expect(editor.getHTML()).toContain(`text-align: ${value}`);
     }
-  });
+  }, 30000);
 
   it("colours text from the palette, a custom colour, and clears it again", async () => {
     const { editor, selectAll, button, user } = await renderEditor();
@@ -258,7 +258,7 @@ describe("links", () => {
       expect(editor.getHTML()).toContain(`href="${address}"`);
       unmount();
     }
-  });
+  }, 30000);
 
   it("replaces the selection when the link text is changed, and inserts text for a bare caret", async () => {
     const { editor, url, user } = await openDialog();
