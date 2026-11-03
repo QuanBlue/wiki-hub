@@ -48,6 +48,18 @@ async def test_space_audience_checks_view_first() -> None:
     assert (audience.users, audience.groups, audience.everyone) == (3, 1, False)
 
 
+async def test_space_watch_routes_require_view_and_delegate() -> None:
+    user, service = Mock(), _space_service()
+    service.get_watch = AsyncMock(return_value="unwatched")
+    service.set_watch = AsyncMock(return_value="watched")
+    payload = spaces.SpaceWatchUpdate(watching=True)
+    assert await spaces.get_space_watch("ENG", user, service) == "unwatched"
+    assert await spaces.update_space_watch("ENG", payload, user, service) == "watched"
+    assert service.require_view.await_count == 2
+    service.get_watch.assert_awaited_once_with(service.space, user)
+    service.set_watch.assert_awaited_once_with(service.space, user, payload)
+
+
 async def test_page_audience_and_likers_check_the_page_too() -> None:
     user, space_service, page_service = Mock(), _space_service(), _page_service()
 
@@ -103,7 +115,7 @@ async def test_share_routes_delegate_to_the_service() -> None:
     service_class.assert_called_once_with(session, user)
 
     service, payload = Mock(), Mock()
-    for name in ("summary", "candidates", "share"):
+    for name in ("summary", "candidates", "share", "list_public_shares", "create_public_share", "update_public_share", "revoke_public_share"):
         setattr(service, name, AsyncMock(return_value=name))
 
     assert await shares.share_summary("ENG", "home", service) == "summary"
@@ -112,6 +124,28 @@ async def test_share_routes_delegate_to_the_service() -> None:
     assert await shares.share_page("ENG", "home", payload, service) == "share"
     service.share.assert_awaited_once_with("ENG", "home", payload)
 
+    assert await shares.list_public_shares("ENG", "home", service) == "list_public_shares"
+    assert await shares.create_public_share("ENG", "home", payload, service) == "create_public_share"
+    share_id = uuid.uuid4()
+    assert await shares.update_public_share("ENG", "home", share_id, payload, service) == "update_public_share"
+    service.update_public_share.assert_awaited_once_with("ENG", "home", share_id, payload)
+    del_res = await shares.revoke_public_share("ENG", "home", share_id, service)
+    assert del_res.status_code == 204
+    service.revoke_public_share.assert_awaited_once_with("ENG", "home", share_id)
+
+    with patch.object(shares, "PublicShareService") as pub_service_class:
+        shares.get_public_share_service(session)
+    pub_service_class.assert_called_once_with(session)
+
+    pub_service = Mock()
+    pub_service.get_share = AsyncMock(return_value="public_share_view")
+    assert await shares.get_public_share("token123", pub_service, x_share_password="pw") == "public_share_view"
+    pub_service.get_share.assert_awaited_with("token123", password="pw")
+
+    verify_payload = shares.PublicShareVerifyRequest(password="secret")
+    assert await shares.verify_public_share("token123", verify_payload, pub_service) == "public_share_view"
+    pub_service.get_share.assert_awaited_with("token123", password="secret")
+
 
 async def test_notification_routes_delegate_to_the_service() -> None:
     session, user, notification_id = Mock(), Mock(), uuid.uuid4()
@@ -119,29 +153,43 @@ async def test_notification_routes_delegate_to_the_service() -> None:
     for name in ("summary", "list", "mark_all_read", "mark_read"):
         setattr(service, name, AsyncMock(return_value=name))
 
-    with patch.object(notifications, "NotificationService", return_value=service):
-        assert await notifications.read_summary(user, session) == "summary"
+    with patch.object(notifications, "NotificationService", return_value=service) as built:
+        assert await notifications.read_summary(user, session, None) == "summary"
         assert (
-            await notifications.list_notifications(user, session, unread=True, limit=5, offset=0)
+            await notifications.list_notifications(
+                user, session, None, unread=True, limit=5, offset=0)
             == "list"
         )
-        response = await notifications.mark_all_read(user, session)
+        response = await notifications.mark_all_read(user, session, None)
         updated = await notifications.update_notification(
-            notification_id, notifications.NotificationUpdate(read=False), user, session
+            notification_id, notifications.NotificationUpdate(read=False), user, session, None
         )
         service.open = AsyncMock(return_value="opened")
-        assert await notifications.open_notification(notification_id, user, session) == "opened"
+        assert (
+            await notifications.open_notification(notification_id, user, session, None) == "opened"
+        )
 
         service.open = AsyncMock(side_effect=NotFoundError("Gone", code="notification_target_gone"))
         session.commit = AsyncMock()
         with pytest.raises(NotFoundError):
-            await notifications.open_notification(notification_id, user, session)
+            await notifications.open_notification(notification_id, user, session, None)
         session.commit.assert_awaited_once()
 
+    built.assert_called_with(session, user, impersonated=False)
     service.list.assert_awaited_once_with(unread_only=True, limit=5, offset=0)
     assert response.status_code == 204
     assert updated == "mark_read"
     service.mark_read.assert_awaited_once_with(notification_id, read=False)
+
+
+async def test_notification_routes_know_when_an_administrator_is_impersonating() -> None:
+    session, user, admin = Mock(), Mock(), Mock()
+    service = Mock(summary=AsyncMock(return_value="summary"))
+
+    with patch.object(notifications, "NotificationService", return_value=service) as built:
+        assert await notifications.read_summary(user, session, admin) == "summary"
+
+    built.assert_called_once_with(session, user, impersonated=True)
 
 
 @pytest.mark.parametrize(

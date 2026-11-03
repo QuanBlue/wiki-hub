@@ -88,6 +88,24 @@ def _strip_mark(li: Tag) -> None:
         node.replace_with(_TASK_MARK.sub("", str(node), count=1))
 
 
+def _diagram_blocks(soup: BeautifulSoup) -> None:
+    """Convert ```mermaid code blocks into rich Diagram nodes."""
+    for code_tag in soup.find_all("code", class_=re.compile(r"\blanguage-mermaid\b")):
+        pre_tag = code_tag.parent
+        if pre_tag and pre_tag.name == "pre":
+            code_text = code_tag.get_text()
+            diag = soup.new_tag(
+                "div",
+                attrs={
+                    "data-type": "diagram",
+                    "data-engine": "mermaid",
+                    "data-look": "classic",
+                    "data-code": code_text,
+                },
+            )
+            pre_tag.replace_with(diag)
+
+
 def draft_to_html(
     body: str, lang: str | None = None, *, notice: bool = True, keep_h1: bool = False
 ) -> str:
@@ -98,5 +116,6 @@ def draft_to_html(
     if not keep_h1 and isinstance(first, Tag) and first.name == "h1":
         first.decompose()
     _task_lists(soup)
+    _diagram_blocks(soup)
     content = sanitize_imported_html(str(soup))
     return ((ai_notice(lang) if notice else "") + content)[:MAX_PAGE_CONTENT_CHARS]

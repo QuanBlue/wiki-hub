@@ -50,6 +50,8 @@ class InstanceInfo(BaseModel):
     allowed_attachment_types: list[str]
     #: How long a deleted page can still be restored from its space's Trash.
     trash_retention_days: int = 30
+    #: Whether external/public read-only page share links are enabled system-wide.
+    public_shares_enabled: bool = True
     #: Active announcement shown on public pages (/login, /contact-admin) when enabled.
     announcement: SystemAnnouncement | None = None
     features: InstanceFeatures
@@ -86,6 +88,7 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
         max_upload_size_bytes=effective.max_upload_size_bytes,
         allowed_attachment_types=effective.allowed_attachment_types,
         trash_retention_days=effective.trash_retention_days,
+        public_shares_enabled=effective.public_shares_enabled,
         announcement=(
             effective.announcement
             if effective.announcement is not None

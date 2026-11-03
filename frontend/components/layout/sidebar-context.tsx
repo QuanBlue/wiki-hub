@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { matchesShortcut } from "@/lib/keyboard-shortcuts";
 
 /**
  * Sidebar open/closed state, shared between the top bar's toggle, the sidebar
@@ -168,6 +169,27 @@ export function SidebarProvider({
     }
     collapsedStore.set(next);
   }, []);
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (matchesShortcut("sidebar.toggle", event)) {
+        event.preventDefault();
+        toggleCollapsed();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [toggleCollapsed]);
 
   const setSidebarWidth = React.useCallback((width: number) => {
     widthStore.set(width);

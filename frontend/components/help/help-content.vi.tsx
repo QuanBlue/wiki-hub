@@ -44,9 +44,14 @@ export const sectionsVi: HelpSection[] = [
           <Code>Account</Code>, <Code>cài đặt</Code> tìm ra <Code>install</Code> - các từ tìm
           thấy được tô sáng trong kết quả, kèm đoạn chứa chúng dưới tiêu đề. Nếu quản trị
           viên đã đặt <strong>Tìm kiếm theo ý nghĩa</strong> (xem Trợ lý AI), tìm kiếm còn tìm trang
-          theo <strong>ý nghĩa</strong>, kể cả khi không trùng từ nào với bạn gõ. Nó hiện chưa
-          tìm trong tên tệp đính kèm hay nội dung tệp đính kèm, và chỉ hiển thị những kết quả
-          bạn có quyền xem. Không có bộ lọc theo ngày, space, hay tác giả.
+          theo <strong>ý nghĩa</strong>, kể cả khi không trùng từ nào với bạn gõ. Nó cũng tìm
+          trong tên tệp đính kèm và nội dung tệp đính kèm (PDF, Word, Excel, PowerPoint, HTML, text),
+          và chỉ hiển thị những kết quả bạn có quyền xem. Bạn có thể lọc nhanh trực tiếp trong ô tìm kiếm
+          với các cú pháp: <Code>space:KEY</Code> (ví dụ <Code>space:ENG</Code>),{" "}
+          <Code>author:tên</Code> (ví dụ <Code>author:john</Code>),{" "}
+          <Code>label:nhãn</Code> (ví dụ <Code>label:runbook</Code>; chỉ khớp nhãn riêng của bạn),{" "}
+          <Code>type:định_dạng</Code> (ví dụ <Code>type:pdf</Code>), và{" "}
+          <Code>updated:khoảng_thời_gian</Code> (ví dụ <Code>updated:&gt;2026-01</Code>).
           Tìm kiếm cũng liệt kê <strong>các trang của ứng dụng</strong> ở mục <strong>Đi tới</strong> -
           gõ <Code>đổi mật khẩu</Code> để mở thẳng form mật khẩu trong tài khoản, hoặc{" "}
           <Code>quản lý user</Code> để tới Quản trị &gt; Users. Bắt đầu bằng <Code>:</Code> để dùng lệnh: <Code>:help</Code> mở trang hướng dẫn này (thêm chữ, như <Code>:help đổi mật khẩu</Code>, để tìm trong các hướng dẫn), <Code>:account</Code>, <Code>:password</Code>, <Code>:users</Code>, <Code>:chat</Code>, và <Code>:ask câu hỏi</Code> để nhờ AI trả lời. Lối tắt Quản trị chỉ hiện khi tài khoản
@@ -610,16 +615,22 @@ export const sectionsVi: HelpSection[] = [
           </li>
           <li>
             <strong>Share</strong>: nhấn <Code>Share</Code> rồi chọn một tuỳ chọn.{" "}
-            <Code>Sao chép liên kết</Code> đưa liên kết trực tiếp của trang vào clipboard, sẵn
-            sàng dán vào chat hoặc email. <Code>Chia sẻ cho người khác…</Code> mở bảng chọn: tìm
+            <Code>Sao chép liên kết trang</Code> đưa liên kết trực tiếp của trang vào clipboard, sẵn
+            sàng dán vào chat hoặc email. <Code>Chia sẻ nội bộ…</Code> mở bảng chọn: tìm
             theo tên hoặc username, chọn một hoặc nhiều đồng nghiệp rồi nhấn{" "}
             <Code>Chia sẻ</Code> - mỗi người nhận được thông báo rằng bạn đã chia sẻ trang, và
-            bấm vào sẽ mở trang đó. Chia sẻ không cấp thêm quyền: với space hoặc trang bị giới hạn,
+            bấm vào sẽ mở trang đó. <Code>Chia sẻ công khai…</Code> tạo liên kết chỉ-đọc có thời hạn
+            và mật khẩu cho đối tác bên ngoài mà không cần tài khoản WikiHub. Chia sẻ không cấp thêm quyền: với space hoặc trang bị giới hạn,
             người không mở được trang vẫn hiện trong danh sách nhưng bị làm mờ, có ổ khoá và dòng{" "}
             <em>Không có quyền truy cập trang hoặc space này</em>, và không chọn được. Mỗi người
             được chia sẻ cộng một vào số lượt chia sẻ cạnh số like và bình luận dưới trang; bấm vào
             con số đó để chia sẻ tiếp. Trang tổng quan của space chỉ có <Code>Share</Code> để sao
-            chép liên kết.
+            chép liên kết. Xem <em>Chia sẻ trang</em> để biết đầy đủ về liên kết công khai.
+          </li>
+          <li>
+            <strong>Theo dõi</strong> (Watch): nhấn <Code>Watch</Code> để được báo khi trang thay đổi - cho riêng
+            trang này, cho nó và các trang con, hoặc cho cả space. Xem{" "}
+            <em>Theo dõi trang &amp; ai đang ở trang</em>.
           </li>
           <li>
             <strong>TL;DR</strong>: nhấn <Code>TL;DR</Code> trên thanh công cụ để xem bản tóm tắt
@@ -953,6 +964,241 @@ export const sectionsVi: HelpSection[] = [
   },
 
   {
+    id: "watch-and-presence",
+    title: "Theo dõi trang & ai đang ở trang",
+    category: "Workspace",
+    description:
+      "Nhận thông báo khi trang thay đổi, xem ai đang đọc hoặc đang sửa, và chuyện gì xảy ra khi hai người lưu cùng lúc.",
+    keywords: [
+      "watch",
+      "theo dõi",
+      "watching",
+      "đăng ký",
+      "thông báo",
+      "presence",
+      "đang xem",
+      "đang sửa",
+      "ai đang ở đây",
+      "xung đột",
+      "ghi đè",
+    ],
+    body: (
+      <>
+        <p>
+          Những trang bạn phụ thuộc, như runbook hay quy định, đổi mà bạn không hay biết.{" "}
+          <strong>Theo dõi</strong> (Watch) báo cho bạn khi điều đó xảy ra. Nút nằm trên thanh công
+          cụ của trang, giữa <strong>Ghim</strong> và <strong>Chia sẻ</strong>.
+        </p>
+        <Screenshot
+          src="/feature-discovery/watch.png"
+          alt="Menu Watch mở từ thanh công cụ của trang, với ba lựa chọn theo dõi"
+          caption="Ba mức theo dõi, từ một trang đến cả space."
+        />
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Watch this page</strong>: báo khi trang này được cập nhật.
+          </li>
+          <li>
+            <strong>Watch page and children</strong>: báo cả khi một trang bên dưới đổi, hoặc có
+            trang con mới.
+          </li>
+          <li>
+            <strong>Watch entire space</strong>: mọi trang được tạo hoặc cập nhật trong space.
+          </li>
+        </ul>
+        <p>
+          Khi một mức đang bật, nút hiện <strong>Watching</strong>. Bấm lại để đổi mức hoặc dừng
+          theo dõi.
+        </p>
+        <Callout variant="note" title="AI ĐƯỢC BÁO">
+          Người theo dõi nhận thông báo trên chuông (xem <em>Thông báo</em>) khi trang được tạo hoặc
+          cập nhật, kèm liên kết mở trang. Bạn không bao giờ nhận thông báo về chính chỉnh sửa của
+          mình, và chỉ người đọc được trang mới được báo: theo dõi không bao giờ mở một trang hạn
+          chế.
+        </Callout>
+
+        <h3 className="mt-6 text-base font-semibold">Ai đang ở trang</h3>
+        <p>
+          Khi một trang đang mở, các ảnh đại diện nhỏ dưới thanh công cụ cho biết ai khác đang mở nó,
+          gắn nhãn <strong>Viewing</strong> (đang xem) hoặc <strong>Editing</strong> (đang sửa). Một
+          người biến mất khoảng 40 giây sau khi rời đi. Nếu đã có người đang sửa, lúc bạn bắt đầu sẽ
+          có thông báo <em>{"{tên}"} cũng đang sửa trang này</em>.
+        </p>
+
+        <h3 className="mt-6 text-base font-semibold">Nếu người khác lưu trước</h3>
+        <p>
+          Nếu người khác lưu một phiên bản mới trong lúc bạn đang sửa, WikiHub không âm thầm ghi đè họ.
+          Khi bạn lưu, hộp thoại <strong>Concurrent edit conflict</strong> cho biết ai đã lưu và lúc
+          nào, rồi đưa ra ba cách đi tiếp:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>View latest version</strong>: xem họ đã đổi gì trước.
+          </li>
+          <li>
+            <strong>Copy draft text</strong>: chép bản nháp của bạn vào clipboard để không mất gì.
+          </li>
+          <li>
+            <strong>Overwrite &amp; Save</strong>: thay chỉnh sửa của họ bằng của bạn, sau một lần xác
+            nhận nữa. Phiên bản của họ vẫn nằm trong lịch sử trang trong cả hai trường hợp.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+
+  {
+    id: "public-sharing",
+    title: "Chia sẻ trang: liên kết, đồng nghiệp và liên kết công khai",
+    category: "Workspace",
+    description:
+      "Sao chép liên kết trang, báo cho đồng nghiệp về một trang, hoặc tạo liên kết chỉ-đọc có thời hạn cho người chưa có tài khoản.",
+    keywords: [
+      "share",
+      "chia sẻ",
+      "liên kết công khai",
+      "public link",
+      "bên ngoài",
+      "khách",
+      "đối tác",
+      "hết hạn",
+      "mật khẩu",
+      "thu hồi",
+      "chỉ đọc",
+    ],
+    body: (
+      <>
+        <p>
+          <strong>Chia sẻ</strong> (Share) trên thanh công cụ của trang có ba lựa chọn.
+        </p>
+        <Screenshot
+          src="/feature-discovery/share.png"
+          alt="Menu Share trên thanh công cụ của trang: Copy page link, Share internally và Share publicly"
+          caption="Copy page link, Share internally, Share publicly."
+        />
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Copy page link</strong>: địa chỉ trực tiếp của trang, để dán vào chat hay e-mail.
+            Người mở vẫn cần có quyền vào space hoặc trang.
+          </li>
+          <li>
+            <strong>Share internally…</strong>: chọn đồng nghiệp theo tên hoặc tên đăng nhập, mỗi
+            người nhận một thông báo. Chia sẻ không bao giờ cấp quyền: người không mở được trang sẽ
+            bị làm mờ kèm ổ khoá và không chọn được.
+          </li>
+          <li>
+            <strong>Share publicly…</strong>: liên kết cho người ngoài WikiHub, như khách hàng hay
+            đối tác, không cần tài khoản.
+          </li>
+        </ul>
+
+        <h3 className="mt-6 text-base font-semibold">Tạo liên kết công khai</h3>
+        <p>
+          Ở tab <strong>Public link</strong>, chọn liên kết tồn tại bao lâu: <strong>1 ngày</strong>,{" "}
+          <strong>7 ngày</strong> (mặc định), <strong>30 ngày</strong>, <strong>90 ngày</strong> hoặc{" "}
+          <strong>Không hết hạn</strong>. Có thể đặt thêm <strong>mật khẩu</strong>. Bấm{" "}
+          <strong>Create link</strong> rồi sao chép.
+        </p>
+        <p>
+          Tab này cũng liệt kê <strong>Active public links</strong> của trang, mỗi liên kết có số lượt
+          xem và cho biết nó <em>có mật khẩu</em> hay <em>mở tự do</em>. Từ đó bạn có thể:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Copy link</strong> lại.
+          </li>
+          <li>
+            <strong>Edit link</strong>: giữ hoặc đổi thời hạn, giữ, đổi, thêm hoặc bỏ mật khẩu.
+          </li>
+          <li>
+            <strong>Revoke</strong>: ai đang giữ liên kết mất quyền ngay lập tức. Không hoàn tác
+            được; hãy tạo liên kết mới.
+          </li>
+        </ul>
+
+        <h3 className="mt-6 text-base font-semibold">Khách nhìn thấy gì</h3>
+        <p>
+          Một bản sao gọn, chỉ-đọc của trang, có nhãn <em>Read-only shared document</em>, ngày hết hạn
+          và số lượt xem, cùng nút <strong>Copy link</strong> và <strong>Print / Export</strong>.
+          Liên kết có mật khẩu sẽ hỏi mật khẩu trước. Liên kết hết hạn hay đã thu hồi sẽ báo rõ, còn
+          liên kết tới trang không còn tồn tại hiện <em>Document not found</em>.
+        </p>
+        <Callout variant="warning" title="AI CÓ LIÊN KẾT LÀ ĐỌC ĐƯỢC">
+          Liên kết công khai bỏ qua quyền của space và trang: ai giữ nó đều đọc được trang cho đến khi
+          hết hạn hoặc bạn thu hồi. Hãy đặt mật khẩu cho nội dung nhạy cảm, để thời hạn ngắn, và thu
+          hồi liên kết không còn dùng.
+        </Callout>
+        <Callout variant="note" title="DÀNH CHO QUẢN TRỊ VIÊN">
+          Có thể tắt liên kết công khai cho cả hệ thống bằng{" "}
+          <strong>Enable public and external share links</strong> tại{" "}
+          <strong>Quản trị → Cài đặt</strong>. Khi tắt, không ai tạo được liên kết và các liên kết cũ
+          ngừng hoạt động (khách thấy <em>Public sharing disabled</em>).
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "quick-guide",
+    title: "Hướng dẫn nhanh (?) & điểm qua tính năng",
+    category: "Workspace",
+    description:
+      "Một phím mở bảng tóm tắt phím tắt, cú pháp tìm kiếm và lệnh trình soạn thảo; Trang chủ gợi ý các tính năng nên thử.",
+    keywords: [
+      "quick guide",
+      "hướng dẫn nhanh",
+      "phím tắt",
+      "dấu hỏi",
+      "cheat sheet",
+      "mẹo",
+      "khám phá tính năng",
+      "explore features",
+    ],
+    body: (
+      <>
+        <p>
+          Nhấn <Kbd>?</Kbd> ở bất kỳ đâu (khi bạn không đang gõ trong một ô) để mở{" "}
+          <strong>Quick Guide &amp; Shortcuts</strong>. Cũng mở được từ menu tài khoản (
+          <strong>Quick shortcuts &amp; tips</strong>) hoặc từ chân hộp tìm kiếm.
+        </p>
+        <Screenshot
+          src="/feature-discovery/quick-shortcuts.png"
+          alt="Cửa sổ Quick Guide and Shortcuts với các tab"
+          caption="Quick Guide: phím tắt, cú pháp tìm kiếm, lệnh soạn thảo và điểm nổi bật."
+        />
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Keyboard shortcuts</strong>: mọi phím tắt, đúng như bạn đã đặt.
+          </li>
+          <li>
+            <strong>Search syntax</strong>: các bộ lọc gõ được trong hộp tìm kiếm, như{" "}
+            <Code>space:KEY</Code> hay <Code>author:</Code>, kèm nút <strong>Try now</strong> để chạy
+            thử một cái.
+          </li>
+          <li>
+            <strong>Editor commands (/)</strong>: menu dấu gạch chéo chèn được những gì.
+          </li>
+          <li>
+            <strong>Highlights</strong>: những tính năng đáng biết.
+          </li>
+        </ul>
+        <p>
+          <strong>View full documentation in Help</strong> ở cuối mở hướng dẫn tương ứng.
+        </p>
+
+        <h3 className="mt-6 text-base font-semibold">Khám phá tính năng WikiHub trên Trang chủ</h3>
+        <p>
+          Trang chủ có thẻ <strong>Explore WikiHub Features</strong>: một chuyến điểm qua ngắn, tự
+          chuyển slide, về những gì workspace làm được, từ tìm trong tệp và bản đồ trang đến sơ đồ,
+          chia sẻ và theo dõi. Mỗi slide kết thúc bằng <strong>See how it works</strong>, mở hướng
+          dẫn của tính năng đó. Dùng mũi tên để tự chuyển, <strong>Collapse guide</strong> để thu
+          nhỏ, hoặc <strong>Dismiss guide</strong> để ẩn.
+        </p>
+      </>
+    ),
+  },
+
+  {
     id: "related-pages",
     title: "Trang liên quan và bản đồ trang",
     category: "Workspace",
@@ -1042,6 +1288,9 @@ export const sectionsVi: HelpSection[] = [
       "mo coi",
       "trùng lặp",
       "trung lap",
+      "mâu thuẫn",
+      "mau thuan",
+      "đối chiếu mâu thuẫn",
       "vẫn còn đúng",
       "kiểm tra bằng ai",
       "content health",
@@ -1049,6 +1298,7 @@ export const sectionsVi: HelpSection[] = [
       "broken links",
       "orphan",
       "duplicate",
+      "conflict",
     ],
     body: (
       <>
@@ -1078,8 +1328,8 @@ export const sectionsVi: HelpSection[] = [
             gợi ý, không phải kết luận: kiểm tra lại trước khi sửa.
           </li>
           <li>
-            <strong>Vẫn còn đúng</strong>: khi bạn đã đọc một trang bị đánh dấu và thấy nó vẫn đúng, hãy
-            bấm nút này. Trang sẽ rời danh sách cho tới khi lại đủ lâu không được sửa.
+            <strong>Bỏ qua: nội dung vẫn đúng</strong>: khi bạn đã đọc một trang bị đánh dấu và thấy nó vẫn đúng, hãy
+            bấm nút này. Trang sẽ rời danh sách cho tới khi một trang liên quan được sửa lại; nội dung trang không bị đổi. Bấm tên bất kỳ trang nào trong báo cáo để đọc nó trong cửa sổ nổi ngay trên báo cáo (có nút Mở trang) thay vì rời khỏi báo cáo.
           </li>
           <li>
             <strong>Link hỏng</strong>: link trên các trang của space tới một trang không còn ở đó -
@@ -1088,13 +1338,25 @@ export const sectionsVi: HelpSection[] = [
           </li>
           <li>
             <strong>Trang mồ côi</strong>: các trang không được trang nào khác link tới hoặc nhắc tên;
-            người đọc chỉ tìm thấy chúng qua cây trang. Hãy link tới chúng từ một trang liên quan. Trang
-            cấp cao nhất và trang trống không được tính.
+            người đọc chỉ tìm thấy chúng qua cây trang. Trang cấp cao nhất và trang trống không được tính.
+            Dưới mỗi trang, <strong>Có thể link từ</strong> gợi ý những trang nên đặt link tới nó: các
+            trang gần nội dung nhất (kèm mức giống) và trang cha. Bấm <strong>Copy link</strong>, mở một
+            trang được gợi ý, sửa và dán link vào chỗ phù hợp (hoặc ghi đúng tiêu đề của trang mồ côi);
+            lưu xong là trang không còn mồ côi.
           </li>
           <li>
             <strong>Trùng lặp</strong>: bản sao của cùng một trang (cùng tiêu đề, chỉ khác số, ví dụ{" "}
             <Code>Checklist (2)</Code>) và, khi bật tìm kiếm ngữ nghĩa, các trang có nội dung gần như
-            giống nhau, kèm mức độ giống. Nên gộp lại và chuyển bản thừa vào Thùng rác.
+            giống nhau, kèm phần trăm giống nhau. Bấm <strong>So sánh</strong> ở một nhóm để đặt hai trang đầu cạnh nhau.{" "}
+            <strong>Xem như trang</strong> (mặc định) hiện mỗi trang giữ nguyên định dạng, giống cách lịch sử
+            trang so sánh phiên bản; <strong>So từng dòng</strong> hiện các dòng đánh số, thẳng hàng: phần chỉ
+            trang trái có tô đỏ, phần chỉ trang phải có tô xanh, các từ khác nhau được đánh dấu. Nên gộp lại và chuyển bản thừa vào Thùng rác.
+          </li>
+          <li>
+            <strong>Có thể mâu thuẫn</strong>: các cặp trang cùng chủ đề (kết nối bởi độ tương đồng cao trong
+            Knowledge Graph hoặc có liên kết, nhắc tên nhau). Bấm <strong>Đối chiếu mâu thuẫn</strong> để AI
+            đối chiếu các thông số kỹ thuật, cổng mạng, quy định, phiên bản và ngày tháng giữa hai trang,
+            chỉ ra điểm vênh nhau để Admin sửa. Khi có điểm vênh, bấm <strong>Xem chi tiết</strong> để mở bảng: điểm khác nhau, mỗi trang ghi gì và việc cần chốt. Có trong danh sách chưa có nghĩa là mâu thuẫn: đây là các cặp nên đối chiếu, chưa đối chiếu thì biểu tượng màu xám; AI kết luận <strong>Không mâu thuẫn</strong> thì biểu tượng chuyển xanh, có điểm vênh thì chuyển vàng. Khi hai trang không vênh nhau nhưng lặp lại nội dung của nhau, AI kết luận <strong>Trùng nội dung, không phải mâu thuẫn</strong> (màu xanh dương) và có nút <strong>So sánh</strong>: nên gộp lại chứ không có gì cần chốt. Cặp đã nằm trong Trùng lặp sẽ không hiện lại ở đây. Mỗi kết quả AI có nút <strong>Thu gọn</strong> để thu về chỉ còn dòng kết luận.
           </li>
         </ul>
         <Callout variant="note" title="AI THẤY GÌ">
@@ -1331,6 +1593,11 @@ export const sectionsVi: HelpSection[] = [
                 <td className="p-2.5">Chèn một ma trận bảng dữ liệu nhiều cột.</td>
               </tr>
               <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Code>/diagram</Code></td>
+                <td className="p-2.5 font-medium">Diagram / Mermaid</td>
+                <td className="p-2.5">Lưu đồ, sơ đồ tuần tự và ER vẽ từ văn bản, có kiểu vẽ tay và tải PNG/SVG. Xem <em>Sơ đồ bằng Mermaid</em>.</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Code>/code</Code></td>
                 <td className="p-2.5 font-medium">Khối code</td>
                 <td className="p-2.5">Khối code tô màu cú pháp kèm bộ chọn ngôn ngữ có ô lọc (dùng mũi tên lên/xuống để chọn) và mười giao diện màu sáng/tối, chọn riêng cho từng khối trong tùy chọn của khối. Trong trình soạn thảo, nút <strong>Lưu nháp</strong> giữ chỉnh sửa thành bản nháp riêng mà không thêm phiên bản vào lịch sử trang. Trong khối code, Tab / Shift+Tab thụt vào / thụt ra các dòng đang chọn. Ngoài khối code, Tab / Shift+Tab thụt lề đoạn văn và tiêu đề.</td>
@@ -1502,6 +1769,70 @@ export const sectionsVi: HelpSection[] = [
       </>
     ),
   },
+
+  {
+    id: "diagrams",
+    title: "Sơ đồ bằng Mermaid",
+    category: "Writing",
+    description:
+      "Vẽ lưu đồ, sơ đồ tuần tự và ER từ vài dòng văn bản, và sửa lại sau mà không phải vẽ lại.",
+    keywords: [
+      "sơ đồ",
+      "diagram",
+      "mermaid",
+      "lưu đồ",
+      "flowchart",
+      "sequence",
+      "er diagram",
+      "class diagram",
+      "state diagram",
+      "git graph",
+      "vẽ tay",
+      "svg",
+      "png",
+    ],
+    body: (
+      <>
+        <p>
+          Sơ đồ là văn bản, nên ai cũng sửa được sau này mà không phải vẽ lại một bức ảnh. Gõ{" "}
+          <Code>/diagram</Code> (hoặc <Code>/mermaid</Code>) trên một dòng trống rồi chọn{" "}
+          <strong>Diagram / Mermaid</strong>.
+        </p>
+        <Screenshot
+          src="/feature-discovery/diagrams.png"
+          alt="Một trang có lưu đồ: Browser, Gateway, API service, Database, Job queue, Worker và Object storage"
+          caption="Lưu đồ luôn sắc nét ở mọi mức phóng."
+        />
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Mẫu có sẵn</strong>: bắt đầu từ Flowchart, Sequence diagram, Class diagram, State
+            diagram, Entity Relationship (ER), Git graph hoặc Architecture flow.
+          </li>
+          <li>
+            <strong>Edit diagram</strong> mở trình sửa; <strong>Done</strong> đóng lại. Xem ở dạng{" "}
+            <strong>Preview</strong>, <strong>Split</strong> (mã và kết quả cạnh nhau) hoặc{" "}
+            <strong>Code</strong>.
+          </li>
+          <li>
+            <strong>Kiểu vẽ</strong>: <strong>Classic</strong> hoặc <strong>Hand-drawn</strong> (vẽ
+            tay), căn trái, giữa hoặc phải, kèm chú thích tuỳ chọn bên dưới.
+          </li>
+          <li>
+            <strong>Zoom diagram</strong> mở sơ đồ lớn hơn để xem bức tranh toàn cảnh.
+          </li>
+          <li>
+            <strong>Sao chép và tải về</strong>: chép ảnh PNG, chép mã Mermaid, hoặc tải PNG, SVG
+            hay tệp <Code>.mmd</Code>.
+          </li>
+        </ul>
+        <Callout variant="tip" title="KHI SƠ ĐỒ KHÔNG VẼ ĐƯỢC">
+          Nếu văn bản không phải Mermaid hợp lệ, sơ đồ báo <em>Syntax error in diagram</em> và giữ
+          nguyên mã để bạn sửa. Một sơ đồ được tính là một dòng trong lịch sử trang, nên thêm hay
+          đổi sơ đồ đều hiện trong so sánh phiên bản.
+        </Callout>
+      </>
+    ),
+  },
   {
     id: "history-and-export",
     title: "Lịch sử phiên bản, So sánh trực quan & Xuất tệp",
@@ -1555,7 +1886,20 @@ export const sectionsVi: HelpSection[] = [
           <li>
             <strong>So sánh trực quan</strong>: Chọn hai phiên bản bất kỳ để so
             sánh thay đổi song song hoặc theo dòng. Phần thêm mới được tô sáng
-            màu xanh, phần bị xoá được tô sáng màu đỏ.
+            màu xanh, phần bị xoá được tô sáng màu đỏ. <strong>Xem như trang</strong> (mặc định) hiện mỗi
+            phiên bản nguyên dạng, sơ đồ, khối code, callout, trích dẫn, bảng hay ảnh đã thay đổi được phủ màu
+            đỏ/xanh. <strong>So từng dòng</strong> đặt hai phiên bản thành các dòng đánh số, thẳng hàng, đánh
+            dấu từ thay đổi; sơ đồ hay ảnh cũng tính là một dòng, nên thêm một sơ đồ sẽ hiện là một dòng thêm
+            mới. Khi chữ giống hệt mà vẫn có
+            phiên bản mới, một ghi chú cho biết phần đã đổi: độ rộng cột bảng, kiểu hiển thị, liên kết, ảnh
+            hay định dạng. Phiên bản đầu tiên (v1) chưa có bản trước để so, nên chỉ hiện nguyên nội dung.
+          </li>
+          <li>
+            <strong>Xem thay đổi ở Trang chủ</strong>: <strong>(xem thay đổi)</strong> cạnh
+            một hoạt động chỉ hiện điều thay đổi đó đã làm - phiên bản đó so với phiên bản
+            ngay trước, từng dòng - kèm nút <strong>Toàn bộ lịch sử</strong>. Hoạt động tạo
+            trang được gắn nhãn <strong>Trang mới</strong> thay vì nút này, vì chưa có phiên
+            bản trước để so sánh - kể cả trang import giữ ngày tạo cũ.
           </li>
           <li>
             <strong>Xuất tệp</strong>: Mở <strong>Export</strong> trong các hành
@@ -1575,6 +1919,38 @@ export const sectionsVi: HelpSection[] = [
           sắc và nội dung, nhưng không đúng hình dạng. PDF và HTML không có giới
           hạn này.
         </Callout>
+        <h3 className="mt-6 text-base font-semibold">Xem một thay đổi</h3>
+        <p>
+          Ở nguồn cấp hoạt động trên Trang chủ, một lần cập nhật có dòng <em>(view change)</em>. Bấm
+          vào để xem riêng thay đổi đó đã làm gì: phiên bản trước so với phiên bản sau, từng dòng một.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>View</strong> chuyển giữa <strong>Line by line</strong> (từng dòng) và{" "}
+            <strong>Page view</strong> (dạng trang). Phiên bản đầu tiên được so với tài liệu trống,
+            vì không có gì trước đó.
+          </li>
+          <li>
+            Khi chỉ có bố cục đổi, chữ vẫn y nguyên và WikiHub nói rõ như vậy, kèm cái gì đã đổi:
+            độ rộng cột, kiểu và màu, địa chỉ liên kết, hình ảnh hoặc định dạng.
+          </li>
+          <li>
+            <strong>Full history</strong> và <strong>Open page</strong> đưa bạn từ thay đổi sang toàn
+            bộ dòng thời gian hoặc sang trang.
+          </li>
+        </ul>
+        <p>
+          Khi đã thiết lập trợ lý AI, <strong>AI Summary</strong> giải thích thay đổi bằng lời. Các câu
+          hỏi bấm-một-lần hỏi <em>what rules changed</em>, <em>summarize key changes</em> hay{" "}
+          <em>what was removed</em>, bạn cũng có thể gõ câu hỏi riêng về phần khác biệt này, và{" "}
+          <strong>Suggest commit message</strong> đề xuất một dòng tóm tắt để chép.
+        </p>
+        <p>
+          Khi lưu một chỉnh sửa, ô <strong>Change note</strong> là nơi bạn ghi đã đổi gì;{" "}
+          <strong>Suggest with AI</strong> soạn sẵn từ chính chỉnh sửa đó. Ghi chú hiện cạnh phiên bản
+          trong lịch sử.
+        </p>
+
       </>
     ),
   },
@@ -2252,7 +2628,13 @@ export const sectionsVi: HelpSection[] = [
           <li>Được cấp hoặc bị thu hồi một quyền cụ thể trên space, hoặc trở thành (hay thôi là) chủ sở hữu space.</li>
           <li>Được thêm vào hoặc bị gỡ khỏi một nhóm.</li>
           <li>Quản trị viên đặt lại mật khẩu của bạn.</li>
+          <li>
+            Quản trị viên xem wiki dưới danh nghĩa của bạn (<em>Switch account</em>). Trong lúc dùng
+            tài khoản của bạn, họ không thể xem hay xoá thông báo này.
+          </li>
           <li>Vai trò hoặc quyền trên workspace của bạn bị thay đổi, hoặc tài khoản được bật lại.</li>
+          <li>Một trang bạn <strong>theo dõi</strong> được tạo hoặc cập nhật (xem <em>Theo dõi trang</em>).</li>
+          <li>Một đồng nghiệp chia sẻ một trang cho bạn.</li>
           <li>Với Quản trị hệ thống: mọi yêu cầu mới từ trang đăng nhập.</li>
         </ul>
         <p className="mt-2 text-sm">
@@ -2287,6 +2669,43 @@ export const sectionsVi: HelpSection[] = [
           rời chuột đi. Hết giờ, thông báo trượt sang phải rồi biến mất. Bấm dấu{" "}
           <strong>x</strong> nhỏ để đóng sớm hơn.
         </p>
+      </>
+    ),
+  },
+  {
+    id: "personal-data",
+    title: "Thông báo xử lý dữ liệu cá nhân",
+    category: "Account",
+    description:
+      "WikiHub lưu gì về bạn, vì sao, trong bao lâu, ai khác nhận được, và cách yêu cầu bản sao, chỉnh sửa hoặc xoá.",
+    keywords: ["privacy", "quyền riêng tư", "dữ liệu cá nhân", "bảo vệ dữ liệu", "xoá dữ liệu", "chính sách", "cookie"],
+    body: (
+      <>
+        <p>
+          <strong>Thông báo xử lý dữ liệu cá nhân</strong> giải thích những dữ liệu được thu thập về
+          bạn (tài khoản, hồ sơ, phiên đăng nhập kèm địa chỉ IP và trình duyệt, nhật ký hoạt động,
+          thống kê sử dụng, câu hỏi AI), mục đích, thời gian lưu và các bên nhận dữ liệu. Mở thông
+          báo từ đường link dưới form đăng nhập, hoặc vào <Code>/privacy</Code>. Không cần đăng
+          nhập vẫn đọc được.
+        </p>
+        <p className="mt-3 font-semibold text-foreground">Thực hiện quyền của bạn:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Tự sửa hồ sơ, đổi mật khẩu và quản lý phiên đăng nhập trong{" "}
+            <strong>Tài khoản</strong>.
+          </li>
+          <li>
+            Để nhận bản sao dữ liệu, sửa thông tin bạn không tự sửa được, yêu cầu xoá hoặc phản đối
+            việc xử lý, dùng nút <strong>Liên hệ quản trị viên</strong> ở cuối thông báo.
+          </li>
+        </ul>
+        <Callout variant="note" title="DÀNH CHO QUẢN TRỊ VIÊN">
+          Tổ chức của bạn chịu trách nhiệm về dữ liệu cá nhân trong wiki này. Thông báo mô tả cách
+          WikiHub hoạt động. Nếu bạn kết nối dịch vụ AI bên ngoài hoặc đặt WikiHub ở ngoài Việt
+          Nam, dữ liệu cá nhân sẽ ra khỏi lãnh thổ: hãy kiểm tra nghĩa vụ chuyển dữ liệu xuyên biên
+          giới áp dụng cho bạn, và phản hồi yêu cầu trong thời hạn pháp luật (phản hồi đầu tiên
+          trong 2 ngày làm việc).
+        </Callout>
       </>
     ),
   },
@@ -2455,17 +2874,25 @@ export const sectionsVi: HelpSection[] = [
         </p>
 
         <p className="mt-3 font-semibold text-foreground">1. Gán lại một phím tắt:</p>
+        <p className="text-sm">
+          Danh sách chỉ để xem cho đến khi bạn bấm <strong>Edit shortcuts</strong>. Ở chế độ chỉnh
+          sửa, bạn bấm vào một phím tắt để gán lại, <Code>✕</Code> để xoá, hoặc <Code>+</Code> để
+          thêm một tổ hợp khác.
+        </p>
         <ul className="list-disc pl-5 space-y-1 text-sm">
           <li>
             Nhấn huy hiệu phím cạnh hành động bạn muốn thay đổi - nó chuyển sang{" "}
             <em>Press keys…</em>
           </li>
           <li>
-            Nhấn tổ hợp phím bạn muốn. Nó được ghi nhận và lưu ngay khi bạn nhấn;
-            không có nút Save riêng.
+            Nhấn tổ hợp phím bạn muốn. Nó được ghi vào bản nháp của bạn; chưa có gì được lưu.
           </li>
           <li>
-            Nhấn <Kbd>Esc</Kbd> để thoát ra mà không thay đổi gì.
+            Bấm <strong>Save changes</strong> để giữ các thay đổi (có thông báo xác nhận), hoặc{" "}
+            <strong>Cancel</strong> để bỏ hết.
+          </li>
+          <li>
+            Nhấn <Kbd>Esc</Kbd> khi đang ghi để thoát khỏi riêng phím đó mà không đổi gì.
           </li>
         </ul>
 
@@ -2477,16 +2904,18 @@ export const sectionsVi: HelpSection[] = [
           thứ ba) - hữu ích khi bạn muốn cả thói quen cũ lẫn thói quen mới đều
           hoạt động. Global search mặc định đã như vậy, đáp ứng cả{" "}
           <Kbd>Ctrl</Kbd>+<Kbd>K</Kbd> lẫn <Kbd>Ctrl</Kbd>+<Kbd>F</Kbd>. Xoá một
-          tổ hợp bằng nút <Code>✕</Code> cạnh nó; tổ hợp cuối cùng còn lại không
-          thể bị xoá, nên một hành động không bao giờ vô tình trở nên không thể
-          gọi được.
+          tổ hợp bằng nút <Code>✕</Code> cạnh nó. Bạn có thể xoá bất kỳ tổ hợp nào
+          (kể cả phím cuối cùng) nếu không muốn dùng phím tắt cho tính năng đó,
+          giúp giải phóng các tổ hợp như <Kbd>Ctrl</Kbd>+<Kbd>F</Kbd> cho tính năng
+          tìm kiếm từ khóa trong trang của trình duyệt.
         </p>
 
         <p className="mt-4 font-semibold text-foreground">3. Quay về bình thường:</p>
         <p className="text-sm">
           Một mũi tên tròn xuất hiện cạnh bất kỳ hành động nào bạn đã thay đổi -
           nhấn vào đó để khôi phục riêng hành động đó. <strong>Reset all to
-          defaults</strong> ở trên cùng khôi phục mọi phím tắt cùng lúc.
+          defaults</strong> khôi phục mọi phím tắt cùng lúc; ở chế độ chỉnh sửa nó đặt lại bản nháp
+          của bạn, và thay đổi chỉ có hiệu lực khi bạn bấm <strong>Save changes</strong>.
         </p>
 
         <p className="mt-4 font-semibold text-foreground">4. Phạm vi áp dụng của từng phím tắt:</p>
@@ -2500,6 +2929,24 @@ export const sectionsVi: HelpSection[] = [
           bạn đang mở bản xem trước một tệp văn bản, nó sẽ tìm bên trong tệp đó
           thay vào đó.
         </p>
+
+        <p className="mt-4 font-semibold text-foreground">5. Những gì bạn có thể gán lại:</p>
+        <p className="text-sm">
+          Ngoài tìm kiếm và các phím điều hướng khác, bạn có thể đặt phím cho{" "}
+          <strong>Toggle sidebar</strong> (bật/tắt thanh bên), <strong>Copy page link</strong>,{" "}
+          <strong>Open help documentation</strong> và <strong>Edit page</strong> (bắt đầu sửa trang
+          bạn đang đọc). Nhấn <Kbd>?</Kbd> bất cứ lúc nào để xem danh sách hiện tại trong{" "}
+          <em>Quick Guide</em>.
+        </p>
+
+        <Callout variant="warning" title="CTRL+F VÀ TRÌNH DUYỆT">
+          <p>
+            <Kbd>Ctrl</Kbd>+<Kbd>F</Kbd> là phím trình duyệt dùng để tìm trong trang. Khi nó đang
+            gán cho một hành động của WikiHub, thanh tìm của trình duyệt không mở được, và một
+            thông báo ở trên cùng nói rõ điều đó. Ở chế độ chỉnh sửa, bấm <Code>✕</Code> trên tổ
+            hợp đó để bỏ nó và lấy lại tìm kiếm gốc của trình duyệt.
+          </p>
+        </Callout>
 
         <Callout variant="note" title="CẢNH BÁO XUNG ĐỘT">
           <p>
@@ -2919,6 +3366,117 @@ export const sectionsVi: HelpSection[] = [
             đè nó ở đây.
           </li>
         </ul>
+      </>
+    ),
+  },
+
+  {
+    id: "admin-audit-logs",
+    title: "Nhật ký kiểm toán",
+    category: "Administration",
+    description:
+      "Dấu vết chỉ-thêm của các thao tác đặc quyền: ai làm gì, với đối tượng nào, và thay đổi những gì.",
+    keywords: [
+      "audit",
+      "nhật ký kiểm toán",
+      "audit log",
+      "dấu vết bảo mật",
+      "lịch sử",
+      "impersonation",
+      "xuất",
+      "csv",
+      "json",
+      "thao tác quản trị",
+    ],
+    body: (
+      <>
+        <p>
+          <strong>Quản trị → Audit logs</strong> là bản ghi các thao tác đặc quyền trên người dùng,
+          space, nhóm, cài đặt, bản sao lưu và hộp thư. Nó chỉ dài thêm: không sửa hay xoá được mục
+          nào từ màn hình này.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Phần tổng quan</strong> đếm tổng số sự kiện và các sự kiện về người dùng, space,
+            nhóm và impersonation.
+          </li>
+          <li>
+            <strong>Bảng</strong> liệt kê <strong>Time</strong>, <strong>Actor</strong>,{" "}
+            <strong>Action</strong>, <strong>Target</strong> và <strong>Details</strong>. Thao tác
+            được viết bằng lời dễ hiểu, như <em>User role changed</em>, <em>Space deleted</em>,{" "}
+            <em>Backup exported</em> hay <em>System announcement updated</em>.
+          </li>
+          <li>
+            <strong>Tìm và lọc</strong> theo chữ của người thực hiện hoặc đối tượng,{" "}
+            <strong>Actor</strong>, <strong>Target type</strong>, <strong>Action</strong> và ngày{" "}
+            <strong>From</strong>, <strong>To</strong>. <strong>Clear filters</strong> để bắt đầu lại.
+          </li>
+          <li>
+            <strong>Inspect</strong> mở một mục: thời điểm ghi, người thực hiện, đối tượng và ID của
+            nó, địa chỉ IP, và bảng Before / After của mọi trường thay đổi, cùng JSON gốc cách một
+            cú bấm.
+          </li>
+          <li>
+            <strong>Export CSV</strong> hoặc <strong>Export JSON</strong> tải về đúng những gì bộ lọc
+            hiện tại đang hiển thị, để đưa kiểm toán viên.
+          </li>
+        </ul>
+        <Callout variant="important" title="KHI XEM DƯỚI TƯ CÁCH NGƯỜI KHÁC">
+          Khi quản trị viên thao tác lúc đang xem WikiHub như một người dùng khác, mục ghi{" "}
+          <em>via {"{admin}"}</em>: dấu vết nêu tên quản trị viên chứ không chỉ người mà họ đang xem
+          thay. Xem <em>Chuyển tài khoản</em>.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "system-announcements",
+    title: "Thông báo hệ thống",
+    category: "Administration",
+    description:
+      "Hiện một biểu ngữ cho mọi người: lịch bảo trì, sự cố, tin vui, có thể hẹn giờ.",
+    keywords: [
+      "thông báo hệ thống",
+      "announcement",
+      "banner",
+      "biểu ngữ",
+      "bảo trì",
+      "maintenance",
+      "thông báo chung",
+      "hẹn giờ",
+      "đóng",
+    ],
+    body: (
+      <>
+        <p>
+          Thông báo hệ thống là một biểu ngữ hiện cho mọi người dùng đã đăng nhập, hữu ích khi có bảo
+          trì theo kế hoạch hay một sự cố. Thiết lập tại{" "}
+          <strong>Quản trị → Cài đặt → System Announcement</strong>.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Mức độ</strong> quyết định màu và độ khẩn: <strong>Information</strong> (thông
+            tin), <strong>Warning</strong> (cảnh báo), <strong>Critical / Urgent</strong> (khẩn cấp)
+            hoặc <strong>Completed / Resolved</strong> (đã xong).
+          </li>
+          <li>
+            <strong>Tiêu đề và nội dung</strong>: một tiêu đề ngắn và nội dung có định dạng, có xem
+            trước biểu ngữ ngay lúc soạn.
+          </li>
+          <li>
+            <strong>Lịch</strong>: bắt đầu khi nào, và kết thúc khi nào: sau 1 giờ, 4 giờ, 1 ngày, 3
+            ngày, 7 ngày, hoặc không giới hạn.
+          </li>
+          <li>
+            <strong>Có thể đóng</strong>: cho phép mỗi người tự đóng biểu ngữ cho mình. Nó không hiện
+            lại với họ cho đến khi bạn đăng một thông báo khác.
+          </li>
+        </ul>
+        <Callout variant="note" title="TẮT THÔNG BÁO">
+          Tắt thông báo để gỡ biểu ngữ cho mọi người cùng lúc. Mỗi thay đổi được ghi vào{" "}
+          <em>Nhật ký kiểm toán</em> dưới tên <em>System announcement updated</em>.
+        </Callout>
       </>
     ),
   },
@@ -3607,6 +4165,12 @@ export const sectionsVi: HelpSection[] = [
           <strong>Return to my account</strong> (trong banner hoặc menu) để kết
           thúc phiên.
         </Callout>
+
+        <p className="mt-3 text-sm">
+          Người bạn chuyển sang sẽ nhận thông báo trong chuông thông báo, có ghi tên bạn. Trong lúc
+          bạn dùng tài khoản của họ, thông báo đó bị ẩn với bạn, nên bạn không thể xoá trước khi họ
+          thấy.
+        </p>
 
         <p className="mt-3 text-sm text-muted-foreground">
           Tài khoản admin khởi tạo được bảo vệ và tài khoản của chính bạn bị loại

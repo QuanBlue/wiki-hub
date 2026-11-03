@@ -10,9 +10,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SpaceWorkspace } from "@/components/pages/space-workspace";
-import { api } from "@/lib/api-client";
+import { api, ApiError } from "@/lib/api-client";
 import * as drafts from "@/lib/drafts";
-import type { Group, PageDraft, Space, WikiPage } from "@/types/api";
+import type { Group, PageDraft, PageSavedEvent, PresenceUser, Space, WikiPage } from "@/types/api";
 
 const {
   push,
@@ -23,6 +23,9 @@ const {
   ai,
   sidebar,
   uploadResults,
+  toastLoading,
+  downloadFile,
+  presence,
 } = vi.hoisted(() => ({
   push: vi.fn(),
   refresh: vi.fn(),
@@ -37,12 +40,20 @@ const {
     setMobileOpen: vi.fn(),
   },
   uploadResults: [] as unknown[],
+  toastLoading: vi.fn(() => "export-toast"),
+  downloadFile: vi.fn(async (_url: string, _name: string) => {}),
+  presence: { onPageSaved: null as ((event: PageSavedEvent) => void) | null, users: [] as PresenceUser[] },
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh }) }));
 vi.mock("sonner", () => ({
-  toast: Object.assign(toastInfo, { success: toastSuccess, error: toastError }),
+  toast: Object.assign(toastInfo, {
+    success: toastSuccess,
+    error: toastError,
+    loading: toastLoading,
+  }),
 }));
+vi.mock("@/lib/download", () => ({ downloadFile }));
 vi.mock("@/lib/ai-summary", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ai-summary")>()),
   aiStatus: async () => ({ enabled: ai.enabled, can_configure: false }),
@@ -67,6 +78,12 @@ vi.mock("@/lib/drafts", () => ({
   getPageDraft: vi.fn(),
   saveLocalPageDraft: vi.fn(),
   savePageDraft: vi.fn(),
+}));
+vi.mock("@/lib/use-page-presence", () => ({
+  usePagePresence: (options: { onPageSaved: (event: PageSavedEvent) => void }) => {
+    presence.onPageSaved = options.onPageSaved;
+    return { activeUsers: presence.users };
+  },
 }));
 
 type EditorProps = {
@@ -367,7 +384,8 @@ function serve(extra: Record<string, unknown> = {}) {
     if (path.endsWith("/like")) return { liked_by_me: false, like_count: 4 };
     if (path.endsWith("/shares")) return { share_count: 3 };
     if (path === "/api/v1/users/me/pins") return [];
-    if (path === "/api/v1/meta") return { trash_retention_days: 14 };
+    if (path === "/api/v1/meta")
+      return { trash_retention_days: 14, public_shares_enabled: true };
     throw new Error(`unexpected ${path}`);
   });
 }
@@ -396,6 +414,8 @@ async function openSub(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  presence.onPageSaved = null;
+  presence.users = [];
   vi.useFakeTimers({ shouldAdvanceTime: true });
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -946,7 +966,7 @@ describe("SpaceWorkspace page view", () => {
 
     writeText.mockResolvedValueOnce();
     await actor.click(screen.getByRole("button", { name: "Share" }));
-    await actor.click(screen.getByRole("menuitem", { name: "Copy link" }));
+    await actor.click(screen.getByRole("menuitem", { name: "Copy page link" }));
     await waitFor(() =>
       expect(toastSuccess).toHaveBeenCalledWith(
         "Page link copied to clipboard.",
@@ -956,7 +976,7 @@ describe("SpaceWorkspace page view", () => {
     writeText.mockRejectedValueOnce(new Error("denied"));
     document.execCommand = vi.fn().mockReturnValue(true);
     await actor.click(screen.getByRole("button", { name: "Share" }));
-    await actor.click(screen.getByRole("menuitem", { name: "Copy link" }));
+    await actor.click(screen.getByRole("menuitem", { name: "Copy page link" }));
     await waitFor(() =>
       expect(document.execCommand).toHaveBeenCalledWith("copy"),
     );
@@ -964,7 +984,7 @@ describe("SpaceWorkspace page view", () => {
     writeText.mockRejectedValueOnce(new Error("denied"));
     document.execCommand = vi.fn().mockReturnValue(false);
     await openMenu(actor, 1);
-    await actor.click(screen.getByRole("menuitem", { name: "Copy link" }));
+    await actor.click(screen.getByRole("menuitem", { name: "Copy page link" }));
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith("Could not copy the page link."),
     );
@@ -978,7 +998,7 @@ describe("SpaceWorkspace page view", () => {
 
     await actor.click(screen.getByRole("button", { name: "Share" }));
     await actor.click(
-      screen.getByRole("menuitem", { name: "Share with people…" }),
+      screen.getByRole("menuitem", { name: "Share internally…" }),
     );
     await actor.click(screen.getByRole("button", { name: "Send share" }));
     expect(count).toHaveAccessibleName("Shared 5 times - share with people");
@@ -989,6 +1009,32 @@ describe("SpaceWorkspace page view", () => {
     ).toBeInTheDocument();
   });
 
+  it("hides 'Share publicly…' menuitem when public shares are disabled by admin", async () => {
+    mocked.get.mockImplementation(async (path: string) => {
+      if (path === "/api/v1/meta")
+        return { trash_retention_days: 14, public_shares_enabled: false };
+      if (path.endsWith("/audience"))
+        return { users: 1, groups: 2, everyone: false };
+      if (path.endsWith("/like")) return { liked_by_me: false, like_count: 4 };
+      if (path.endsWith("/shares")) return { share_count: 3 };
+      if (path === "/api/v1/users/me/pins") return [];
+      throw new Error(`unexpected ${path}`);
+    });
+
+    const { actor } = renderWorkspace({ currentPage: GUIDES });
+    await screen.findByRole("button", {
+      name: "Shared 3 times - share with people",
+    });
+
+    await actor.click(screen.getByRole("button", { name: "Share" }));
+    expect(
+      screen.getByRole("menuitem", { name: "Share internally…" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "Share publicly…" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("only copies the link on a space overview, which has no page to send", async () => {
     const { actor } = renderWorkspace();
     vi.spyOn(navigator.clipboard, "writeText").mockResolvedValueOnce();
@@ -996,7 +1042,7 @@ describe("SpaceWorkspace page view", () => {
     await actor.click(screen.getByRole("button", { name: "Share" }));
 
     expect(
-      screen.queryByRole("menuitem", { name: "Share with people…" }),
+      screen.queryByRole("menuitem", { name: "Share internally…" }),
     ).not.toBeInTheDocument();
     await waitFor(() =>
       expect(toastSuccess).toHaveBeenCalledWith(
@@ -1007,9 +1053,6 @@ describe("SpaceWorkspace page view", () => {
 
   it("exports the page in each format from both menus", async () => {
     const { actor } = renderWorkspace({ currentPage: GUIDES });
-    const click = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => {});
 
     for (const [index, label, format] of [
       [0, "Export HTML", "HTML"],
@@ -1019,11 +1062,45 @@ describe("SpaceWorkspace page view", () => {
       await openMenu(actor, index);
       await openSub(actor, "Export");
       await actor.click(await screen.findByRole("menuitem", { name: label }));
-      expect(toastSuccess).toHaveBeenLastCalledWith(
-        `Preparing your ${format} export — the download will start shortly.`,
+      expect(toastLoading).toHaveBeenLastCalledWith(
+        `Generating the ${format} file… this can take a few seconds.`,
+      );
+      await waitFor(() =>
+        expect(toastSuccess).toHaveBeenLastCalledWith(`${format} file downloaded.`, {
+          id: "export-toast",
+        }),
+      );
+      expect(downloadFile).toHaveBeenLastCalledWith(
+        expect.stringMatching(new RegExp(`/export/${format.toLowerCase()}$`)),
+        `${GUIDES.slug}.${format.toLowerCase()}`,
       );
     }
-    expect(click).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports why an export failed in the same toast", async () => {
+    const { actor } = renderWorkspace({ currentPage: GUIDES });
+    downloadFile.mockRejectedValueOnce(
+      new ApiError(503, "service_unavailable", "Rendering the page for export failed."),
+    );
+    await openMenu(actor, 1);
+    await openSub(actor, "Export");
+    await actor.click(await screen.findByRole("menuitem", { name: "Export Word" }));
+    await waitFor(() =>
+      expect(toastError).toHaveBeenLastCalledWith("Rendering the page for export failed.", {
+        id: "export-toast",
+      }),
+    );
+
+    downloadFile.mockRejectedValueOnce(new Error("boom"));
+    await openMenu(actor, 1);
+    await openSub(actor, "Export");
+    await actor.click(await screen.findByRole("menuitem", { name: "Export Word" }));
+    await waitFor(() =>
+      expect(toastError).toHaveBeenLastCalledWith(
+        "Could not export the DOCX file. Please try again.",
+        { id: "export-toast" },
+      ),
+    );
   });
 
   it("opens each page tool from the desktop menu", async () => {
@@ -1276,6 +1353,81 @@ describe("SpaceWorkspace editing", () => {
     await actor.click(await screen.findByRole("menuitem", { name: mode }));
   }
 
+  it("warns about a remote save and lets the editor inspect, copy, or overwrite", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const { actor } = renderWorkspace({ currentPage: GUIDES });
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    await startEditing(actor);
+    await act(async () => {
+      presence.onPageSaved?.({ actor_id: "other", actor_name: "Bob", saved_at: "2026-03-04T06:00:00Z", title: "Guides" });
+    });
+    expect(screen.getByText("Concurrent edit conflict detected")).toBeInTheDocument();
+    expect(screen.getByText(/new revision of this page/)).toBeInTheDocument();
+    await act(async () => {
+      presence.onPageSaved?.({ actor_id: "other", actor_name: "Bob", saved_at: "", title: "Guides" });
+    });
+    await act(async () => {
+      presence.onPageSaved?.({ actor_id: "other", actor_name: "", saved_at: "2026-03-04T06:00:00Z", title: "Guides" });
+    });
+    await actor.click(screen.getByRole("button", { name: "Copy draft text" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(GUIDES.content));
+    await actor.click(screen.getByRole("button", { name: "View latest version" }));
+    expect(screen.getByRole("dialog", { name: "History" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Overwrite & Save" }));
+    expect(screen.getByRole("alertdialog", { name: "Overwrite recent changes?" })).toBeInTheDocument();
+  });
+
+  it("shows another active editor while editing", async () => {
+    presence.users = [{
+      user_id: "other", username: "bob", full_name: "Bob", state: "editing",
+      last_seen: "2026-03-04T06:00:00Z",
+    }];
+    const { actor } = renderWorkspace({ currentPage: GUIDES });
+    await startEditing(actor);
+    expect(screen.getByText(/Bob.*editing/)).toBeInTheDocument();
+  });
+
+  it("copies the page link with the keyboard shortcut", async () => {
+    renderWorkspace({ currentPage: GUIDES });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    fireEvent.keyDown(window, { key: "C", code: "KeyC", ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href));
+    expect(screen.queryByLabelText("Page title")).toBeNull();
+  });
+
+  it.each([
+    ["html", GUIDES],
+    ["markdown", page("md", { content_format: "markdown" })],
+    ["unknown", page("unknown", { content_format: "plain" as WikiPage["content_format"] })],
+  ])("starts %s editing from the keyboard", async (_format, currentPage) => {
+    renderWorkspace({ currentPage });
+    fireEvent.keyDown(window, { key: "e", code: "KeyE", ctrlKey: true, altKey: true });
+    if (_format === "unknown") {
+      expect(await screen.findByRole("alertdialog", { name: "Convert this page to HTML?" })).toBeInTheDocument();
+    } else {
+      expect(await screen.findByLabelText("Page title")).toBeInTheDocument();
+    }
+  });
+
+  it("asks before overwriting after the server reports a page conflict", async () => {
+    const { actor } = renderWorkspace({ currentPage: GUIDES });
+    await startEditing(actor);
+    await actor.type(screen.getByLabelText("Rich editor"), "new edit");
+    mocked.patch.mockRejectedValueOnce(new ApiError(409, "page_conflict", "Someone saved first"));
+    await actor.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByRole("alertdialog", { name: "Overwrite recent changes?" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Stay" }));
+    expect(screen.queryByRole("alertdialog", { name: "Overwrite recent changes?" })).toBeNull();
+    mocked.patch.mockRejectedValueOnce(new ApiError(409, "page_conflict", "Someone saved first"));
+    await actor.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Overwrite & Save" }));
+    await waitFor(() => expect(mocked.patch).toHaveBeenCalledWith(
+      "/api/v1/spaces/ENG/pages/guides",
+      expect.objectContaining({ force: true }),
+    ));
+  });
+
   it("edits a page in the rich editor and saves it", async () => {
     const { actor } = renderWorkspace({ currentPage: GUIDES });
     await startEditing(actor);
@@ -1295,11 +1447,11 @@ describe("SpaceWorkspace editing", () => {
     );
     expect(mocked.patch).toHaveBeenCalledWith(
       "/api/v1/spaces/ENG/pages/guides",
-      {
+      expect.objectContaining({
         title: "Guides 2",
         content: "<p>Body of guides</p>!",
         content_format: "html",
-      },
+      }),
     );
     expect(mockedDrafts.clearLocalPageDraft).toHaveBeenCalledWith(
       "ENG",

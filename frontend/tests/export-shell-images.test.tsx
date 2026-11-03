@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import { ExportShell } from "@/components/print/export-shell";
 import type { ExportBundle } from "@/types/api";
 
+let pendingDiagram = false;
+
 // The real editor draws images asynchronously; a stand-in that has them in the
 // DOM when it reports ready lets the shell's wait-for-images path be exercised.
 vi.mock("@/components/pages/rich-text-editor", () => ({
@@ -13,6 +15,7 @@ vi.mock("@/components/pages/rich-text-editor", () => ({
     useEffect(() => onReady?.(), [onReady]);
     return (
       <div>
+        {pendingDiagram ? <div data-diagram-pending="true" /> : null}
         <img alt="a" src="/a.png" />
         <img alt="b" src="/b.png" />
         <img alt="c" src="/c.png" />
@@ -30,6 +33,49 @@ const bundle = {
 } as unknown as ExportBundle;
 
 describe("ExportShell images", () => {
+  it("waits until diagrams finish rendering", async () => {
+    pendingDiagram = true;
+    delete document.body.dataset.exportReady;
+    Object.defineProperty(HTMLImageElement.prototype, "complete", {
+      configurable: true,
+      get: () => true,
+    });
+    try {
+      const { container } = render(
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+          <ExportShell bundle={bundle} />
+        </ThemeProvider>,
+      );
+      await waitFor(() => expect(container.querySelector('[data-diagram-pending="true"]')).not.toBeNull());
+      expect(document.body.dataset.exportReady).not.toBe("true");
+      container.querySelector('[data-diagram-pending="true"]')?.removeAttribute("data-diagram-pending");
+      await waitFor(() => expect(document.body.dataset.exportReady).toBe("true"));
+    } finally {
+      pendingDiagram = false;
+      Reflect.deleteProperty(HTMLImageElement.prototype, "complete");
+    }
+  });
+
+  it("releases an export when a diagram never clears its pending flag", async () => {
+    pendingDiagram = true;
+    delete document.body.dataset.exportReady;
+    Object.defineProperty(HTMLImageElement.prototype, "complete", {
+      configurable: true,
+      get: () => true,
+    });
+    try {
+      render(
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+          <ExportShell bundle={bundle} />
+        </ThemeProvider>,
+      );
+      await waitFor(() => expect(document.body.dataset.exportReady).toBe("true"), { timeout: 8_000 });
+    } finally {
+      pendingDiagram = false;
+      Reflect.deleteProperty(HTMLImageElement.prototype, "complete");
+    }
+  }, 10_000);
+
   it("waits for images that have not finished loading, even if one is broken", async () => {
     const decode = vi.fn().mockResolvedValue(undefined);
     const broken = vi.fn().mockRejectedValue(new Error("broken"));

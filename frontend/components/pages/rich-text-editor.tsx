@@ -90,6 +90,7 @@ import {
   ListOrdered,
   ListTodo,
   Minus,
+  Network,
   Palette,
   Paperclip,
   Pencil,
@@ -192,6 +193,7 @@ import {
   toggleListBlock,
   toggleToggleBlock,
 } from "@/components/pages/slash-command";
+import { DiagramBlockComponent } from "@/components/pages/diagram-block";
 import { WritingAssistant } from "@/components/pages/writing-assistant";
 import type { WikiPage } from "@/types/api";
 
@@ -3136,6 +3138,93 @@ const TableOfContentsNode = TiptapNode.create({
   },
 });
 
+const DiagramNode = TiptapNode.create({
+  name: "diagram",
+  group: "block",
+  atom: true,
+  selectable: true,
+  draggable: true,
+  priority: 150,
+
+  addAttributes() {
+    return {
+      code: {
+        default: "",
+        parseHTML: (element: HTMLElement) => {
+          return (
+            element.getAttribute("data-code") ||
+            element.querySelector("code.language-mermaid")?.textContent ||
+            element.querySelector("pre")?.textContent ||
+            element.textContent ||
+            ""
+          );
+        },
+      },
+      look: {
+        default: "classic",
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-look") || "classic",
+      },
+      caption: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-caption") || null,
+      },
+      width: {
+        default: null,
+        parseHTML: (element: HTMLElement) => {
+          const w = element.getAttribute("data-width");
+          return w ? parseInt(w, 10) || null : null;
+        },
+      },
+      alignment: {
+        default: "center",
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-alignment") || "center",
+      },
+    };
+  },
+
+  parseHTML() {
+    return [
+      {
+        tag: 'div[data-type="diagram"]',
+      },
+      {
+        tag: 'pre[data-type="diagram"]',
+      },
+      {
+        tag: "pre > code.language-mermaid",
+      },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    const code = HTMLAttributes.code || "";
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, {
+        "data-type": "diagram",
+        "data-engine": "mermaid",
+        "data-look": HTMLAttributes.look || "classic",
+        "data-caption": HTMLAttributes.caption || undefined,
+        "data-width": HTMLAttributes.width || undefined,
+        "data-alignment": HTMLAttributes.alignment || "center",
+        "data-code": code,
+      }),
+      [
+        "pre",
+        { class: "mermaid-src hidden", style: "display:none" },
+        ["code", { class: "language-mermaid" }, code],
+      ],
+    ];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(DiagramBlockComponent);
+  },
+});
+
 const CustomCodeBlock = CodeBlockLowlight.extend({
   addAttributes() {
     const parentAttributes = (this.parent?.() ?? {}) as Record<
@@ -4225,6 +4314,7 @@ function buildEditorExtensions({
     CustomToggleContentNode,
     CustomToggleNode,
     TableOfContentsNode,
+    DiagramNode,
     StyledListItem,
     TaskList.configure({ HTMLAttributes: { class: "wikihub-task-list" } }),
     TaskItem.configure({ nested: true }),
@@ -4261,7 +4351,7 @@ function buildEditorExtensions({
 
 // RichTextContent's read-only render: see buildEditorExtensions' own comment
 // for why this one alone needs to accept a `data:` URI image.
-const readOnlyEditorExtensions = buildEditorExtensions({ allowBase64: true });
+export const readOnlyEditorExtensions = buildEditorExtensions({ allowBase64: true });
 
 function escapeHtml(value: string): string {
   return value
@@ -4322,6 +4412,18 @@ export function normalizeConfluenceCodeMacros(content: string): string {
 
         const type = name === "expand" ? "panel" : name;
         return `<div data-type="callout" data-callout-type="${type}" class="callout callout-${type}">${titleHtml}${body}</div>`;
+      }
+
+      if (name === "mermaid") {
+        const bodyMatch = inner.match(
+          /<ac:plain-text-body\b[^>]*>([\s\S]*?)<\/ac:plain-text-body>/i,
+        );
+        let code = bodyMatch ? bodyMatch[1] : inner;
+        if (/^\s*<!\[CDATA\[/i.test(code)) {
+          code = code.replace(/^\s*<!\[CDATA\[/i, "");
+          code = code.replace(/\]\]\s*(?:>?|&gt;)\s*$/i, "");
+        }
+        return `<div data-type="diagram" data-engine="mermaid" data-look="classic" data-code="${escapeHtml(code.trim())}"></div>`;
       }
 
       if (["view-file", "viewfile", "view-doc", "viewdoc"].includes(name)) {
@@ -4398,6 +4500,20 @@ export function normalizeConfluenceCodeMacros(content: string): string {
         return `<a href="${href}" data-attachment="${escapeHtml(filename)}" data-display-mode="card" title="${escapeHtml(filename)}">${escapeHtml(filename)}</a>`;
       }
       return fullDiv;
+    },
+  );
+
+  // Normalize <pre><code class="language-mermaid"> into <div data-type="diagram" ...>
+  res = res.replace(
+    /<pre\b[^>]*>\s*<code\b[^>]*class=["'][^"']*language-mermaid[^"']*["'][^>]*>([\s\S]*?)<\/code>\s*<\/pre>/gi,
+    (_match, code) => {
+      const decoded = code
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+      return `<div data-type="diagram" data-engine="mermaid" data-look="classic" data-code="${escapeHtml(decoded.trim())}"></div>`;
     },
   );
 
@@ -6270,6 +6386,25 @@ function RichTextToolbar({
           }
         >
           <ListTree />
+        </ToolbarButton>
+        <ToolbarButton
+          editor={editor}
+          label={t("editor.insertDiagram")}
+          onClick={() =>
+            editor
+              ?.chain()
+              .focus()
+              .insertContent({
+                type: "diagram",
+                attrs: {
+                  code: "",
+                  look: "classic",
+                },
+              })
+              .run()
+          }
+        >
+          <Network />
         </ToolbarButton>
       </div>
       <div className="border-border ml-auto flex shrink-0 items-center gap-1 border-l pl-1">

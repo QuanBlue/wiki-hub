@@ -227,10 +227,10 @@ async def test_space_route_wrappers_delegate_to_services(monkeypatch: pytest.Mon
     )
     session.get = AsyncMock(return_value=user)
     await spaces_api.effective_permissions("ENG", user.id, user, session)
-    await spaces_api.grant_user_permission("ENG", user.id, Permission.view, user, session)
-    await spaces_api.revoke_user_permission("ENG", user.id, Permission.view, user, session)
-    await spaces_api.grant_group_permission("ENG", user.id, Permission.view, user, session)
-    await spaces_api.revoke_group_permission("ENG", user.id, Permission.view, user, session)
+    await spaces_api.grant_user_permission("ENG", user.id, Permission.view, user, service)
+    await spaces_api.revoke_user_permission("ENG", user.id, Permission.view, user, service)
+    await spaces_api.grant_group_permission("ENG", user.id, Permission.view, user, service)
+    await spaces_api.revoke_group_permission("ENG", user.id, Permission.view, user, service)
 
 
 @pytest.mark.asyncio

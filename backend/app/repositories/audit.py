@@ -31,6 +31,7 @@ class AuditLogRepository:
         since: datetime | None,
         until: datetime | None,
         q: str | None,
+        actor_username: str | None = None,
     ) -> Select[tuple[AuditLog]]:
         """One place where the filter is defined.
 
@@ -45,6 +46,15 @@ class AuditLogRepository:
             stmt = stmt.where(AuditLog.entity_type == entity_type)
         if actor_id:
             stmt = stmt.where(AuditLog.actor_id == actor_id)
+        if actor_username:
+            # Matches the impersonator too: "what did this administrator do"
+            # must include what they did while viewing WikiHub as someone else.
+            stmt = stmt.where(
+                or_(
+                    AuditLog.actor_username == actor_username,
+                    AuditLog.impersonator_username == actor_username,
+                )
+            )
         if entity_id:
             stmt = stmt.where(AuditLog.entity_id == entity_id)
         if since:
@@ -70,6 +80,7 @@ class AuditLogRepository:
         since: datetime | None = None,
         until: datetime | None = None,
         q: str | None = None,
+        actor_username: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[Sequence[AuditLog], int]:
@@ -81,6 +92,7 @@ class AuditLogRepository:
             since=since,
             until=until,
             q=q,
+            actor_username=actor_username,
         )
 
         total = int(
@@ -104,3 +116,48 @@ class AuditLogRepository:
         )
 
         return page, total
+
+
+    async def export(
+        self,
+        *,
+        action: str | None = None,
+        entity_type: str | None = None,
+        actor_id: uuid.UUID | None = None,
+        entity_id: uuid.UUID | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        q: str | None = None,
+        actor_username: str | None = None,
+        limit: int,
+    ) -> Sequence[AuditLog]:
+        """Newest-first rows for a download - the same filter as `search`,
+        without the count query or an offset."""
+        stmt = self._filtered(
+            action=action,
+            entity_type=entity_type,
+            actor_id=actor_id,
+            entity_id=entity_id,
+            since=since,
+            until=until,
+            q=q,
+            actor_username=actor_username,
+        )
+        result = await self.session.execute(
+            stmt.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)
+        )
+        return result.scalars().all()
+
+    async def actor_usernames(self) -> list[str]:
+        """Everyone who appears on the trail, as actor or impersonator.
+
+        Read from the log itself rather than `users` so an account that has
+        since been deleted can still be picked in the filter.
+        """
+        actors = select(AuditLog.actor_username.label("name"))
+        impersonators = select(AuditLog.impersonator_username.label("name")).where(
+            AuditLog.impersonator_username.is_not(None)
+        )
+        union = actors.union(impersonators).subquery()
+        rows = await self.session.execute(select(union.c.name).order_by(union.c.name))
+        return [str(name) for name in rows.scalars().all() if name]

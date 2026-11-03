@@ -100,6 +100,7 @@ from app.models.space import Space, SpaceMember, SpaceOwner, SpaceRole, SpaceVis
 from app.models.user import User
 from app.modules.notifications.service import notify
 from app.schemas.permission import GroupCreate, GroupUpdate
+from app.services.audit import AuditService, ClientInfo
 
 ALL_SPACE_PERMISSIONS = frozenset(Permission)
 ROLE_PERMISSIONS: dict[SpaceRole, frozenset[Permission]] = {
@@ -143,8 +144,25 @@ def _request_cache(session: Any) -> dict[Any, Any] | None:
 
 
 class PermissionService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        client: ClientInfo | None = None,
+        impersonator: User | None = None,
+    ) -> None:
         self.session = session
+        #: Request origin and impersonating administrator, recorded on every
+        #: audit row this service writes. Optional so the many read-only
+        #: call sites can keep constructing it with just a session; mutating
+        #: endpoints pass both (see `api.deps.get_client_info`/`Impersonator`).
+        self.client = client
+        self.impersonator = impersonator
+
+    def _audit(self, actor: User) -> AuditService:
+        return AuditService(
+            self.session, actor=actor, client=self.client, impersonator=self.impersonator
+        )
 
     @property
     def _memo(self) -> dict[Any, Any]:
@@ -431,6 +449,25 @@ class PermissionService:
                 "space_owner_removed",
                 params={"space": space.name},
                 actor=actor,
+            )
+        added = [u.username for u in users if u.id not in previous_owner_ids]
+        removed_ids = previous_owner_ids - set(unique_ids)
+        if added or removed_ids:
+            removed: list[str] = []
+            for owner_id in removed_ids:
+                former = await self.session.get(User, owner_id)
+                removed.append(former.username if former is not None else str(owner_id))
+            await self._audit(actor).record(
+                AuditAction.space_owners_changed,
+                entity_type="space",
+                entity_id=space.id,
+                entity_label=space.name,
+                details={
+                    "space_key": space.key,
+                    "added": sorted(added),
+                    "removed": sorted(removed),
+                    "owners": sorted(u.username for u in users),
+                },
             )
         users.sort(key=lambda u: u.username)
         return users
@@ -859,6 +896,17 @@ class PermissionService:
         self.session.add(GroupOwner(group_id=group.id, user_id=owner.id))
         await self.session.flush()
         await _safe_refresh(self.session, group)
+        await self._audit(actor).record(
+            AuditAction.group_created,
+            entity_type="group",
+            entity_id=group.id,
+            entity_label=group.name,
+            details={
+                "name": group.name,
+                "description": group.description,
+                "owner": owner.username,
+            },
+        )
         return group
 
     async def get_group(self, group_id: UUID) -> Group:
@@ -880,6 +928,15 @@ class PermissionService:
                 "Only the group owner or a system administrator can manage this group."
             )
         data = payload.model_dump(exclude_unset=True)
+        before: dict[str, Any] = {
+            "name": getattr(group, "name", None),
+            "description": getattr(group, "description", None),
+            "is_active": getattr(group, "is_active", None),
+            "owner_id": str(getattr(group, "owner_id", None))
+            if getattr(group, "owner_id", None)
+            else None,
+        }
+        new_owner_usernames: list[str] | None = None
         if "owner_ids" in data and data["owner_ids"] is not None:
             new_owner_ids = data["owner_ids"]
             if not new_owner_ids:
@@ -887,10 +944,12 @@ class PermissionService:
             await self.session.execute(
                 delete(GroupOwner).where(GroupOwner.group_id == group.id)
             )
+            new_owner_usernames = []
             for o_id in new_owner_ids:
                 u = await self.session.get(User, o_id)
                 if u is None:
                     raise NotFoundError(f"User {o_id} not found.")
+                new_owner_usernames.append(str(getattr(u, "username", o_id)))
                 self.session.add(GroupOwner(group_id=group.id, user_id=o_id))
                 if not await self.session.scalar(
                     select(GroupMember).where(
@@ -903,6 +962,7 @@ class PermissionService:
             owner = await self.session.get(User, data["owner_id"])
             if owner is None:
                 raise NotFoundError("Group owner not found.")
+            new_owner_usernames = [str(getattr(owner, "username", owner.id))]
             if not await self.session.scalar(
                 select(GroupMember).where(
                     GroupMember.group_id == group.id, GroupMember.user_id == owner.id
@@ -929,6 +989,25 @@ class PermissionService:
             group.is_active = bool(data["is_active"])
         await self.session.flush()
         await _safe_refresh(self.session, group)
+        after: dict[str, Any] = {
+            "name": getattr(group, "name", None),
+            "description": getattr(group, "description", None),
+            "is_active": getattr(group, "is_active", None),
+            "owner_id": str(getattr(group, "owner_id", None))
+            if getattr(group, "owner_id", None)
+            else None,
+        }
+        diff = AuditService.changes(before, after, list(after))
+        if new_owner_usernames is not None:
+            diff["owners"] = {"from": before["owner_id"], "to": sorted(new_owner_usernames)}
+        if diff:
+            await self._audit(actor).record(
+                AuditAction.group_updated,
+                entity_type="group",
+                entity_id=group.id,
+                entity_label=str(getattr(group, "name", None) or ""),
+                details={"changes": diff},
+            )
         return group
 
     async def delete_group(self, group: Group, actor: User) -> None:
@@ -949,8 +1028,16 @@ class PermissionService:
                 "Remove this group's permission assignments before deleting it.",
                 code="group_in_use",
             )
+        # Captured before the row goes away: the audit entry has to outlive it.
+        group_id, group_name = group.id, group.name
         await self.session.delete(group)
         await self.session.flush()
+        await self._audit(actor).record(
+            AuditAction.group_deleted,
+            entity_type="group",
+            entity_id=group_id,
+            entity_label=group_name,
+        )
 
     async def set_group_member(
         self, group: Group, user_id: uuid.UUID, actor: User, present: bool
@@ -976,6 +1063,13 @@ class PermissionService:
                 params={"group": group.name},
                 actor=actor,
             )
+            await self._audit(actor).record(
+                AuditAction.group_member_added,
+                entity_type="group",
+                entity_id=group.id,
+                entity_label=group.name,
+                details={"user": user.username, "user_id": str(user.id)},
+            )
         elif not present and member is not None:
             if group.owner_id == user_id:
                 raise ConflictError(
@@ -989,6 +1083,13 @@ class PermissionService:
                 "group_member_removed",
                 params={"group": group.name},
                 actor=actor,
+            )
+            await self._audit(actor).record(
+                AuditAction.group_member_removed,
+                entity_type="group",
+                entity_id=group.id,
+                entity_label=group.name,
+                details={"user": user.username, "user_id": str(user.id)},
             )
         await self.session.flush()
 
@@ -1007,9 +1108,21 @@ class PermissionService:
         )
         if present and row is None:
             self.session.add(GroupGlobalPermission(group_id=group.id, permission=permission))
+            action: AuditAction | None = AuditAction.group_permission_granted
         elif not present and row is not None:
             await self.session.delete(row)
+            action = AuditAction.group_permission_revoked
+        else:
+            action = None
         await self.session.flush()
+        if action is not None:
+            await self._audit(actor).record(
+                action,
+                entity_type="group",
+                entity_id=group.id,
+                entity_label=group.name,
+                details={"permission": permission.value},
+            )
 
     async def set_space_permission(
         self,
@@ -1075,6 +1188,25 @@ class PermissionService:
             if view_row is None:
                 self.session.add(model(**view_key))
                 await self.session.flush()
+        if event:
+            principal_name = str(
+                getattr(principal, "name" if group else "username", None) or principal_id
+            )
+            await self._audit(actor).record(
+                AuditAction.space_permission_granted
+                if event.endswith("granted")
+                else AuditAction.space_permission_revoked,
+                entity_type="space",
+                entity_id=space.id,
+                entity_label=space.name,
+                details={
+                    "space_key": space.key,
+                    "permission": permission.value,
+                    "principal_type": "group" if group else "user",
+                    "principal": principal_name,
+                    "principal_id": str(principal_id),
+                },
+            )
         if event and not group:
             await notify(
                 self.session,

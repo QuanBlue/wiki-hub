@@ -73,8 +73,32 @@ export function ExportShell({ bundle }: { bundle: ExportBundle }) {
     // in; the fallback only matters for jsdom, which doesn't implement it.
     const fontsReady = document.fonts?.ready ?? Promise.resolve();
 
+    const waitForDiagrams = () => {
+      const pendingDiagrams = Array.from(
+        rootRef.current?.querySelectorAll('[data-diagram-pending="true"]') ?? [],
+      );
+      if (pendingDiagrams.length === 0) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        const interval = window.setInterval(() => {
+          const remaining =
+            rootRef.current?.querySelectorAll(
+              '[data-diagram-pending="true"]',
+            ) ?? [];
+          if (remaining.length === 0) {
+            window.clearInterval(interval);
+            resolve();
+          }
+        }, 50);
+        window.setTimeout(() => {
+          window.clearInterval(interval);
+          resolve();
+        }, 6000);
+      });
+    };
+
     Promise.all([
       fontsReady,
+      waitForDiagrams(),
       ...images.map((img) =>
         img.complete ? Promise.resolve() : img.decode().catch(() => undefined),
       ),

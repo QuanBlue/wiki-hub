@@ -34,6 +34,25 @@ class PageSummary(BaseModel):
     too_short: bool = False
 
 
+class RevisionDiffSummaryRequest(BaseModel):
+    from_version: int | None = Field(default=None, ge=0)
+    to_version: int | None = Field(default=None, ge=1)
+    prompt: str | None = Field(default=None, max_length=1000)
+    lang: str | None = Field(default=None, max_length=8)
+    from_content: str | None = Field(default=None, max_length=2_500_000)
+    to_content: str | None = Field(default=None, max_length=2_500_000)
+    from_title: str | None = Field(default=None, max_length=255)
+    to_title: str | None = Field(default=None, max_length=255)
+
+
+class RevisionDiffSummaryRead(BaseModel):
+    summary: str
+    commit_message: str = ""
+    from_version: int | None = None
+    to_version: int | None = None
+    cached: bool = False
+
+
 class PageAnswer(BaseModel):
     """One clarifying question and what the author chose or wrote."""
 

@@ -86,7 +86,8 @@ describe("formatBinding", () => {
 describe("matchesShortcut", () => {
   it("matches every binding an action carries by default", () => {
     expect(matchesShortcut("search.open", chord("KeyK", "k", { ctrlKey: true }))).toBe(true);
-    expect(matchesShortcut("search.open", chord("KeyF", "f", { ctrlKey: true }))).toBe(true);
+    // Ctrl+F is left to the browser's own find bar.
+    expect(matchesShortcut("search.open", chord("KeyF", "f", { ctrlKey: true }))).toBe(false);
     expect(matchesShortcut("search.open", chord("KeyJ", "j", { ctrlKey: true }))).toBe(false);
     // The bare letter is not the shortcut - the modifier is part of it.
     expect(matchesShortcut("search.open", chord("KeyK", "k"))).toBe(false);
@@ -150,8 +151,6 @@ describe("persistence", () => {
 
 describe("findConflicts", () => {
   it("reports nothing for the shipped defaults", () => {
-    // Mod+F is deliberately on both quick search and find-in-file, but those
-    // sit in different scopes, so it is not a conflict.
     expect([...findConflicts({}).keys()]).toEqual([]);
   });
 

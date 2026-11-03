@@ -8,9 +8,28 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from bs4 import BeautifulSoup
 
 from app.core.config import settings
 from app.modules.pages import export_content
+
+
+def test_diagrams_export_as_images_with_captions_or_mermaid_source() -> None:
+    soup = BeautifulSoup(
+        '<div data-type="diagram" data-code="graph TD; A-->B" data-caption="Flow"></div>'
+        '<div data-type="diagram" data-code="sequenceDiagram"></div>'
+        '<div data-type="diagram" data-code="fallback"></div>',
+        "html.parser",
+    )
+    export_content._render_diagrams_for_export(soup, ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"])
+    images = soup.select("p.diagram-rendered img")
+    assert [img["src"] for img in images] == ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"]
+    assert soup.select_one("p.diagram-caption em").get_text() == "Flow"
+    assert soup.select_one("pre.mermaid code.language-mermaid").get_text() == "fallback"
+
+    source_only = BeautifulSoup('<div data-type="diagram" data-code="graph TD"></div>', "html.parser")
+    export_content._render_diagrams_for_export(source_only)
+    assert source_only.select_one("pre.mermaid code").get_text() == "graph TD"
 
 
 def page(**overrides: object) -> SimpleNamespace:

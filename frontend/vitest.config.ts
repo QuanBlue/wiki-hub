@@ -15,6 +15,8 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./tests/setup.ts"],
+    // Keep the full coverage run within Docker's memory budget.
+    maxWorkers: 4,
     // The default 5s is too tight for the longer form-filling tests once
     // coverage instrumentation slows every file down - they time out
     // intermittently rather than fail on anything real.

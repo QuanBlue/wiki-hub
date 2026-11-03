@@ -192,6 +192,29 @@ async def test_when_the_rewrite_fails_the_latest_questions_are_searched_as_typed
     assert events[-1]["type"] == "done" and events[-1]["result"]["found"] is True
 
 
+async def test_a_new_topic_whose_rewrite_fails_is_not_mixed_with_the_earlier_question(
+    installed: AsyncSession, model: Model, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Seen live: a question about rescue mode, glued to the earlier one about Fortify reports,
+    # found only Fortify pages and was answered about them.
+    owner, space, pages = await _setup(installed)
+    await _page(pages, space, owner, "Fortify report", "The Fortify report lists scan issues")
+    rescue = await _page(pages, space, owner, "Rescue mode", "Reset the password in rescue mode")
+
+    async def broken(config, messages, *, max_tokens: int = 2000, temperature: float = 0.2):
+        raise ServiceUnavailableError("down")
+
+    monkeypatch.setattr(chat_module, "chat_with_usage", broken)
+    turn = await ChatService(installed, owner).begin(
+        conversation(
+            "what is the Fortify report", "A scan report [1].", "reset password in rescue mode"
+        )
+    )
+
+    assert turn.standalone == "reset password in rescue mode"
+    assert [s.id for s in turn.sources] == [rescue.id]
+
+
 async def test_nothing_matching_answers_without_calling_the_model(
     installed: AsyncSession, model: Model
 ) -> None:

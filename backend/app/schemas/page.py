@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 #: Ceiling on stored page content. Security-report exports can legitimately
 #: exceed one million HTML characters even after their layout wrappers and
@@ -48,6 +48,8 @@ class PageRead(BaseModel):
     inherits_view_restriction: bool = False
     # Whether this page follows its parent's access at all (child pages only).
     inherit_restrictions: bool = True
+    is_watched: bool = False
+    watch_descendants: bool = False
 
 
 class PageRecentItem(BaseModel):
@@ -60,6 +62,19 @@ class PageRecentItem(BaseModel):
     updated_at: datetime
     user_username: str
     user_full_name: str
+    user_avatar_url: str | None = None
+    #: How many versions the page has; 1 means its latest change created it.
+    revision_count: int | None = None
+
+    @field_validator("user_avatar_url", mode="before")
+    @classmethod
+    def _normalize_avatar_url(cls, v: str | None) -> str | None:
+        if not v:
+            return None
+        idx = str(v).find("/api/v1/users/")
+        if idx != -1:
+            return str(v)[idx:]
+        return str(v)
 
 
 class PageLikeRead(BaseModel):
@@ -92,6 +107,19 @@ class PageUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     content: str | None = Field(default=None, max_length=MAX_PAGE_CONTENT_CHARS)
     content_format: Literal["html", "markdown"] | None = None
+    change_summary: str | None = Field(default=None, max_length=255)
+    base_updated_at: datetime | None = None
+    force: bool = False
+
+
+class PageWatchRead(BaseModel):
+    watching: bool
+    include_descendants: bool = False
+
+
+class PageWatchUpdate(BaseModel):
+    watching: bool
+    include_descendants: bool = False
 
 
 class PageTrashResult(BaseModel):

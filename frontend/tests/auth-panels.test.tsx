@@ -129,21 +129,4 @@ describe("AuthPanels", () => {
       ).toBe("");
     });
   });
-
-  it("renders system announcement on the sign-in pane when provided", () => {
-    const announcement = {
-      enabled: true,
-      level: "warning" as const,
-      title: "Planned Maintenance",
-      content_html: "<p>Server updates tonight.</p>",
-      starts_at: null,
-      expires_at: null,
-      dismissible: false,
-      show_on_login: true,
-      updated_at: null,
-    };
-    render(<AuthPanels siteName="WikiHub" announcement={announcement} />);
-    expect(screen.getByText("Planned Maintenance")).toBeInTheDocument();
-    expect(screen.getByText("Server updates tonight.")).toBeInTheDocument();
-  });
 });

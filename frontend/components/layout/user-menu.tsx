@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Avatar } from "@/components/ui/avatar";
 import { ReportIssueDialog } from "@/components/issues/report-issue-dialog";
 import { SwitchAccountMenu } from "@/components/layout/switch-account-dialog";
 import { clearStoredChats } from "@/lib/ai-chat";
@@ -27,12 +28,6 @@ import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { Me, User } from "@/types/api";
-
-function initials(user: User): string {
-  const source = user.full_name.trim() || user.username;
-  const parts = source.split(/\s+/).filter(Boolean).slice(0, 2);
-  return parts.map((p) => p[0]!.toUpperCase()).join("") || "?";
-}
 
 /**
  * Avatar + account menu.
@@ -78,20 +73,12 @@ export function UserMenu({ user }: { user: Me }) {
         )}
         aria-label={t("userMenu.accountMenuAria", { name: displayName })}
       >
-        <span
-          className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-          aria-hidden
-          style={
-            user.avatar_url
-              ? {
-                  backgroundImage: `url(${user.avatar_url})`,
-                  backgroundSize: "cover",
-                }
-              : undefined
-          }
-        >
-          {user.avatar_url ? null : initials(user)}
-        </span>
+        <Avatar
+          username={user.username}
+          name={user.full_name}
+          src={user.avatar_url}
+          className="size-7 text-[11px] ring-1 ring-white/20"
+        />
         <span className="hidden max-w-40 truncate sm:inline">
           {displayName}
         </span>

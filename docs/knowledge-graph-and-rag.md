@@ -254,11 +254,15 @@ report for a space's Owners and Admins, worked out when asked for; no model is c
 | Broken links | `extract.internal_links` over the space's pages, resolved with the Trash included: `missing` (no such space or slug), `trashed`, `archived_space` |
 | Orphans | Pages with no incoming `link` / `mention` edge from a live page; top-level and empty pages left out |
 | Duplicates | Same `copy_key` title, and - with semantic search - page mean vectors at least `DUPLICATE_THRESHOLD` (0.92) alike, empty pages left out. The builder drops these pairs from `similar` edges on purpose, so they are computed here |
+| Conflicts | Related page pairs on the same topic: connected by high similarity in the Knowledge Graph or by direct `link` and `mention` edges, with an AI contradiction check to pinpoint divergence in technical parameters, network ports, rules, versions, or dates |
 
 **Still correct** writes `page_reviews`; **Check with AI**
 (`POST /spaces/{key}/pages/{slug}/stale-check`, `AIService.check_stale`) sends the page and
 up to three newer neighbours (plain text, secrets scrubbed) and asks what in the page they
-contradict or replace. It is rate-limited like every AI call and cached by content. Every
+contradict or replace. **Detect conflicts** (`POST /spaces/{key}/conflict-check`,
+`AIService.check_conflict`) compares two related pages and quotes conflicting technical
+parameters, network ports, policies, dates, or version specifications so administrators can
+resolve differences. Both are rate-limited and cached by content in Redis. Every
 page listed or sent is checked against the reader's permissions.
 
 | Endpoint | |
@@ -266,6 +270,7 @@ page listed or sent is checked against the reader's permissions.
 | `GET /api/v1/spaces/{key}/health?stale_days=&recent_days=` | the report (space admin) |
 | `POST /api/v1/spaces/{key}/pages/{slug}/review` | mark still correct |
 | `POST /api/v1/spaces/{key}/pages/{slug}/stale-check` | AI comparison |
+| `POST /api/v1/spaces/{key}/conflict-check` | AI contradiction detector |
 
 **Unanswered questions** (`modules/ai/question_gaps.py`, `ai_question_gaps`,
 `components/admin/ai-questions-panel.tsx`): the chat (`ChatTurn._done`) and the search box

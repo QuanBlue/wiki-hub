@@ -218,9 +218,18 @@ describe("leaving the page", () => {
     link.remove();
   }
 
+  async function waitForExportGuard() {
+    await waitFor(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    });
+  }
+
   it("warns that an export keeps running, and lets the person stay or leave", async () => {
     const user = await openPanel(exportRoutes());
     await screen.findByRole("button", { name: "Cancel export" });
+    await waitForExportGuard();
 
     clickLink();
     const dialog = await screen.findByRole("alertdialog");
@@ -238,6 +247,7 @@ describe("leaving the page", () => {
   it("offers to stop the export instead of leaving", async () => {
     const user = await openPanel(exportRoutes());
     await screen.findByRole("button", { name: "Cancel export" });
+    await waitForExportGuard();
 
     clickLink();
     await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Cancel export" }));
@@ -248,6 +258,7 @@ describe("leaving the page", () => {
   it("words the warning for a restore", async () => {
     await openPanel(exportRoutes("full_import"));
     await screen.findByRole("button", { name: /cancel restore/i });
+    await waitForExportGuard();
 
     clickLink();
 

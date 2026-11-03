@@ -11,6 +11,7 @@ import {
   useCanEmailAccounts,
 } from "@/components/admin/account-email-option";
 import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -27,18 +28,6 @@ const USERNAME_PATTERN = /^[a-zA-Z0-9._-]{3,64}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type UsernameCheck = "idle" | "checking" | "available" | "taken" | "error";
-
-function initials(name: string): string {
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]!.toUpperCase())
-      .join("") || "?"
-  );
-}
 
 export function AddAdminDialog({
   viewerIsSystemAdmin,
@@ -342,9 +331,12 @@ export function AddAdminDialog({
               {selectedMember && (
                 <div className="border-border bg-surface-sunken flex items-center justify-between gap-3 rounded-lg border p-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="bg-primary-subtle text-primary flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
-                      {initials(selectedMember.full_name || selectedMember.username)}
-                    </span>
+                    <Avatar
+                      name={selectedMember.full_name}
+                      username={selectedMember.username}
+                      src={selectedMember.avatar_url}
+                      className="size-9 text-xs"
+                    />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">
                         {selectedMember.full_name || selectedMember.username}

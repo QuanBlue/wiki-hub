@@ -100,6 +100,13 @@ def test_a_plain_bullet_list_stays_a_bullet_list() -> None:
     assert "<ul>" in page
 
 
+def test_mermaid_code_block_becomes_an_editable_diagram() -> None:
+    html = draft_to_html("```mermaid\ngraph TD; A-->B\n```", "en", notice=False)
+    assert 'data-type="diagram"' in html
+    assert 'data-engine="mermaid"' in html
+    assert 'data-code="graph TD; A--&gt;B' in html
+
+
 def test_the_prompt_has_the_skill_the_format_rules_and_marks_the_request_as_data() -> None:
     prompt = page_draft_system_prompt("Be brief.")
 

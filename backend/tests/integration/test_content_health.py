@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import PermissionDeniedError, ServiceUnavailableError
 from app.models.page import WikiPage
+from app.models.page_graph import PageLink
 from app.models.page_review import PageReview
 from app.models.space import SpaceRole, SpaceVisibility
 from app.modules.ai import service as ai_service
@@ -370,6 +371,40 @@ async def test_a_link_from_a_page_in_the_trash_does_not_count(installed: AsyncSe
     assert "Expense claims" in {p.title for p in (await _report(installed, space, owner)).orphans}
 
 
+async def test_an_orphan_says_where_a_link_to_it_would_fit(installed: AsyncSession) -> None:
+    owner, space, pages = await _wiki(installed)
+    root = await pages.create(space, PageCreate(title="Handbook", content="<p>Start.</p>"), owner)
+    orphan = await pages.create(
+        space, PageCreate(title="VPN setup", content="<p>vpn1.</p>", parent_id=root.id), owner
+    )
+    close = await pages.create(
+        space, PageCreate(title="Remote access", content="<p>vpn.</p>", parent_id=root.id), owner
+    )
+    closer = await pages.create(
+        space, PageCreate(title="Network guide", content="<p>vpn.</p>", parent_id=root.id), owner
+    )
+    installed.add_all(
+        [
+            PageLink(source_page_id=close.id, target_page_id=orphan.id, kind="similar", weight=0.7),
+            PageLink(
+                source_page_id=orphan.id, target_page_id=closer.id, kind="similar", weight=0.8
+            ),
+        ]
+    )
+    await installed.commit()
+
+    report = await _report(installed, space, owner)
+
+    found = next(page for page in report.orphans if page.id == orphan.id)
+    # The closest in content first, then the parent the page sits under.
+    assert [(s.page.title, s.reason) for s in found.link_from] == [
+        ("Network guide", "similar"),
+        ("Remote access", "similar"),
+        ("Handbook", "parent"),
+    ]
+    assert found.link_from[0].similarity == pytest.approx(0.8)
+
+
 # -- duplicates ----------------------------------------------------------------------------
 
 
@@ -562,3 +597,127 @@ async def test_the_ai_check_needs_the_assistant_and_a_space_admin(
 
     with pytest.raises(PermissionDeniedError):
         await AIService(installed, viewer).check_stale(space.key, old.slug, "en")
+
+
+# -- conflicts -----------------------------------------------------------------------------
+
+
+async def test_related_pages_surface_as_conflict_candidates(installed: AsyncSession) -> None:
+    owner, space, pages = await _wiki(installed)
+    vpn = await pages.create(
+        space, PageCreate(title="VPN Specs", content="<p>VPN listens on port 1194 UDP.</p>"), owner
+    )
+    firewall = await pages.create(
+        space,
+        PageCreate(
+            title="Firewall Policy",
+            content=f'<p>Allow traffic to <a href="/spaces/{space.key}/pages/{vpn.slug}">VPN</a> on port 443.</p>',
+        ),
+        owner,
+    )
+    await installed.commit()
+
+    report = await _report(installed, space, owner)
+
+    assert report.conflicts_total >= 1
+    pair = next(
+        (
+            c
+            for c in report.conflicts
+            if {c.page_a.slug, c.page_b.slug} == {vpn.slug, firewall.slug}
+        ),
+        None,
+    )
+    assert pair is not None
+    assert pair.relation == "link"
+
+
+async def test_ai_conflict_detection_detects_discrepancy_and_caches(
+    installed: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner, space, pages = await _wiki(installed)
+    p1 = await pages.create(
+        space, PageCreate(title="Service A", content="<p>Port is 8080.</p>"), owner
+    )
+    p2 = await pages.create(
+        space, PageCreate(title="Service B", content="<p>Port is 8443.</p>"), owner
+    )
+    await installed.commit()
+    await _connect(installed)
+
+    sent: list[list[dict[str, str]]] = []
+
+    async def fake_chat(config, messages, *, max_tokens=2000):
+        sent.append(messages)
+        return ChatReply(
+            text="[CONFLICT_FOUND]\n- **Port mạng**: Service A quy định port 8080, Service B ghi 8443.",
+            usage=None,
+        )
+
+    async def no_usage(**_: object) -> None:
+        return None
+
+    redis = FakeRedis()
+    monkeypatch.setattr(ai_service, "chat_with_usage", fake_chat)
+    monkeypatch.setattr(ai_service, "record_ai_usage", no_usage)
+    monkeypatch.setattr(ai_service, "get_redis", lambda: redis)
+
+    async def no_limit(*_: object) -> None:
+        return None
+
+    monkeypatch.setattr(ai_service.rate_limit, "enforce", no_limit)
+
+    service = AIService(installed, owner)
+    result = await service.check_conflict(space.key, p1.slug, p2.slug, locale="vi")
+
+    assert result.has_conflict is True
+    assert "Port mạng" in result.result
+    assert result.cached is False
+    assert len(result.compared) == 2
+
+    # Cached on repeat
+    repeat = await service.check_conflict(space.key, p1.slug, p2.slug, locale="vi")
+    assert repeat.cached is True
+    assert repeat.has_conflict is True
+    assert len(sent) == 1
+
+
+async def test_ai_conflict_detection_clean_when_no_contradiction(
+    installed: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner, space, pages = await _wiki(installed)
+    p1 = await pages.create(
+        space, PageCreate(title="Guideline 1", content="<p>Follow standard process.</p>"), owner
+    )
+    p2 = await pages.create(
+        space,
+        PageCreate(title="Guideline 2", content="<p>Process complies with standard.</p>"),
+        owner,
+    )
+    await installed.commit()
+    await _connect(installed)
+
+    async def fake_chat(config, messages, *, max_tokens=2000):
+        return ChatReply(
+            text="[NO_CONFLICT]\nKhông phát hiện mâu thuẫn hay điểm vênh nào giữa hai trang.",
+            usage=None,
+        )
+
+    async def no_usage(**_: object) -> None:
+        return None
+
+    redis = FakeRedis()
+    monkeypatch.setattr(ai_service, "chat_with_usage", fake_chat)
+    monkeypatch.setattr(ai_service, "record_ai_usage", no_usage)
+    monkeypatch.setattr(ai_service, "get_redis", lambda: redis)
+
+    async def no_limit(*_: object) -> None:
+        return None
+
+    monkeypatch.setattr(ai_service.rate_limit, "enforce", no_limit)
+
+    service = AIService(installed, owner)
+    result = await service.check_conflict(space.key, p1.slug, p2.slug, locale="vi")
+
+    assert result.has_conflict is False
+    assert "Không phát hiện mâu thuẫn" in result.result

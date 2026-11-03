@@ -22,6 +22,7 @@ from app.core.exceptions import (
 from app.models.audit import AuditAction, AuditLog
 from app.models.user import User
 from app.modules.auth.service import AuthService
+from app.modules.notifications.service import IMPERSONATION_NOTICE_KIND, NotificationService
 from app.schemas.user import UserCreate
 from tests.integration.conftest import unique
 
@@ -231,3 +232,40 @@ class TestAuditTrail:
 
         assert row.impersonator_username is None
         assert row.impersonator_id is None
+
+
+class TestTheAccountOwnerIsTold:
+    """An administrator using someone's account leaves a notice in that person's bell
+    that the administrator, while still inside the account, can neither see nor clear."""
+
+    async def test_starting_tells_the_person_who_did_it(self, session: AsyncSession) -> None:
+        admin = await _user(session, superuser=True)
+        member = await _user(session)
+
+        await AuthService(session, actor=admin).begin_impersonation(member.id)
+        await session.flush()
+
+        page = await NotificationService(session, member).list(unread_only=True, limit=10, offset=0)
+        assert [item.kind for item in page.items] == [IMPERSONATION_NOTICE_KIND]
+        assert page.items[0].actor_name == admin.username
+
+    async def test_the_impersonated_session_cannot_see_or_clear_it(
+        self, session: AsyncSession
+    ) -> None:
+        admin = await _user(session, superuser=True)
+        member = await _user(session)
+        await AuthService(session, actor=admin).begin_impersonation(member.id)
+        await session.flush()
+        owner = NotificationService(session, member)
+        (notice,) = (await owner.list(unread_only=False, limit=10, offset=0)).items
+
+        borrowed = NotificationService(session, member, impersonated=True)
+        assert (await borrowed.list(unread_only=False, limit=10, offset=0)).items == []
+        assert (await borrowed.summary()).unread_count == 0
+        with pytest.raises(NotFoundError):
+            await borrowed.mark_read(notice.id)
+        with pytest.raises(NotFoundError):
+            await borrowed.open(notice.id)
+        await borrowed.mark_all_read()
+
+        assert (await owner.summary()).unread_count == 1

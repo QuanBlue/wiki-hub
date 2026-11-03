@@ -7,6 +7,13 @@ import {
 } from "@/components/pages/rich-text-editor";
 
 describe("Confluence macros", () => {
+  it("converts a Mermaid macro and strips CDATA wrappers", () => {
+    expect(
+      normalizeConfluenceCodeMacros(
+        '<ac:structured-macro ac:name="mermaid"><ac:plain-text-body><![CDATA[graph TD; A-->B]]></ac:plain-text-body></ac:structured-macro>',
+      ),
+    ).toContain('data-code="graph TD; A--&gt;B"');
+  });
   it("finds a view-file name from a plain filename attribute or a bare parameter", () => {
     expect(
       normalizeConfluenceCodeMacros(

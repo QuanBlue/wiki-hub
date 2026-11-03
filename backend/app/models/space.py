@@ -16,6 +16,7 @@ from enum import StrEnum
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -227,3 +228,24 @@ class SpaceVisit(Base):
     last_visited_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class SpaceWatch(Base):
+    """A user watching all pages in a space for updates."""
+
+    __tablename__ = "space_watches"
+    __table_args__ = (
+        Index("ix_space_watches_space_id", "space_id"),
+        Index("ix_space_watches_user_id", "user_id"),
+    )
+
+    space_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("spaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+

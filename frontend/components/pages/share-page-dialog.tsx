@@ -1,6 +1,13 @@
 "use client";
 
-import { Link2, Loader2, Lock, Search, Send, X } from "lucide-react";
+import {
+  Link2,
+  Loader2,
+  Lock,
+  Search,
+  Send,
+  X,
+} from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
@@ -14,15 +21,17 @@ import { cn } from "@/lib/utils";
 import type { MentionCandidate, ShareResult } from "@/types/api";
 
 /**
- * "Share with people": pick colleagues and send them a notification that
- * links to the page. People who cannot open the page (a restricted space or
- * page) are listed but disabled - sharing never widens access.
+ * SharePageDialog:
+ * Dedicated dialog for sharing a page with internal colleagues.
+ * Sends notifications/mentions to chosen colleagues who already have access,
+ * without widening space permissions.
  */
 export function SharePageDialog({
   spaceKey,
   pageSlug,
   pageTitle,
   open,
+  initialTab, // kept optional for backwards compatibility
   onOpenChange,
   onCopyLink,
   onShared,
@@ -31,6 +40,7 @@ export function SharePageDialog({
   pageSlug: string;
   pageTitle: string;
   open: boolean;
+  initialTab?: "internal" | "public";
   onOpenChange: (open: boolean) => void;
   onCopyLink: () => void;
   /** The page's share count after a successful share. */
@@ -38,6 +48,7 @@ export function SharePageDialog({
 }) {
   const { t, apiErrorText } = useTranslation();
   const base = `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(pageSlug)}/shares`;
+
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MentionCandidate[] | null>(null);
   const [selected, setSelected] = useState<MentionCandidate[]>([]);
@@ -46,16 +57,15 @@ export function SharePageDialog({
   const listId = useId();
   const requestId = useRef(0);
 
-  // A fresh picker every time it opens.
+  // Reset internal picker when reopened
   useEffect(() => {
     if (!open) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset when reopened
     setQuery("");
     setSelected([]);
     setResults(null);
   }, [open]);
 
-  // Look people up (debounced) as the query changes.
+  // Look people up (debounced) as the internal query changes
   useEffect(() => {
     if (!open) return;
     const id = ++requestId.current;
@@ -86,7 +96,6 @@ export function SharePageDialog({
     );
   }
 
-  /** The next pickable row from ``from`` in ``step`` direction, wrapping. */
   function nextSelectable(list: MentionCandidate[], from: number, step: 1 | -1): number {
     const order = list.map(
       (_, i) => (from + step * (i + 1) + list.length * (i + 1)) % list.length,
@@ -109,7 +118,7 @@ export function SharePageDialog({
     }
   }
 
-  async function share() {
+  async function shareInternal() {
     if (selected.length === 0 || pending) return;
     setPending(true);
     try {
@@ -117,7 +126,6 @@ export function SharePageDialog({
         recipients: selected.map((person) => person.username),
       });
       onShared(result.share_count);
-      // The server answers with usernames; show the names that were picked.
       const named = (usernames: string[]) =>
         usernames
           .map((username) => {
@@ -130,7 +138,6 @@ export function SharePageDialog({
       if (result.shared.length > 0) {
         toast.success(t("share.sent", { names: named(result.shared) }));
       }
-      // Access can change between picking and sending.
       const missed = [...result.no_access, ...result.not_found];
       if (missed.length > 0) {
         toast.warning(t("share.notSent", { names: named(missed) }));
@@ -145,7 +152,11 @@ export function SharePageDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent title={t("share.title")} description={pageTitle}>
+      <DialogContent
+        title={t("share.title")}
+        description={pageTitle}
+        className="sm:max-w-md"
+      >
         <div className="relative">
           <Search
             className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
@@ -153,17 +164,13 @@ export function SharePageDialog({
           />
           <Input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={t("share.searchPlaceholder")}
             role="combobox"
             aria-label={t("share.searchPlaceholder")}
             aria-controls={listId}
-            aria-expanded
-            aria-autocomplete="list"
-            aria-activedescendant={
-              results?.[active]?.can_view ? `${listId}-${results[active].username}` : undefined
-            }
+            aria-expanded={results !== null && results.length > 0}
             className="pl-8"
             autoFocus
           />
@@ -180,7 +187,9 @@ export function SharePageDialog({
                 <button
                   type="button"
                   onClick={() => toggle(person)}
-                  aria-label={t("share.remove", { name: person.full_name || person.username })}
+                  aria-label={t("share.remove", {
+                    name: person.full_name || person.username,
+                  })}
                   className="hover:bg-primary/15 active:bg-primary/25 focus-visible:ring-ring flex size-5 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                 >
                   <X className="size-3" aria-hidden />
@@ -203,7 +212,9 @@ export function SharePageDialog({
               {t("share.searching")}
             </li>
           ) : results.length === 0 ? (
-            <li className="text-muted-foreground px-2 py-2 text-sm">{t("share.noResults")}</li>
+            <li className="text-muted-foreground px-2 py-2 text-sm">
+              {t("share.noResults")}
+            </li>
           ) : (
             results.map((person, index) => {
               const chosen = isSelected(person);
@@ -239,7 +250,9 @@ export function SharePageDialog({
                       className="size-7 text-[10px]"
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate">{person.full_name || person.username}</span>
+                      <span className="block truncate">
+                        {person.full_name || person.username}
+                      </span>
                       <span className="text-muted-foreground flex items-center gap-1 truncate text-xs">
                         {person.can_view ? (
                           `@${person.username}`
@@ -252,7 +265,9 @@ export function SharePageDialog({
                       </span>
                     </span>
                     {chosen ? (
-                      <span className="text-primary text-xs font-medium">{t("share.added")}</span>
+                      <span className="text-primary text-xs font-medium">
+                        {t("share.added")}
+                      </span>
                     ) : null}
                   </button>
                 </li>
@@ -261,16 +276,22 @@ export function SharePageDialog({
           )}
         </ul>
 
-        <DialogFooter className="items-center justify-between">
-          <Button type="button" variant="ghost" onClick={onCopyLink}>
-            <Link2 />
-            {t("share.copyLink")}
+        <DialogFooter className="items-center justify-between pt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onCopyLink}
+            className="hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
+          >
+            <Link2 className="size-4" />
+            {t("share.copyPageLink")}
           </Button>
           <Button
             type="button"
             variant="primary"
-            onClick={() => void share()}
+            onClick={() => void shareInternal()}
             disabled={selected.length === 0 || pending}
+            className="hover:bg-primary-hover active:bg-primary-active transition-colors cursor-pointer"
           >
             {pending ? <Loader2 className="animate-spin" /> : <Send />}
             {selected.length > 0

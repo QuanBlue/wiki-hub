@@ -36,6 +36,8 @@ export interface SearchResults {
   spaces: SearchResultSpace[];
   /** Folded words and synonyms to highlight (absent on older servers). */
   terms?: string[];
+  /** Applied search filters when parsed by the server. */
+  filters?: Record<string, unknown> | null;
 }
 
 export interface RecentPageItem {
@@ -48,6 +50,9 @@ export interface RecentPageItem {
   updated_at: string;
   user_username: string;
   user_full_name: string;
+  user_avatar_url?: string | null;
+  /** How many versions the page has; 1 means its latest change created it. */
+  revision_count?: number | null;
 }
 
 export interface PageRevisionItem {
@@ -117,6 +122,7 @@ export interface InstanceInfo {
   max_upload_size_bytes: number;
   /** How long a deleted page can still be restored from its space's Trash. */
   trash_retention_days?: number;
+  public_shares_enabled?: boolean;
   announcement?: SystemAnnouncement | null;
   features: InstanceFeatures;
 }
@@ -307,7 +313,7 @@ export type SpacePermission =
   | "move"
   | "admin";
 export type GlobalPermission =
-  "create_space"
+  | "create_space"
   | "manage_users"
   | "manage_groups"
   | "manage_issues"
@@ -331,11 +337,7 @@ export interface AdminAccount extends User {
   granted_via_group: string | null;
 }
 export type MailHealth =
-  | "unknown"
-  | "ok"
-  | "auth_failed"
-  | "unreachable"
-  | "error";
+  "unknown" | "ok" | "auth_failed" | "unreachable" | "error";
 export type SmtpSecurity = "ssl" | "starttls" | "none";
 
 /** An administrator mailbox. The SMTP password is never part of this: the
@@ -512,6 +514,7 @@ export interface Space {
   /** Distinct non-superuser users holding a direct permission on this space. */
   direct_user_permission_count: number;
   is_favorite: boolean;
+  is_watched?: boolean;
   /** The current user's role in this space, or null if not a member. */
   my_role: SpaceRole | null;
   my_permissions?: string[];
@@ -679,6 +682,47 @@ export interface WikiPage {
   inherits_view_restriction?: boolean;
   /** Whether this child page follows its parent's access at all (default true). */
   inherit_restrictions?: boolean;
+  is_watched?: boolean;
+  watch_descendants?: boolean;
+}
+
+export interface PageWatchRead {
+  watching: boolean;
+  include_descendants: boolean;
+}
+
+export interface PageWatchUpdate {
+  watching: boolean;
+  include_descendants?: boolean;
+}
+
+export interface SpaceWatchRead {
+  watching: boolean;
+}
+
+export interface SpaceWatchUpdate {
+  watching: boolean;
+}
+
+export interface PresenceUser {
+  user_id: string;
+  username: string;
+  full_name: string;
+  avatar_url?: string | null;
+  state: "viewing" | "editing";
+  last_seen: string;
+}
+
+export interface PresenceHeartbeatResponse {
+  users: PresenceUser[];
+  page_updated_at: string;
+}
+
+export interface PageSavedEvent {
+  actor_id: string;
+  actor_name: string;
+  saved_at: string;
+  title: string;
 }
 
 export type DependencyStatus = "ok" | "error" | "timeout";
@@ -728,6 +772,7 @@ export interface SiteSettingsOverrides {
   announcement?: SystemAnnouncement | null;
   session_ttl_hours: number | null;
   trash_retention_days: number | null;
+  public_shares_enabled?: boolean | null;
 }
 
 export interface EffectiveSettings {
@@ -745,6 +790,7 @@ export interface EffectiveSettings {
   announcement?: SystemAnnouncement;
   session_ttl_hours: number;
   trash_retention_days: number;
+  public_shares_enabled?: boolean;
 }
 
 export type AppRole = "admin" | "member";
@@ -972,7 +1018,8 @@ export interface DocumentImportReview {
   /** clean: matches; fixed: all differences mended; partial: some left; kept: the page
    *  stays as converted; skipped: this file type is not reviewed; failed: it could not finish;
    *  running: still going, see the log. */
-  status: "running" | "clean" | "fixed" | "partial" | "kept" | "skipped" | "failed";
+  status:
+    "running" | "clean" | "fixed" | "partial" | "kept" | "skipped" | "failed";
   issues_before: number;
   issues_after: number;
   fixes: number;
@@ -1149,6 +1196,49 @@ export interface MentionCandidate {
   can_view: boolean;
 }
 
+export interface PublicShareItem {
+  id: string;
+  token: string;
+  page_id: string;
+  created_at: string;
+  expires_at: string | null;
+  has_password: boolean;
+  view_count: number;
+  is_active: boolean;
+  is_expired: boolean;
+  share_url?: string | null;
+}
+
+export interface PublicShareListResponse {
+  enabled: boolean;
+  shares: PublicShareItem[];
+}
+
+export interface PublicShareCreatePayload {
+  expires_in_days?: number | null;
+  password?: string | null;
+}
+
+export interface PublicShareUpdatePayload {
+  expires_in_days?: number | null;
+  clear_expiration?: boolean;
+  password?: string | null;
+  clear_password?: boolean;
+}
+
+export interface PublicShareView {
+  title: string;
+  content_html: string;
+  space_key: string;
+  space_name: string;
+  created_at: string;
+  updated_at: string;
+  expires_at: string | null;
+  has_password: boolean;
+  is_password_verified: boolean;
+  view_count: number;
+}
+
 export type StatsRange = "7d" | "30d" | "90d";
 
 export interface StatsOverview {
@@ -1271,11 +1361,7 @@ export interface PageRestoreResult {
 
 /** Why a page is related to another, seen from that other page. */
 export type RelatedVia =
-  | "link"
-  | "linked_from"
-  | "mention"
-  | "mentioned_by"
-  | "similar";
+  "link" | "linked_from" | "mention" | "mentioned_by" | "similar";
 
 export interface RelatedPage {
   id: string;
@@ -1350,6 +1436,18 @@ export interface HealthPage {
   updated_at: string;
 }
 
+/** A page that could link to an orphan: close to it in content, or its parent. */
+export interface LinkSuggestion {
+  page: HealthPage;
+  reason: "similar" | "parent";
+  similarity?: number | null;
+}
+
+export interface OrphanPage extends HealthPage {
+  /** Where a link to it would fit best, the most fitting first. */
+  link_from?: LinkSuggestion[];
+}
+
 export interface StalePage {
   page: HealthPage;
   /** When someone last marked it still correct, if ever. */
@@ -1380,6 +1478,14 @@ export interface DuplicateGroup {
   pages: HealthPage[];
 }
 
+export interface ConflictPair {
+  id: string;
+  page_a: HealthPage;
+  page_b: HealthPage;
+  relation: "similar" | "link" | "mention";
+  similarity: number | null;
+}
+
 export interface SpaceHealth {
   stale_days: number;
   recent_days: number;
@@ -1387,10 +1493,12 @@ export interface SpaceHealth {
   stale_total: number;
   broken_links: BrokenLink[];
   broken_total: number;
-  orphans: HealthPage[];
+  orphans: OrphanPage[];
   orphans_total: number;
   duplicates: DuplicateGroup[];
   duplicates_total: number;
+  conflicts: ConflictPair[];
+  conflicts_total: number;
   /** Whether nearly identical content was looked for (semantic search is on). */
   semantic: boolean;
 }
@@ -1400,6 +1508,15 @@ export interface StaleCheck {
   result: string;
   compared: HealthPage[];
   cached: boolean;
+}
+
+export interface ConflictCheck {
+  has_conflict: boolean;
+  /** "duplicate": the pages agree but repeat each other - merge, nothing to settle. */
+  verdict?: "conflict" | "consistent" | "duplicate";
+  result: string;
+  compared: HealthPage[];
+  cached?: boolean;
 }
 
 export interface QuestionPage {
@@ -1441,4 +1558,20 @@ export interface QuestionGroupList {
   items: QuestionGroup[];
   recording: boolean;
   retention_days: number;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  created_at: string;
+  actor_id: string | null;
+  actor_username: string;
+  impersonator_username: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  entity_label: string;
+  details: Record<string, unknown>;
+  ip_address: string | null;
+  actor_avatar_url?: string | null;
+  actor_full_name?: string | null;
 }

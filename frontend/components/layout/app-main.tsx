@@ -22,7 +22,8 @@ export function AppMain({
   /** Reserve room for the fixed impersonation bar so it covers no content. */
   hasBanner?: boolean;
   /** A strip shown across the top of the content, under the top bar. Part of
-   * the flow, so it pushes the page down instead of covering it. */
+   * the flow, so it pushes the page down instead of covering it, and sticky so
+   * it stays visible while the page scrolls. */
   banner?: React.ReactNode;
   contentClassName?: string;
   disableSidebarOffset?: boolean;
@@ -57,7 +58,11 @@ export function AppMain({
         } as CSSProperties
       }
     >
-      {banner ? <div ref={bannerWrapRef}>{banner}</div> : null}
+      {banner ? (
+        <div ref={bannerWrapRef} className="top-topbar sticky z-30">
+          {banner}
+        </div>
+      ) : null}
       <div
         className={cn(
           fullWidth ? "w-full px-6 py-8 sm:px-10 sm:py-10" : "max-w-content mx-auto w-full px-5 py-8 sm:px-8 sm:py-10",

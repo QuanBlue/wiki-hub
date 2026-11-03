@@ -59,6 +59,16 @@ class UserRead(BaseModel):
     company: str
     is_active: bool
     is_superuser: bool
+
+    @field_validator("avatar_url", mode="before")
+    @classmethod
+    def _normalize_avatar_url(cls, v: str | None) -> str | None:
+        if not v:
+            return None
+        idx = str(v).find("/api/v1/users/")
+        if idx != -1:
+            return str(v)[idx:]
+        return str(v)
     #: Whether this account currently holds `system_admin` from *any* source -
     #: `is_superuser` directly, a group's global permission, or a personal
     #: override (see `PermissionService.is_system_admin`) - not just

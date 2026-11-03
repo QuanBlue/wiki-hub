@@ -4,6 +4,7 @@ import { Building2, Loader2, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { getUserAvatarColor, resolveAvatarUrl } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -27,14 +28,18 @@ function initials(name: string, username: string): string {
 export function UserProfileTrigger({
   username,
   fullName,
+  avatarUrl,
   variant = "name",
   className,
-  openOnHover = variant === "mention",
+  openOnHover = variant === "mention" || variant === "avatar",
   children,
   asSpan = false,
+  statusBadge,
+  popoverAlign = "start",
 }: {
   username: string;
   fullName?: string | null;
+  avatarUrl?: string | null;
   variant?: "name" | "avatar" | "mention";
   className?: string;
   /** Also open the card when the pointer rests on the name (and close it after leaving). */
@@ -42,6 +47,10 @@ export function UserProfileTrigger({
   children?: ReactNode;
   /** Render as an inline <span> instead of <button> for tight inline text integration. */
   asSpan?: boolean;
+  /** Optional badge shown next to the name in the popover card. */
+  statusBadge?: ReactNode;
+  /** Popover alignment relative to trigger. */
+  popoverAlign?: "start" | "center" | "end";
 }) {
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<PublicUser | null>(null);
@@ -81,10 +90,11 @@ export function UserProfileTrigger({
       .finally(() => setLoading(false));
   }
 
+  const effectiveAvatarUrl = resolveAvatarUrl(profile?.avatar_url ?? avatarUrl ?? null);
   const displayProfile = profile ?? {
     username,
     full_name: fullName || "",
-    avatar_url: null,
+    avatar_url: effectiveAvatarUrl,
     bio: "",
     pronouns: "",
     profile_url: "",
@@ -101,13 +111,31 @@ export function UserProfileTrigger({
             onMouseEnter={() => hoverTo(true)}
             onMouseLeave={() => hoverTo(false)}
             aria-label={t("userProfile.profileSummaryAria", { name: label })}
+            style={
+              effectiveAvatarUrl
+                ? {
+                    backgroundImage: `url(${effectiveAvatarUrl})`,
+                    backgroundSize: "cover",
+                  }
+                : undefined
+            }
             className={cn(
-              "bg-primary-subtle text-primary hover:bg-surface-selected focus-visible:ring-ring flex shrink-0 cursor-pointer items-center justify-center rounded-full font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+              "focus-visible:ring-ring flex shrink-0 cursor-pointer items-center justify-center rounded-full font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none select-none ring-1 ring-inset ring-black/5 dark:ring-white/10",
+              !children &&
+                (effectiveAvatarUrl
+                  ? ""
+                  : label.trim() || username.trim()
+                    ? getUserAvatarColor(username || label)
+                    : "bg-primary-subtle text-primary"),
               className,
             )}
           >
-            {initials(label, username) || (
-              <UserRound className="size-4" aria-hidden />
+            {children ?? (
+              effectiveAvatarUrl
+                ? null
+                : initials(label, username) || (
+                    <UserRound className="size-4" aria-hidden />
+                  )
             )}
           </button>
         ) : variant === "mention" ? (
@@ -153,7 +181,7 @@ export function UserProfileTrigger({
       </PopoverTrigger>
 
       <PopoverContent
-        align="start"
+        align={popoverAlign}
         className="w-72 p-4"
         onMouseEnter={() => hoverTo(true)}
         onMouseLeave={() => hoverTo(false)}
@@ -166,7 +194,14 @@ export function UserProfileTrigger({
         ) : profile || !loadError ? (
           <div>
             <div className="flex items-start gap-3">
-              <span className="bg-primary text-primary-foreground flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold">
+              <span
+                className={cn(
+                  "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold select-none ring-1 ring-inset ring-black/5 dark:ring-white/10",
+                  displayProfile.avatar_url
+                    ? ""
+                    : getUserAvatarColor(displayProfile.username || displayProfile.full_name || ""),
+                )}
+              >
                 {displayProfile.avatar_url ? (
                   <img
                     src={displayProfile.avatar_url}
@@ -181,9 +216,12 @@ export function UserProfileTrigger({
                 )}
               </span>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">
-                  {displayProfile.full_name || displayProfile.username}
-                </p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <p className="truncate text-sm font-semibold">
+                    {displayProfile.full_name || displayProfile.username}
+                  </p>
+                  {statusBadge}
+                </div>
                 <p className="text-muted-foreground mt-0.5 truncate text-xs">
                   @{displayProfile.username}
                 </p>

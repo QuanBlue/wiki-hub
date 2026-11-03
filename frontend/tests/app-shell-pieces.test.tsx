@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -21,6 +21,7 @@ const m = vi.hoisted(() => ({
   listFavoriteSpaces: vi.fn(),
   listOwnPinnedPages: vi.fn(),
   theme: { siteName: "" as string | undefined },
+  routerPush: vi.fn(),
 }));
 
 vi.mock("@/lib/admin-mail", () => ({
@@ -38,7 +39,7 @@ vi.mock("@/lib/pages", () => ({ listOwnPinnedPages: m.listOwnPinnedPages }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/",
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: m.routerPush, replace: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("@/components/theme-color-provider", () => ({
   useThemeSettings: () => (m.theme.siteName === undefined ? undefined : { siteName: m.theme.siteName }),
@@ -145,6 +146,29 @@ describe("TopBar", () => {
     setBindings("search.open", []);
     render(<TopBar user={user()} />);
     expect(document.querySelector("kbd")).toBeNull();
+  });
+
+  it("opens help from the keyboard while ignoring editable and handled events", () => {
+    render(<TopBar user={user()} />);
+    const help = { key: "H", code: "KeyH", ctrlKey: true, shiftKey: true };
+    fireEvent.keyDown(window, help);
+    expect(m.routerPush).toHaveBeenCalledWith("/help");
+    m.routerPush.mockClear();
+
+    const handled = new KeyboardEvent("keydown", { ...help, bubbles: true, cancelable: true });
+    handled.preventDefault();
+    fireEvent(window, handled);
+    expect(m.routerPush).not.toHaveBeenCalled();
+    const input = document.createElement("input");
+    document.body.append(input);
+    fireEvent.keyDown(input, help);
+    expect(m.routerPush).not.toHaveBeenCalled();
+    input.remove();
+    const textarea = document.createElement("textarea");
+    document.body.append(textarea);
+    fireEvent.keyDown(textarea, help);
+    expect(m.routerPush).not.toHaveBeenCalled();
+    textarea.remove();
   });
 });
 

@@ -12,7 +12,7 @@ from app.modules.pages.service import PageService
 
 
 def _activity_page(*, updated_at: datetime) -> SimpleNamespace:
-    author = SimpleNamespace(username="alice", full_name="Alice")
+    author = SimpleNamespace(username="alice", full_name="Alice", avatar_url=None)
     return SimpleNamespace(
         id=uuid4(),
         title="Title",
@@ -28,6 +28,7 @@ def _activity_page(*, updated_at: datetime) -> SimpleNamespace:
 def _activity_service() -> PageService:
     service = PageService(Mock())
     service.pages = Mock()
+    service.revisions = Mock(count_by_pages=AsyncMock(return_value={}))
     service.spaces.permissions = Mock()
     return service
 

@@ -37,6 +37,29 @@ vi.mock("@/components/users/contribution-chart", () => ({
     <div data-testid="contributions">{username}</div>
   ),
 }));
+vi.mock("@/components/pages/page-change-dialog", () => ({
+  PageChangeDialog: ({
+    pageTitle,
+    onOpenChange,
+    onOpenHistory,
+  }: {
+    pageTitle: string;
+    onOpenChange: (open: boolean) => void;
+    onOpenHistory?: () => void;
+  }) => (
+    <div role="dialog" aria-label={`Change of ${pageTitle}`}>
+      <button type="button" onClick={() => onOpenChange(true)}>
+        Keep change open
+      </button>
+      <button type="button" onClick={() => onOpenChange(false)}>
+        Close change
+      </button>
+      <button type="button" onClick={onOpenHistory}>
+        Full history
+      </button>
+    </div>
+  ),
+}));
 vi.mock("@/components/pages/page-history-modal", () => ({
   PageHistoryModal: ({
     pageTitle,
@@ -59,10 +82,12 @@ vi.mock("@/components/users/user-profile-trigger", () => ({
   UserProfileTrigger: ({
     fullName,
     variant,
+    avatarUrl,
   }: {
     fullName: string;
     variant?: string;
-  }) => <span data-variant={variant ?? "name"}>{fullName}</span>,
+    avatarUrl?: string | null;
+  }) => <span data-variant={variant ?? "name"} data-avatar-url={avatarUrl ?? ""}>{fullName}</span>,
 }));
 
 const mocked = vi.mocked(api);
@@ -260,6 +285,7 @@ describe("UserProfile summary", () => {
     view.unmount();
 
     renderProfile({
+      isOwner: false,
       user: {
         ...USER,
         full_name: " ",
@@ -271,6 +297,15 @@ describe("UserProfile summary", () => {
     });
     expect(screen.getByText("No recent activity")).toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("omits Last active on your own profile but shows it on someone else's", () => {
+    const { view } = renderProfile({ isOwner: true });
+    expect(screen.queryByText("Last active")).toBeNull();
+    view.unmount();
+
+    renderProfile({ isOwner: false });
+    expect(screen.getByText("Last active")).toBeInTheDocument();
   });
 
   it("re-reads presence every half minute", () => {
@@ -286,6 +321,33 @@ describe("UserProfile summary", () => {
 });
 
 describe("UserProfile activity", () => {
+  it("uses an avatar from a later update in the same activity group", () => {
+    renderProfile({
+      initialAllActivity: [
+        activity("first", { user_avatar_url: null, updated_at: minutesAgo(1) }),
+        activity("second", { user_avatar_url: "/ann.png", updated_at: minutesAgo(2) }),
+      ],
+    });
+    expect(screen.getByText("Ann Lee", { selector: '[data-variant="avatar"]' })).toHaveAttribute(
+      "data-avatar-url", "/ann.png",
+    );
+  });
+
+  it("fits the knowledge layout within a desktop viewport", () => {
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    try {
+      const { view } = renderProfile();
+      const layout = view.container.firstElementChild as HTMLElement;
+      expect(document.documentElement.style.overflow).toBe("hidden");
+      expect(layout.style.height).toMatch(/px$/);
+      fireEvent.resize(window);
+      view.unmount();
+      expect(document.documentElement.style.overflow).toBe("");
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
+  });
   it("groups the workspace feed by person and time, and opens a change's history", async () => {
     const { actor } = renderProfile();
 
@@ -303,6 +365,21 @@ describe("UserProfile activity", () => {
     await actor.click(
       screen.getAllByRole("button", { name: "(view change)" })[0]!,
     );
+    // One change only, against the version before it; the full history is a click away.
+    const change = screen.getByRole("dialog", { name: "Change of Page a1" });
+    await actor.click(
+      within(change).getByRole("button", { name: "Keep change open" }),
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await actor.click(
+      within(change).getByRole("button", { name: "Close change" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await actor.click(
+      screen.getAllByRole("button", { name: "(view change)" })[0]!,
+    );
+    await actor.click(screen.getByRole("button", { name: "Full history" }));
+    expect(screen.queryByRole("dialog", { name: "Change of Page a1" })).toBeNull();
     const history = screen.getByRole("dialog", { name: "History of Page a1" });
     await actor.click(
       within(history).getByRole("button", { name: "Stay open" }),
@@ -348,10 +425,57 @@ describe("UserProfile activity", () => {
 
     await actor.click(changes[1]!);
     expect(
-      screen.getByRole("dialog", { name: "History of Runbook" }),
+      screen.getByRole("dialog", { name: "Change of Runbook" }),
     ).toBeInTheDocument();
-    await actor.click(screen.getByRole("button", { name: "Close history" }));
+    await actor.click(screen.getByRole("button", { name: "Close change" }));
     await actor.click(toggle);
+    expect(
+      screen.getAllByRole("button", { name: "(view change)" }),
+    ).toHaveLength(1);
+  });
+
+  it("marks the entry that created a page instead of offering a change to view", () => {
+    const now = minutesAgo(5);
+    renderProfile({
+      initialAllActivity: [
+        activity("n1", {
+          slug: "fresh",
+          title: "Fresh page",
+          created_at: now,
+          updated_at: now,
+        }),
+      ],
+    });
+
+    expect(screen.getByText("New page")).toBeInTheDocument();
+    expect(screen.getByText(/^Created /)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "(view change)" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("goes by the version count, so an imported page with an old date still reads as new", () => {
+    renderProfile({
+      initialAllActivity: [
+        activity("imp", {
+          slug: "imported",
+          title: "Imported page",
+          // Created years ago elsewhere, brought in today: one version only.
+          created_at: "2022-08-12T11:34:29Z",
+          updated_at: minutesAgo(5),
+          revision_count: 1,
+        }),
+        activity("edited", {
+          slug: "edited",
+          title: "Edited page",
+          created_at: minutesAgo(6),
+          updated_at: minutesAgo(6),
+          revision_count: 2,
+        }),
+      ],
+    });
+
+    expect(screen.getAllByText("New page")).toHaveLength(1);
     expect(
       screen.getAllByRole("button", { name: "(view change)" }),
     ).toHaveLength(1);

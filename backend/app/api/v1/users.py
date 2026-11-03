@@ -85,7 +85,7 @@ def get_storage() -> ObjectStorage:
 
 
 def avatar_endpoint(request: Request, user_id: uuid.UUID) -> str:
-    return f"{str(request.base_url).rstrip('/')}{settings.api_v1_prefix}/users/{user_id}/avatar"
+    return f"{settings.api_v1_prefix}/users/{user_id}/avatar"
 
 
 async def remove_avatar_object(user: User, storage: ObjectStorage) -> None:

@@ -191,7 +191,12 @@ async def test_asking_about_one_file_reads_only_that_file(installed: AsyncSessio
 
 async def test_a_file_whose_words_could_not_be_read_cannot_be_asked_about(
     installed: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    async def unreadable(*_args: object, **_kwargs: object) -> None:
+        raise BadRequestError("This PDF cannot be read")
+
+    monkeypatch.setattr(attachment_text, "extract_document", unreadable)
     owner, space, pages = await _wiki(installed)
     page = await pages.create(space, PageCreate(title="Sales", content="<p>Deals</p>"), owner)
     storage = FakeStorage()

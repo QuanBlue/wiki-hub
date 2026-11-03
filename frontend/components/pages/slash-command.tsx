@@ -32,6 +32,7 @@ import {
   ListOrdered,
   ListTodo,
   Minus,
+  Network,
   Paperclip,
   Pilcrow,
   Sparkles,
@@ -85,6 +86,7 @@ export type SlashPreviewKind =
   | "codeBlock"
   | "table"
   | "tableOfContents"
+  | "diagram"
   | "callout"
   | "image"
   | "attachment"
@@ -518,6 +520,39 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
       editor.chain().focus().insertContent({ type: "tableOfContents" }).run(),
   },
   {
+    id: "diagram",
+    labelKey: "slash.diagramLabel",
+    descriptionKey: "slash.diagramDescription",
+    keywords: [
+      "diagram",
+      "mermaid",
+      "flowchart",
+      "sequence",
+      "class",
+      "er",
+      "architecture",
+      "sodo",
+      "luudo",
+      "vetay",
+      "chart",
+    ],
+    icon: Network,
+    groupKey: "slash.groupMedia",
+    preview: "diagram",
+    run: (editor) =>
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "diagram",
+          attrs: {
+            code: "",
+            look: "classic",
+          },
+        })
+        .run(),
+  },
+  {
     id: "callout-info",
     labelKey: "slash.calloutInfoLabel",
     descriptionKey: "slash.calloutInfoDescription",
@@ -765,6 +800,22 @@ function PreviewMockup({
             <div>{t("slash.previewTocIntroduction")}</div>
             <div className="pl-3">{t("slash.previewTocGettingStarted")}</div>
             <div>{t("slash.previewTocNextSteps")}</div>
+          </div>
+        </div>
+      );
+    case "diagram":
+      return (
+        <div className="flex flex-col items-center justify-center rounded border border-neutral-700 bg-neutral-800 p-3 text-xs">
+          <div className="mb-2 flex items-center gap-1.5 font-medium text-neutral-100">
+            <Network className="size-3.5 text-blue-400" aria-hidden />
+            <span>Mermaid Diagram</span>
+          </div>
+          <div className="flex items-center gap-1 text-[11px] text-neutral-300">
+            <span className="rounded border border-neutral-600 bg-neutral-700 px-1.5 py-0.5">Start</span>
+            <span className="text-neutral-500">→</span>
+            <span className="rounded border border-blue-500/40 bg-blue-500/20 px-1.5 py-0.5 text-blue-300">Process</span>
+            <span className="text-neutral-500">→</span>
+            <span className="rounded border border-neutral-600 bg-neutral-700 px-1.5 py-0.5">End</span>
           </div>
         </div>
       );

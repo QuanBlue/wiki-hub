@@ -413,6 +413,9 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const [trashDays, setTrashDays] = useState(
     settings.overrides.trash_retention_days?.toString() ?? "",
   );
+  const [publicSharesEnabled, setPublicSharesEnabled] = useState<boolean>(
+    settings.overrides.public_shares_enabled ?? settings.effective.public_shares_enabled ?? true,
+  );
   const [sidebarPermissions, setSidebarPermissions] =
     useState<SidebarPermissions>(() => ({
       home: ["admin", "member"],
@@ -601,6 +604,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
         ? Number(sessionTtlHours)
         : null,
       trash_retention_days: trashDays.trim() ? Number(trashDays) : null,
+      public_shares_enabled: publicSharesEnabled,
     });
   }
 
@@ -661,6 +665,8 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     customLogoUrl !== initialCustomLogoUrl;
 
   const initialTrashDays = settings.overrides.trash_retention_days?.toString() ?? "";
+  const initialPublicShares =
+    settings.overrides.public_shares_enabled ?? settings.effective.public_shares_enabled ?? true;
   const effectiveTrashDays =
     settings.effective.trash_retention_days || DEFAULT_TRASH_RETENTION_DAYS;
   const trashDaysNum = trashDays.trim() ? Number(trashDays) : effectiveTrashDays;
@@ -671,7 +677,8 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   const isGeneralChanged =
     siteName.trim() !== initialSiteName.trim() ||
     sessionTtlHours.trim() !== initialSessionTtl.trim() ||
-    trashDays.trim() !== initialTrashDays.trim();
+    trashDays.trim() !== initialTrashDays.trim() ||
+    publicSharesEnabled !== initialPublicShares;
 
   const normalizeSidebar = (perms?: SidebarPermissions | null) => ({
     home: [...(perms?.home ?? ["admin", "member"])].sort(),
@@ -1106,6 +1113,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                       setSiteName("");
                       setSessionTtlHours("");
                       setTrashDays("");
+                      setPublicSharesEnabled(settings.effective.public_shares_enabled ?? true);
                     }}
                   >
                     <RotateCcw className="size-3.5" />
@@ -1496,6 +1504,79 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                         {t("adminSettings.trashRetentionHelp", { days: trashDaysNum })}
                       </p>
                     )}
+                  </div>
+                </div>
+
+                {/* Section 4: Public / External Share Links */}
+                <div
+                  id="public-share-settings"
+                  className="border-border bg-surface-sunken/40 rounded-xl border p-5 sm:p-6 space-y-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="border-primary/20 bg-primary-subtle text-primary flex size-9 items-center justify-center rounded-lg border shrink-0">
+                        <Share2 className="size-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-foreground text-sm sm:text-base font-semibold">
+                          {t("adminSettings.publicSharesTitle")}
+                        </h4>
+                        <p className="text-muted-foreground mt-0.5 text-xs max-w-xl">
+                          {t("adminSettings.publicSharesDescription")}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={publicSharesEnabled ? "success" : "neutral"}
+                      className="text-[11px] font-medium shadow-2xs"
+                    >
+                      {publicSharesEnabled
+                        ? t("adminSettings.publicSharesEnabledBadge")
+                        : t("adminSettings.publicSharesDisabledBadge")}
+                    </Badge>
+                  </div>
+
+                  <div className="border-border bg-surface rounded-xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <span className="text-foreground text-xs font-semibold">
+                        {t("adminSettings.publicSharesEnableLabel")}
+                      </span>
+                      <p className="text-muted-foreground text-[11px]">
+                        {t("adminSettings.publicSharesHelp")}
+                      </p>
+                    </div>
+
+                    <label
+                      className={cn(
+                        "border-border bg-surface has-disabled:opacity-60 flex h-8 cursor-pointer items-center gap-2 rounded-md border px-2.5 text-xs font-medium transition-colors duration-150 select-none self-start sm:self-center shrink-0",
+                        "has-disabled:cursor-not-allowed",
+                        "has-not-disabled:hover:bg-surface-hover has-not-disabled:hover:border-border-strong",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        aria-checked={publicSharesEnabled}
+                        aria-label={t("adminSettings.publicSharesEnableLabel")}
+                        checked={publicSharesEnabled}
+                        disabled={pending}
+                        onChange={(event) =>
+                          setPublicSharesEnabled(event.target.checked)
+                        }
+                        className="peer sr-only"
+                      />
+                      <span
+                        aria-hidden
+                        className="bg-border-strong peer-checked:bg-success relative h-4 w-7 shrink-0 rounded-full transition-colors duration-150"
+                      >
+                        <span className="bg-surface absolute top-0.5 left-0.5 size-3 rounded-full shadow-sm transition-transform duration-150 peer-checked:translate-x-3" />
+                      </span>
+                      <span>
+                        {publicSharesEnabled
+                          ? t("adminSettings.publicSharesEnabledBadge")
+                          : t("adminSettings.publicSharesDisabledBadge")}
+                      </span>
+                    </label>
                   </div>
                 </div>
               </div>

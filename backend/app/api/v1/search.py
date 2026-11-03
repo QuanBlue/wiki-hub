@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
 from app.api.deps import CurrentUser, DbSession
+from app.modules.search.filters import parse_date_spec, parse_search_query
 from app.modules.search.service import SearchResults, SearchService
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -54,6 +55,7 @@ class SearchResponseSchema(BaseModel):
     spaces: list[SearchResultSpaceSchema]
     #: Folded (accent-free, lower-case) words and synonyms to highlight in results.
     terms: list[str] = []
+    filters: dict[str, Any] | None = None
 
 
 @router.get("", response_model=SearchResponseSchema, summary="Search spaces and pages")
@@ -62,5 +64,36 @@ async def search(
     service: SearchServiceDep,
     q: str = Query(default="", description="Search query string"),
     limit: int = Query(default=20, ge=1, le=50),
+    space: str | None = Query(default=None, description="Filter by space key or name"),
+    author: str | None = Query(default=None, description="Filter by author username or name"),
+    label: str | None = Query(default=None, description="Filter by page label"),
+    type: str | None = Query(default=None, description="Filter by attachment type/ext"),
+    updated: str | None = Query(default=None, description="Filter by updated date range"),
 ) -> SearchResults:
-    return await service.search(query=q, user=user, limit=limit)
+    parsed = parse_search_query(q)
+    if space:
+        parsed.filters.spaces.append(space)
+    if author:
+        parsed.filters.authors.append(author)
+    if label:
+        parsed.filters.labels.append(label)
+    if type:
+        cleaned_type = type.lower().lstrip(".")
+        if cleaned_type:
+            parsed.filters.types.append(cleaned_type)
+    if updated:
+        after, before = parse_date_spec(updated)
+        if after:
+            parsed.filters.updated_after = after
+        if before:
+            parsed.filters.updated_before = before
+
+    return await service.search(
+        # Only the free text: a filter-only box ("space:ENG") must not fall back to the raw
+        # string, or the service would search for the literal word "space:ENG".
+        query=parsed.clean_query,
+        user=user,
+        limit=limit,
+        filters=parsed.filters,
+        raw_query=q,
+    )

@@ -4,10 +4,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "@/app/login/page";
 import { SavedPagesList } from "@/components/recent/saved-pages-list";
 import { ApiError, api } from "@/lib/api-client";
+import { serverGet } from "@/lib/server-api";
 
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
-  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  api: {
+    get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 vi.mock("@/lib/i18n/server", () => ({
   getServerLocale: async () => ({ t: (key: string) => key, locale: "en" }),
@@ -18,7 +25,17 @@ vi.mock("@/components/auth/auth-panels", () => ({
   ),
 }));
 vi.mock("@/components/brand/logo", () => ({
-  Wordmark: ({ siteName }: { siteName: string }) => <span data-testid="wordmark">{siteName}</span>,
+  Wordmark: ({ siteName }: { siteName: string }) => (
+    <span data-testid="wordmark">{siteName}</span>
+  ),
+}));
+vi.mock("@/lib/server-api", () => ({ serverGet: vi.fn() }));
+vi.mock("@/components/layout/system-announcement-banner", () => ({
+  SystemAnnouncementBanner: ({
+    announcement,
+  }: {
+    announcement: { title: string };
+  }) => <aside data-testid="login-announcement">{announcement.title}</aside>,
 }));
 
 const mocked = vi.mocked(api);
@@ -27,6 +44,7 @@ const KEY = "wikihub:saved-page-keys";
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
+  vi.mocked(serverGet).mockResolvedValue({});
 });
 
 describe("SavedPagesList", () => {
@@ -47,7 +65,10 @@ describe("SavedPagesList", () => {
   });
 
   it("lists saved pages, resolving titles", async () => {
-    window.localStorage.setItem(KEY, JSON.stringify(["ENG/run book", 7, "ENG/other", "ONLYSPACE"]));
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify(["ENG/run book", 7, "ENG/other", "ONLYSPACE"]),
+    );
     mocked.get.mockImplementation(async (url: string) => {
       if (url.endsWith("/run%20book")) return { title: "Run book" };
       if (url.endsWith("/other")) throw new ApiError(500, "x", "boom");
@@ -61,8 +82,14 @@ describe("SavedPagesList", () => {
       "/spaces/ENG/pages/run%20book",
     );
     // A transient failure shows as unavailable but stays in the list.
-    await waitFor(() => expect(screen.getAllByText("No longer available").length).toBeGreaterThan(0));
-    expect(JSON.parse(window.localStorage.getItem(KEY)!)).toContain("ENG/other");
+    await waitFor(() =>
+      expect(screen.getAllByText("No longer available").length).toBeGreaterThan(
+        0,
+      ),
+    );
+    expect(JSON.parse(window.localStorage.getItem(KEY)!)).toContain(
+      "ENG/other",
+    );
     expect(screen.getByRole("link", { name: /ONLYSPACE/ })).toHaveAttribute(
       "href",
       "/spaces/ONLYSPACE/pages",
@@ -88,9 +115,13 @@ describe("SavedPagesList", () => {
     render(<SavedPagesList />);
 
     await waitFor(() =>
-      expect(JSON.parse(window.localStorage.getItem(KEY)!)).toEqual(["ENG/kept"]),
+      expect(JSON.parse(window.localStorage.getItem(KEY)!)).toEqual([
+        "ENG/kept",
+      ]),
     );
-    await waitFor(() => expect(screen.queryByText("gone")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText("gone")).not.toBeInTheDocument(),
+    );
     expect(await screen.findByText("Kept")).toBeInTheDocument();
   });
 
@@ -124,8 +155,14 @@ describe("SavedPagesList", () => {
   });
 
   it("ignores a response that arrives after unmounting", async () => {
-    window.localStorage.setItem(KEY, JSON.stringify(["ENG/late", "ENG/late-fail"]));
-    const resolvers: Array<{ ok: (v: unknown) => void; fail: (e: unknown) => void }> = [];
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify(["ENG/late", "ENG/late-fail"]),
+    );
+    const resolvers: Array<{
+      ok: (v: unknown) => void;
+      fail: (e: unknown) => void;
+    }> = [];
     mocked.get.mockImplementation(
       () =>
         new Promise((ok, fail) => {
@@ -144,6 +181,22 @@ describe("SavedPagesList", () => {
 });
 
 describe("LoginPage", () => {
+  it("renders the sign-in form when the public metadata request fails", async () => {
+    vi.mocked(serverGet).mockRejectedValueOnce(new Error("offline"));
+    render(await LoginPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.getByTestId("panels")).toHaveTextContent("login");
+    expect(screen.queryByTestId("login-announcement")).not.toBeInTheDocument();
+  });
+
+  it("shows the public system announcement beside the sign-in form", async () => {
+    vi.mocked(serverGet).mockResolvedValueOnce({
+      announcement: { title: "Maintenance tonight" },
+    });
+    render(await LoginPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.getByTestId("login-announcement")).toHaveTextContent(
+      "Maintenance tonight",
+    );
+  });
   it("renders the marketing panel and the sign-in form", async () => {
     render(await LoginPage({ searchParams: Promise.resolve({}) }));
     expect(screen.getByTestId("panels")).toHaveTextContent("login");
@@ -153,7 +206,17 @@ describe("LoginPage", () => {
   });
 
   it("opens the contact view when asked", async () => {
-    render(await LoginPage({ searchParams: Promise.resolve({ view: "contact" }) }));
+    render(
+      await LoginPage({ searchParams: Promise.resolve({ view: "contact" }) }),
+    );
     expect(screen.getByTestId("panels")).toHaveTextContent("contact");
+  });
+
+  it("links the personal data notice under the form", async () => {
+    render(await LoginPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.getByText(/auth\.privacyNotice/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "auth.privacyLink" }),
+    ).toHaveAttribute("href", "/privacy");
   });
 });

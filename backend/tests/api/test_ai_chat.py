@@ -10,6 +10,7 @@ from httpx import AsyncClient
 
 from app.models.user import User
 from app.modules.ai import chat as chat_module
+from app.modules.ai import chat_files as chat_files_module
 from app.modules.ai.client import ChatReply, Usage
 from tests.api.test_ai_answer import _connect, _no_connections
 
@@ -104,7 +105,23 @@ async def test_a_file_attached_in_the_chat_is_read_and_answered_from(
     api_user: User,
     api_access_token: str,
     model: list[list[dict[str, str]]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    class FileCache:
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {}
+
+        async def set(self, key: str, value: str, ex: int) -> None:
+            self.values[key] = value
+
+        async def get(self, key: str) -> str | None:
+            return self.values.get(key)
+
+        async def expire(self, key: str, seconds: int) -> None:
+            pass
+
+    file_cache = FileCache()
+    monkeypatch.setattr(chat_files_module, "get_redis", lambda: file_cache)
     client.cookies.set("wikihub_access", api_access_token)
     await _connect(client)
 

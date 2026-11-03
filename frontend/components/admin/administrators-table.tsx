@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Avatar } from "@/components/ui/avatar";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -23,10 +24,6 @@ const SOURCE_HINT: Record<AdminAccount["admin_source"], string> = {
   override: "Not an Administrator account, but system_admin is force-enabled for this user specifically.",
   group: "Granted through a group that holds the System administrator global permission.",
 };
-
-function initials(name: string): string {
-  return name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join("") || "?";
-}
 
 /**
  * Every account that currently holds `system_admin`, however it got there -
@@ -176,9 +173,12 @@ export function AdministratorsTable({
                 <tr key={account.id} className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0">
                   <td className="px-4 py-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
-                        {initials(account.full_name || account.username)}
-                      </span>
+                      <Avatar
+                        name={account.full_name}
+                        username={account.username}
+                        src={account.avatar_url}
+                        className="size-8 text-xs"
+                      />
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <p className="truncate font-medium">{account.full_name || account.username}</p>

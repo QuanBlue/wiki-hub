@@ -101,6 +101,20 @@ class HealthPage(BaseModel):
     updated_at: datetime
 
 
+class LinkSuggestion(BaseModel):
+    """A page that could link to an orphan: the closest in content, or its parent."""
+
+    page: HealthPage
+    #: ``similar`` (close in content; ``similarity`` says how close) or ``parent``.
+    reason: Literal["similar", "parent"]
+    similarity: float | None = None
+
+
+class OrphanPage(HealthPage):
+    #: Where a link to it would fit best, the most fitting first.
+    link_from: list[LinkSuggestion] = []
+
+
 class StalePage(BaseModel):
     page: HealthPage
     #: When someone last marked it still correct, if ever.
@@ -132,6 +146,14 @@ class DuplicateGroup(BaseModel):
     pages: list[HealthPage]
 
 
+class ConflictPair(BaseModel):
+    id: str
+    page_a: HealthPage
+    page_b: HealthPage
+    relation: Literal["similar", "link", "mention"]
+    similarity: float | None = None
+
+
 class SpaceHealthRead(BaseModel):
     stale_days: int
     recent_days: int
@@ -139,10 +161,12 @@ class SpaceHealthRead(BaseModel):
     stale_total: int
     broken_links: list[BrokenLink]
     broken_total: int
-    orphans: list[HealthPage]
+    orphans: list[OrphanPage]
     orphans_total: int
     duplicates: list[DuplicateGroup]
     duplicates_total: int
+    conflicts: list[ConflictPair] = []
+    conflicts_total: int = 0
     #: Whether nearly identical content was looked for (semantic search is on).
     semantic: bool
 
@@ -160,5 +184,21 @@ class StaleCheckRead(BaseModel):
     #: Markdown: what in the page the newer pages contradict or replace, or that nothing does.
     result: str
     #: The newer pages it was compared with.
+    compared: list[HealthPage]
+    cached: bool = False
+
+
+class ConflictCheckRequest(BaseModel):
+    page_a_slug: str
+    page_b_slug: str
+    page_b_space_key: str | None = None
+    locale: Literal["en", "vi"] = "en"
+
+
+class ConflictCheckRead(BaseModel):
+    has_conflict: bool
+    #: ``duplicate`` when the pages agree but repeat each other: one to merge, not to settle.
+    verdict: Literal["conflict", "consistent", "duplicate"] = "consistent"
+    result: str
     compared: list[HealthPage]
     cached: bool = False

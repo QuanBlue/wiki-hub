@@ -4,6 +4,7 @@ import { KeyRound } from "lucide-react";
 
 import { UserRowActions } from "@/components/admin/user-row-actions";
 import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
 import type { GlobalPermission, User } from "@/types/api";
 
 const PERMISSION_LABEL: Record<GlobalPermission, string> = {
@@ -13,18 +14,6 @@ const PERMISSION_LABEL: Record<GlobalPermission, string> = {
   manage_issues: "Manage issues",
   system_admin: "System administrator",
 };
-
-function initials(name: string): string {
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]!.toUpperCase())
-      .join("") || "?"
-  );
-}
 
 /**
  * Every account with at least one Global Access override - previously the
@@ -81,9 +70,12 @@ export function PermissionOverridesTable({
               >
                 <td className="px-4 py-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
-                      {initials(account.full_name || account.username)}
-                    </span>
+                    <Avatar
+                      name={account.full_name}
+                      username={account.username}
+                      src={account.avatar_url}
+                      className="size-8 text-xs"
+                    />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <p className="truncate font-medium">

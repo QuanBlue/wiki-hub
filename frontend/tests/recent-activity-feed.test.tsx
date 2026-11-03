@@ -25,8 +25,8 @@ vi.mock("@/components/pages/page-history-modal", () => ({
   ),
 }));
 vi.mock("@/components/users/user-profile-trigger", () => ({
-  UserProfileTrigger: ({ username, variant }: { username: string; variant?: string }) => (
-    <span data-testid={variant === "avatar" ? "avatar" : "name"}>{username}</span>
+  UserProfileTrigger: ({ username, variant, avatarUrl }: { username: string; variant?: string; avatarUrl?: string | null }) => (
+    <span data-testid={variant === "avatar" ? "avatar" : "name"} data-avatar-url={avatarUrl ?? ""}>{username}</span>
   ),
 }));
 
@@ -59,6 +59,19 @@ function space(n: number, icon = ""): Space {
 }
 
 describe("RecentActivityFeed", () => {
+  it("uses a later avatar when the first update lacks one", () => {
+    render(
+      <RecentActivityFeed
+        activities={[
+          item({ id: "1", user_avatar_url: null }),
+          item({ id: "2", user_avatar_url: "/ann.png" }),
+        ]}
+        spaces={[]}
+        user={makeUser()}
+      />,
+    );
+    expect(screen.getByTestId("avatar")).toHaveAttribute("data-avatar-url", "/ann.png");
+  });
   it("groups updates by person, with system updates shown plainly", () => {
     render(
       <RecentActivityFeed

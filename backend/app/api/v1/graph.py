@@ -14,6 +14,8 @@ from app.modules.graph.service import GraphService
 from app.modules.pages.service import PageService
 from app.modules.spaces.service import SpaceService
 from app.schemas.graph import (
+    ConflictCheckRead,
+    ConflictCheckRequest,
     PageRelatedRead,
     PageReviewRead,
     SpaceGraphRead,
@@ -172,3 +174,23 @@ async def stale_check(
     session: DbSession,
 ) -> StaleCheckRead:
     return await AIService(session, user).check_stale(key, slug, payload.locale)
+
+
+@router.post(
+    "/conflict-check",
+    response_model=ConflictCheckRead,
+    summary="Ask the AI where two related pages contradict each other",
+)
+async def conflict_check(
+    key: str,
+    payload: ConflictCheckRequest,
+    user: CurrentUser,
+    session: DbSession,
+) -> ConflictCheckRead:
+    return await AIService(session, user).check_conflict(
+        key=key,
+        page_a_slug=payload.page_a_slug,
+        page_b_slug=payload.page_b_slug,
+        page_b_space_key=payload.page_b_space_key,
+        locale=payload.locale,
+    )

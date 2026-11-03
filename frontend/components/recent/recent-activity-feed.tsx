@@ -6,11 +6,14 @@ import { useMemo, useState } from "react";
 
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
+import { getUserAvatarColor } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
 import type { Me, RecentPageItem, Space } from "@/types/api";
 
 type ActivityGroup = {
   username: string;
   name: string;
+  avatarUrl?: string | null;
   items: RecentPageItem[];
 };
 
@@ -53,8 +56,12 @@ export function RecentActivityFeed({
         grouped.set(username, {
           username,
           name: item.user_full_name || username,
+          avatarUrl: item.user_avatar_url ?? null,
           items: [],
         });
+      else if (!grouped.get(username)!.avatarUrl && item.user_avatar_url) {
+        grouped.get(username)!.avatarUrl = item.user_avatar_url;
+      }
       grouped.get(username)!.items.push(item);
     }
     return Array.from(grouped.values());
@@ -90,6 +97,7 @@ export function RecentActivityFeed({
                     <UserProfileTrigger
                       username={group.username}
                       fullName={group.name}
+                      avatarUrl={group.avatarUrl}
                       variant="avatar"
                       className="size-11 text-sm"
                     />
@@ -166,7 +174,14 @@ export function RecentActivityFeed({
         </section>
         <section className="border-border bg-surface rounded-lg border p-4">
           <div className="flex items-center gap-3">
-            <div className="bg-primary text-primary-foreground flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold">
+            <div
+              className={cn(
+                "flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold select-none ring-1 ring-inset ring-black/5 dark:ring-white/10",
+                user.avatar_url
+                  ? ""
+                  : getUserAvatarColor(user.username || user.full_name || ""),
+              )}
+            >
               {user.avatar_url ? (
                 <img
                   src={user.avatar_url}

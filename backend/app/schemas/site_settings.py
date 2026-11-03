@@ -163,6 +163,7 @@ class SiteSettingsOverrides(BaseModel):
     announcement: SystemAnnouncement | None = None
     session_ttl_hours: int | None = None
     trash_retention_days: int | None = None
+    public_shares_enabled: bool | None = None
 
 
 class EffectiveSettings(BaseModel):
@@ -182,6 +183,7 @@ class EffectiveSettings(BaseModel):
     announcement: SystemAnnouncement = Field(default_factory=SystemAnnouncement)
     session_ttl_hours: int
     trash_retention_days: int
+    public_shares_enabled: bool = True
 
 
 class SiteSettingsRead(BaseModel):
@@ -224,6 +226,7 @@ class SiteSettingsUpdate(BaseModel):
     announcement: SystemAnnouncement | None = None
     session_ttl_hours: int | None = Field(default=None, ge=1, le=8760)
     trash_retention_days: int | None = Field(default=None, ge=1, le=3650)
+    public_shares_enabled: bool | None = None
 
     @field_validator("site_name")
     @classmethod

@@ -1,12 +1,14 @@
 "use client";
 
 import {
+  AlertTriangle,
   Bookmark,
   Check,
   Clock3,
   CodeXml,
   Columns2,
   ChevronDown,
+  Copy,
   Download,
   FileText,
   FileUp,
@@ -23,6 +25,7 @@ import {
   MoreHorizontal,
   Pencil,
   Pin,
+  Plus,
   RectangleHorizontal,
   RefreshCw,
   Save,
@@ -72,10 +75,15 @@ import { TRASH_OPEN_EVENT } from "@/lib/space-trash";
 import { SelectionAssistant } from "@/components/pages/selection-assistant";
 import { aiStatus } from "@/lib/ai-summary";
 import { SharePageDialog } from "@/components/pages/share-page-dialog";
+import { PublicShareDialog } from "@/components/pages/public-share-dialog";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { CreatePageDialog } from "@/components/pages/create-page-dialog";
 import { ImportPagesDialog } from "@/components/pages/import-pages-dialog";
 import { MovePageDialog } from "@/components/pages/move-page-dialog";
+import { PagePresence } from "@/components/pages/page-presence";
+import { WatchButton } from "@/components/pages/watch-button";
+import { usePagePresence } from "@/lib/use-page-presence";
+import type { PageSavedEvent } from "@/types/api";
 import { SourceCodeEditor } from "@/components/pages/source-code-editor";
 import {
   isAttachmentHref,
@@ -94,7 +102,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { api } from "@/lib/api-client";
+import { api, describeApiError } from "@/lib/api-client";
+import { downloadFile } from "@/lib/download";
 import { escapeHtml, markdownToHtml } from "@/lib/markdown-html";
 import { apiBaseUrl } from "@/lib/env";
 import { formatDate, formatTime } from "@/lib/i18n/format";
@@ -816,6 +825,28 @@ export function SpaceWorkspace({
   const [shareCount, setShareCount] = useState(0);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [publicShareDialogOpen, setPublicShareDialogOpen] = useState(false);
+  const [publicSharesEnabled, setPublicSharesEnabled] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    void api
+      .get<InstanceInfo>("/api/v1/meta")
+      .then((meta) => {
+        if (active) {
+          if (typeof meta.public_shares_enabled === "boolean") {
+            setPublicSharesEnabled(meta.public_shares_enabled);
+          }
+          if (meta.trash_retention_days) {
+            setTrashDays(meta.trash_retention_days);
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
   const [pinned, setPinned] = useState(false);
   const [pinPending, setPinPending] = useState(false);
   const savedPageKeys = useSyncExternalStore(
@@ -857,6 +888,26 @@ export function SpaceWorkspace({
   const [trashOpen, setTrashOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
+  const [conflictNotice, setConflictNotice] = useState<PageSavedEvent | null>(null);
+  const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
+
+  const { activeUsers } = usePagePresence({
+    spaceKey: space.key,
+    pageSlug: currentPage?.slug,
+    editing,
+    currentUserId: currentUser?.id,
+    onPageSaved: (savedEvent) => {
+      if (editing) {
+        setConflictNotice(savedEvent);
+      }
+    },
+  });
+
+  const otherEditors = useMemo(
+    () => activeUsers.filter((u) => u.state === "editing"),
+    [activeUsers],
+  );
+
   // ":trash" in the search box opens this space's Trash from wherever the person is.
   useEffect(() => {
     const open = (event: Event) => {
@@ -1459,6 +1510,43 @@ export function SpaceWorkspace({
     savePending,
   ]);
 
+  useEffect(() => {
+    const handleWorkspaceShortcuts = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      const inInput =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+
+      if (!inInput && matchesShortcut("page.copyLink", event)) {
+        if (currentPage) {
+          event.preventDefault();
+          void shareCurrentPage();
+        }
+        return;
+      }
+
+      if (!inInput && !editing && matchesShortcut("page.edit", event)) {
+        if (currentPage && canEdit && space.status === "active") {
+          event.preventDefault();
+          beginEditing(
+            currentPage.content_format === "markdown"
+              ? "markdown"
+              : currentPage.content_format === "html"
+                ? "html"
+                : "normal",
+          );
+        }
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleWorkspaceShortcuts);
+    return () => window.removeEventListener("keydown", handleWorkspaceShortcuts);
+  }, [canEdit, currentPage, editing, space.status]);
+
   useEffect(
     () => () => {
       if (autoSaveResetTimer.current !== null) {
@@ -1655,23 +1743,26 @@ export function SpaceWorkspace({
     }
   }
 
-  // The backend renders the real page in a headless browser and serves the
-  // result directly - PDF and HTML are captured from the same render the
-  // live page uses, so this is now just a download link, the same pattern
-  // for both formats.
-  function exportPage(format: "pdf" | "html" | "docx") {
+  // The backend renders the real page in a headless browser, which takes a
+  // few seconds. Fetch it behind a loading toast so the user sees it is
+  // working, and gets the server's reason if it fails, instead of a silent
+  // wait followed by the browser's own "Site wasn't available".
+  async function exportPage(format: "pdf" | "html" | "docx") {
     if (!currentPage) return;
-    const link = document.createElement("a");
-    link.href = `${apiBaseUrl()}/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/export/${format}`;
-    link.download = `${currentPage.slug || "page"}.${format}`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    toast.success(
-      t("workspace.exportPreparing", {
-        format: format.toUpperCase(),
-      }),
-    );
+    const label = format.toUpperCase();
+    const toastId = toast.loading(t("workspace.exportPreparing", { format: label }));
+    try {
+      await downloadFile(
+        `${apiBaseUrl()}/api/v1/spaces/${encodeURIComponent(space.key)}/pages/${encodeURIComponent(currentPage.slug)}/export/${format}`,
+        `${currentPage.slug || "page"}.${format}`,
+      );
+      toast.success(t("workspace.exportReady", { format: label }), { id: toastId });
+    } catch (err) {
+      toast.error(
+        describeApiError(err, t("workspace.exportError", { format: label })),
+        { id: toastId },
+      );
+    }
   }
 
   function openEditor(mode: EditMode) {
@@ -1769,9 +1860,11 @@ export function SpaceWorkspace({
   async function persistPage({
     closeEditor = false,
     announce = true,
+    force = false,
   }: {
     closeEditor?: boolean;
     announce?: boolean;
+    force?: boolean;
   } = {}) {
     const {
       currentPage: page,
@@ -1796,8 +1889,11 @@ export function SpaceWorkspace({
           title,
           content: mode === "markdown" ? markdownSource : htmlDraft,
           content_format: formatForMode(mode),
+          base_updated_at: page.updated_at,
+          force,
         },
       );
+      setConflictNotice(null);
       pageEditBaseline.current = {
         html: htmlDraft,
         markdown: markdownSource,
@@ -1827,6 +1923,15 @@ export function SpaceWorkspace({
       }
       return true;
     } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        (error as { code: string }).code === "page_conflict"
+      ) {
+        setOverwriteConfirmOpen(true);
+        return false;
+      }
       if (announce) {
         toast.error(
           error instanceof Error ? error.message : t("workspace.pageSaveError"),
@@ -1966,7 +2071,7 @@ export function SpaceWorkspace({
           "max-md:top-topbar max-md:fixed max-md:bottom-0 max-md:left-0 max-md:z-40 max-md:w-[min(20rem,85vw)] max-md:shadow-xl",
           "max-md:transition-[transform,visibility] max-md:duration-200 motion-reduce:max-md:transition-none",
           mobileOpen ? "max-md:translate-x-0" : "max-md:invisible max-md:-translate-x-full",
-          "md:top-topbar md:sticky md:h-[calc(100vh-var(--wh-topbar-height)-var(--wh-banner-height,0px))]",
+          "md:top-[calc(var(--wh-topbar-height)+var(--wh-banner-height,0px))] md:sticky md:h-[calc(100vh-var(--wh-topbar-height)-var(--wh-banner-height,0px))]",
           "md:w-(--space-sidebar-width)",
         )}
         style={
@@ -2345,6 +2450,7 @@ export function SpaceWorkspace({
                   variant="ghost"
                   size="sm"
                   onClick={beginOverviewEditing}
+                  title={t("workspace.editOverviewTooltip")}
                 >
                   <Pencil />
                   {t("workspace.editOverview")}
@@ -2357,12 +2463,22 @@ export function SpaceWorkspace({
                     triggerLabel={
                       isHomePage ? t("workspace.newButton") : t("workspace.createButton")
                     }
+                    triggerTitle={
+                      isHomePage
+                        ? t("workspace.newPageTooltip")
+                        : t("workspace.createSubpageTooltip")
+                    }
                     triggerVariant="ghost"
                     triggerSize="sm"
                   />
                   <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" disabled={editing}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={editing}
+                        title={t("workspace.editTooltip")}
+                      >
                         <Pencil />
                         {t("spaces.edit")}
                         <ChevronDown />
@@ -2400,9 +2516,11 @@ export function SpaceWorkspace({
                         size="sm"
                         onClick={() => setSummaryOpen(true)}
                         title={t("ai.summarize")}
+                        aria-label={t("ai.button")}
+                        className="hidden 2xl:inline-flex"
                       >
                         <Sparkles />
-                        {t("ai.button")}
+                        <span className="hidden 2xl:inline">{t("ai.button")}</span>
                       </Button>
                     ) : null}
                     {currentPage ? (
@@ -2412,15 +2530,20 @@ export function SpaceWorkspace({
                         size="sm"
                         onClick={toggleSavedForLater}
                         aria-pressed={savedForLater}
+                        title={savedForLater ? t("workspace.removeFromSavedTooltip") : t("workspace.saveForLaterTooltip")}
+                        aria-label={savedForLater ? t("workspace.savedToggle") : t("workspace.saveForLater")}
+                        className="hidden xl:inline-flex"
                       >
                         <Bookmark
                           className={cn(
                             savedForLater && "text-primary fill-current",
                           )}
                         />
-                        {savedForLater
-                          ? t("workspace.savedToggle")
-                          : t("workspace.saveForLater")}
+                        <span className="hidden 2xl:inline">
+                          {savedForLater
+                            ? t("workspace.savedToggle")
+                            : t("workspace.saveForLater")}
+                        </span>
                       </Button>
                     ) : null}
                     {currentPage ? (
@@ -2431,17 +2554,28 @@ export function SpaceWorkspace({
                         onClick={() => void togglePinned()}
                         disabled={pinPending}
                         aria-pressed={pinned}
+                        title={pinned ? t("workspace.unpinTooltip") : t("workspace.pinTooltip")}
+                        aria-label={pinned ? t("workspace.pinnedToggle") : t("workspace.pinPage")}
+                        className="hidden lg:inline-flex"
                       >
                         <Pin className={cn(pinned && "text-primary fill-current")} />
-                        {pinned
-                          ? t("workspace.pinnedToggle")
-                          : t("workspace.pinPage")}
+                        <span className="hidden 2xl:inline">
+                          {pinned
+                            ? t("workspace.pinnedToggle")
+                            : t("workspace.pinPage")}
+                        </span>
                       </Button>
                     ) : null}
+                    <WatchButton space={space} page={currentPage} />
                     {currentPage ? (
                       <DropdownMenu modal={false}>
                         <DropdownMenuTrigger asChild>
-                          <Button type="button" variant="ghost" size="sm">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            title={t("workspace.shareTooltip")}
+                          >
                             <Share2 />
                             {t("workspace.share")}
                           </Button>
@@ -2450,14 +2584,30 @@ export function SpaceWorkspace({
                           align="end"
                           className="text-muted-foreground min-w-52 text-sm font-medium"
                         >
-                          <DropdownMenuItem onSelect={() => void shareCurrentPage()}>
+                          <DropdownMenuItem
+                            onSelect={() => void shareCurrentPage()}
+                            title={t("share.copyPageLinkTooltip")}
+                          >
                             <Link2 />
-                            {t("share.copyLink")}
+                            {t("share.copyPageLink")}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => setShareDialogOpen(true)}>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={() => setShareDialogOpen(true)}
+                            title={t("share.shareInternallyTooltip")}
+                          >
                             <Users />
                             {t("share.withPeople")}
                           </DropdownMenuItem>
+                          {publicSharesEnabled ? (
+                            <DropdownMenuItem
+                              onSelect={() => setPublicShareDialogOpen(true)}
+                              title={t("share.sharePubliclyTooltip")}
+                            >
+                              <Globe />
+                              {t("share.sharePublicly")}
+                            </DropdownMenuItem>
+                          ) : null}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : (
@@ -2468,6 +2618,7 @@ export function SpaceWorkspace({
                         variant="ghost"
                         size="sm"
                         onClick={() => void shareCurrentPage()}
+                        title={t("workspace.shareOverviewTooltip")}
                       >
                         <Share2 />
                         {t("workspace.share")}
@@ -2481,7 +2632,7 @@ export function SpaceWorkspace({
                           variant="ghost"
                           size="icon"
                           aria-label={t("workspace.moreActionsAria")}
-                          title={t("workspace.moreActionsAria")}
+                          title={t("workspace.moreActionsTooltip")}
                           className="hidden lg:inline-flex"
                         >
                           <MoreHorizontal />
@@ -2491,6 +2642,40 @@ export function SpaceWorkspace({
                         align="end"
                         className="text-muted-foreground min-w-52 text-sm font-medium"
                       >
+                        {/* Secondary page actions collapsed into ... like a stack when the screen narrows */}
+                        <DropdownMenuItem
+                          onSelect={() => setSummaryOpen(true)}
+                          className="2xl:hidden"
+                        >
+                          <Sparkles />
+                          {t("ai.button")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={toggleSavedForLater}
+                          className="xl:hidden"
+                        >
+                          <Bookmark
+                            className={cn(
+                              savedForLater && "text-primary fill-current",
+                            )}
+                          />
+                          {savedForLater
+                            ? t("workspace.removeFromSaved")
+                            : t("workspace.saveForLater")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => void togglePinned()}
+                          disabled={pinPending}
+                          className="lg:hidden"
+                        >
+                          <Pin
+                            className={cn(pinned && "text-primary fill-current")}
+                          />
+                          {pinned
+                            ? t("workspace.pinnedToggle")
+                            : t("workspace.pinPage")}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="2xl:hidden" />
                         {currentPage?.can_move && space.status === "active" ? (
                           <DropdownMenuItem
                             onSelect={() => setMovePageOpen(true)}
@@ -2592,6 +2777,7 @@ export function SpaceWorkspace({
                         variant="ghost"
                         size="icon"
                         aria-label={t("workspace.moreActionsAria")}
+                        title={t("workspace.moreActionsTooltip")}
                         className="lg:hidden"
                       >
                         <MoreHorizontal />
@@ -2621,14 +2807,27 @@ export function SpaceWorkspace({
                       ) : null}
                       <DropdownMenuItem
                         onSelect={() => void shareCurrentPage()}
+                        title={t("share.copyPageLinkTooltip")}
                       >
                         <Link2 />
-                        {t("share.copyLink")}
+                        {t("share.copyPageLink")}
                       </DropdownMenuItem>
                       {currentPage ? (
-                        <DropdownMenuItem onSelect={() => setShareDialogOpen(true)}>
+                        <DropdownMenuItem
+                          onSelect={() => setShareDialogOpen(true)}
+                          title={t("share.shareInternallyTooltip")}
+                        >
                           <Share2 />
                           {t("share.withPeople")}
+                        </DropdownMenuItem>
+                      ) : null}
+                      {currentPage && publicSharesEnabled ? (
+                        <DropdownMenuItem
+                          onSelect={() => setPublicShareDialogOpen(true)}
+                          title={t("share.sharePubliclyTooltip")}
+                        >
+                          <Globe />
+                          {t("share.sharePublicly")}
                         </DropdownMenuItem>
                       ) : null}
                       {currentPage && canManageRestrictions ? (
@@ -2808,16 +3007,88 @@ export function SpaceWorkspace({
                 className="space-y-5"
                 noValidate
               >
-                <input
-                  type="text"
-                  id="page-editor-title"
-                  aria-label={t("workspace.pageTitleAria")}
-                  value={titleDraft}
-                  onChange={(event) => updateTitleDraft(event.target.value)}
-                  maxLength={255}
-                  required
-                  className="text-foreground wikihub-page-header w-full rounded-md border border-transparent bg-transparent text-3xl font-semibold tracking-normal outline-none transition-colors duration-150 hover:border-border-strong focus-visible:border-border-strong focus-visible:ring-ring focus-visible:ring-2"
-                />
+                {conflictNotice ? (
+                  <div className="bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200 flex flex-col gap-2 rounded-lg border p-3.5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <AlertTriangle className="text-amber-600 dark:text-amber-400 mt-0.5 size-5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-wider">
+                          {t("workspace.concurrentEditWarningTitle")}
+                        </p>
+                        <p className="mt-0.5 text-xs">
+                          {conflictNotice.actor_name
+                            ? t("workspace.concurrentEditWarningBody", {
+                                actor: conflictNotice.actor_name,
+                                time: conflictNotice.saved_at
+                                  ? formatTime(conflictNotice.saved_at, locale)
+                                  : "",
+                              })
+                            : t("workspace.concurrentEditWarningTitle")}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center gap-1.5 self-end sm:self-auto">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 gap-1 text-xs"
+                        onClick={() => setHistoryModalOpen(true)}
+                      >
+                        <Clock3 className="size-3.5" />
+                        {t("workspace.viewLatestRevision")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 gap-1 text-xs"
+                        onClick={() => {
+                          const content = editMode === "markdown" ? markdownDraft : draftContent;
+                          void navigator.clipboard.writeText(content).then(() => {
+                            toast.success(t("workspace.draftCopied"));
+                          });
+                        }}
+                      >
+                        <Copy className="size-3.5" />
+                        {t("workspace.copyMyDraft")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="danger"
+                        className="h-7 text-xs"
+                        onClick={() => setOverwriteConfirmOpen(true)}
+                      >
+                        {t("workspace.overwriteAndSave")}
+                      </Button>
+                    </div>
+                  </div>
+                ) : otherEditors.length > 0 ? (
+                  <div className="bg-blue-500/10 border-blue-500/20 text-blue-900 dark:text-blue-200 flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
+                    <Pencil className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                    <span>
+                      {t("workspace.concurrentEditingNotice", {
+                        name: otherEditors.map((u) => u.full_name).join(", "),
+                      })}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0">
+                    <input
+                      type="text"
+                      id="page-editor-title"
+                      aria-label={t("workspace.pageTitleAria")}
+                      value={titleDraft}
+                      onChange={(event) => updateTitleDraft(event.target.value)}
+                      maxLength={255}
+                      required
+                      className="text-foreground wikihub-page-header flex-1 min-w-[200px] rounded-md border border-transparent bg-transparent text-3xl font-semibold tracking-normal outline-none transition-colors duration-150 hover:border-border-strong focus-visible:border-border-strong focus-visible:ring-ring focus-visible:ring-2"
+                    />
+                  </div>
+                  <PagePresence users={activeUsers} className="shrink-0 pt-1" />
+                </div>
                 <div
                   className={cn(
                     "min-w-0",
@@ -3041,39 +3312,60 @@ export function SpaceWorkspace({
               </form>
             ) : (
               <>
-                <h1 className="text-foreground text-3xl font-semibold tracking-normal wikihub-page-header">
-                  {title}
-                </h1>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-3 min-w-0">
+                    <h1 className="text-foreground text-3xl font-semibold tracking-normal wikihub-page-header">
+                      {title}
+                    </h1>
+                  </div>
+                  {currentPage ? (
+                    <PagePresence users={activeUsers} className="shrink-0 pt-1" />
+                  ) : null}
+                </div>
                 {/* Metadata on the left, labels on the right of the same line
                     (wrapping below it on narrow screens). The page's Like
                     lives with the discussion, beside the comment count - see
                     `PageComments`' header. */}
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-                <p className="text-muted-foreground text-xs">
-                  {t("workspace.createdByPrefix")}{" "}
-                  {author ? (
-                    <UserProfileTrigger username={author} />
-                  ) : (
-                    t("workspace.unknownAuthor")
-                  )}
-                  {updatedAt ? (
-                    <>
-                      {t("workspace.lastModifiedPrefix")}{" "}
-                      {updatedBy ? (
-                        <>
-                          {t("workspace.byLabel")}{" "}
-                          <UserProfileTrigger username={updatedBy} />{" "}
-                        </>
-                      ) : null}
-                      {t("workspace.onDate", {
-                        date: formatDateAndTime(updatedAt, t, locale),
-                      })}
-                    </>
-                  ) : null}
-                </p>
-                  <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                    {pageLabels.length ? pageLabels.map((label) => label.name).join(", ") : t("workspace.noLabels")}
-                    <button type="button" onClick={() => setLabelsDialogOpen(true)} className="hover:bg-surface-hover hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex size-6 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none" aria-label={t("workspace.manageLabelsAria")} title={t("workspace.manageLabelsAria")}><Tag className="size-3.5" /></button>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                  <p className="flex flex-wrap items-center gap-1">
+                    {t("workspace.createdByPrefix")}{" "}
+                    {author ? (
+                      <UserProfileTrigger username={author} />
+                    ) : (
+                      t("workspace.unknownAuthor")
+                    )}
+                    {updatedAt ? (
+                      <>
+                        {t("workspace.lastModifiedPrefix")}{" "}
+                        {updatedBy ? (
+                          <>
+                            {t("workspace.byLabel")}{" "}
+                            <UserProfileTrigger username={updatedBy} />{" "}
+                          </>
+                        ) : null}
+                        {t("workspace.onDate", {
+                          date: formatDateAndTime(updatedAt, t, locale),
+                        })}
+                      </>
+                    ) : null}
+                  </p>
+
+                  <span className="text-muted-foreground/40 select-none" aria-hidden>•</span>
+
+                  <span className="inline-flex items-center gap-1.5">
+                    <Tag className="size-3.5 text-muted-foreground/70 shrink-0" aria-hidden />
+                    <span>
+                      {pageLabels.length ? pageLabels.map((label) => label.name).join(", ") : t("workspace.noLabels")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setLabelsDialogOpen(true)}
+                      className="hover:bg-surface-hover hover:text-foreground active:bg-surface-selected focus-visible:ring-ring flex size-5 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                      aria-label={t("workspace.manageLabelsAria")}
+                      title={t("workspace.manageLabelsAria")}
+                    >
+                      <Plus className="size-3" />
+                    </button>
                   </span>
                 </div>
 
@@ -3147,7 +3439,7 @@ export function SpaceWorkspace({
                           type="button"
                           onClick={() => setShareDialogOpen(true)}
                           aria-label={t("share.countAria", { count: shareCount })}
-                          title={t("share.withPeople")}
+                          title={t("share.title")}
                           className="text-muted-foreground hover:bg-primary-subtle hover:text-primary active:bg-surface-selected focus-visible:ring-ring flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm tabular-nums transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                         >
                           <Share2 className="size-4.5" aria-hidden />
@@ -3248,6 +3540,22 @@ export function SpaceWorkspace({
             onConfirm={() => void discardRecoveryDraft()}
           />
 
+          <ConfirmDialog
+            open={overwriteConfirmOpen}
+            onOpenChange={(open) => {
+              if (!open) setOverwriteConfirmOpen(false);
+            }}
+            title={t("workspace.overwriteConfirmTitle")}
+            description={t("workspace.overwriteConfirmDescription")}
+            confirmLabel={t("workspace.overwriteAndSave")}
+            cancelLabel={t("workspace.stay")}
+            destructive
+            onConfirm={() => {
+              setOverwriteConfirmOpen(false);
+              void persistPage({ closeEditor: true, force: true });
+            }}
+          />
+
           {currentPage ? (
             <MovePageDialog
               space={space}
@@ -3289,6 +3597,16 @@ export function SpaceWorkspace({
               onOpenChange={setShareDialogOpen}
               onCopyLink={() => void shareCurrentPage()}
               onShared={setShareCount}
+            />
+          ) : null}
+
+          {currentPage ? (
+            <PublicShareDialog
+              spaceKey={space.key}
+              pageSlug={currentPage.slug}
+              pageTitle={currentPage.title}
+              open={publicShareDialogOpen}
+              onOpenChange={setPublicShareDialogOpen}
             />
           ) : null}
 

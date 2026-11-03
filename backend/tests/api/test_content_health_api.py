@@ -58,7 +58,7 @@ async def test_a_space_administrator_reads_the_health_report(
         ("never-was", "missing")
     ]
     assert body["broken_total"] == 1
-    assert {"stale", "orphans", "duplicates", "semantic"} <= set(body)
+    assert {"stale", "orphans", "duplicates", "conflicts", "conflicts_total", "semantic"} <= set(body)
 
     chosen = await client.get(f"/api/v1/spaces/{key}/health?stale_days=365&recent_days=30")
     assert chosen.json()["stale_days"] == 365
@@ -94,6 +94,12 @@ async def test_a_member_cannot_read_a_space_health_report(
     assert (await client.post(f"/api/v1/spaces/{key}/pages/hub/review")).status_code == 403
     assert (
         await client.post(f"/api/v1/spaces/{key}/pages/hub/stale-check", json={"locale": "en"})
+    ).status_code in (403, 503)
+    assert (
+        await client.post(
+            f"/api/v1/spaces/{key}/conflict-check",
+            json={"page_a_slug": "hub", "page_b_slug": "hub", "locale": "en"},
+        )
     ).status_code in (403, 503)
 
 

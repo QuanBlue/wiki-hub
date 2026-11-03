@@ -33,6 +33,18 @@ import { matchesShortcut } from "@/lib/keyboard-shortcuts";
 import { highlightRanges } from "@/lib/search-highlight";
 import { isLocalFindActive } from "@/lib/local-find-registry";
 import {
+  appendFilterToQuery,
+  parseActiveFilters,
+  QUICK_FILTER_OPTIONS,
+  removeFilterFromQuery,
+  type ActiveFilter,
+} from "@/lib/search-filters";
+import {
+  openCheatSheet,
+  SEARCH_OPEN_EVENT,
+  type SearchOpenDetail,
+} from "@/lib/cheat-sheet";
+import {
   spaceKeyFromPath,
   matchCommands,
   matchNavigation,
@@ -101,6 +113,12 @@ function HighlightText({
   );
 }
 
+const SMART_TIPS = [
+  "search.tipAttachment",
+  "search.tipAi",
+  "search.tipCheatSheet",
+] as const;
+
 export function SearchModal({
   open,
   onOpenChange,
@@ -117,6 +135,11 @@ export function SearchModal({
   const { t, locale } = useTranslation();
   const siteName = themeSettings?.siteName || "WikiHub";
   const [query, setQuery] = useState("");
+  const [tipIndex, setTipIndex] = useState(0);
+  const { cleanQuery, filters: activeFilters } = useMemo(
+    () => parseActiveFilters(query),
+    [query],
+  );
   const [results, setResults] = useState<SearchResults | null>(null);
   const [loading, setLoading] = useState(false);
   // Which search is the latest: answers can arrive out of order, because a question that
@@ -131,6 +154,26 @@ export function SearchModal({
   // How many shortcuts head the list: the first guide sits right after them.
   const navMatchCount = useRef(0);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  const removeFilter = useCallback(
+    (filter: ActiveFilter) => {
+      const next = removeFilterFromQuery(query, filter.rawToken);
+      setQuery(next);
+      setSelectedIndex(0);
+      inputRef.current?.focus();
+    },
+    [query],
+  );
+
+  const insertFilter = useCallback(
+    (prefix: string) => {
+      const next = appendFilterToQuery(query, prefix);
+      setQuery(next);
+      setSelectedIndex(0);
+      inputRef.current?.focus();
+    },
+    [query],
+  );
 
   // Global quick-search shortcut, whatever the user has bound it to.
   useEffect(() => {
@@ -148,10 +191,24 @@ export function SearchModal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onOpenChange]);
 
+  // Listen for external trigger to open search
+  useEffect(() => {
+    const handleOpen = (e: Event) => {
+      const detail = (e as CustomEvent<SearchOpenDetail>).detail;
+      if (detail?.query !== undefined) {
+        setQuery(detail.query);
+      }
+      onOpenChange(true);
+    };
+    window.addEventListener(SEARCH_OPEN_EVENT, handleOpen);
+    return () => window.removeEventListener(SEARCH_OPEN_EVENT, handleOpen);
+  }, [onOpenChange]);
+
   // Focus input on modal open
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 50);
+      setTipIndex((prev) => (prev + 1) % SMART_TIPS.length);
       // Whether the AI assistant is on decides if a question can be asked from here.
       void aiStatus().then((status) => setAiOn(status.enabled === true));
     } else {
@@ -214,8 +271,8 @@ export function SearchModal({
     () =>
       command
         ? matchCommands(command.name, user, t, aiOn, spaceKeyFromPath(pathname))
-        : matchNavigation(query, user, t),
-    [command, query, user, t, aiOn, pathname],
+        : matchNavigation(cleanQuery || query, user, t),
+    [command, cleanQuery, query, user, t, aiOn, pathname],
   );
   // ":help <words>" looks the words up in the Help guides. They are large, so load them only now.
   const helpQuestion =
@@ -248,7 +305,7 @@ export function SearchModal({
   }, [helpQuestion, locale]);
 
   // What the AI is asked: the text after ":ask", or the whole box.
-  const questionText = command ? command.rest : query.trim();
+  const questionText = command ? command.rest : (cleanQuery || query).trim();
 
   // Flatten items for unified keyboard navigation
   const flatItems = useMemo<SearchItem[]>(() => {
@@ -419,6 +476,40 @@ export function SearchModal({
             </kbd>
           </div>
 
+          {/* Active Filter Badges */}
+          {activeFilters.length > 0 ? (
+            <div className="border-border bg-surface-sunken/40 flex flex-wrap items-center gap-1.5 border-b px-4 py-2">
+              {activeFilters.map((filter, idx) => (
+                <span
+                  key={`${filter.key}-${filter.value}-${idx}`}
+                  className="border-border bg-surface text-foreground inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium"
+                >
+                  <span className="text-muted-foreground text-[11px]">
+                    {filter.key === "space"
+                      ? t("search.filterSpace")
+                      : filter.key === "author"
+                        ? t("search.filterAuthor")
+                        : filter.key === "label"
+                          ? t("search.filterLabel")
+                          : filter.key === "type"
+                            ? t("search.filterType")
+                            : t("search.filterUpdated")}
+                    :
+                  </span>
+                  <span className="font-semibold text-xs">{filter.value}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeFilter(filter)}
+                    className="text-muted-foreground hover:text-foreground hover:bg-surface-hover ml-0.5 cursor-pointer rounded p-0.5 transition-colors"
+                    aria-label={t("search.removeFilter")}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+
           {/* Results List or Empty States */}
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {answer ? (
@@ -572,16 +663,88 @@ export function SearchModal({
                     {t("search.searching", { siteName })}
                   </div>
                 ) : !query.trim() ? (
-                  <div className="text-muted-foreground py-12 text-center text-sm">
+                  <div className="py-8 px-4 text-center text-sm">
                     <p className="text-foreground font-medium">
                       {t("search.quickSearchTitle", { siteName })}
                     </p>
-                    <p className="mt-1 text-xs">
+                    <p className="text-muted-foreground mt-1 text-xs">
                       {t("search.quickSearchHint")}
                     </p>
-                    <p className="mt-3 text-xs">
-                      {t("search.commandHint")}
-                    </p>
+
+                    {/* Clean, single-row pill suggestions */}
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5 px-2">
+                      <span className="text-muted-foreground text-[11px] font-medium mr-0.5">
+                        {t("search.filterPrefixes")}:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => insertFilter("space:")}
+                        className="border-border bg-surface hover:bg-surface-hover hover:border-primary/40 focus-visible:ring-ring text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center rounded-md border px-2 py-0.5 font-mono text-[11px] transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                      >
+                        space:
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertFilter("type:pdf")}
+                        className="border-border bg-surface hover:bg-surface-hover hover:border-primary/40 focus-visible:ring-ring text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center rounded-md border px-2 py-1 font-mono text-[11px] transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                      >
+                        type:pdf
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertFilter("author:")}
+                        className="border-border bg-surface hover:bg-surface-hover hover:border-primary/40 focus-visible:ring-ring text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center rounded-md border px-2 py-1 font-mono text-[11px] transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                      >
+                        author:
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertFilter("label:")}
+                        className="border-border bg-surface hover:bg-surface-hover hover:border-primary/40 focus-visible:ring-ring text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center rounded-md border px-2 py-1 font-mono text-[11px] transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                      >
+                        label:
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery(":ask ");
+                          setSelectedIndex(0);
+                          inputRef.current?.focus();
+                        }}
+                        className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/50 focus-visible:ring-ring inline-flex cursor-pointer items-center rounded-md border px-2 py-1 font-mono text-[11px] font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                        title={t("search.cmdAskAiHint")}
+                      >
+                        :ask
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery(":help ");
+                          setSelectedIndex(0);
+                          inputRef.current?.focus();
+                        }}
+                        className="border-border bg-surface hover:bg-surface-hover hover:border-primary/40 focus-visible:ring-ring text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center rounded-md border px-2 py-1 font-mono text-[11px] transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                        title={t("search.cmdHelpHint")}
+                      >
+                        :help
+                      </button>
+                    </div>
+
+                    {/* Subtle quiet hint with shortcuts link */}
+                    <div className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span>💡 {t(SMART_TIPS[tipIndex % SMART_TIPS.length])}</span>
+                      <span>·</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenChange(false);
+                          openCheatSheet({ initialTab: "search" });
+                        }}
+                        className="text-primary hover:underline cursor-pointer"
+                      >
+                        {t("search.openCheatSheet")}
+                      </button>
+                    </div>
                   </div>
                 ) : (results || command) && flatItems.length === 0 ? (
                   <div className="text-muted-foreground py-12 text-center text-sm">
@@ -627,7 +790,7 @@ export function SearchModal({
                                     <span className="truncate text-sm font-medium">
                                       <HighlightText
                                         text={space.name}
-                                        query={query}
+                                        query={cleanQuery || query}
                                         terms={results?.terms}
                                       />
                                     </span>
@@ -636,7 +799,7 @@ export function SearchModal({
                                         —{" "}
                                         <HighlightText
                                           text={space.description}
-                                          query={query}
+                                          query={cleanQuery || query}
                                           terms={results?.terms}
                                         />
                                       </span>
@@ -694,7 +857,7 @@ export function SearchModal({
                                       <div className="truncate text-sm font-medium">
                                         <HighlightText
                                           text={page.title}
-                                          query={query}
+                                          query={cleanQuery || query}
                                           terms={results?.terms}
                                         />
                                       </div>
@@ -715,7 +878,7 @@ export function SearchModal({
                                         <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
                                           <HighlightText
                                             text={page.snippet}
-                                            query={query}
+                                            query={cleanQuery || query}
                                             terms={results?.terms}
                                           />
                                         </div>

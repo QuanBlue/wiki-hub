@@ -1,6 +1,6 @@
 """A space's content health: what an administrator should look at to keep it in shape.
 
-Four lists, worked out when asked for (nothing is stored but the "still correct" marks):
+Five lists, worked out when asked for (nothing is stored but the "still correct" marks):
 
 * **stale** - pages not edited for a long while although pages tied to them (links,
   mentions, likeness, parent or child) were edited recently, after them: what they say may
@@ -11,8 +11,10 @@ Four lists, worked out when asked for (nothing is stored but the "still correct"
   Top-level pages are the tree's way in, so they are left out, and so are empty pages.
 * **duplicates** - pages that are copies of each other: the same title but for a "(2)", or,
   with semantic search, nearly the same content.
+* **conflicts** - pairs of related pages (alike, linked or named) that are not copies:
+  candidates an administrator may ask the AI to compare (``AIService.check_conflict``).
 
-No model is called. Every page listed is one the reader may see.
+No model is called here. Every page listed is one the reader may see.
 """
 
 from __future__ import annotations
@@ -42,8 +44,11 @@ from app.modules.permissions.service import PermissionService
 from app.modules.search.indexer import semantic_tables_exist
 from app.schemas.graph import (
     BrokenLink,
+    ConflictPair,
     DuplicateGroup,
     HealthPage,
+    LinkSuggestion,
+    OrphanPage,
     SpaceHealthRead,
     StalePage,
 )
@@ -56,6 +61,10 @@ STALE_DAYS = 180
 RECENT_DAYS = 90
 #: Two pages at least this alike (cosine, mean of their passages) say the same thing.
 DUPLICATE_THRESHOLD = 0.92
+#: Pages alike enough to be worth comparing for contradictions (links and mentions always are).
+CONFLICT_SIMILARITY = 0.85
+#: Pages close in content offered as a place to link an orphan from (its parent comes after).
+LINK_SUGGESTIONS = 3
 #: Pages listed per kind at most; the totals say how many there are.
 LIST_LIMIT = 200
 #: Newer neighbours shown with a stale page.
@@ -117,7 +126,24 @@ class ContentHealthService:
         stale = await self._stale(pages, user, stale_days=stale_days, recent_days=recent_days)
         broken = await self._broken_links(pages, user)
         orphans = await self._orphans(pages)
+        # Before duplicates: a failed similarity query rolls the session back, which
+        # expires the pages, and reading them afterwards would need IO outside a greenlet.
+        conflicts = await self._conflicts(space, pages, user)
+        orphan_rows = await self._link_suggestions(orphans[:LIST_LIMIT], pages)
         duplicates, semantic = await self._duplicates(space, pages, user)
+        # A pair already listed as a duplicate is not also a possible conflict.
+        duplicated = {
+            frozenset((a.id, b.id))
+            for group in duplicates
+            for a in group.pages
+            for b in group.pages
+            if a.id != b.id
+        }
+        conflicts = [
+            pair
+            for pair in conflicts
+            if frozenset((pair.page_a.id, pair.page_b.id)) not in duplicated
+        ]
         return SpaceHealthRead(
             stale_days=stale_days,
             recent_days=recent_days,
@@ -125,10 +151,12 @@ class ContentHealthService:
             stale_total=len(stale),
             broken_links=broken[:LIST_LIMIT],
             broken_total=len(broken),
-            orphans=[health_page(page) for page in orphans[:LIST_LIMIT]],
+            orphans=orphan_rows,
             orphans_total=len(orphans),
             duplicates=duplicates[:LIST_LIMIT],
             duplicates_total=len(duplicates),
+            conflicts=conflicts[:LIST_LIMIT],
+            conflicts_total=len(conflicts),
             semantic=semantic,
         )
 
@@ -334,6 +362,40 @@ class ContentHealthService:
         orphans.sort(key=lambda page: page.updated_at, reverse=True)
         return orphans
 
+    async def _link_suggestions(
+        self, orphans: Sequence[WikiPage], pages: Sequence[WikiPage]
+    ) -> list[OrphanPage]:
+        """Each orphan with the pages a link to it would fit in: the closest in content (from
+        the graph's similarity edges), then its parent. Only pages of this report - ones the
+        reader may see - are offered."""
+        by_id = {page.id: page for page in pages}
+        close: dict[uuid.UUID, dict[uuid.UUID, float]] = defaultdict(dict)
+        for chunk in _chunks([page.id for page in orphans]):
+            rows = await self.session.execute(
+                select(PageLink.source_page_id, PageLink.target_page_id, PageLink.weight).where(
+                    PageLink.kind == "similar",
+                    or_(PageLink.source_page_id.in_(chunk), PageLink.target_page_id.in_(chunk)),
+                )
+            )
+            for src, tgt, weight in rows:
+                for own, other in ((src, tgt), (tgt, src)):
+                    if own != other and other in by_id:
+                        close[own][other] = max(close[own].get(other, 0.0), float(weight))
+        out: list[OrphanPage] = []
+        for orphan in orphans:
+            ranked = sorted(close.get(orphan.id, {}).items(), key=lambda item: -item[1])
+            suggestions = [
+                LinkSuggestion(
+                    page=health_page(by_id[other]), reason="similar", similarity=round(weight, 4)
+                )
+                for other, weight in ranked[:LINK_SUGGESTIONS]
+            ]
+            parent = by_id.get(orphan.parent_id) if orphan.parent_id else None
+            if parent is not None and all(s.page.id != parent.id for s in suggestions):
+                suggestions.append(LinkSuggestion(page=health_page(parent), reason="parent"))
+            out.append(OrphanPage(**health_page(orphan).model_dump(), link_from=suggestions))
+        return out
+
     # -- duplicates ----------------------------------------------------------------------
 
     async def _duplicates(
@@ -439,3 +501,123 @@ class ContentHealthService:
                 )
             )
         return out
+
+    # -- conflicts -----------------------------------------------------------------------
+
+    async def _conflicts(
+        self, space: Space, pages: Sequence[WikiPage], user: User
+    ) -> list[ConflictPair]:
+        """Candidate pairs of related pages (high similarity or link/mention) that may conflict."""
+        if not pages:
+            return []
+        ids = [page.id for page in pages]
+        pair_edges: dict[frozenset[uuid.UUID], tuple[uuid.UUID, uuid.UUID, str, float | None]] = {}
+
+        for chunk in _chunks(ids):
+            rows = await self.session.execute(
+                select(
+                    PageLink.source_page_id,
+                    PageLink.target_page_id,
+                    PageLink.kind,
+                    PageLink.weight,
+                ).where(
+                    or_(PageLink.source_page_id.in_(chunk), PageLink.target_page_id.in_(chunk)),
+                    PageLink.kind.in_(("similar", "link", "mention")),
+                )
+            )
+            for src, tgt, kind, weight in rows:
+                if src == tgt:
+                    continue
+                if kind == "similar" and float(weight) < CONFLICT_SIMILARITY:
+                    continue
+                pair_key = frozenset((src, tgt))
+                sim = float(weight) if kind == "similar" else None
+                existing = pair_edges.get(pair_key)
+                if existing is None:
+                    pair_edges[pair_key] = (src, tgt, kind, sim)
+                else:
+                    _, _, ex_kind, ex_sim = existing
+                    if kind == "similar" and (
+                        ex_kind != "similar" or (sim and (ex_sim or 0) < sim)
+                    ):
+                        pair_edges[pair_key] = (src, tgt, kind, sim)
+                    elif ex_kind != "similar" and kind == "link":
+                        pair_edges[pair_key] = (src, tgt, kind, ex_sim)
+
+        # Direct internal links in case graph background builder has not run yet
+        page_by_space_slug: dict[tuple[str, str], WikiPage] = {
+            (page.space.key.upper(), page.slug): page for page in pages
+        }
+        for page in pages:
+            for target_key, target_slug in internal_links(page.content):
+                target = page_by_space_slug.get((target_key.upper(), target_slug))
+                if target is not None and target.id != page.id:
+                    pair_key = frozenset((page.id, target.id))
+                    if pair_key not in pair_edges:
+                        pair_edges[pair_key] = (page.id, target.id, "link", None)
+
+        if not pair_edges:
+            return []
+
+        candidate_ids = list({pid for pair in pair_edges for pid in pair})
+        needed_ids = [pid for pid in candidate_ids if pid not in {p.id for p in pages}]
+        pages_dict: dict[uuid.UUID, WikiPage] = {p.id: p for p in pages}
+        for chunk in _chunks(needed_ids):
+            rows = await self.session.execute(
+                select(WikiPage)
+                .options(selectinload(WikiPage.space))
+                .join(Space, Space.id == WikiPage.space_id)
+                .where(
+                    WikiPage.id.in_(chunk),
+                    Space.status == SpaceStatus.active,
+                    WikiPage.deleted_at.is_(None),
+                )
+            )
+            for other_page in rows.scalars():
+                pages_dict[other_page.id] = other_page
+
+        conflicts: list[ConflictPair] = []
+        for src, tgt, kind, sim in pair_edges.values():
+            first, second = pages_dict.get(src), pages_dict.get(tgt)
+            if first is None or second is None:
+                continue
+            if not first.content.strip() or not second.content.strip():
+                continue
+            if not (
+                await self.permissions.can_view_page(first, user)
+                and await self.permissions.can_view_page(second, user)
+            ):
+                continue
+            if copy_key(first.title) == copy_key(second.title):
+                continue
+            if kind == "similar" and sim is not None and sim >= DUPLICATE_THRESHOLD:
+                continue
+
+            # Prioritize placing the page from this space as page_a
+            if first.space_id == space.id and second.space_id != space.id:
+                p_a, p_b = first, second
+            elif second.space_id == space.id and first.space_id != space.id:
+                p_a, p_b = second, first
+            else:
+                p_a, p_b = (
+                    (first, second) if first.updated_at >= second.updated_at else (second, first)
+                )
+
+            conflicts.append(
+                ConflictPair(
+                    id=f"{p_a.id}:{p_b.id}",
+                    page_a=health_page(p_a),
+                    page_b=health_page(p_b),
+                    relation=kind,  # type: ignore[arg-type]
+                    similarity=round(sim, 4) if sim is not None else None,
+                )
+            )
+
+        conflicts.sort(
+            key=lambda c: (
+                0 if c.relation == "similar" else 1,
+                -(c.similarity or 0.0) if c.relation == "similar" else 0.0,
+                -(max(c.page_a.updated_at, c.page_b.updated_at).timestamp()),
+            )
+        )
+        return conflicts

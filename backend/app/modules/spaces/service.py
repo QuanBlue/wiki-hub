@@ -23,16 +23,26 @@ from sqlalchemy.orm import aliased
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.logging import get_logger
+from app.models.audit import AuditAction
 from app.models.page import WikiPage
 from app.models.page_graph import PageLink
 from app.models.permission import Group, Permission, SpaceGroupPermission, SpaceUserPermission
-from app.models.space import Space, SpaceMember, SpaceOwner, SpaceRole, SpaceStatus, SpaceVisibility
+from app.models.space import Space, SpaceMember, SpaceOwner, SpaceRole, SpaceStatus, SpaceVisibility, SpaceWatch
 from app.models.user import User
 from app.modules.notifications.service import notify
 from app.modules.permissions.service import ROLE_PERMISSIONS, PermissionService
 from app.repositories.space import SpaceRepository
 from app.repositories.user import UserRepository
-from app.schemas.space import SpaceCreate, SpaceMemberRead, SpaceOwnerRead, SpaceRead, SpaceUpdate
+from app.schemas.space import (
+    SpaceCreate,
+    SpaceMemberRead,
+    SpaceOwnerRead,
+    SpaceRead,
+    SpaceUpdate,
+    SpaceWatchRead,
+    SpaceWatchUpdate,
+)
+from app.services.audit import AuditService, ClientInfo
 
 logger = get_logger(__name__)
 
@@ -42,12 +52,62 @@ logger = get_logger(__name__)
 DEFAULT_ADMIN_GROUP_NAMES = frozenset({"confluence-administrators"})
 
 
+#: Space columns diffed into a `space_updated` audit row. An explicit
+#: allowlist, like `AUDITED_USER_FIELDS`, so a widened model never leaks into
+#: the trail by accident.
+AUDITED_SPACE_FIELDS = (
+    "name",
+    "description",
+    "icon",
+    "font_family",
+    "max_upload_size_mb",
+    "status",
+    "visibility",
+)
+
+
+def _audit_value(value: object) -> object:
+    """Enum members become their plain value so the JSONB stays readable."""
+    return getattr(value, "value", value)
+
+
 class SpaceService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        client: ClientInfo | None = None,
+        impersonator: User | None = None,
+    ) -> None:
         self.session = session
         self.spaces = SpaceRepository(session)
         self.users = UserRepository(session)
-        self.permissions = PermissionService(session)
+        self.client = client
+        self.impersonator = impersonator
+        self.permissions = PermissionService(session, client=client, impersonator=impersonator)
+
+    def _audit(self, actor: User) -> AuditService:
+        return AuditService(
+            self.session, actor=actor, client=self.client, impersonator=self.impersonator
+        )
+
+    def _snapshot(self, space: Space) -> dict[str, object]:
+        return {f: _audit_value(getattr(space, f, None)) for f in AUDITED_SPACE_FIELDS}
+
+    async def _record(
+        self,
+        action: AuditAction,
+        space: Space,
+        actor: User,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        await self._audit(actor).record(
+            action,
+            entity_type="space",
+            entity_id=space.id,
+            entity_label=space.name,
+            details={"space_key": space.key, **(details or {})},
+        )
 
     # -- authorization -----------------------------------------------------
     async def role_of(self, space: Space, user: User) -> SpaceRole | None:
@@ -184,12 +244,45 @@ class SpaceService:
             group_permission_count=group_permission_count,
             direct_user_permission_count=direct_user_permission_count,
             is_favorite=favorite,
+            is_watched=await self.session.scalar(
+                select(SpaceWatch.space_id).where(
+                    SpaceWatch.space_id == space.id, SpaceWatch.user_id == user.id
+                )
+            ) is not None,
             my_role=await self.role_of(space, user),
             my_permissions=sorted(
                 permission.value
                 for permission in await self.permissions.effective_permissions(space, user)
             ),
         )
+
+    async def get_watch(self, space: Space, user: User) -> SpaceWatchRead:
+        watch = await self.session.scalar(
+            select(SpaceWatch).where(
+                SpaceWatch.space_id == space.id, SpaceWatch.user_id == user.id
+            )
+        )
+        return SpaceWatchRead(watching=watch is not None)
+
+    async def set_watch(
+        self, space: Space, user: User, payload: SpaceWatchUpdate
+    ) -> SpaceWatchRead:
+        watch = await self.session.scalar(
+            select(SpaceWatch).where(
+                SpaceWatch.space_id == space.id, SpaceWatch.user_id == user.id
+            )
+        )
+        if not payload.watching:
+            if watch is not None:
+                await self.session.delete(watch)
+                await self.session.flush()
+            return SpaceWatchRead(watching=False)
+
+        if watch is None:
+            watch = SpaceWatch(space_id=space.id, user_id=user.id)
+            self.session.add(watch)
+            await self.session.flush()
+        return SpaceWatchRead(watching=True)
 
     async def to_read_many(self, spaces: Sequence[Space], user: User) -> list[SpaceRead]:
         # Resolve favourites, permission-principal counts and owners in one
@@ -398,6 +491,7 @@ class SpaceService:
         await self.session.flush()
         await self.session.refresh(space)
         logger.info("space_created", key=space.key, by=creator.username)
+        await self._record(AuditAction.space_created, space, creator, self._snapshot(space))
         return space
 
     async def update(self, space: Space, payload: SpaceUpdate, user: User) -> Space:
@@ -418,6 +512,7 @@ class SpaceService:
             and SpaceVisibility(data["visibility"]) != space.visibility
         ):
             await self.permissions.require_owner(space, user)
+        before = self._snapshot(space)
         if data.get("name") is not None:
             space.name = str(data["name"]).strip()
         if data.get("description") is not None:
@@ -437,6 +532,9 @@ class SpaceService:
 
         await self._flush_and_refresh(space)
         logger.info("space_updated", key=space.key, by=user.username)
+        diff = AuditService.changes(before, self._snapshot(space), AUDITED_SPACE_FIELDS)
+        if diff:
+            await self._record(AuditAction.space_updated, space, user, {"changes": diff})
         return space
 
     async def archive(self, space: Space, user: User) -> Space:
@@ -445,6 +543,7 @@ class SpaceService:
         space.status = SpaceStatus.archived
         await self._flush_and_refresh(space)
         logger.info("space_archived", key=space.key, by=user.username)
+        await self._record(AuditAction.space_archived, space, user)
         return space
 
     async def unarchive(self, space: Space, user: User) -> Space:
@@ -453,15 +552,25 @@ class SpaceService:
         space.status = SpaceStatus.active
         await self._flush_and_refresh(space)
         logger.info("space_unarchived", key=space.key, by=user.username)
+        await self._record(AuditAction.space_unarchived, space, user)
         return space
 
     async def delete(self, space: Space, user: User) -> None:
         # A space administrator owns the lifecycle of their space. System
         # administrators retain that ability across every space.
         await self.require_admin(space, user)
+        # Captured before the row goes away: the audit entry has to outlive it.
+        space_id, key, name = space.id, space.key, space.name
         await self.spaces.delete(space)
         await self.session.flush()
-        logger.info("space_deleted", key=space.key, by=user.username)
+        logger.info("space_deleted", key=key, by=user.username)
+        await self._audit(user).record(
+            AuditAction.space_deleted,
+            entity_type="space",
+            entity_id=space_id,
+            entity_label=name,
+            details={"space_key": key},
+        )
 
     # -- membership --------------------------------------------------------
     async def set_member(
@@ -523,6 +632,16 @@ class SpaceService:
                 link=f"/spaces/{space.key}",
                 actor=actor,
             )
+            await self._record(
+                AuditAction.space_member_set,
+                space,
+                actor,
+                {
+                    "user": target.username,
+                    "user_id": str(target.id),
+                    "role": {"from": _audit_value(previous_role), "to": role.value},
+                },
+            )
         return SpaceMemberRead(
             user_id=target.id, username=target.username, full_name=target.full_name, role=role
         )
@@ -565,6 +684,16 @@ class SpaceService:
             "space_member_removed",
             params={"space": space.name},
             actor=actor,
+        )
+        removed = await self.users.get(user_id)
+        await self._record(
+            AuditAction.space_member_removed,
+            space,
+            actor,
+            {
+                "user": getattr(removed, "username", None) or str(user_id),
+                "user_id": str(user_id),
+            },
         )
         # This user now has zero space access, direct or otherwise - any
         # page-level restriction naming them in this space is dead weight.

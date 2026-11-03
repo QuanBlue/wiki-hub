@@ -122,6 +122,43 @@ async def test_a_rewrite_that_fails_is_replaced_by_the_questions_as_asked(
     assert "billing" in query
 
 
+async def test_a_new_topic_whose_rewrite_fails_is_searched_on_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Seen live: glued to the earlier question about Fortify SCA reports, this found only
+    # Fortify pages and was answered about SCA.
+    async def broken(*args: object, **kwargs: object):
+        raise TimeoutError
+
+    monkeypatch.setattr(chat_module, "chat_with_usage", broken)
+    service = ChatService(None, SimpleNamespace(id="u1"))  # type: ignore[arg-type]
+
+    query = await service._standalone(
+        AIConfig(True, "http://g/v1", "k", "m"),
+        turns(("user", "báo cáo SCA của fortify là gì"), ("assistant", "Báo cáo quét mã [1].")),
+        "đổi pass trong chế độ rescure",
+    )
+
+    assert query == "đổi pass trong chế độ rescure"
+
+
+@pytest.mark.parametrize(
+    ("question", "leans"),
+    [
+        ("and its address?", True),
+        ("why?", True),
+        ("bản windows?", True),
+        ("còn cái đó thì sao", True),
+        ("server này ở đâu", True),
+        ("đổi pass trong chế độ rescure", False),
+        ("how do I reset the root password", False),
+        ("cài đặt nginx như thế nào", False),
+    ],
+)
+def test_a_follow_up_is_told_from_a_new_question(question: str, leans: bool) -> None:
+    assert chat_module._refers_back(question) is leans
+
+
 def test_a_unit_before_the_end_of_bold_text_is_not_taken_for_a_password() -> None:
     # Seen live: "gió **10.7 km/h**, lượng mưa" lost "h**," to [hidden] and left the bold open.
     from app.modules.ai.answer import scrub_secrets

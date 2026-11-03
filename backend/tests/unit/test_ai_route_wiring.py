@@ -39,6 +39,7 @@ async def test_summarize_page_forwards_refresh_and_language() -> None:
         (ai.explain_selection, "explain_selection", ("ENG", "home", "payload")),
         (ai.clarify_page, "clarify_page", ("ENG", "payload")),
         (ai.draft_page, "draft_page", ("ENG", "payload")),
+        (ai.summarize_revision_diff, "summarize_revision_diff", ("ENG", "home", "payload")),
     ],
 )
 async def test_page_handlers_hand_over_to_the_service(handler, method, args) -> None:

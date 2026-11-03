@@ -26,3 +26,5 @@ class AuditLogRead(BaseModel):
     entity_label: str
     details: dict[str, Any]
     ip_address: str | None
+    actor_avatar_url: str | None = None
+    actor_full_name: str | None = None

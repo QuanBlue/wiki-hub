@@ -94,8 +94,9 @@ export function formatBinding(binding: string): string {
 
 /**
  * Where a shortcut applies. Two actions may share a binding across different
- * scopes on purpose - Mod+F opens site search globally, but means "find in
- * this file" while an attachment preview is open, and the narrower scope wins.
+ * scopes on purpose - a chord bound to site search globally can also mean
+ * "find in this file" while an attachment preview is open, and the narrower
+ * scope wins.
  * Only a clash *within* one scope is a genuine conflict.
  */
 export type ShortcutScope = "global" | "editor" | "preview";
@@ -122,7 +123,39 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     description: "Opens the search bar over whatever you are looking at.",
     scope: "global",
     group: "Navigation",
-    defaultBindings: ["Mod+K", "Mod+F"],
+    defaultBindings: ["Mod+K"],
+  },
+  {
+    id: "sidebar.toggle",
+    label: "Toggle navigation sidebar",
+    description: "Expands or collapses the space navigation sidebar.",
+    scope: "global",
+    group: "Navigation",
+    defaultBindings: ["Mod+B"],
+  },
+  {
+    id: "page.copyLink",
+    label: "Copy page link",
+    description: "Copies the link to the currently open page to your clipboard.",
+    scope: "global",
+    group: "Navigation",
+    defaultBindings: ["Mod+Shift+C"],
+  },
+  {
+    id: "help.open",
+    label: "Open help documentation",
+    description: "Opens the Help documentation page.",
+    scope: "global",
+    group: "Navigation",
+    defaultBindings: ["Mod+Shift+H"],
+  },
+  {
+    id: "page.edit",
+    label: "Edit page",
+    description: "Starts editing the current page when viewing it.",
+    scope: "global",
+    group: "Editing",
+    defaultBindings: ["Mod+Alt+E"],
   },
   {
     id: "page.save",
@@ -275,6 +308,21 @@ export function setBindings(actionId: string, bindings: string[]): void {
   store.write(overrides);
 }
 
+export function saveOverrides(newOverrides: ShortcutOverrides): void {
+  const cleaned: ShortcutOverrides = {};
+  for (const [id, bindings] of Object.entries(newOverrides)) {
+    const action = ACTIONS_BY_ID.get(id);
+    if (!action) continue;
+    const isDefault =
+      bindings.length === action.defaultBindings.length &&
+      bindings.every((binding, index) => binding === action.defaultBindings[index]);
+    if (!isDefault) {
+      cleaned[id] = bindings;
+    }
+  }
+  store.write(cleaned);
+}
+
 export function resetAllShortcuts(): void {
   store.write({});
 }
@@ -303,7 +351,7 @@ export function findConflicts(overrides: ShortcutOverrides): Map<string, string[
   const seen = new Map<string, string[]>();
   for (const action of SHORTCUT_ACTIONS) {
     for (const binding of bindingsFor(action.id, overrides)) {
-      const key = `${action.scope} ${binding}`;
+      const key = `${action.scope}:::${binding}`;
       const existing = seen.get(key);
       if (existing) existing.push(action.id);
       else seen.set(key, [action.id]);
@@ -312,7 +360,7 @@ export function findConflicts(overrides: ShortcutOverrides): Map<string, string[
   const conflicts = new Map<string, string[]>();
   for (const [key, ids] of seen) {
     if (ids.length < 2) continue;
-    conflicts.set(key.split(" ")[1]!, ids);
+    conflicts.set(key.split(":::")[1]!, ids);
   }
   return conflicts;
 }

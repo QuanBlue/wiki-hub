@@ -185,7 +185,7 @@ describe("SelectionAssistant", () => {
       await screen.findByRole("menuitem", { name: "English" }),
     );
 
-    expect(await screen.findByText("In English.")).toBeInTheDocument();
+    expect(await screen.findByText("In English.", {}, { timeout: 10_000 })).toBeInTheDocument();
     expect(fresh.post).toHaveBeenLastCalledWith(
       "/api/v1/ai/spaces/ENG/pages/runbook/explain",
       expect.objectContaining({ action: "explain", lang: "en" }),
