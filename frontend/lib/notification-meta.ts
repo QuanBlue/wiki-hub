@@ -1,6 +1,8 @@
 import {
   Bell,
   Bug,
+  Eye,
+  FileText,
   Inbox,
   KeyRound,
   LayoutGrid,
@@ -10,6 +12,7 @@ import {
   ShieldCheck,
   ThumbsUp,
   UserCheck,
+  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -43,6 +46,7 @@ const KINDS: Record<string, KindMeta> = {
   role_changed: { icon: ShieldCheck, tone: "info" },
   global_permissions_changed: { icon: ShieldCheck, tone: "info" },
   account_enabled: { icon: UserCheck, tone: "success" },
+  account_impersonated: { icon: UserCog, tone: "warning" },
   admin_request: { icon: Inbox, tone: "info" },
   issue_created: { icon: Bug, tone: "warning" },
   issue_claimed: { icon: Bug, tone: "info" },
@@ -54,6 +58,8 @@ const KINDS: Record<string, KindMeta> = {
   comment_liked: { icon: ThumbsUp, tone: "info" },
   page_comment: { icon: MessageSquare, tone: "info" },
   page_shared: { icon: Share2, tone: "info" },
+  page_updated: { icon: Eye, tone: "info" },
+  page_created: { icon: FileText, tone: "success" },
   question_answered: { icon: MessageCircleQuestion, tone: "success" },
 };
 

@@ -71,7 +71,7 @@ PAGE_DRAFT_RULES = (
     "title, then a blank line, then the body. Do not repeat the title as a heading in "
     "the body, and use no `#` heading; start sections at `##`. Allowed: paragraphs, "
     "`##`/`###` headings, bullet and numbered lists, task lists ('- [ ] item'), pipe "
-    "tables, fenced code blocks with a language, '> ' quotes, **bold**, _italic_, "
+    "tables, fenced code blocks with a language (use '```mermaid' blocks for flowcharts, processes, architecture or sequence diagrams), '> ' quotes, **bold**, _italic_, "
     "`inline code` and links. No raw HTML, no images, no preamble and no closing remark. "
     "Write in the same language as the description."
 )
@@ -571,6 +571,47 @@ def page_draft_system_prompt(instructions: str) -> str:
 def summary_system_prompt(instructions: str, lang: str | None = None) -> str:
     rules = f"{language_rule(lang)} {OUTPUT_RULES} {FILE_RULES}"
     return f"{instructions}\n\n{rules}\n\n{SAFETY_RULES}"
+
+
+DIFF_SUMMARY_RULES_VI = """Bạn là chuyên gia phân tích và đánh giá tài liệu cho WikiHub.
+Nhiệm vụ của bạn là phân tích ý nghĩa nghiệp vụ/kỹ thuật và những thay đổi cốt lõi giữa hai phiên bản của trang wiki (hoặc tóm tắt nội dung khi tạo trang mới).
+Người dùng đã có công cụ so sánh trực quan từng ký tự thay đổi, vì vậy TUYỆT ĐỐI KHÔNG chép lại hay liệt kê từng từ/dòng thô. Hãy tập trung vào ý nghĩa, quy định và tác động.
+BẮT BUỘC TRẢ LỜI 100% BẰNG TIẾNG VIỆT. Toàn bộ tiêu đề, đề mục, câu văn và các gạch đầu dòng đều phải viết bằng tiếng Việt tự nhiên, chuẩn mực. Tuyệt đối không dùng tiếng Anh hay tiêu đề tiếng Anh.
+
+Định dạng và hướng dẫn:
+1. Trường hợp chỉnh sửa nhỏ hoặc dữ liệu mẫu:
+   - Nếu bản cập nhật chỉ chứa chỉnh sửa nhỏ, chữ gõ thử, định dạng hoặc sửa lỗi chính tả không ảnh hưởng đến quy định/nghiệp vụ, hãy nêu rõ trong 1 câu ngắn gọn (ví dụ: "Bản cập nhật chỉ chứa các chỉnh sửa nhỏ mang tính thử nghiệm hoặc sửa lỗi định dạng, không thay đổi quy định hay quy trình cốt lõi.").
+2. Trường hợp có thay đổi nội dung (khi so sánh 2 phiên bản):
+   - **Tính chất thay đổi**: 1 câu khái quát loại thay đổi (ví dụ: cập nhật quy định, sửa đổi quy trình làm việc, điều chỉnh thông số kỹ thuật, hoặc bổ sung tài liệu).
+   - **Quy định & Tác động cốt lõi**: 2-3 gạch đầu dòng ngắn gọn tóm tắt những gì thực sự thay đổi về chính sách, bước thực hiện, trách nhiệm, tham số kỹ thuật hoặc thời hạn.
+3. Trường hợp phiên bản đầu tiên (v1 hoặc so với văn bản trống):
+   - **Mục đích tài liệu**: 1-2 câu ngắn gọn mô tả chức năng chính của trang tài liệu này.
+   - **Nội dung & Quy định chính**: Các gạch đầu dòng nêu bật các quy định, luồng công việc hoặc tiêu chuẩn được thiết lập.
+4. Giữ nội dung ngắn gọn, súc tích, dễ đọc lướt, tập trung vào tác động cốt lõi. Không thêm tag commit message hay lời chào."""
+
+DIFF_SUMMARY_RULES_EN = """You are an expert technical editor and documentation reviewer for WikiHub.
+Your role is to analyze the semantic impact and substantive business/technical changes between two revisions of a wiki page, or summarize the initial creation of a new page.
+The user already has a visual side-by-side diff tool displaying exact highlighted text changes, so NEVER copy, quote, or list raw words/lines word-for-word. Focus strictly on meaning, rules, and impact.
+YOU MUST RESPOND 100% IN ENGLISH. All headings, labels, sentences, and bullet points must be in English. Do not use Vietnamese headings or Vietnamese sentences under any circumstances.
+
+Format and guidelines:
+1. Handling minor or placeholder edits:
+   - If the revision contains only test edits, placeholder text, formatting adjustments, or minor typo fixes with no substantive impact, state this directly in 1 brief sentence (e.g. "This revision contains only minor placeholder or formatting adjustments with no substantive impact on rules or procedures."). Do not list individual placeholder words.
+2. Handling substantive changes (when comparing two versions):
+   - **Nature of change**: 1 sentence classifying the update (e.g., policy revision, workflow update, technical configuration adjustment, or documentation expansion).
+   - **Key impacts & rule changes**: 2-3 concise bullet points summarizing what actually changed in policies, workflow steps, responsibilities, technical parameters, or deadlines.
+3. For an initial version (v1 or compared against an empty document):
+   - **Purpose**: 1-2 brief sentences describing the document's main function.
+   - **Core topics & policies**: Bullet points highlighting key policies, workflows, or specifications established.
+4. Keep the output compact, scannable, and strictly focused on high-level impact. Never include commit message tags or conversational filler."""
+
+
+def diff_summary_system_prompt(lang: str | None = None) -> str:
+    is_vi = (lang or "").lower() == "vi"
+    base_rules = DIFF_SUMMARY_RULES_VI if is_vi else DIFF_SUMMARY_RULES_EN
+    lang_name = "Vietnamese" if is_vi else "English"
+    strict_lang = f"CRITICAL REQUIREMENT: Answer strictly and entirely in {lang_name}. Do not mix languages."
+    return f"{base_rules}\n\n{strict_lang}\n\n{SAFETY_RULES}"
 
 
 #: Skill key -> built-in instructions, for the skills an administrator can edit.

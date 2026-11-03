@@ -60,6 +60,14 @@ class SpaceOwnersUpdate(BaseModel):
     owner_ids: list[uuid.UUID] = Field(min_length=1)
 
 
+class SpaceWatchRead(BaseModel):
+    watching: bool
+
+
+class SpaceWatchUpdate(BaseModel):
+    watching: bool
+
+
 class SpaceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -99,6 +107,7 @@ class SpaceRead(BaseModel):
     #: make every space look explicitly "licensed" to them.
     direct_user_permission_count: int = 0
     is_favorite: bool = False
+    is_watched: bool = False
     #: The requesting user's role, or ``None`` when they are not a member.
     my_role: SpaceRole | None = None
     my_permissions: list[str] = Field(default_factory=list)

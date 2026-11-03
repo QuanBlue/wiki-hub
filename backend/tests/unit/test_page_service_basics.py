@@ -19,6 +19,8 @@ def make_service() -> PageService:
     result.session.get = AsyncMock()
     result.session.flush = AsyncMock()
     result.session.refresh = AsyncMock()
+    result.session.scalar = AsyncMock(return_value=None)
+    result.session.scalars = AsyncMock(return_value=[])
     result.spaces.require_add = AsyncMock()
     result.spaces.permissions = Mock()
     result.spaces.permissions.can_edit_page = AsyncMock(return_value=True)
@@ -70,6 +72,10 @@ async def test_page_permissions_serialization_and_likes() -> None:
     assert read.title == "Title" and read.created_by_username == "alice"
     result = await service.to_read_for_user(current, actor)
     assert result.can_edit is True and result.can_export is True
+    service.session.scalar.return_value = SimpleNamespace(include_descendants=True)
+    watched = await service.to_read_for_user(current, actor)
+    assert watched.is_watched is True and watched.watch_descendants is True
+    service.session.scalar.return_value = None
     assert service.to_read_many([current])[0].slug == "title"
 
     service.pages.list_for_space = AsyncMock(return_value=[current])
@@ -96,7 +102,7 @@ async def test_page_create_and_revision_read_paths() -> None:
     service = make_service()
     current = page()
     space = SimpleNamespace(id=current.space_id, key="ENG")
-    actor = SimpleNamespace(id=uuid.uuid4(), username="alice")
+    actor = SimpleNamespace(id=uuid.uuid4(), username="alice", full_name="Alice")
     service.unique_slug = AsyncMock(return_value="new-page")
     service.pages.get = AsyncMock(return_value=None)
     service.pages.add = Mock()
@@ -174,7 +180,7 @@ async def test_page_create_and_revision_read_paths() -> None:
 async def test_page_restore_move_delete_slugs_and_recent() -> None:
     service = make_service()
     current = page()
-    actor = SimpleNamespace(id=uuid.uuid4(), username="alice")
+    actor = SimpleNamespace(id=uuid.uuid4(), username="alice", full_name="Alice")
     space = SimpleNamespace(id=current.space_id, key="ENG", status="active")
     revision = SimpleNamespace(title="Restored", content="Old", content_format="markdown")
     service.revisions.get_by_version = AsyncMock(return_value=revision)
@@ -235,10 +241,13 @@ async def test_page_restore_move_delete_slugs_and_recent() -> None:
         await service.trash(space, current, actor)
 
     current.space = SimpleNamespace(key="ENG", name="Engineering")
-    current.updated_by = SimpleNamespace(username="alice", full_name="Alice")
+    current.updated_by = SimpleNamespace(username="alice", full_name="Alice", avatar_url=None)
     service.pages.list_recent_pages = AsyncMock(return_value=[current])
+    service.revisions.count_by_pages = AsyncMock(return_value={current.id: 3})
     service.spaces.permissions.can_view_page = AsyncMock(return_value=True)
-    assert (await service.list_recent_pages(actor))[0].user_full_name == "Alice"
+    recent = (await service.list_recent_pages(actor))[0]
+    assert recent.user_full_name == "Alice"
+    assert recent.revision_count == 3
 
 
 def trashed(**extra):
@@ -294,7 +303,7 @@ async def test_trash_lists_what_each_person_may_restore() -> None:
 @pytest.mark.asyncio
 async def test_restore_puts_a_page_back_where_it_was_or_at_the_top() -> None:
     service = make_service()
-    actor = SimpleNamespace(id=uuid.uuid4(), username="alice")
+    actor = SimpleNamespace(id=uuid.uuid4(), username="alice", full_name="Alice")
     space = SimpleNamespace(id=uuid.uuid4(), key="ENG")
     service.spaces.permissions.effective_permissions = AsyncMock(return_value={Permission.delete})
 
@@ -335,7 +344,7 @@ async def test_restore_puts_a_page_back_where_it_was_or_at_the_top() -> None:
 @pytest.mark.asyncio
 async def test_a_trashed_page_can_be_read_by_whoever_may_restore_it() -> None:
     service = make_service()
-    actor = SimpleNamespace(id=uuid.uuid4(), username="alice")
+    actor = SimpleNamespace(id=uuid.uuid4(), username="alice", full_name="Alice")
     space = SimpleNamespace(id=uuid.uuid4(), key="ENG")
     parent = page()
     item = trashed(parent_id=parent.id, content="<p>Old notes</p>", content_format="html")
@@ -376,7 +385,7 @@ async def test_a_trashed_page_can_be_read_by_whoever_may_restore_it() -> None:
 @pytest.mark.asyncio
 async def test_purge_and_empty_trash_are_for_space_admins() -> None:
     service = make_service()
-    actor = SimpleNamespace(id=uuid.uuid4(), username="alice")
+    actor = SimpleNamespace(id=uuid.uuid4(), username="alice", full_name="Alice")
     space = SimpleNamespace(id=uuid.uuid4(), key="ENG")
     service.spaces.permissions.effective_permissions = AsyncMock(
         return_value={Permission.delete, Permission.admin}

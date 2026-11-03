@@ -129,6 +129,8 @@ class Settings(BaseSettings):
     # mailbox, so it is throttled per client and again across all clients.
     contact_admin_rate_limit: str = "5/hour"
     contact_admin_global_rate_limit: str = "100/hour"
+    #: Whether external/public read-only page share links are enabled system-wide.
+    public_shares_enabled: bool = True
     #: Where people reach WikiHub in a browser, e.g. ``https://wiki.example.com``
     #: (no trailing slash needed). Used for the links in emails - "Open the
     #: Inbox" and "Sign in". Blank leaves those links out rather than guessing.

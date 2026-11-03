@@ -23,6 +23,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
+import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { GroupUsagePanel } from "@/components/admin/group-usage-panel";
@@ -554,13 +556,17 @@ export function EditGroupDialog({
       username: u?.username || userId,
       full_name: u?.full_name || u?.username || userId,
       email: u?.email || "",
+      avatar_url: u?.avatar_url ?? null,
       isNew: true,
     };
   });
 
   const existingActiveMembers = members
     .filter((m) => !pendingRemovedUserIds.includes(m.user_id))
-    .map((m) => ({ ...m, isNew: false }));
+    .map((m) => {
+      const u = users.find((user) => user.id === m.user_id || user.username === m.username);
+      return { ...m, avatar_url: u?.avatar_url ?? null, isNew: false };
+    });
 
   const allDisplayedMembers = [...stagedNewMembers, ...existingActiveMembers];
 
@@ -808,12 +814,17 @@ export function EditGroupDialog({
                         >
                           <td className="px-3 py-2">
                             <div className="flex min-w-0 items-center gap-2.5">
-                              <span className="bg-primary-subtle text-primary flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
-                                {(member.full_name || member.username)[0]?.toUpperCase()}
-                              </span>
-                              <span className="truncate font-medium text-foreground">
-                                {member.full_name || member.username}
-                              </span>
+                              <Avatar
+                                name={member.full_name}
+                                username={member.username}
+                                src={member.avatar_url}
+                                className="size-7 text-xs"
+                              />
+                              <UserProfileTrigger
+                                username={member.username}
+                                fullName={member.full_name}
+                                className="truncate font-medium text-foreground hover:underline"
+                              />
                               {member.isNew ? (
                                 <Badge variant="success" className="shrink-0 px-1.5 py-0 text-[10px] font-semibold tracking-wider uppercase">
                                   New

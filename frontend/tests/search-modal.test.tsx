@@ -10,7 +10,9 @@ import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SearchModal } from "@/components/layout/search-modal";
+import { CHEAT_SHEET_OPEN_EVENT, triggerOpenSearch } from "@/lib/cheat-sheet";
 import { api } from "@/lib/api-client";
+import { resetAllShortcuts, setBindings } from "@/lib/keyboard-shortcuts";
 import { markLocalFindActive } from "@/lib/local-find-registry";
 import type { Me, SearchResults } from "@/types/api";
 
@@ -330,6 +332,14 @@ describe("SearchModal", () => {
     });
     expect(screen.getByTestId("state")).toHaveTextContent("closed");
 
+    // Ctrl+F is no longer a default quick-search chord: it stays the browser's.
+    act(() => {
+      fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    });
+    expect(screen.getByTestId("state")).toHaveTextContent("closed");
+
+    // A user who binds it themselves still yields to a local find.
+    setBindings("search.open", ["Mod+K", "Mod+F"]);
     const release = markLocalFindActive();
     act(() => {
       fireEvent.keyDown(window, { key: "f", ctrlKey: true });
@@ -340,6 +350,7 @@ describe("SearchModal", () => {
       fireEvent.keyDown(window, { key: "f", ctrlKey: true });
     });
     expect(screen.getByTestId("state")).toHaveTextContent("open");
+    resetAllShortcuts();
   });
 
   it("forgets the query once closed", async () => {
@@ -385,5 +396,77 @@ describe("SearchModal", () => {
     await actor.type(input, "help");
     await actor.keyboard("{Enter}");
     expect(navigate).toHaveBeenCalledWith("/help");
+  });
+
+  it("shows quick filter options in empty state and inserts prefix on click", async () => {
+    const actor = userEvent.setup();
+    render(<Harness />);
+    expect(screen.getByText("Quick filters:")).toBeInTheDocument();
+
+    const spaceChip = screen.getByRole("button", { name: /^space:/ });
+    await actor.click(spaceChip);
+
+    const input = screen.getByPlaceholderText("Search WikiHub...");
+    expect(input).toHaveValue("space:");
+  });
+
+  it("opens with a query from another part of the app", async () => {
+    render(<Harness initialOpen={false} />);
+    act(() => triggerOpenSearch({ query: "runbook" }));
+    expect(screen.getByTestId("state")).toHaveTextContent("open");
+    expect(screen.getByPlaceholderText("Search WikiHub...")).toHaveValue("runbook");
+  });
+
+  it("inserts AI and Help commands from the empty prompt", async () => {
+    const actor = userEvent.setup();
+    render(<Harness />);
+    const input = screen.getByPlaceholderText("Search WikiHub...");
+    await actor.click(screen.getByRole("button", { name: /^:ask$/ }));
+    expect(input).toHaveValue(":ask ");
+    await actor.clear(input);
+    await actor.click(screen.getByRole("button", { name: /^:help$/ }));
+    expect(input).toHaveValue(":help ");
+  });
+
+  it("opens the search shortcuts guide from the empty prompt", async () => {
+    const opened = vi.fn();
+    window.addEventListener(CHEAT_SHEET_OPEN_EVENT, opened);
+    render(<Harness />);
+    await userEvent.click(screen.getByRole("button", { name: /shortcuts/i }));
+    expect(screen.getByTestId("state")).toHaveTextContent("closed");
+    expect((opened.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({ initialTab: "search" });
+    window.removeEventListener(CHEAT_SHEET_OPEN_EVENT, opened);
+  });
+
+  it("labels author, type and updated search filters", async () => {
+    const actor = userEvent.setup();
+    render(<Harness />);
+    await actor.type(
+      screen.getByPlaceholderText("Search WikiHub..."),
+      "author:alice type:pdf updated:2026-11-01",
+    );
+    expect(screen.getByText("Author:")).toBeInTheDocument();
+    expect(screen.getByText("File type:")).toBeInTheDocument();
+    expect(screen.getByText("Updated:")).toBeInTheDocument();
+  });
+
+  it("renders active filter badges when typing filters and allows removing them", async () => {
+    const actor = userEvent.setup();
+    render(<Harness />);
+    const input = screen.getByPlaceholderText("Search WikiHub...");
+    await actor.type(input, "space:ENG label:runbook deployment");
+
+    expect(screen.getByText("Space:")).toBeInTheDocument();
+    expect(screen.getByText("ENG")).toBeInTheDocument();
+    expect(screen.getByText("Label:")).toBeInTheDocument();
+    expect(screen.getByText("runbook")).toBeInTheDocument();
+
+    // Click remove button on space:ENG badge
+    const removeButtons = screen.getAllByRole("button", { name: "Remove filter" });
+    await actor.click(removeButtons[0]!);
+
+    expect(input).toHaveValue("label:runbook deployment");
+    expect(screen.queryByText("ENG")).not.toBeInTheDocument();
+    expect(screen.getByText("runbook")).toBeInTheDocument();
   });
 });

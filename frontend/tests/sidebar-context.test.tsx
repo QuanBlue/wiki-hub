@@ -107,6 +107,24 @@ describe("SidebarProvider", () => {
     expect(root.dataset.whSidebarCollapsed).toBe("true");
   });
 
+  it("toggles from the keyboard outside text fields", () => {
+    const { result } = renderHook(() => useSidebar(), { wrapper });
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    act(() => input.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "b", ctrlKey: true, bubbles: true, cancelable: true,
+    })));
+    expect(result.current.collapsed).toBe(false);
+
+    const event = new KeyboardEvent("keydown", {
+      key: "b", ctrlKey: true, bubbles: true, cancelable: true,
+    });
+    act(() => window.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(result.current.collapsed).toBe(true);
+    input.remove();
+  });
+
   it("restores a usable width when expanding from a collapsed rail", () => {
     const { result } = renderHook(() => useSidebar(), { wrapper });
     act(() => result.current.setSidebarWidth(40));

@@ -1,6 +1,6 @@
 "use client";
 
-import { Link2, Loader2, Trash2, Upload, UserRound } from "lucide-react";
+import { Building2, Globe, Link2, Loader2, Trash2, Upload, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -10,8 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { getUserAvatarColor, resolveAvatarUrl } from "@/components/ui/avatar";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
+import { cn } from "@/lib/utils";
 import type { Me, User } from "@/types/api";
 
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
@@ -46,13 +48,14 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [avatarRemoved, setAvatarRemoved] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
-  const displayAvatar = previewUrl || (!avatarRemoved ? avatarUrl : "");
+  const displayAvatar = previewUrl || resolveAvatarUrl(!avatarRemoved ? avatarUrl : "");
 
   function chooseFile(file: File | undefined) {
     if (!file) return;
@@ -66,6 +69,7 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
     }
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setError(null);
+    setImgError(false);
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setAvatarRemoved(false);
@@ -77,6 +81,7 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
     setSelectedFile(null);
     setAvatarUrl("");
     setAvatarRemoved(true);
+    setImgError(false);
   }
 
   function updateSocialLink(index: number, value: string) {
@@ -167,34 +172,143 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
   }
 
   return (
-    <form onSubmit={submit} className="w-full" noValidate>
-      <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_15rem]">
-        <div className="max-w-2xl space-y-6">
+    <form onSubmit={submit} className="w-full max-w-4xl space-y-6" noValidate>
+      {/* Header bar */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">{t("profile.profileTitle")}</h2>
+          <p className="text-muted-foreground mt-0.5 text-sm">{t("account.pageDescription")}</p>
+        </div>
+      </div>
+
+      {/* Main Form Card */}
+      <div className="border-border bg-surface divide-border rounded-xl border divide-y shadow-xs overflow-hidden">
+        {/* Avatar Section */}
+        <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+          <div className="flex items-center gap-4">
+            <span
+              aria-hidden
+              className={cn(
+                "flex size-16 sm:size-20 shrink-0 items-center justify-center overflow-hidden rounded-full text-2xl font-bold ring-1 ring-border shadow-xs select-none",
+                displayAvatar && !imgError
+                  ? ""
+                  : getUserAvatarColor(user.username || fullName || ""),
+              )}
+            >
+              {displayAvatar && !imgError ? (
+                <img
+                  src={displayAvatar}
+                  alt=""
+                  className="size-full object-cover"
+                  onError={() => setImgError(true)}
+                />
+              ) : (
+                initials(fullName, user.username) || <UserRound className="size-8" />
+              )}
+            </span>
+            <div>
+              <Label className="text-sm font-semibold text-foreground">{t("profile.profilePicture")}</Label>
+              <p className="text-muted-foreground text-xs mt-0.5">{t("profile.avatarTypes")}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-center">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={pending}
+              onClick={() => document.getElementById(fileInputId)?.click()}
+              className="gap-1.5"
+            >
+              <Upload className="size-3.5" aria-hidden />
+              {t("profile.change")}
+            </Button>
+            {displayAvatar ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={pending}
+                onClick={removeAvatar}
+                className="text-danger hover:text-danger hover:bg-danger/10 gap-1.5"
+              >
+                <Trash2 className="size-3.5" aria-hidden />
+                {t("profile.remove")}
+              </Button>
+            ) : null}
+            <input
+              id={fileInputId}
+              type="file"
+              accept={AVATAR_TYPES.join(",")}
+              className="sr-only"
+              onChange={(event) => chooseFile(event.target.files?.[0])}
+              disabled={pending}
+            />
+          </div>
+        </div>
+
+        {/* Basic Fields */}
+        <div className="p-6 space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="profile-name">{t("profile.displayName")}</Label>
-            <Input id="profile-name" value={fullName} onChange={(event) => setFullName(event.target.value)} onBlur={() => validateField("fullName")} disabled={pending} aria-invalid={Boolean(fieldErrors.fullName)} maxLength={255} />
+            <Input
+              id="profile-name"
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              onBlur={() => validateField("fullName")}
+              disabled={pending}
+              aria-invalid={Boolean(fieldErrors.fullName)}
+              maxLength={255}
+            />
             <p className="text-muted-foreground text-xs">{t("profile.displayNameHint")}</p>
             {fieldErrors.fullName ? <p className="text-danger text-xs">{fieldErrors.fullName}</p> : null}
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="profile-email">{t("profile.email")}</Label>
-            <Input id="profile-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} onBlur={() => validateField("email")} disabled={pending} aria-invalid={Boolean(fieldErrors.email)} required />
+            <Input
+              id="profile-email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              onBlur={() => validateField("email")}
+              disabled={pending}
+              aria-invalid={Boolean(fieldErrors.email)}
+              required
+            />
             {fieldErrors.email ? <p className="text-danger text-xs">{fieldErrors.email}</p> : null}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="profile-bio">{t("profile.bio")}</Label>
-            <Textarea id="profile-bio" value={bio} onChange={(event) => setBio(event.target.value)} onBlur={() => validateField("bio")} disabled={pending} aria-invalid={Boolean(fieldErrors.bio)} maxLength={500} placeholder={t("profile.bioPlaceholder")} />
-            <p className="text-muted-foreground text-xs">{bio.length}/500</p>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="profile-bio">{t("profile.bio")}</Label>
+              <span className="text-muted-foreground text-xs font-mono">{bio.length}/500</span>
+            </div>
+            <Textarea
+              id="profile-bio"
+              value={bio}
+              onChange={(event) => setBio(event.target.value)}
+              onBlur={() => validateField("bio")}
+              disabled={pending}
+              aria-invalid={Boolean(fieldErrors.bio)}
+              maxLength={500}
+              placeholder={t("profile.bioPlaceholder")}
+              rows={3}
+            />
             {fieldErrors.bio ? <p className="text-danger text-xs">{fieldErrors.bio}</p> : null}
           </div>
+        </div>
 
-          <div className="grid gap-6 sm:grid-cols-2">
+        {/* Organization Fields */}
+        <div className="p-6 space-y-4">
+          <div className="grid gap-5 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>{t("profile.pronouns")}</Label>
               <Select value={pronouns} onValueChange={setPronouns} disabled={pending}>
-                <SelectTrigger aria-label={t("profile.pronounsAria")}><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("profile.pronounsAria")}>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent align="start">
                   <SelectItem value="unspecified">{t("profile.pronounsUnspecified")}</SelectItem>
                   <SelectItem value="she/her">She/her</SelectItem>
@@ -203,48 +317,90 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="profile-company">{t("profile.company")}</Label>
-              <Input id="profile-company" value={company} onChange={(event) => setCompany(event.target.value)} onBlur={() => validateField("company")} disabled={pending} aria-invalid={Boolean(fieldErrors.company)} maxLength={255} placeholder={t("profile.companyPlaceholder")} />
+              <Input
+                id="profile-company"
+                value={company}
+                onChange={(event) => setCompany(event.target.value)}
+                onBlur={() => validateField("company")}
+                disabled={pending}
+                aria-invalid={Boolean(fieldErrors.company)}
+                maxLength={255}
+                placeholder={t("profile.companyPlaceholder")}
+              />
               {fieldErrors.company ? <p className="text-danger text-xs">{fieldErrors.company}</p> : null}
             </div>
           </div>
+        </div>
 
+        {/* Links Fields */}
+        <div className="p-6 space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="profile-url">{t("profile.website")}</Label>
-            <Input id="profile-url" type="url" value={profileUrl} onChange={(event) => setProfileUrl(event.target.value)} onBlur={() => validateField("profileUrl")} disabled={pending} aria-invalid={Boolean(fieldErrors.profileUrl)} placeholder="https://example.com" />
+            <Input
+              id="profile-url"
+              type="url"
+              value={profileUrl}
+              onChange={(event) => setProfileUrl(event.target.value)}
+              onBlur={() => validateField("profileUrl")}
+              disabled={pending}
+              aria-invalid={Boolean(fieldErrors.profileUrl)}
+              placeholder="https://example.com"
+            />
             {fieldErrors.profileUrl ? <p className="text-danger text-xs">{fieldErrors.profileUrl}</p> : null}
           </div>
 
           <div className="space-y-2">
-            <div><Label>{t("profile.socialLinks")}</Label><p className="text-muted-foreground mt-1 text-xs">{t("profile.socialLinksHint")}</p></div>
-            <div className="space-y-2">
+            <div>
+              <Label>{t("profile.socialLinks")}</Label>
+              <p className="text-muted-foreground mt-1 text-xs">{t("profile.socialLinksHint")}</p>
+            </div>
+            <div className="space-y-2.5">
               {socialLinks.map((link, index) => (
                 <div key={index} className="flex items-center gap-2">
-                  <Link2 className="text-muted-foreground size-4 shrink-0" aria-hidden />
-                  <div className="min-w-0 flex-1"><Input aria-label={t("profile.socialLinkLabel", { index: index + 1 })} type="url" value={link} onChange={(event) => updateSocialLink(index, event.target.value)} onBlur={() => validateField(`social-${index}`)} disabled={pending} aria-invalid={Boolean(fieldErrors[`social-${index}`])} placeholder={t("profile.socialLinkPlaceholder", { index: index + 1 })} />{fieldErrors[`social-${index}`] ? <p className="text-danger mt-1 text-xs">{fieldErrors[`social-${index}`]}</p> : null}</div>
+                  <div className="bg-surface-sunken text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md border border-border">
+                    <Link2 className="size-4" aria-hidden />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Input
+                      aria-label={t("profile.socialLinkLabel", { index: index + 1 })}
+                      type="url"
+                      value={link}
+                      onChange={(event) => updateSocialLink(index, event.target.value)}
+                      onBlur={() => validateField(`social-${index}`)}
+                      disabled={pending}
+                      aria-invalid={Boolean(fieldErrors[`social-${index}`])}
+                      placeholder={t("profile.socialLinkPlaceholder", { index: index + 1 })}
+                    />
+                    {fieldErrors[`social-${index}`] ? (
+                      <p className="text-danger mt-1 text-xs">{fieldErrors[`social-${index}`]}</p>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         </div>
-
-        <aside className="border-border bg-surface-sunken/60 flex flex-col items-center rounded-lg border p-5 text-center">
-          <Label className="self-start">{t("profile.profilePicture")}</Label>
-          <span aria-hidden className="bg-primary text-primary-foreground mt-4 flex size-36 shrink-0 items-center justify-center overflow-hidden rounded-full text-3xl font-semibold shadow-sm ring-1 ring-border">
-            {displayAvatar ? <img src={displayAvatar} alt="" className="size-full object-cover" /> : initials(fullName, user.username) || <UserRound className="size-10" />}
-          </span>
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => document.getElementById(fileInputId)?.click()}><Upload />{t("profile.change")}</Button>
-            {displayAvatar ? <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={removeAvatar}><Trash2 />{t("profile.remove")}</Button> : null}
-          </div>
-          <p className="text-muted-foreground mt-3 text-xs">{t("profile.avatarTypes")}</p>
-          <input id={fileInputId} type="file" accept={AVATAR_TYPES.join(",")} className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0])} disabled={pending} />
-        </aside>
       </div>
 
-      {error ? <p role="alert" className="border-danger/30 bg-danger/10 text-danger mt-6 rounded-md border px-3 py-2 text-sm">{error}</p> : null}
-      <footer className="border-border mt-8 flex flex-wrap justify-end gap-2 border-t pt-5"><Button type="button" variant="secondary" onClick={onCancel} disabled={pending}>{t("profile.cancel")}</Button><Button type="submit" variant="primary" disabled={pending || !email.trim()}>{pending ? <Loader2 className="animate-spin" /> : null}{t("profile.saveChanges")}</Button></footer>
+      {error ? (
+        <p role="alert" className="border-danger/30 bg-danger/10 text-danger rounded-md border px-3 py-2 text-sm">
+          {error}
+        </p>
+      ) : null}
+
+      {/* Footer Actions */}
+      <footer className="border-border flex flex-wrap justify-end gap-3 border-t pt-5">
+        <Button type="button" variant="secondary" onClick={onCancel} disabled={pending}>
+          {t("profile.cancel")}
+        </Button>
+        <Button type="submit" variant="primary" disabled={pending || !email.trim()} className="gap-2">
+          {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+          {t("profile.saveChanges")}
+        </Button>
+      </footer>
     </form>
   );
 }

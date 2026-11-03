@@ -7,12 +7,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  FilePenLine,
-  FilePlus2,
   FileText,
   Bookmark,
   FolderOpen,
-  FolderTree,
   Mail,
   PanelLeft,
   Pencil,
@@ -28,7 +25,9 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { PageChangeDialog } from "@/components/pages/page-change-dialog";
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
+import { FeatureDiscovery } from "@/components/home/feature-discovery";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -37,8 +36,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ContributionChart } from "@/components/users/contribution-chart";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
+import { getUserAvatarColor } from "@/components/ui/avatar";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { formatDate, formatTime } from "@/lib/i18n/format";
@@ -401,6 +400,60 @@ function SearchableFilterSelect({
   );
 }
 
+/**
+ * Whether an activity entry is the page being created: no earlier version to compare with.
+ * The version count says so; the dates only as a fallback, since an imported page keeps the
+ * creation date it had in the system it came from.
+ */
+export function isCreation(item: RecentPageItem): boolean {
+  if (item.revision_count != null) return item.revision_count <= 1;
+  return (
+    Math.abs(
+      new Date(item.updated_at).getTime() - new Date(item.created_at).getTime(),
+    ) < 60_000
+  );
+}
+
+/**
+ * When an entry happened and what to do about it: "Updated ... (view change)", or for the
+ * entry that created the page "Created ..." with a label - there is no earlier version.
+ */
+function ChangeWhen({
+  item,
+  onViewChange,
+}: {
+  item: RecentPageItem;
+  onViewChange: (item: RecentPageItem) => void;
+}) {
+  const { t, locale } = useTranslation();
+  const when = {
+    date: formatDate(item.updated_at, locale),
+    time: formatTime(item.updated_at, locale),
+  };
+  if (isCreation(item)) {
+    return (
+      <>
+        {t("userProfile.createdRow", when)}{" "}
+        <span className="bg-success-bg text-success rounded-full px-1.5 py-px text-xs font-medium">
+          {t("userProfile.createdBadge")}
+        </span>
+      </>
+    );
+  }
+  return (
+    <>
+      {t("userProfile.updatedRow", when)}{" "}
+      <button
+        type="button"
+        onClick={() => onViewChange(item)}
+        className="text-primary hover:bg-primary-subtle hover:text-primary-hover active:bg-surface-selected focus-visible:ring-ring cursor-pointer rounded-sm px-0.5 transition-colors duration-150 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+      >
+        {t("userProfile.viewChange")}
+      </button>
+    </>
+  );
+}
+
 function ActivityRow({
   item,
   onViewChange,
@@ -410,7 +463,6 @@ function ActivityRow({
   onViewChange: (item: RecentPageItem) => void;
   treePosition?: "middle" | "last";
 }) {
-  const { t, locale } = useTranslation();
   const treeClassName = treeConnectorClass(treePosition);
 
   return (
@@ -425,17 +477,7 @@ function ActivityRow({
             {item.title}
           </Link>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            {t("userProfile.updatedRow", {
-              date: formatDate(item.updated_at, locale),
-              time: formatTime(item.updated_at, locale),
-            })}{" "}
-            <button
-              type="button"
-              onClick={() => onViewChange(item)}
-              className="text-primary hover:bg-primary-subtle hover:text-primary-hover active:bg-surface-selected focus-visible:ring-ring cursor-pointer rounded-sm px-0.5 transition-colors duration-150 hover:underline focus-visible:ring-2 focus-visible:outline-none"
-            >
-              {t("userProfile.viewChange")}
-            </button>{" "}
+            <ChangeWhen item={item} onViewChange={onViewChange} />{" "}
             ·{" "}
             <Link
               href={`/spaces/${encodeURIComponent(item.space_key)}`}
@@ -520,17 +562,7 @@ function RepeatedActivityRow({
           <ul className="border-border mt-1 ml-6 space-y-0.5 border-l pl-3">
             {items.map((item) => (
               <li key={item.id} className="text-muted-foreground text-xs">
-                {t("userProfile.updatedRow", {
-                  date: formatDate(item.updated_at, locale),
-                  time: formatTime(item.updated_at, locale),
-                })}{" "}
-                <button
-                  type="button"
-                  onClick={() => onViewChange(item)}
-                  className="text-primary hover:bg-primary-subtle hover:text-primary-hover active:bg-surface-selected focus-visible:ring-ring cursor-pointer rounded-sm px-0.5 transition-colors duration-150 hover:underline focus-visible:ring-2 focus-visible:outline-none"
-                >
-                  {t("userProfile.viewChange")}
-                </button>
+                <ChangeWhen item={item} onViewChange={onViewChange} />
               </li>
             ))}
           </ul>
@@ -618,6 +650,7 @@ function CompactActivityFeed({
       key: string;
       username: string;
       name: string;
+      avatarUrl?: string | null;
       items: RecentPageItem[];
     }[] = [];
     for (const item of items) {
@@ -626,11 +659,15 @@ function CompactActivityFeed({
 
       if (current && current.username === username) {
         current.items.push(item);
+        if (!current.avatarUrl && item.user_avatar_url) {
+          current.avatarUrl = item.user_avatar_url;
+        }
       } else {
         result.push({
           key: `${username}-${item.id}`,
           username,
           name: item.user_full_name || username,
+          avatarUrl: item.user_avatar_url ?? null,
           items: [item],
         });
       }
@@ -668,6 +705,7 @@ function CompactActivityFeed({
                 <UserProfileTrigger
                   username={username}
                   fullName={group.name}
+                  avatarUrl={group.avatarUrl}
                   variant="avatar"
                   className="size-8 text-xs"
                 />
@@ -738,6 +776,8 @@ export function UserProfile({
   const [allActivityLoading, setAllActivityLoading] = useState(false);
   const [allActivityError, setAllActivityError] = useState<string | null>(null);
   const [historyItem, setHistoryItem] = useState<RecentPageItem | null>(null);
+  const [fullHistoryItem, setFullHistoryItem] =
+    useState<RecentPageItem | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activityScrollRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
@@ -1158,9 +1198,44 @@ export function UserProfile({
   };
   const activeKnowledgeSection = knowledgeSectionDetails[knowledgeSection];
 
+  // On wide screens the page itself does not scroll: the grid takes exactly the
+  // space left under the top bar (and any announcement banner), the activity
+  // list scrolls inside it, and the side column scrolls on its own if it is
+  // taller than the window.
+  const layoutRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = layoutRef.current;
+    if (!el) return;
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const root = document.documentElement;
+    const fit = () => {
+      if (!desktop.matches) {
+        el.style.height = "";
+        root.style.overflow = "";
+        return;
+      }
+      root.style.overflow = "hidden";
+      el.style.height = `${Math.max(320, window.innerHeight - el.getBoundingClientRect().top - 24)}px`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    observer?.observe(document.body);
+    return () => {
+      window.removeEventListener("resize", fit);
+      observer?.disconnect();
+      root.style.overflow = "";
+      el.style.height = "";
+    };
+  }, []);
+
   return (
-    <div className="grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_26rem]">
-      <main className="min-w-0 lg:flex lg:h-[calc(100dvh-var(--wh-topbar-height)-5rem)] lg:flex-col lg:overflow-hidden">
+    <div
+      ref={layoutRef}
+      className="grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_21rem]"
+    >
+      <main className="min-w-0 lg:flex lg:h-full lg:flex-col lg:overflow-hidden">
         <div className="shrink-0 px-2 pt-1">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-tight">
@@ -1837,57 +1912,67 @@ export function UserProfile({
         </div>
       </main>
 
-      <aside className="space-y-5 lg:sticky lg:top-20">
-        <section className="border-border bg-surface overflow-hidden rounded-lg border">
+      <aside className="space-y-5 lg:flex lg:h-full lg:flex-col lg:space-y-0 lg:gap-5">
+        <section className="border-border bg-surface relative shrink-0 overflow-hidden rounded-lg border">
           <div className="bg-primary-subtle h-20" />
-          <div className="px-4 pb-4 text-center">
-            <div className="relative mx-auto -mt-12 size-20">
-              <span className="bg-primary text-primary-foreground ring-surface flex size-20 items-center justify-center overflow-hidden rounded-full text-2xl font-semibold ring-4">
-                {user.avatar_url ? (
-                  <img
-                    src={user.avatar_url}
-                    alt=""
-                    className="size-full object-cover"
-                  />
-                ) : (
-                  initials(user) || (
-                    <UserRound className="size-10" aria-hidden />
-                  )
-                )}
-              </span>
-              <span
-                className={presenceIndicatorClass}
-                role="img"
-                aria-label={presence.label}
-                title={presence.label}
-              >
-                {presence.minutesAgo !== undefined
-                  ? `${presence.minutesAgo}m`
-                  : null}
-              </span>
+          {isOwner ? (
+            <Link
+              href="/account"
+              aria-label={t("profile.editProfile")}
+              title={t("profile.editProfile")}
+              className="text-muted-foreground hover:text-foreground hover:bg-surface-hover bg-surface/70 focus-visible:ring-ring absolute top-2 right-2 flex size-8 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            >
+              <Pencil className="size-4" aria-hidden />
+            </Link>
+          ) : null}
+          <div className="px-4 pb-4">
+            {/* Avatar overlaps the cover, name beside it, actions on the right. */}
+            <div className="flex items-end gap-3">
+              <div className="relative -mt-10 size-20 shrink-0">
+                <span
+                  className={cn(
+                    "ring-surface flex size-20 items-center justify-center overflow-hidden rounded-full text-2xl font-semibold ring-4 select-none",
+                    user.avatar_url
+                      ? ""
+                      : getUserAvatarColor(user.username || user.full_name || ""),
+                  )}
+                >
+                  {user.avatar_url ? (
+                    <img
+                      src={user.avatar_url}
+                      alt=""
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    initials(user) || (
+                      <UserRound className="size-10" aria-hidden />
+                    )
+                  )}
+                </span>
+                <span
+                  className={presenceIndicatorClass}
+                  role="img"
+                  aria-label={presence.label}
+                  title={presence.label}
+                >
+                  {presence.minutesAgo !== undefined
+                    ? `${presence.minutesAgo}m`
+                    : null}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1 pb-1">
+                <h1 className="line-clamp-2 text-xl leading-tight font-semibold tracking-tight">
+                  {displayName}
+                </h1>
+                <p className="text-muted-foreground truncate text-sm">
+                  @{user.username}
+                </p>
+              </div>
             </div>
-            <h1 className="mt-2.5 text-xl font-semibold tracking-tight">
-              {displayName}
-            </h1>
-            <p className="text-muted-foreground mt-0.5 text-sm">
-              @{user.username}
-            </p>
             {user.bio ? (
-              <p className="text-muted-foreground mt-3 text-xs leading-5">
+              <p className="text-muted-foreground mt-2 text-xs leading-5">
                 {user.bio}
               </p>
-            ) : null}
-            {isOwner ? (
-              <Button
-                asChild
-                variant="secondary"
-                size="sm"
-                className="mt-4 w-full"
-              >
-                <Link href="/account">
-                  <Pencil aria-hidden /> {t("profile.editProfile")}
-                </Link>
-              </Button>
             ) : null}
           </div>
           <dl className="border-border space-y-2.5 border-t px-4 py-3 text-xs">
@@ -1918,54 +2003,52 @@ export function UserProfile({
               <dt className="text-muted-foreground">{t("profile.email")}</dt>
               <dd className="ml-auto max-w-36 truncate">{user.email}</dd>
             </div>
-            <div className="flex items-center gap-2">
-              <Clock3 className="text-muted-foreground size-4" />
-              <dt className="text-muted-foreground">
-                {t("userProfile.lastActive")}
-              </dt>
-              <dd className="ml-auto">
-                {user.last_active_at
-                  ? relativeDate(user.last_active_at, t)
-                  : "—"}
-              </dd>
-            </div>
+            {/* You are online by definition on your own profile. */}
+            {isOwner ? null : (
+              <div className="flex items-center gap-2">
+                <Clock3 className="text-muted-foreground size-4" />
+                <dt className="text-muted-foreground">
+                  {t("userProfile.lastActive")}
+                </dt>
+                <dd className="ml-auto">
+                  {user.last_active_at
+                    ? relativeDate(user.last_active_at, t)
+                    : "—"}
+                </dd>
+              </div>
+            )}
+          </dl>
+          <dl
+            aria-label={t("userProfile.statsTitle")}
+            className="border-border grid grid-cols-3 divide-x border-t text-center"
+          >
+            {[
+              [t("userProfile.statsPagesUpdated"), stats.pages_updated],
+              [t("userProfile.statsPagesCreated"), stats.pages_created],
+              [t("userProfile.statsSpacesContributed"), stats.spaces_contributed],
+            ].map(([label, value]) => (
+              <div key={label} className="divide-border px-1 py-1.5">
+                <dd className="text-sm leading-tight font-semibold tabular-nums">{value}</dd>
+                <dt className="text-muted-foreground text-[10px] leading-tight whitespace-nowrap">
+                  {label}
+                </dt>
+              </div>
+            ))}
           </dl>
         </section>
-        <ContributionChart username={user.username} />
-        <SideCard title={t("userProfile.statsTitle")}>
-          <dl className="space-y-3 text-xs">
-            <div className="flex items-center justify-between">
-              <dt className="text-muted-foreground flex items-center gap-2">
-                <FilePenLine className="size-4" aria-hidden="true" />{" "}
-                {t("userProfile.statsPagesUpdated")}
-              </dt>
-              <dd className="font-semibold">{stats.pages_updated}</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-muted-foreground flex items-center gap-2">
-                <FilePlus2 className="size-4" aria-hidden="true" />{" "}
-                {t("userProfile.statsPagesCreated")}
-              </dt>
-              <dd className="font-semibold">{stats.pages_created}</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-muted-foreground flex items-center gap-2">
-                <FolderTree className="size-4" aria-hidden="true" />{" "}
-                {t("userProfile.statsSpacesContributed")}
-              </dt>
-              <dd className="font-semibold">{stats.spaces_contributed}</dd>
-            </div>
-          </dl>
-        </SideCard>
-        {!isOwner && isAdmin ? (
-          <SideCard title={t("userProfile.draftAccess")}>
-            <EmptyCard>{t("userProfile.draftAccessHint")}</EmptyCard>
-          </SideCard>
-        ) : null}
+        {/* Only what sits under the profile card scrolls when it does not fit. */}
+        <div className="wh-scroll space-y-5 lg:-mr-2.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          {isOwner && <FeatureDiscovery />}
+          {!isOwner && isAdmin ? (
+            <SideCard title={t("userProfile.draftAccess")}>
+              <EmptyCard>{t("userProfile.draftAccessHint")}</EmptyCard>
+            </SideCard>
+          ) : null}
+        </div>
       </aside>
 
       {historyItem ? (
-        <PageHistoryModal
+        <PageChangeDialog
           open
           onOpenChange={(open) => {
             if (!open) setHistoryItem(null);
@@ -1973,6 +2056,22 @@ export function UserProfile({
           spaceKey={historyItem.space_key}
           slug={historyItem.slug}
           pageTitle={historyItem.title}
+          at={historyItem.updated_at}
+          onOpenHistory={() => {
+            setFullHistoryItem(historyItem);
+            setHistoryItem(null);
+          }}
+        />
+      ) : null}
+      {fullHistoryItem ? (
+        <PageHistoryModal
+          open
+          onOpenChange={(open) => {
+            if (!open) setFullHistoryItem(null);
+          }}
+          spaceKey={fullHistoryItem.space_key}
+          slug={fullHistoryItem.slug}
+          pageTitle={fullHistoryItem.title}
         />
       ) : null}
     </div>

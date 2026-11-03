@@ -52,6 +52,7 @@ AUDITED_FIELDS = (
     "announcement",
     "session_ttl_hours",
     "trash_retention_days",
+    "public_shares_enabled",
 )
 
 
@@ -146,6 +147,11 @@ class SiteSettingsService:
             session_ttl_hours=session_ttl_hours,
             trash_retention_days=(
                 getattr(row, "trash_retention_days", None) or DEFAULT_TRASH_RETENTION_DAYS
+            ),
+            public_shares_enabled=(
+                getattr(row, "public_shares_enabled", None)
+                if getattr(row, "public_shares_enabled", None) is not None
+                else getattr(settings, "public_shares_enabled", True)
             ),
         )
 

@@ -51,7 +51,7 @@ async def get_revision_diff(
     _user: CurrentUser,
     page_service: PageServiceDep,
     space_service: SpaceServiceDep,
-    from_version: int | None = Query(default=None, ge=1),
+    from_version: int | None = Query(default=None, ge=0),
     to_version: int | None = Query(default=None, ge=1),
 ) -> PageRevisionDiffRead:
     space = await space_service.get_by_key(key)

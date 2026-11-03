@@ -21,7 +21,7 @@ If WikiHub is useful to you, a ⭐ on the repo helps other teams find it.
 [![open issues](https://img.shields.io/github/issues/QuanBlue/wiki-hub)](https://github.com/QuanBlue/wiki-hub/issues)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](#-license)
 
-**[Demo](#-demo) • [Documentation](#-documentation) • [Report Bug](https://github.com/QuanBlue/wiki-hub/issues) • [Request Feature](https://github.com/QuanBlue/wiki-hub/issues)**
+**[🌐 Website](https://quanblue.github.io/wiki-hub/) • [Demo](#️-demo) • [Documentation](#-documentation) • [Report Bug](https://github.com/QuanBlue/wiki-hub/issues) • [Request Feature](https://github.com/QuanBlue/wiki-hub/issues)**
 
 > **Status: the core platform is built and in daily use** — Spaces, Pages, full
 > revision history, authentication & RBAC, the rich editor, attachments,
@@ -80,6 +80,10 @@ unformatted text.
 
 ## 📽️ Demo
 
+New to WikiHub? The **[project website](https://quanblue.github.io/wiki-hub/)** gives a
+guided overview of what it does, its features and how to deploy it. The captures below show the
+real interface.
+
 <div align="center">
 
 <img src="docs/demo/assets/demo-editor.gif" alt="Sign in, land in a space, open a page from the page tree, edit it with the slash menu, and save — end to end" width="700">
@@ -99,7 +103,7 @@ unformatted text.
 <sub>The same flow at phone width — see <a href="docs/demo#small-screens">docs/demo</a> for details.</sub>
 
 **Full walkthrough with screenshots of every feature: [`docs/demo`](docs/demo).**
-All captures are of the current interface, taken on 18 October 2026.
+The editing and search captures were retaken on 3 November 2026; the phone capture is from 18 October 2026 (see [docs/demo](docs/demo) for which is which).
 
 </div>
 

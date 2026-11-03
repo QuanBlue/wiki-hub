@@ -4,12 +4,20 @@ A closer look at WikiHub than the [main README](../../README.md#-demo) has room
 for. Every image below is a real, unedited capture of a running local
 instance — nothing here is a mockup.
 
-All captures were refreshed on **18 October 2026** against the current
-interface. They were taken in a throwaway space, **Product Engineering**
-(`DEMO`), signed in as the seeded administrator, at a 1430×900 desktop window
-in light mode and English. The only thing hidden is the Next.js development
-badge, which is not part of the product. Search terms were chosen so that only
-the demo space's pages come back.
+The captures were taken in a throwaway space, **Product Engineering** (`DEMO`),
+signed in as the seeded administrator, in light mode and English. On
+**3 November 2026** these were retaken against the current interface: the
+editing and search GIFs, and the page, code block, search, drafts,
+permissions, Help centre, backup and theme screenshots. The other images
+(sign-in, the *Go to* and Help search captures, language switching, the phone
+GIF and the like/pin GIF) are from 18 October 2026 and show the interface as
+it was then.
+
+Nothing is edited except what is hidden at capture time: the Next.js
+development badge (not part of the product) and, on the test instance, a
+system-announcement banner and the *Related pages* block, which lists pages
+from other spaces. Search terms were chosen so that only the demo space's pages
+come back.
 
 - [Signing in](#signing-in)
 - [Editing a page](#editing-a-page)
@@ -46,8 +54,7 @@ request form for people who cannot sign in. The colour and logo follow
 
 <img src="assets/demo-editor.gif" alt="Signing in, landing in the Product Engineering space, opening Getting Started from the page tree, choosing Edit then Normal editor, typing /callout, picking Callout: Tip, typing into it, and saving" width="720">
 
-The full path, start to finish: **sign in** (here straight into the space, via
-the `?next=` link) → open **Getting Started** from the **page tree** →
+The full path, start to finish: open **Onboarding checklist** from the **page tree** →
 **Edit ▾ → Normal editor** → at the end of the page type `/callout` to open the
 slash-command menu, pick **Callout: Tip**, and type into it → **Save**. The
 toast in the last frame is the real save confirmation.
@@ -92,7 +99,7 @@ else that mixes prose with real code or config.
 
 ## Global search, shortcuts & commands
 
-<img src="assets/demo-search.gif" alt="Opening search with Ctrl+K, searching for onboarding, typing keyboard shortcuts to get a Go to shortcut, typing : to list commands, then :help change password to search the Help guides and open one" width="720">
+<img src="assets/demo-search.gif" alt="Opening search with Ctrl+K, searching for onboarding, typing keyboard shortcuts to get a Go to shortcut, typing : to list commands, then :help change password to search the Help guides" width="720">
 
 `Ctrl`/`⌘`+`K` from anywhere in the app opens one search box that does three
 things.
@@ -161,11 +168,13 @@ says so.
 
 ## Permissions & access control
 
-<img src="assets/screenshot-permissions.png" alt="The Page access dialog for Architecture overview: General access set to Open, an empty group table, and a user table listing the administrator with View and Edit" width="720">
+<img src="assets/screenshot-permissions.png" alt="The Page access dialog for Architecture overview: the Inherit permissions from parent page switch, General access set to Open, an empty group table, and a user table listing the administrator with View and Edit" width="720">
 
 Access can be scoped at the space level or narrowed further on a single page.
-**⋯ → Page access** shows **General access** (Open or Restricted) plus exactly
-which groups and users can view or edit *this* page. Restricted starts from an
+**⋯ → Page access** starts with **Inherit permissions from parent page**: on,
+the page follows its parent, unless you give it its own list. Below it,
+**General access** (Open or Restricted) and exactly which groups and users can
+view or edit *this* page. Restricted starts from an
 empty allow-list you build up by adding specific people or groups, and View
 and Edit restrictions inherit down to child pages. **Reset to default** clears
 the page's own allow-list or blocks, after a confirmation. The demo space is Restricted with no groups, so
@@ -214,7 +223,8 @@ or a custom hex colour, choose a logo preset or upload your own image or SVG,
 and pick the default page typeface. **Preview Theme** shows the result before
 **Save Theme** applies it to the whole workspace. A value marked *Inherited
 from environment* comes from the server's configuration until it is changed
-here. The other sections are **General & Sessions** and **Sidebar access**.
+here. The other sections are **General & Sessions**, **Sidebar access** and
+**System Announcement** (a scheduled banner for everyone).
 
 ## Language switching
 

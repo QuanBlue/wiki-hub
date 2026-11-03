@@ -15,14 +15,16 @@ from bs4 import BeautifulSoup
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
+from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
 from app.models.draft import PageDraft
-from app.models.page import INVALID_IMPORT_ACTOR_LABEL, PageLike, WikiPage
+from app.models.page import INVALID_IMPORT_ACTOR_LABEL, PageLike, PageWatch, WikiPage
 from app.models.permission import Permission
 from app.models.revision import PageRevision
-from app.models.space import Space, SpaceStatus
+from app.models.space import Space, SpaceStatus, SpaceWatch
 from app.models.user import User
+from app.modules.notifications.service import notify
+from app.modules.presence.service import PresenceService
 from app.modules.spaces.service import SpaceService
 from app.repositories.draft import PageDraftRepository
 from app.repositories.page import PageRepository
@@ -38,6 +40,8 @@ from app.schemas.page import (
     PageRestoreResult,
     PageTrashResult,
     PageUpdate,
+    PageWatchRead,
+    PageWatchUpdate,
     TrashedPageDetail,
     TrashedPageRead,
     TrashListRead,
@@ -137,7 +141,126 @@ class PageService:
                 parent is not None
                 and await self.spaces.permissions.page_view_is_restricted(parent)
             )
+
+        watch = await self.session.scalar(
+            select(PageWatch).where(
+                PageWatch.page_id == page.id,
+                PageWatch.user_id == user.id,
+            )
+        )
+        if watch is not None:
+            result.is_watched = True
+            result.watch_descendants = watch.include_descendants
+
         return result
+
+    async def get_watch(self, page: WikiPage, user: User) -> PageWatchRead:
+        await self.require_page_view(page, user)
+        watch = await self.session.scalar(
+            select(PageWatch).where(
+                PageWatch.page_id == page.id,
+                PageWatch.user_id == user.id,
+            )
+        )
+        if watch is None:
+            return PageWatchRead(watching=False, include_descendants=False)
+        return PageWatchRead(watching=True, include_descendants=watch.include_descendants)
+
+    async def set_watch(
+        self, page: WikiPage, user: User, payload: PageWatchUpdate
+    ) -> PageWatchRead:
+        await self.require_page_view(page, user)
+        watch = await self.session.scalar(
+            select(PageWatch).where(
+                PageWatch.page_id == page.id,
+                PageWatch.user_id == user.id,
+            )
+        )
+        if not payload.watching:
+            if watch is not None:
+                await self.session.delete(watch)
+                await self.session.flush()
+            return PageWatchRead(watching=False, include_descendants=False)
+
+        if watch is None:
+            watch = PageWatch(
+                page_id=page.id,
+                user_id=user.id,
+                include_descendants=payload.include_descendants,
+            )
+            self.session.add(watch)
+        else:
+            watch.include_descendants = payload.include_descendants
+        await self.session.flush()
+        return PageWatchRead(watching=True, include_descendants=watch.include_descendants)
+
+    async def _ancestor_ids(self, page: WikiPage) -> list[uuid.UUID]:
+        ancestors: list[uuid.UUID] = []
+        current_parent_id = page.parent_id
+        depth = 0
+        while current_parent_id and depth < 50:
+            ancestors.append(current_parent_id)
+            parent = await self.session.get(WikiPage, current_parent_id)
+            current_parent_id = parent.parent_id if parent else None
+            depth += 1
+        return ancestors
+
+    async def _notify_watchers(
+        self, space: Space, page: WikiPage, actor: User, is_create: bool = False
+    ) -> None:
+        direct_watcher_ids = set(
+            await self.session.scalars(
+                select(PageWatch.user_id).where(PageWatch.page_id == page.id)
+            )
+        )
+
+        ancestor_ids = await self._ancestor_ids(page)
+        branch_watcher_ids: set[uuid.UUID] = set()
+        if ancestor_ids:
+            branch_watcher_ids = set(
+                await self.session.scalars(
+                    select(PageWatch.user_id).where(
+                        PageWatch.page_id.in_(ancestor_ids),
+                        PageWatch.include_descendants.is_(True),
+                    )
+                )
+            )
+
+        space_watcher_ids = set(
+            await self.session.scalars(
+                select(SpaceWatch.user_id).where(SpaceWatch.space_id == space.id)
+            )
+        )
+
+        all_recipient_ids = (direct_watcher_ids | branch_watcher_ids | space_watcher_ids)
+        all_recipient_ids.discard(actor.id)
+        if not all_recipient_ids:
+            return
+
+        recipients = list(
+            await self.session.scalars(
+                select(User).where(User.id.in_(all_recipient_ids), User.is_active.is_(True))
+            )
+        )
+
+        kind = "page_created" if is_create else "page_updated"
+        link = f"/spaces/{space.key}/pages/{page.slug}"
+        params = {
+            "title": page.title,
+            "space": space.name or space.key,
+        }
+
+        for recipient in recipients:
+            if await self.spaces.permissions.can_view_page(page, recipient):
+                await notify(
+                    self.session,
+                    recipient.id,
+                    kind=kind,
+                    params=params,
+                    link=link,
+                    actor=actor,
+                )
+
 
     def to_read_many(self, pages: Sequence[WikiPage]) -> list[PageRead]:
         return [self.to_read(page) for page in pages]
@@ -234,6 +357,7 @@ class PageService:
         await self.session.flush()
         await self.session.refresh(page)
         await self.snapshot_revision(page, creator, "Initial page creation")
+        await self._notify_watchers(space, page, creator, is_create=True)
         logger.info("page_created", space_key=space.key, slug=page.slug, by=creator.username)
         return page
 
@@ -241,6 +365,23 @@ class PageService:
         self, space: Space, page: WikiPage, payload: PageUpdate, user: User
     ) -> WikiPage:
         await self.require_page_editor(page, user)
+        if payload.base_updated_at is not None and not payload.force:
+            if page.updated_at is not None:
+                delta = (page.updated_at - payload.base_updated_at).total_seconds()
+                if delta > 1.0:
+                    raise ConflictError(
+                        "This page has been updated by someone else while you were editing.",
+                        code="page_conflict",
+                        details={
+                            "current_updated_at": page.updated_at.isoformat(),
+                            "base_updated_at": payload.base_updated_at.isoformat(),
+                            "updated_by": (
+                                page.updated_by.full_name or page.updated_by.username
+                                if page.updated_by
+                                else None
+                            ),
+                        },
+                    )
         data = payload.model_dump(exclude_unset=True)
         if data.get("title") is not None:
             page.title = str(data["title"]).strip()
@@ -251,10 +392,15 @@ class PageService:
         page.updated_by_id = user.id
         await self.session.flush()
         await self.session.refresh(page)
-        await self.snapshot_revision(page, user, "Updated content")
+        change_summary = str(data["change_summary"]).strip() if data.get("change_summary") else "Updated content"
+        await self.snapshot_revision(page, user, change_summary)
         draft = await self.drafts.get(page.id, user.id)
         if draft is not None:
             await self.drafts.delete(draft)
+        await self._notify_watchers(space, page, user, is_create=False)
+        await PresenceService.broadcast_page_saved(
+            page.id, user, page.updated_at, page.title
+        )
         logger.info("page_updated", space_key=space.key, slug=page.slug, by=user.username)
         return page
 
@@ -384,20 +530,16 @@ class PageService:
         target_from = (
             from_version
             if from_version is not None
-            else (target_to - 1 if target_to > 1 else target_to)
+            else (target_to - 1 if target_to > 1 else 0)
         )
 
-        rev_from = next((r for r in revisions if r.version == target_from), None)
         rev_to = next((r for r in revisions if r.version == target_to), None)
-
-        if rev_from is None:
-            rev_from = revisions[-1]
         if rev_to is None:
             rev_to = latest_rev
 
         def diff_lines(content: str, content_format: str) -> list[str]:
             if content_format != "html":
-                return content.splitlines()
+                return [line for line in content.splitlines() if line.strip()]
 
             soup = BeautifulSoup(content, "html.parser")
             block_tags = (
@@ -425,6 +567,38 @@ class PageService:
             if lines:
                 return lines
             return [line.strip() for line in soup.get_text("\n").splitlines() if line.strip()]
+
+        if target_to == 1 or target_from == 0:
+            to_lines = diff_lines(rev_to.content, rev_to.content_format)
+            added_lines = [
+                PageRevisionDiffLine(
+                    operation="add",
+                    new_line_number=idx + 1,
+                    new_text=line,
+                    new_segments=[PageRevisionDiffSegment(operation="add", text=line)],
+                )
+                for idx, line in enumerate(to_lines)
+            ]
+            chunks = (
+                [PageRevisionDiffChunk(operation="add", text="\n".join(to_lines))]
+                if to_lines
+                else []
+            )
+            return PageRevisionDiffRead(
+                from_version=0,
+                to_version=rev_to.version,
+                title_changed=False,
+                from_title="",
+                to_title=rev_to.title,
+                chunks=chunks,
+                added_count=len(to_lines),
+                deleted_count=0,
+                lines=added_lines,
+            )
+
+        rev_from = next((r for r in revisions if r.version == target_from), None)
+        if rev_from is None:
+            rev_from = revisions[-1]
 
         from_lines = diff_lines(rev_from.content, rev_from.content_format)
         to_lines = diff_lines(rev_to.content, rev_to.content_format)
@@ -828,10 +1002,17 @@ class PageService:
     async def list_recent_pages(self, user: User, *, limit: int = 50) -> list[PageRecentItem]:
         pages = await self.pages.list_recent_pages(limit=limit)
         pages = [page for page in pages if await self.spaces.permissions.can_view_page(page, user)]
-        return [self._recent_item(page) for page in pages]
+        return await self._recent_items(pages)
+
+    async def _recent_items(self, pages: Sequence[WikiPage]) -> list[PageRecentItem]:
+        """Feed entries, each with how many versions its page has: one means the latest
+        change created the page (an imported page keeps its original ``created_at``, so the
+        dates cannot tell), and there is nothing earlier to compare it with."""
+        counts = await self.revisions.count_by_pages([page.id for page in pages])
+        return [self._recent_item(page, counts.get(page.id, 0)) for page in pages]
 
     @staticmethod
-    def _recent_item(page: WikiPage) -> PageRecentItem:
+    def _recent_item(page: WikiPage, revision_count: int | None = None) -> PageRecentItem:
         author = page.updated_by or page.created_by
         username = author.username if author else "system"
         return PageRecentItem(
@@ -844,6 +1025,8 @@ class PageService:
             updated_at=page.updated_at,
             user_username=username,
             user_full_name=author.full_name if author and author.full_name else username,
+            user_avatar_url=author.avatar_url if author else None,
+            revision_count=revision_count,
         )
 
     @staticmethod
@@ -910,7 +1093,7 @@ class PageService:
                     if len(visible) > limit:
                         last_returned = visible[limit - 1]
                         return (
-                            [self._recent_item(item) for item in visible[:limit]],
+                            await self._recent_items(visible[:limit]),
                             self._encode_activity_cursor(last_returned, member.id),
                         )
 
@@ -919,4 +1102,4 @@ class PageService:
             last_page = pages[-1]
             before = (last_page.updated_at, last_page.id)
 
-        return [self._recent_item(item) for item in visible], None
+        return await self._recent_items(visible), None

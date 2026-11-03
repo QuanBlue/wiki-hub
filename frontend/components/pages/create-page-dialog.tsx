@@ -55,12 +55,14 @@ export function CreatePageDialog({
   spaceKey,
   parentPage,
   triggerLabel = "Create page",
+  triggerTitle,
   triggerVariant = "primary",
   triggerSize = "md",
 }: {
   spaceKey: string;
   parentPage?: Pick<WikiPage, "id" | "title"> | null;
   triggerLabel?: string;
+  triggerTitle?: string;
   triggerVariant?: ButtonProps["variant"];
   triggerSize?: ButtonProps["size"];
 }) {
@@ -257,7 +259,7 @@ export function CreatePageDialog({
           variant={triggerVariant}
           size={triggerSize}
           aria-label={triggerLabel || t("pageCreate.newPageAria")}
-          title={triggerLabel || t("pageCreate.newPageAria")}
+          title={triggerTitle || triggerLabel || t("pageCreate.newPageAria")}
         >
           <FilePlus2 />
           {triggerLabel}

@@ -8,8 +8,9 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 from pydantic import BaseModel
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, Impersonator
 from app.core.exceptions import NotFoundError
+from app.models.user import User
 from app.modules.notifications.service import NotificationService
 from app.schemas.notification import NotificationRead, NotificationSummary
 from app.schemas.pagination import Page
@@ -21,21 +22,28 @@ class NotificationUpdate(BaseModel):
     read: bool = True
 
 
+def _service(session: DbSession, user: User, impersonator: User | None) -> NotificationService:
+    return NotificationService(session, user, impersonated=impersonator is not None)
+
+
 @router.get("/summary", response_model=NotificationSummary, summary="Unread count")
-async def read_summary(user: CurrentUser, session: DbSession) -> NotificationSummary:
+async def read_summary(
+    user: CurrentUser, session: DbSession, impersonator: Impersonator
+) -> NotificationSummary:
     """Cheap and polled by every page."""
-    return await NotificationService(session, user).summary()
+    return await _service(session, user, impersonator).summary()
 
 
 @router.get("", response_model=Page[NotificationRead], summary="List notifications")
 async def list_notifications(
     user: CurrentUser,
     session: DbSession,
+    impersonator: Impersonator,
     unread: bool = False,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Page[NotificationRead]:
-    return await NotificationService(session, user).list(
+    return await _service(session, user, impersonator).list(
         unread_only=unread, limit=limit, offset=offset
     )
 
@@ -43,8 +51,10 @@ async def list_notifications(
 @router.post(
     "/read-all", status_code=status.HTTP_204_NO_CONTENT, summary="Mark every notification read"
 )
-async def mark_all_read(user: CurrentUser, session: DbSession) -> Response:
-    await NotificationService(session, user).mark_all_read()
+async def mark_all_read(
+    user: CurrentUser, session: DbSession, impersonator: Impersonator
+) -> Response:
+    await _service(session, user, impersonator).mark_all_read()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -54,12 +64,15 @@ async def mark_all_read(user: CurrentUser, session: DbSession) -> Response:
     summary="Open a notification: mark it read, or report that its target is gone",
 )
 async def open_notification(
-    notification_id: uuid.UUID, user: CurrentUser, session: DbSession
+    notification_id: uuid.UUID,
+    user: CurrentUser,
+    session: DbSession,
+    impersonator: Impersonator,
 ) -> NotificationRead:
     """404 ``notification_target_gone`` (and the notification is removed) when the
     comment, page, space or request it points at no longer exists."""
     try:
-        return await NotificationService(session, user).open(notification_id)
+        return await _service(session, user, impersonator).open(notification_id)
     except NotFoundError:
         # The request's transaction is rolled back on an error; keep the removal.
         await session.commit()
@@ -72,5 +85,6 @@ async def update_notification(
     payload: NotificationUpdate,
     user: CurrentUser,
     session: DbSession,
+    impersonator: Impersonator,
 ) -> NotificationRead:
-    return await NotificationService(session, user).mark_read(notification_id, read=payload.read)
+    return await _service(session, user, impersonator).mark_read(notification_id, read=payload.read)

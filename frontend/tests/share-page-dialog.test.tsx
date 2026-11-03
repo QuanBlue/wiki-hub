@@ -12,7 +12,7 @@ vi.mock("sonner", () => ({
 }));
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
-  api: { get: vi.fn(), post: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
 }));
 
 const BASE = "/api/v1/spaces/ENG/pages/runbook/shares";
@@ -136,7 +136,7 @@ describe("SharePageDialog", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
-    await userEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    await userEvent.click(screen.getByRole("button", { name: "Copy page link" }));
     expect(onCopyLink).toHaveBeenCalled();
   });
 

@@ -36,6 +36,7 @@ from app.modules.ai.skills import (
     LANGUAGES,
     assist_system_prompt,
     clarify_system_prompt,
+    diff_summary_system_prompt,
     page_draft_instructions,
     page_draft_system_prompt,
     selection_instructions,
@@ -64,10 +65,12 @@ from app.schemas.ai import (
     PageSuggestions,
     PageSummary,
     RelatedPage,
+    RevisionDiffSummaryRead,
+    RevisionDiffSummaryRequest,
     SuggestedLabel,
     SummaryAttachment,
 )
-from app.schemas.graph import StaleCheckRead
+from app.schemas.graph import ConflictCheckRead, StaleCheckRead
 
 logger = get_logger(__name__)
 
@@ -606,10 +609,353 @@ class AIService:
         await self._write(redis, cache_key, result)
         return StaleCheckRead(result=result, compared=compared)
 
+    async def check_conflict(
+        self,
+        key: str,
+        page_a_slug: str,
+        page_b_slug: str,
+        page_b_space_key: str | None = None,
+        locale: str = "en",
+    ) -> ConflictCheckRead:
+        """Compare two related pages for contradicting parameters, rules, ports or dates."""
+        config = await load_config(self.session)
+        if not config.ready:
+            raise ServiceUnavailableError("The AI assistant is not enabled.")
+        space_a = await self.spaces.get_by_key(key)
+        await self.spaces.require_admin(space_a, self.user)
+        page_a = await self.pages.get_by_slug(space_a, page_a_slug)
+        await self.pages.require_page_view(page_a, self.user)
+
+        target_space_key = page_b_space_key or key
+        if target_space_key.upper() == key.upper():
+            space_b = space_a
+        else:
+            space_b = await self.spaces.get_by_key(target_space_key)
+        page_b = await self.pages.get_by_slug(space_b, page_b_slug)
+        await self.pages.require_page_view(page_b, self.user)
+
+        compared = [health_page(page_a), health_page(page_b)]
+        lang = LANGUAGES.get(locale, "English")
+
+        parts: list[str] = []
+        for tag, page, page_space in (("page_1", page_a, space_a), ("page_2", page_b, space_b)):
+            parts += [
+                f'<{tag} title="{page.title}" space="{page_space.name}" '
+                f'edited="{page.updated_at:%Y-%m-%d}">',
+                scrub_secrets(page_plain_text(page.content, _CONFLICT_PAGE_CHARS)),
+                f"</{tag}>",
+            ]
+        message = "\n".join(parts)
+        pair_key = ":".join(sorted([str(page_a.id), str(page_b.id)]))
+        fingerprint = hashlib.sha256(f"v5|{lang}|{message}".encode()).hexdigest()[:24]
+        cache_key = f"ai:conflict:{pair_key}:{fingerprint}"
+        redis = get_redis()
+        if cached := await self._read(redis, cache_key):
+            verdict, clean_result = _conflict_verdict(cached)
+            return ConflictCheckRead(
+                has_conflict=verdict == "conflict",
+                verdict=verdict,
+                result=clean_result,
+                compared=compared,
+                cached=True,
+            )
+
+        await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
+        raw_result = await self._chat(
+            "conflict_check",
+            config,
+            [
+                {
+                    "role": "system",
+                    "content": _CONFLICT_SYSTEM_PROMPT.format(
+                        language=lang,
+                        title_a=page_a.title.replace("|", "/"),
+                        title_b=page_b.title.replace("|", "/"),
+                    ),
+                },
+                {"role": "user", "content": message},
+            ],
+            max_tokens=1500,
+        )
+        raw_result = raw_result.strip()
+        await self._write(redis, cache_key, raw_result)
+
+        verdict, clean_result = _conflict_verdict(raw_result)
+        return ConflictCheckRead(
+            has_conflict=verdict == "conflict",
+            verdict=verdict,
+            result=clean_result,
+            compared=compared,
+        )
+
+    async def summarize_revision_diff(
+        self, key: str, slug: str, payload: RevisionDiffSummaryRequest
+    ) -> RevisionDiffSummaryRead:
+        config = await load_config(self.session)
+        if not config.ready:
+            raise ServiceUnavailableError("The AI assistant is not enabled.")
+        page = await self._visible_page(key, slug)
+
+        from_version = payload.from_version
+        to_version = payload.to_version
+        prompt_override = (payload.prompt or "").strip()
+        lang = (payload.lang or "").lower() or None
+
+        redis = get_redis()
+        cache_key: str | None = None
+
+        if payload.from_content is not None or payload.to_content is not None:
+            old_title = payload.from_title or page.title
+            new_title = payload.to_title or page.title
+            title_changed = old_title != new_title
+            old_text = page_plain_text(payload.from_content or "", settings.ai_max_input_chars)
+            new_text = page_plain_text(payload.to_content or "", settings.ai_max_input_chars)
+            import difflib
+
+            diff_lines = list(
+                difflib.unified_diff(
+                    old_text.splitlines(),
+                    new_text.splitlines(),
+                    fromfile=f"v_prev: {old_title}",
+                    tofile=f"v_curr: {new_title}",
+                    lineterm="",
+                )
+            )
+            diff_text = "\n".join(diff_lines[:300])
+        else:
+            diff = await self.pages.calculate_diff(
+                page, from_version=from_version, to_version=to_version
+            )
+            from_version = diff.from_version
+            to_version = diff.to_version
+            old_title = diff.from_title
+            new_title = diff.to_title
+            title_changed = diff.title_changed
+
+            prompt_hash = hashlib.sha256(f"{prompt_override}:{lang}".encode()).hexdigest()[:12]
+            cache_key = f"ai:diff_summary:v6:{page.id}:{from_version}:{to_version}:{prompt_hash}"
+            if cached := await self._read(redis, cache_key):
+                try:
+                    return RevisionDiffSummaryRead.model_validate_json(cached).model_copy(
+                        update={"cached": True}
+                    )
+                except ValueError:
+                    pass
+
+            deleted_lines = [
+                line.old_text
+                for line in diff.lines
+                if line.operation in ("delete", "replace") and line.old_text
+            ][:150]
+            added_lines = [
+                line.new_text
+                for line in diff.lines
+                if line.operation in ("add", "replace") and line.new_text
+            ][:150]
+
+            diff_parts: list[str] = []
+            if title_changed:
+                diff_parts.append(f"Title changed: '{old_title}' -> '{new_title}'")
+            if deleted_lines:
+                diff_parts.append(
+                    "### Removed or Replaced Content:\n"
+                    + "\n".join(f"- {line}" for line in deleted_lines)
+                )
+            if added_lines:
+                diff_parts.append(
+                    "### Added or New Content:\n"
+                    + "\n".join(f"+ {line}" for line in added_lines)
+                )
+            diff_text = "\n\n".join(diff_parts)
+
+        is_vi = (lang or "").lower() == "vi"
+
+        if not diff_text.strip():
+            empty_msg = (
+                "Không có thay đổi nào giữa hai phiên bản được chọn."
+                if is_vi
+                else "No changes detected between the selected revisions."
+            )
+            return RevisionDiffSummaryRead(
+                summary=empty_msg,
+                commit_message="Không có thay đổi" if is_vi else "No changes",
+                from_version=from_version,
+                to_version=to_version,
+                cached=False,
+            )
+
+        is_initial = (from_version == 0) or (to_version == 1)
+        is_custom_content = payload.from_content is not None or payload.to_content is not None
+
+        # Fast path for trivial / minor diffs (few words, test placeholders, minor formatting)
+        if not is_custom_content and not is_initial and not title_changed and not prompt_override:
+            total_changed_lines = len(deleted_lines) + len(added_lines)
+            total_changed_chars = (
+                sum(len(line.strip()) for line in deleted_lines)
+                + sum(len(line.strip()) for line in added_lines)
+            )
+            if total_changed_lines <= 4 and total_changed_chars <= 60:
+                minor_msg = (
+                    "**Thay đổi nhỏ**: Bản cập nhật này chỉ chứa chỉnh sửa nhỏ về câu chữ hoặc định dạng (dưới 60 ký tự), "
+                    "không có thay đổi về quy định, quy trình hay nghiệp vụ cốt lõi."
+                    if is_vi
+                    else (
+                        "**Minor edit**: This revision contains only minor wording, placeholder, or formatting adjustments "
+                        "with no significant changes to rules, procedures, or core content."
+                    )
+                )
+                minor_result = RevisionDiffSummaryRead(
+                    summary=minor_msg,
+                    commit_message="Cập nhật nhỏ" if is_vi else "Minor update",
+                    from_version=from_version,
+                    to_version=to_version,
+                    cached=False,
+                )
+                if cache_key:
+                    await self._write(redis, cache_key, minor_result.model_dump_json())
+                return minor_result
+
+        await rate_limit.enforce(f"ai:{self.user.id}", await ai_rate_limit())
+        if is_initial:
+            doc_info = f"<document_info>\nPage: {page.title}\nVersion: v{to_version or 1} (Initial creation from empty document)\n</document_info>"
+        else:
+            doc_info = f"<document_info>\nPage: {page.title}\nComparing: v{from_version or '?'} -> v{to_version or '?'}\n</document_info>"
+
+        user_content_parts = [
+            doc_info,
+            f"<diff_data>\n{diff_text[:6000]}\n</diff_data>",
+        ]
+        if prompt_override:
+            user_content_parts.append(f"<user_question>\n{prompt_override}\n</user_question>")
+
+        messages = [
+            {"role": "system", "content": diff_summary_system_prompt(lang=lang)},
+            {"role": "user", "content": "\n\n".join(user_content_parts)},
+        ]
+
+        reply = await self._chat("diff_summary", config, messages, max_tokens=1500)
+
+        commit_message = ""
+        cm_match = re.search(r"<commit_message>(.*?)</commit_message>", reply, flags=re.DOTALL)
+        if cm_match:
+            commit_message = cm_match.group(1).strip()
+            summary = re.sub(
+                r"<commit_message>.*?</commit_message>", "", reply, flags=re.DOTALL
+            ).strip()
+        else:
+            summary = reply.strip()
+            first_line = summary.splitlines()[0].strip("#* -")
+            if is_initial:
+                commit_message = (
+                    first_line[:120]
+                    if first_line
+                    else ("Khởi tạo trang" if is_vi else "Initial page creation")
+                )
+            else:
+                commit_message = (
+                    first_line[:120]
+                    if first_line
+                    else ("Cập nhật nội dung" if is_vi else "Updated content")
+                )
+
+        result = RevisionDiffSummaryRead(
+            summary=summary,
+            commit_message=commit_message,
+            from_version=from_version,
+            to_version=to_version,
+            cached=False,
+        )
+
+        if cache_key:
+            await self._write(redis, cache_key, result.model_dump_json())
+
+        return result
+
 
 #: Characters of the page checked, and of each newer page it is compared with.
 _STALE_PAGE_CHARS = 8000
 _STALE_NEWER_CHARS = 5000
+_CONFLICT_PAGE_CHARS = 8000
+
+#: The verdict tag, with any bold / code markup the model wrapped it in.
+_CONFLICT_TAG = re.compile(r"[*`_]*\[(CONFLICT_FOUND|NO_CONFLICT|DUPLICATE_CONTENT)\][*`_]*:?")
+
+
+def _conflict_verdict(reply: str) -> tuple[str, str]:
+    """What the model found - ``conflict``, ``consistent`` or ``duplicate`` - and its answer
+    without the tag.
+
+    Models do not always put the tag alone on the first line - it may come in bold or
+    backticks, or after a word of preamble - so it is looked for anywhere. With no tag
+    at all the answer is shown as a finding: better looked at than silently dropped.
+    """
+    tags = _CONFLICT_TAG.findall(reply)
+    if "CONFLICT_FOUND" in tags or not tags:
+        verdict = "conflict"
+    elif "DUPLICATE_CONTENT" in tags:
+        verdict = "duplicate"
+    else:
+        verdict = "consistent"
+    text = _CONFLICT_TAG.sub("", reply)
+    # Drop a line the tag leaves empty but for stray markup; keep blank lines as they are.
+    lines = [line for line in text.splitlines() if line.strip(" *`_:") or not line.strip()]
+    return verdict, "\n".join(lines).strip()
+
+
+_CONFLICT_SYSTEM_PROMPT = """You are a knowledge consistency analyst for an enterprise wiki.
+You are comparing two related pages from the same organization to detect contradictions,
+discrepancies, or inconsistencies between them.
+
+Focus specifically on comparing:
+1. Technical parameters, network ports, firewall rules, IP addresses, URLs, environment
+   variables, system configurations.
+2. Policies, rules, prerequisites, approval steps, requirements, criteria.
+3. Dates, deadlines, timelines, version numbers, schedules, assigned roles or owners.
+4. Numerical metrics, thresholds, quotas, capacities, SLA limits.
+
+Instructions:
+- Base your analysis strictly on what the two pages state. Do not invent, guess, or assume
+  details not present.
+- If contradictions or discrepancies are found:
+  Begin your response with '[CONFLICT_FOUND]' on the first line.
+  Then write ONE Markdown table, one row per contradiction, with exactly these four
+  columns (header row first, then the separator row):
+  | Subject | {title_a} | {title_b} | Note |
+  - Subject: the parameter or rule that differs (e.g. port, approval step, deadline,
+    version), in {language}, in **bold**.
+  - The two page columns: what that page says, briefly. Put every exact value - port,
+    IP address, URL, path, file name, command, variable, version, date - in `inline code`.
+  - Note: one short sentence on how they differ and what the administrator should settle.
+  Never put a "|" inside a cell. Maximum 8 rows, most significant discrepancies first.
+  After the table, add ONE callout line naming the single most urgent thing to settle:
+  > [!WARNING] <one sentence>
+- If NO contradictions are found but the pages say largely the same thing - one repeats
+  most of the other, so one could replace the other - that is a duplicate, not a conflict:
+  Begin your response with '[DUPLICATE_CONTENT]' on the first line.
+  Then write, each part on its own lines:
+  1. One sentence in **bold**: the verdict, that the pages repeat each other and nothing in
+     them conflicts.
+  2. A short bullet list headed "**Repeated in both:**" (translated into {language}): what
+     both pages say, with exact values in `inline code`. At most 5 bullets.
+  3. A short bullet list headed "**Only in one page:**" (translated into {language}): what one page
+     covers and the other does not, naming the page in _italics_; skip it if there is
+     nothing.
+  4. End with: > [!TIP] <one sentence: which page to keep, and to merge the other into it
+     or replace it with a link>
+- If NO contradictions or discrepancies are found and the pages are not duplicates (they
+  agree, complement each other, or cover non-overlapping aspects):
+  Begin your response with '[NO_CONFLICT]' on the first line.
+  Then write, each part on its own lines:
+  1. One sentence in **bold**: the verdict, that no conflicting parameters, dates, ports or
+     rules were found.
+  2. A short bullet list headed "**Agree on:**" (translated into {language}): the shared facts, with
+     exact values in `inline code`. At most 5 bullets; skip it if they share nothing.
+  3. A short bullet list headed "**Only in one page:**" (translated into {language}): what one page
+     covers and the other does not, naming the page in _italics_. At most 4 bullets; skip
+     it if there is nothing.
+- Write in {language}, regardless of the language of the source pages.
+- Use Markdown only: **bold**, _italics_, `inline code`, bullet lists, the table and
+  callouts above. No headings, no HTML, no fenced code blocks."""
 
 _STALE_SYSTEM_PROMPT = """You help keep a company wiki up to date.
 You are given an OLDER page and one or more NEWER pages that are related to it and were

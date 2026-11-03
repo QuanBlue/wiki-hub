@@ -10,6 +10,7 @@ import {
   Database,
   FolderCog,
   HardDrive,
+  History,
   Home,
   Inbox,
   Layers,
@@ -130,6 +131,12 @@ const ADMIN_NAV: NavItem[] = [
     href: "/admin/monitor",
     labelKey: "nav.server",
     icon: Activity,
+    permission: "settings",
+  },
+  {
+    href: "/admin/audit-logs",
+    labelKey: "nav.auditLogs",
+    icon: History,
     permission: "settings",
   },
   {

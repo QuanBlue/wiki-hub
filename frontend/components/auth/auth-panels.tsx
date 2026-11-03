@@ -6,11 +6,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { ContactAdminForm } from "@/components/auth/contact-admin-form";
 import { LoginForm } from "@/components/auth/login-form";
 import { LogoMark } from "@/components/brand/logo";
-import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
-import type { SystemAnnouncement } from "@/types/api";
 
 export type AuthView = "login" | "contact";
 
@@ -105,11 +103,9 @@ function Pane({
 export function AuthPanels({
   siteName,
   initialView = "login",
-  announcement = null,
 }: {
   siteName: string;
   initialView?: AuthView;
-  announcement?: SystemAnnouncement | null;
 }) {
   const { t } = useTranslation();
   const [view, setView] = useState<AuthView>(initialView);
@@ -190,16 +186,6 @@ export function AuthPanels({
                 </p>
               </div>
             </div>
-
-            {announcement ? (
-              <div className="mt-auto pt-3 [@media(max-height:800px)]:pt-2.5">
-                <SystemAnnouncementBanner
-                  announcement={announcement}
-                  allowDismiss={false}
-                  className="rounded-xl border shadow-2xs sm:px-4 py-2 sm:py-2.5 text-xs"
-                />
-              </div>
-            ) : null}
           </div>
         </Pane>
 

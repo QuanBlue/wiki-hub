@@ -28,7 +28,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import reduce
-from typing import Literal
+from typing import Any, Literal
 
 import sqlalchemy as sa
 from sqlalchemy import select, text
@@ -39,6 +39,7 @@ from sqlalchemy.orm import selectinload
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.logging import get_logger
 from app.core.redis import get_redis
+from app.models.attachment import PageAttachment
 from app.models.attachment_text import AttachmentText
 from app.models.page import WikiPage
 from app.models.permission import Permission
@@ -51,6 +52,13 @@ from app.modules.graph.extract import copy_key
 from app.modules.graph.neighbors import related_pages
 from app.modules.permissions.service import PermissionService
 from app.modules.search.chunking import _blocks
+from app.modules.search.filters import (
+    SearchFilters,
+    build_page_filter_clauses,
+    file_type_clause,
+    parse_search_query,
+    space_clause,
+)
 from app.modules.search.indexer import (
     SEARCH_INDEX_LOCK,
     semantic_tables_exist,
@@ -196,6 +204,7 @@ class SearchResults:
     spaces: list[SearchResultSpace]
     #: Folded words and synonyms worth highlighting in the titles and snippets.
     terms: list[str] = field(default_factory=list)
+    filters: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -234,57 +243,137 @@ class SearchService:
         #: ``page id -> its matching attached files``, best first (a page may hold several).
         self.last_page_files: dict[uuid.UUID, list[FileHit]] = {}
 
-    async def search(self, query: str, user: User, limit: int = 20) -> SearchResults:
-        query_trimmed = query.strip()
-        if not query_trimmed:
-            return SearchResults(query="", pages=[], spaces=[])
+    async def search(
+        self,
+        query: str,
+        user: User,
+        limit: int = 20,
+        *,
+        filters: SearchFilters | None = None,
+        raw_query: str | None = None,
+    ) -> SearchResults:
+        parsed = parse_search_query(query)
+        if filters is not None:
+            effective_filters = filters
+            clean_query = query.strip()
+        else:
+            effective_filters = parsed.filters
+            clean_query = parsed.clean_query
+
+        effective_filters.viewer_id = user.id
+        display_query = (raw_query or query).strip()
+
+        if not clean_query and effective_filters.is_empty:
+            return SearchResults(query=display_query, pages=[], spaces=[])
 
         # 1. Search spaces
-        spaces_stmt = (
-            select(Space)
-            .where(
-                Space.status == SpaceStatus.active,
-                (
-                    ilike_contains(Space.name, query_trimmed)
-                    | ilike_contains(Space.key, query_trimmed)
-                    | ilike_contains(Space.description, query_trimmed)
-                ),
-            )
-            .limit(limit)
-        )
-        spaces_result = await self.session.execute(spaces_stmt)
-        matched_spaces = list(spaces_result.scalars().all())
+        space_results: list[SearchResultSpace] = []
         permissions = PermissionService(self.session)
-        matched_spaces = [
-            space
-            for space in matched_spaces
-            if Permission.view in await permissions.effective_permissions(space, user)
-        ]
+        # Spaces only make sense to list if no page-only filters (type, label, author) were supplied
+        if not (effective_filters.types or effective_filters.labels or effective_filters.authors):
+            space_preds: list[sa.ColumnElement[bool]] = [Space.status == SpaceStatus.active]
+            if effective_filters.spaces:
+                space_preds.extend(
+                    space_clause(Space, s)
+                    for s in effective_filters.spaces
+                )
+            elif clean_query:
+                space_preds.append(
+                    ilike_contains(Space.name, clean_query)
+                    | ilike_contains(Space.key, clean_query)
+                    | ilike_contains(Space.description, clean_query)
+                )
+            spaces_stmt = select(Space).where(*space_preds).limit(limit)
+            spaces_result = await self.session.execute(spaces_stmt)
+            matched_spaces = list(spaces_result.scalars().all())
+            matched_spaces = [
+                space
+                for space in matched_spaces
+                if Permission.view in await permissions.effective_permissions(space, user)
+            ]
 
-        space_results = [
-            SearchResultSpace(
-                id=s.id,
-                key=s.key,
-                name=s.name,
-                description=s.description or "",
-            )
-            for s in matched_spaces
-        ]
+            space_results = [
+                SearchResultSpace(
+                    id=s.id,
+                    key=s.key,
+                    name=s.name,
+                    description=s.description or "",
+                )
+                for s in matched_spaces
+            ]
 
-        page_results, terms = await self._search_pages(query_trimmed, user, limit, permissions)
+        page_results, terms = await self._search_pages(
+            clean_query, user, limit, permissions, filters=effective_filters
+        )
 
         return SearchResults(
-            query=query_trimmed,
+            query=display_query,
             pages=page_results,
             spaces=space_results,
             terms=terms,
+            filters=effective_filters.to_dict() if not effective_filters.is_empty else None,
         )
 
     # ------------------------------------------------------------------ pages
 
+    async def _filter_only_pages(
+        self,
+        user: User,
+        limit: int,
+        permissions: PermissionService,
+        filters: SearchFilters,
+        filter_clauses: list[sa.ColumnElement[bool]],
+    ) -> list[SearchResultPage]:
+        """Pages matching the filters alone, newest first."""
+        stmt = (
+            select(WikiPage)
+            .options(selectinload(WikiPage.space), selectinload(WikiPage.created_by))
+            .join(Space, WikiPage.space_id == Space.id)
+            .where(Space.status == SpaceStatus.active, *filter_clauses)
+            .order_by(WikiPage.updated_at.desc())
+            .limit(limit * _OVERFETCH)
+        )
+        recent = list((await self.session.execute(stmt)).scalars().all())
+        matching_attachments = await self._matching_files([p.id for p in recent], filters)
+
+        hits: list[SearchResultPage] = []
+        for page in recent:
+            if not await permissions.can_view_page(page, user):
+                continue
+            att = matching_attachments.get(page.id)
+            snippet = extract_snippet(page.content, "", max_len=140)
+            hits.append(
+                SearchResultPage(
+                    id=page.id,
+                    title=page.title,
+                    slug=page.slug,
+                    space_key=page.space.key,
+                    space_name=page.space.name,
+                    snippet=snippet,
+                    updated_at=page.updated_at,
+                    file_id=att.id if att else None,
+                    file_name=att.filename if att else None,
+                )
+            )
+            if len(hits) >= limit:
+                break
+        return hits
+
     async def _search_pages(
-        self, query: str, user: User, limit: int, permissions: PermissionService
+        self,
+        query: str,
+        user: User,
+        limit: int,
+        permissions: PermissionService,
+        filters: SearchFilters | None = None,
     ) -> tuple[list[SearchResultPage], list[str]]:
+        filter_clauses = build_page_filter_clauses(WikiPage, filters) if filters else []
+
+        # No free text, only filters (e.g. ``space:ENG`` or ``type:pdf``): list what they match.
+        if not query and filters and not filters.is_empty:
+            hits = await self._filter_only_pages(user, limit, permissions, filters, filter_clauses)
+            return hits, []
+
         started = time.perf_counter()
         wanted = limit * _OVERFETCH
         concepts = build_concepts(query)
@@ -299,8 +388,10 @@ class SearchService:
         keyword_seconds = semantic_seconds = 0.0
         try:
             mark = time.perf_counter()
-            ranked = await self._keyword_pages(query, concepts, wanted)
-            files = await self._file_hits(query, concepts, wanted)
+            ranked = await self._keyword_pages(
+                query, concepts, wanted, filter_clauses=filter_clauses
+            )
+            files = await self._file_hits(query, concepts, wanted, filters=filters)
             in_spaces = await self._named_space_pages(query, concepts, wanted)
             keyword_seconds = time.perf_counter() - mark
             mark = time.perf_counter()
@@ -331,14 +422,21 @@ class SearchService:
             for page in (
                 await self.session.execute(
                     select(WikiPage)
-                    .options(selectinload(WikiPage.space))
+                    .options(selectinload(WikiPage.space), selectinload(WikiPage.created_by))
                     .join(Space, WikiPage.space_id == Space.id)
-                    .where(WikiPage.id.in_(order), Space.status == SpaceStatus.active)
+                    .where(
+                        WikiPage.id.in_(order),
+                        Space.status == SpaceStatus.active,
+                        *filter_clauses,
+                    )
                 )
             )
             .scalars()
             .all()
         }
+
+        extra_atts = await self._matching_files(list(pages), filters)
+
         results: list[SearchResultPage] = []
         for page_id in order:
             page = pages.get(page_id)
@@ -356,6 +454,9 @@ class SearchService:
                 # Found by meaning, not by the words typed: show the passage
                 # that matched, which is what explains the result.
                 snippet = _passage_snippet(passage)
+
+            shown_file = file_ref or extra_atts.get(page.id)
+
             results.append(
                 SearchResultPage(
                     id=page.id,
@@ -365,8 +466,8 @@ class SearchService:
                     space_name=page.space.name,
                     snippet=snippet,
                     updated_at=page.updated_at,
-                    file_id=file_ref.id if file_ref else None,
-                    file_name=file_ref.filename if file_ref else None,
+                    file_id=shown_file.id if shown_file else None,
+                    file_name=shown_file.filename if shown_file else None,
                 )
             )
             if len(results) >= limit:
@@ -857,14 +958,21 @@ class SearchService:
             best_coverage=round(ranked.best_coverage, 2),
         )
 
-    async def _keyword_pages(self, query: str, concepts: list[Concept], wanted: int) -> _Ranked:
+    async def _keyword_pages(
+        self,
+        query: str,
+        concepts: list[Concept],
+        wanted: int,
+        filter_clauses: list[sa.ColumnElement[bool]] | None = None,
+    ) -> _Ranked:
         """Ranked keyword matches, then plain substring matches to fill the rest."""
         ranked = _Ranked(weights={t: 1.0 for c in concepts for t in c.terms()})
+        extra_where = filter_clauses or []
         try:
             # A savepoint: a database without the search objects raises here,
             # and that must not poison the surrounding transaction.
             async with self.session.begin_nested():
-                ranked = await self._ranked(query, concepts, wanted)
+                ranked = await self._ranked(query, concepts, wanted, filter_clauses=extra_where)
         except SQLAlchemyError:
             ranked.degraded = True
             logger.warning(
@@ -881,6 +989,7 @@ class SearchService:
                         Space.status == SpaceStatus.active,
                         ilike_contains(WikiPage.title, query)
                         | ilike_contains(WikiPage.content, query),
+                        *extra_where,
                     )
                     .limit(wanted)
                 )
@@ -890,8 +999,15 @@ class SearchService:
         ranked.ids = ranked.ids[:wanted]
         return ranked
 
-    async def _ranked(self, query: str, concepts: list[Concept], wanted: int) -> _Ranked:
+    async def _ranked(
+        self,
+        query: str,
+        concepts: list[Concept],
+        wanted: int,
+        filter_clauses: list[sa.ColumnElement[bool]] | None = None,
+    ) -> _Ranked:
         active = Space.status == SpaceStatus.active
+        extra_where = filter_clauses or []
         title_key = sa.func.wh_title_key(WikiPage.title)
         key_text = fold(query).strip()
         contains_title = title_key.like(f"%{like_escape(key_text)}%", escape="\\")
@@ -944,7 +1060,7 @@ class SearchService:
             await self.session.execute(
                 select(WikiPage.id, in_body.label("body_weight"), contains_title.label("whole"))
                 .join(Space, WikiPage.space_id == Space.id)
-                .where(active, sa.or_(*matches))
+                .where(active, sa.or_(*matches), *extra_where)
                 .order_by(score.desc(), WikiPage.updated_at.desc())
                 .limit(wanted)
             )
@@ -965,8 +1081,33 @@ class SearchService:
             ids=[row[0] for row in rows], weights=term_weights, best_coverage=min(best, 1.0)
         )
 
+    async def _matching_files(
+        self, page_ids: list[uuid.UUID], filters: SearchFilters | None
+    ) -> dict[uuid.UUID, PageAttachment]:
+        """``page id -> an attached file of a ``type:`` the user asked for``, if any."""
+        types = [t for t in (filters.types if filters else []) if t != "page"]
+        if not types or not page_ids:
+            return {}
+        stmt = select(PageAttachment).where(
+            PageAttachment.page_id.in_(page_ids),
+            sa.or_(
+                *(
+                    file_type_clause(PageAttachment.filename, PageAttachment.content_type, t)
+                    for t in types
+                )
+            ),
+        )
+        found: dict[uuid.UUID, PageAttachment] = {}
+        for att in (await self.session.execute(stmt)).scalars().all():
+            found.setdefault(att.page_id, att)
+        return found
+
     async def _file_hits(
-        self, query: str, concepts: list[Concept], wanted: int
+        self,
+        query: str,
+        concepts: list[Concept],
+        wanted: int,
+        filters: SearchFilters | None = None,
     ) -> dict[uuid.UUID, FileHit]:
         """``page id -> its best matching attached file``, best page first.
 
@@ -998,6 +1139,20 @@ class SearchService:
                         for q, (_, w) in zip(queries, live, strict=True)
                     ),
                 )
+                file_where: list[sa.ColumnElement[bool]] = [
+                    Space.status == SpaceStatus.active,
+                    AttachmentText.status == "ok",
+                    _FILE_VECTOR.op("@@")(any_idea),
+                    held >= _MIN_COVERAGE * total_weight,
+                ]
+                if filters:
+                    # Types apply to the attached file itself, the rest to its page.
+                    for ext in filters.types:
+                        if ext != "page":
+                            file_where.append(file_type_clause(AttachmentText.filename, None, ext))
+                    file_where.extend(
+                        build_page_filter_clauses(WikiPage, filters, include_types=False)
+                    )
                 rows = (
                     await self.session.execute(
                         select(
@@ -1009,12 +1164,7 @@ class SearchService:
                         )
                         .join(WikiPage, WikiPage.id == AttachmentText.page_id)
                         .join(Space, WikiPage.space_id == Space.id)
-                        .where(
-                            Space.status == SpaceStatus.active,
-                            AttachmentText.status == "ok",
-                            _FILE_VECTOR.op("@@")(any_idea),
-                            held >= _MIN_COVERAGE * total_weight,
-                        )
+                        .where(*file_where)
                         .order_by(
                             (
                                 held

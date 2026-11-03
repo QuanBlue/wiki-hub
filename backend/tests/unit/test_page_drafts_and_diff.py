@@ -149,6 +149,19 @@ async def test_calculate_diff_falls_back_to_available_revisions_and_rejects_empt
 
 
 @pytest.mark.asyncio
+async def test_first_revision_diff_adds_each_line_from_empty_document() -> None:
+    service = _service()
+    page = SimpleNamespace(id=uuid.uuid4())
+    service.list_revisions = AsyncMock(return_value=[_revision(1, "First\nSecond", "markdown")])
+    result = await service.calculate_diff(page)
+    assert result.from_version == 0
+    assert result.to_version == 1
+    assert result.added_count == 2
+    assert [line.operation for line in result.lines] == ["add", "add"]
+    assert result.chunks[0].text == "First\nSecond"
+
+
+@pytest.mark.asyncio
 async def test_calculate_diff_covers_nested_html_and_unbalanced_operations() -> None:
     service = _service()
     page = SimpleNamespace(id=uuid.uuid4())
@@ -197,13 +210,15 @@ async def test_update_removes_existing_draft_after_snapshot() -> None:
         content="old",
         content_format="html",
         updated_by_id=None,
+        updated_at=datetime.now(UTC),
     )
     space = SimpleNamespace(key="ENG")
-    user = SimpleNamespace(id=uuid.uuid4(), username="editor")
+    user = SimpleNamespace(id=uuid.uuid4(), username="editor", full_name="Editor")
     draft = SimpleNamespace()
     service.session.flush = AsyncMock()
     service.session.refresh = AsyncMock()
     service.snapshot_revision = AsyncMock()
+    service._notify_watchers = AsyncMock()
     service.drafts.get = AsyncMock(return_value=draft)
     service.drafts.delete = AsyncMock()
 

@@ -60,35 +60,70 @@ export function Select({
 
 export const SelectGroup = React.Fragment;
 
-export function SelectValue({ placeholder = "", children }: { placeholder?: string; children?: React.ReactNode }) {
-  const { value, labels } = useSelectContext("SelectValue");
-  return <span className={cn("truncate", !value && "text-muted-foreground")}>{children ?? (value ? labels[value] ?? value : placeholder)}</span>;
+function getChildrenText(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(getChildrenText).join("");
+  if (
+    React.isValidElement(children) &&
+    children.props &&
+    (children.props as { children?: React.ReactNode }).children
+  ) {
+    return getChildrenText(
+      (children.props as { children?: React.ReactNode }).children,
+    );
+  }
+  return "";
 }
 
-export const SelectTrigger = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement>>(
-  function SelectTrigger({ className, children, disabled, ...props }, ref) {
-    const context = useSelectContext("SelectTrigger");
-    return (
-      <DropdownMenuPrimitive.Trigger asChild>
-        <button
-          ref={ref}
-          type="button"
-          disabled={disabled ?? context.disabled}
-          className={cn(
-            inputClassName,
-            "flex cursor-pointer items-center justify-between gap-2 text-left",
-            "disabled:pointer-events-none",
-            className,
-          )}
-          {...props}
-        >
-          {children}
-          <ChevronDown aria-hidden className="text-muted-foreground size-4 shrink-0" />
-        </button>
-      </DropdownMenuPrimitive.Trigger>
-    );
-  },
-);
+export function SelectValue({
+  placeholder = "",
+  children,
+}: {
+  placeholder?: string;
+  children?: React.ReactNode;
+}) {
+  const { value, labels } = useSelectContext("SelectValue");
+  return (
+    <span
+      className={cn(
+        "truncate flex-1 min-w-0 text-left",
+        !value && "text-muted-foreground",
+      )}
+    >
+      {children ?? (value ? labels[value] ?? value : placeholder)}
+    </span>
+  );
+}
+
+export const SelectTrigger = React.forwardRef<
+  HTMLButtonElement,
+  React.ButtonHTMLAttributes<HTMLButtonElement>
+>(function SelectTrigger({ className, children, disabled, ...props }, ref) {
+  const context = useSelectContext("SelectTrigger");
+  return (
+    <DropdownMenuPrimitive.Trigger asChild>
+      <button
+        ref={ref}
+        type="button"
+        disabled={disabled ?? context.disabled}
+        className={cn(
+          inputClassName,
+          "flex cursor-pointer items-center justify-between gap-2 text-left",
+          "disabled:pointer-events-none",
+          className,
+        )}
+        {...props}
+      >
+        {children}
+        <ChevronDown
+          aria-hidden
+          className="text-muted-foreground size-4 shrink-0 opacity-60 -translate-y-px"
+        />
+      </button>
+    </DropdownMenuPrimitive.Trigger>
+  );
+});
 
 export const SelectContent = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.Content>,
@@ -129,7 +164,10 @@ export const SelectItem = React.forwardRef<
 >(function SelectItem({ className, children, value, disabled, ...props }, ref) {
   const context = useSelectContext("SelectItem");
   React.useEffect(() => {
-    if (value) context.registerLabel(value, typeof children === "string" ? children : value);
+    if (value) {
+      const text = getChildrenText(children);
+      context.registerLabel(value, text || value);
+    }
   }, [children, context, value]);
 
   return (

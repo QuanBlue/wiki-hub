@@ -22,7 +22,7 @@ from app.core.logging import get_logger
 from app.core.security import hash_password, needs_rehash, verify_password
 from app.models.audit import AuditAction
 from app.models.user import User
-from app.modules.notifications.service import notify
+from app.modules.notifications.service import IMPERSONATION_NOTICE_KIND, notify
 from app.repositories.user import UserRepository
 from app.schemas.user import SelfProfileUpdate, UserCreate, UserUpdate
 from app.services.audit import AuditService, ClientInfo
@@ -277,6 +277,10 @@ class AuthService:
             entity_label=target.username,
             details={"target_is_superuser": target.is_superuser},
         )
+        # The person is told an administrator used their account. The bell hides this
+        # kind from the impersonated session itself (see NotificationService), so the
+        # administrator cannot read it away before its owner sees it.
+        await notify(self.session, target.id, IMPERSONATION_NOTICE_KIND, actor=actor)
         logger.info("impersonation_started", actor=actor.username, target=target.username)
         return target
 

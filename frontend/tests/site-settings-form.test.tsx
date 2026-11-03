@@ -238,6 +238,17 @@ describe("SiteSettingsForm theme tab", () => {
 });
 
 describe("SiteSettingsForm general tab", () => {
+  it("shows disabled public links and enables them when switched on", async () => {
+    const actor = renderForm(makeSettings({}, { public_shares_enabled: false }));
+    await openTab(actor, /General/);
+    const section = document.getElementById("public-share-settings") as HTMLElement;
+    expect(within(section).getAllByText(/Disabled/).length).toBeGreaterThan(0);
+    const toggle = within(section).getByRole("switch");
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    await actor.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(within(section).queryByText(/Disabled/)).not.toBeInTheDocument();
+  });
   it("opens on the tab named in the URL", () => {
     window.history.replaceState(null, "", "/admin/settings?tab=general");
     renderForm();
@@ -713,7 +724,7 @@ describe("SiteSettingsForm announcement tab", () => {
         }),
       );
     });
-  });
+  }, 30_000);
 
   it("handles status badges, clear button, and Vietnamese locale", async () => {
     // Expired announcement in Vietnamese

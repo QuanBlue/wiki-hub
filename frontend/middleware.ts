@@ -18,14 +18,10 @@ const ACCESS_COOKIE_NAME = "wikihub_access";
 /**
  * Routes reachable without a session.
  *
- * "/print" is the chrome-less render the backend's headless-browser export
- * visits - it has no session cookie at all, only a short-lived, page-scoped
- * export token in the query string. Its own fetch to /api/v1/export-render
- * carries that token as a Bearer credential and is the actual authority (see
- * the module docstring above); this entry just keeps the UX guard from
- * bouncing that request to /login before it ever gets there.
+ * "/share" is the external read-only document viewer reachable with a
+ * public share token, with optional password protection.
  */
-const PUBLIC_PATHS = ["/login", "/print", "/contact-admin"];
+const PUBLIC_PATHS = ["/login", "/print", "/contact-admin", "/share", "/privacy"];
 
 /** API requests must reach the backend, including unauthenticated login calls. */
 export function isApiRequestPath(pathname: string): boolean {

@@ -110,13 +110,15 @@ async def test_html_export_captures_the_snapshot_js_result() -> None:
     assert result.filename == "runbook.html"
 
 
-async def _run_docx_export(*, space_font: str | None):
+async def _run_docx_export(*, space_font: str | None, diagram_images: list | None = None):
     """Shared plumbing for the docx tests below: fakes the browser theme
     probe and the conversion call, returning what `html_to_docx` was
     actually called with so each test only has to assert on `font_id`
     (the site default is stubbed to "lora" throughout)."""
     fake_page = FakePage()
-    fake_page.evaluate = AsyncMock(return_value={"code_fg": "#fff"})
+    fake_page.evaluate = AsyncMock(return_value={
+        "code_fg": "#fff", "_diagram_images": diagram_images or []
+    })
     renderer = FakeRenderer(fake_page)
     service = ExportService(page_renderer=renderer)
     user, space, page, session = actors(space_font=space_font)
@@ -162,6 +164,17 @@ async def test_docx_export_probes_the_theme_and_converts_the_semantic_html() -> 
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename="runbook.docx",
     )
+
+
+@pytest.mark.asyncio
+async def test_docx_export_passes_captured_diagram_images() -> None:
+    _, prepared, _, _, _, page = await _run_docx_export(
+        space_font="roboto", diagram_images=[{"index": 0, "data": "image-data"}]
+    )
+    assert prepared.await_args.args == (page,)
+    assert prepared.await_args.kwargs["diagram_images"] == [
+        {"index": 0, "data": "image-data"}
+    ]
 
 
 @pytest.mark.asyncio

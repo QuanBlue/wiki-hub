@@ -12,6 +12,9 @@ import {
   getStatsOverview,
   getStatsTopPages,
   getStatsTopSpaces,
+  listAuditActions,
+  listAuditActors,
+  listAuditLogs,
   listAllUsers,
   listUsers,
 } from "@/lib/admin";
@@ -39,6 +42,35 @@ describe("listUsers", () => {
     expect(serverGetMock).toHaveBeenCalledWith(
       "/api/v1/users?q=ali&status=active&role=admin&limit=10&offset=20",
     );
+  });
+});
+
+describe("audit log fetchers", () => {
+  beforeEach(() => serverGetMock.mockReset());
+
+  it("applies paging defaults and forwards all filters", async () => {
+    serverGetMock.mockResolvedValue({ items: [], total: 0 });
+    await listAuditLogs();
+    await listAuditLogs({
+      q: "runbook",
+      action: "page_updated",
+      entity_type: "page",
+      actor_username: "alice",
+      actor_id: "u1",
+      entity_id: "p1",
+      since: "2026-11-01",
+      until: "2026-11-03",
+      limit: 10,
+      offset: 20,
+    });
+    await listAuditActions();
+    await listAuditActors();
+    expect(serverGetMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v1/audit-logs?limit=50&offset=0",
+      "/api/v1/audit-logs?q=runbook&action=page_updated&entity_type=page&actor_username=alice&actor_id=u1&entity_id=p1&since=2026-11-01&until=2026-11-03&limit=10&offset=20",
+      "/api/v1/audit-logs/actions",
+      "/api/v1/audit-logs/actors",
+    ]);
   });
 });
 

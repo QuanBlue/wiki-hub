@@ -13,6 +13,7 @@ import { RefreshButton } from "@/components/admin/refresh-button";
 import { SummaryMetrics } from "@/components/admin/summary-metrics";
 import { UserRowActions } from "@/components/admin/user-row-actions";
 import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { formatDateTime } from "@/lib/i18n/format";
@@ -39,11 +40,6 @@ function ColumnWidths() {
     </colgroup>
   );
 }
-
-function initials(name: string): string {
-  return name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join("") || "?";
-}
-
 
 function TabLink({
   href,
@@ -271,7 +267,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
                 disabled={user.is_protected || me?.id === user.id || peerAdminBlocked(user)}
                 title={user.is_protected ? t("adminUsers.protectedAccountTitle") : me?.id === user.id ? t("adminUsers.thisIsYou") : peerAdminBlocked(user) ? t("adminUsers.onlyBuiltinCanAct") : undefined}
               />
-              <td className="px-4 py-3"><div className="flex items-center gap-3"><span className="bg-primary-subtle text-primary flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold">{initials(user.full_name || user.username)}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><UserProfileTrigger username={user.username} fullName={user.full_name} className="truncate font-medium" />{me?.id === user.id ? <Badge variant="info">{t("adminUsers.youBadge")}</Badge> : null}{user.is_protected ? <Badge title={t("adminUsers.protectedBadgeTitle")}>{t("adminUsers.protectedBadge")}</Badge> : null}</div><p className="text-muted-foreground truncate text-xs">@{user.username}</p></div></div></td>
+              <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={user.full_name} username={user.username} src={user.avatar_url} className="size-8 text-xs" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><UserProfileTrigger username={user.username} fullName={user.full_name} className="truncate font-medium" />{me?.id === user.id ? <Badge variant="info">{t("adminUsers.youBadge")}</Badge> : null}{user.is_protected ? <Badge title={t("adminUsers.protectedBadgeTitle")}>{t("adminUsers.protectedBadge")}</Badge> : null}</div><p className="text-muted-foreground truncate text-xs">@{user.username}</p></div></div></td>
               <td className="text-muted-foreground truncate px-4 py-3" title={user.email}>{user.email}</td>
               <td className="px-4 py-3">{user.groups.length ? <div className="flex flex-wrap gap-1">{user.groups.map((group) => <Badge key={group} variant="neutral" title={group} className="max-w-full truncate">{group}</Badge>)}</div> : <span className="text-muted-foreground">—</span>}</td>
               <td className="px-4 py-3"><Badge variant={user.is_superuser || user.is_effective_admin ? "info" : "neutral"} title={!user.is_superuser && user.is_effective_admin ? t("adminUsers.notSetDirectlyTitle") : undefined}>{user.is_superuser || user.is_effective_admin ? t("adminUsers.adminBadge") : t("adminUsers.roleMember")}</Badge></td>

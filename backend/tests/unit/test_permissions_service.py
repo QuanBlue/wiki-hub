@@ -141,7 +141,7 @@ async def test_update_group_replaces_owners() -> None:
 
     assert group.owner_id == other_owner.id
     service.session.execute.assert_awaited()
-    assert service.session.add.call_count == 2  # GroupOwner + GroupMember
+    assert service.session.add.call_count == 3  # GroupOwner + GroupMember + AuditLog
 
     with pytest.raises(ConflictError):
         await service.update_group(group, GroupUpdate(owner_ids=[]), actor)
@@ -282,6 +282,8 @@ async def test_group_members_and_global_permissions() -> None:
     service.session.scalar = AsyncMock(return_value=existing)
     await service.set_group_global_permission(group, GlobalPermission.manage_groups, actor, False)
     service.session.delete.assert_awaited_with(existing)
+    service.session.scalar = AsyncMock(return_value=None)
+    await service.set_group_global_permission(group, GlobalPermission.manage_groups, actor, False)
 
 
 @pytest.mark.asyncio

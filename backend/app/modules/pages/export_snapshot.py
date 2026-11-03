@@ -111,7 +111,7 @@ async () => {
 #: elements carrying the app's real classes, so this cannot drift from the
 #: live theme the way a hand-written palette would.
 THEME_PROBE_JS = r"""
-() => {
+async () => {
   const root = document.querySelector('[data-export-root]');
   if (!root) {
     throw new Error('export root not found');
@@ -134,7 +134,46 @@ THEME_PROBE_JS = r"""
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
+  const diagramImages = [];
+  const diagramEls = Array.from(document.querySelectorAll('[data-type="diagram"]'));
+  for (const el of diagramEls) {
+    const svg = el.querySelector('svg');
+    if (!svg) {
+      diagramImages.push('');
+      continue;
+    }
+    try {
+      const svgString = new XMLSerializer().serializeToString(svg);
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      const img = new Image();
+      await new Promise((resolve) => {
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+        img.src = url;
+      });
+      const rect = svg.getBoundingClientRect();
+      const canvas = document.createElement('canvas');
+      const scale = 2;
+      canvas.width = Math.max(200, Math.round((rect.width || 600) * scale));
+      canvas.height = Math.max(100, Math.round((rect.height || 300) * scale));
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        diagramImages.push(canvas.toDataURL('image/png'));
+      } else {
+        diagramImages.push('');
+      }
+      URL.revokeObjectURL(url);
+    } catch {
+      diagramImages.push('');
+    }
+  }
+
   return {
+    _diagram_images: diagramImages,
     font_page: getComputedStyle(root).fontFamily,
     font_mono: probe('wikihub-code', 'font-family', 'code'),
     foreground: readRootVar('--foreground'),

@@ -364,9 +364,9 @@ describe("OfficeAttachmentPreview workbooks", () => {
     const user = userEvent.setup();
     m.renderer.node = <FakeXlsx />;
     xlsx({ toolbarContainer: host });
-    await frame();
 
     await waitFor(() => expect(within(host).getByText("Sheet1 - 2 rows")).toBeInTheDocument());
+    await frame();
     expect(within(host).getByText("100%")).toBeInTheDocument();
     await user.click(within(host).getByRole("button", { name: "Zoom out" }));
     await waitFor(() => expect(within(host).getByText("90%")).toBeInTheDocument());

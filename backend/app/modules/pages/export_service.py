@@ -149,7 +149,13 @@ class ExportService:
                     # block) render on screen through a custom React node
                     # view whose visual DOM does not carry the same
                     # data-type attributes that markup does.
-                    docx_theme = await browser_page.evaluate(THEME_PROBE_JS)
+                    probe_result = await browser_page.evaluate(THEME_PROBE_JS)
+                    diagram_images = (
+                        probe_result.pop("_diagram_images", [])
+                        if isinstance(probe_result, dict)
+                        else []
+                    )
+                    docx_theme = probe_result
                 else:
                     content = await self._capture(browser_page, fmt)
         except PlaywrightError as exc:
@@ -159,9 +165,14 @@ class ExportService:
             ) from exc
 
         if docx_theme is not None:
-            html = await prepare_export_html(
-                page, storage=get_storage(), session=session, native_word_toc=True
-            )
+            prepare_kwargs: dict[str, Any] = {
+                "storage": get_storage(),
+                "session": session,
+                "native_word_toc": True,
+            }
+            if diagram_images:
+                prepare_kwargs["diagram_images"] = diagram_images
+            html = await prepare_export_html(page, **prepare_kwargs)
             # Same precedence the live page itself renders with (see
             # export-shell.tsx's spaceFontStyle): the space's own font
             # first, falling back to the site's default whenever the space

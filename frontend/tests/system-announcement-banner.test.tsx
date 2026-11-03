@@ -272,7 +272,7 @@ describe("SystemAnnouncementBanner", () => {
   });
 
   it("renders expires_at badge in English and Vietnamese", () => {
-    const expiresAt = "2026-10-31T15:30:00Z";
+    const expiresAt = "2030-10-31T15:30:00Z";
     const { unmount } = render(
       <LocaleProvider initialLocale="en">
         <SystemAnnouncementBanner

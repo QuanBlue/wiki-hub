@@ -45,3 +45,31 @@ export function restorePageRevision(
     `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(slug)}/revisions/${version}/restore`,
   );
 }
+
+export type RevisionDiffSummary = {
+  summary: string;
+  commit_message: string;
+  from_version: number | null;
+  to_version: number | null;
+  cached: boolean;
+};
+
+export function getRevisionDiffSummary(
+  spaceKey: string,
+  slug: string,
+  payload: {
+    from_version?: number;
+    to_version?: number;
+    prompt?: string;
+    lang?: string;
+    from_content?: string;
+    to_content?: string;
+    from_title?: string;
+    to_title?: string;
+  },
+): Promise<RevisionDiffSummary> {
+  return api.post<RevisionDiffSummary>(
+    `/api/v1/ai/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(slug)}/diff-summary`,
+    payload,
+  );
+}

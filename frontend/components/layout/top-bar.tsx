@@ -2,18 +2,20 @@
 
 import { BookOpen, Search } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { Wordmark } from "@/components/brand/logo";
 import { ChatTopBarButton } from "@/components/chat/chat-top-bar-button";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { QuickShortcutsModal } from "@/components/layout/quick-shortcuts-modal";
 import { SearchModal } from "@/components/layout/search-modal";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { LanguageToggle } from "@/components/layout/language-toggle";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { UserMenu } from "@/components/layout/user-menu";
-import { formatBinding, useShortcutBindings } from "@/lib/keyboard-shortcuts";
+import { formatBinding, matchesShortcut, useShortcutBindings } from "@/lib/keyboard-shortcuts";
 import { useTranslation } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
 import type { Me } from "@/types/api";
@@ -28,6 +30,7 @@ export function TopBar({
   siteName?: string;
   user: Me;
 }) {
+  const router = useRouter();
   const [searchOpen, setSearchOpen] = useState(false);
   const themeSettings = useThemeSettings();
   const { t } = useTranslation();
@@ -39,6 +42,27 @@ export function TopBar({
   const searchHint = searchBindings[0]
     ? formatBinding(searchBindings[0])
     : null;
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (matchesShortcut("help.open", event)) {
+        event.preventDefault();
+        router.push("/help");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [router]);
 
   return (
     <header className="h-topbar topbar-on-primary fixed inset-x-0 top-0 z-30">
@@ -98,6 +122,7 @@ export function TopBar({
         onOpenChange={setSearchOpen}
         user={user}
       />
+      <QuickShortcutsModal />
     </header>
   );
 }

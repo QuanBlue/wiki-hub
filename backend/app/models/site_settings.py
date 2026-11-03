@@ -50,6 +50,8 @@ class SiteSettings(TimestampMixin, Base):
     max_backup_import_size_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     allowed_attachment_types: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     session_ttl_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Whether public/external read-only share links are enabled system-wide. NULL = on.
+    public_shares_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     #: Days a deleted page can be restored from its space's Trash. NULL = the default above.
     trash_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: Per-role visibility for the application navigation. NULL keeps the

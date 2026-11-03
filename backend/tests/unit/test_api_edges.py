@@ -277,7 +277,17 @@ async def test_simple_read_endpoints_and_backup_validation() -> None:
     search_service = Mock(
         search=AsyncMock(return_value=SimpleNamespace(query="wiki", pages=[], spaces=[]))
     )
-    result = await search.search(_user(), search_service, q="wiki", limit=5)
+    result = await search.search(
+        _user(),
+        search_service,
+        q="wiki",
+        limit=5,
+        space=None,
+        author=None,
+        label=None,
+        type=None,
+        updated=None,
+    )
     assert result.query == "wiki"
     assert search.get_search_service(Mock())
     assert attachments.get_storage()
@@ -603,7 +613,7 @@ async def test_group_endpoint_wrappers(monkeypatch: pytest.MonkeyPatch) -> None:
         add=Mock(),
     )
     assert (await groups.group_read(session, group)).member_count == 2
-    assert groups.get_service(session)
+    assert groups.get_service(session, (None, None), None)
 
     class _Service:
         require_global = AsyncMock()
@@ -651,7 +661,7 @@ async def test_space_permission_endpoint_wrappers(monkeypatch: pytest.MonkeyPatc
     group = SimpleNamespace(id=uuid.uuid4(), name="Engineering", is_active=True)
 
     class _SpaceService:
-        def __init__(self, _session):
+        def __init__(self, _session, **_kwargs):
             pass
 
         get_by_key = AsyncMock(return_value=space)
@@ -689,11 +699,13 @@ async def test_space_permission_endpoint_wrappers(monkeypatch: pytest.MonkeyPatc
     session.get = AsyncMock(return_value=None)
     with pytest.raises(NotFoundError):
         await spaces.effective_permissions("ENG", target.id, actor, session)
-    await spaces.grant_user_permission("ENG", target.id, Permission.view, actor, session)
-    await spaces.revoke_user_permission("ENG", target.id, Permission.view, actor, session)
-    await spaces.grant_group_permission("ENG", group.id, Permission.add, actor, session)
-    await spaces.revoke_group_permission("ENG", group.id, Permission.add, actor, session)
-    assert spaces.get_space_service(session)
+    space_service = _SpaceService(session)
+    space_service.permissions = _PermissionService(session)
+    await spaces.grant_user_permission("ENG", target.id, Permission.view, actor, space_service)
+    await spaces.revoke_user_permission("ENG", target.id, Permission.view, actor, space_service)
+    await spaces.grant_group_permission("ENG", group.id, Permission.add, actor, space_service)
+    await spaces.revoke_group_permission("ENG", group.id, Permission.add, actor, space_service)
+    assert spaces.get_space_service(session, (None, None), None)
 
 
 @pytest.mark.asyncio

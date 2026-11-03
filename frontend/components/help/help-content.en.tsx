@@ -44,9 +44,14 @@ export const sectionsEn: HelpSection[] = [
           the words found are highlighted in the results, with the passage that has them
           shown under the title. If an administrator has set an{" "}
           <strong>Semantic search</strong> (see AI assistant), search also finds pages by{" "}
-          <strong>meaning</strong>, even when they share none of your words. It does not
-          currently search attachment filenames or attachment content, and only ever shows
-          results you have permission to see. There are no date, space, or author filters.
+          <strong>meaning</strong>, even when they share none of your words. It also searches
+          attachment filenames and attachment text (PDF, Word, Excel, PowerPoint, HTML, text),
+          and only ever shows results you have permission to see. You can narrow results using
+          fast search filters directly in the search box: <Code>space:KEY</Code> (e.g. <Code>space:ENG</Code>),{" "}
+          <Code>author:username</Code> (e.g. <Code>author:john</Code>),{" "}
+          <Code>label:tag</Code> (e.g. <Code>label:runbook</Code>; matches your own private labels),{" "}
+          <Code>type:format</Code> (e.g. <Code>type:pdf</Code>), and{" "}
+          <Code>updated:range</Code> (e.g. <Code>updated:&gt;2026-01</Code>).
           Search also lists <strong>app pages</strong> under <strong>Go to</strong> - type{" "}
           <Code>change password</Code> to jump to your account&apos;s password form, or{" "}
           <Code>manage users</Code> for Administration &gt; Users. Start with <Code>:</Code> for commands: <Code>:help</Code> opens this guide (add words, as in <Code>:help change password</Code>, to search the guides), <Code>:account</Code>, <Code>:password</Code>, <Code>:users</Code>, <Code>:chat</Code>, and <Code>:ask your question</Code> for an AI answer. Administration shortcuts
@@ -607,16 +612,23 @@ export const sectionsEn: HelpSection[] = [
           </li>
           <li>
             <strong>Share</strong>: click <Code>Share</Code> and pick an option.{" "}
-            <Code>Copy link</Code> puts the page&apos;s direct link on your clipboard, ready to
-            paste into chat or email. <Code>Share with people…</Code> opens a picker: search by
+            <Code>Copy page link</Code> puts the page&apos;s direct link on your clipboard, ready to
+            paste into chat or email. <Code>Share internally…</Code> opens a picker: search by
             name or username, pick one or more colleagues, then click <Code>Share</Code> - each
-            of them gets a notification saying you shared the page, and the link opens it.
+            of them gets a notification saying you shared the page, and the link opens it.{" "}
+            <Code>Share publicly…</Code> creates an expiring read-only link (with optional password)
+            for external partners without a WikiHub account.
             Sharing never grants access: on a restricted space or page, people who can&apos;t
             open it are listed greyed out with a lock and{" "}
             <em>No access to this page or space</em>, and can&apos;t be picked. Every person you
             share with adds one to the share count beside the like and comment counts under the
             page; click that count to share again. A space overview only has{" "}
-            <Code>Share</Code> to copy its link.
+            <Code>Share</Code> to copy its link. See <em>Sharing a page</em> for public links in full.
+          </li>
+          <li>
+            <strong>Watch</strong>: click <Code>Watch</Code> to be notified when the page changes - for
+            this page, for it and its children, or for the whole space. See{" "}
+            <em>Watching pages &amp; who is on a page</em>.
           </li>
           <li>
             <strong>TL;DR</strong>: click <Code>TL;DR</Code> in the toolbar for a short AI
@@ -948,6 +960,244 @@ export const sectionsEn: HelpSection[] = [
   },
 
   {
+    id: "watch-and-presence",
+    title: "Watching pages & who is on a page",
+    category: "Workspace",
+    description:
+      "Get notified when pages change, see who else is reading or editing, and what happens when two people save at once.",
+    keywords: [
+      "watch",
+      "watching",
+      "follow",
+      "subscribe",
+      "notification",
+      "presence",
+      "viewing",
+      "editing",
+      "who is here",
+      "concurrent",
+      "conflict",
+      "overwrite",
+    ],
+    body: (
+      <>
+        <p>
+          Pages you depend on, such as a runbook or a policy, change without you noticing.{" "}
+          <strong>Watch</strong> tells you when they do. It sits in the page toolbar, between{" "}
+          <strong>Pin</strong> and <strong>Share</strong>.
+        </p>
+        <Screenshot
+          src="/feature-discovery/watch.png"
+          alt="The Watch menu opened from a page toolbar, with Watch this page, Watch page and children, and Watch entire space"
+          caption="Three levels of watching, from one page to a whole space."
+        />
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Watch this page</strong>: you are notified when it is updated.
+          </li>
+          <li>
+            <strong>Watch page and children</strong>: also when a page below it changes, or a new
+            child page is added.
+          </li>
+          <li>
+            <strong>Watch entire space</strong>: every page created or updated in the space.
+          </li>
+        </ul>
+        <p>
+          Once any of these is on, the button reads <strong>Watching</strong>. Click it again to
+          change the level or to stop.
+        </p>
+        <Callout variant="note" title="WHO IS TOLD">
+          Watchers get a notification in the bell (see <em>Notifications</em>) when a page is
+          created or updated, with a link to it. You are never notified about your own edits, and
+          only people who can read a page hear about it: watching never opens a restricted page.
+        </Callout>
+
+        <h3 className="mt-6 text-base font-semibold">Who is on the page</h3>
+        <p>
+          While a page is open, small avatars under its toolbar show who else has it open, marked{" "}
+          <strong>Viewing</strong> or <strong>Editing</strong>. Someone drops off about 40 seconds
+          after they leave. If another person is already editing, a notice tells you{" "}
+          <em>{"{name}"} is also editing this page</em> as you start.
+        </p>
+
+        <h3 className="mt-6 text-base font-semibold">If someone saves first</h3>
+        <p>
+          If another person saves a new version while you are editing, WikiHub does not silently
+          overwrite them. When you save, a <strong>Concurrent edit conflict</strong> dialog says who
+          saved and when, and offers three ways on:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>View latest version</strong>: read what they changed first.
+          </li>
+          <li>
+            <strong>Copy draft text</strong>: put your draft on the clipboard so nothing is lost.
+          </li>
+          <li>
+            <strong>Overwrite &amp; Save</strong>: replace their edits with yours, after a second
+            confirmation. Their version stays in the page history either way.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+
+  {
+    id: "public-sharing",
+    title: "Sharing a page: link, colleagues and public links",
+    category: "Workspace",
+    description:
+      "Copy a page link, tell colleagues about a page, or create an expiring read-only link for people without an account.",
+    keywords: [
+      "share",
+      "public link",
+      "external",
+      "guest",
+      "partner",
+      "expire",
+      "password",
+      "revoke",
+      "read-only",
+      "link",
+    ],
+    body: (
+      <>
+        <p>
+          <strong>Share</strong> in the page toolbar has three options.
+        </p>
+        <Screenshot
+          src="/feature-discovery/share.png"
+          alt="The Share menu from a page toolbar: Copy page link, Share internally and Share publicly"
+          caption="Copy page link, Share internally, Share publicly."
+        />
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Copy page link</strong>: the page&apos;s direct address, for chat or e-mail.
+            Whoever opens it still needs access to the space or page.
+          </li>
+          <li>
+            <strong>Share internally…</strong>: pick colleagues by name or username and each gets a
+            notification. Sharing never grants access: people who cannot open the page are shown
+            greyed out with a lock and cannot be picked.
+          </li>
+          <li>
+            <strong>Share publicly…</strong>: a link for someone outside WikiHub, such as a client
+            or partner, who needs no account.
+          </li>
+        </ul>
+
+        <h3 className="mt-6 text-base font-semibold">Creating a public link</h3>
+        <p>
+          In the <strong>Public link</strong> tab choose how long the link lasts:{" "}
+          <strong>1 day</strong>, <strong>7 days</strong> (the default), <strong>30 days</strong>,{" "}
+          <strong>90 days</strong> or <strong>No expiration</strong>. Optionally set a{" "}
+          <strong>password</strong>. Click <strong>Create link</strong> and copy it.
+        </p>
+        <p>
+          The tab also lists the page&apos;s <strong>Active public links</strong>, each with how many
+          times it was viewed and whether it is <em>Password protected</em> or <em>Open access</em>.
+          From there you can:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Copy link</strong> again.
+          </li>
+          <li>
+            <strong>Edit link</strong>: keep or change the expiration, and keep, change, add or
+            remove the password.
+          </li>
+          <li>
+            <strong>Revoke</strong>: anyone holding the link loses access at once. This cannot be
+            undone; create a new link instead.
+          </li>
+        </ul>
+
+        <h3 className="mt-6 text-base font-semibold">What the guest sees</h3>
+        <p>
+          A clean, read-only copy of the page with a <em>Read-only shared document</em> badge, its
+          expiry date and its view count, and <strong>Copy link</strong> and{" "}
+          <strong>Print / Export</strong> buttons. A password-protected link asks for the password
+          first. An expired or revoked link says so, and a link to a page that no longer exists
+          reads <em>Document not found</em>.
+        </p>
+        <Callout variant="warning" title="ANYONE WITH THE LINK CAN READ">
+          A public link ignores space and page permissions: whoever holds it can read the page until
+          it expires or you revoke it. Use a password for anything sensitive, keep the expiry short,
+          and revoke links you no longer need.
+        </Callout>
+        <Callout variant="note" title="FOR ADMINISTRATORS">
+          Public links can be switched off for the whole instance with{" "}
+          <strong>Enable public and external share links</strong> under{" "}
+          <strong>Administration → Settings</strong>. While off, nobody can create a link and the
+          existing ones stop working (the guest sees <em>Public sharing disabled</em>).
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "quick-guide",
+    title: "Quick guide (?) & the feature tour",
+    category: "Workspace",
+    description:
+      "One key opens a cheat sheet of shortcuts, search syntax and editor commands; Home suggests features to try.",
+    keywords: [
+      "quick guide",
+      "cheat sheet",
+      "shortcuts",
+      "question mark",
+      "help",
+      "tips",
+      "explore features",
+      "discovery",
+      "tour",
+    ],
+    body: (
+      <>
+        <p>
+          Press <Kbd>?</Kbd> anywhere (when you are not typing in a field) to open the{" "}
+          <strong>Quick Guide &amp; Shortcuts</strong>. You can also open it from the account menu
+          (<strong>Quick shortcuts &amp; tips</strong>) or from the footer of the search box.
+        </p>
+        <Screenshot
+          src="/feature-discovery/quick-shortcuts.png"
+          alt="The Quick Guide and Shortcuts window with its tabs"
+          caption="The Quick Guide: shortcuts, search syntax, editor commands and highlights."
+        />
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Keyboard shortcuts</strong>: every shortcut, as you have set them.
+          </li>
+          <li>
+            <strong>Search syntax</strong>: the filters you can type in the search box, such as{" "}
+            <Code>space:KEY</Code> or <Code>author:</Code>, with a <strong>Try now</strong> button
+            that runs one.
+          </li>
+          <li>
+            <strong>Editor commands (/)</strong>: what the slash menu can insert.
+          </li>
+          <li>
+            <strong>Highlights</strong>: features worth knowing about.
+          </li>
+        </ul>
+        <p>
+          <strong>View full documentation in Help</strong> at the bottom opens the matching guide.
+        </p>
+
+        <h3 className="mt-6 text-base font-semibold">Explore WikiHub features on Home</h3>
+        <p>
+          Home shows an <strong>Explore WikiHub Features</strong> card: a short rotating tour of
+          what the workspace can do, from search inside files and the page map to diagrams,
+          sharing and watching. Each slide ends in <strong>See how it works</strong>, which opens
+          the guide for it. Use the arrows to move on yourself, <strong>Collapse guide</strong> to
+          shrink it, or <strong>Dismiss guide</strong> to hide it.
+        </p>
+      </>
+    ),
+  },
+
+  {
     id: "related-pages",
     title: "Related pages and the page map",
     category: "Workspace",
@@ -1035,6 +1285,9 @@ export const sectionsEn: HelpSection[] = [
       "orphan pages",
       "duplicates",
       "duplicate pages",
+      "conflicts",
+      "contradictions",
+      "contradiction detector",
       "still correct",
       "review",
       "check with ai",
@@ -1068,7 +1321,7 @@ export const sectionsEn: HelpSection[] = [
             not a verdict: check before you change anything.
           </li>
           <li>
-            <strong>Still correct</strong>: when you read a flagged page and it is still right, mark it so.
+            <strong>Dismiss: still accurate</strong>: when you read a flagged page and it is still right, Dismiss it and it leaves the list until a related page is edited again; the page itself is not changed. Click any page title in the report to read it in a window over the report (with an Open page button), instead of leaving it.
             It leaves the list until it has gone that long again without an edit.
           </li>
           <li>
@@ -1078,13 +1331,25 @@ export const sectionsEn: HelpSection[] = [
           </li>
           <li>
             <strong>Orphans</strong>: pages no other page links to or names; readers find them only
-            through the page tree. Link to them from a related page. Top-level and empty pages are left
-            out.
+            through the page tree. Top-level and empty pages are left out. Under each one,{" "}
+            <strong>Could be linked from</strong> names the pages a link to it would fit in: the closest
+            in content (with how similar) and its parent page. Click <strong>Copy link</strong>, open one
+            of them, edit it and paste the link where it fits (or write the orphan&apos;s exact title
+            there); once saved, the page is no longer an orphan.
           </li>
           <li>
             <strong>Duplicates</strong>: copies of one page (the same title but for a number, such as{" "}
             <Code>Checklist (2)</Code>) and, when semantic search is on, pages saying nearly the same
-            thing, with how alike they are. Consider merging them and moving the copy to the Trash.
+            thing, with how alike they are in percent. Click <strong>Compare</strong> on a group to set the first two pages side by side.{" "}
+            <strong>Page view</strong> (the default) shows each page as it reads, the way the page history
+            compares versions; <strong>Line by line</strong> shows numbered, aligned lines: what only the left
+            page says is red, what only the right page says green, and the differing words are marked. Consider merging them and moving the copy to the Trash.
+          </li>
+          <li>
+            <strong>Possible conflicts</strong>: pairs of related pages on the same topic (connected by high
+            similarity in the Knowledge Graph or by direct links and mentions). Clicking{" "}
+            <strong>Detect conflicts</strong> asks the AI to compare technical parameters, network ports,
+            rules, versions, and dates between them, pinpointing discrepancies so administrators can resolve them. When it finds some, click <strong>View details</strong> for a table: what differs, what each page says, and what to settle. Being listed does not mean two pages disagree: these are pairs worth checking, shown with a grey icon until checked. When the AI answers <strong>No conflict</strong> the icon turns green; when it finds a discrepancy, amber. When the two pages agree but repeat each other, the AI says <strong>Duplicate content, not a conflict</strong> (blue) and offers <strong>Compare</strong>: merge them rather than settle anything. A pair already listed under Duplicates is not listed here again. Each AI answer has a <strong>Collapse</strong> button that folds it down to its verdict line.
           </li>
         </ul>
         <Callout variant="note" title="WHO SEES WHAT">
@@ -1310,6 +1575,11 @@ export const sectionsEn: HelpSection[] = [
                 <td className="p-2.5">Insert a multi-column data table matrix.</td>
               </tr>
               <tr className="hover:bg-surface-hover">
+                <td className="p-2.5"><Code>/diagram</Code></td>
+                <td className="p-2.5 font-medium">Diagram / Mermaid</td>
+                <td className="p-2.5">Flowcharts, sequence and ER diagrams drawn from text, with a hand-drawn look and PNG/SVG download. See <em>Diagrams with Mermaid</em>.</td>
+              </tr>
+              <tr className="hover:bg-surface-hover">
                 <td className="p-2.5"><Code>/code</Code></td>
                 <td className="p-2.5 font-medium">Code Block</td>
                 <td className="p-2.5">Syntax-highlighted code block with a filterable language picker (use the up/down arrow keys to choose) and ten colour themes, light and dark, set per block from the block&apos;s options. In the editor, <strong>Save draft</strong> keeps your edits as a private draft without adding a version to the page history. Inside a code block, Tab / Shift+Tab indent / outdent the selected lines. Outside one, Tab / Shift+Tab indent paragraphs and headings.</td>
@@ -1476,6 +1746,68 @@ export const sectionsEn: HelpSection[] = [
       </>
     ),
   },
+
+  {
+    id: "diagrams",
+    title: "Diagrams with Mermaid",
+    category: "Writing",
+    description:
+      "Draw flowcharts, sequence and ER diagrams from a few lines of text, and edit them later without redrawing.",
+    keywords: [
+      "diagram",
+      "mermaid",
+      "flowchart",
+      "sequence",
+      "er diagram",
+      "class diagram",
+      "state diagram",
+      "git graph",
+      "hand-drawn",
+      "svg",
+      "png",
+    ],
+    body: (
+      <>
+        <p>
+          A diagram is text, so anyone can change it later without redrawing a picture. Type{" "}
+          <Code>/diagram</Code> (or <Code>/mermaid</Code>) on an empty line and choose{" "}
+          <strong>Diagram / Mermaid</strong>.
+        </p>
+        <Screenshot
+          src="/feature-discovery/diagrams.png"
+          alt="A page with a flowchart: Browser, Gateway, API service, Database, Job queue, Worker and Object storage"
+          caption="A flowchart that stays sharp at any zoom."
+        />
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Templates</strong>: start from Flowchart, Sequence diagram, Class diagram,
+            State diagram, Entity Relationship (ER), Git graph or Architecture flow.
+          </li>
+          <li>
+            <strong>Edit diagram</strong> opens the editor; <strong>Done</strong> closes it. View it
+            as <strong>Preview</strong>, <strong>Split</strong> (code and result side by side) or{" "}
+            <strong>Code</strong>.
+          </li>
+          <li>
+            <strong>Look</strong>: <strong>Classic</strong> or <strong>Hand-drawn</strong>, and left,
+            centre or right alignment, with an optional caption underneath.
+          </li>
+          <li>
+            <strong>Zoom diagram</strong> opens it larger for a big picture.
+          </li>
+          <li>
+            <strong>Copy and download</strong>: copy the image as PNG, copy the Mermaid code, or
+            download PNG, SVG or a <Code>.mmd</Code> file.
+          </li>
+        </ul>
+        <Callout variant="tip" title="WHEN IT DOES NOT DRAW">
+          If the text is not valid Mermaid, the diagram says <em>Syntax error in diagram</em> and
+          keeps your code so you can fix it. A diagram counts as one line in the page&apos;s history,
+          so adding or changing one shows up in a revision comparison.
+        </Callout>
+      </>
+    ),
+  },
   {
     id: "history-and-export",
     title: "Revision History, Visual Diff & Export",
@@ -1523,7 +1855,22 @@ export const sectionsEn: HelpSection[] = [
           <li>
             <strong>Visual Diff Comparison</strong>: Select any two revisions to compare
             changes side-by-side or inline. Additions are highlighted in green,
-            and deletions are highlighted in red.
+            and deletions are highlighted in red. <strong>Page view</strong> (the default) shows each
+            version as it reads, with any diagram, code block, callout, quote, table or image that changed
+            tinted red or green. <strong>Line by line</strong> sets the two versions out as numbered,
+            aligned lines with the changed words marked; a diagram or an image counts as a line, so adding
+            one shows as an addition. When the
+            words are the same but a version was still saved, a note says what changed instead - table
+            column widths, styles, links, images or formatting. The first version (v1) has nothing earlier to
+            compare with, so it is simply shown as it is.
+          </li>
+          <li>
+            <strong>View change on Home</strong>: <strong>(view change)</strong> beside an
+            activity shows only what that change did - that version against the one
+            before it, line by line - with <strong>Full history</strong> a click away. The
+            entry that created a page is marked <strong>New page</strong> instead, as
+            there is no earlier version to compare with - also for an imported page that keeps an older
+            creation date.
           </li>
           <li>
             <strong>Export</strong>: Open <strong>Export</strong> in page actions to
@@ -1542,6 +1889,38 @@ export const sectionsEn: HelpSection[] = [
           paragraph - faithful in color and text, not in exact shape. PDF and HTML
           have no such limit.
         </Callout>
+        <h3 className="mt-6 text-base font-semibold">Looking at one change</h3>
+        <p>
+          In the activity feed on Home, an update reads <em>(view change)</em>. Click it to open what
+          that one change did: the version before against the version after, line by line.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>View</strong> switches between <strong>Line by line</strong> and{" "}
+            <strong>Page view</strong>. The first version is compared with an empty document,
+            because there is nothing earlier.
+          </li>
+          <li>
+            When only the layout changed, the words are the same and WikiHub says so, naming what
+            moved: column widths, styles and colours, link addresses, images or formatting.
+          </li>
+          <li>
+            <strong>Full history</strong> and <strong>Open page</strong> take you from the change
+            to the whole timeline or to the page.
+          </li>
+        </ul>
+        <p>
+          With the AI assistant set up, <strong>AI Summary</strong> explains the change in words.
+          One-click questions ask <em>what rules changed</em>, <em>summarize key changes</em> or{" "}
+          <em>what was removed</em>, you can type your own question about the diff, and{" "}
+          <strong>Suggest commit message</strong> proposes a one-line summary to copy.
+        </p>
+        <p>
+          When you save an edit, the <strong>Change note</strong> box is where you say what you
+          changed; <strong>Suggest with AI</strong> drafts it from the edit. The note shows beside
+          the version in the history.
+        </p>
+
       </>
     ),
   },
@@ -2199,7 +2578,13 @@ export const sectionsEn: HelpSection[] = [
           <li>Being given or losing a specific permission on a space, or becoming (or ceasing to be) a space owner.</li>
           <li>Being added to or removed from a group.</li>
           <li>An administrator resetting your password.</li>
+          <li>
+            An administrator viewing the wiki as you (<em>Switch account</em>). They cannot see or
+            clear this notification while they are using your account.
+          </li>
           <li>Your workspace role or permissions being changed, or your account being switched back on.</li>
+          <li>A page you <strong>watch</strong> being created or updated (see <em>Watching pages</em>).</li>
+          <li>A colleague sharing a page with you.</li>
           <li>For System Administrators: every new request from the sign-in page.</li>
         </ul>
         <p className="mt-2 text-sm">
@@ -2231,6 +2616,43 @@ export const sectionsEn: HelpSection[] = [
           text: hovering a pop-up pauses that one only, and the timer carries on from where it
           stopped when you move away. When it runs out, the pop-up slides off to the right. Use the small <strong>x</strong> to close one sooner.
         </p>
+      </>
+    ),
+  },
+  {
+    id: "personal-data",
+    title: "Personal Data Notice",
+    category: "Account",
+    description:
+      "What WikiHub stores about you, why, for how long, who else receives it, and how to ask for a copy, a correction or deletion.",
+    keywords: ["privacy", "personal data", "gdpr", "data protection", "delete my data", "policy", "cookies"],
+    body: (
+      <>
+        <p>
+          The <strong>personal data notice</strong> explains what is collected about you (account,
+          profile, sign-in sessions with IP address and browser, the activity log, usage
+          statistics, AI questions), why, how long it is kept, and who else receives it. Open it
+          from the link under the sign-in form, or go to <Code>/privacy</Code>. It can be read
+          without signing in.
+        </p>
+        <p className="mt-3 font-semibold text-foreground">Exercising your rights:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Change your profile, your password and your sign-in sessions yourself in{" "}
+            <strong>Account</strong>.
+          </li>
+          <li>
+            For a copy of your data, a correction you cannot make yourself, deletion, or an
+            objection, use <strong>Contact an administrator</strong> at the end of the notice.
+          </li>
+        </ul>
+        <Callout variant="note" title="FOR ADMINISTRATORS">
+          Your organisation is responsible for the personal data in this wiki. The notice
+          describes how WikiHub itself behaves. If you connect an external AI service or host
+          WikiHub outside Vietnam, personal data leaves the country: check the cross-border
+          transfer obligations that apply to you, and answer requests within the legal time limits
+          (a first reply within 2 working days).
+        </Callout>
       </>
     ),
   },
@@ -2393,17 +2815,27 @@ export const sectionsEn: HelpSection[] = [
         </p>
 
         <p className="mt-3 font-semibold text-foreground">1. Rebinding a shortcut:</p>
+        <p className="text-sm">
+          The list is read-only until you click <strong>Edit shortcuts</strong>. In editing mode
+          you click a shortcut to rebind it, <Code>✕</Code> to remove it, or <Code>+</Code> to add
+          another combination.
+        </p>
         <ul className="list-disc pl-5 space-y-1 text-sm">
           <li>
             Click the key badge next to the action you want to change - it switches to{" "}
             <em>Press keys…</em>
           </li>
           <li>
-            Press the combination you want. It is captured and saved the moment you press
-            it; there is no separate Save button.
+            Press the combination you want. It is captured into your draft; nothing is stored
+            yet.
           </li>
           <li>
-            Press <Kbd>Esc</Kbd> to back out without changing anything.
+            Click <strong>Save changes</strong> to keep your edits (a toast confirms it), or{" "}
+            <strong>Cancel</strong> to throw them away.
+          </li>
+          <li>
+            Press <Kbd>Esc</Kbd> while recording to back out of that one key without changing
+            anything.
           </li>
         </ul>
 
@@ -2414,15 +2846,17 @@ export const sectionsEn: HelpSection[] = [
           Click <Code>+</Code> to give an action a second (or third) combination - handy
           when you want both an old habit and a new one to work. Global search ships this
           way, answering to both <Kbd>Ctrl</Kbd>+<Kbd>K</Kbd> and <Kbd>Ctrl</Kbd>+
-          <Kbd>F</Kbd>. Remove one with the <Code>✕</Code> beside it; the last remaining
-          binding cannot be removed, so an action is never left unreachable by accident.
+          <Kbd>F</Kbd>. Remove one with the <Code>✕</Code> beside it. You can remove
+          any binding (even the last one) if you want an action to have no shortcut,
+          freeing up combinations like <Kbd>Ctrl</Kbd>+<Kbd>F</Kbd> for browser in-page search.
         </p>
 
         <p className="mt-4 font-semibold text-foreground">3. Getting back to normal:</p>
         <p className="text-sm">
           A circular arrow appears beside any action you have changed - click it to
-          restore just that one. <strong>Reset all to defaults</strong> at the top
-          restores every shortcut at once.
+          restore just that one. <strong>Reset all to defaults</strong> restores every
+          shortcut at once; in editing mode it resets your draft, and the change only
+          counts once you click <strong>Save changes</strong>.
         </p>
 
         <p className="mt-4 font-semibold text-foreground">4. Where each shortcut applies:</p>
@@ -2434,6 +2868,24 @@ export const sectionsEn: HelpSection[] = [
           by default: normally it opens global search, but while you have a text file
           preview open it searches inside that file instead.
         </p>
+
+        <p className="mt-4 font-semibold text-foreground">5. What you can rebind:</p>
+        <p className="text-sm">
+          Besides search and the other navigation shortcuts, you can set keys for{" "}
+          <strong>Toggle sidebar</strong>, <strong>Copy page link</strong>,{" "}
+          <strong>Open help documentation</strong> and <strong>Edit page</strong> (which starts
+          editing the page you are reading). Press <Kbd>?</Kbd> any time to see the current list in
+          the <em>Quick Guide</em>.
+        </p>
+
+        <Callout variant="warning" title="CTRL+F AND THE BROWSER">
+          <p>
+            <Kbd>Ctrl</Kbd>+<Kbd>F</Kbd> is what browsers use to search inside a page. While it
+            is bound to a WikiHub action, the browser&apos;s find bar cannot open, and a notice
+            at the top says so. In editing mode, click <Code>✕</Code> on that combination to
+            remove it and get the browser&apos;s own search back.
+          </p>
+        </Callout>
 
         <Callout variant="note" title="CONFLICT WARNINGS">
           <p>
@@ -2831,6 +3283,115 @@ export const sectionsEn: HelpSection[] = [
             <Code>(inherited from environment)</Code> until you actually override it here.
           </li>
         </ul>
+      </>
+    ),
+  },
+
+  {
+    id: "admin-audit-logs",
+    title: "Audit logs",
+    category: "Administration",
+    description:
+      "An append-only trail of privileged actions: who did what, to which target, and what changed.",
+    keywords: [
+      "audit",
+      "audit log",
+      "security trail",
+      "history",
+      "impersonation",
+      "export",
+      "csv",
+      "json",
+      "administrator actions",
+    ],
+    body: (
+      <>
+        <p>
+          <strong>Administration → Audit logs</strong> is the record of privileged actions across
+          users, spaces, groups, settings, backups and mailboxes. It only ever grows: entries cannot
+          be edited or deleted from the screen.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>The overview</strong> counts total events and the user, space, group and
+            impersonation events.
+          </li>
+          <li>
+            <strong>The table</strong> lists <strong>Time</strong>, <strong>Actor</strong>,{" "}
+            <strong>Action</strong>, <strong>Target</strong> and <strong>Details</strong>. Actions
+            read in plain words, such as <em>User role changed</em>, <em>Space deleted</em>,{" "}
+            <em>Backup exported</em> or <em>System announcement updated</em>.
+          </li>
+          <li>
+            <strong>Search and filter</strong> by actor or target text, <strong>Actor</strong>,{" "}
+            <strong>Target type</strong>, <strong>Action</strong> and a <strong>From</strong> and{" "}
+            <strong>To</strong> date. <strong>Clear filters</strong> starts over.
+          </li>
+          <li>
+            <strong>Inspect</strong> opens one entry: when it was recorded, the actor, the target and
+            its ID, the IP address, and a Before / After table of every changed field, with the raw
+            JSON one click away.
+          </li>
+          <li>
+            <strong>Export CSV</strong> or <strong>Export JSON</strong> downloads what the current
+            filters show, for an auditor.
+          </li>
+        </ul>
+        <Callout variant="important" title="VIEWING AS SOMEONE ELSE">
+          When an administrator acts while viewing WikiHub as another user, the entry shows{" "}
+          <em>via {"{admin}"}</em>: the trail names the administrator, not only the person they were
+          viewing as. See <em>Switch account</em>.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
+    id: "system-announcements",
+    title: "System announcements",
+    category: "Administration",
+    description:
+      "Show a banner to everyone: maintenance windows, incidents, good news, with a schedule.",
+    keywords: [
+      "announcement",
+      "banner",
+      "maintenance",
+      "notice",
+      "broadcast",
+      "system message",
+      "schedule",
+      "dismiss",
+    ],
+    body: (
+      <>
+        <p>
+          A system announcement is a banner shown to every signed-in user, useful for planned
+          maintenance or an incident. Set it under{" "}
+          <strong>Administration → Settings → System Announcement</strong>.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Level</strong> sets the colour and urgency: <strong>Information</strong>,{" "}
+            <strong>Warning</strong>, <strong>Critical / Urgent</strong> or{" "}
+            <strong>Completed / Resolved</strong>.
+          </li>
+          <li>
+            <strong>Title and message</strong>: a short title and a formatted message, with a live
+            preview of the banner.
+          </li>
+          <li>
+            <strong>Schedule</strong>: when it starts, and when it ends: after 1 hour, 4 hours, 1
+            day, 3 days, 7 days, or no expiry.
+          </li>
+          <li>
+            <strong>Dismissible</strong>: lets each person close it for themselves. It does not
+            come back for them until you publish a different announcement.
+          </li>
+        </ul>
+        <Callout variant="note" title="TURN IT OFF">
+          Switch the announcement off to remove the banner for everyone at once. Each change is
+          recorded in the <em>Audit logs</em> as <em>System announcement updated</em>.
+        </Callout>
       </>
     ),
   },
@@ -3481,6 +4042,12 @@ export const sectionsEn: HelpSection[] = [
           <strong>Return to my account</strong> (in the banner or the menu) to end the
           session.
         </Callout>
+
+        <p className="mt-3 text-sm">
+          The person you switch to is told in their notification bell, by name. While you are
+          using their account that notification is hidden from you, so you cannot clear it before
+          they see it.
+        </p>
 
         <p className="mt-3 text-sm text-muted-foreground">
           The protected bootstrap admin account and your own account are excluded from

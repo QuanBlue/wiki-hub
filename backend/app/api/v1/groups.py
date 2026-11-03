@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import ClientInfoDep, CurrentUser, DbSession, Impersonator
 from app.core.exceptions import PermissionDeniedError
 from app.models.page import WikiPage
 from app.models.permission import (
@@ -35,8 +35,12 @@ from app.schemas.permission import (
 router = APIRouter(prefix="/groups", tags=["groups"])
 
 
-def get_service(session: DbSession) -> PermissionService:
-    return PermissionService(session)
+def get_service(
+    session: DbSession, client: ClientInfoDep, impersonator: Impersonator
+) -> PermissionService:
+    # Request origin and impersonator ride along so every group mutation
+    # lands in the audit trail with full attribution.
+    return PermissionService(session, client=client, impersonator=impersonator)
 
 
 ServiceDep = Annotated[PermissionService, Depends(get_service)]

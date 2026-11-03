@@ -82,6 +82,8 @@ from app.schemas.ai import (
     QuestionGroupList,
     QuestionRecording,
     QuestionResolve,
+    RevisionDiffSummaryRead,
+    RevisionDiffSummaryRequest,
     SearchIndexPause,
     SearchIndexStatus,
     SkillRead,
@@ -270,6 +272,20 @@ async def summarize_page(
 )
 async def suggest_for_page(key: str, slug: str, service: AIServiceDep) -> PageSuggestions:
     return await service.suggest_for_page(key, slug)
+
+
+@router.post(
+    "/spaces/{key}/pages/{slug}/diff-summary",
+    response_model=RevisionDiffSummaryRead,
+    summary="Summarise differences between two revisions of a page with AI",
+)
+async def summarize_revision_diff(
+    key: str,
+    slug: str,
+    payload: RevisionDiffSummaryRequest,
+    service: AIServiceDep,
+) -> RevisionDiffSummaryRead:
+    return await service.summarize_revision_diff(key, slug, payload)
 
 
 @router.post(

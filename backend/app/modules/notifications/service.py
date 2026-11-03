@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from urllib.parse import unquote
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import ColumnElement, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -36,6 +36,10 @@ _REQUEST_LINK = re.compile(rf"^/admin/inbox\?request=({_UUID})$")
 
 #: Error code the bell reacts to: what a notification points at is gone.
 TARGET_GONE_CODE = "notification_target_gone"
+
+#: Told to a person whose account an administrator started using. Hidden from that
+#: impersonated session itself, so only the account's owner can see or dismiss it.
+IMPERSONATION_NOTICE_KIND = "account_impersonated"
 
 
 async def link_target_exists(session: AsyncSession, link: str | None) -> bool:
@@ -125,9 +129,20 @@ async def notify(
 class NotificationService:
     """One account's own notifications - never anyone else's."""
 
-    def __init__(self, session: AsyncSession, user: User) -> None:
+    def __init__(self, session: AsyncSession, user: User, *, impersonated: bool = False) -> None:
         self.session = session
         self.user = user
+        #: True when an administrator is using this account: the notice telling its
+        #: owner so is then neither shown nor markable.
+        self.impersonated = impersonated
+
+    def _visible(self) -> list[ColumnElement[bool]]:
+        """The rows this session may see: the account's own, minus the notice an
+        impersonating administrator must not read away."""
+        conditions: list[ColumnElement[bool]] = [Notification.user_id == self.user.id]
+        if self.impersonated:
+            conditions.append(Notification.kind != IMPERSONATION_NOTICE_KIND)
+        return conditions
 
     async def summary(self) -> NotificationSummary:
         unread, latest = (
@@ -135,7 +150,7 @@ class NotificationService:
                 select(
                     func.count().filter(Notification.read_at.is_(None)),
                     func.max(Notification.created_at),
-                ).where(Notification.user_id == self.user.id)
+                ).where(*self._visible())
             )
         ).one()
         return NotificationSummary(unread_count=int(unread), latest_at=latest)
@@ -160,7 +175,7 @@ class NotificationService:
         return bool(stale)
 
     async def list(self, *, unread_only: bool, limit: int, offset: int) -> Page[NotificationRead]:
-        query = select(Notification).where(Notification.user_id == self.user.id)
+        query = select(Notification).where(*self._visible())
         if unread_only:
             query = query.where(Notification.read_at.is_(None))
         # Whatever a notification pointed at may have been deleted since: those are
@@ -199,9 +214,7 @@ class NotificationService:
         navigating to a missing page.
         """
         row = await self.session.scalar(
-            select(Notification).where(
-                Notification.id == notification_id, Notification.user_id == self.user.id
-            )
+            select(Notification).where(Notification.id == notification_id, *self._visible())
         )
         if row is None:
             raise NotFoundError("Notification not found.", code=TARGET_GONE_CODE)
@@ -215,9 +228,7 @@ class NotificationService:
 
     async def mark_read(self, notification_id: uuid.UUID, *, read: bool = True) -> NotificationRead:
         row = await self.session.scalar(
-            select(Notification).where(
-                Notification.id == notification_id, Notification.user_id == self.user.id
-            )
+            select(Notification).where(Notification.id == notification_id, *self._visible())
         )
         if row is None:
             raise NotFoundError("Notification not found.", code="notification_not_found")
@@ -228,6 +239,6 @@ class NotificationService:
     async def mark_all_read(self) -> None:
         await self.session.execute(
             update(Notification)
-            .where(Notification.user_id == self.user.id, Notification.read_at.is_(None))
+            .where(*self._visible(), Notification.read_at.is_(None))
             .values(read_at=datetime.now(UTC))
         )

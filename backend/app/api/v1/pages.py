@@ -2,19 +2,32 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import ACCESS_COOKIE_NAME, CurrentUser, DbSession
 from app.core.exceptions import ConflictError
+from app.core.redis import get_redis
+from app.core.security import decode_token_identity
+from app.db.session import get_session_factory
 from app.models.permission import Permission
 from app.models.restriction import PageRestrictionPermission
 from app.models.user_page_label import UserPageLabel
+from app.modules.auth.service import AuthService
+from app.modules.auth.sessions import SessionService
 from app.modules.pages.export_service import ExportFormat, ExportService
 from app.modules.pages.service import PageService
+from app.modules.presence import (
+    PresenceHeartbeatRequest,
+    PresenceHeartbeatResponse,
+    PresenceService,
+    PresenceUser,
+)
 from app.modules.spaces.service import SpaceService
 from app.modules.stats.recorder import record_view
 from app.schemas.draft import PageDraftRead, PageDraftUpsert
@@ -28,6 +41,8 @@ from app.schemas.page import (
     PageRestoreResult,
     PageTrashResult,
     PageUpdate,
+    PageWatchRead,
+    PageWatchUpdate,
     TrashedPageDetail,
     TrashListRead,
 )
@@ -389,6 +404,174 @@ async def delete_page_draft(
     space = await space_service.get_by_key(key)
     page = await page_service.get_by_slug(space, slug)
     await page_service.discard_draft(page, user)
+
+
+@router.get("/{slug}/watch", response_model=PageWatchRead, summary="Get page watch status")
+async def get_page_watch(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> PageWatchRead:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    return await page_service.get_watch(page, user)
+
+
+@router.put("/{slug}/watch", response_model=PageWatchRead, summary="Update page watch status")
+async def update_page_watch(
+    key: str,
+    slug: str,
+    payload: PageWatchUpdate,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> PageWatchRead:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    return await page_service.set_watch(page, user, payload)
+
+
+@router.get("/{slug}/presence", response_model=list[PresenceUser], summary="Get active users on a page")
+async def get_page_presence(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> list[PresenceUser]:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, user)
+    return await PresenceService.get_active_users(page.id)
+
+
+@router.post(
+    "/{slug}/presence/heartbeat",
+    response_model=PresenceHeartbeatResponse,
+    summary="Send presence heartbeat and retrieve active users",
+)
+async def page_presence_heartbeat(
+    key: str,
+    slug: str,
+    payload: PresenceHeartbeatRequest,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> PresenceHeartbeatResponse:
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    await page_service.require_page_view(page, user)
+    active_users = await PresenceService.heartbeat(page.id, user, editing=payload.editing)
+    return PresenceHeartbeatResponse(
+        users=active_users,
+        page_updated_at=page.updated_at,
+    )
+
+
+@router.websocket("/{slug}/presence/ws")
+async def page_presence_websocket(
+    websocket: WebSocket,
+    key: str,
+    slug: str,
+):
+    token = websocket.cookies.get(ACCESS_COOKIE_NAME) or websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    async with get_session_factory()() as session:
+        try:
+            identity = decode_token_identity(token)
+            await SessionService(session).require_active(
+                user_id=identity.subject, token_jti=identity.jti
+            )
+            auth_service = AuthService(session)
+            user = await auth_service.get_active_user(identity.subject)
+            space_service = SpaceService(session)
+            space = await space_service.get_by_key(key)
+            page_service = PageService(session)
+            page = await page_service.get_by_slug(space, slug)
+            if not await space_service.permissions.can_view_page(page, user):
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        except Exception:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+    await websocket.accept()
+
+    page_id = page.id
+    user_id = user.id
+    editing = websocket.query_params.get("editing", "false").lower() in ("true", "1")
+
+    # Initial registration
+    initial_users = await PresenceService.heartbeat(page_id, user, editing=editing)
+    await websocket.send_json({
+        "type": "sync",
+        "users": [u.model_dump(mode="json") for u in initial_users],
+        "page_updated_at": page.updated_at.isoformat(),
+    })
+
+    channel_name = f"wikihub:events:page:{page_id}"
+    pubsub_task: asyncio.Task | None = None
+    stop_event = asyncio.Event()
+
+    async def _listen_redis():
+        try:
+            redis = get_redis()
+            pubsub = redis.pubsub()
+            await pubsub.subscribe(channel_name)
+            try:
+                while not stop_event.is_set():
+                    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if msg and msg.get("type") == "message":
+                        data = msg["data"]
+                        if isinstance(data, bytes):
+                            data = data.decode("utf-8")
+                        await websocket.send_text(data)
+                    await asyncio.sleep(0.05)
+            finally:
+                await pubsub.unsubscribe(channel_name)
+                await pubsub.aclose()
+        except Exception:
+            pass
+
+    pubsub_task = asyncio.create_task(_listen_redis())
+
+    try:
+        while True:
+            text = await websocket.receive_text()
+            try:
+                data = json.loads(text)
+                action = data.get("action")
+                if action == "heartbeat":
+                    is_editing = bool(data.get("editing", False))
+                    active_users = await PresenceService.heartbeat(page_id, user, editing=is_editing)
+                    await websocket.send_json({
+                        "type": "sync",
+                        "users": [u.model_dump(mode="json") for u in active_users],
+                        "page_updated_at": page.updated_at.isoformat(),
+                    })
+                elif action == "set_state":
+                    state = data.get("state", "viewing")
+                    is_editing = (state == "editing")
+                    active_users = await PresenceService.heartbeat(page_id, user, editing=is_editing)
+                    await websocket.send_json({
+                        "type": "sync",
+                        "users": [u.model_dump(mode="json") for u in active_users],
+                        "page_updated_at": page.updated_at.isoformat(),
+                    })
+            except Exception:
+                pass
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        stop_event.set()
+        if pubsub_task and not pubsub_task.done():
+            pubsub_task.cancel()
+        await PresenceService.leave(page_id, user_id)
 
 
 @router.delete(

@@ -342,12 +342,39 @@ async def _inline_attachments(
         anchor["download"] = anchor.get("data-attachment", "")
 
 
+def _render_diagrams_for_export(soup: BeautifulSoup, diagram_images: list[str] | None = None) -> None:
+    diagrams = soup.find_all("div", attrs={"data-type": "diagram"})
+    for i, el in enumerate(diagrams):
+        caption = el.get("data-caption")
+        if diagram_images and i < len(diagram_images) and diagram_images[i]:
+            img_tag = soup.new_tag("img", src=diagram_images[i], alt="Diagram")
+            p_tag = soup.new_tag("p", attrs={"class": "diagram-rendered"})
+            p_tag.append(img_tag)
+            if caption:
+                caption_tag = soup.new_tag("p", attrs={"class": "diagram-caption"})
+                em = soup.new_tag("em")
+                em.string = caption
+                caption_tag.append(em)
+                el.replace_with(p_tag)
+                p_tag.insert_after(caption_tag)
+            else:
+                el.replace_with(p_tag)
+        else:
+            code = el.get("data-code") or ""
+            pre_tag = soup.new_tag("pre", attrs={"class": "mermaid"})
+            code_tag = soup.new_tag("code", attrs={"class": "language-mermaid"})
+            code_tag.string = code
+            pre_tag.append(code_tag)
+            el.replace_with(pre_tag)
+
+
 async def prepare_export_html(
     page: WikiPage,
     *,
     storage: ObjectStorage,
     session: AsyncSession,
     native_word_toc: bool = False,
+    diagram_images: list[str] | None = None,
 ) -> str:
     """Return a self-contained HTML fragment ready for a session-less
     headless-browser render or a direct PDF/Word conversion.
@@ -363,6 +390,7 @@ async def prepare_export_html(
     _wrap_bare_header_rows(soup)
     if native_word_toc:
         _mark_table_of_contents_for_word(soup)
+        _render_diagrams_for_export(soup, diagram_images=diagram_images)
     else:
         _render_table_of_contents(soup)
     _render_image_captions(soup)

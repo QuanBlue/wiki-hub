@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import ClientInfoDep, CurrentUser, DbSession, Impersonator
 from app.api.v1.groups import group_read
 from app.models.permission import (
     GlobalPermission,
@@ -31,14 +31,20 @@ from app.schemas.space import (
     SpaceOwnersUpdate,
     SpaceRead,
     SpaceUpdate,
+    SpaceWatchRead,
+    SpaceWatchUpdate,
 )
 from app.schemas.user import UserRead
 
 router = APIRouter(prefix="/spaces", tags=["spaces"])
 
 
-def get_space_service(session: DbSession) -> SpaceService:
-    return SpaceService(session)
+def get_space_service(
+    session: DbSession, client: ClientInfoDep, impersonator: Impersonator
+) -> SpaceService:
+    # Request origin and impersonator ride along so every space mutation
+    # lands in the audit trail with the same attribution as user changes.
+    return SpaceService(session, client=client, impersonator=impersonator)
 
 
 SpaceServiceDep = Annotated[SpaceService, Depends(get_space_service)]
@@ -167,6 +173,29 @@ async def add_favorite(key: str, user: CurrentUser, service: SpaceServiceDep) ->
 async def remove_favorite(key: str, user: CurrentUser, service: SpaceServiceDep) -> None:
     space = await service.get_by_key(key)
     await service.set_favorite(space, user, False)
+
+
+@router.get("/{key}/watch", response_model=SpaceWatchRead, summary="Get space watch status")
+async def get_space_watch(
+    key: str,
+    user: CurrentUser,
+    service: SpaceServiceDep,
+) -> SpaceWatchRead:
+    space = await service.get_by_key(key)
+    await service.require_view(space, user)
+    return await service.get_watch(space, user)
+
+
+@router.put("/{key}/watch", response_model=SpaceWatchRead, summary="Update space watch status")
+async def update_space_watch(
+    key: str,
+    payload: SpaceWatchUpdate,
+    user: CurrentUser,
+    service: SpaceServiceDep,
+) -> SpaceWatchRead:
+    space = await service.get_by_key(key)
+    await service.require_view(space, user)
+    return await service.set_watch(space, user, payload)
 
 
 # -- membership --------------------------------------------------------------
@@ -353,10 +382,14 @@ async def effective_permissions(
     "/{key}/permissions/users/{user_id}/{permission}", status_code=status.HTTP_204_NO_CONTENT
 )
 async def grant_user_permission(
-    key: str, user_id: uuid.UUID, permission: Permission, user: CurrentUser, session: DbSession
+    key: str,
+    user_id: uuid.UUID,
+    permission: Permission,
+    user: CurrentUser,
+    service: SpaceServiceDep,
 ) -> None:
-    space = await SpaceService(session).get_by_key(key)
-    await PermissionService(session).set_space_permission(
+    space = await service.get_by_key(key)
+    await service.permissions.set_space_permission(
         space, user_id, permission, user, group=False, present=True
     )
 
@@ -365,10 +398,14 @@ async def grant_user_permission(
     "/{key}/permissions/users/{user_id}/{permission}", status_code=status.HTTP_204_NO_CONTENT
 )
 async def revoke_user_permission(
-    key: str, user_id: uuid.UUID, permission: Permission, user: CurrentUser, session: DbSession
+    key: str,
+    user_id: uuid.UUID,
+    permission: Permission,
+    user: CurrentUser,
+    service: SpaceServiceDep,
 ) -> None:
-    space = await SpaceService(session).get_by_key(key)
-    await PermissionService(session).set_space_permission(
+    space = await service.get_by_key(key)
+    await service.permissions.set_space_permission(
         space, user_id, permission, user, group=False, present=False
     )
 
@@ -377,10 +414,14 @@ async def revoke_user_permission(
     "/{key}/permissions/groups/{group_id}/{permission}", status_code=status.HTTP_204_NO_CONTENT
 )
 async def grant_group_permission(
-    key: str, group_id: uuid.UUID, permission: Permission, user: CurrentUser, session: DbSession
+    key: str,
+    group_id: uuid.UUID,
+    permission: Permission,
+    user: CurrentUser,
+    service: SpaceServiceDep,
 ) -> None:
-    space = await SpaceService(session).get_by_key(key)
-    await PermissionService(session).set_space_permission(
+    space = await service.get_by_key(key)
+    await service.permissions.set_space_permission(
         space, group_id, permission, user, group=True, present=True
     )
 
@@ -389,9 +430,13 @@ async def grant_group_permission(
     "/{key}/permissions/groups/{group_id}/{permission}", status_code=status.HTTP_204_NO_CONTENT
 )
 async def revoke_group_permission(
-    key: str, group_id: uuid.UUID, permission: Permission, user: CurrentUser, session: DbSession
+    key: str,
+    group_id: uuid.UUID,
+    permission: Permission,
+    user: CurrentUser,
+    service: SpaceServiceDep,
 ) -> None:
-    space = await SpaceService(session).get_by_key(key)
-    await PermissionService(session).set_space_permission(
+    space = await service.get_by_key(key)
+    await service.permissions.set_space_permission(
         space, group_id, permission, user, group=True, present=False
     )

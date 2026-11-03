@@ -38,6 +38,17 @@ class PageRevisionRepository:
         res = (await self.session.execute(stmt)).scalar_one_or_none()
         return int(res) if res is not None else 0
 
+    async def count_by_pages(self, page_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, int]:
+        """How many versions each page has; a page with none is left out."""
+        if not page_ids:
+            return {}
+        stmt = (
+            select(PageRevision.page_id, func.count())
+            .where(PageRevision.page_id.in_(list(page_ids)))
+            .group_by(PageRevision.page_id)
+        )
+        return {page_id: int(count) for page_id, count in await self.session.execute(stmt)}
+
     def add(self, revision: PageRevision) -> PageRevision:
         self.session.add(revision)
         return revision

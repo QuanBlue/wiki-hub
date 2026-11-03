@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Avatar } from "@/components/ui/avatar";
 import { clearStoredChats } from "@/lib/ai-chat";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -107,23 +108,15 @@ export function SwitchAccountMenu({
   );
   const hasQuery = searchQuery.trim().length > 0;
 
-  const avatarStyle = (user: User) =>
-    user.avatar_url
-      ? { backgroundImage: `url(${user.avatar_url})`, backgroundSize: "cover" }
-      : undefined;
-  const initials = (user: User) =>
-    (user.full_name.trim() || user.username).slice(0, 1).toUpperCase();
-
   return (
     <div className="p-2">
       <div className="flex items-center gap-3 rounded-lg px-2 py-1.5">
-        <span
-          aria-hidden
-          className="bg-primary text-primary-foreground flex size-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-          style={avatarStyle(currentUser)}
-        >
-          {currentUser.avatar_url ? null : initials(currentUser)}
-        </span>
+        <Avatar
+          username={currentUser.username}
+          name={currentUser.full_name}
+          src={currentUser.avatar_url}
+          className="size-10 text-sm"
+        />
         <span className="min-w-0 flex-1">
           <span
             className="block truncate text-sm font-semibold"
@@ -269,12 +262,12 @@ export function SwitchAccountMenu({
                             switching === user.id && "bg-surface-selected",
                           )}
                         >
-                          <span
-                            className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                            style={avatarStyle(user)}
-                          >
-                            {user.avatar_url ? null : initials(user)}
-                          </span>
+                          <Avatar
+                            username={user.username}
+                            name={user.full_name}
+                            src={user.avatar_url}
+                            className="size-7 text-xs"
+                          />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-xs font-medium text-foreground">
                               {user.full_name || user.username}

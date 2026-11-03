@@ -1,6 +1,7 @@
 import { queryString, serverGet } from "@/lib/server-api";
 import type {
   AdminAccount,
+  AuditLogEntry,
   Page,
   SiteSettings,
   StatsAi,
@@ -95,4 +96,42 @@ export function getStatsTopSpaces(
   return serverGet<StatsTopContent>(
     `/api/v1/admin/statistics/top-spaces${queryString({ range, sort })}`,
   );
+}
+
+export interface AuditLogQuery {
+  q?: string;
+  action?: string;
+  entity_type?: string;
+  actor_username?: string;
+  actor_id?: string;
+  entity_id?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function listAuditLogs(query: AuditLogQuery = {}): Promise<Page<AuditLogEntry>> {
+  return serverGet<Page<AuditLogEntry>>(
+    `/api/v1/audit-logs${queryString({
+      q: query.q,
+      action: query.action,
+      entity_type: query.entity_type,
+      actor_username: query.actor_username,
+      actor_id: query.actor_id,
+      entity_id: query.entity_id,
+      since: query.since,
+      until: query.until,
+      limit: query.limit ?? 50,
+      offset: query.offset ?? 0,
+    })}`,
+  );
+}
+
+export function listAuditActions(): Promise<string[]> {
+  return serverGet<string[]>("/api/v1/audit-logs/actions");
+}
+
+export function listAuditActors(): Promise<string[]> {
+  return serverGet<string[]>("/api/v1/audit-logs/actors");
 }

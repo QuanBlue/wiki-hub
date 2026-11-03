@@ -23,7 +23,7 @@ from app.models.draft import PageDraft
 from app.models.import_job import ImportArchive, ImportJob, ImportLog
 from app.models.issue import Issue, IssueAttachment, IssueNote, IssueStatus
 from app.models.notification import Notification
-from app.models.page import PageLike, UserPagePin, WikiPage
+from app.models.page import PageLike, PageWatch, UserPagePin, WikiPage
 from app.models.page_graph import PageGraphState, PageLink
 from app.models.page_review import PageReview
 from app.models.permission import (
@@ -42,7 +42,7 @@ from app.models.restriction import (
     PageUserRestriction,
 )
 from app.models.revision import PageRevision
-from app.models.share import PageShare
+from app.models.share import PageShare, PublicPageShare
 from app.models.site_settings import SINGLETON_ID, SiteSettings
 from app.models.space import (
     Space,
@@ -52,6 +52,7 @@ from app.models.space import (
     SpaceStatus,
     SpaceVisibility,
     SpaceVisit,
+    SpaceWatch,
 )
 from app.models.stats import AiUsage, ContentViewDaily, UserActivityDaily
 from app.models.user import User
@@ -105,7 +106,9 @@ __all__ = [
     "PageRevision",
     "PageShare",
     "PageUserRestriction",
+    "PageWatch",
     "Permission",
+    "PublicPageShare",
     "SiteSettings",
     "Space",
     "SpaceFavorite",
@@ -116,6 +119,7 @@ __all__ = [
     "SpaceUserPermission",
     "SpaceVisibility",
     "SpaceVisit",
+    "SpaceWatch",
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
     "User",

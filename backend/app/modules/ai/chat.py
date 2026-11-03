@@ -228,9 +228,37 @@ def _history(turns: list[ChatMessage]) -> list[dict[str, str]]:
 
 
 def _last_questions(turns: list[ChatMessage]) -> str:
-    """The user's two latest questions: what is searched when a follow-up cannot be rewritten."""
+    """The user's two latest questions: what a bare follow-up is searched with."""
     asked = [prompt_text(t.content) for t in turns if t.role == "user"][-2:]
     return " ".join(asked)[-_QUERY_CHARS:].strip()
+
+
+#: Words a message leans on the earlier turns with ("and its address?", "còn cái đó thì sao?").
+_REFERS_BACK = re.compile(
+    r"\b(it|its|that|this|these|those|they|them|their|there|same|above|previous|other one"
+    r"|what about|how about)\b"
+    r"|(?<!\w)(nó|đó|này|ấy|kia|chúng|họ|như trên|ở trên|bên trên|thì sao|thế còn|vậy còn)(?!\w)",
+    re.IGNORECASE,
+)
+#: A message this short is taken for a follow-up ("why?", "bản windows?").
+_BARE_WORDS = 3
+
+
+def _refers_back(question: str) -> bool:
+    return len(question.split()) <= _BARE_WORDS or bool(_REFERS_BACK.search(question))
+
+
+def _fallback_query(earlier: list[ChatMessage], question: str) -> str:
+    """What is searched when a follow-up cannot be rewritten.
+
+    The question as typed, unless it leans on the earlier turns. Seen live: with the rewrite
+    timing out, "đổi pass trong chế độ rescure" asked after a question about Fortify SCA
+    reports was searched together with that question, found only Fortify pages, and was
+    answered about SCA reports.
+    """
+    if _refers_back(question):
+        return _last_questions([*earlier, ChatMessage(role="user", content=question or "?")])
+    return question[:_QUERY_CHARS].strip()
 
 
 def web_block(results: list[WebResult]) -> str:
@@ -1111,7 +1139,7 @@ class ChatService:
 
     async def _standalone(self, config: AIConfig, earlier: list[ChatMessage], question: str) -> str:
         """The question as a search would need it; the user's own words when that fails."""
-        fallback = _last_questions([*earlier, ChatMessage(role="user", content=question or "?")])
+        fallback = _fallback_query(earlier, question)
         lines = [
             f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
             for m in _history(earlier)
