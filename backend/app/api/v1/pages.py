@@ -470,6 +470,29 @@ async def page_presence_heartbeat(
     )
 
 
+@router.post(
+    "/{slug}/presence/leave",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Say you have left the page",
+)
+async def page_presence_leave(
+    key: str,
+    slug: str,
+    user: CurrentUser,
+    page_service: PageServiceDep,
+    space_service: SpaceServiceDep,
+) -> None:
+    """For clients that heartbeat over plain HTTP (no WebSocket to close).
+
+    Without this a person who navigates away stays listed until their last
+    heartbeat expires. No view permission is required: someone whose access was
+    just withdrawn must still be able to take themselves off the list.
+    """
+    space = await space_service.get_by_key(key)
+    page = await page_service.get_by_slug(space, slug)
+    await PresenceService.leave(page.id, user.id)
+
+
 @router.websocket("/{slug}/presence/ws")
 async def page_presence_websocket(
     websocket: WebSocket,
