@@ -75,7 +75,7 @@ async def test_auth_route_wrappers(monkeypatch: pytest.MonkeyPatch) -> None:
     session = Mock(execute=AsyncMock(), flush=AsyncMock())
     client = SimpleNamespace(ip="127.0.0.1", user_agent=None)
     result = await auth.login(
-        SimpleNamespace(username="Admin", password="password"),
+        SimpleNamespace(username="Admin", password="password", accept_privacy=False),
         request,
         response,
         service,
@@ -263,7 +263,9 @@ async def test_group_user_audit_and_meta_wrappers(monkeypatch: pytest.MonkeyPatc
                 allowed_attachment_types=[],
                 trash_retention_days=45,
                 announcement=None,
-                    public_shares_enabled=False,
+                login_panel=meta.LoginPanel(),
+                login_image_url=None,
+                public_shares_enabled=False,
             )
         ),
     )

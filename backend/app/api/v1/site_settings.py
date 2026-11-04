@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile
 
 from app.api.deps import ClientInfoDep, CurrentSuperuser, CurrentUser, DbSession, Impersonator
+from app.core.exceptions import BadRequestError, PayloadTooLargeError, UnsupportedMediaTypeError
 from app.schemas.site_settings import (
     AnnouncementRead,
     SidebarPermissionsRead,
@@ -14,8 +15,16 @@ from app.schemas.site_settings import (
     SiteSettingsUpdate,
 )
 from app.services.site_settings import SiteSettingsService
+from app.services.storage import ObjectStorage, S3ObjectStorage
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+LOGIN_IMAGE_EXTENSIONS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+MAX_LOGIN_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def get_login_image_storage() -> ObjectStorage:
+    return S3ObjectStorage()
 
 
 def get_site_settings_service(session: DbSession) -> SiteSettingsService:
@@ -80,3 +89,43 @@ async def update_settings(
     """Partial update. Send an explicit ``null`` to reset a setting to its
     environment default."""
     return await service.update(payload)
+
+
+@router.post(
+    "/login-image",
+    response_model=SiteSettingsRead,
+    summary="Upload the sign-in page illustration",
+)
+async def upload_login_image(
+    file: UploadFile,
+    service: ActingSiteSettingsServiceDep,
+    _admin: CurrentSuperuser,
+    storage: ObjectStorage = Depends(get_login_image_storage),
+) -> SiteSettingsRead:
+    content_type = (file.content_type or "").lower()
+    if content_type not in LOGIN_IMAGE_EXTENSIONS:
+        raise UnsupportedMediaTypeError("The illustration must be a JPEG, PNG or WebP image.")
+    data = await file.read(MAX_LOGIN_IMAGE_BYTES + 1)
+    if len(data) > MAX_LOGIN_IMAGE_BYTES:
+        raise PayloadTooLargeError("The illustration must be 5 MB or smaller.")
+    if not data:
+        raise BadRequestError("The illustration is empty.")
+    return await service.set_login_image(
+        storage,
+        data=data,
+        content_type=content_type,
+        extension=LOGIN_IMAGE_EXTENSIONS[content_type],
+    )
+
+
+@router.delete(
+    "/login-image",
+    response_model=SiteSettingsRead,
+    summary="Remove the uploaded sign-in page illustration",
+)
+async def delete_login_image(
+    service: ActingSiteSettingsServiceDep,
+    _admin: CurrentSuperuser,
+    storage: ObjectStorage = Depends(get_login_image_storage),
+) -> SiteSettingsRead:
+    return await service.clear_login_image(storage)

@@ -717,6 +717,24 @@
   "text": "<>\nA system announcement is a banner shown to every signed-in user, useful for planned\nmaintenance or an incident. Set it under\nAdministration → Settings → System Announcement.\nLevel sets the colour and urgency: Information,\nWarning, Critical / Urgent or\nCompleted / Resolved.\nTitle and message: a short title and a formatted message, with a live\npreview of the banner.\nSchedule: when it starts, and when it ends: after 1 hour, 4 hours, 1\nday, 3 days, 7 days, or no expiry.\nDismissible: lets each person close it for themselves. It does not\ncome back for them until you publish a different announcement.\nSwitch the announcement off to remove the banner for everyone at once. Each change is\nrecorded in the Audit logs as System announcement updated.\n),\n},"
  },
  {
+  "id": "login-page-panel",
+  "title": "Customize the sign-in page",
+  "category": "Administration",
+  "keywords": [
+   "sign-in page",
+   "login page",
+   "login panel",
+   "welcome",
+   "headline",
+   "tagline",
+   "illustration",
+   "image",
+   "branding",
+   "customize"
+  ],
+  "text": "<>\nThe left side of the sign-in page can show your own message instead of the default one.\nOpen Administration → Settings → Sign-in page.\nLanguage: switch between English and\nTiếng Việt and edit each one separately. A field you leave empty keeps\nthe default text for that language, so people never see text meant for another one.\nText: the small line above the headline, the headline, the\ndescription and the footer line. A counter shows how much room is left.\nFeature blurbs: the three boxes under the picture each have a title\nand a description, and can be switched off. At least one must stay on.\nIllustration: upload your own image (JPEG, PNG or WebP, up to 5 MB;\nwide images around 16:9 fit best), go back to the default image, or turn the\nillustration off. Uploads apply straight away; text changes need Save.\nLive preview on the right shows the panel as you type, in the\nlanguage you are editing.\nReset this language sends all the text of the language you are editing\nback to the default (after you confirm and save). The panel colour always follows your\ntheme colour under Theme & Branding.\n),\n},"
+ },
+ {
   "id": "permissions-overview",
   "title": "Permissions & Roles Reference",
   "category": "Administration",

@@ -24,6 +24,68 @@ def _strip_empty_html(value: str) -> str:
     return text
 
 
+def _blank_to_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+class LoginPanelFeature(BaseModel):
+    """One of the three feature blurbs on the sign-in page."""
+
+    enabled: bool = True
+    title: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=240)
+
+    @field_validator("title", "description")
+    @classmethod
+    def _clean(cls, value: str | None) -> str | None:
+        return _blank_to_none(value)
+
+
+def _three_blank_features() -> list[LoginPanelFeature]:
+    return [LoginPanelFeature() for _ in range(3)]
+
+
+class LoginPanelCopy(BaseModel):
+    """Sign-in page text for one language. ``None`` = the built-in default."""
+
+    tagline: str | None = Field(default=None, max_length=120)
+    headline: str | None = Field(default=None, max_length=160)
+    subheading: str | None = Field(default=None, max_length=600)
+    footer: str | None = Field(default=None, max_length=200)
+    features: list[LoginPanelFeature] = Field(default_factory=_three_blank_features)
+
+    @field_validator("tagline", "headline", "subheading", "footer")
+    @classmethod
+    def _clean(cls, value: str | None) -> str | None:
+        return _blank_to_none(value)
+
+    @field_validator("features")
+    @classmethod
+    def _three_features(cls, value: list[LoginPanelFeature]) -> list[LoginPanelFeature]:
+        if len(value) != 3:
+            raise ValueError("The sign-in panel has exactly three feature blurbs.")
+        return value
+
+
+class LoginPanel(BaseModel):
+    """Administrator copy for the left panel of the sign-in page."""
+
+    en: LoginPanelCopy = Field(default_factory=LoginPanelCopy)
+    vi: LoginPanelCopy = Field(default_factory=LoginPanelCopy)
+    #: Hide the illustration entirely (instead of showing the default or upload).
+    hide_image: bool = False
+
+    @model_validator(mode="after")
+    def _keep_one_feature(self) -> LoginPanel:
+        for copy in (self.en, self.vi):
+            if not any(feature.enabled for feature in copy.features):
+                raise ValueError("Keep at least one feature blurb enabled.")
+        return self
+
+
 class SystemAnnouncement(BaseModel):
     """Top-of-page system announcement banner configured by an administrator."""
 
@@ -161,6 +223,7 @@ class SiteSettingsOverrides(BaseModel):
     allowed_attachment_types: list[str] | None = None
     sidebar_permissions: SidebarPermissions | None = None
     announcement: SystemAnnouncement | None = None
+    login_panel: LoginPanel | None = None
     session_ttl_hours: int | None = None
     trash_retention_days: int | None = None
     public_shares_enabled: bool | None = None
@@ -181,6 +244,9 @@ class EffectiveSettings(BaseModel):
     allowed_attachment_types: list[str]
     sidebar_permissions: SidebarPermissions
     announcement: SystemAnnouncement = Field(default_factory=SystemAnnouncement)
+    login_panel: LoginPanel = Field(default_factory=LoginPanel)
+    #: Public URL of the uploaded sign-in illustration, ``None`` if there is none.
+    login_image_url: str | None = None
     session_ttl_hours: int
     trash_retention_days: int
     public_shares_enabled: bool = True
@@ -224,6 +290,7 @@ class SiteSettingsUpdate(BaseModel):
     allowed_attachment_types: list[str] | None = Field(default=None, max_length=100)
     sidebar_permissions: SidebarPermissions | None = None
     announcement: SystemAnnouncement | None = None
+    login_panel: LoginPanel | None = None
     session_ttl_hours: int | None = Field(default=None, ge=1, le=8760)
     trash_retention_days: int | None = Field(default=None, ge=1, le=3650)
     public_shares_enabled: bool | None = None

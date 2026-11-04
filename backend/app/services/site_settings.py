@@ -14,6 +14,7 @@ document the staleness window here.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -27,6 +28,7 @@ from app.models.user import User
 from app.schemas.site_settings import (
     AnnouncementRead,
     EffectiveSettings,
+    LoginPanel,
     SidebarPermissions,
     SidebarPermissionsRead,
     SiteSettingsOverrides,
@@ -35,6 +37,7 @@ from app.schemas.site_settings import (
     SystemAnnouncement,
 )
 from app.services.audit import AuditService, ClientInfo
+from app.services.storage import ObjectStorage
 
 logger = get_logger(__name__)
 
@@ -50,6 +53,7 @@ AUDITED_FIELDS = (
     "allowed_attachment_types",
     "sidebar_permissions",
     "announcement",
+    "login_panel",
     "session_ttl_hours",
     "trash_retention_days",
     "public_shares_enabled",
@@ -128,6 +132,18 @@ class SiteSettingsService:
             if announcement_raw is not None
             else SystemAnnouncement()
         )
+        login_panel_raw = getattr(row, "login_panel", None)
+        login_panel = (
+            LoginPanel.model_validate(login_panel_raw)
+            if login_panel_raw is not None
+            else LoginPanel()
+        )
+        image_updated_at = getattr(row, "login_image_updated_at", None)
+        login_image_url = (
+            f"{settings.api_v1_prefix}/meta/login-image?v={int(image_updated_at.timestamp())}"
+            if getattr(row, "login_image_object_key", None) and image_updated_at is not None
+            else None
+        )
         session_ttl_hours = getattr(row, "session_ttl_hours", None) or (
             settings.access_token_ttl_seconds // 3600
         )
@@ -144,6 +160,8 @@ class SiteSettingsService:
             allowed_attachment_types=list(types),
             sidebar_permissions=sidebar_permissions,
             announcement=announcement,
+            login_panel=login_panel,
+            login_image_url=login_image_url,
             session_ttl_hours=session_ttl_hours,
             trash_retention_days=(
                 getattr(row, "trash_retention_days", None) or DEFAULT_TRASH_RETENTION_DAYS
@@ -168,6 +186,57 @@ class SiteSettingsService:
             effective=self._effective(row),
             updated_at=row.updated_at if row else None,
             updated_by_username=updated_by,
+        )
+
+    async def read_login_image(self, storage: ObjectStorage) -> tuple[bytes, str] | None:
+        """The uploaded sign-in illustration and its content type, if any."""
+        row = await self._get_row()
+        key = getattr(row, "login_image_object_key", None)
+        if row is None or not key:
+            return None
+        return await storage.get(key), row.login_image_content_type or "image/png"
+
+    async def set_login_image(
+        self, storage: ObjectStorage, *, data: bytes, content_type: str, extension: str
+    ) -> SiteSettingsRead:
+        row = await self._get_row()
+        if row is None:
+            row = SiteSettings(id=SINGLETON_ID)
+            self.session.add(row)
+            await self.session.flush()
+        key = f"site/login/{uuid.uuid4()}.{extension}"
+        await storage.put(key, data, content_type=content_type)
+        old_key = row.login_image_object_key
+        row.login_image_object_key = key
+        row.login_image_content_type = content_type
+        row.login_image_updated_at = datetime.now(UTC)
+        if self.actor is not None:
+            row.updated_by_id = self.actor.id
+        await self.session.flush()
+        if old_key and old_key != key:
+            await storage.delete(old_key)
+        await self._audit_login_image("uploaded")
+        return await self.read()
+
+    async def clear_login_image(self, storage: ObjectStorage) -> SiteSettingsRead:
+        row = await self._get_row()
+        if row is not None and row.login_image_object_key:
+            await storage.delete(row.login_image_object_key)
+            row.login_image_object_key = None
+            row.login_image_content_type = None
+            row.login_image_updated_at = None
+            if self.actor is not None:
+                row.updated_by_id = self.actor.id
+            await self.session.flush()
+            await self._audit_login_image("removed")
+        return await self.read()
+
+    async def _audit_login_image(self, what: str) -> None:
+        await self.audit.record(
+            AuditAction.site_settings_updated,
+            entity_type="site_settings",
+            entity_label="Site settings",
+            details={"changes": {"login_image": what}},
         )
 
     async def update(self, payload: SiteSettingsUpdate) -> SiteSettingsRead:

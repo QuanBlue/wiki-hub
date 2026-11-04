@@ -812,6 +812,22 @@
   "text": "<>\nThông báo hệ thống là một biểu ngữ hiện cho mọi người dùng đã đăng nhập, hữu ích khi có bảo\ntrì theo kế hoạch hay một sự cố. Thiết lập tại\nQuản trị → Cài đặt → System Announcement.\nMức độ quyết định màu và độ khẩn: Information (thông\ntin), Warning (cảnh báo), Critical / Urgent (khẩn cấp)\nhoặc Completed / Resolved (đã xong).\nTiêu đề và nội dung: một tiêu đề ngắn và nội dung có định dạng, có xem\ntrước biểu ngữ ngay lúc soạn.\nLịch: bắt đầu khi nào, và kết thúc khi nào: sau 1 giờ, 4 giờ, 1 ngày, 3\nngày, 7 ngày, hoặc không giới hạn.\nCó thể đóng: cho phép mỗi người tự đóng biểu ngữ cho mình. Nó không hiện\nlại với họ cho đến khi bạn đăng một thông báo khác.\nTắt thông báo để gỡ biểu ngữ cho mọi người cùng lúc. Mỗi thay đổi được ghi vào\nNhật ký kiểm toán dưới tên System announcement updated.\n),\n},"
  },
  {
+  "id": "login-page-panel",
+  "title": "Tuỳ chỉnh trang đăng nhập",
+  "category": "Administration",
+  "keywords": [
+   "trang đăng nhập",
+   "login",
+   "panel bên trái",
+   "tiêu đề",
+   "ảnh minh hoạ",
+   "hình ảnh",
+   "thương hiệu",
+   "tuỳ chỉnh"
+  ],
+  "text": "<>\nPhần bên trái của trang đăng nhập có thể hiển thị nội dung của riêng bạn thay cho nội\ndung mặc định. Vào Quản trị → Cài đặt → Trang đăng nhập.\nNgôn ngữ: chuyển giữa English và\nTiếng Việt và chỉnh riêng từng ngôn ngữ. Ô để trống sẽ dùng chữ mặc\nđịnh của ngôn ngữ đó, nên không ai thấy chữ của ngôn ngữ khác.\nChữ: dòng nhỏ phía trên tiêu đề, tiêu đề, mô tả và dòng chân trang.\nBộ đếm cho biết còn bao nhiêu ký tự.\nBa ô tính năng: ba ô bên dưới ảnh, mỗi ô có tiêu đề và mô tả, và có\nthể tắt từng ô. Phải giữ bật ít nhất một ô.\nẢnh minh hoạ: tải ảnh của bạn lên (JPEG, PNG hoặc WebP, tối đa 5 MB;\nảnh ngang khoảng 16:9 hiển thị đẹp nhất), quay về ảnh mặc định, hoặc tắt ảnh. Ảnh áp\ndụng ngay; phần chữ cần bấm Lưu.\nXem trước trực tiếp ở bên phải hiển thị panel khi bạn gõ, theo ngôn\nngữ đang chỉnh.\nĐặt lại ngôn ngữ này đưa toàn bộ chữ của ngôn ngữ đang chỉnh về mặc định\n(sau khi bạn xác nhận và lưu). Màu của panel luôn theo màu chủ đề trong\nGiao diện & Thương hiệu.\n),\n},"
+ },
+ {
   "id": "permissions-overview",
   "title": "Tra cứu Quyền & Vai trò",
   "category": "Administration",

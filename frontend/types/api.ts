@@ -111,6 +111,29 @@ export interface PageDraft {
   is_conflict: boolean;
 }
 
+/** One of the three feature blurbs on the sign-in page. `null` text = built-in default. */
+export interface LoginPanelFeature {
+  enabled: boolean;
+  title: string | null;
+  description: string | null;
+}
+
+/** Sign-in page copy for one language. `null` text = built-in default. */
+export interface LoginPanelCopy {
+  tagline: string | null;
+  headline: string | null;
+  subheading: string | null;
+  footer: string | null;
+  /** Always exactly three. */
+  features: LoginPanelFeature[];
+}
+
+export interface LoginPanel {
+  en: LoginPanelCopy;
+  vi: LoginPanelCopy;
+  hide_image: boolean;
+}
+
 export interface InstanceInfo {
   site_name: string;
   theme_color?: string;
@@ -124,6 +147,8 @@ export interface InstanceInfo {
   trash_retention_days?: number;
   public_shares_enabled?: boolean;
   announcement?: SystemAnnouncement | null;
+  login_panel?: LoginPanel;
+  login_image_url?: string | null;
   features: InstanceFeatures;
 }
 
@@ -777,6 +802,7 @@ export interface SiteSettingsOverrides {
   allowed_attachment_types: string[] | null;
   sidebar_permissions: SidebarPermissions | null;
   announcement?: SystemAnnouncement | null;
+  login_panel?: LoginPanel | null;
   session_ttl_hours: number | null;
   trash_retention_days: number | null;
   public_shares_enabled?: boolean | null;
@@ -795,6 +821,8 @@ export interface EffectiveSettings {
   allowed_attachment_types: string[];
   sidebar_permissions: SidebarPermissions;
   announcement?: SystemAnnouncement;
+  login_panel?: LoginPanel;
+  login_image_url?: string | null;
   session_ttl_hours: number;
   trash_retention_days: number;
   public_shares_enabled?: boolean;

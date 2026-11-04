@@ -59,6 +59,7 @@ import {
   Type,
   User,
   Users,
+  LogIn,
   Volume2,
   X,
   type LucideIcon,
@@ -68,12 +69,14 @@ import {
   useState,
   useRef,
   useEffect,
+  useMemo,
   type FormEvent,
   type ChangeEvent,
   type CSSProperties,
 } from "react";
 import { toast } from "sonner";
 
+import { emptyLoginPanel } from "@/lib/login-panel";
 import { LogoMark, Wordmark } from "@/components/brand/logo";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { useTranslation } from "@/lib/i18n/context";
@@ -92,6 +95,7 @@ import {
 import { FontPicker } from "@/components/admin/font-picker";
 import { FontSpecimenModal } from "@/components/admin/font-specimen-modal";
 import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
+import { LoginPanelSettings } from "@/components/admin/login-panel-settings";
 import { RichTextEditor } from "@/components/pages/rich-text-editor";
 import { api, ApiError } from "@/lib/api-client";
 import {
@@ -109,6 +113,7 @@ import { cn } from "@/lib/utils";
 import type {
   AnnouncementLevel,
   AppRole,
+  LoginPanel,
   SidebarPermissions,
   SiteSettings,
   SystemAnnouncement,
@@ -244,7 +249,7 @@ const ROLE_OPTIONS: Array<{
 ];
 
 const SETTINGS_TABS: Array<{
-  id: "appearance" | "general" | "sidebar" | "announcement";
+  id: "appearance" | "general" | "sidebar" | "announcement" | "login";
   labelEn: string;
   labelVi: string;
   icon: LucideIcon;
@@ -253,6 +258,7 @@ const SETTINGS_TABS: Array<{
   { id: "general", labelEn: "General & Sessions", labelVi: "Cấu hình chung & Phiên", icon: SlidersHorizontal },
   { id: "sidebar", labelEn: "Sidebar access", labelVi: "Phân quyền thanh bên", icon: ShieldCheck },
   { id: "announcement", labelEn: "System Announcement", labelVi: "Thông báo hệ thống", icon: Volume2 },
+  { id: "login", labelEn: "Sign-in page", labelVi: "Trang đăng nhập", icon: LogIn },
 ];
 
 const ANNOUNCEMENT_LEVEL_OPTIONS: Array<{
@@ -465,8 +471,22 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   );
   const [announcementEditorKey, setAnnouncementEditorKey] = useState(0);
 
+  const initialLoginPanel = useMemo<LoginPanel>(
+    () => settings.overrides.login_panel ?? settings.effective.login_panel ?? emptyLoginPanel(),
+    [settings.overrides.login_panel, settings.effective.login_panel],
+  );
+  const [loginPanel, setLoginPanel] = useState<LoginPanel>(initialLoginPanel);
+  const [loginImageUrl, setLoginImageUrl] = useState<string | null>(
+    settings.effective.login_image_url ?? null,
+  );
+  const loginPanelChanged = JSON.stringify(loginPanel) !== JSON.stringify(initialLoginPanel);
+  // After a save the server returns the normalised copy (trimmed, blanks to null).
+  useEffect(() => {
+    setLoginPanel(initialLoginPanel);
+  }, [initialLoginPanel]);
+
   const [activeTab, setActiveTab] = useState<
-    "appearance" | "general" | "sidebar" | "announcement"
+    "appearance" | "general" | "sidebar" | "announcement" | "login"
   >("appearance");
 
   useEffect(() => {
@@ -477,7 +497,8 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
         tabParam === "general" ||
         tabParam === "sidebar" ||
         tabParam === "appearance" ||
-        tabParam === "announcement"
+        tabParam === "announcement" ||
+        tabParam === "login"
       ) {
         setActiveTab(tabParam);
       }
@@ -600,6 +621,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
       custom_logo_url: customLogoUrl || null,
       sidebar_permissions: sidebarPermissions,
       announcement: announcementPayload,
+      login_panel: loginPanel,
       session_ttl_hours: sessionTtlHours.trim()
         ? Number(sessionTtlHours)
         : null,
@@ -2248,6 +2270,27 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                   </div>
                 </div>
               </div>
+            </section>
+
+            {/* Card 5: Sign-in page (left showcase panel) */}
+            <section
+              id="login-settings"
+              role="tabpanel"
+              className={cn(activeTab !== "login" && "hidden")}
+            >
+              {/* Mounted only while open: its preview is heavy and the form state lives here. */}
+              {activeTab === "login" ? (
+                <LoginPanelSettings
+                  value={loginPanel}
+                  onChange={setLoginPanel}
+                  imageUrl={loginImageUrl}
+                  onImageUrlChange={setLoginImageUrl}
+                  hasUploadedImage={loginImageUrl !== null}
+                  siteName={siteName.trim() || settings.effective.site_name}
+                  pending={pending}
+                  dirty={loginPanelChanged}
+                />
+              ) : null}
             </section>
 
             {/* Error alert */}

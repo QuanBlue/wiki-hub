@@ -770,3 +770,58 @@ describe("SiteSettingsForm announcement tab", () => {
     expect(screen.getAllByText("Đang tắt").length).toBeGreaterThan(0);
   });
 });
+
+describe("SiteSettingsForm sign-in page tab", () => {
+  it("edits the sign-in panel and saves it with the other settings", async () => {
+    mocked.patch.mockResolvedValue(makeSettings());
+    const actor = renderForm();
+    await openTab(actor, /Sign-in page/);
+
+    // The announcement tab (hidden, but in the DOM) has its own Save, so scope to this panel.
+    const save = () => within(panel("login-settings")).getByRole("button", { name: "Save" });
+    expect(save()).toBeDisabled(); // nothing changed yet
+    await actor.type(screen.getByLabelText("Headline"), "Welcome to Acme");
+    await actor.click(screen.getByRole("switch", { name: "Blurb 3" }));
+    await actor.click(screen.getByRole("switch", { name: "Show an illustration" }));
+
+    await actor.click(save());
+    await waitFor(() => {
+      expect(mocked.patch).toHaveBeenCalledWith(
+        "/api/v1/settings",
+        expect.objectContaining({
+          login_panel: expect.objectContaining({
+            hide_image: true,
+            en: expect.objectContaining({
+              headline: "Welcome to Acme",
+              features: [
+                expect.objectContaining({ enabled: true }),
+                expect.objectContaining({ enabled: true }),
+                expect.objectContaining({ enabled: false }),
+              ],
+            }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it("starts from the stored copy and the uploaded image", async () => {
+    const stored = {
+      en: { tagline: null, headline: "Stored headline", subheading: null, footer: null, features: [1, 2, 3].map(() => ({ enabled: true, title: null, description: null })) },
+      vi: { tagline: null, headline: null, subheading: null, footer: null, features: [1, 2, 3].map(() => ({ enabled: true, title: null, description: null })) },
+      hide_image: false,
+    };
+    const actor = renderForm(
+      makeSettings({ login_panel: stored }, { login_panel: stored, login_image_url: "/api/v1/meta/login-image?v=1" }),
+    );
+    await openTab(actor, /Sign-in page/);
+    expect(screen.getByLabelText("Headline")).toHaveValue("Stored headline");
+    expect(screen.getByRole("button", { name: "Replace image" })).toBeInTheDocument();
+  });
+
+  it("is also reachable from the Vietnamese UI", async () => {
+    const actor = renderForm(makeSettings(), "vi");
+    await openTab(actor, /Trang đăng nhập/);
+    expect(screen.getByLabelText("Tiêu đề")).toBeInTheDocument();
+  });
+});

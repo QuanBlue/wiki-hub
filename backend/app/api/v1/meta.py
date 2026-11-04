@@ -10,15 +10,16 @@ sends the UI to a dead end and makes the endpoint worse than useless.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.v1.site_settings import SiteSettingsServiceDep
+from app.api.v1.site_settings import SiteSettingsServiceDep, get_login_image_storage
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.schemas.site_settings import SystemAnnouncement
+from app.schemas.site_settings import LoginPanel, SystemAnnouncement
 from app.services.site_settings import SiteSettingsService
+from app.services.storage import ObjectStorage
 
 logger = get_logger(__name__)
 
@@ -54,6 +55,10 @@ class InstanceInfo(BaseModel):
     public_shares_enabled: bool = True
     #: Active announcement shown on public pages (/login, /contact-admin) when enabled.
     announcement: SystemAnnouncement | None = None
+    #: Administrator copy for the sign-in page's left panel (per language).
+    login_panel: LoginPanel = LoginPanel()
+    #: Public URL of the uploaded sign-in illustration, if one was uploaded.
+    login_image_url: str | None = None
     features: InstanceFeatures
 
 
@@ -89,6 +94,8 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
         allowed_attachment_types=effective.allowed_attachment_types,
         trash_retention_days=effective.trash_retention_days,
         public_shares_enabled=effective.public_shares_enabled,
+        login_panel=effective.login_panel,
+        login_image_url=effective.login_image_url,
         announcement=(
             effective.announcement
             if effective.announcement is not None
@@ -110,4 +117,21 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
             imports=["confluence"],
             exports=["pdf", "html", "docx"],
         ),
+    )
+
+
+@router.get("/login-image", summary="The sign-in page illustration (public)")
+async def read_login_image(
+    service: SiteSettingsServiceDep,
+    storage: ObjectStorage = Depends(get_login_image_storage),
+) -> Response:
+    """Public: the sign-in page is shown before anyone is authenticated."""
+    found = await service.read_login_image(storage)
+    if found is None:
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+    data, content_type = found
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
     )
