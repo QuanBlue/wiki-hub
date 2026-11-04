@@ -48,6 +48,9 @@ export function ConfirmDialog({
   pending?: boolean;
   onConfirm: () => void;
 }) {
+  const hasSecondary = Boolean(secondaryLabel && onSecondary);
+  const hasTertiary = Boolean(tertiaryLabel && onTertiary);
+
   return (
     <AlertDialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialogPrimitive.Portal>
@@ -60,8 +63,9 @@ export function ConfirmDialog({
         <AlertDialogPrimitive.Content
           className={cn(
             "border-border bg-surface fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem)]",
-            // Four actions need more room than two, or the row wraps.
-            tertiaryLabel && onTertiary ? "max-w-xl" : "max-w-md",
+            // Three or four actions need more room than two, or the last one
+            // drops onto a line of its own.
+            hasSecondary || hasTertiary ? "max-w-xl" : "max-w-md",
             "-translate-x-1/2 -translate-y-1/2 rounded-lg border p-5 shadow-lg",
           )}
         >
@@ -82,10 +86,7 @@ export function ConfirmDialog({
                 }}
                 // The "leave" escape hatch sits apart on the left; the
                 // remaining actions group on the right.
-                className={cn(
-                  buttonVariants({ variant: "ghost" }),
-                  tertiaryLabel && onTertiary && "sm:mr-auto",
-                )}
+                className={cn(buttonVariants({ variant: "ghost" }), "sm:mr-auto")}
               >
                 {secondaryLabel}
               </AlertDialogPrimitive.Action>

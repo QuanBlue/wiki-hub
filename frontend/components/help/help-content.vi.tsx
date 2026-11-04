@@ -2580,6 +2580,13 @@ export const sectionsVi: HelpSection[] = [
             hội.
           </li>
           <li>Kiểm tra trường dữ liệu đưa phản hồi tức thì về lỗi định dạng hay yêu cầu.</li>
+          <li>
+            Nếu có thay đổi chưa lưu mà bạn rời đi (nhấn <strong>Cancel</strong>, chuyển sang tab
+            cài đặt khác, hoặc bấm liên kết sang trang khác), WikiHub sẽ hỏi bạn muốn làm gì:{" "}
+            <strong>Lưu và rời đi</strong>, <strong>Rời đi mà không lưu</strong> hoặc{" "}
+            <strong>Tiếp tục chỉnh sửa</strong>. Nếu lưu không thành công, bạn ở lại biểu mẫu để
+            sửa lỗi.
+          </li>
         </ul>
 
         <p className="mt-4 font-semibold text-foreground">

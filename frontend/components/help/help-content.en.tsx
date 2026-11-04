@@ -2531,6 +2531,12 @@ export const sectionsEn: HelpSection[] = [
             image, bio, pronouns, company, and social links.
           </li>
           <li>Field validation provides instant feedback on format or requirement errors.</li>
+          <li>
+            If you have changes you have not saved and try to leave (<strong>Cancel</strong>,
+            another settings tab, or a link to another page), WikiHub asks what to do:{" "}
+            <strong>Save and leave</strong>, <strong>Leave without saving</strong>, or{" "}
+            <strong>Keep editing</strong>. If saving fails, you stay on the form so you can fix it.
+          </li>
         </ul>
 
         <p className="mt-4 font-semibold text-foreground">
