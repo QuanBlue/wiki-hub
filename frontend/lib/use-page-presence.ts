@@ -5,6 +5,9 @@ import { api } from "@/lib/api-client";
 import { apiBaseUrl } from "@/lib/env";
 import type { PageSavedEvent, PresenceHeartbeatResponse, PresenceUser } from "@/types/api";
 
+/** How often the HTTP fallback heartbeats and refreshes the list of viewers. */
+const POLL_INTERVAL_MS = 5000;
+
 interface UsePagePresenceOptions {
   spaceKey: string | null | undefined;
   pageSlug: string | null | undefined;
@@ -87,7 +90,19 @@ export function usePagePresence({
       };
 
       void poll();
-      fallbackPollInterval = setInterval(poll, 12000);
+      fallbackPollInterval = setInterval(poll, POLL_INTERVAL_MS);
+      window.addEventListener("pagehide", sendLeave);
+    }
+
+    // Plain-HTTP presence has no socket whose closing tells the server someone
+    // left, so say so explicitly - otherwise they stay listed until their last
+    // heartbeat expires. (A WebSocket closing already does this server-side.)
+    function sendLeave() {
+      if (!usePolling) return;
+      void fetch(
+        `/api/v1/spaces/${encodeURIComponent(spaceKey!)}/pages/${encodeURIComponent(pageSlug!)}/presence/leave`,
+        { method: "POST", keepalive: true, credentials: "same-origin" },
+      ).catch(() => undefined);
     }
 
     // Try WebSocket connection first
@@ -167,6 +182,8 @@ export function usePagePresence({
 
     return () => {
       active = false;
+      sendLeave();
+      window.removeEventListener("pagehide", sendLeave);
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (fallbackPollInterval) clearInterval(fallbackPollInterval);
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {

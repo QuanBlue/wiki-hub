@@ -141,6 +141,22 @@ async def test_watch_and_presence_http_routes_delegate_after_page_lookup() -> No
 
 
 @pytest.mark.asyncio
+async def test_presence_leave_route_removes_the_user_without_needing_view_access() -> None:
+    user, page, space, _factory = dependencies()
+    page_service = Mock(
+        get_by_slug=AsyncMock(return_value=page),
+        require_page_view=AsyncMock(side_effect=AssertionError("leaving must not need view access")),
+    )
+    space_service = Mock(get_by_key=AsyncMock(return_value=space))
+
+    with patch.object(pages.PresenceService, "leave", new_callable=AsyncMock) as leave:
+        result = await pages.page_presence_leave("ENG", "runbook", user, page_service, space_service)
+
+    assert result is None
+    leave.assert_awaited_once_with(page.id, user.id)
+
+
+@pytest.mark.asyncio
 async def test_websocket_forwards_redis_events_and_closes_subscription() -> None:
     user, page, space, factory = dependencies()
     message_sent = asyncio.Event()

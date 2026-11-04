@@ -145,4 +145,83 @@ describe("usePagePresence", () => {
     expect(saved).toHaveBeenCalledWith(expect.objectContaining({ saved_at: "t2" }));
     unmount();
   });
+
+  describe("telling the server you left", () => {
+    const leaveUrl = "/api/v1/spaces/ENG/pages/runbook/presence/leave";
+
+    it("says so when HTTP-polling presence ends, so others do not wait for it to expire", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("WebSocket", class { constructor() { throw new Error("unavailable"); } });
+      vi.mocked(api.post).mockResolvedValue({ users: [], page_updated_at: "t1" });
+      const { unmount } = renderHook(() =>
+        usePagePresence({ spaceKey: "ENG", pageSlug: "runbook", editing: false }),
+      );
+      await act(async () => { await Promise.resolve(); });
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      unmount();
+      expect(fetchMock).toHaveBeenCalledWith(
+        leaveUrl,
+        expect.objectContaining({ method: "POST", keepalive: true }),
+      );
+    });
+
+    it("also says so when the tab is closed or navigated away", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("WebSocket", class { constructor() { throw new Error("unavailable"); } });
+      vi.mocked(api.post).mockResolvedValue({ users: [], page_updated_at: "t1" });
+      const { unmount } = renderHook(() =>
+        usePagePresence({ spaceKey: "ENG", pageSlug: "runbook", editing: false }),
+      );
+      await act(async () => { await Promise.resolve(); });
+
+      window.dispatchEvent(new Event("pagehide"));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      unmount();
+    });
+
+    it("tells the old page, not the new one, when the person moves to another page", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("WebSocket", class { constructor() { throw new Error("unavailable"); } });
+      vi.mocked(api.post).mockResolvedValue({ users: [], page_updated_at: "t1" });
+      const { rerender, unmount } = renderHook(
+        ({ slug }) => usePagePresence({ spaceKey: "ENG", pageSlug: slug, editing: false }),
+        { initialProps: { slug: "runbook" } },
+      );
+      await act(async () => { await Promise.resolve(); });
+      rerender({ slug: "other" });
+
+      expect(fetchMock).toHaveBeenCalledWith(leaveUrl, expect.anything());
+      unmount();
+    });
+
+    it("leaves the leaving to the socket when a WebSocket is in use", () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const { unmount } = renderHook(() =>
+        usePagePresence({ spaceKey: "ENG", pageSlug: "runbook", editing: false }),
+      );
+      FakeSocket.instances[0]!.readyState = FakeSocket.OPEN;
+      act(() => FakeSocket.instances[0]!.onopen?.());
+      unmount();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("polls often enough to feel live", async () => {
+      vi.useFakeTimers();
+      vi.stubGlobal("WebSocket", class { constructor() { throw new Error("unavailable"); } });
+      vi.mocked(api.post).mockResolvedValue({ users: [bob], page_updated_at: "t1" });
+      const { unmount } = renderHook(() =>
+        usePagePresence({ spaceKey: "ENG", pageSlug: "runbook", editing: false }),
+      );
+      await act(async () => { await Promise.resolve(); });
+      const first = vi.mocked(api.post).mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(vi.mocked(api.post).mock.calls.length).toBe(first + 1);
+      unmount();
+    });
+  });
 });
