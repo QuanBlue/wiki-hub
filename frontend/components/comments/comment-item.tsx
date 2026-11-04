@@ -115,6 +115,7 @@ export function CommentItem({
           <UserProfileTrigger
             username={author.username}
             fullName={author.full_name}
+            avatarUrl={author.avatar_url}
             variant="avatar"
             className={cn(
               "shrink-0 self-start",

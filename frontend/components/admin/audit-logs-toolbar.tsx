@@ -480,6 +480,8 @@ export function AuditLogDetailsDialog({
                 <dd className="mt-0.5 flex items-center gap-1.5">
                   <UserProfileTrigger
                     username={entry.impersonator_username}
+                    fullName={entry.impersonator_full_name}
+                    avatarUrl={entry.impersonator_avatar_url}
                     variant="avatar"
                     className="size-4 text-[9px]"
                   />

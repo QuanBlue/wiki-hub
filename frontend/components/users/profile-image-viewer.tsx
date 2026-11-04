@@ -38,7 +38,7 @@ export function ProfileImageViewer({
           type="button"
           aria-label={label}
           className={cn(
-            "focus-visible:ring-ring block cursor-zoom-in transition-opacity hover:opacity-85 active:opacity-70 focus-visible:z-10 focus-visible:rounded-md focus-visible:ring-2 focus-visible:outline-none",
+            "focus-visible:ring-ring block cursor-zoom-in transition-[filter] duration-150 hover:brightness-90 active:brightness-75 focus-visible:z-10 focus-visible:rounded-md focus-visible:ring-2 focus-visible:outline-none",
             className,
           )}
         >

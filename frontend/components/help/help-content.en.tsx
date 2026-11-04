@@ -2530,6 +2530,13 @@ export const sectionsEn: HelpSection[] = [
             Click <strong>Edit profile</strong> to update display name, email, avatar
             image, bio, pronouns, company, and social links.
           </li>
+          <li>
+            Click your profile picture or cover image to choose{" "}
+            <strong>Upload new picture</strong> or <strong>Reposition</strong>. Reposition
+            reopens the picture you uploaded, so you can drag or zoom it again without
+            uploading it a second time. Pictures saved before this existed, or restored from a
+            backup, reposition from the cropped image instead.
+          </li>
           <li>Field validation provides instant feedback on format or requirement errors.</li>
           <li>
             If you have changes you have not saved and try to leave (<strong>Cancel</strong>,

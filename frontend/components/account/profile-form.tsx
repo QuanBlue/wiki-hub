@@ -1,12 +1,18 @@
 "use client";
 
-import { Link2, Loader2, Trash2, Upload, UserRound } from "lucide-react";
+import { Link2, Loader2, Move, Trash2, Upload, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { ImageCropDialog } from "@/components/account/image-crop-dialog";
+import { ImageCropDialog, type CropState } from "@/components/account/image-crop-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -33,6 +39,63 @@ function initials(name: string, username: string): string {
 
 function normalizeSocialLinks(links: string[]) {
   return [...links.slice(0, SOCIAL_SLOTS), ...Array(SOCIAL_SLOTS).fill("")].slice(0, SOCIAL_SLOTS);
+}
+
+/**
+ * A profile picture you can click: with a picture it opens "Upload new" /
+ * "Reposition", without one it goes straight to the file picker.
+ */
+function ImageActions({
+  label,
+  uploadLabel,
+  repositionLabel,
+  canReposition,
+  disabled,
+  onUpload,
+  onReposition,
+  className,
+  children,
+}: {
+  label: string;
+  uploadLabel: string;
+  repositionLabel: string;
+  canReposition: boolean;
+  disabled: boolean;
+  onUpload: () => void;
+  onReposition: () => void;
+  className: string;
+  children: ReactNode;
+}) {
+  const triggerClass = cn(
+    className,
+    "cursor-pointer transition-[filter] duration-150 hover:brightness-90 active:brightness-75 focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60",
+  );
+  if (!canReposition) {
+    return (
+      <button type="button" aria-label={uploadLabel} disabled={disabled} onClick={onUpload} className={triggerClass}>
+        {children}
+      </button>
+    );
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" aria-label={label} disabled={disabled} className={triggerClass}>
+          {children}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem onSelect={onUpload}>
+          <Upload className="size-4" aria-hidden />
+          {uploadLabel}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onReposition}>
+          <Move className="size-4" aria-hidden />
+          {repositionLabel}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export function ProfileForm({
@@ -72,7 +135,18 @@ export function ProfileForm({
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
   const [coverRemoved, setCoverRemoved] = useState(false);
-  const [cropTarget, setCropTarget] = useState<{ file: File; kind: "avatar" | "cover" } | null>(null);
+  // The uncropped picture behind a pending crop; null means "keep the one the server has".
+  const [avatarOriginal, setAvatarOriginal] = useState<File | null>(null);
+  const [avatarCrop, setAvatarCrop] = useState<CropState | null>(null);
+  const [coverOriginal, setCoverOriginal] = useState<File | null>(null);
+  const [coverCrop, setCoverCrop] = useState<CropState | null>(null);
+  const [cropTarget, setCropTarget] = useState<{
+    file: File;
+    kind: "avatar" | "cover";
+    /** True when `file` is a picture the server does not hold yet and must be saved as the original. */
+    isNewOriginal: boolean;
+    initialCrop: CropState | null;
+  } | null>(null);
   const [imgError, setImgError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -112,12 +186,14 @@ export function ProfileForm({
       return;
     }
     setError(null);
-    setCropTarget({ file, kind: "cover" });
+    setCropTarget({ file, kind: "cover", isNewOriginal: true, initialCrop: null });
   }
 
   function removeCover() {
     setCoverFile(null);
     setCoverPreviewUrl(null);
+    setCoverOriginal(null);
+    setCoverCrop(null);
     setCoverRemoved(true);
   }
 
@@ -132,17 +208,62 @@ export function ProfileForm({
       return;
     }
     setError(null);
-    setCropTarget({ file, kind: "avatar" });
+    setCropTarget({ file, kind: "avatar", isNewOriginal: true, initialCrop: null });
   }
 
-  function applyCroppedImage(file: File) {
+  /** Reopen the current picture in the crop dialog, from its original when one is kept. */
+  async function reposition(kind: "avatar" | "cover") {
+    const isCover = kind === "cover";
+    const pendingOriginal = isCover ? coverOriginal : avatarOriginal;
+    const pendingCrop = isCover ? coverCrop : avatarCrop;
+    const hasPending = isCover ? coverFile !== null : selectedFile !== null;
+    const serverHasOriginal = isCover ? user.cover_has_original : user.avatar_has_original;
+    const serverCrop = (isCover ? user.cover_crop : user.avatar_crop) ?? null;
+    if (hasPending && pendingOriginal) {
+      setCropTarget({ file: pendingOriginal, kind, isNewOriginal: true, initialCrop: pendingCrop });
+      return;
+    }
+    const keptOnServer = serverHasOriginal && !(isCover ? coverRemoved : avatarRemoved);
+    const url = keptOnServer
+      ? `/api/v1/users/me/${kind}/original`
+      : hasPending
+        ? (isCover ? coverPreviewUrl : previewUrl)
+        : isCover
+          ? displayCover
+          : displayAvatar;
+    if (!url) return;
+    try {
+      const response = await fetch(url, { credentials: "same-origin" });
+      if (!response.ok) throw new Error(String(response.status));
+      const blob = await response.blob();
+      const type = AVATAR_TYPES.includes(blob.type) ? blob.type : "image/png";
+      const file = new File([blob], kind === "cover" ? "cover" : "avatar", { type });
+      setError(null);
+      setCropTarget({
+        file,
+        kind,
+        // Without a kept original, the picture being shown becomes the original.
+        isNewOriginal: !keptOnServer,
+        initialCrop: keptOnServer ? (hasPending ? pendingCrop : serverCrop) : null,
+      });
+    } catch {
+      setError(t("profile.repositionLoadError"));
+    }
+  }
+
+  function applyCroppedImage(file: File, crop: CropState) {
+    const original = cropTarget?.isNewOriginal ? cropTarget.file : null;
     if (cropTarget?.kind === "cover") {
       if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
+      setCoverOriginal(original);
+      setCoverCrop(crop);
       setCoverFile(file);
       setCoverPreviewUrl(URL.createObjectURL(file));
       setCoverRemoved(false);
     } else {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setAvatarOriginal(original);
+      setAvatarCrop(crop);
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
       setAvatarRemoved(false);
@@ -155,6 +276,8 @@ export function ProfileForm({
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setSelectedFile(null);
+    setAvatarOriginal(null);
+    setAvatarCrop(null);
     setAvatarUrl("");
     setAvatarRemoved(true);
     setImgError(false);
@@ -238,6 +361,8 @@ export function ProfileForm({
       if (selectedFile) {
         const body = new FormData();
         body.append("file", selectedFile);
+        if (avatarOriginal) body.append("original", avatarOriginal);
+        if (avatarCrop) body.append("crop", JSON.stringify(avatarCrop));
         updatedUser = await api.post<User>("/api/v1/users/me/avatar", undefined, { rawBody: body });
       } else if (avatarRemoved) {
         updatedUser = await api.delete<User>("/api/v1/users/me/avatar");
@@ -245,6 +370,8 @@ export function ProfileForm({
       if (coverFile) {
         const body = new FormData();
         body.append("file", coverFile);
+        if (coverOriginal) body.append("original", coverOriginal);
+        if (coverCrop) body.append("crop", JSON.stringify(coverCrop));
         updatedUser = await api.post<User>("/api/v1/users/me/cover", undefined, { rawBody: body });
       } else if (coverRemoved && user.cover_url) {
         updatedUser = await api.delete<User>("/api/v1/users/me/cover");
@@ -280,9 +407,18 @@ export function ProfileForm({
       {/* Main Form Card */}
       <div className="border-border bg-surface divide-border rounded-xl border divide-y shadow-xs overflow-hidden">
         <div className="flex flex-col gap-4 p-6">
-          <div className="bg-primary-subtle relative aspect-[15/4] overflow-hidden rounded-md border border-border">
+          <ImageActions
+            label={t("profile.imageOptions")}
+            uploadLabel={t("profile.uploadNew")}
+            repositionLabel={t("profile.reposition")}
+            canReposition={Boolean(displayCover)}
+            disabled={pending}
+            onUpload={() => document.getElementById(coverInputId)?.click()}
+            onReposition={() => void reposition("cover")}
+            className="bg-primary-subtle relative block aspect-[15/4] w-full overflow-hidden rounded-md border border-border"
+          >
             {displayCover ? <img src={displayCover} alt="" className="absolute inset-0 size-full object-cover" /> : null}
-          </div>
+          </ImageActions>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <Label className="text-sm font-semibold text-foreground">{t("profile.coverPicture")}</Label>
@@ -315,8 +451,14 @@ export function ProfileForm({
         {/* Avatar Section */}
         <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
           <div className="flex items-center gap-4">
-            <span
-              aria-hidden
+            <ImageActions
+              label={t("profile.imageOptions")}
+              uploadLabel={t("profile.uploadNew")}
+              repositionLabel={t("profile.reposition")}
+              canReposition={Boolean(displayAvatar && !imgError)}
+              disabled={pending}
+              onUpload={() => document.getElementById(fileInputId)?.click()}
+              onReposition={() => void reposition("avatar")}
               className={cn(
                 "flex size-16 sm:size-20 shrink-0 items-center justify-center overflow-hidden rounded-full text-2xl font-bold ring-1 ring-border shadow-xs select-none",
                 displayAvatar && !imgError
@@ -334,7 +476,7 @@ export function ProfileForm({
               ) : (
                 initials(fullName, user.username) || <UserRound className="size-8" />
               )}
-            </span>
+            </ImageActions>
             <div>
               <Label className="text-sm font-semibold text-foreground">{t("profile.profilePicture")}</Label>
               <p className="text-muted-foreground text-xs mt-0.5">{t("profile.avatarTypes")}</p>
@@ -539,6 +681,7 @@ export function ProfileForm({
         key={cropTarget.file.name + cropTarget.file.lastModified + cropTarget.kind}
         file={cropTarget.file}
         kind={cropTarget.kind}
+        initialCrop={cropTarget.initialCrop}
         onApply={applyCroppedImage}
         onClose={() => setCropTarget(null)}
       />

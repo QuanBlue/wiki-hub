@@ -13,11 +13,11 @@ vi.mock("sonner", () => ({ toast: { success: toastSuccess, error: vi.fn() } }));
 vi.mock("@/components/account/image-crop-dialog", () => ({
   ImageCropDialog: ({ file, onApply, onClose }: {
     file: File;
-    onApply: (file: File) => void;
+    onApply: (file: File, crop: { zoom: number; x: number; y: number }) => void;
     onClose: () => void;
   }) => (
     <div role="dialog" aria-label="Position image">
-      <button type="button" onClick={() => onApply(file)}>Use image</button>
+      <button type="button" onClick={() => onApply(file, { zoom: 2, x: 0.1, y: 0.2 })}>Use image</button>
       <button type="button" onClick={onClose}>Cancel positioning</button>
     </div>
   ),
@@ -365,5 +365,27 @@ describe("ProfileSummary", () => {
     second.unmount();
     render(<ProfileSummary user={me({ profile_url: "https://site.example", company: "Acme" })} onEdit={vi.fn()} />);
     expect(screen.queryByText("Social links")).not.toBeInTheDocument();
+  });
+});
+
+describe("ProfileForm reposition", () => {
+  it("offers Upload and Reposition on a picture and saves a new crop without re-uploading the original", async () => {
+    const actor = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["x"], { type: "image/png" }))));
+    renderForm(me({ avatar_url: "/me.png", avatar_has_original: true, avatar_crop: { zoom: 1, x: 0, y: 0 } }));
+
+    await actor.click(screen.getAllByRole("button", { name: "Picture options" })[0]);
+    expect(await screen.findByRole("menuitem", { name: "Upload new picture" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("menuitem", { name: "Reposition" }));
+    expect(fetch).toHaveBeenCalledWith("/api/v1/users/me/avatar/original", expect.anything());
+
+    await actor.click(await screen.findByRole("button", { name: "Use image" }));
+    await actor.click(save());
+    await waitFor(() => expect(mocked.post).toHaveBeenCalled());
+    const body = mocked.post.mock.calls[0][2]!.rawBody as FormData;
+    expect(body.get("file")).toBeInstanceOf(File);
+    expect(body.get("original")).toBeNull();
+    expect(JSON.parse(body.get("crop") as string)).toEqual({ zoom: 2, x: 0.1, y: 0.2 });
+    vi.unstubAllGlobals();
   });
 });

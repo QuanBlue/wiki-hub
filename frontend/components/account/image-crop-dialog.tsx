@@ -20,15 +20,21 @@ import {
 } from "@/lib/image-crop";
 import { useTranslation } from "@/lib/i18n/context";
 
+/** Where the picture sat in the frame; offsets are fractions of the frame so they survive a resize. */
+export type CropState = { zoom: number; x: number; y: number };
+
 export function ImageCropDialog({
   file,
   kind,
+  initialCrop,
   onApply,
   onClose,
 }: {
   file: File;
   kind: "avatar" | "cover";
-  onApply: (file: File) => void;
+  /** Start from this crop (reopening a saved picture) instead of centred. */
+  initialCrop?: CropState | null;
+  onApply: (file: File, crop: CropState) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -43,8 +49,9 @@ export function ImageCropDialog({
   const [imageUrl, setImageUrl] = useState("");
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
   const [viewportSize, setViewportSize] = useState<ImageSize | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(initialCrop?.zoom ?? 1);
   const [offset, setOffset] = useState<ImageOffset>({ x: 0, y: 0 });
+  const initialApplied = useRef(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,6 +86,17 @@ export function ImageCropDialog({
     observer.observe(viewport);
     return () => observer.disconnect();
   }, [viewportElement]);
+
+  useEffect(() => {
+    if (initialApplied.current || !viewportSize) return;
+    initialApplied.current = true;
+    if (initialCrop) {
+      setOffset({
+        x: initialCrop.x * viewportSize.width,
+        y: initialCrop.y * viewportSize.height,
+      });
+    }
+  }, [viewportSize, initialCrop]);
 
   const geometry =
     imageSize && viewportSize
@@ -160,7 +178,11 @@ export function ImageCropDialog({
         setSaving(false);
         return;
       }
-      onApply(cropped);
+      onApply(cropped, {
+        zoom,
+        x: (geometry?.x ?? 0) / viewportSize.width,
+        y: (geometry?.y ?? 0) / viewportSize.height,
+      });
     } catch {
       setError(t("profile.cropSaveError"));
       setSaving(false);

@@ -2579,6 +2579,12 @@ export const sectionsVi: HelpSection[] = [
             ảnh đại diện, tiểu sử, đại từ nhân xưng, công ty, và liên kết mạng xã
             hội.
           </li>
+          <li>
+            Nhấn vào ảnh đại diện hoặc ảnh bìa để chọn <strong>Tải ảnh mới lên</strong> hoặc{" "}
+            <strong>Chỉnh vị trí</strong>. Chỉnh vị trí mở lại ảnh bạn đã tải lên để kéo hoặc
+            thu phóng lại mà không cần tải ảnh lần nữa. Ảnh lưu từ trước đó, hoặc khôi phục từ
+            bản sao lưu, sẽ chỉnh vị trí trên ảnh đã cắt.
+          </li>
           <li>Kiểm tra trường dữ liệu đưa phản hồi tức thì về lỗi định dạng hay yêu cầu.</li>
           <li>
             Nếu có thay đổi chưa lưu mà bạn rời đi (nhấn <strong>Cancel</strong>, chuyển sang tab

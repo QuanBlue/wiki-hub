@@ -542,6 +542,50 @@ async def test_cover_endpoints_validate_replace_and_remove_cover() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cover_original_is_kept_for_repositioning() -> None:
+    user = _user()
+    user.cover_object_key = None
+    session = Mock(flush=AsyncMock())
+    storage = Mock(put=AsyncMock(), delete=AsyncMock(), get=AsyncMock(return_value=b"big"))
+
+    def png(name: str, body: bytes = b"image bytes") -> UploadFile:
+        return UploadFile(
+            file=io.BytesIO(body), filename=name, headers=Headers({"content-type": "image/png"})
+        )
+
+    crop = '{"zoom": 1.5, "x": 0.1, "y": -0.2}'
+    await users.upload_own_cover(png("c.png"), user, session, storage, png("o.png", b"orig"), crop)
+    first_original = user.cover_original_key
+    assert first_original.startswith(f"covers/{user.id}/original-")
+    assert user.cover_crop == {"zoom": 1.5, "x": 0.1, "y": -0.2}
+    read = await users.read_own_cover_original(user, storage)
+    assert read.status_code == 200 and read.body == b"big"
+
+    # Repositioning sends only the new crop: the original must stay.
+    storage.delete.reset_mock()
+    await users.upload_own_cover(png("c2.png"), user, session, storage, None, '{"zoom":1,"x":0,"y":0}')
+    assert user.cover_original_key == first_original
+    assert user.cover_crop == {"zoom": 1.0, "x": 0.0, "y": 0.0}
+    assert first_original not in [c.args[0] for c in storage.delete.await_args_list]
+
+    # Replacing the original drops the old object.
+    await users.upload_own_cover(png("c3.png"), user, session, storage, png("o2.png"), crop)
+    assert user.cover_original_key != first_original
+    storage.delete.assert_any_await(first_original)
+
+    with pytest.raises(BadRequestError):
+        await users.upload_own_cover(png("c4.png"), user, session, storage, None, "not json")
+    with pytest.raises(BadRequestError):
+        await users.upload_own_cover(png("c5.png"), user, session, storage, None, '{"zoom":9,"x":0,"y":0}')
+
+    kept = user.cover_original_key
+    await users.delete_own_cover(user, session, storage)
+    assert user.cover_original_key is None and user.cover_crop is None
+    storage.delete.assert_any_await(kept)
+    assert (await users.read_own_cover_original(user, storage)).status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_storage_and_dependency_edges(monkeypatch: pytest.MonkeyPatch) -> None:
     user = _user()
     now = datetime.now(UTC)
