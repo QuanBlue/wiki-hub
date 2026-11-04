@@ -1376,6 +1376,11 @@ export const en = {
   graph: {
     relatedTitle: "Related pages",
     relatedLoadError: "Related pages could not be loaded.",
+    relatedNote:
+      "WikiHub finds these automatically, from the links on a page, the page titles it names and similar content. The page map uses them, and search and the AI assistant follow them to find connected pages.",
+    relatedTipLabel: "Tip",
+    relatedTip:
+      "To make a page easier to find, link it from related pages, or name other pages by their exact title.",
     via_link: "Linked from this page",
     via_linked_from: "Links to this page",
     via_mention: "Named on this page",

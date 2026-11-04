@@ -2310,7 +2310,7 @@ describe("SpaceWorkspace hooks from elsewhere", () => {
     ).toBeInTheDocument();
   });
 
-  it("links the words that name another page in the body it shows", async () => {
+  it("shows the page as written: words naming another page are not turned into links", async () => {
     serve({
       "/api/v1/spaces/ENG/pages/guides/related": {
         pages: [],
@@ -2322,7 +2322,33 @@ describe("SpaceWorkspace hooks from elsewhere", () => {
     });
 
     const rendered = screen.getByTestId("rendered");
-    const link = await within(rendered).findByRole("link", { name: "Glossary" });
-    expect(link).toHaveAttribute("href", "/spaces/ENG/pages/glossary");
+    expect(rendered).toHaveTextContent("Read the Glossary notes first.");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(within(rendered).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("keeps related pages out of the page, and opens them from the ... menu", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    serve({
+      "/api/v1/spaces/ENG/pages/guides/related": {
+        pages: [
+          { id: "9", title: "Glossary", slug: "glossary", space_key: "ENG", space_name: "Engineering", via: ["mention"] },
+        ],
+        mentions: [],
+      },
+    });
+    renderWorkspace({ currentPage: { ...GUIDES, content: "<p>Body</p>" } });
+
+    await screen.findByTestId("rendered");
+    await waitFor(() => expect(vi.mocked(api.get)).toHaveBeenCalled());
+    await openMenu(user);
+    await user.click(await screen.findByRole("menuitem", { name: /Related pages \(1\)/ }));
+
+    expect(await screen.findByRole("heading", { name: "Related pages" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Glossary/ })).toHaveAttribute(
+      "href",
+      "/spaces/ENG/pages/glossary",
+    );
+    expect(within(screen.getByTestId("rendered")).queryByRole("link")).not.toBeInTheDocument();
   });
 });
