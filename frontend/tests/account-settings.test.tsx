@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AccountSettings } from "@/components/account/account-settings";
+import { api } from "@/lib/api-client";
 import type { Me } from "@/types/api";
 
 const refresh = vi.fn();
@@ -13,6 +14,15 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/components/account/sessions-panel", () => ({
   SessionsPanel: () => <h2>Web sessions</h2>,
+}));
+vi.mock("@/components/account/image-crop-dialog", () => ({
+  ImageCropDialog: ({ file, onApply }: { file: File; onApply: (file: File) => void }) => (
+    <button type="button" onClick={() => onApply(file)}>Use image</button>
+  ),
+}));
+vi.mock("@/lib/api-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api-client")>()),
+  api: { patch: vi.fn(), post: vi.fn(), delete: vi.fn() },
 }));
 
 const user: Me = {
@@ -41,7 +51,32 @@ const user: Me = {
   impersonator: null,
 };
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  URL.createObjectURL = vi.fn(() => "blob:avatar-preview");
+  URL.revokeObjectURL = vi.fn();
+  vi.mocked(api.patch).mockResolvedValue(user);
+  vi.mocked(api.post).mockResolvedValue({
+    ...user,
+    avatar_url: "/api/v1/users/user-1/avatar",
+    avatar_updated_at: "2026-11-04T12:00:00Z",
+  });
+});
+
 describe("AccountSettings", () => {
+  it("shows the newly saved avatar in the profile immediately", async () => {
+    const actor = userEvent.setup();
+    render(<AccountSettings user={user} />);
+    await actor.click(screen.getByRole("button", { name: "Edit profile" }));
+    await actor.upload(document.querySelector<HTMLInputElement>('input[type="file"]:not([aria-label])')!,
+      new File(["picture"], "avatar.png", { type: "image/png" }));
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+    await actor.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit profile" })).toBeInTheDocument());
+    expect(document.querySelector('img[src^="/api/v1/users/user-1/avatar?v="]')).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "View profile picture" }));
+    expect(within(screen.getByRole("dialog", { name: "Profile picture" })).getByText(/2026/)).toBeInTheDocument();
+  });
   it("starts with a read-only profile and only shows profile inputs after Edit profile", async () => {
     const actor = userEvent.setup();
     render(<AccountSettings user={user} />);

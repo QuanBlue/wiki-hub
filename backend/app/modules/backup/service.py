@@ -75,6 +75,7 @@ from app.schemas.backup import (
     SUPPORTED_BACKUP_VERSIONS,
     BackupAttachment,
     BackupAvatar,
+    BackupCover,
     BackupDocument,
     BackupGroup,
     BackupGroupGlobalPermission,
@@ -974,6 +975,7 @@ class BackupService:
         users_by_id = {u.id: u for u in users}
         spaces_by_id = {s.id: s for s in spaces}
         avatar_users = [user for user in users if user.avatar_object_key]
+        cover_users = [user for user in users if getattr(user, "cover_object_key", None)]
 
         members = list((await self.session.execute(select(SpaceMember))).scalars())
         owners = list((await self.session.execute(select(SpaceOwner))).scalars())
@@ -1129,6 +1131,7 @@ class BackupService:
         total_items = (
             len(attachments)
             + len(avatar_users)
+            + len(cover_users)
             + len(pages_index)
             + revisions_total
             + sum(len(rows) for rows in issue_shots.values())
@@ -1244,6 +1247,17 @@ class BackupService:
                 _write_once(archive, object_path, digest, data)
                 del data
                 await _report_progress()
+            for user in cover_users:
+                data = await storage.get(user.cover_object_key)
+                digest = hashlib.sha256(data).hexdigest()
+                content_type = user.cover_content_type or "application/octet-stream"
+                object_path = f"objects/covers/{digest}"
+                document.covers.append(
+                    BackupCover(username=user.username, content_type=content_type, object_path=object_path, sha256=digest, size_bytes=len(data))
+                )
+                _write_once(archive, object_path, digest, data)
+                del data
+                await _report_progress()
 
             issue_screenshots = 0
             for issue_entry in document.issues:
@@ -1270,6 +1284,7 @@ class BackupService:
                 {
                     "attachments": len(document.attachments),
                     "avatars": len(document.avatars),
+                    "covers": len(document.covers),
                     "issue_attachments": issue_screenshots,
                 }
             )
@@ -1446,6 +1461,7 @@ class BackupService:
                         (len(scanned.document.pages), "page"),
                         (len(scanned.document.attachments), "attachment"),
                         (len(scanned.document.avatars), "avatar"),
+                        (len(scanned.document.covers), "cover"),
                         (len(scanned.document.issues), "issue"),
                     )
                 )
@@ -1458,6 +1474,7 @@ class BackupService:
                     "items_processed": 0,
                     "items_total": len(scanned.document.attachments)
                     + len(scanned.document.avatars)
+                    + len(scanned.document.covers)
                     + sum(len(issue.attachments) for issue in scanned.document.issues),
                 },
             )
@@ -1569,6 +1586,7 @@ class BackupService:
         total_items = (
             len(scanned.document.attachments)
             + len(scanned.document.avatars)
+            + len(scanned.document.covers)
             + sum(len(issue.attachments) for issue in scanned.document.issues)
         )
         processed_items = 0
@@ -1582,7 +1600,7 @@ class BackupService:
                 job,
                 "info",
                 "restoring",
-                f"Copying 0/{total_items} attachments and avatars into storage.",
+                f"Copying 0/{total_items} attachments and profile images into storage.",
             )
             if job is not None and total_items
             else None
@@ -1595,7 +1613,7 @@ class BackupService:
                 return
             if files_log is not None:
                 files_log.message = (
-                    f"Copying {processed_items}/{total_items} attachments and avatars "
+                    f"Copying {processed_items}/{total_items} attachments and profile images "
                     "into storage."
                 )
             # `checkpoint_backup_job` commits - and this loop can be running
@@ -1696,6 +1714,21 @@ class BackupService:
                     user.avatar_content_type = avatar.content_type
                     user.avatar_url = f"/api/v1/users/{user.id}/avatar"
                     result.created["avatar"] = result.created.get("avatar", 0) + 1
+                for cover in scanned.document.covers:
+                    await _report_progress()
+                    if cover.username in existing_users:
+                        continue
+                    user = await self.users.get_by_username(cover.username)
+                    if user is None:
+                        continue
+                    key = f"covers/{user.id}/{uuid4()}"
+                    with archive.open(cover.object_path) as source:
+                        await storage.put(key, source, content_type=cover.content_type)
+                    created_object_keys.append(key)
+                    user.cover_object_key = key
+                    user.cover_content_type = cover.content_type
+                    user.cover_url = f"/api/v1/users/{user.id}/cover"
+                    result.created["cover"] = result.created.get("cover", 0) + 1
                 for issue_entry in scanned.document.issues:
                     restored_issue = (
                         await self._find_issue(issue_entry) if issue_entry.attachments else None
@@ -1933,6 +1966,8 @@ class BackupService:
                 social_links=[str(link).strip() for link in user_entry.social_links],
                 company=user_entry.company.strip(),
                 avatar_url=user_entry.avatar_url,
+                avatar_updated_at=user_entry.avatar_updated_at,
+                cover_updated_at=user_entry.cover_updated_at,
                 is_active=user_entry.is_active,
                 is_superuser=user_entry.is_superuser,
                 # Hardcoded False - the single most important line here. A

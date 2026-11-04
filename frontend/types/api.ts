@@ -133,6 +133,9 @@ export interface User {
   email: string;
   full_name: string;
   avatar_url: string | null;
+  avatar_updated_at?: string | null;
+  cover_url?: string | null;
+  cover_updated_at?: string | null;
   bio: string;
   pronouns: string;
   profile_url: string;
@@ -209,6 +212,9 @@ export interface PublicUser {
   username: string;
   full_name: string;
   avatar_url: string | null;
+  avatar_updated_at?: string | null;
+  cover_url?: string | null;
+  cover_updated_at?: string | null;
   bio: string;
   pronouns: string;
   profile_url: string;

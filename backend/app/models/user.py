@@ -48,6 +48,15 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     avatar_object_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     avatar_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    avatar_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cover_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    cover_object_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    cover_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    cover_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     bio: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     pronouns: Mapped[str] = mapped_column(String(64), nullable=False, default="", server_default="")
     profile_url: Mapped[str] = mapped_column(

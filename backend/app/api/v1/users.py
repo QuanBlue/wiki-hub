@@ -76,6 +76,7 @@ AVATAR_EXTENSIONS = {
     "image/webp": "webp",
 }
 MAX_AVATAR_BYTES = 5 * 1024 * 1024
+MAX_COVER_BYTES = 10 * 1024 * 1024
 #: A session that made a request within this window counts as online.
 ONLINE_WINDOW = timedelta(minutes=5)
 
@@ -94,6 +95,7 @@ async def remove_avatar_object(user: User, storage: ObjectStorage) -> None:
         await storage.delete(key)
         user.avatar_object_key = None
         user.avatar_content_type = None
+        user.avatar_updated_at = None
 
 
 @router.patch("/me", response_model=UserRead, summary="Update your profile")
@@ -129,6 +131,7 @@ async def upload_own_avatar(
     user.avatar_object_key = key
     user.avatar_content_type = content_type
     user.avatar_url = avatar_endpoint(request, user.id)
+    user.avatar_updated_at = datetime.now(UTC)
     if old_key and old_key != key:
         await storage.delete(old_key)
     await session.flush()
@@ -143,6 +146,7 @@ async def delete_own_avatar(
 ) -> UserRead:
     await remove_avatar_object(user, storage)
     user.avatar_url = None
+    user.avatar_updated_at = None
     await session.flush()
     return UserRead.model_validate(user)
 
@@ -171,7 +175,70 @@ async def read_avatar(
     return Response(
         content=await storage.get(avatar_user.avatar_object_key),
         media_type=avatar_user.avatar_content_type or "image/png",
-        headers={"Cache-Control": "private, max-age=300"},
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post("/me/cover", response_model=UserRead, summary="Upload your profile cover")
+async def upload_own_cover(
+    file: UploadFile,
+    user: CurrentUser,
+    session: DbSession,
+    storage: ObjectStorage = Depends(get_storage),
+) -> UserRead:
+    content_type = (file.content_type or "").lower()
+    if content_type not in AVATAR_TYPES:
+        raise UnsupportedMediaTypeError("Cover must be a JPEG, PNG, GIF, or WebP image.")
+    data = await file.read(MAX_COVER_BYTES + 1)
+    if len(data) > MAX_COVER_BYTES:
+        raise PayloadTooLargeError("Profile covers must be 10 MB or smaller.")
+    if not data:
+        raise BadRequestError("The profile cover is empty.")
+
+    key = f"covers/{user.id}/{uuid.uuid4()}.{AVATAR_EXTENSIONS[content_type]}"
+    await storage.put(key, data, content_type=content_type)
+    old_key = user.cover_object_key
+    user.cover_object_key = key
+    user.cover_content_type = content_type
+    user.cover_url = f"{settings.api_v1_prefix}/users/{user.id}/cover"
+    user.cover_updated_at = datetime.now(UTC)
+    await session.flush()
+    if old_key and old_key != key:
+        await storage.delete(old_key)
+    return UserRead.model_validate(user)
+
+
+@router.delete("/me/cover", response_model=UserRead, summary="Remove your profile cover")
+async def delete_own_cover(
+    user: CurrentUser,
+    session: DbSession,
+    storage: ObjectStorage = Depends(get_storage),
+) -> UserRead:
+    old_key = user.cover_object_key
+    user.cover_object_key = None
+    user.cover_content_type = None
+    user.cover_url = None
+    user.cover_updated_at = None
+    await session.flush()
+    if old_key:
+        await storage.delete(old_key)
+    return UserRead.model_validate(user)
+
+
+@router.get("/{user_id}/cover", summary="Read a user profile cover")
+async def read_cover(
+    user_id: uuid.UUID,
+    _viewer: CurrentUser,
+    session: DbSession,
+    storage: ObjectStorage = Depends(get_storage),
+) -> Response:
+    cover_user = await session.get(User, user_id)
+    if cover_user is None or not cover_user.cover_object_key:
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+    return Response(
+        content=await storage.get(cover_user.cover_object_key),
+        media_type=cover_user.cover_content_type or "image/png",
+        headers={"Cache-Control": "private, no-store"},
     )
 
 

@@ -11,7 +11,7 @@ import { ShortcutSettings } from "@/components/account/shortcut-settings";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
-import type { Me } from "@/types/api";
+import type { Me, User } from "@/types/api";
 
 type AccountTab = "profile" | "security" | "sessions" | "shortcuts";
 
@@ -37,10 +37,27 @@ export function AccountSettings({
     tabs.find((tab) => tab.id === initialTab)?.id ?? "profile",
   );
   const [profileEditing, setProfileEditing] = useState(false);
+  const [savedUser, setSavedUser] = useState<{ source: Me; current: Me } | null>(null);
+  const [avatarVersion, setAvatarVersion] = useState(0);
   const [passwordEditing, setPasswordEditing] = useState(
     openChangePassword && initialTab === "security",
   );
   const { t } = useTranslation();
+  const currentUser = savedUser?.source === user ? savedUser.current : user;
+  const profileUser: Me = avatarVersion && currentUser.avatar_url
+    ? {
+        ...currentUser,
+        avatar_url: `${currentUser.avatar_url}${currentUser.avatar_url.includes("?") ? "&" : "?"}v=${avatarVersion}`,
+      }
+    : currentUser;
+
+  function handleProfileSaved(updated: User, avatarChanged: boolean) {
+    setSavedUser({ source: user, current: { ...currentUser, ...updated } });
+    if (avatarChanged) {
+      setAvatarVersion((previous) => Math.max(Date.now(), previous + 1));
+    }
+    setProfileEditing(false);
+  }
   const tabRefs = useRef<Record<AccountTab, HTMLButtonElement | null>>({
     profile: null,
     security: null,
@@ -117,12 +134,12 @@ export function AccountSettings({
         <section id="profile-panel" role="tabpanel" aria-labelledby="profile-tab">
           {profileEditing ? (
             <ProfileForm
-              user={user}
+              user={profileUser}
               onCancel={() => setProfileEditing(false)}
-              onSaved={() => setProfileEditing(false)}
+              onSaved={handleProfileSaved}
             />
           ) : (
-            <ProfileSummary user={user} onEdit={() => setProfileEditing(true)} />
+            <ProfileSummary user={profileUser} onEdit={() => setProfileEditing(true)} />
           )}
         </section>
       ) : activeTab === "security" ? (

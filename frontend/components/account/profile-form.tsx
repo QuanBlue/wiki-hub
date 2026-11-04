@@ -1,11 +1,12 @@
 "use client";
 
-import { Building2, Globe, Link2, Loader2, Trash2, Upload, UserRound } from "lucide-react";
+import { Link2, Loader2, Trash2, Upload, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { ImageCropDialog } from "@/components/account/image-crop-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils";
 import type { Me, User } from "@/types/api";
 
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+const MAX_COVER_BYTES = 10 * 1024 * 1024;
 const AVATAR_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 const SOCIAL_SLOTS = 2;
 
@@ -33,9 +35,10 @@ function normalizeSocialLinks(links: string[]) {
   return [...links.slice(0, SOCIAL_SLOTS), ...Array(SOCIAL_SLOTS).fill("")].slice(0, SOCIAL_SLOTS);
 }
 
-export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: () => void; onSaved: () => void }) {
+export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: () => void; onSaved: (user: User, avatarChanged: boolean) => void }) {
   const router = useRouter();
   const fileInputId = useId();
+  const coverInputId = useId();
   const { t, apiErrorText } = useTranslation();
   const [fullName, setFullName] = useState(user.full_name);
   const [email, setEmail] = useState(user.email);
@@ -48,14 +51,40 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [avatarRemoved, setAvatarRemoved] = useState(false);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
+  const [coverRemoved, setCoverRemoved] = useState(false);
+  const [cropTarget, setCropTarget] = useState<{ file: File; kind: "avatar" | "cover" } | null>(null);
   const [imgError, setImgError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+  useEffect(() => () => { if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl); }, [coverPreviewUrl]);
 
   const displayAvatar = previewUrl || resolveAvatarUrl(!avatarRemoved ? avatarUrl : "");
+  const displayCover = coverPreviewUrl || (!coverRemoved ? user.cover_url : null);
+
+  function chooseCover(file: File | undefined) {
+    if (!file) return;
+    if (!AVATAR_TYPES.includes(file.type)) {
+      setError(t("profile.invalidImageType"));
+      return;
+    }
+    if (file.size > MAX_COVER_BYTES) {
+      setError(t("profile.coverTooLarge"));
+      return;
+    }
+    setError(null);
+    setCropTarget({ file, kind: "cover" });
+  }
+
+  function removeCover() {
+    setCoverFile(null);
+    setCoverPreviewUrl(null);
+    setCoverRemoved(true);
+  }
 
   function chooseFile(file: File | undefined) {
     if (!file) return;
@@ -67,12 +96,24 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
       setError(t("profile.avatarTooLarge"));
       return;
     }
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setError(null);
-    setImgError(false);
-    setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
-    setAvatarRemoved(false);
+    setCropTarget({ file, kind: "avatar" });
+  }
+
+  function applyCroppedImage(file: File) {
+    if (cropTarget?.kind === "cover") {
+      if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
+      setCoverFile(file);
+      setCoverPreviewUrl(URL.createObjectURL(file));
+      setCoverRemoved(false);
+    } else {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+      setAvatarRemoved(false);
+      setImgError(false);
+    }
+    setCropTarget(null);
   }
 
   function removeAvatar() {
@@ -153,16 +194,23 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
         social_links: socialLinks.map((link) => link.trim()).filter(Boolean),
         company: company.trim(),
       };
-      await api.patch<User>("/api/v1/users/me", profile);
+      let updatedUser = await api.patch<User>("/api/v1/users/me", profile);
       if (selectedFile) {
         const body = new FormData();
         body.append("file", selectedFile);
-        await api.post<User>("/api/v1/users/me/avatar", undefined, { rawBody: body });
+        updatedUser = await api.post<User>("/api/v1/users/me/avatar", undefined, { rawBody: body });
       } else if (avatarRemoved) {
-        await api.delete<User>("/api/v1/users/me/avatar");
+        updatedUser = await api.delete<User>("/api/v1/users/me/avatar");
+      }
+      if (coverFile) {
+        const body = new FormData();
+        body.append("file", coverFile);
+        updatedUser = await api.post<User>("/api/v1/users/me/cover", undefined, { rawBody: body });
+      } else if (coverRemoved && user.cover_url) {
+        updatedUser = await api.delete<User>("/api/v1/users/me/cover");
       }
       toast.success(t("profile.profileUpdated"));
-      onSaved();
+      onSaved(updatedUser, Boolean(selectedFile || avatarRemoved));
       router.refresh();
     } catch (err) {
       setError(apiErrorText(err, "profile.couldNotUpdateProfile"));
@@ -172,6 +220,7 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
   }
 
   return (
+    <>
     <form onSubmit={submit} className="w-full max-w-4xl space-y-6" noValidate>
       {/* Header bar */}
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -183,6 +232,39 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
 
       {/* Main Form Card */}
       <div className="border-border bg-surface divide-border rounded-xl border divide-y shadow-xs overflow-hidden">
+        <div className="flex flex-col gap-4 p-6">
+          <div className="bg-primary-subtle relative aspect-[15/4] overflow-hidden rounded-md border border-border">
+            {displayCover ? <img src={displayCover} alt="" className="absolute inset-0 size-full object-cover" /> : null}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <Label className="text-sm font-semibold text-foreground">{t("profile.coverPicture")}</Label>
+              <p className="text-muted-foreground mt-0.5 text-xs">{t("profile.coverTypes")}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="secondary" size="sm" disabled={pending}
+                onClick={() => document.getElementById(coverInputId)?.click()} className="gap-1.5"
+                aria-label={t("profile.changeCover")}>
+                <Upload className="size-3.5" aria-hidden />
+                {t("profile.change")}
+              </Button>
+              {displayCover ? (
+                <Button type="button" variant="ghost" size="sm" disabled={pending}
+                  onClick={removeCover} className="text-danger hover:text-danger hover:bg-danger/10 gap-1.5"
+                  aria-label={t("profile.removeCover")}>
+                  <Trash2 className="size-3.5" aria-hidden />
+                  {t("profile.remove")}
+                </Button>
+              ) : null}
+              <input id={coverInputId} type="file" accept={AVATAR_TYPES.join(",")} className="sr-only"
+                aria-label={t("profile.coverPicture")} disabled={pending}
+                onChange={(event) => {
+                  chooseCover(event.target.files?.[0]);
+                  event.currentTarget.value = "";
+                }} />
+            </div>
+          </div>
+        </div>
         {/* Avatar Section */}
         <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
           <div className="flex items-center gap-4">
@@ -242,7 +324,10 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
               type="file"
               accept={AVATAR_TYPES.join(",")}
               className="sr-only"
-              onChange={(event) => chooseFile(event.target.files?.[0])}
+              onChange={(event) => {
+                chooseFile(event.target.files?.[0]);
+                event.currentTarget.value = "";
+              }}
               disabled={pending}
             />
           </div>
@@ -402,5 +487,15 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
         </Button>
       </footer>
     </form>
+    {cropTarget ? (
+      <ImageCropDialog
+        key={cropTarget.file.name + cropTarget.file.lastModified + cropTarget.kind}
+        file={cropTarget.file}
+        kind={cropTarget.kind}
+        onApply={applyCroppedImage}
+        onClose={() => setCropTarget(null)}
+      />
+    ) : null}
+    </>
   );
 }

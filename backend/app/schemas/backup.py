@@ -54,6 +54,8 @@ class BackupUser(BaseModel):
     # an internal avatar URL points at the source instance and would be broken
     # after restore. External URLs remain safe to preserve.
     avatar_url: str | None = None
+    avatar_updated_at: datetime | None = None
+    cover_updated_at: datetime | None = None
 
 
 class BackupSpace(BaseModel):
@@ -264,6 +266,10 @@ class BackupAvatar(BaseModel):
     size_bytes: int
 
 
+class BackupCover(BackupAvatar):
+    """A member's uploaded profile cover in the backup archive."""
+
+
 class BackupPagePin(BaseModel):
     page_space_key: str
     page_slug: str
@@ -381,6 +387,7 @@ class BackupDocument(BaseModel):
     user_page_labels: list[BackupUserPageLabel] = Field(default_factory=list)
     attachments: list[BackupAttachment] = Field(default_factory=list)
     avatars: list[BackupAvatar] = Field(default_factory=list)
+    covers: list[BackupCover] = Field(default_factory=list)
     issues: list[BackupIssue] = Field(default_factory=list)
     site_settings: BackupSiteSettings | None = None
 

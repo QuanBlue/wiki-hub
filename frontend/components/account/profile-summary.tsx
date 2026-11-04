@@ -16,6 +16,7 @@ import { useState, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ProfileImageViewer } from "@/components/users/profile-image-viewer";
 import { getUserAvatarColor, resolveAvatarUrl } from "@/components/ui/avatar";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
@@ -52,7 +53,7 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
   const effectiveAvatarUrl = resolveAvatarUrl(user.avatar_url);
 
   return (
-    <section className="w-full max-w-4xl space-y-6">
+    <section className="w-full max-w-[37.5rem] space-y-6">
       {/* Header bar */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -66,38 +67,54 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
       </div>
 
       {/* Main Profile Card */}
-      <div className="border-border bg-surface divide-border rounded-xl border divide-y shadow-xs overflow-hidden">
+      <div className="border-border bg-surface relative w-full overflow-hidden rounded-lg border">
+        <div className="bg-primary-subtle relative aspect-[15/4] overflow-hidden">
+          {user.cover_url ? (
+            <ProfileImageViewer src={user.cover_url} kind="cover" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.cover_updated_at} className="absolute inset-0 size-full">
+              <img src={user.cover_url} alt="" className="absolute inset-0 size-full object-cover" />
+            </ProfileImageViewer>
+          ) : null}
+        </div>
         {/* Identity Header */}
-        <div className="p-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
-            {/* Clean Avatar with no distracting colored banner */}
-            <span
-              aria-hidden
-              className={cn(
-                "flex size-20 sm:size-24 shrink-0 items-center justify-center overflow-hidden rounded-full text-2xl sm:text-3xl font-bold ring-1 ring-border shadow-xs select-none",
-                effectiveAvatarUrl && !imgError
-                  ? ""
-                  : getUserAvatarColor(user.username || user.full_name || ""),
-              )}
-            >
-              {effectiveAvatarUrl && !imgError ? (
-                <img
-                  src={effectiveAvatarUrl}
-                  alt=""
-                  className="size-full object-cover"
-                  onError={() => setImgError(true)}
-                />
-              ) : (
-                initials(user.full_name, user.username) || <UserRound className="size-10" />
-              )}
-            </span>
+        <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+          <div className="flex items-start gap-3 sm:gap-5">
+            <div className="relative z-10 -mt-10 size-20 shrink-0 self-start sm:-mt-20 sm:size-40">
+              <ProfileImageViewer
+                src={effectiveAvatarUrl && !imgError ? effectiveAvatarUrl : null}
+                kind="avatar"
+                ownerName={user.full_name}
+                ownerUsername={user.username}
+                updatedAt={user.avatar_updated_at}
+                className="size-full rounded-full focus-visible:rounded-full"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "ring-surface flex size-full items-center justify-center overflow-hidden rounded-full text-3xl font-semibold ring-4 select-none sm:text-4xl",
+                    effectiveAvatarUrl && !imgError
+                      ? ""
+                      : getUserAvatarColor(user.username || user.full_name || ""),
+                  )}
+                >
+                  {effectiveAvatarUrl && !imgError ? (
+                    <img
+                      src={effectiveAvatarUrl}
+                      alt=""
+                      className="size-full object-cover"
+                      onError={() => setImgError(true)}
+                    />
+                  ) : (
+                    initials(user.full_name, user.username) || <UserRound className="size-10" />
+                  )}
+                </span>
+              </ProfileImageViewer>
+            </div>
 
-            {/* Name, Handle, Badges, and Bio */}
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground truncate">
-                  {user.full_name || user.username}
-                </h3>
+            <div className="min-w-0 flex-1 pt-4">
+              <h3 className="line-clamp-2 text-xl leading-tight font-semibold tracking-tight text-foreground">
+                {user.full_name || user.username}
+              </h3>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Badge variant={user.is_superuser ? "info" : "neutral"} className="gap-1 py-0.5 px-2 text-xs font-semibold">
                   <ShieldCheck className="size-3.5" aria-hidden />
                   {user.is_superuser ? t("profile.administrator") : t("profile.member")}
@@ -110,22 +127,21 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
                 ) : null}
               </div>
 
-              <p className="text-muted-foreground flex items-center gap-1.5 text-sm font-medium">
+              <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-sm font-medium">
                 <AtSign className="size-3.5 text-muted-foreground" aria-hidden />
                 <span>{user.username}</span>
               </p>
-
-              {user.bio ? (
-                <p className="text-foreground/90 pt-1.5 text-sm leading-relaxed whitespace-pre-line max-w-2xl">
-                  {user.bio}
-                </p>
-              ) : null}
             </div>
           </div>
+          {user.bio ? (
+            <p className="text-foreground/90 mt-2 max-w-2xl text-sm leading-relaxed whitespace-pre-line">
+              {user.bio}
+            </p>
+          ) : null}
         </div>
 
         {/* Structured Profile Attributes */}
-        <dl className="divide-border divide-y text-sm">
+        <dl className="border-border divide-border border-t divide-y text-sm">
           {/* Email Address */}
           <div className="flex flex-col sm:flex-row sm:items-center px-6 py-4 gap-1.5 sm:gap-4 hover:bg-surface-hover/40 transition-colors">
             <dt className="text-muted-foreground w-48 sm:w-56 font-medium flex items-center gap-2.5 shrink-0">
