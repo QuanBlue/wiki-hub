@@ -250,7 +250,7 @@ export function FeatureDiscovery() {
         ),
         icon: <Search className="size-3.5" />,
         iconColor: "bg-primary/20 text-primary",
-        cardBg: "bg-blue-50/60 dark:bg-blue-950/25 border-blue-200/60 dark:border-blue-800/40",
+        cardBg: "bg-blue-600 dark:bg-blue-700 border-blue-700 dark:border-blue-600",
         badge: "Ctrl+K",
         title: L("Find anything, fast", "Tìm mọi thứ thật nhanh"),
         desc: L(
@@ -285,7 +285,7 @@ export function FeatureDiscovery() {
         ),
         icon: <Sparkles className="size-3.5" />,
         iconColor: "bg-violet-500/20 text-violet-600 dark:text-violet-400",
-        cardBg: "bg-violet-50/60 dark:bg-violet-950/25 border-violet-200/60 dark:border-violet-800/40",
+        cardBg: "bg-violet-600 dark:bg-violet-700 border-violet-700 dark:border-violet-600",
         badge: "AI",
         title: L("Ask your wiki a question", "Hỏi wiki như hỏi một người"),
         desc: L(
@@ -317,7 +317,7 @@ export function FeatureDiscovery() {
         ),
         icon: <Paperclip className="size-3.5" />,
         iconColor: "bg-cyan-500/20 text-cyan-600 dark:text-cyan-400",
-        cardBg: "bg-cyan-50/60 dark:bg-cyan-950/25 border-cyan-200/60 dark:border-cyan-800/40",
+        cardBg: "bg-cyan-700 dark:bg-cyan-800 border-cyan-800 dark:border-cyan-700",
         badge: "PDF · Office",
         title: L("Search inside attached files", "Tìm bên trong tệp đính kèm"),
         desc: L(
@@ -348,7 +348,7 @@ export function FeatureDiscovery() {
         ),
         icon: <FileSpreadsheet className="size-3.5" />,
         iconColor: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400",
-        cardBg: "bg-emerald-50/60 dark:bg-emerald-950/25 border-emerald-200/60 dark:border-emerald-800/40",
+        cardBg: "bg-emerald-700 dark:bg-emerald-800 border-emerald-800 dark:border-emerald-700",
         badge: "Word · Excel",
         title: L("Open and edit Office files in the page", "Mở và sửa tệp Office ngay trong trang"),
         desc: L(
@@ -378,7 +378,7 @@ export function FeatureDiscovery() {
         ),
         icon: <Presentation className="size-3.5" />,
         iconColor: "bg-amber-500/20 text-amber-600 dark:text-amber-400",
-        cardBg: "bg-amber-50/60 dark:bg-amber-950/25 border-amber-200/60 dark:border-amber-800/40",
+        cardBg: "bg-amber-700 dark:bg-amber-800 border-amber-800 dark:border-amber-700",
         badge: "Slideshow",
         title: L("Present a PowerPoint from the wiki", "Trình chiếu PowerPoint ngay từ wiki"),
         desc: L(
@@ -409,7 +409,7 @@ export function FeatureDiscovery() {
         ),
         icon: <FilePenLine className="size-3.5" />,
         iconColor: "bg-sky-500/20 text-sky-600 dark:text-sky-400",
-        cardBg: "bg-sky-50/60 dark:bg-sky-950/25 border-sky-200/60 dark:border-sky-800/40",
+        cardBg: "bg-sky-600 dark:bg-sky-700 border-sky-700 dark:border-sky-600",
         badge: "/ slash",
         title: L("Write faster with the / menu", "Soạn nhanh với menu dấu /"),
         desc: L(
@@ -441,7 +441,7 @@ export function FeatureDiscovery() {
         ),
         icon: <Workflow className="size-3.5" />,
         iconColor: "bg-purple-500/20 text-purple-600 dark:text-purple-400",
-        cardBg: "bg-purple-50/60 dark:bg-purple-950/25 border-purple-200/60 dark:border-purple-800/40",
+        cardBg: "bg-purple-600 dark:bg-purple-700 border-purple-700 dark:border-purple-600",
         badge: "Mermaid",
         title: L("Draw diagrams from text", "Vẽ sơ đồ từ vài dòng chữ"),
         desc: L(
@@ -471,7 +471,7 @@ export function FeatureDiscovery() {
         ),
         icon: <HeartPulse className="size-3.5" />,
         iconColor: "bg-rose-500/20 text-rose-600 dark:text-rose-400",
-        cardBg: "bg-rose-50/60 dark:bg-rose-950/25 border-rose-200/60 dark:border-rose-800/40",
+        cardBg: "bg-rose-600 dark:bg-rose-700 border-rose-700 dark:border-rose-600",
         badge: "Health",
         title: L("Keep a space clean with Content health", "Giữ space gọn gàng với Sức khỏe nội dung"),
         desc: L(
@@ -506,7 +506,7 @@ export function FeatureDiscovery() {
         ),
         icon: <FolderTree className="size-3.5" />,
         iconColor: "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400",
-        cardBg: "bg-indigo-50/60 dark:bg-indigo-950/25 border-indigo-200/60 dark:border-indigo-800/40",
+        cardBg: "bg-indigo-600 dark:bg-indigo-700 border-indigo-700 dark:border-indigo-600",
         badge: "Page map",
         title: L("See how your pages connect", "Nhìn thấy các trang liên kết thế nào"),
         desc: L(
@@ -541,7 +541,7 @@ export function FeatureDiscovery() {
         ),
         icon: <GitCompare className="size-3.5" />,
         iconColor: "bg-teal-500/20 text-teal-600 dark:text-teal-400",
-        cardBg: "bg-teal-50/60 dark:bg-teal-950/25 border-teal-200/60 dark:border-teal-800/40",
+        cardBg: "bg-teal-700 dark:bg-teal-800 border-teal-800 dark:border-teal-700",
         badge: "History",
         title: L("See exactly what changed", "Xem chính xác điều gì đã thay đổi"),
         desc: L(
@@ -574,7 +574,7 @@ export function FeatureDiscovery() {
         ),
         icon: <FileText className="size-3.5" />,
         iconColor: "bg-fuchsia-500/20 text-fuchsia-600 dark:text-fuchsia-400",
-        cardBg: "bg-fuchsia-50/60 dark:bg-fuchsia-950/25 border-fuchsia-200/60 dark:border-fuchsia-800/40",
+        cardBg: "bg-fuchsia-600 dark:bg-fuchsia-700 border-fuchsia-700 dark:border-fuchsia-600",
         badge: "TL;DR",
         title: L("Get the gist of a long page", "Nắm ý chính của trang dài"),
         desc: L(
@@ -604,7 +604,7 @@ export function FeatureDiscovery() {
         ),
         icon: <Share2 className="size-3.5" />,
         iconColor: "bg-orange-500/20 text-orange-600 dark:text-orange-400",
-        cardBg: "bg-orange-50/60 dark:bg-orange-950/25 border-orange-200/60 dark:border-orange-800/40",
+        cardBg: "bg-orange-700 dark:bg-orange-800 border-orange-800 dark:border-orange-700",
         badge: "Share",
         title: L("Share a page the right way", "Chia sẻ trang đúng cách"),
         desc: L(
@@ -637,7 +637,7 @@ export function FeatureDiscovery() {
         ),
         icon: <Eye className="size-3.5" />,
         iconColor: "bg-lime-500/20 text-lime-700 dark:text-lime-400",
-        cardBg: "bg-lime-50/60 dark:bg-lime-950/25 border-lime-200/60 dark:border-lime-800/40",
+        cardBg: "bg-lime-700 dark:bg-lime-800 border-lime-800 dark:border-lime-700",
         badge: "Watch",
         title: L("Get told when a page changes", "Được báo khi trang thay đổi"),
         desc: L(
@@ -667,7 +667,7 @@ export function FeatureDiscovery() {
         ),
         icon: <Download className="size-3.5" />,
         iconColor: "bg-slate-500/20 text-slate-600 dark:text-slate-300",
-        cardBg: "bg-slate-50/60 dark:bg-slate-900/40 border-slate-200/60 dark:border-slate-700/40",
+        cardBg: "bg-slate-700 dark:bg-slate-800 border-slate-800 dark:border-slate-600",
         badge: "PDF · Word",
         title: L("Take a page with you", "Mang trang đi nơi khác"),
         desc: L(
@@ -697,7 +697,7 @@ export function FeatureDiscovery() {
         ),
         icon: <Keyboard className="size-3.5" />,
         iconColor: "bg-amber-500/20 text-amber-600 dark:text-amber-400",
-        cardBg: "bg-amber-50/60 dark:bg-amber-950/25 border-amber-200/60 dark:border-amber-800/40",
+        cardBg: "bg-amber-700 dark:bg-amber-800 border-amber-800 dark:border-amber-700",
         badge: "?",
         title: L("Forgot a shortcut? Press ?", "Quên phím tắt? Nhấn ?"),
         desc: L(
@@ -866,22 +866,21 @@ export function FeatureDiscovery() {
                       <div className="flex min-w-0 items-center gap-2">
                         <span
                           className={cn(
-                            "flex size-6 shrink-0 items-center justify-center rounded-md",
-                            slide.iconColor,
+                            "flex size-6 shrink-0 items-center justify-center rounded-md bg-white/20 text-white",
                           )}
                         >
                           {slide.icon}
                         </span>
-                        <h3 className="text-foreground truncate text-xs font-semibold">
+                        <h3 className="truncate text-xs font-semibold text-white">
                           {slide.title}
                         </h3>
                       </div>
-                      <span className="text-muted-foreground bg-surface/80 border-border/60 shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px]">
+                      <span className="shrink-0 rounded border border-white/30 bg-white/15 px-1.5 py-0.5 font-mono text-[10px] text-white">
                         {slide.badge}
                       </span>
                     </div>
 
-                    <p className="text-muted-foreground mt-2 line-clamp-3 text-[11px] leading-relaxed">
+                    <p className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-white/90">
                       {slide.desc}
                     </p>
                   </div>
