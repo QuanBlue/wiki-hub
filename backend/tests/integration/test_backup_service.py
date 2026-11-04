@@ -1460,7 +1460,7 @@ class TestRoundTrip:
         await BackupService(session).import_document(doc, dry_run=False)
 
         assert (
-            await AuthService(session).authenticate("alice", "alice-pass-1")
+            await AuthService(session).authenticate("alice", "alice-pass-1", accept_privacy=True)
         ).username == "alice"
 
     async def test_restored_user_without_a_hash_cannot_sign_in_until_reset(
@@ -1477,13 +1477,13 @@ class TestRoundTrip:
 
         auth = AuthService(session)
         with pytest.raises(AuthenticationError):
-            await auth.authenticate("alice", "alice-pass-1")
+            await auth.authenticate("alice", "alice-pass-1", accept_privacy=True)
 
         # The admin reset endpoint is the recovery path.
         restored = await auth.users.get_by_username("alice")
         assert restored is not None
         await auth.reset_password(restored.id, "a-fresh-password-1")
-        assert (await auth.authenticate("alice", "a-fresh-password-1")).id == restored.id
+        assert (await auth.authenticate("alice", "a-fresh-password-1", accept_privacy=True)).id == restored.id
 
 
 class TestDryRun:

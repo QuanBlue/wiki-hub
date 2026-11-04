@@ -42,6 +42,7 @@ class BackupUser(BaseModel):
     #: protected account.
     is_protected: bool = False
     last_login_at: datetime | None = None
+    privacy_accepted_at: datetime | None = None
     created_at: datetime | None = None
     #: Argon2 hash. Only populated when the export explicitly opted in.
     password_hash: str | None = None

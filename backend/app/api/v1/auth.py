@@ -65,7 +65,9 @@ async def login(
         f"login:user:{payload.username.strip().lower()}", settings.login_rate_limit
     )
 
-    user = await service.authenticate(payload.username, payload.password)
+    user = await service.authenticate(
+        payload.username, payload.password, accept_privacy=payload.accept_privacy
+    )
     effective_settings = await SiteSettingsService(session).get_effective()
     ttl_seconds = effective_settings.session_ttl_hours * 3600
     token, expires_at = create_access_token(str(user.id), expires_in=ttl_seconds)

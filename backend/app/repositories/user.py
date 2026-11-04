@@ -110,6 +110,11 @@ class UserRepository:
             # direction is chosen - NULL placement differs between databases.
             direction = User.last_login_at.asc() if asc else User.last_login_at.desc()
             ordering = [User.last_login_at.is_(None), direction, *ordering]
+        elif sort == "privacy":
+            direction = (
+                User.privacy_accepted_at.asc() if asc else User.privacy_accepted_at.desc()
+            )
+            ordering = [User.privacy_accepted_at.is_(None), direction, *ordering]
         elif sort is not None:
             if sort == "groups":
                 # First active group alphabetically; users with none sort last.

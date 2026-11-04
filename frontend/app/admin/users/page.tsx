@@ -28,9 +28,9 @@ export const dynamic = "force-dynamic";
 // list becomes unwieldy.
 const PAGE_SIZE = 10;
 const USER_PAGE_SIZES = [10, 25, 50, 100] as const;
-const SORT_KEYS = ["username", "email", "groups", "role", "status", "last_login"] as const;
+const SORT_KEYS = ["username", "email", "groups", "role", "status", "last_login", "privacy"] as const;
 type SortKey = (typeof SORT_KEYS)[number];
-const COLUMN_WIDTHS = ["20%", "18%", "27%", "7%", "8%", "12%", "8%"];
+const COLUMN_WIDTHS = ["17%", "16%", "20%", "7%", "8%", "12%", "12%", "8%"];
 
 function ColumnWidths() {
   return (
@@ -261,7 +261,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
             confirmNote={t("adminUsers.bulkDeleteNote")}
           />
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] table-fixed text-sm"><ColumnWidths /><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><SelectionHeaderCell ids={selectableUserIds} />{sortHeader("username", t("adminUsers.columnUser"))}{sortHeader("email", t("adminUsers.columnEmail"))}{sortHeader("groups", t("adminUsers.columnGroups"))}{sortHeader("role", t("adminUsers.columnRole"))}{sortHeader("status", t("adminUsers.columnStatus"))}{sortHeader("last_login", t("adminUsers.columnLastLogin"))}<th className="px-4 py-3 text-right font-medium">{t("adminUsers.columnActions")}</th></tr></thead><tbody>{page.items.length === 0 ? <tr><td colSpan={8} className="px-4 py-12 text-center"><UserRound className="text-muted-foreground mx-auto size-7" /><p className="mt-3 font-medium">{t("adminUsers.noUsersFound")}</p><p className="text-muted-foreground mt-1 text-sm">{t("adminUsers.tryChangingFilters")}</p></td></tr> : page.items.map((user) => <tr key={user.id} className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0">
+            <table className="w-full min-w-[960px] table-fixed text-sm"><ColumnWidths /><thead><tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left"><SelectionHeaderCell ids={selectableUserIds} />{sortHeader("username", t("adminUsers.columnUser"))}{sortHeader("email", t("adminUsers.columnEmail"))}{sortHeader("groups", t("adminUsers.columnGroups"))}{sortHeader("role", t("adminUsers.columnRole"))}{sortHeader("status", t("adminUsers.columnStatus"))}{sortHeader("last_login", t("adminUsers.columnLastLogin"))}{sortHeader("privacy", t("adminUsers.columnPrivacy"))}<th className="px-4 py-3 text-right font-medium">{t("adminUsers.columnActions")}</th></tr></thead><tbody>{page.items.length === 0 ? <tr><td colSpan={9} className="px-4 py-12 text-center"><UserRound className="text-muted-foreground mx-auto size-7" /><p className="mt-3 font-medium">{t("adminUsers.noUsersFound")}</p><p className="text-muted-foreground mt-1 text-sm">{t("adminUsers.tryChangingFilters")}</p></td></tr> : page.items.map((user) => <tr key={user.id} className="border-border hover:bg-surface-hover border-b transition-colors duration-150 last:border-0">
               <SelectionCell
                 id={user.id}
                 disabled={user.is_protected || me?.id === user.id || peerAdminBlocked(user)}
@@ -273,6 +273,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
               <td className="px-4 py-3"><Badge variant={user.is_superuser || user.is_effective_admin ? "info" : "neutral"} title={!user.is_superuser && user.is_effective_admin ? t("adminUsers.notSetDirectlyTitle") : undefined}>{user.is_superuser || user.is_effective_admin ? t("adminUsers.adminBadge") : t("adminUsers.roleMember")}</Badge></td>
               <td className="px-4 py-3"><Badge variant={user.is_active ? "success" : "warning"}>{user.is_active ? t("adminUsers.active") : t("adminUsers.disabled")}</Badge></td>
               <td className="px-4 py-3"><div className="flex items-center gap-1.5 text-xs font-medium"><span aria-hidden className={cn("size-2 shrink-0 rounded-full", user.is_online ? "bg-online" : user.last_login_at ? "bg-muted-foreground/50" : "border-muted-foreground border")} />{user.is_online ? t("adminUsers.presenceOnline") : user.last_login_at ? t("adminUsers.presenceOffline") : t("adminUsers.presenceNever")}</div>{user.last_login_at ? <p className="text-muted-foreground mt-0.5 truncate text-xs" title={formatDateTime(user.last_login_at, locale)}>{formatDateTime(user.last_login_at, locale)}</p> : null}</td>
+              <td className="px-4 py-3"><div className="flex items-center gap-1.5 text-xs font-medium"><span aria-hidden className={cn("size-2 shrink-0 rounded-full", user.privacy_accepted_at ? "bg-online" : "border-muted-foreground border")} />{user.privacy_accepted_at ? t("adminUsers.privacyAccepted") : t("adminUsers.privacyNotAccepted")}</div>{user.privacy_accepted_at ? <p className="text-muted-foreground mt-0.5 truncate text-xs" title={formatDateTime(user.privacy_accepted_at, locale)}>{formatDateTime(user.privacy_accepted_at, locale)}</p> : null}</td>
               <td className="px-4 py-3"><UserRowActions user={user} isSelf={me?.id === user.id} viewerIsProtected={me?.is_protected ?? false} viewerIsSystemAdmin={!!viewerIsSystemAdmin} /></td>
             </tr>)}</tbody></table>
           </div>

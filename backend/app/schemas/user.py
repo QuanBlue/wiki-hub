@@ -88,6 +88,7 @@ class UserRead(BaseModel):
     is_protected: bool
     receive_admin_emails: bool = True
     last_login_at: datetime | None
+    privacy_accepted_at: datetime | None = None
     #: Latest request seen on any live, non-impersonated session. Only filled
     #: in by `list_users`, which is what the People directory's Online column
     #: reads.
@@ -349,6 +350,9 @@ class LoginRequest(BaseModel):
     #: Username or e-mail address - the form accepts either.
     username: str = Field(min_length=1, max_length=320)
     password: str = Field(min_length=1, max_length=128)
+    #: Set by the consent dialog once the user has read and accepted the
+    #: personal-data policy. Required for any account that has not accepted yet.
+    accept_privacy: bool = False
 
 
 class LoginResponse(BaseModel):

@@ -676,7 +676,7 @@ async def list_users(
     ),
     status_filter: Literal["active", "disabled"] | None = Query(default=None, alias="status"),
     role: Literal["admin", "member"] | None = Query(default=None),
-    sort: Literal["username", "email", "groups", "role", "status", "last_login"] | None = Query(
+    sort: Literal["username", "email", "groups", "role", "status", "last_login", "privacy"] | None = Query(
         default=None
     ),
     order: Literal["asc", "desc"] = Query(default="desc"),
