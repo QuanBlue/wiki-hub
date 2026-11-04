@@ -498,3 +498,54 @@ function createLeave(target: Element, related: Element) {
 function dom_of(link: HTMLElement) {
   return link;
 }
+
+describe("removing a link from the hover toolbar", () => {
+  /** Hover a link (no click, so the caret stays where it was) and press Remove link. */
+  async function removeHovered(html: string, text: string, nth = 0) {
+    const view = await renderEditor(html);
+    const link = Array.from(view.dom.querySelectorAll("a")).filter(
+      (a) => a.textContent === text,
+    )[nth] as HTMLElement;
+    link.getBoundingClientRect = () =>
+      ({ left: 40, bottom: 60, top: 40, right: 100 }) as DOMRect;
+    fireEvent.mouseOver(link);
+    fireEvent.click(await screen.findByTitle("Remove link"));
+    return view.editor.getHTML();
+  }
+
+  it("removes a link in the middle of a paragraph, not just one at the caret", async () => {
+    const html = await removeHovered(
+      '<p>one <a href="/spaces/5MOB/pages/account">Account</a> two</p>',
+      "Account",
+    );
+    expect(html).toBe("<p>one Account two</p>");
+  });
+
+  it("removes a link inside a table header cell", async () => {
+    const html = await removeHovered(
+      '<table><tbody><tr><th>IP</th><th><a href="/spaces/5MOB/pages/account">Account</a> SSH</th></tr></tbody></table>',
+      "Account",
+    );
+    expect(html).not.toContain("<a ");
+    expect(html).not.toContain("/spaces/5MOB/pages/account");
+    expect(html).toContain("Account SSH");
+  });
+
+  it("removes a link whose text is also bold, keeping the bold", async () => {
+    const html = await removeHovered(
+      '<p>one <strong><a href="/x">Account</a></strong> two</p>',
+      "Account",
+    );
+    expect(html).toBe("<p>one <strong>Account</strong> two</p>");
+  });
+
+  it("removes only the link that was hovered when two sit side by side", async () => {
+    const html = await removeHovered(
+      '<p>a <a href="/first">Account</a><a href="/second">Account</a> b</p>',
+      "Account",
+      1,
+    );
+    expect(html).toContain('href="/first"');
+    expect(html).not.toContain("/second");
+  });
+});
