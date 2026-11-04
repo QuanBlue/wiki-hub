@@ -199,9 +199,15 @@ class TestRoundTrip:
         alice.avatar_object_key = "avatars/source-alice.png"
         alice.avatar_content_type = "image/png"
         alice.avatar_url = "/api/v1/users/source/avatar"
+        alice.avatar_updated_at = datetime(2026, 11, 3, 8, 30, tzinfo=UTC)
+        alice.cover_object_key = "covers/source-alice.png"
+        alice.cover_content_type = "image/png"
+        alice.cover_url = "/api/v1/users/source/cover"
+        alice.cover_updated_at = datetime(2026, 11, 4, 9, 45, tzinfo=UTC)
         objects = {
             "attachments/source-guide.txt": b"important file bytes",
             "avatars/source-alice.png": b"avatar bytes",
+            "covers/source-alice.png": b"cover bytes",
         }
 
         async def get(key: str) -> bytes:
@@ -236,8 +242,13 @@ class TestRoundTrip:
         assert restored_alice is not None
         assert restored_alice.avatar_object_key is not None
         assert objects[restored_alice.avatar_object_key] == b"avatar bytes"
+        assert restored_alice.avatar_updated_at == datetime(2026, 11, 3, 8, 30, tzinfo=UTC)
+        assert restored_alice.cover_object_key is not None
+        assert objects[restored_alice.cover_object_key] == b"cover bytes"
+        assert restored_alice.cover_updated_at == datetime(2026, 11, 4, 9, 45, tzinfo=UTC)
         assert report.created["attachment"] == 1
         assert report.created["avatar"] == 1
+        assert report.created["cover"] == 1
 
     async def test_replacing_a_space_repairs_content_whose_attachment_links_are_stale(
         self, session: AsyncSession, tmp_path: Path

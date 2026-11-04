@@ -454,6 +454,7 @@ async def test_avatar_endpoints_validate_replace_and_remove_avatar() -> None:
     )
     uploaded = await users.upload_own_avatar(request, upload, user, session, storage)
     assert uploaded.avatar_url.endswith(f"/users/{user.id}/avatar")
+    assert uploaded.avatar_updated_at is not None
     assert user.avatar_object_key and user.avatar_object_key.startswith(f"avatars/{user.id}/")
     storage.put.assert_awaited_once()
     storage.delete.assert_awaited_once_with("avatars/old.png")
@@ -484,8 +485,10 @@ async def test_avatar_endpoints_validate_replace_and_remove_avatar() -> None:
 
     response = await users.read_avatar(user.id, user, session, storage)
     assert response.status_code == 200 and response.body == b"avatar"
+    assert response.headers["cache-control"] == "private, no-store"
     removed = await users.delete_own_avatar(user, session, storage)
     assert removed.avatar_url is None
+    assert removed.avatar_updated_at is None
     assert user.avatar_object_key is None and user.avatar_content_type is None
 
     # No avatar to serve any more (just removed above) - and a user id that
@@ -494,6 +497,48 @@ async def test_avatar_endpoints_validate_replace_and_remove_avatar() -> None:
     assert (await users.read_avatar(user.id, user, session, storage)).status_code == 404
     session.get = AsyncMock(return_value=None)
     assert (await users.read_avatar(uuid.uuid4(), user, session, storage)).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_cover_endpoints_validate_replace_and_remove_cover() -> None:
+    user = _user()
+    user.cover_url = "/api/v1/users/old/cover"
+    user.cover_object_key = "covers/old.png"
+    user.cover_content_type = "image/png"
+    session = Mock(flush=AsyncMock(), get=AsyncMock(return_value=user))
+    storage = Mock(put=AsyncMock(), delete=AsyncMock(), get=AsyncMock(return_value=b"cover"))
+
+    upload = UploadFile(
+        file=io.BytesIO(b"image bytes"),
+        filename="cover.png",
+        headers=Headers({"content-type": "image/png"}),
+    )
+    uploaded = await users.upload_own_cover(upload, user, session, storage)
+    assert uploaded.cover_url == f"/api/v1/users/{user.id}/cover"
+    assert uploaded.cover_updated_at is not None
+    assert user.cover_object_key.startswith(f"covers/{user.id}/")
+    storage.delete.assert_awaited_once_with("covers/old.png")
+    response = await users.read_cover(user.id, user, session, storage)
+    assert response.status_code == 200 and response.body == b"cover"
+
+    invalid = UploadFile(
+        file=io.BytesIO(b"<svg />"), filename="cover.svg",
+        headers=Headers({"content-type": "image/svg+xml"}),
+    )
+    with pytest.raises(UnsupportedMediaTypeError):
+        await users.upload_own_cover(invalid, user, session, storage)
+    oversized = UploadFile(
+        file=io.BytesIO(b"x" * (users.MAX_COVER_BYTES + 1)),
+        filename="large.png", headers=Headers({"content-type": "image/png"}),
+    )
+    with pytest.raises(PayloadTooLargeError):
+        await users.upload_own_cover(oversized, user, session, storage)
+
+    removed = await users.delete_own_cover(user, session, storage)
+    assert removed.cover_url is None
+    assert removed.cover_updated_at is None
+    assert user.cover_object_key is None
+    assert (await users.read_cover(user.id, user, session, storage)).status_code == 404
 
 
 @pytest.mark.asyncio

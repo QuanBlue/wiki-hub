@@ -52,6 +52,9 @@ class UserRead(BaseModel):
     email: str
     full_name: str
     avatar_url: str | None
+    avatar_updated_at: datetime | None = None
+    cover_url: str | None = None
+    cover_updated_at: datetime | None = None
     bio: str
     pronouns: str
     profile_url: str
@@ -131,6 +134,9 @@ class PublicUserRead(BaseModel):
     username: str
     full_name: str
     avatar_url: str | None
+    avatar_updated_at: datetime | None = None
+    cover_url: str | None = None
+    cover_updated_at: datetime | None = None
     bio: str
     pronouns: str
     profile_url: str

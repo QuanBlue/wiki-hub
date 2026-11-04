@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,6 +10,18 @@ import type { Me } from "@/types/api";
 const { refresh, toastSuccess } = vi.hoisted(() => ({ refresh: vi.fn(), toastSuccess: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("sonner", () => ({ toast: { success: toastSuccess, error: vi.fn() } }));
+vi.mock("@/components/account/image-crop-dialog", () => ({
+  ImageCropDialog: ({ file, onApply, onClose }: {
+    file: File;
+    onApply: (file: File) => void;
+    onClose: () => void;
+  }) => (
+    <div role="dialog" aria-label="Position image">
+      <button type="button" onClick={() => onApply(file)}>Use image</button>
+      <button type="button" onClick={onClose}>Cancel positioning</button>
+    </div>
+  ),
+}));
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
@@ -57,7 +69,8 @@ function renderForm(user: Me = me(), props: Partial<React.ComponentProps<typeof 
 }
 
 const save = () => screen.getByRole("button", { name: "Save changes" });
-const fileInput = () => document.querySelector<HTMLInputElement>('input[type="file"]')!;
+const fileInput = () => document.querySelector<HTMLInputElement>('input[type="file"]:not([aria-label])')!;
+const coverInput = () => screen.getByLabelText("Profile cover") as HTMLInputElement;
 
 describe("ProfileForm", () => {
   it("saves trimmed values and shows success", async () => {
@@ -159,6 +172,7 @@ describe("ProfileForm", () => {
     const actor = userEvent.setup();
     renderForm();
     await actor.upload(fileInput(), png());
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
     expect(document.querySelector("img")).toHaveAttribute("src", "blob:preview");
     await actor.click(save());
     await waitFor(() => expect(mocked.post).toHaveBeenCalled());
@@ -166,11 +180,40 @@ describe("ProfileForm", () => {
     expect(mocked.post.mock.calls[0][2]).toMatchObject({ rawBody: expect.any(FormData) });
   });
 
+  it("previews and uploads a profile cover", async () => {
+    const actor = userEvent.setup();
+    renderForm();
+    await actor.upload(coverInput(), png("cover.png"));
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+    expect(document.querySelector('img[src="blob:preview"]')).toBeInTheDocument();
+    await actor.click(save());
+    await waitFor(() => expect(mocked.post).toHaveBeenCalled());
+    expect(mocked.post.mock.calls[0][0]).toBe("/api/v1/users/me/cover");
+    expect(mocked.post.mock.calls[0][2]).toMatchObject({ rawBody: expect.any(FormData) });
+  });
+
+  it("removes an existing profile cover", async () => {
+    const actor = userEvent.setup();
+    renderForm(me({ cover_url: "/cover.png" }));
+    expect(document.querySelector('img[src="/cover.png"]')).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Remove profile cover" }));
+    await actor.click(save());
+    await waitFor(() => expect(mocked.delete).toHaveBeenCalledWith("/api/v1/users/me/cover"));
+  });
+
+  it("rejects oversized profile covers", () => {
+    renderForm();
+    fireEvent.change(coverInput(), { target: { files: [png("big.png", 11 * 1024 * 1024)] } });
+    expect(screen.getByText("Profile covers must be 10 MB or smaller.")).toBeInTheDocument();
+  });
+
   it("replaces a previous preview and revokes the old one", async () => {
     const actor = userEvent.setup();
     renderForm();
     await actor.upload(fileInput(), png("one.png"));
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
     await actor.upload(fileInput(), png("two.png"));
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
   });
 
@@ -198,6 +241,7 @@ describe("ProfileForm", () => {
     const actor = userEvent.setup();
     renderForm();
     await actor.upload(fileInput(), png());
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
     await actor.click(screen.getByRole("button", { name: "Remove" }));
     expect(URL.revokeObjectURL).toHaveBeenCalled();
   });
@@ -228,15 +272,58 @@ describe("ProfileForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Change" }));
     expect(click).toHaveBeenCalled();
   });
+
+  it("keeps the previous picture when positioning is cancelled", async () => {
+    const actor = userEvent.setup();
+    renderForm(me({ avatar_url: "/me.png" }));
+    await actor.upload(fileInput(), png());
+    await actor.click(screen.getByRole("button", { name: "Cancel positioning" }));
+    expect(document.querySelector('img[src="/me.png"]')).toBeInTheDocument();
+    await actor.click(save());
+    await waitFor(() => expect(mocked.patch).toHaveBeenCalled());
+    expect(mocked.post).not.toHaveBeenCalled();
+  });
 });
 
 describe("ProfileSummary", () => {
+  it("opens the full cover and avatar from their profile images", async () => {
+    const actor = userEvent.setup();
+    render(<ProfileSummary user={me({
+      avatar_url: "/me.png",
+      cover_url: "/cover.png",
+      cover_updated_at: "2026-11-04T12:00:00Z",
+    })} onEdit={vi.fn()} />);
+
+    await actor.click(screen.getByRole("button", { name: "View profile cover" }));
+    const coverDialog = screen.getByRole("dialog", { name: "Profile cover" });
+    expect(within(coverDialog).getByText("Image information")).toBeInTheDocument();
+    expect(within(coverDialog).getByText("Ann Lee")).toBeInTheDocument();
+    expect(within(coverDialog).getByText("Last updated")).toBeInTheDocument();
+    expect(within(coverDialog).getByText(/2026/)).toBeInTheDocument();
+    const coverImage = within(coverDialog).getByRole("img", { name: "Profile cover" });
+    expect(coverImage).toHaveAttribute("src", "/cover.png");
+    Object.defineProperties(coverImage, {
+      naturalWidth: { configurable: true, value: 1500 },
+      naturalHeight: { configurable: true, value: 400 },
+    });
+    fireEvent.load(coverImage);
+    expect(within(coverDialog).getByText("1500 × 400 px")).toBeInTheDocument();
+    await actor.keyboard("{Escape}");
+
+    await actor.click(screen.getByRole("button", { name: "View profile picture" }));
+    const avatarDialog = screen.getByRole("dialog", { name: "Profile picture" });
+    expect(within(avatarDialog).getByText("@ann")).toBeInTheDocument();
+    expect(within(avatarDialog).getByText("Not recorded")).toBeInTheDocument();
+    expect(within(avatarDialog).getByRole("img", { name: "Profile picture" })).toHaveAttribute("src", "/me.png");
+  });
+
   it("shows the essentials for a bare member", () => {
     const onEdit = vi.fn();
     render(<ProfileSummary user={me()} onEdit={onEdit} />);
     expect(screen.getByText("Ann Lee")).toBeInTheDocument();
     expect(screen.getByText("ann@example.com")).toBeInTheDocument();
     expect(screen.getByText("Member")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change profile cover" })).not.toBeInTheDocument();
     expect(screen.queryByText("Social links")).not.toBeInTheDocument();
   });
 
@@ -253,6 +340,7 @@ describe("ProfileSummary", () => {
           is_superuser: true,
           is_protected: true,
           avatar_url: "/me.png",
+          cover_url: "/cover.png",
         } as Partial<Me>)}
         onEdit={onEdit}
       />,
@@ -261,6 +349,7 @@ describe("ProfileSummary", () => {
     expect(screen.getByText("Administrator")).toBeInTheDocument();
     expect(screen.getByText("Protected")).toBeInTheDocument();
     expect(screen.getByText("Acme")).toBeInTheDocument();
+    expect(document.querySelector('img[src="/cover.png"]')).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "ann.example" })).toHaveAttribute("href", "https://ann.example");
     expect(screen.getByRole("link", { name: "https://a.example" })).toHaveAttribute("href", "https://a.example");
     await userEvent.click(screen.getByRole("button", { name: "Edit profile" }));

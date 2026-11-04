@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
+import { ProfileImageViewer } from "@/components/users/profile-image-viewer";
 import { getUserAvatarColor } from "@/components/ui/avatar";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -1914,7 +1915,13 @@ export function UserProfile({
 
       <aside className="space-y-5 lg:flex lg:h-full lg:flex-col lg:space-y-0 lg:gap-5">
         <section className="border-border bg-surface relative shrink-0 overflow-hidden rounded-lg border">
-          <div className="bg-primary-subtle h-20" />
+          <div className="bg-primary-subtle aspect-[15/4] overflow-hidden">
+            {user.cover_url ? (
+              <ProfileImageViewer src={user.cover_url} kind="cover" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.cover_updated_at} className="size-full">
+                <img src={user.cover_url} alt="" className="size-full object-cover" />
+              </ProfileImageViewer>
+            ) : null}
+          </div>
           {isOwner ? (
             <Link
               href="/account"
@@ -1929,26 +1936,28 @@ export function UserProfile({
             {/* Avatar overlaps the cover, name beside it, actions on the right. */}
             <div className="flex items-end gap-3">
               <div className="relative -mt-10 size-20 shrink-0">
-                <span
-                  className={cn(
-                    "ring-surface flex size-20 items-center justify-center overflow-hidden rounded-full text-2xl font-semibold ring-4 select-none",
-                    user.avatar_url
-                      ? ""
-                      : getUserAvatarColor(user.username || user.full_name || ""),
-                  )}
-                >
-                  {user.avatar_url ? (
-                    <img
-                      src={user.avatar_url}
-                      alt=""
-                      className="size-full object-cover"
-                    />
-                  ) : (
-                    initials(user) || (
-                      <UserRound className="size-10" aria-hidden />
-                    )
-                  )}
-                </span>
+                <ProfileImageViewer src={user.avatar_url} kind="avatar" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.avatar_updated_at} className="size-full rounded-full focus-visible:rounded-full">
+                  <span
+                    className={cn(
+                      "ring-surface flex size-20 items-center justify-center overflow-hidden rounded-full text-2xl font-semibold ring-4 select-none",
+                      user.avatar_url
+                        ? ""
+                        : getUserAvatarColor(user.username || user.full_name || ""),
+                    )}
+                  >
+                    {user.avatar_url ? (
+                      <img
+                        src={user.avatar_url}
+                        alt=""
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      initials(user) || (
+                        <UserRound className="size-10" aria-hidden />
+                      )
+                    )}
+                  </span>
+                </ProfileImageViewer>
                 <span
                   className={presenceIndicatorClass}
                   role="img"
