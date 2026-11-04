@@ -119,6 +119,7 @@ import {
 import { findHomePage } from "@/lib/home-page";
 import { getFontFamilyCss } from "@/lib/font-presets";
 import { matchesShortcut } from "@/lib/keyboard-shortcuts";
+import { linkNavigationTarget } from "@/lib/navigation-target";
 import { cn } from "@/lib/utils";
 import type {
   PageContentFormat,
@@ -149,23 +150,10 @@ const DEFAULT_SIDEBAR_WIDTH = 320;
  * without standing up the whole workspace.
  */
 export function navigationTargetOf(event: MouseEvent): URL | null {
-  if (event.defaultPrevented || event.button !== 0) return null;
-  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-    return null;
-
-  const target = event.target;
-  const link = target instanceof Element ? target.closest("a[href]") : null;
-  if (!(link instanceof HTMLAnchorElement)) return null;
-  if (link.target && link.target !== "_self") return null;
-  if (link.hasAttribute("download")) return null;
   // An attachment link opens the preview modal and leaves the page where it
   // is, so challenging it would be asking about a departure that is not
   // happening. The editor's own capture listener handles the click.
-  if (isAttachmentHref(link.getAttribute("href") ?? "")) return null;
-
-  const destination = new URL(link.href, window.location.href);
-  if (destination.href === window.location.href) return null;
-  return destination;
+  return linkNavigationTarget(event, isAttachmentHref);
 }
 
 /**

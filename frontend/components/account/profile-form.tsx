@@ -35,7 +35,25 @@ function normalizeSocialLinks(links: string[]) {
   return [...links.slice(0, SOCIAL_SLOTS), ...Array(SOCIAL_SLOTS).fill("")].slice(0, SOCIAL_SLOTS);
 }
 
-export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: () => void; onSaved: (user: User, avatarChanged: boolean) => void }) {
+export function ProfileForm({
+  user,
+  onCancel,
+  onSaved,
+  onDirtyChange,
+  registerSave,
+}: {
+  user: Me;
+  onCancel: () => void;
+  onSaved: (user: User, avatarChanged: boolean) => void;
+  /** Told whenever the form gains or loses unsaved changes. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * Hands the parent a function that validates and saves, resolving to whether
+   * the changes were saved. Lets a "save and leave" prompt outside this form
+   * save it. Called with `null` when the form goes away.
+   */
+  registerSave?: (save: (() => Promise<boolean>) | null) => void;
+}) {
   const router = useRouter();
   const fileInputId = useId();
   const coverInputId = useId();
@@ -59,6 +77,23 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
+
+  const dirty =
+    fullName !== user.full_name ||
+    email !== user.email ||
+    bio !== user.bio ||
+    pronouns !== (user.pronouns || "unspecified") ||
+    profileUrl !== user.profile_url ||
+    company !== user.company ||
+    JSON.stringify(socialLinks) !== JSON.stringify(normalizeSocialLinks(user.social_links)) ||
+    selectedFile !== null ||
+    avatarRemoved ||
+    coverFile !== null ||
+    coverRemoved;
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
   useEffect(() => () => { if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl); }, [coverPreviewUrl]);
@@ -179,9 +214,14 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
     return Object.keys(nextErrors).length === 0;
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!validateForm()) return;
+    void save();
+  }
+
+  /** Validate and save. Resolves to whether the changes were saved. */
+  async function save(): Promise<boolean> {
+    if (!validateForm()) return false;
     setPending(true);
     setError(null);
     try {
@@ -212,12 +252,19 @@ export function ProfileForm({ user, onCancel, onSaved }: { user: Me; onCancel: (
       toast.success(t("profile.profileUpdated"));
       onSaved(updatedUser, Boolean(selectedFile || avatarRemoved));
       router.refresh();
+      return true;
     } catch (err) {
       setError(apiErrorText(err, "profile.couldNotUpdateProfile"));
+      return false;
     } finally {
       setPending(false);
     }
   }
+
+  useEffect(() => {
+    registerSave?.(save);
+    return () => registerSave?.(null);
+  });
 
   return (
     <>

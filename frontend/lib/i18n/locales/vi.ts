@@ -546,6 +546,14 @@ export const vi: Dictionary = {
     "ssoHint": "Đăng nhập qua nhà cung cấp danh tính của tổ chức bạn.",
     "incomingFeature": "Sắp ra mắt"
   },
+  "unsavedChanges": {
+    "title": "Lưu thay đổi trước khi rời đi?",
+    "description": "Bạn có thay đổi chưa lưu. Hãy lưu rồi rời đi, rời đi mà không lưu, hoặc tiếp tục chỉnh sửa.",
+    "saveAndLeave": "Lưu và rời đi",
+    "leaveWithoutSaving": "Rời đi mà không lưu",
+    "keepEditing": "Tiếp tục chỉnh sửa",
+    "browserMessage": "Bạn có thay đổi chưa được lưu. Rời đi mà không lưu?"
+  },
   "profile": {
     "displayName": "Tên hiển thị",
     "displayNameHint": "Tên này hiển thị ở những nơi bạn đóng góp và cộng tác.",

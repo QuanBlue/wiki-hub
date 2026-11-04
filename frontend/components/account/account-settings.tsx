@@ -1,7 +1,7 @@
 "use client";
 
 import { Keyboard, KeyRound, Mail, ShieldCheck, UserRound } from "lucide-react";
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useRef, useState, type KeyboardEvent } from "react";
 
 import { ChangePasswordForm } from "@/components/account/change-password-form";
 import { ProfileForm } from "@/components/account/profile-form";
@@ -10,6 +10,7 @@ import { SessionsPanel } from "@/components/account/sessions-panel";
 import { ShortcutSettings } from "@/components/account/shortcut-settings";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n/context";
+import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import { cn } from "@/lib/utils";
 import type { Me, User } from "@/types/api";
 
@@ -43,6 +44,17 @@ export function AccountSettings({
     openChangePassword && initialTab === "security",
   );
   const { t } = useTranslation();
+  // The profile form reports its unsaved state and a way to save it, so leaving
+  // it (Cancel, another tab, another page) can ask first.
+  const [profileDirty, setProfileDirty] = useState(false);
+  const profileSaveRef = useRef<(() => Promise<boolean>) | null>(null);
+  const registerProfileSave = useCallback((save: (() => Promise<boolean>) | null) => {
+    profileSaveRef.current = save;
+  }, []);
+  const guard = useUnsavedChangesGuard({
+    dirty: profileEditing && profileDirty,
+    save: async () => (await profileSaveRef.current?.()) ?? false,
+  });
   const currentUser = savedUser?.source === user ? savedUser.current : user;
   const profileUser: Me = avatarVersion && currentUser.avatar_url
     ? {
@@ -66,7 +78,8 @@ export function AccountSettings({
   });
 
   function selectTab(tab: AccountTab) {
-    setActiveTab(tab);
+    if (tab === activeTab) return;
+    guard.attempt(() => setActiveTab(tab));
   }
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: AccountTab) {
@@ -78,8 +91,10 @@ export function AccountSettings({
     if (nextIndex === -1) return;
     event.preventDefault();
     const nextTab = tabs[nextIndex]!.id;
-    selectTab(nextTab);
-    tabRefs.current[nextTab]?.focus();
+    guard.attempt(() => {
+      setActiveTab(nextTab);
+      tabRefs.current[nextTab]?.focus();
+    });
   }
 
   return (
@@ -135,8 +150,10 @@ export function AccountSettings({
           {profileEditing ? (
             <ProfileForm
               user={profileUser}
-              onCancel={() => setProfileEditing(false)}
+              onCancel={() => guard.attempt(() => setProfileEditing(false))}
               onSaved={handleProfileSaved}
+              onDirtyChange={setProfileDirty}
+              registerSave={registerProfileSave}
             />
           ) : (
             <ProfileSummary user={profileUser} onEdit={() => setProfileEditing(true)} />
@@ -200,6 +217,7 @@ export function AccountSettings({
         </section>
       )}
       </div>
+      {guard.dialog}
     </div>
   );
 }

@@ -623,6 +623,15 @@ export const en = {
     incomingFeature: "Incoming feature",
   },
 
+  unsavedChanges: {
+    title: "Save your changes before leaving?",
+    description:
+      "You have unsaved changes. Save them and leave, leave without saving, or keep editing.",
+    saveAndLeave: "Save and leave",
+    leaveWithoutSaving: "Leave without saving",
+    keepEditing: "Keep editing",
+    browserMessage: "You have unsaved changes. Leave without saving?",
+  },
   profile: {
     displayName: "Display name",
     displayNameHint: "This name is shown where you contribute and collaborate.",
