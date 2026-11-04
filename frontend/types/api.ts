@@ -161,6 +161,11 @@ export interface User {
   avatar_updated_at?: string | null;
   cover_url?: string | null;
   cover_updated_at?: string | null;
+  /** The uncropped picture is kept, so "Reposition" can reopen it. */
+  avatar_has_original?: boolean;
+  avatar_crop?: { zoom: number; x: number; y: number } | null;
+  cover_has_original?: boolean;
+  cover_crop?: { zoom: number; x: number; y: number } | null;
   bio: string;
   pronouns: string;
   profile_url: string;
@@ -1609,4 +1614,6 @@ export interface AuditLogEntry {
   ip_address: string | null;
   actor_avatar_url?: string | null;
   actor_full_name?: string | null;
+  impersonator_avatar_url?: string | null;
+  impersonator_full_name?: string | null;
 }

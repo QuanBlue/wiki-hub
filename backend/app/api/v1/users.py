@@ -12,11 +12,13 @@ layer so they hold for any future caller:
 
 from __future__ import annotations
 
+import json
+import math
 import uuid
 from datetime import UTC, date, datetime, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, Form, Query, Request, Response, UploadFile, status
 from sqlalchemy import delete, func, select
 
 from app.api.deps import ActingAuthServiceDep, CurrentUser, DbSession, Impersonator
@@ -96,6 +98,66 @@ async def remove_avatar_object(user: User, storage: ObjectStorage) -> None:
         user.avatar_object_key = None
         user.avatar_content_type = None
         user.avatar_updated_at = None
+    await _drop_original(user, "avatar", storage)
+
+
+def _parse_crop(raw: str | None) -> dict[str, float] | None:
+    """The crop frame sent alongside an upload: ``{"zoom", "x", "y"}`` or nothing."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        crop = {key: float(data[key]) for key in ("zoom", "x", "y")}
+    except (ValueError, TypeError, KeyError):
+        raise BadRequestError("The crop settings are invalid.") from None
+    if not all(math.isfinite(v) for v in crop.values()) or not 1 <= crop["zoom"] <= 3:
+        raise BadRequestError("The crop settings are invalid.")
+    return crop
+
+
+async def _drop_original(user: User, kind: str, storage: ObjectStorage) -> None:
+    key = getattr(user, f"{kind}_original_key", None)
+    setattr(user, f"{kind}_original_key", None)
+    setattr(user, f"{kind}_original_content_type", None)
+    setattr(user, f"{kind}_crop", None)
+    if key:
+        await storage.delete(key)
+
+
+async def _store_original(
+    user: User,
+    kind: str,
+    original: UploadFile | None,
+    crop: str | None,
+    limit: int,
+    storage: ObjectStorage,
+) -> list[str]:
+    """Keep (or refresh) the uncropped picture behind a just-uploaded crop.
+
+    Without a new ``original`` the stored one stays and only its crop moves;
+    that is how repositioning avoids re-sending the picture. Returns the keys
+    to delete once the transaction is safe.
+    """
+    parsed = _parse_crop(crop)
+    stale: list[str] = []
+    if original is not None:
+        content_type = (original.content_type or "").lower()
+        if content_type not in AVATAR_TYPES:
+            raise UnsupportedMediaTypeError("The original must be a JPEG, PNG, GIF, or WebP image.")
+        data = await original.read(limit + 1)
+        if len(data) > limit:
+            raise PayloadTooLargeError("The original image is too large.")
+        if not data:
+            raise BadRequestError("The original image is empty.")
+        key = f"{kind}s/{user.id}/original-{uuid.uuid4()}.{AVATAR_EXTENSIONS[content_type]}"
+        await storage.put(key, data, content_type=content_type)
+        old = getattr(user, f"{kind}_original_key", None)
+        if old:
+            stale.append(old)
+        setattr(user, f"{kind}_original_key", key)
+        setattr(user, f"{kind}_original_content_type", content_type)
+    setattr(user, f"{kind}_crop", parsed if getattr(user, f"{kind}_original_key", None) else None)
+    return stale
 
 
 @router.patch("/me", response_model=UserRead, summary="Update your profile")
@@ -115,6 +177,8 @@ async def upload_own_avatar(
     user: CurrentUser,
     session: DbSession,
     storage: ObjectStorage = Depends(get_storage),
+    original: UploadFile | None = None,
+    crop: Annotated[str | None, Form()] = None,
 ) -> UserRead:
     content_type = (file.content_type or "").lower()
     if content_type not in AVATAR_TYPES:
@@ -132,10 +196,27 @@ async def upload_own_avatar(
     user.avatar_content_type = content_type
     user.avatar_url = avatar_endpoint(request, user.id)
     user.avatar_updated_at = datetime.now(UTC)
+    stale = await _store_original(user, "avatar", original, crop, MAX_AVATAR_BYTES, storage)
     if old_key and old_key != key:
-        await storage.delete(old_key)
+        stale.append(old_key)
     await session.flush()
+    for old in stale:
+        await storage.delete(old)
     return UserRead.model_validate(user)
+
+
+@router.get("/me/avatar/original", summary="Read your uncropped profile picture")
+async def read_own_avatar_original(
+    user: CurrentUser,
+    storage: ObjectStorage = Depends(get_storage),
+) -> Response:
+    if not user.avatar_original_key:
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+    return Response(
+        content=await storage.get(user.avatar_original_key),
+        media_type=user.avatar_original_content_type or "image/png",
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.delete("/me/avatar", response_model=UserRead, summary="Remove your profile picture")
@@ -185,6 +266,8 @@ async def upload_own_cover(
     user: CurrentUser,
     session: DbSession,
     storage: ObjectStorage = Depends(get_storage),
+    original: UploadFile | None = None,
+    crop: Annotated[str | None, Form()] = None,
 ) -> UserRead:
     content_type = (file.content_type or "").lower()
     if content_type not in AVATAR_TYPES:
@@ -202,10 +285,27 @@ async def upload_own_cover(
     user.cover_content_type = content_type
     user.cover_url = f"{settings.api_v1_prefix}/users/{user.id}/cover"
     user.cover_updated_at = datetime.now(UTC)
-    await session.flush()
+    stale = await _store_original(user, "cover", original, crop, MAX_COVER_BYTES, storage)
     if old_key and old_key != key:
-        await storage.delete(old_key)
+        stale.append(old_key)
+    await session.flush()
+    for old in stale:
+        await storage.delete(old)
     return UserRead.model_validate(user)
+
+
+@router.get("/me/cover/original", summary="Read your uncropped profile cover")
+async def read_own_cover_original(
+    user: CurrentUser,
+    storage: ObjectStorage = Depends(get_storage),
+) -> Response:
+    if not user.cover_original_key:
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+    return Response(
+        content=await storage.get(user.cover_original_key),
+        media_type=user.cover_original_content_type or "image/png",
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.delete("/me/cover", response_model=UserRead, summary="Remove your profile cover")
@@ -219,6 +319,7 @@ async def delete_own_cover(
     user.cover_content_type = None
     user.cover_url = None
     user.cover_updated_at = None
+    await _drop_original(user, "cover", storage)
     await session.flush()
     if old_key:
         await storage.delete(old_key)

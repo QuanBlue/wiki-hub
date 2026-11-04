@@ -74,6 +74,11 @@ class AuditQueryService:
             e.actor_username
             for e in entries
             if getattr(e, "actor_username", None) and e.actor_username != "system"
+        } | {
+            e.impersonator_username
+            for e in entries
+            if isinstance(getattr(e, "impersonator_username", None), str)
+            and e.impersonator_username
         }
         user_meta: dict[str, tuple[str | None, str | None]] = {}
         if (
@@ -96,6 +101,10 @@ class AuditQueryService:
             read = AuditLogRead.model_validate(e)
             if read.actor_username in user_meta:
                 read.actor_avatar_url, read.actor_full_name = user_meta[read.actor_username]
+            if read.impersonator_username in user_meta:
+                read.impersonator_avatar_url, read.impersonator_full_name = user_meta[
+                    read.impersonator_username
+                ]
             items.append(read)
 
         return Page.of(

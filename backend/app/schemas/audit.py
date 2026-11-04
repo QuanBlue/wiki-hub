@@ -28,3 +28,5 @@ class AuditLogRead(BaseModel):
     ip_address: str | None
     actor_avatar_url: str | None = None
     actor_full_name: str | None = None
+    impersonator_avatar_url: str | None = None
+    impersonator_full_name: str | None = None

@@ -55,6 +55,12 @@ class UserRead(BaseModel):
     avatar_updated_at: datetime | None = None
     cover_url: str | None = None
     cover_updated_at: datetime | None = None
+    #: Whether the uncropped picture is kept (owner can reopen it to
+    #: reposition) and the crop last applied.
+    avatar_has_original: bool = False
+    avatar_crop: dict[str, float] | None = None
+    cover_has_original: bool = False
+    cover_crop: dict[str, float] | None = None
     bio: str
     pronouns: str
     profile_url: str

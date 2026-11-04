@@ -57,6 +57,17 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     cover_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    #: The uncropped upload behind the avatar/cover and where its crop sat
+    #: (``{"zoom", "x", "y"}``, offsets as a fraction of the crop frame), so
+    #: "Reposition" can reopen the picture instead of asking for it again.
+    #: Only the owner can read the original. NULL for images saved before this
+    #: existed or restored from a backup; the cropped image is used then.
+    avatar_original_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    avatar_original_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    avatar_crop: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    cover_original_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    cover_original_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    cover_crop: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     bio: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     pronouns: Mapped[str] = mapped_column(String(64), nullable=False, default="", server_default="")
     profile_url: Mapped[str] = mapped_column(
@@ -95,6 +106,14 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     privacy_accepted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    @property
+    def avatar_has_original(self) -> bool:
+        return bool(self.avatar_original_key)
+
+    @property
+    def cover_has_original(self) -> bool:
+        return bool(self.cover_original_key)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<User {self.username}>"
