@@ -4,6 +4,7 @@ import { AlertCircle, AlertTriangle, ArrowRight, Loader2, Lock, User } from "luc
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { PrivacyConsentDialog } from "@/components/auth/privacy-consent-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -11,7 +12,7 @@ import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import type { LoginResponse } from "@/types/api";
 
-export function LoginForm() {
+export function LoginForm({ siteName = "WikiHub" }: { siteName?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useTranslation();
@@ -21,6 +22,7 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
   const accountInactive = errorCode === "account_inactive";
 
   /**
@@ -34,8 +36,20 @@ export function LoginForm() {
     return next;
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    void submit(false);
+  }
+
+  /** Declining the policy means no sign-in: nothing was ever sent to accept it. */
+  function declineConsent() {
+    setConsentOpen(false);
+    setPassword("");
+    setErrorCode("privacy_consent_declined");
+    setError(t("auth.privacyConsentDeclined"));
+  }
+
+  async function submit(acceptPrivacy: boolean) {
     setPending(true);
     setError(null);
     setErrorCode(null);
@@ -46,6 +60,7 @@ export function LoginForm() {
       await api.post<LoginResponse>("/api/v1/auth/login", {
         username: username.trim(),
         password,
+        ...(acceptPrivacy ? { accept_privacy: true } : {}),
       });
 
       // `refresh` re-runs the server components so the shell renders with the
@@ -53,18 +68,27 @@ export function LoginForm() {
       router.replace(safeNextPath());
       router.refresh();
     } catch (err) {
+      if (err instanceof ApiError && err.code === "privacy_consent_required") {
+        // Credentials were right but the policy is not accepted yet. Keep them
+        // in state and ask; no session exists until the user accepts.
+        setConsentOpen(true);
+        setPending(false);
+        return;
+      }
       if (err instanceof ApiError) {
         setError(err.message);
         setErrorCode(err.code);
       } else {
         setError(t("auth.networkError"));
       }
+      setConsentOpen(false);
       setPassword("");
       setPending(false);
     }
   }
 
   return (
+    <>
     <form
       onSubmit={handleSubmit}
       className="space-y-3.5 [@media(max-height:800px)]:space-y-2.5"
@@ -145,5 +169,13 @@ export function LoginForm() {
         )}
       </Button>
     </form>
+    <PrivacyConsentDialog
+      open={consentOpen}
+      siteName={siteName}
+      pending={pending}
+      onAccept={() => void submit(true)}
+      onDecline={declineConsent}
+    />
+    </>
   );
 }

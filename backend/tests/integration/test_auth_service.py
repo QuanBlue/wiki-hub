@@ -106,10 +106,10 @@ class TestBootstrapAdmin:
         assert again.username == admin.username
 
         assert (
-            await service.authenticate(admin.username, "a-totally-different-password")
+            await service.authenticate(admin.username, "a-totally-different-password", accept_privacy=True)
         ).id == admin.id
         with pytest.raises(AuthenticationError):
-            await service.authenticate(admin.username, "admin123")
+            await service.authenticate(admin.username, "admin123", accept_privacy=True)
 
     async def test_reseeding_with_a_different_identity_resyncs_it(
         self, session: AsyncSession
@@ -139,9 +139,9 @@ class TestBootstrapAdmin:
         assert again.full_name == "Renamed Admin"
 
         # Sign-in follows the new username, not the old one.
-        assert (await service.authenticate("renamed-admin", "admin123")).id == admin.id
+        assert (await service.authenticate("renamed-admin", "admin123", accept_privacy=True)).id == admin.id
         with pytest.raises(AuthenticationError):
-            await service.authenticate(original_username, "admin123")
+            await service.authenticate(original_username, "admin123", accept_privacy=True)
 
     async def test_reseeding_leaves_a_colliding_username_or_email_untouched(
         self, session: AsyncSession
@@ -183,7 +183,7 @@ class TestBootstrapAdmin:
         service = AuthService(session)
         admin = await _make_protected_admin(service)
 
-        authenticated = await service.authenticate(admin.username, "admin123")
+        authenticated = await service.authenticate(admin.username, "admin123", accept_privacy=True)
         assert authenticated.id == admin.id
 
     async def test_wrong_password_is_rejected(self, session: AsyncSession) -> None:
@@ -191,7 +191,7 @@ class TestBootstrapAdmin:
         admin = await _make_protected_admin(service)
 
         with pytest.raises(AuthenticationError):
-            await service.authenticate(admin.username, "not-the-password")
+            await service.authenticate(admin.username, "not-the-password", accept_privacy=True)
 
 
 class TestProtectedAccountIsImmutable:
@@ -214,7 +214,7 @@ class TestProtectedAccountIsImmutable:
             await service.change_password(admin.id, "admin123", "a-new-password-123")
 
         # The original credential still works.
-        assert (await service.authenticate(admin.username, "admin123")).id == admin.id
+        assert (await service.authenticate(admin.username, "admin123", accept_privacy=True)).id == admin.id
 
     async def test_cannot_be_deactivated(self, session: AsyncSession) -> None:
         service = AuthService(session)
@@ -262,7 +262,7 @@ class TestOrdinaryUsers:
         user = await self._make_user(service)
 
         await service.change_password(user.id, "user-password-123", "brand-new-password")
-        assert (await service.authenticate(user.username, "brand-new-password")).id == user.id
+        assert (await service.authenticate(user.username, "brand-new-password", accept_privacy=True)).id == user.id
 
     async def test_can_be_deactivated_and_then_cannot_log_in(self, session: AsyncSession) -> None:
         service = AuthService(session)
@@ -271,7 +271,7 @@ class TestOrdinaryUsers:
         await service.update_user(user.id, UserUpdate(is_active=False))
 
         with pytest.raises(AuthenticationError):
-            await service.authenticate(user.username, "user-password-123")
+            await service.authenticate(user.username, "user-password-123", accept_privacy=True)
 
     async def test_can_be_deleted(self, session: AsyncSession) -> None:
         service = AuthService(session)
@@ -284,13 +284,15 @@ class TestOrdinaryUsers:
         service = AuthService(session)
         user = await self._make_user(service)
 
-        assert (await service.authenticate(user.email, "user-password-123")).id == user.id
+        assert (await service.authenticate(user.email, "user-password-123", accept_privacy=True)).id == user.id
 
     async def test_username_lookup_is_case_insensitive(self, session: AsyncSession) -> None:
         service = AuthService(session)
         user = await self._make_user(service)
 
-        found = await service.authenticate(user.username.upper(), "user-password-123")
+        found = await service.authenticate(
+            user.username.upper(), "user-password-123", accept_privacy=True
+        )
         assert found.id == user.id
 
 
@@ -583,9 +585,9 @@ class TestAdminPasswordReset:
 
         await service.reset_password(user.id, "replacement-password-2")
 
-        assert (await service.authenticate(user.username, "replacement-password-2")).id == user.id
+        assert (await service.authenticate(user.username, "replacement-password-2", accept_privacy=True)).id == user.id
         with pytest.raises(AuthenticationError):
-            await service.authenticate(user.username, "original-password-1")
+            await service.authenticate(user.username, "original-password-1", accept_privacy=True)
 
     async def test_missing_user_is_not_found(self, session: AsyncSession) -> None:
         with pytest.raises(NotFoundError):
@@ -605,7 +607,7 @@ class TestAdminPasswordReset:
             await service.reset_password(admin.id, "attempted-new-password")
 
         # The original credential still works.
-        assert (await service.authenticate(admin.username, "admin123")).id == admin.id
+        assert (await service.authenticate(admin.username, "admin123", accept_privacy=True)).id == admin.id
 
     async def test_password_never_reaches_the_audit_trail(self, session: AsyncSession) -> None:
         actor = await AuthService(session).create_user(

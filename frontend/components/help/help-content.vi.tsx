@@ -2688,6 +2688,21 @@ export const sectionsVi: HelpSection[] = [
           báo từ đường link dưới form đăng nhập, hoặc vào <Code>/privacy</Code>. Không cần đăng
           nhập vẫn đọc được.
         </p>
+        <p className="mt-3 font-semibold text-foreground">Đồng ý thông báo khi đăng nhập lần đầu:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Lần đăng nhập đầu tiên, WikiHub hiển thị thông báo trong một cửa sổ. Hãy cuộn đến cuối
+            cùng; nút <strong>Đồng ý và đăng nhập</strong> chỉ bật sau khi bạn đã cuộn hết.
+          </li>
+          <li>
+            Nếu chọn <strong>Không đồng ý</strong>, bạn sẽ không được đăng nhập. Lần sau bạn sẽ
+            được hỏi lại, vì tài khoản phải đồng ý thông báo mới sử dụng được.
+          </li>
+          <li>
+            Quản trị viên xem được ai đã đồng ý và vào lúc nào ở cột{" "}
+            <strong>Chính sách DLCN</strong> trong <strong>Quản trị → Người dùng</strong>.
+          </li>
+        </ul>
         <p className="mt-3 font-semibold text-foreground">Thực hiện quyền của bạn:</p>
         <ul className="list-disc pl-5 space-y-1 text-sm">
           <li>

@@ -165,7 +165,9 @@ class AuthService:
             )
 
     # -- authentication ----------------------------------------------------
-    async def authenticate(self, identifier: str, password: str) -> User:
+    async def authenticate(
+        self, identifier: str, password: str, *, accept_privacy: bool = False
+    ) -> User:
         """Verify credentials and return the user.
 
         Unknown accounts and invalid credentials share one generic error. Once
@@ -192,11 +194,23 @@ class AuthService:
                 code="account_inactive",
             )
 
+        # Only reached with valid credentials, so this never reveals whether an
+        # unknown account exists. Nothing is written until consent is given.
+        if user.privacy_accepted_at is None and not accept_privacy:
+            logger.info("login_refused", username=user.username, reason="privacy_consent")
+            raise PermissionDeniedError(
+                "You must accept the personal-data policy to sign in.",
+                code="privacy_consent_required",
+            )
+
         # Transparently upgrade the stored hash when Argon2 parameters change.
         if user.password_hash and needs_rehash(user.password_hash):
             user.password_hash = hash_password(password)
 
-        user.last_login_at = datetime.now(UTC)
+        now = datetime.now(UTC)
+        if user.privacy_accepted_at is None:
+            user.privacy_accepted_at = now
+        user.last_login_at = now
         await self.session.flush()
         logger.info("login_succeeded", username=user.username)
         return user

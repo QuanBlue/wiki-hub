@@ -67,10 +67,12 @@ export function NavigationLoading() {
 
       const destination = new URL(link.href, window.location.href);
       if (destination.origin !== window.location.origin) return;
+      // Same page, at most a different #fragment: an in-page jump (e.g. a
+      // table of contents) never changes the pathname, so a bar started here
+      // would spin until the safety timeout for nothing.
       if (
         destination.pathname === window.location.pathname &&
-        destination.search === window.location.search &&
-        destination.hash === window.location.hash
+        destination.search === window.location.search
       ) {
         return;
       }

@@ -172,7 +172,7 @@ export function AuthPanels({
                 title={t("auth.welcomeBack")}
                 description={t("auth.signInToContinue", { siteName })}
               />
-              <LoginForm />
+              <LoginForm siteName={siteName} />
               <div className="border-border/60 mt-4.5 border-t pt-3 sm:pt-3.5 text-center">
                 <p className="text-muted-foreground text-xs">
                   {t("auth.troubleSigningIn")}{" "}

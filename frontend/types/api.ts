@@ -157,6 +157,7 @@ export interface User {
   /** Whether this administrator receives notification emails for user requests and issues. */
   receive_admin_emails: boolean;
   last_login_at: string | null;
+  privacy_accepted_at: string | null;
   /** Only filled in by the People directory list (`GET /users`). */
   last_active_at?: string | null;
   is_online?: boolean;

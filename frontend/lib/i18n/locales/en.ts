@@ -591,6 +591,13 @@ export const en = {
     contactAdminLink: "Contact an administrator",
     privacyNotice: "{siteName} processes your personal data as described in the",
     privacyLink: "personal data notice",
+    privacyConsentTitle: "Personal data policy",
+    privacyConsentIntro: "Please read how {siteName} processes your personal data before signing in.",
+    privacyConsentScrollHint: "Scroll to the end of the policy to enable Accept.",
+    privacyConsentReady: "You have reached the end. You can accept now.",
+    privacyConsentAccept: "Accept and sign in",
+    privacyConsentDecline: "Decline",
+    privacyConsentDeclined: "You must accept the personal data policy to sign in.",
   },
 
   account: {
@@ -2377,6 +2384,9 @@ export const en = {
     columnRole: "Role",
     columnStatus: "Status",
     columnLastLogin: "Last sign-in",
+    columnPrivacy: "Personal data policy",
+    privacyAccepted: "Accepted",
+    privacyNotAccepted: "Not accepted",
     sortBy: "Sort by",
     refresh: "Refresh list and online status",
     presenceOnline: "Online",

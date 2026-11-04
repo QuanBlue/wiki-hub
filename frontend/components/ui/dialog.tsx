@@ -26,9 +26,11 @@ export const DialogContent = React.forwardRef<
     description?: string;
     /** Sits beside the title, e.g. an info button. Not part of the accessible name. */
     titleAddon?: React.ReactNode;
+    /** Omit the corner close button, for dialogs that must be answered. */
+    hideClose?: boolean;
   }
 >(function DialogContent(
-  { className, children, title, description, titleAddon, ...props },
+  { className, children, title, description, titleAddon, hideClose, ...props },
   ref,
 ) {
   return (
@@ -74,6 +76,7 @@ export const DialogContent = React.forwardRef<
 
         {children}
 
+        {hideClose ? null : (
         <DialogPrimitive.Close
           aria-label="Close"
           className={cn(
@@ -85,6 +88,7 @@ export const DialogContent = React.forwardRef<
         >
           <X className="size-4" />
         </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   );

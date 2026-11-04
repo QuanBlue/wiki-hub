@@ -90,5 +90,11 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    #: When the user accepted the personal-data policy at sign-in. ``None`` means
+    #: they have not yet, so the next sign-in is refused until they do.
+    privacy_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<User {self.username}>"

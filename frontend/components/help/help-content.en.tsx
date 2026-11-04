@@ -2635,6 +2635,22 @@ export const sectionsEn: HelpSection[] = [
           from the link under the sign-in form, or go to <Code>/privacy</Code>. It can be read
           without signing in.
         </p>
+        <p className="mt-3 font-semibold text-foreground">Accepting the notice at first sign-in:</p>
+        <ul className="list-disc pl-5 space-y-1 text-sm">
+          <li>
+            The first time you sign in, WikiHub shows the notice in a window. Scroll to the very
+            end; <strong>Accept and sign in</strong> only becomes available once you have.
+          </li>
+          <li>
+            If you choose <strong>Decline</strong>, you are not signed in. You will be asked
+            again the next time you try, because an account must accept the notice before it can
+            be used.
+          </li>
+          <li>
+            Administrators can see who has accepted, and when, in the{" "}
+            <strong>Personal data policy</strong> column of <strong>Admin → Users</strong>.
+          </li>
+        </ul>
         <p className="mt-3 font-semibold text-foreground">Exercising your rights:</p>
         <ul className="list-disc pl-5 space-y-1 text-sm">
           <li>

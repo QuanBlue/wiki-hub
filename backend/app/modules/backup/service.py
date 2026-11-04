@@ -1968,6 +1968,7 @@ class BackupService:
                 avatar_url=user_entry.avatar_url,
                 avatar_updated_at=user_entry.avatar_updated_at,
                 cover_updated_at=user_entry.cover_updated_at,
+                privacy_accepted_at=user_entry.privacy_accepted_at,
                 is_active=user_entry.is_active,
                 is_superuser=user_entry.is_superuser,
                 # Hardcoded False - the single most important line here. A

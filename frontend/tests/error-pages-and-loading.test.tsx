@@ -141,6 +141,8 @@ describe("NavigationLoading", () => {
       [link("/a", { download: "" })],
       [link("https://elsewhere.example/page")],
       [link(window.location.href)],
+      // In-page jump to a #fragment of the current page: nothing to load.
+      [link("#section")],
       [document.body],
     ];
     for (const [el, init] of cases) {

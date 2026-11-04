@@ -516,7 +516,14 @@ export const vi: Dictionary = {
     "troubleSigningIn": "Không đăng nhập được?",
     "contactAdminLink": "Liên hệ quản trị viên",
     "privacyNotice": "{siteName} xử lý dữ liệu cá nhân của bạn như mô tả trong",
-    "privacyLink": "thông báo xử lý dữ liệu cá nhân"
+    "privacyLink": "thông báo xử lý dữ liệu cá nhân",
+    "privacyConsentTitle": "Chính sách dữ liệu cá nhân",
+    "privacyConsentIntro": "Vui lòng đọc cách {siteName} xử lý dữ liệu cá nhân của bạn trước khi đăng nhập.",
+    "privacyConsentScrollHint": "Cuộn xuống cuối chính sách để bật nút Đồng ý.",
+    "privacyConsentReady": "Bạn đã đọc đến cuối. Bạn có thể đồng ý.",
+    "privacyConsentAccept": "Đồng ý và đăng nhập",
+    "privacyConsentDecline": "Không đồng ý",
+    "privacyConsentDeclined": "Bạn cần đồng ý với chính sách dữ liệu cá nhân để đăng nhập."
   },
   "account": {
     "settingsAria": "Cài đặt tài khoản",
@@ -2147,6 +2154,9 @@ export const vi: Dictionary = {
     "columnRole": "Vai trò",
     "columnStatus": "Trạng thái",
     "columnLastLogin": "Đăng nhập lần cuối",
+    "columnPrivacy": "Chính sách DLCN",
+    "privacyAccepted": "Đã đồng ý",
+    "privacyNotAccepted": "Chưa đồng ý",
     "sortBy": "Sắp xếp theo",
     "refresh": "Làm mới danh sách và trạng thái online",
     "presenceOnline": "Đang online",

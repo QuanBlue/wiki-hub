@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -37,6 +38,7 @@ def user(**overrides):
         "is_protected": False,
         "receive_admin_emails": True,
         "last_login_at": None,
+        "privacy_accepted_at": datetime(2026, 1, 1, tzinfo=UTC),
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -457,3 +459,31 @@ async def test_auth_conflict_and_failure_branches(monkeypatch: pytest.MonkeyPatc
     )
     await svc.delete_user(target.id)
     svc.session.delete.assert_awaited_once_with(target)
+
+
+@pytest.mark.asyncio
+async def test_login_requires_privacy_consent_until_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    svc = service()
+    monkeypatch.setattr(auth_module, "verify_password", Mock(return_value=True))
+    monkeypatch.setattr(auth_module, "needs_rehash", Mock(return_value=False))
+    fresh = user(privacy_accepted_at=None)
+    svc.users.get_by_identifier = AsyncMock(return_value=fresh)
+
+    # Valid password but no consent: refused, and nothing is written.
+    with pytest.raises(PermissionDeniedError) as refused:
+        await svc.authenticate("alice", "pw")
+    assert refused.value.code == "privacy_consent_required"
+    assert fresh.privacy_accepted_at is None
+    assert fresh.last_login_at is None
+
+    # Accepting records the time and signs in.
+    assert await svc.authenticate("alice", "pw", accept_privacy=True) is fresh
+    assert fresh.privacy_accepted_at is not None
+    assert fresh.last_login_at == fresh.privacy_accepted_at
+
+    # Already accepted: no flag needed, and the original time is kept.
+    accepted_at = fresh.privacy_accepted_at
+    assert await svc.authenticate("alice", "pw") is fresh
+    assert fresh.privacy_accepted_at == accepted_at
