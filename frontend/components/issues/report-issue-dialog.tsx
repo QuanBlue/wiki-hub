@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { IssueMarkdown } from "@/components/issues/issue-markdown";
 import { LabelChip } from "@/components/issues/label-chip";
 import { LabelPicker } from "@/components/issues/label-picker";
+import { MarkdownMirror } from "@/components/issues/markdown-mirror";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
@@ -109,6 +110,7 @@ export function ReportIssueDialog({
   const fileInput = useRef<HTMLInputElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
   const descriptionInput = useRef<HTMLTextAreaElement>(null);
+  const descriptionMirror = useRef<HTMLDivElement>(null);
   // Starts from a draft saved earlier on this device, if there is one.
   const [title, setTitle] = useState(() => readDraft()?.title ?? "");
   const [description, setDescription] = useState(
@@ -389,12 +391,24 @@ export function ReportIssueDialog({
                   </div>
 
                   {tab === "write" ? (
+                    <div className="relative">
+                    {/* The styled copy of the text (bold, italic, code...) sits over
+                        a transparent textarea, so formatting shows as you type. */}
+                    <MarkdownMirror
+                      ref={descriptionMirror}
+                      value={description}
+                      className="p-3 font-mono text-sm [scrollbar-gutter:stable]"
+                    />
                     <textarea
                       id="issue-description"
                       ref={descriptionInput}
                       value={description}
                       maxLength={10000}
                       onChange={(event) => setDescription(event.target.value)}
+                      onScroll={(event) => {
+                        if (descriptionMirror.current)
+                          descriptionMirror.current.scrollTop = event.currentTarget.scrollTop;
+                      }}
                       onKeyDown={(event) => {
                         if (!(event.ctrlKey || event.metaKey) || event.shiftKey)
                           return;
@@ -405,8 +419,9 @@ export function ReportIssueDialog({
                         }
                       }}
                       placeholder={t("issues.descriptionPlaceholder")}
-                      className="placeholder:text-muted-foreground block h-72 w-full resize-y bg-transparent p-3 font-mono text-sm outline-none"
+                      className="placeholder:text-muted-foreground caret-foreground selection:bg-primary/25 block h-72 w-full resize-y bg-transparent p-3 font-mono text-sm text-transparent outline-none [scrollbar-gutter:stable]"
                     />
+                    </div>
                   ) : (
                     <div className="h-72 overflow-y-auto p-3">
                       {description.trim() ? (
