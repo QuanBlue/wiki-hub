@@ -5626,7 +5626,13 @@ function LinkFloatingToolbar({
   }
 
   function removeLink() {
-    editor?.chain().focus().extendMarkRange("link").unsetLink().run();
+    if (!editor) return;
+    // The toolbar also opens on hover, when the caret is somewhere else
+    // entirely. Select the link this toolbar is about first, or the command
+    // acts on whatever the caret happens to touch (usually nothing).
+    const chain = editor.chain().focus();
+    if (typeof position?.pos === "number") chain.setTextSelection(position.pos);
+    chain.extendMarkRange("link").unsetLink().run();
     setPosition(null);
   }
 
