@@ -1225,14 +1225,14 @@ export const sectionsVi: HelpSection[] = [
         </p>
         <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
-            <strong>Trang liên quan</strong> hiện dưới nội dung trang, kèm lý do: trang này liên
-            kết tới, liên kết tới trang này, được nhắc trong trang này, nhắc tới trang này, hoặc nội
-            dung gần nghĩa. Trang ở space khác ghi rõ thuộc space nào.
-          </li>
-          <li>
-            <strong>Tên trang thành liên kết</strong>: khi một trang nhắc đúng tiêu đề của trang khác,
-            chỗ nhắc đầu tiên hiện thành liên kết lúc bạn đọc. Tiêu đề mục, code và liên kết sẵn có
-            được giữ nguyên, và nội dung lưu trữ không thay đổi.
+            <strong>Trang liên quan</strong> không hiện trong trang. Mở menu <strong>⋯</strong> phía
+            trên trang và chọn <strong>Trang liên quan</strong> (kèm số lượng), mỗi trang được liệt
+            kê cùng lý do: trang này liên kết tới, liên kết tới trang này, được nhắc trong trang
+            này, nhắc tới trang này, hoặc nội dung gần nghĩa. Trang ở space khác ghi rõ thuộc space
+            nào. WikiHub tự tìm chúng, dựa trên liên kết, tiêu đề trang được nhắc tới và nội dung gần
+            nghĩa; bản đồ trang dùng chúng, còn tìm kiếm và trợ lý AI lần theo chúng. Để trang dễ được
+            tìm thấy hơn, hãy liên kết tới nó từ các trang liên quan hoặc nhắc các trang khác bằng
+            đúng tiêu đề của chúng.
           </li>
           <li>
             <strong>Bản đồ trang</strong>, ở cuối sidebar của space, vẽ các trang của space và liên kết

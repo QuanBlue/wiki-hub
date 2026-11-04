@@ -1,7 +1,7 @@
 import { renderHook, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { RelatedPages, usePageRelated } from "@/components/pages/related-pages";
+import { RelatedPagesDialog, usePageRelated } from "@/components/pages/related-pages";
 import { api } from "@/lib/api-client";
 import type { PageRelated } from "@/types/api";
 
@@ -32,9 +32,9 @@ const related: PageRelated = {
   mentions: [],
 };
 
-describe("RelatedPages", () => {
+describe("RelatedPagesDialog", () => {
   it("groups related pages by their strongest tie, naming another space", () => {
-    render(<RelatedPages related={related} spaceKey="HR" />);
+    render(<RelatedPagesDialog related={related} spaceKey="HR" open onOpenChange={vi.fn()} />);
 
     expect(
       screen.getByRole("heading", { name: "Related pages" }),
@@ -55,11 +55,36 @@ describe("RelatedPages", () => {
 
   it("shows nothing when there is nothing related, or before it loads", () => {
     const { container, rerender } = render(
-      <RelatedPages related={{ pages: [], mentions: [] }} spaceKey="HR" />,
+      <RelatedPagesDialog related={{ pages: [], mentions: [] }} spaceKey="HR" open onOpenChange={vi.fn()} />,
     );
     expect(container).toBeEmptyDOMElement();
-    rerender(<RelatedPages related={null} spaceKey="HR" />);
+    rerender(<RelatedPagesDialog related={null} spaceKey="HR" open onOpenChange={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("explains that the links are automatic and how to get more of them", () => {
+    render(<RelatedPagesDialog related={related} spaceKey="HR" open onOpenChange={vi.fn()} />);
+    expect(screen.getByText(/WikiHub finds these automatically/)).toBeInTheDocument();
+    expect(screen.getByText(/to make a page easier to find/i)).toBeInTheDocument();
+  });
+
+  it("keeps the panel one height however many pages there are, scrolling the list inside", () => {
+    render(<RelatedPagesDialog related={related} spaceKey="HR" open onOpenChange={vi.fn()} />);
+    const panel = screen.getByRole("dialog");
+    expect(panel.className).toContain("h-[28rem]");
+    expect(panel.querySelector("dl")?.className).toContain("overflow-y-auto");
+  });
+
+  it("renders nothing while closed, and closes when a page is chosen", async () => {
+    const onOpenChange = vi.fn();
+    const { rerender } = render(
+      <RelatedPagesDialog related={related} spaceKey="HR" open={false} onOpenChange={onOpenChange} />,
+    );
+    expect(screen.queryByRole("heading", { name: "Related pages" })).not.toBeInTheDocument();
+
+    rerender(<RelatedPagesDialog related={related} spaceKey="HR" open onOpenChange={onOpenChange} />);
+    screen.getByRole("link", { name: /Payroll/ }).click();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
 

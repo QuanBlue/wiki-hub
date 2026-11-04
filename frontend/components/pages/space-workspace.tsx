@@ -66,11 +66,10 @@ import { PageLabelsDialog } from "@/components/pages/page-labels-dialog";
 import { PageAttachmentsDialog } from "@/components/pages/page-attachments-dialog";
 import { PageRestrictionsDialog } from "@/components/pages/page-restrictions-dialog";
 import { PageSummaryDialog } from "@/components/pages/page-summary-dialog";
-import { RelatedPages, usePageRelated } from "@/components/pages/related-pages";
+import { RelatedPagesDialog, usePageRelated } from "@/components/pages/related-pages";
 import { SpaceGraphDialog } from "@/components/pages/space-graph";
 import { SpaceHealthDialog } from "@/components/pages/space-health";
 import { SpaceTrashDialog } from "@/components/pages/space-trash";
-import { linkMentions } from "@/lib/page-mentions";
 import { TRASH_OPEN_EVENT } from "@/lib/space-trash";
 import { SelectionAssistant } from "@/components/pages/selection-assistant";
 import { aiStatus } from "@/lib/ai-summary";
@@ -876,6 +875,7 @@ export function SpaceWorkspace({
   const [trashOpen, setTrashOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
+  const [relatedOpen, setRelatedOpen] = useState(false);
   const [conflictNotice, setConflictNotice] = useState<PageSavedEvent | null>(null);
   const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
 
@@ -1065,16 +1065,10 @@ export function SpaceWorkspace({
     ? pageHref(space.key, homePage.slug)
     : `/spaces/${encodeURIComponent(space.key)}`;
   const body = currentPage?.content || space.description;
-  // Pages tied to this one, and the pages it names: the words naming them become
-  // links for the reader (the stored page is never changed).
+  // Pages tied to this one, for the Related pages list under it. The page itself
+  // is shown exactly as written: words that merely name another page are not
+  // turned into links (they appeared as links the editor could not show or remove).
   const related = usePageRelated(space.key, currentPage?.slug);
-  const readerBody = useMemo(
-    () =>
-      body && related?.mentions.length && currentPage?.content_format !== "markdown"
-        ? linkMentions(body, related.mentions)
-        : body,
-    [body, related, currentPage?.content_format],
-  );
   const activeSlug = currentPage?.slug ?? null;
   const savedPageKey = currentPage ? `${space.key}/${currentPage.slug}` : null;
   const savedForLater = savedPageKey
@@ -2688,6 +2682,12 @@ export function SpaceWorkspace({
                           <Tag />
                           {t("workspace.labels")}
                         </DropdownMenuItem>
+                        {related?.pages.length ? (
+                          <DropdownMenuItem onSelect={() => setRelatedOpen(true)}>
+                            <Network />
+                            {t("graph.relatedTitle")} ({related.pages.length})
+                          </DropdownMenuItem>
+                        ) : null}
                         <DropdownMenuItem
                           onSelect={() => setAttachmentsDialogOpen(true)}
                         >
@@ -3370,7 +3370,7 @@ export function SpaceWorkspace({
                       />
                     ) : (
                       <RichTextContent
-                        content={readerBody}
+                        content={body}
                         canEditAttachments={canEdit && space.status === "active"}
                       />
                     )
@@ -3384,8 +3384,6 @@ export function SpaceWorkspace({
                   )}
                   </SelectionAssistant>
                 </div>
-
-                <RelatedPages related={related} spaceKey={space.key} />
 
                 {currentUser && currentPage ? (
                   <PageComments
@@ -3621,6 +3619,12 @@ export function SpaceWorkspace({
           {canAdmin ? (
             <SpaceHealthDialog space={space} open={healthOpen} onOpenChange={setHealthOpen} />
           ) : null}
+          <RelatedPagesDialog
+            related={related}
+            spaceKey={space.key}
+            open={relatedOpen}
+            onOpenChange={setRelatedOpen}
+          />
 
           {/* One controlled instance shared by both entry points: the sidebar
               button and the More-actions item. Nesting a second Radix trigger

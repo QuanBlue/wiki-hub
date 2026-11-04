@@ -1238,6 +1238,9 @@ export const vi: Dictionary = {
   "graph": {
     "relatedTitle": "Trang liên quan",
     "relatedLoadError": "Không tải được trang liên quan.",
+    "relatedNote": "WikiHub tự tìm các trang này, dựa trên liên kết trong trang, tiêu đề trang được nhắc tới và nội dung gần nghĩa. Bản đồ trang dùng chúng, còn tìm kiếm và trợ lý AI lần theo chúng để tìm các trang có liên quan.",
+    "relatedTipLabel": "Gợi ý",
+    "relatedTip": "Để trang dễ được tìm thấy hơn, hãy liên kết tới nó từ các trang liên quan, hoặc nhắc các trang khác bằng đúng tiêu đề của chúng.",
     "via_link": "Trang này liên kết tới",
     "via_linked_from": "Liên kết tới trang này",
     "via_mention": "Được nhắc trong trang này",

@@ -1,9 +1,10 @@
 "use client";
 
-import { FileText } from "lucide-react";
+import { FileText, Lightbulb } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { pageHref } from "@/lib/page-mentions";
@@ -42,15 +43,20 @@ export function usePageRelated(spaceKey: string, pageSlug: string | null | undef
 }
 
 /**
- * Below a page's body: the pages tied to it, grouped by their strongest tie, each a
- * compact chip (its other ties in the tooltip). Nothing when there are none.
+ * The pages tied to a page, grouped by their strongest tie, each a compact chip
+ * (its other ties in the tooltip). Opened on demand from the page's ... menu
+ * rather than sitting under the text, so it does not crowd what people came to read.
  */
-export function RelatedPages({
+export function RelatedPagesDialog({
   related,
   spaceKey,
+  open,
+  onOpenChange,
 }: {
   related: PageRelated | null;
   spaceKey: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
   if (!related?.pages.length) return null;
@@ -61,50 +67,60 @@ export function RelatedPages({
     groups.set(via, [...(groups.get(via) ?? []), page]);
   }
   return (
-    <section aria-labelledby="related-pages-heading" className="mt-10">
-      {/* The same labelled rule as Comments below, so the two read as one footer. */}
-      <div className="mb-3 flex items-center gap-3">
-        <h2
-          id="related-pages-heading"
-          className="text-muted-foreground shrink-0 text-xs font-semibold tracking-wider uppercase"
-        >
-          {t("graph.relatedTitle")}
-        </h2>
-        <span className="bg-border h-px flex-1" aria-hidden />
-      </div>
-      <dl className="space-y-2">
-        {[...groups].map(([via, pages]) => (
-          <div key={via} className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
-            <dt className="text-muted-foreground shrink-0 text-xs sm:w-40">
-              {t(`graph.via_${via}`)}
-            </dt>
-            <dd className="flex min-w-0 flex-wrap gap-1.5">
-              {pages.map((page) => {
-                const elsewhere = page.space_key !== spaceKey;
-                return (
-                  <Link
-                    key={page.id}
-                    href={pageHref(page.space_key, page.slug)}
-                    title={[
-                      ...page.via.map((v) => t(`graph.via_${v}`)),
-                      ...(elsewhere ? [t("graph.inSpace", { space: page.space_name })] : []),
-                    ].join(" · ")}
-                    className="border-border text-primary hover:bg-surface-hover hover:border-border-strong active:bg-surface-selected focus-visible:ring-ring inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-0.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                  >
-                    <FileText className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-                    <span className="truncate">{page.title}</span>
-                    {elsewhere ? (
-                      <span className="text-muted-foreground shrink-0 text-xs">
-                        · {page.space_name}
-                      </span>
-                    ) : null}
-                  </Link>
-                );
-              })}
-            </dd>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* A fixed height, so the panel does not jump about between pages with
+          one related page and pages with many; the list scrolls inside it. */}
+      <DialogContent
+        title={t("graph.relatedTitle")}
+        className="flex h-[28rem] max-w-xl flex-col overflow-hidden"
+      >
+        <dl className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          {[...groups].map(([via, pages]) => (
+            <div key={via} className="space-y-1.5">
+              <dt className="text-muted-foreground text-xs font-medium">
+                {t(`graph.via_${via}`)}
+              </dt>
+              <dd className="flex min-w-0 flex-wrap gap-1.5">
+                {pages.map((page) => {
+                  const elsewhere = page.space_key !== spaceKey;
+                  return (
+                    <Link
+                      key={page.id}
+                      href={pageHref(page.space_key, page.slug)}
+                      onClick={() => onOpenChange(false)}
+                      title={[
+                        ...page.via.map((v) => t(`graph.via_${v}`)),
+                        ...(elsewhere ? [t("graph.inSpace", { space: page.space_name })] : []),
+                      ].join(" · ")}
+                      className="border-border text-primary hover:bg-surface-hover hover:border-border-strong active:bg-surface-selected focus-visible:ring-ring inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-0.5 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      <FileText className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+                      <span className="truncate">{page.title}</span>
+                      {elsewhere ? (
+                        <span className="text-muted-foreground shrink-0 text-xs">
+                          · {page.space_name}
+                        </span>
+                      ) : null}
+                    </Link>
+                  );
+                })}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <div className="border-border mt-3 shrink-0 space-y-2.5 border-t pt-3">
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            {t("graph.relatedNote")}
+          </p>
+          <div className="border-primary/25 bg-primary-subtle flex items-start gap-2.5 rounded-lg border px-3 py-2.5">
+            <Lightbulb className="text-primary mt-0.5 size-4 shrink-0" aria-hidden />
+            <p className="text-foreground text-sm leading-snug">
+              <strong className="text-primary font-semibold">{t("graph.relatedTipLabel")}: </strong>
+              {t("graph.relatedTip")}
+            </p>
           </div>
-        ))}
-      </dl>
-    </section>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

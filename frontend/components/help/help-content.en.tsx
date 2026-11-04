@@ -1224,14 +1224,14 @@ export const sectionsEn: HelpSection[] = [
         </p>
         <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
-            <strong>Related pages</strong> appear under a page&apos;s text, each with why: linked
-            from this page, links to this page, named on this page, names this page, or similar
-            content. Pages from other spaces say which space they are in.
-          </li>
-          <li>
-            <strong>Names become links</strong>: when a page names another page by its title, the
-            first place it does so is shown as a link while you read. Headings, code and existing
-            links are left alone, and the stored page is not changed.
+            <strong>Related pages</strong> stay out of the page itself. Open the{" "}
+            <strong>⋯</strong> menu above the page and choose <strong>Related pages</strong> (it
+            shows how many there are), and each is listed with why: linked from this page, links
+            to this page, named on this page, names this page, or similar content. Pages from other
+            spaces say which space they are in. WikiHub finds them on its own, from links, page
+            titles named on a page and similar content; the page map uses them, and search and the
+            AI assistant follow them. To make a page easier to find, link it from related pages or
+            name other pages by their exact title.
           </li>
           <li>
             <strong>Page map</strong>, at the bottom of the space&apos;s sidebar, draws the
