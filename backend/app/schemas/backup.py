@@ -346,6 +346,7 @@ class BackupSiteSettings(BaseModel):
     allowed_attachment_types: list[str] | None = None
     sidebar_permissions: dict[str, list[str]] | None = None
     announcement: dict[str, Any] | None = None
+    login_panel: dict[str, Any] | None = None
 
 
 class BackupMeta(BaseModel):

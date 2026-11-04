@@ -16,9 +16,19 @@ migration per new setting, which ``alembic check`` then keeps honest.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, SmallInteger, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -61,6 +71,16 @@ class SiteSettings(TimestampMixin, Base):
     #: Top-of-page system announcement banner (rich HTML content, level, schedule,
     #: dismissibility). NULL = no announcement configured.
     announcement: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    #: Copy for the left panel of the sign-in page, per language (see
+    #: ``schemas.site_settings.LoginPanel``). NULL = the built-in text.
+    login_panel: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    #: Illustration uploaded for that panel. Kept out of ``login_panel`` so the
+    #: object key can only ever be set by the upload endpoint.
+    login_image_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    login_image_content_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    login_image_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     #: How many AI calls one person may make an hour (questions, chat, writing help...), and
     #: how many a document translation may. NULL = the value from the environment
     #: (``WIKIHUB_AI_RATE_LIMIT`` / ``WIKIHUB_AI_TRANSLATE_RATE_LIMIT``). See ``ai.limits``.

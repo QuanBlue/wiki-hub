@@ -3412,6 +3412,62 @@ export const sectionsEn: HelpSection[] = [
     ),
   },
   {
+    id: "login-page-panel",
+    title: "Customize the sign-in page",
+    category: "Administration",
+    description:
+      "Change the text, feature blurbs, footer and illustration on the left of the sign-in page, separately for English and Vietnamese.",
+    keywords: [
+      "sign-in page",
+      "login page",
+      "login panel",
+      "welcome",
+      "headline",
+      "tagline",
+      "illustration",
+      "image",
+      "branding",
+      "customize",
+    ],
+    body: (
+      <>
+        <p>
+          The left side of the sign-in page can show your own message instead of the default one.
+          Open <strong>Administration → Settings → Sign-in page</strong>.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Language</strong>: switch between <strong>English</strong> and{" "}
+            <strong>Tiếng Việt</strong> and edit each one separately. A field you leave empty keeps
+            the default text for that language, so people never see text meant for another one.
+          </li>
+          <li>
+            <strong>Text</strong>: the small line above the headline, the headline, the
+            description and the footer line. A counter shows how much room is left.
+          </li>
+          <li>
+            <strong>Feature blurbs</strong>: the three boxes under the picture each have a title
+            and a description, and can be switched off. At least one must stay on.
+          </li>
+          <li>
+            <strong>Illustration</strong>: upload your own image (JPEG, PNG or WebP, up to 5 MB;
+            wide images around 16:9 fit best), go back to the default image, or turn the
+            illustration off. Uploads apply straight away; text changes need <strong>Save</strong>.
+          </li>
+          <li>
+            <strong>Live preview</strong> on the right shows the panel as you type, in the
+            language you are editing.
+          </li>
+        </ul>
+        <Callout variant="note" title="START OVER">
+          <strong>Reset this language</strong> sends all the text of the language you are editing
+          back to the default (after you confirm and save). The panel colour always follows your
+          theme colour under <em>Theme &amp; Branding</em>.
+        </Callout>
+      </>
+    ),
+  },
+  {
     id: "permissions-overview",
     title: "Permissions & Roles Reference",
     category: "Administration",

@@ -3496,6 +3496,60 @@ export const sectionsVi: HelpSection[] = [
     ),
   },
   {
+    id: "login-page-panel",
+    title: "Tuỳ chỉnh trang đăng nhập",
+    category: "Administration",
+    description:
+      "Đổi chữ, ba ô tính năng, dòng chân trang và ảnh minh hoạ ở bên trái trang đăng nhập, riêng cho tiếng Anh và tiếng Việt.",
+    keywords: [
+      "trang đăng nhập",
+      "login",
+      "panel bên trái",
+      "tiêu đề",
+      "ảnh minh hoạ",
+      "hình ảnh",
+      "thương hiệu",
+      "tuỳ chỉnh",
+    ],
+    body: (
+      <>
+        <p>
+          Phần bên trái của trang đăng nhập có thể hiển thị nội dung của riêng bạn thay cho nội
+          dung mặc định. Vào <strong>Quản trị → Cài đặt → Trang đăng nhập</strong>.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Ngôn ngữ</strong>: chuyển giữa <strong>English</strong> và{" "}
+            <strong>Tiếng Việt</strong> và chỉnh riêng từng ngôn ngữ. Ô để trống sẽ dùng chữ mặc
+            định của ngôn ngữ đó, nên không ai thấy chữ của ngôn ngữ khác.
+          </li>
+          <li>
+            <strong>Chữ</strong>: dòng nhỏ phía trên tiêu đề, tiêu đề, mô tả và dòng chân trang.
+            Bộ đếm cho biết còn bao nhiêu ký tự.
+          </li>
+          <li>
+            <strong>Ba ô tính năng</strong>: ba ô bên dưới ảnh, mỗi ô có tiêu đề và mô tả, và có
+            thể tắt từng ô. Phải giữ bật ít nhất một ô.
+          </li>
+          <li>
+            <strong>Ảnh minh hoạ</strong>: tải ảnh của bạn lên (JPEG, PNG hoặc WebP, tối đa 5 MB;
+            ảnh ngang khoảng 16:9 hiển thị đẹp nhất), quay về ảnh mặc định, hoặc tắt ảnh. Ảnh áp
+            dụng ngay; phần chữ cần bấm <strong>Lưu</strong>.
+          </li>
+          <li>
+            <strong>Xem trước trực tiếp</strong> ở bên phải hiển thị panel khi bạn gõ, theo ngôn
+            ngữ đang chỉnh.
+          </li>
+        </ul>
+        <Callout variant="note" title="LÀM LẠI TỪ ĐẦU">
+          <strong>Đặt lại ngôn ngữ này</strong> đưa toàn bộ chữ của ngôn ngữ đang chỉnh về mặc định
+          (sau khi bạn xác nhận và lưu). Màu của panel luôn theo màu chủ đề trong{" "}
+          <em>Giao diện &amp; Thương hiệu</em>.
+        </Callout>
+      </>
+    ),
+  },
+  {
     id: "permissions-overview",
     title: "Tra cứu Quyền & Vai trò",
     category: "Administration",
