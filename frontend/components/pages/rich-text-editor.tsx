@@ -4140,7 +4140,11 @@ function AttachmentTile({
           "group/attachment-wrapper relative my-0.5 inline-block px-1 py-0.5 align-baseline",
           isUploading && "pointer-events-none select-none",
         )}
-        onDragStartCapture={isUploading ? (e) => e.preventDefault() : beginMove}
+        onDragStartCapture={
+          isUploading
+            ? (e: React.DragEvent<HTMLElement>) => e.preventDefault()
+            : beginMove
+        }
         onDragEndCapture={isUploading ? undefined : endMove}
         onMouseEnter={isUploading ? undefined : keepToolsVisible}
         onMouseLeave={isUploading ? undefined : scheduleToolsHide}
@@ -4230,7 +4234,11 @@ function AttachmentTile({
         "group/attachment-wrapper relative mx-0.5 my-1 inline-block px-1.5 py-0.5 align-top",
         isUploading && "pointer-events-none select-none",
       )}
-      onDragStartCapture={isUploading ? (e) => e.preventDefault() : beginMove}
+      onDragStartCapture={
+        isUploading
+          ? (e: React.DragEvent<HTMLElement>) => e.preventDefault()
+          : beginMove
+      }
       onDragEndCapture={isUploading ? undefined : endMove}
       onMouseEnter={isUploading ? undefined : keepToolsVisible}
       onMouseLeave={isUploading ? undefined : scheduleToolsHide}
