@@ -158,6 +158,7 @@ export interface User {
   email: string;
   full_name: string;
   avatar_url: string | null;
+  avatar_content_type?: string | null;
   avatar_updated_at?: string | null;
   cover_url?: string | null;
   cover_updated_at?: string | null;
@@ -171,6 +172,9 @@ export interface User {
   profile_url: string;
   social_links: string[];
   company: string;
+  status_emoji?: string;
+  status_text?: string;
+  status_expires_at?: string | null;
   is_active: boolean;
   is_superuser: boolean;
   /** Whether this account currently holds `system_admin` from any source -
@@ -243,6 +247,8 @@ export interface PublicUser {
   username: string;
   full_name: string;
   avatar_url: string | null;
+  avatar_content_type?: string | null;
+  avatar_crop?: { zoom: number; x: number; y: number } | null;
   avatar_updated_at?: string | null;
   cover_url?: string | null;
   cover_updated_at?: string | null;
@@ -251,6 +257,9 @@ export interface PublicUser {
   profile_url: string;
   social_links: string[];
   company: string;
+  status_emoji?: string;
+  status_text?: string;
+  status_expires_at?: string | null;
   email: string;
   created_at: string;
   last_active_at: string | null;

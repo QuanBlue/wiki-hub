@@ -388,4 +388,80 @@ describe("ProfileForm reposition", () => {
     expect(JSON.parse(body.get("crop") as string)).toEqual({ zoom: 2, x: 0.1, y: 0.2 });
     vi.unstubAllGlobals();
   });
+
+  it("shows direct Reposition buttons beside Change/Remove for cover and avatar and signals cover change to onSaved", async () => {
+    const actor = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["x"], { type: "image/png" }))));
+    const { onSaved } = renderForm(
+      me({
+        avatar_url: "/me.png",
+        cover_url: "/cover.png",
+        avatar_has_original: true,
+        cover_has_original: true,
+        avatar_crop: { zoom: 1, x: 0, y: 0 },
+        cover_crop: { zoom: 1, x: 0, y: 0 },
+      }),
+    );
+
+    const repositionButtons = screen.getAllByRole("button", { name: "Reposition" });
+    expect(repositionButtons).toHaveLength(2);
+    expect(fetch).not.toHaveBeenCalled();
+
+    // Clicking direct Reposition on cover fetches original cover without cache-busting query params.
+    await actor.click(repositionButtons[0]!);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/users/me/cover/original",
+      expect.objectContaining({ cache: "no-store" }),
+    );
+    await actor.click(await screen.findByRole("button", { name: "Use image" }));
+    await actor.click(save());
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.anything(), false, true));
+    vi.unstubAllGlobals();
+  });
+
+  it("positions an animated GIF avatar in the crop dialog and uploads the GIF with crop metadata", async () => {
+    const actor = userEvent.setup();
+    const gif = new File(["GIF89a"], "wave.gif", { type: "image/gif" });
+    const { onSaved } = renderForm();
+
+    await actor.upload(fileInput(), gif);
+    expect(screen.getByRole("dialog", { name: "Position image" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+
+    expect(screen.getByRole("button", { name: "Reposition" })).toBeInTheDocument();
+    await actor.click(save());
+    await waitFor(() => expect(mocked.post).toHaveBeenCalled());
+    const body = mocked.post.mock.calls[0][2]!.rawBody as FormData;
+    const uploaded = body.get("file") as File;
+    expect(uploaded).toBeInstanceOf(File);
+    expect(uploaded.type).toBe("image/gif");
+    expect(uploaded.name).toBe("wave.gif");
+    expect(body.get("original")).toBeNull();
+    expect(JSON.parse(body.get("crop") as string)).toEqual({ zoom: 2, x: 0.1, y: 0.2 });
+    expect(onSaved).toHaveBeenCalledWith(expect.anything(), true, false);
+  });
+
+  it("allows repositioning a saved GIF avatar from its current image", async () => {
+    const actor = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["GIF89a"], { type: "image/gif" }))));
+    renderForm(me({
+      avatar_url: "/me.gif",
+      avatar_content_type: "image/gif",
+      avatar_crop: { zoom: 1.5, x: 0.1, y: -0.1 },
+    }));
+
+    await actor.click(screen.getByRole("button", { name: "Reposition" }));
+    expect(fetch).toHaveBeenCalledWith("/me.gif", expect.objectContaining({ cache: "no-store" }));
+    expect(await screen.findByRole("dialog", { name: "Position image" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+    await actor.click(save());
+
+    await waitFor(() => expect(mocked.post).toHaveBeenCalled());
+    const body = mocked.post.mock.calls[0][2]!.rawBody as FormData;
+    expect((body.get("file") as File).type).toBe("image/gif");
+    expect(body.get("original")).toBeNull();
+    expect(JSON.parse(body.get("crop") as string)).toEqual({ zoom: 2, x: 0.1, y: 0.2 });
+    vi.unstubAllGlobals();
+  });
 });

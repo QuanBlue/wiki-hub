@@ -392,6 +392,20 @@ export function IssuesList({ openId }: { openId?: string }) {
       () => api.post<Issue>(`/api/v1/issues/${issue.id}/claim`),
       () => t("adminIssues.claimed"),
     );
+  const assignIssue = (issue: Issue, assigneeId: string | null) =>
+    act(
+      () =>
+        api.put<Issue>(`/api/v1/issues/${issue.id}/assignee`, {
+          assignee_id: assigneeId,
+        }),
+      (updated) =>
+        updated.assignee
+          ? t("adminIssues.assignedToPerson", {
+              name:
+                updated.assignee.full_name.trim() || updated.assignee.username,
+            })
+          : t("adminIssues.unassignedSuccess"),
+    );
   const setStatus = (issue: Issue, status: IssueStatus) =>
     act(
       () => api.patch<Issue>(`/api/v1/issues/${issue.id}/status`, { status }),
@@ -1238,79 +1252,112 @@ export function IssuesList({ openId }: { openId?: string }) {
                 </section>
               ) : null}
             </div>
-            <DialogFooter className="shrink-0">
-              {closingFor === selected.id ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => setClosingFor(null)}
-                >
-                  {t("common.cancel")}
-                </Button>
-              ) : (
-                <Hint label={t("adminIssues.closeTip")}>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setSelected(null)}
-                  >
-                    {t("adminIssues.close")}
-                  </Button>
-                </Hint>
-              )}
+            <DialogFooter className="shrink-0 gap-1.5">
               {closingFor !== selected.id ? (
-                <IssueExportButton issueIds={[selected.id]} />
+                <IssueExportButton
+                  issueIds={[selected.id]}
+                  variant="ghost"
+                  className="px-2.5"
+                />
               ) : null}
-              {selected.can_claim && closingFor !== selected.id ? (
-                <Hint label={t("adminIssues.claimHelp")}>
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                {closingFor === selected.id ? (
                   <Button
                     type="button"
                     variant="secondary"
+                    className="px-2.5"
                     disabled={busy}
-                    onClick={() => void claim(selected)}
+                    onClick={() => setClosingFor(null)}
                   >
-                    <Hand /> {t("adminIssues.claim")}
+                    {t("common.cancel")}
                   </Button>
-                </Hint>
-              ) : null}
-              {selected.can_set_status && selected.status !== "done" ? (
-                <Hint
-                  label={t(
-                    closingFor === selected.id
-                      ? "adminIssues.confirmMarkDoneTip"
-                      : "adminIssues.markDoneTip",
-                  )}
-                >
-                  <Button
-                    type="button"
-                    variant="primary"
+                ) : (
+                  <Hint label={t("adminIssues.closeTip")}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="px-2.5"
+                      onClick={() => setSelected(null)}
+                    >
+                      {t("adminIssues.close")}
+                    </Button>
+                  </Hint>
+                )}
+                {selected.can_claim && closingFor !== selected.id ? (
+                  <Hint label={t("adminIssues.claimHelp")}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="px-2.5"
+                      disabled={busy}
+                      onClick={() => void claim(selected)}
+                    >
+                      <Hand /> {t("adminIssues.claim")}
+                    </Button>
+                  </Hint>
+                ) : null}
+                {selected.status !== "done" &&
+                closingFor !== selected.id &&
+                assignable.length > 0 ? (
+                  <PeoplePicker
                     disabled={busy}
-                    onClick={() =>
-                      closingFor === selected.id
-                        ? void closeIssue(selected)
-                        : setClosingFor(selected.id)
+                    trigger={
+                      <>
+                        <Users className="size-3.5" aria-hidden />
+                        {t("adminIssues.assign")}
+                      </>
                     }
+                    triggerClassName="border-border bg-surface-sunken text-foreground hover:bg-surface-hover hover:border-border-strong h-8 border px-2.5 py-0 font-medium"
+                    title={t("adminIssues.applyAssignee")}
+                    filterPlaceholder={t("adminIssues.filterAssignees")}
+                    noMatch={t("adminIssues.noPeopleMatch")}
+                    options={assignOptions}
+                    selected={selected.assignee?.id ?? NOBODY}
+                    onPick={(value) =>
+                      void assignIssue(selected, value === NOBODY ? null : value)
+                    }
+                  />
+                ) : null}
+                {selected.can_set_status && selected.status !== "done" ? (
+                  <Hint
+                    label={t(
+                      closingFor === selected.id
+                        ? "adminIssues.confirmMarkDoneTip"
+                        : "adminIssues.markDoneTip",
+                    )}
                   >
-                    <Check />{" "}
-                    {closingFor === selected.id
-                      ? t("adminIssues.confirmMarkDone")
-                      : t("adminIssues.markDone")}
-                  </Button>
-                </Hint>
-              ) : null}
-              {selected.can_set_status && selected.status === "done" ? (
-                <Hint label={t("adminIssues.reopenTip")}>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => void setStatus(selected, "in_progress")}
-                  >
-                    <RotateCcw /> {t("adminIssues.reopen")}
-                  </Button>
-                </Hint>
-              ) : null}
+                    <Button
+                      type="button"
+                      variant="primary"
+                      className="px-2.5"
+                      disabled={busy}
+                      onClick={() =>
+                        closingFor === selected.id
+                          ? void closeIssue(selected)
+                          : setClosingFor(selected.id)
+                      }
+                    >
+                      <Check />{" "}
+                      {closingFor === selected.id
+                        ? t("adminIssues.confirmMarkDone")
+                        : t("adminIssues.markDone")}
+                    </Button>
+                  </Hint>
+                ) : null}
+                {selected.can_set_status && selected.status === "done" ? (
+                  <Hint label={t("adminIssues.reopenTip")}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="px-2.5"
+                      disabled={busy}
+                      onClick={() => void setStatus(selected, "in_progress")}
+                    >
+                      <RotateCcw /> {t("adminIssues.reopen")}
+                    </Button>
+                  </Hint>
+                ) : null}
+              </div>
             </DialogFooter>
           </DialogContent>
         ) : null}

@@ -112,9 +112,9 @@ class PageDraft(BaseModel):
 
 class ExplainRequest(BaseModel):
     #: The words the reader selected in the page.
-    text: str = Field(min_length=1, max_length=2000)
+    text: str = Field(min_length=1, max_length=4000)
     #: The text around the selection, so a term is read in its setting.
-    context: str = Field(default="", max_length=800)
+    context: str = Field(default="", max_length=1600)
     action: Literal["explain", "translate"]
     #: Language code to answer in (the app's language); English when unknown.
     lang: str | None = Field(default=None, max_length=8)
@@ -138,10 +138,16 @@ class AssistRequest(BaseModel):
     #: Text before and after the caret, so new content fits in (complete, write).
     before: str = Field(default="", max_length=2000)
     after: str = Field(default="", max_length=800)
+    #: Uploaded reference files stored via POST /api/v1/ai/chat/files.
+    attachment_ids: list[uuid.UUID] = Field(default_factory=list, max_length=5)
 
     @model_validator(mode="after")
     def _needs(self) -> AssistRequest:
-        if self.action in ("fix", "complete", "terms", "edit") and not self.text.strip():
+        if (
+            self.action in ("fix", "complete", "terms", "edit")
+            and not self.text.strip()
+            and not (self.action == "edit" and self.attachment_ids)
+        ):
             raise ValueError("There is no text to work on.")
         if self.action in ("edit", "write") and not self.instruction.strip():
             raise ValueError("Say what you want the AI to do.")

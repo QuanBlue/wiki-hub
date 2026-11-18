@@ -14,7 +14,12 @@ router = APIRouter(prefix="/admin/monitor", tags=["admin-monitor"])
 
 _UNAVAILABLE = (
     "The server monitor is not running. It is part of the Ollama controller service: "
-    "start it with the rest of WikiHub (`./scripts/run.sh --dev`)."
+    "start it with the rest of WikiHub (`./scripts/run.sh --dev` or "
+    "`docker compose -f docker-compose.release.yml up -d ollama-controller`)."
+)
+_TOKEN_MISMATCH = (
+    "The server monitor rejected the controller token "
+    "(ensure WIKIHUB_SECRET_KEY is set in .env and restart backend and ollama-controller)."
 )
 
 
@@ -22,8 +27,16 @@ _UNAVAILABLE = (
 async def overview(_admin: CurrentSuperuser) -> MonitorOverview:
     try:
         async with controller_client() as http:
-            host = (await http.get("/host", timeout=15.0)).json()
-            listed = (await http.get("/containers", timeout=45.0)).json()
+            host_resp = await http.get("/host", timeout=15.0)
+            listed_resp = await http.get("/containers", timeout=45.0)
+            if host_resp.status_code == 401 or listed_resp.status_code == 401:
+                raise ServiceUnavailableError(_TOKEN_MISMATCH)
+            host_resp.raise_for_status()
+            listed_resp.raise_for_status()
+            host = host_resp.json()
+            listed = listed_resp.json()
+    except ServiceUnavailableError:
+        raise
     except (httpx.HTTPError, ValueError) as exc:
         raise ServiceUnavailableError(_UNAVAILABLE) from exc
     return MonitorOverview(

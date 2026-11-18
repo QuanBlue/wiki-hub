@@ -301,4 +301,55 @@ describe("SelectionAssistant edge cases", () => {
       Object.defineProperty(window, "innerHeight", { configurable: true, value: original });
     }
   });
+
+  it("formats multi-cell table selections as Markdown and preserves the header row as context", async () => {
+    const { SelectionAssistant } =
+      await import("@/components/pages/selection-assistant");
+    const { api: fresh } = await import("@/lib/api-client");
+    vi.mocked(fresh.get).mockResolvedValue({ enabled: true, can_configure: false });
+    vi.mocked(fresh.post).mockResolvedValue({ result: "Bảng thông số." });
+
+    render(
+      <SelectionAssistant spaceKey="ENG" pageSlug="runbook">
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Threshold</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-testid="row1">
+              <td>CPU</td>
+              <td>90%</td>
+            </tr>
+          </tbody>
+        </table>
+      </SelectionAssistant>,
+    );
+
+    const row = screen.getByTestId("row1");
+    await act(async () => {
+      const range = document.createRange();
+      range.setStartBefore(row.firstElementChild!);
+      range.setEndAfter(row.lastElementChild!);
+      const sel = window.getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Explain or translate with AI" }),
+    );
+    expect(await screen.findByText("Bảng thông số.")).toBeInTheDocument();
+    expect(fresh.post).toHaveBeenCalledWith(
+      "/api/v1/ai/spaces/ENG/pages/runbook/explain",
+      expect.objectContaining({
+        text: "| CPU | 90% |",
+        context: "| Metric | Threshold |",
+      }),
+    );
+  });
 });

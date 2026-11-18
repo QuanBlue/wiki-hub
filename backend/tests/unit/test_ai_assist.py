@@ -198,3 +198,31 @@ async def test_asking_for_changes_sends_the_draft_back_with_the_new_request(
     sent = harness.messages[0][1]["content"]
     assert "<draft>\n## Long\n\nText.\n</draft>" in sent
     assert "Revise the draft between <draft> tags as follows: Shorter, please" in sent
+
+
+async def test_editing_with_reference_files_and_table_header_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = Harness(monkeypatch)
+    file_id = uuid.uuid4()
+
+    async def fake_load(user: object, ids: list[uuid.UUID]) -> list[object]:
+        assert ids == [file_id]
+        return [service_module.chat_files.ChatFileText(file_id, "guide.md", "Use port 9090.")]
+
+    monkeypatch.setattr(service_module.chat_files, "load", fake_load)
+
+    await harness.service.assist_writing(
+        "ENG",
+        AssistRequest(
+            action="edit",
+            instruction="Check port config",
+            before="| Service | Port |",
+            attachment_ids=[file_id],
+        ),
+    )
+
+    sent = harness.messages[0][1]["content"]
+    assert "<context>\n| Service | Port |\n</context>" in sent
+    assert "<instruction>\nCheck port config\n</instruction>" in sent
+    assert '<file name="guide.md">\nUse port 9090.\n</file>' in sent

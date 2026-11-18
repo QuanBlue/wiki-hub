@@ -1,33 +1,32 @@
 "use client";
 
-import { Loader2, TriangleAlert } from "lucide-react";
+import { Loader2, RotateCcw, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api-client";
 import type { OnlyOfficeConfig, OnlyOfficeEditor } from "@/types/onlyoffice";
 
-/**
- * Read-only ONLYOFFICE preview for an arbitrary storage object.
- *
- * The edit-capable counterpart of this is `OfficeAttachmentEditor`
- * (`@/components/pages/office-attachment-editor`), keyed by a `PageAttachment`
- * row with a save-back callback. This one is keyed by a raw storage key
- * instead - the admin Object Storage browser lists avatars, import archives
- * and other objects with no attachment permission to check an edit against -
- * so it only ever asks the backend for a view-only configuration
- * (`/api/v1/storage/office-preview/config`) and never registers a callback.
- * The DocsAPI script-loading plumbing below is intentionally the same shape
- * as the editor's; two documented copies of a five-line loader are cheaper to
- * read than a shared abstraction over "load this global script once" would be.
- */
-
+const LOAD_TIMEOUT_MS = 15_000;
 let documentServerScript: Promise<void> | null = null;
 
 function documentServerUrl() {
-  return (process.env.NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL ?? "").replace(
+  const raw = (process.env.NEXT_PUBLIC_ONLYOFFICE_DOCUMENT_SERVER_URL ?? "").replace(
     /\/+$/,
     "",
   );
+  if (!raw) return "";
+  if (
+    typeof window !== "undefined" &&
+    window.location.hostname !== "localhost" &&
+    window.location.hostname !== "127.0.0.1"
+  ) {
+    return raw.replace(
+      /\/\/(?:localhost|127\.0\.0\.1)(?=:|\/|$)/,
+      `//${window.location.hostname}`,
+    );
+  }
+  return raw;
 }
 
 function loadDocumentServerScript(url: string) {
@@ -71,9 +70,18 @@ export function OfficePreviewViewer({
   const editorRef = useRef<OnlyOfficeEditor | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    let loadTimer: number | null = null;
+    const clearLoadTimer = () => {
+      if (loadTimer !== null) {
+        window.clearTimeout(loadTimer);
+        loadTimer = null;
+      }
+    };
+    const hostElement = hostRef.current;
     const serverUrl = documentServerUrl();
 
     async function initialize() {
@@ -86,16 +94,33 @@ export function OfficePreviewViewer({
           `/api/v1/storage/office-preview/config?key=${encodeURIComponent(storageKey)}`,
         );
         await loadDocumentServerScript(serverUrl);
-        if (cancelled || !hostRef.current || !window.DocsAPI?.DocEditor) return;
+        if (cancelled || !hostElement || !window.DocsAPI?.DocEditor) return;
+
+        // DocsAPI replaces the target DOM node in-place with an <iframe>.
+        const mountNode = document.createElement("div");
+        mountNode.id = elementIdFor(storageKey);
+        mountNode.setAttribute("aria-label", `Preview of ${filename}`);
+        mountNode.className = "h-full w-full";
+        hostElement.replaceChildren(mountNode);
+
+        loadTimer = window.setTimeout(() => {
+          if (!cancelled) {
+            setError(
+              "The document viewer took too long to respond. Make sure the Document Server is reachable and try again.",
+            );
+          }
+        }, LOAD_TIMEOUT_MS);
 
         const config: OnlyOfficeConfig = {
           ...result.config,
           events: {
             ...result.config.events,
             onDocumentReady: () => {
+              clearLoadTimer();
               if (!cancelled) setReady(true);
             },
             onError: (event: { data?: { errorDescription?: string } }) => {
+              clearLoadTimer();
               if (!cancelled) {
                 setError(
                   event.data?.errorDescription ??
@@ -106,10 +131,11 @@ export function OfficePreviewViewer({
           },
         };
         editorRef.current = new window.DocsAPI.DocEditor(
-          hostRef.current.id,
+          mountNode.id,
           config,
         );
       } catch (loadError) {
+        clearLoadTimer();
         if (!cancelled) {
           setError(
             loadError instanceof Error
@@ -123,14 +149,23 @@ export function OfficePreviewViewer({
     void initialize();
     return () => {
       cancelled = true;
-      editorRef.current?.destroyEditor();
+      clearLoadTimer();
+      try {
+        editorRef.current?.destroyEditor();
+      } catch {
+        // Ignore teardown errors if the iframe was never attached.
+      }
       editorRef.current = null;
+      hostElement?.replaceChildren();
     };
-  }, [storageKey]);
+  }, [storageKey, filename, attempt]);
 
   if (error) {
     return (
-      <div className="text-muted-foreground flex h-full min-h-80 w-full flex-col items-center justify-center gap-3 p-6 text-center">
+      <div
+        key="preview-error"
+        className="text-muted-foreground flex h-full min-h-80 w-full flex-col items-center justify-center gap-3 p-6 text-center"
+      >
         <TriangleAlert className="text-warning size-8" />
         <div>
           <p className="text-foreground text-sm font-semibold">
@@ -138,24 +173,35 @@ export function OfficePreviewViewer({
           </p>
           <p className="mt-1 max-w-md text-sm">{error}</p>
         </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setError(null);
+            setReady(false);
+            setAttempt((current) => current + 1);
+          }}
+        >
+          <RotateCcw className="size-3.5" aria-hidden />
+          Retry
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="bg-surface relative h-full min-h-0 w-full overflow-hidden">
+    <div
+      key="preview-host"
+      className="bg-surface relative h-full min-h-0 w-full overflow-hidden"
+    >
       {!ready ? (
         <div className="text-muted-foreground bg-surface absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 text-sm">
           <Loader2 className="size-6 animate-spin" />
           <span>Loading preview…</span>
         </div>
       ) : null}
-      <div
-        id={elementIdFor(storageKey)}
-        ref={hostRef}
-        aria-label={`Preview of ${filename}`}
-        className="h-full w-full"
-      />
+      <div ref={hostRef} className="h-full w-full" />
     </div>
   );
 }

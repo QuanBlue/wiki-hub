@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { getUserAvatarColor, resolveAvatarUrl } from "@/components/ui/avatar";
+import { CroppedAvatarImage, getUserAvatarColor, resolveAvatarUrl } from "@/components/ui/avatar";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
@@ -107,7 +107,7 @@ export function ProfileForm({
 }: {
   user: Me;
   onCancel: () => void;
-  onSaved: (user: User, avatarChanged: boolean) => void;
+  onSaved: (user: User, avatarChanged: boolean, coverChanged?: boolean) => void;
   /** Told whenever the form gains or loses unsaved changes. */
   onDirtyChange?: (dirty: boolean) => void;
   /**
@@ -174,6 +174,11 @@ export function ProfileForm({
 
   const displayAvatar = previewUrl || resolveAvatarUrl(!avatarRemoved ? avatarUrl : "");
   const displayCover = coverPreviewUrl || (!coverRemoved ? user.cover_url : null);
+  const isGifAvatar = selectedFile
+    ? selectedFile.type === "image/gif"
+    : !avatarRemoved && user.avatar_content_type === "image/gif";
+  const effectiveAvatarCrop = selectedFile ? avatarCrop : (!avatarRemoved ? user.avatar_crop : null);
+  const canRepositionAvatar = Boolean(displayAvatar && !imgError);
 
   function chooseCover(file: File | undefined) {
     if (!file) return;
@@ -223,6 +228,10 @@ export function ProfileForm({
       setCropTarget({ file: pendingOriginal, kind, isNewOriginal: true, initialCrop: pendingCrop });
       return;
     }
+    if (!isCover && selectedFile?.type === "image/gif") {
+      setCropTarget({ file: selectedFile, kind, isNewOriginal: false, initialCrop: pendingCrop });
+      return;
+    }
     const keptOnServer = serverHasOriginal && !(isCover ? coverRemoved : avatarRemoved);
     const url = keptOnServer
       ? `/api/v1/users/me/${kind}/original`
@@ -233,18 +242,25 @@ export function ProfileForm({
           : displayAvatar;
     if (!url) return;
     try {
-      const response = await fetch(url, { credentials: "same-origin" });
+      const response = await fetch(url, { credentials: "same-origin", cache: "no-store" });
       if (!response.ok) throw new Error(String(response.status));
       const blob = await response.blob();
-      const type = AVATAR_TYPES.includes(blob.type) ? blob.type : "image/png";
+      const responseType = blob.type || response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || "";
+      const fallbackType = !isCover ? user.avatar_content_type : null;
+      const type = AVATAR_TYPES.includes(responseType)
+        ? responseType
+        : fallbackType && AVATAR_TYPES.includes(fallbackType)
+          ? fallbackType
+          : "image/png";
       const file = new File([blob], kind === "cover" ? "cover" : "avatar", { type });
+      const isGif = !isCover && type === "image/gif";
       setError(null);
       setCropTarget({
         file,
         kind,
-        // Without a kept original, the picture being shown becomes the original.
-        isNewOriginal: !keptOnServer,
-        initialCrop: keptOnServer ? (hasPending ? pendingCrop : serverCrop) : null,
+        // Without a kept original, the picture being shown becomes the original (except GIFs, which stay uncropped).
+        isNewOriginal: !keptOnServer && !isGif,
+        initialCrop: keptOnServer || isGif ? (hasPending ? pendingCrop : serverCrop) : null,
       });
     } catch {
       setError(t("profile.repositionLoadError"));
@@ -252,7 +268,8 @@ export function ProfileForm({
   }
 
   function applyCroppedImage(file: File, crop: CropState) {
-    const original = cropTarget?.isNewOriginal ? cropTarget.file : null;
+    const isGifAvatarCrop = cropTarget?.kind === "avatar" && file.type === "image/gif";
+    const original = cropTarget?.isNewOriginal && !isGifAvatarCrop ? cropTarget.file : null;
     if (cropTarget?.kind === "cover") {
       if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
       setCoverOriginal(original);
@@ -377,7 +394,7 @@ export function ProfileForm({
         updatedUser = await api.delete<User>("/api/v1/users/me/cover");
       }
       toast.success(t("profile.profileUpdated"));
-      onSaved(updatedUser, Boolean(selectedFile || avatarRemoved));
+      onSaved(updatedUser, Boolean(selectedFile || avatarRemoved), Boolean(coverFile || coverRemoved));
       router.refresh();
       return true;
     } catch (err) {
@@ -432,6 +449,13 @@ export function ProfileForm({
                 {t("profile.change")}
               </Button>
               {displayCover ? (
+                <Button type="button" variant="secondary" size="sm" disabled={pending}
+                  onClick={() => void reposition("cover")} className="gap-1.5">
+                  <Move className="size-3.5" aria-hidden />
+                  {t("profile.reposition")}
+                </Button>
+              ) : null}
+              {displayCover ? (
                 <Button type="button" variant="ghost" size="sm" disabled={pending}
                   onClick={removeCover} className="text-danger hover:text-danger hover:bg-danger/10 gap-1.5"
                   aria-label={t("profile.removeCover")}>
@@ -455,22 +479,22 @@ export function ProfileForm({
               label={t("profile.imageOptions")}
               uploadLabel={t("profile.uploadNew")}
               repositionLabel={t("profile.reposition")}
-              canReposition={Boolean(displayAvatar && !imgError)}
+              canReposition={canRepositionAvatar}
               disabled={pending}
               onUpload={() => document.getElementById(fileInputId)?.click()}
               onReposition={() => void reposition("avatar")}
               className={cn(
-                "flex size-16 sm:size-20 shrink-0 items-center justify-center overflow-hidden rounded-full text-2xl font-bold ring-1 ring-border shadow-xs select-none",
+                "relative flex size-16 sm:size-20 shrink-0 items-center justify-center overflow-hidden rounded-full text-2xl font-bold ring-1 ring-border shadow-xs select-none",
                 displayAvatar && !imgError
                   ? ""
                   : getUserAvatarColor(user.username || fullName || ""),
               )}
             >
               {displayAvatar && !imgError ? (
-                <img
+                <CroppedAvatarImage
                   src={displayAvatar}
-                  alt=""
-                  className="size-full object-cover"
+                  crop={effectiveAvatarCrop}
+                  contentType={isGifAvatar ? "image/gif" : null}
                   onError={() => setImgError(true)}
                 />
               ) : (
@@ -495,6 +519,19 @@ export function ProfileForm({
               <Upload className="size-3.5" aria-hidden />
               {t("profile.change")}
             </Button>
+            {canRepositionAvatar ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={pending}
+                onClick={() => void reposition("avatar")}
+                className="gap-1.5"
+              >
+                <Move className="size-3.5" aria-hidden />
+                {t("profile.reposition")}
+              </Button>
+            ) : null}
             {displayAvatar ? (
               <Button
                 type="button"

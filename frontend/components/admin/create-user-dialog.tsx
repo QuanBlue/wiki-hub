@@ -77,7 +77,7 @@ export function CreateUserDialog({
   const [email, setEmail] = useState(initial?.email ?? "");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("member");
-  const [receiveAdminEmails, setReceiveAdminEmails] = useState(true);
+  const [receiveAdminEmails, setReceiveAdminEmails] = useState(false);
   const canEmailAccounts = useCanEmailAccounts();
   // A prefilled username (from an Inbox request) is checked as soon as the
   // dialog mounts, so it starts as "checking" rather than blank.
@@ -128,7 +128,7 @@ export function CreateUserDialog({
     setEmail("");
     setPassword("");
     setRole("member");
-    setReceiveAdminEmails(true);
+    setReceiveAdminEmails(false);
     setUsernameCheck("idle");
     setError(null);
   }

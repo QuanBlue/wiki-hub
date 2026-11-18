@@ -8,7 +8,7 @@ to the seed script and future admin tooling.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,9 @@ AUDITED_USER_FIELDS = (
     "profile_url",
     "social_links",
     "company",
+    "status_emoji",
+    "status_text",
+    "status_expires_at",
     "is_active",
     "is_superuser",
     "receive_admin_emails",
@@ -522,6 +525,29 @@ class AuthService:
         for field in ("bio", "pronouns", "profile_url", "company"):
             if field in data:
                 setattr(user, field, str(data[field]).strip() if data[field] else "")
+        if data.get("clear_status"):
+            user.status_emoji = ""
+            user.status_text = ""
+            user.status_expires_at = None
+        elif (
+            "status_emoji" in data
+            or "status_text" in data
+            or "status_expires_at" in data
+        ):
+            if "status_emoji" in data:
+                user.status_emoji = (
+                    str(data["status_emoji"]).strip() if data["status_emoji"] else ""
+                )
+            if "status_text" in data:
+                user.status_text = (
+                    str(data["status_text"]).strip() if data["status_text"] else ""
+                )
+            if not user.status_emoji and not user.status_text:
+                user.status_expires_at = None
+            elif "status_expires_at" in data:
+                user.status_expires_at = data["status_expires_at"]
+            else:
+                user.status_expires_at = datetime.now(UTC) + timedelta(hours=24)
         if "social_links" in data and data["social_links"] is not None:
             user.social_links = [
                 str(link).strip() for link in data["social_links"] if str(link).strip()

@@ -6,7 +6,9 @@ import {
   BookMarked,
   Check,
   CornerDownLeft,
+  FileText,
   Loader2,
+  Paperclip,
   PenLine,
   Pencil,
   Redo2,
@@ -25,6 +27,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { ChatFileError, uploadChatFile } from "@/lib/ai-chat";
 import { aiStatus } from "@/lib/ai-summary";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -61,7 +64,25 @@ type Target = {
   blockEmpty: boolean;
   left: number;
   top: number;
+  /** Top edge of the caret/selection line, for aligning the minimized pill and above-line card. */
+  lineTop?: number;
+  /** True when the selection spans multiple cells inside a table. */
+  isTableSelection?: boolean;
+  /** First row of the table when excluded from a multi-cell selection. */
+  tableHeaderContext?: string;
 };
+
+type AttachmentChip = {
+  key: string;
+  filename: string;
+  status: "reading" | "ready" | "failed";
+  id?: string;
+  error?: string;
+};
+
+const MAX_ATTACHMENTS = 5;
+const ATTACH_ACCEPT =
+  ".txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.pdf,.docx,.xlsx,.pptx,.html,.htm";
 
 type Suggestion = {
   kind: Kind;
@@ -104,17 +125,141 @@ const QUICK: Array<{
 const PANEL_WIDTH = 520;
 const MAX_TEXT = 4000;
 
+/** Finds the shared ancestor depth for a table containing both $from and $to, or null. */
+function sharedTableDepth(editor: Editor): number | null {
+  const { $from, $to } = editor.state.selection;
+  for (let depth = $from.depth; depth >= 1; depth -= 1) {
+    if ($from.node(depth).type.name === "table") {
+      if ($to.pos <= $from.after(depth)) return depth;
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Extracts selected cells in a ProseMirror table as Markdown rows + optional header context. */
+function readTableTarget(editor: Editor): Target | null {
+  const { selection, doc } = editor.state;
+  const { $from, from, to } = selection;
+  const isCellSel = "$anchorCell" in selection;
+  const tableDepth = sharedTableDepth(editor);
+  if (tableDepth === null) return null;
+
+  const tableNode = $from.node(tableDepth);
+  const tableFrom = $from.before(tableDepth);
+  const tableTo = $from.after(tableDepth);
+  const tableStart = tableFrom + 1;
+
+  const selectedRows: string[] = [];
+  let selectedCellCount = 0;
+  let firstRowSelected = false;
+  let headerLine = "";
+
+  tableNode.forEach((rowNode, rowOffset, rowIndex) => {
+    const rowStart = tableStart + rowOffset + 1;
+    const rowCellTexts: string[] = [];
+    const allRowCellTexts: string[] = [];
+
+    rowNode.forEach((cellNode, cellOffset) => {
+      const cellPos = rowStart + cellOffset;
+      const cellEnd = cellPos + cellNode.nodeSize;
+      const cellText = cellNode
+        .textBetween(0, cellNode.content.size, " ", " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      allRowCellTexts.push(cellText);
+
+      const isSelected =
+        selection.ranges.length > 1
+          ? selection.ranges.some(
+              (r) => r.$from.pos < cellEnd && r.$to.pos > cellPos,
+            )
+          : from < cellEnd && to > cellPos;
+      if (isSelected) {
+        selectedCellCount += 1;
+        rowCellTexts.push(cellText);
+      }
+    });
+
+    if (rowIndex === 0) {
+      const joinedHeader = `| ${allRowCellTexts.join(" | ")} |`;
+      if (joinedHeader.replace(/[|\s]/g, "")) {
+        headerLine = joinedHeader;
+      }
+      if (rowCellTexts.length > 0) firstRowSelected = true;
+    }
+    if (rowCellTexts.length > 0) {
+      selectedRows.push(`| ${rowCellTexts.join(" | ")} |`);
+    }
+  });
+
+  if (!isCellSel && selectedCellCount < 2) return null;
+  const tableText = selectedRows.join("\n").slice(0, MAX_TEXT);
+  if (tableText.replace(/[|\s\n]/g, "").length < 2) return null;
+
+  try {
+    let left = 0;
+    let top = 0;
+    const selectedDomCells =
+      editor.view.dom.querySelectorAll(".selectedCell");
+    if (selectedDomCells.length > 0) {
+      const lastRect =
+        selectedDomCells[selectedDomCells.length - 1].getBoundingClientRect();
+      if (lastRect.width > 0 || lastRect.height > 0) {
+        left = lastRect.right;
+        top = lastRect.bottom;
+      }
+    }
+    if (left === 0 && top === 0) {
+      const coords = editor.view.coordsAtPos(Math.min(to, doc.content.size));
+      left = coords.left;
+      top = coords.bottom;
+    }
+    return {
+      from,
+      to,
+      text: tableText,
+      before: "",
+      after: "",
+      docBefore: doc.textBetween(0, tableFrom, "\n", " ").slice(-1500),
+      docAfter: doc
+        .textBetween(tableTo, doc.content.size, "\n", " ")
+        .slice(0, 600),
+      blockFrom: tableFrom,
+      blockTo: tableTo,
+      blockEmpty: false,
+      left,
+      top,
+      isTableSelection: true,
+      tableHeaderContext:
+        !firstRowSelected && headerLine ? headerLine.slice(0, 1000) : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** The target for the editor's current selection, or null when there is none worth acting on. */
 function readTarget(editor: Editor, caret = false): Target | null {
   const { selection, doc } = editor.state;
   const { from, to, $from, $to } = selection;
+  // Multi-cell table selection: ProseMirror CellSelection or TextSelection spanning cells.
+  if (!caret && ("$anchorCell" in selection || !$from.sameParent($to))) {
+    const tableTarget = readTableTarget(editor);
+    if (tableTarget) return tableTarget;
+  }
   // One paragraph only: replacing across blocks would flatten lists and tables.
   if (!$from.sameParent($to) || !$from.parent.isTextblock) return null;
   const text = doc.textBetween(from, to, " ");
   if (!caret && (text.trim().length < 2 || text.length > MAX_TEXT)) return null;
   const block = $from.parent;
   const offsetTo = $to.parentOffset;
-  const before = block.textBetween(0, offsetTo, " ").slice(-1500);
+  const blockBefore = block.textBetween(0, offsetTo, " ").slice(-1500);
+  const docBefore = doc.textBetween(0, from, "\n", " ").slice(-1500);
+  const before =
+    blockBefore.trim().length === 0 && docBefore.trim().length > 0
+      ? docBefore.trim()
+      : blockBefore;
   const after = block
     .textBetween(offsetTo, block.content.size, " ")
     .slice(0, 400);
@@ -126,7 +271,7 @@ function readTarget(editor: Editor, caret = false): Target | null {
       text,
       before,
       after,
-      docBefore: doc.textBetween(0, from, "\n", " ").slice(-1500),
+      docBefore,
       docAfter: doc
         .textBetween($to.after(), doc.content.size, "\n", " ")
         .slice(0, 600),
@@ -135,6 +280,7 @@ function readTarget(editor: Editor, caret = false): Target | null {
       blockEmpty: block.content.size === 0,
       left: coords.left,
       top: coords.bottom,
+      lineTop: coords.top,
     };
   } catch {
     return null;
@@ -168,11 +314,15 @@ export function WritingAssistant({
   const promptRef = useRef<HTMLInputElement>(null);
   const refineRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [canConfigure, setCanConfigure] = useState(false);
   const [target, setTarget] = useState<Target | null>(null);
   const [open, setOpen] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const [prompt, setPrompt] = useState("");
+  const [attachments, setAttachments] = useState<AttachmentChip[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [refining, setRefining] = useState(false);
   const [refineText, setRefineText] = useState("");
   // Every version the AI has given for this request, so a change that made it
@@ -211,7 +361,10 @@ export function WritingAssistant({
   const close = useCallback(() => {
     request.current += 1;
     setOpen(false);
+    setMinimized(false);
     setPrompt("");
+    setAttachments([]);
+    setDragging(false);
     setRefining(false);
     setRefineText("");
     setSuggestion(null);
@@ -223,7 +376,7 @@ export function WritingAssistant({
   useEffect(() => {
     if (!editor || enabled !== true) return;
     const refresh = () => {
-      if (open || !editor.isEditable) return;
+      if (open || minimized || pending || !editor.isEditable) return;
       setTarget(readTarget(editor));
     };
     editor.on("selectionUpdate", refresh);
@@ -232,7 +385,7 @@ export function WritingAssistant({
       editor.off("selectionUpdate", refresh);
       editor.off("blur", refresh);
     };
-  }, [editor, enabled, open]);
+  }, [editor, enabled, open, minimized, pending]);
 
   // The box hangs off the line it was called from: when the page scrolls, it
   // moves with that line instead of staying where it opened on screen.
@@ -247,10 +400,19 @@ export function WritingAssistant({
           if (!current) return current;
           try {
             const coords = editor.view.coordsAtPos(current.to);
-            if (coords.left === current.left && coords.bottom === current.top) {
+            if (
+              coords.left === current.left &&
+              coords.bottom === current.top &&
+              coords.top === current.lineTop
+            ) {
               return current;
             }
-            return { ...current, left: coords.left, top: coords.bottom };
+            return {
+              ...current,
+              left: coords.left,
+              top: coords.bottom,
+              lineTop: coords.top,
+            };
           } catch {
             return current;
           }
@@ -266,6 +428,48 @@ export function WritingAssistant({
     };
   }, [anchored, editor]);
 
+  const attachFiles = useCallback(
+    (picked: File[]) => {
+      const room = MAX_ATTACHMENTS - attachments.length;
+      const taken = picked.slice(0, Math.max(room, 0));
+      if (!taken.length) return;
+      const added: AttachmentChip[] = taken.map((file, index) => ({
+        key: `${Date.now().toString(36)}-${index}-${file.name}`,
+        filename: file.name,
+        status: "reading",
+      }));
+      setAttachments((current) => [...current, ...added]);
+      added.forEach((chip, index) => {
+        uploadChatFile(taken[index]).then(
+          (read) =>
+            setAttachments((current) =>
+              current.map((item) =>
+                item.key === chip.key
+                  ? { ...item, status: "ready", id: read.id, filename: read.filename }
+                  : item,
+              ),
+            ),
+          (caught: unknown) =>
+            setAttachments((current) =>
+              current.map((item) =>
+                item.key === chip.key
+                  ? {
+                      ...item,
+                      status: "failed",
+                      error:
+                        caught instanceof ChatFileError && caught.message && caught.message !== caught.code
+                          ? caught.message
+                          : t("ai.writing.attachError"),
+                    }
+                  : item,
+              ),
+            ),
+        );
+      });
+    },
+    [attachments.length, t],
+  );
+
   const ask = useCallback(
     async (
       kind: Kind,
@@ -277,13 +481,23 @@ export function WritingAssistant({
       const text =
         options.text ??
         (kind === "complete" ? on.before : kind === "write" ? "" : on.text);
-      if (kind !== "write" && text.trim().length < 3) {
+      const readyIds = attachments
+        .filter((item) => item.status === "ready" && item.id)
+        .map((item) => item.id!);
+      if (kind !== "write" && text.trim().length < 3 && readyIds.length === 0) {
         setError(t("ai.writing.needText"));
         return;
       }
       const id = ++request.current;
       setPending(true);
       try {
+        const beforeValue =
+          kind === "write"
+            ? [on.tableHeaderContext, on.docBefore.trim()]
+                .filter(Boolean)
+                .join("\n")
+                .slice(-2000)
+            : (on.tableHeaderContext ?? "");
         const response = await api.post<{
           result: string;
           html?: string | null;
@@ -292,13 +506,14 @@ export function WritingAssistant({
           text,
           instruction,
           draft: options.draft ?? "",
-          before: kind === "write" ? on.docBefore.trim() : "",
+          before: beforeValue,
           after:
             kind === "write"
               ? on.docAfter
               : kind === "complete"
                 ? on.after
                 : "",
+          ...(readyIds.length > 0 ? { attachment_ids: readyIds } : {}),
         });
         if (id !== request.current) return;
         setSuggestion({
@@ -321,7 +536,7 @@ export function WritingAssistant({
         if (id === request.current) setPending(false);
       }
     },
-    [spaceKey, t, setSuggestion],
+    [attachments, spaceKey, t, setSuggestion],
   );
 
   const openPrompt = useCallback(
@@ -329,13 +544,30 @@ export function WritingAssistant({
       if (!at) return;
       setTarget(at);
       setPlacement(placeFor(at.top));
+      setMinimized(false);
       setSuggestion(null);
       setError(null);
       setOpen(true);
-      window.setTimeout(() => promptRef.current?.focus(), 0);
     },
     [setSuggestion],
   );
+
+  useEffect(() => {
+    if (open && enabled === true && !minimized && suggestion === null) {
+      promptRef.current?.focus();
+    }
+  }, [open, enabled, minimized, suggestion]);
+
+  useEffect(() => {
+    const dom = editor?.view?.dom;
+    if (!dom) return;
+    if (open) {
+      dom.setAttribute("data-ai-active", "true");
+    } else {
+      dom.removeAttribute("data-ai-active");
+    }
+    return () => dom.removeAttribute("data-ai-active");
+  }, [editor, open]);
 
   // Ctrl+Space inside the editor opens the "Edit with AI" box at the caret.
   useEffect(() => {
@@ -356,22 +588,21 @@ export function WritingAssistant({
     return () => dom.removeEventListener("keydown", onKey);
   }, [editor, openPrompt]);
 
-  // "Continue writing with AI" in the / menu: finish the sentence at the caret.
+  // "Continue writing with AI" in the / menu (or "Ask AI" from table menu).
   useEffect(() => {
-    const onRequest = () => {
+    const onRequest = (event: Event) => {
+      const mode = (event as CustomEvent<{ mode?: string }>).detail?.mode;
       window.setTimeout(() => {
-        const at = readTarget(editor, true);
-        if (!at) return;
-        setTarget(at);
-        setPlacement(placeFor(at.top));
-        setSuggestion(null);
-        setOpen(true);
-        if (enabled) void ask("complete", at);
+        const at =
+          mode === "prompt"
+            ? (readTarget(editor) ?? readTarget(editor, true))
+            : readTarget(editor, true);
+        openPrompt(at);
       }, 0);
     };
     window.addEventListener("wikihub:ai-assist", onRequest);
     return () => window.removeEventListener("wikihub:ai-assist", onRequest);
-  }, [editor, enabled, ask, setSuggestion]);
+  }, [editor, openPrompt]);
 
   useEffect(() => {
     if (!open) return;
@@ -385,16 +616,20 @@ export function WritingAssistant({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, close, editor]);
 
-  // A press anywhere outside the box dismisses it, like any other popover.
+  // A press outside minimizes while AI is working or holding a draft; otherwise dismisses.
   useEffect(() => {
-    if (!open) return;
+    if (!open || minimized) return;
     const onPointerDown = (event: PointerEvent) => {
       if (panelRef.current?.contains(event.target as Node)) return;
+      if (pending || suggestion !== null) {
+        setMinimized(true);
+        return;
+      }
       close();
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open, close]);
+  }, [open, minimized, pending, suggestion, close]);
 
   // The "not set up" notice is only a tooltip: carrying on typing dismisses it.
   useEffect(() => {
@@ -409,9 +644,11 @@ export function WritingAssistant({
     if (refining) window.setTimeout(() => refineRef.current?.focus(), 0);
   }, [refining]);
 
+  const readingFiles = attachments.some((item) => item.status === "reading");
+
   function submitPrompt() {
     const instruction = prompt.trim();
-    if (!target || !instruction || pending) return;
+    if (!target || !instruction || pending || readingFiles) return;
     void ask(target.text.trim() ? "edit" : "write", target, { instruction });
   }
 
@@ -433,7 +670,8 @@ export function WritingAssistant({
     const { doc } = editor.state;
     const unchanged =
       asked.to <= doc.content.size &&
-      doc.textBetween(asked.from, asked.to, " ") === asked.text;
+      (target.isTableSelection ||
+        doc.textBetween(asked.from, asked.to, " ") === asked.text);
     if (!unchanged) {
       setError(t("ai.writing.stale"));
       setSuggestion(null);
@@ -454,9 +692,10 @@ export function WritingAssistant({
       }
     } else if (suggestion.kind === "complete") {
       const continuation = suggestion.result.trim();
-      // A space between what was typed and what continues it, unless the
-      // continuation opens with punctuation or the text already ends in one.
+      // A space between what was typed and what continues it, unless on an empty line,
+      // the continuation opens with punctuation, or the text already ends in whitespace.
       const needsSpace =
+        !target.blockEmpty &&
         target.before !== "" &&
         !/\s$/.test(target.before) &&
         !/^[.,;:!?)\]]/.test(continuation);
@@ -464,6 +703,24 @@ export function WritingAssistant({
         .insertContentAt(
           asked.to,
           needsSpace ? ` ${continuation}` : continuation,
+        )
+        .run();
+    } else if (
+      target.isTableSelection &&
+      !editor.state.selection.$from.sameParent(editor.state.selection.$to)
+    ) {
+      // Insert multi-cell table edits right below the table so cell nodes stay intact.
+      const paragraphs = suggestion.result
+        .split(/\n+/)
+        .map((line) => ({
+          type: "paragraph",
+          content: line ? [{ type: "text", text: line }] : [],
+        }));
+      chain
+        .insertContentAt(
+          target.blockTo,
+          suggestion.html ??
+            (paragraphs.length > 0 ? paragraphs : suggestion.result),
         )
         .run();
     } else {
@@ -517,11 +774,16 @@ export function WritingAssistant({
   if (enabled !== true && !open) return null;
 
   const insertLabel =
-    suggestion?.kind === "write"
+    suggestion?.kind === "write" || target.isTableSelection
       ? t("ai.writing.insertBelow")
       : suggestion?.kind === "complete"
         ? t("ai.writing.insert")
         : t("ai.writing.replace");
+  const pillLeft = Math.max(8, Math.min(target.left, viewportWidth - 220));
+  const pillTop = Math.max(
+    8,
+    Math.min((target.lineTop ?? target.top - 24) - 2, viewportHeight - 36),
+  );
 
   return createPortal(
     !open ? (
@@ -536,20 +798,110 @@ export function WritingAssistant({
       >
         <Sparkles className="size-3.5" aria-hidden />
       </button>
+    ) : minimized ? (
+      <div
+        ref={panelRef}
+        data-testid="writing-assistant-minimized"
+        onMouseDown={(event) => event.preventDefault()}
+        style={{ left: pillLeft, top: pillTop }}
+        className="border-primary/35 bg-primary-subtle dark:bg-surface-raised fixed z-50 flex items-center gap-1.5 rounded-full border py-1 pr-1.5 pl-3 shadow-md"
+      >
+        <button
+          type="button"
+          onClick={() => setMinimized(false)}
+          className="text-foreground hover:text-primary focus-visible:ring-ring flex cursor-pointer items-center gap-1.5 rounded text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+        >
+          {pending ? (
+            <>
+              <Loader2 className="text-primary size-3.5 animate-spin" aria-hidden />
+              <span>{t("ai.writing.generating")}</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="text-primary size-3.5" aria-hidden />
+              <span>{t("ai.writing.draftReady")}</span>
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={close}
+          aria-label={t("ai.selectionAi.close")}
+          className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+        >
+          <X className="size-3" aria-hidden />
+        </button>
+      </div>
     ) : (
       <div
         ref={panelRef}
         role="dialog"
         aria-label={t("ai.writing.button")}
         onMouseDown={keepFocusUnlessInput}
+        onDragEnter={(event) => {
+          if (enabled !== true || suggestion !== null || pending) return;
+          const dt = event.dataTransfer;
+          if (!dt) return;
+          const hasFile =
+            Array.from(dt.types ?? []).includes("Files") ||
+            Array.from(dt.items ?? []).some((item) => item.kind === "file");
+          if (!hasFile) return;
+          event.preventDefault();
+          event.stopPropagation();
+          dt.dropEffect = "copy";
+          setDragging(true);
+        }}
+        onDragOver={(event) => {
+          if (enabled !== true || suggestion !== null || pending) return;
+          const dt = event.dataTransfer;
+          if (!dt) return;
+          const hasFile =
+            Array.from(dt.types ?? []).includes("Files") ||
+            Array.from(dt.items ?? []).some((item) => item.kind === "file");
+          if (!hasFile) return;
+          event.preventDefault();
+          event.stopPropagation();
+          dt.dropEffect = "copy";
+          if (!dragging) setDragging(true);
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setDragging(false);
+          }
+        }}
+        onDrop={(event) => {
+          setDragging(false);
+          if (enabled !== true || suggestion !== null || pending) return;
+          const dt = event.dataTransfer;
+          if (!dt) return;
+          const fromFiles = Array.from(dt.files ?? []);
+          const files =
+            fromFiles.length > 0
+              ? fromFiles
+              : Array.from(dt.items ?? [])
+                  .filter((item) => item.kind === "file")
+                  .map((item) => item.getAsFile())
+                  .filter((file): file is File => file !== null);
+          if (!files.length) return;
+          event.preventDefault();
+          event.stopPropagation();
+          attachFiles(files);
+          promptRef.current?.focus();
+        }}
         style={{
           left: panelLeft,
           width,
           ...(panelBelow
             ? { top }
-            : { bottom: viewportHeight - target.top + 30 }),
+            : {
+                bottom:
+                  viewportHeight - (target.lineTop ?? target.top - 24) + 6,
+              }),
         }}
-        className="border-border bg-surface fixed z-50 max-w-[calc(100vw-1rem)] rounded-xl border shadow-lg"
+        className={cn(
+          "border-border bg-surface fixed z-50 max-w-[calc(100vw-1rem)] rounded-xl border shadow-lg transition-shadow duration-150",
+          dragging && "border-primary ring-primary/25 ring-2",
+        )}
       >
         {enabled !== true ? (
           <div className="flex items-start gap-2.5 p-3">
@@ -580,6 +932,41 @@ export function WritingAssistant({
           </div>
         ) : suggestion === null ? (
           <>
+            {attachments.length > 0 ? (
+              <div className="border-border flex flex-wrap gap-1.5 border-b px-3 py-2">
+                {attachments.map((chip) => (
+                  <span
+                    key={chip.key}
+                    title={chip.error ?? chip.filename}
+                    className={cn(
+                      "inline-flex max-w-44 items-center gap-1 rounded-md border px-2 py-0.5 text-xs",
+                      chip.status === "failed"
+                        ? "border-danger/40 bg-danger-bg text-danger"
+                        : "border-border bg-surface-sunken text-foreground",
+                    )}
+                  >
+                    {chip.status === "reading" ? (
+                      <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />
+                    ) : (
+                      <FileText className="size-3 shrink-0" aria-hidden />
+                    )}
+                    <span className="truncate">{chip.filename}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAttachments((current) =>
+                          current.filter((item) => item.key !== chip.key),
+                        )
+                      }
+                      aria-label={t("ai.selectionAi.close")}
+                      className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring -mr-0.5 flex size-4 shrink-0 cursor-pointer items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      <X className="size-2.5" aria-hidden />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
             <form
               className="flex items-center gap-2 p-2.5"
               onSubmit={(event) => {
@@ -597,6 +984,12 @@ export function WritingAssistant({
                 ref={promptRef}
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
+                onPaste={(event) => {
+                  const files = Array.from(event.clipboardData?.files ?? []);
+                  if (!files.length) return;
+                  event.preventDefault();
+                  attachFiles(files);
+                }}
                 disabled={pending}
                 maxLength={1000}
                 aria-label={t("ai.writing.promptLabel")}
@@ -607,9 +1000,33 @@ export function WritingAssistant({
                 }
                 className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
               />
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={ATTACH_ACCEPT}
+                data-testid="writing-assistant-file-input"
+                tabIndex={-1}
+                className="hidden"
+                onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  event.currentTarget.value = "";
+                  attachFiles(files);
+                }}
+              />
+              <button
+                type="button"
+                disabled={pending || attachments.length >= MAX_ATTACHMENTS}
+                onClick={() => fileInputRef.current?.click()}
+                aria-label={t("ai.writing.attachFile")}
+                title={t("ai.writing.attachFile")}
+                className="text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Paperclip className="size-3.5" aria-hidden />
+              </button>
               <button
                 type="submit"
-                disabled={pending || !prompt.trim()}
+                disabled={pending || readingFiles || !prompt.trim()}
                 aria-label={t("ai.writing.send")}
                 title={t("ai.writing.send")}
                 className="bg-primary text-primary-foreground hover:bg-primary-hover focus-visible:ring-ring flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
@@ -836,6 +1253,19 @@ export function WritingAssistant({
                   >
                     <Pencil aria-hidden />
                     {t("ai.writing.edit")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => {
+                      close();
+                      editor.commands.focus();
+                    }}
+                  >
+                    <X aria-hidden />
+                    {t("ai.writing.discard")}
                   </Button>
                 </div>
               )}

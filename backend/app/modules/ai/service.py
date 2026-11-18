@@ -21,6 +21,7 @@ from app.models.attachment import PageAttachment
 from app.models.page import WikiPage
 from app.models.user import User
 from app.models.user_page_label import UserPageLabel
+from app.modules.ai import chat_files
 from app.modules.ai.answer import scrub_secrets
 from app.modules.ai.client import chat_with_usage
 from app.modules.ai.config import AIConfig, load_config
@@ -274,7 +275,10 @@ class AIService:
             parts += ["<before>", payload.before.strip(), "</before>"]
             parts += ["<after>", payload.after.strip(), "</after>"]
         else:
-            parts += ["<text>", text, "</text>"]
+            if payload.before.strip():
+                parts += ["<context>", payload.before.strip(), "</context>"]
+            if text:
+                parts += ["<text>", text, "</text>"]
         instruction = payload.instruction.strip()
         if payload.action == "write" and payload.draft.strip():
             parts += ["<draft>", payload.draft.strip(), "</draft>"]
@@ -283,6 +287,10 @@ class AIService:
             parts += ["<instruction>", instruction, "</instruction>"]
         if payload.action == "complete" and payload.after.strip():
             parts += ["<after>", payload.after.strip(), "</after>"]
+        if payload.attachment_ids:
+            files = await chat_files.load(self.user, payload.attachment_ids)
+            for filename, body in chat_files.passages(files, [instruction or text]):
+                parts.append(f'<file name="{filename}">\n{body}\n</file>')
         if payload.action == "terms":
             related = await find_related(self.session, self.user, text, space_id=space.id)
             parts.append(wiki_context(related, 300))

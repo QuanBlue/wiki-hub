@@ -80,7 +80,7 @@ describe("AddAdminDialog", () => {
     });
   });
 
-  it("submits promote member request with receive_admin_emails=true by default", async () => {
+  it("submits promote member request with receive_admin_emails=false by default", async () => {
     vi.mocked(api.patch).mockResolvedValue({} as any);
     const user = userEvent.setup();
     render(<AddAdminDialog viewerIsSystemAdmin={true} />);
@@ -104,12 +104,12 @@ describe("AddAdminDialog", () => {
 
     expect(api.patch).toHaveBeenCalledWith("/api/v1/users/u-1", {
       is_superuser: true,
-      receive_admin_emails: true,
+      receive_admin_emails: false,
     });
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("allows turning off receive_admin_emails before promoting", async () => {
+  it("allows turning on receive_admin_emails before promoting", async () => {
     vi.mocked(api.patch).mockResolvedValue({} as any);
     const user = userEvent.setup();
     render(<AddAdminDialog viewerIsSystemAdmin={true} />);
@@ -125,18 +125,18 @@ describe("AddAdminDialog", () => {
       expect(screen.getByText(/alice@corp\.com/)).toBeInTheDocument();
     });
 
-    // Toggle switch off
+    // Toggle switch on
     const emailSwitch = screen.getByRole("switch");
-    expect(emailSwitch).toHaveAttribute("aria-checked", "true");
-    await user.click(emailSwitch);
     expect(emailSwitch).toHaveAttribute("aria-checked", "false");
+    await user.click(emailSwitch);
+    expect(emailSwitch).toHaveAttribute("aria-checked", "true");
 
     const submitBtn = screen.getByRole("button", { name: /add as administrator/i });
     await user.click(submitBtn);
 
     expect(api.patch).toHaveBeenCalledWith("/api/v1/users/u-1", {
       is_superuser: true,
-      receive_admin_emails: false,
+      receive_admin_emails: true,
     });
   });
 
@@ -178,7 +178,7 @@ describe("AddAdminDialog", () => {
       email: "charlie@corp.com",
       password: "Secret123!",
       is_superuser: true,
-      receive_admin_emails: true,
+      receive_admin_emails: false,
     });
     expect(refresh).toHaveBeenCalled();
   });

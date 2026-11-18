@@ -1,10 +1,13 @@
 "use client";
 
-import { Building2, Loader2, UserRound } from "lucide-react";
+import { Building2, Clock3, Loader2, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { getUserAvatarColor, resolveAvatarUrl } from "@/components/ui/avatar";
+import {
+  isUserStatusActive,
+} from "@/components/account/status-dialog";
+import { CroppedAvatarImage, getUserAvatarColor, versionedAvatarUrl } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -56,7 +59,7 @@ export function UserProfileTrigger({
   const [profile, setProfile] = useState<PublicUser | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const label = fullName || username;
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -75,31 +78,87 @@ export function UserProfileTrigger({
     [],
   );
 
+  useEffect(() => {
+    function onStatusChanged(e: Event) {
+      const customEvent = e as CustomEvent<{
+        username: string;
+        status_emoji?: string | null;
+        status_text?: string | null;
+        status_expires_at?: string | null;
+      }>;
+      if (
+        customEvent.detail?.username &&
+        customEvent.detail.username.toLowerCase() === username.toLowerCase()
+      ) {
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                status_emoji: customEvent.detail.status_emoji ?? "",
+                status_text: customEvent.detail.status_text ?? "",
+                status_expires_at: customEvent.detail.status_expires_at ?? null,
+              }
+            : null,
+        );
+      }
+    }
+    window.addEventListener("wikihub:user-status-changed", onStatusChanged);
+    return () => {
+      window.removeEventListener("wikihub:user-status-changed", onStatusChanged);
+    };
+  }, [username]);
+
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
-    if (!nextOpen || profile || loading || loadError) return;
-    setLoading(true);
+    if (!nextOpen) return;
+    if (loading) return;
+
+    // Show skeleton loader only if we don't have profile data yet
+    if (!profile) {
+      setLoading(true);
+    }
     api
       .get<PublicUser>(`/api/v1/users/${encodeURIComponent(username)}/profile`)
       .then((data) => {
         setProfile(data);
+        setLoadError(false);
       })
       .catch(() => {
-        setLoadError(true);
+        if (!profile) {
+          setLoadError(true);
+        }
       })
       .finally(() => setLoading(false));
   }
 
-  const effectiveAvatarUrl = resolveAvatarUrl(profile?.avatar_url ?? avatarUrl ?? null);
+  const effectiveAvatarUrl = versionedAvatarUrl(
+    profile?.avatar_url ?? avatarUrl ?? null,
+    profile?.avatar_updated_at,
+  );
+  const useCroppedAvatar = Boolean(
+    effectiveAvatarUrl &&
+      profile?.avatar_content_type === "image/gif" &&
+      profile?.avatar_crop &&
+      !(
+        profile.avatar_crop.zoom === 1 &&
+        profile.avatar_crop.x === 0 &&
+        profile.avatar_crop.y === 0
+      ),
+  );
   const displayProfile = profile ?? {
     username,
     full_name: fullName || "",
     avatar_url: effectiveAvatarUrl,
+    avatar_content_type: null,
+    avatar_crop: null,
     bio: "",
     pronouns: "",
     profile_url: "",
     social_links: [],
     company: "",
+    status_emoji: null,
+    status_text: null,
+    status_expires_at: null,
   };
 
   return (
@@ -112,7 +171,7 @@ export function UserProfileTrigger({
             onMouseLeave={() => hoverTo(false)}
             aria-label={t("userProfile.profileSummaryAria", { name: label })}
             style={
-              effectiveAvatarUrl
+              effectiveAvatarUrl && !useCroppedAvatar
                 ? {
                     backgroundImage: `url(${effectiveAvatarUrl})`,
                     backgroundSize: "cover",
@@ -120,7 +179,7 @@ export function UserProfileTrigger({
                 : undefined
             }
             className={cn(
-              "focus-visible:ring-ring flex shrink-0 cursor-pointer items-center justify-center rounded-full font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none select-none ring-1 ring-inset ring-black/5 dark:ring-white/10",
+              "focus-visible:ring-ring relative flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none select-none ring-1 ring-inset ring-black/5 dark:ring-white/10",
               !children &&
                 (effectiveAvatarUrl
                   ? ""
@@ -131,11 +190,19 @@ export function UserProfileTrigger({
             )}
           >
             {children ?? (
-              effectiveAvatarUrl
-                ? null
-                : initials(label, username) || (
-                    <UserRound className="size-4" aria-hidden />
-                  )
+              effectiveAvatarUrl ? (
+                useCroppedAvatar ? (
+                  <CroppedAvatarImage
+                    src={effectiveAvatarUrl}
+                    crop={profile?.avatar_crop}
+                    contentType={profile?.avatar_content_type}
+                  />
+                ) : null
+              ) : (
+                initials(label, username) || (
+                  <UserRound className="size-4" aria-hidden />
+                )
+              )
             )}
           </button>
         ) : variant === "mention" ? (
@@ -196,17 +263,17 @@ export function UserProfileTrigger({
             <div className="flex items-start gap-3">
               <span
                 className={cn(
-                  "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold select-none ring-1 ring-inset ring-black/5 dark:ring-white/10",
+                  "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold select-none ring-1 ring-inset ring-black/5 dark:ring-white/10",
                   displayProfile.avatar_url
                     ? ""
                     : getUserAvatarColor(displayProfile.username || displayProfile.full_name || ""),
                 )}
               >
                 {displayProfile.avatar_url ? (
-                  <img
-                    src={displayProfile.avatar_url}
-                    alt=""
-                    className="size-full object-cover"
+                  <CroppedAvatarImage
+                    src={effectiveAvatarUrl ?? displayProfile.avatar_url}
+                    crop={displayProfile.avatar_crop}
+                    contentType={displayProfile.avatar_content_type}
                   />
                 ) : (
                   initials(
@@ -227,6 +294,43 @@ export function UserProfileTrigger({
                 </p>
               </div>
             </div>
+            {isUserStatusActive(displayProfile) ? (
+              <div className="border-border/70 bg-surface-sunken/60 relative mt-3 rounded-lg border p-2.5 text-xs shadow-2xs">
+                {/* Speech callout tail pointing up to avatar */}
+                <span
+                  aria-hidden="true"
+                  className="border-border/70 bg-surface-sunken absolute -top-1.5 left-5 size-2.5 rotate-45 border-t border-l"
+                />
+                <div className="relative z-1 flex items-start gap-2">
+                  {displayProfile.status_emoji ? (
+                    <span className="shrink-0 text-base leading-none pt-0.5" aria-hidden>
+                      {displayProfile.status_emoji}
+                    </span>
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-foreground text-xs font-medium leading-snug break-words">
+                      {displayProfile.status_text}
+                    </p>
+                    {displayProfile.status_expires_at ? (
+                      <p className="text-muted-foreground mt-1 flex items-center gap-1 text-[11px]">
+                        <Clock3 className="size-3 shrink-0" aria-hidden />
+                        <span>
+                          {t("profile.statusExpiresTooltip", {
+                            time: new Date(displayProfile.status_expires_at).toLocaleString(locale, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: false,
+                            }),
+                          })}
+                        </span>
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
             {displayProfile.bio ? (
               <p className="text-muted-foreground mt-3 line-clamp-3 text-sm leading-5">
                 {displayProfile.bio}

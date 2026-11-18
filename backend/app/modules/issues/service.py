@@ -14,9 +14,12 @@ so its existence is not revealed.
 
 from __future__ import annotations
 
+import io
 import re
 import uuid
+import zipfile
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +37,7 @@ from app.core.logging import get_logger
 from app.models.issue import Issue, IssueAttachment, IssueNote, IssueStatus
 from app.models.user import User
 from app.modules.admin_mail.service import AdminMailService
+from app.modules.attachments.store import reject_svg
 from app.modules.issues.labels import NO_LABEL
 from app.modules.notifications.service import notify
 from app.modules.permissions.service import PermissionService
@@ -48,17 +52,21 @@ from app.schemas.issue import (
 from app.schemas.pagination import Page
 from app.services.storage import ObjectStorage
 
-#: Screenshots only: raster images a browser shows inline. SVG is active
-#: content and is never accepted.
+#: Raster images embedded inline in exported Word reports. General files are
+#: also allowed as issue attachments; only SVG is rejected.
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
-MAX_IMAGES_PER_ISSUE = 5
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+MAX_IMAGE_BYTES = MAX_ATTACHMENT_BYTES
+MAX_ATTACHMENTS_PER_ISSUE = 10
+MAX_IMAGES_PER_ISSUE = MAX_ATTACHMENTS_PER_ISSUE
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+ZIP_MIME = "application/zip"
 
 
-def _safe_name(filename: str | None) -> str:
+def _safe_name(filename: str | None, *, default_name: str = "attachment") -> str:
     name = re.split(r"[\\/]+", (filename or "").strip())[-1].strip()
     if not name or name in {".", ".."}:
-        name = "screenshot.png"
+        name = default_name
     return name[:255]
 
 
@@ -181,14 +189,9 @@ class IssueService:
         issue = await self.get_visible(issue_id)
         return (await self._render([issue], triager=await self.is_triager()))[0]
 
-    async def export_docx(
+    async def _prepare_export(
         self, storage: ObjectStorage, issue_ids: list[uuid.UUID], *, lang: str = "en"
-    ) -> tuple[bytes, str]:
-        """One or more issues as a single Word document, in the order given
-        (see ``app.modules.issues.export``). Returns the bytes and a filename.
-
-        An issue the caller may not see is left out, never named - same as
-        reading it. Not found only when none of them is visible."""
+    ) -> tuple[bytes, str, list[IssueAttachment]]:
         from app.modules.issues.export import issues_to_docx, load_issue_images
 
         triager = await self.is_triager()
@@ -201,13 +204,15 @@ class IssueService:
             raise NotFoundError("Issue not found.", code="issue_not_found")
 
         rendered = await self._render(visible, triager=triager)
-        rows = (
-            await self.session.scalars(
-                select(IssueAttachment)
-                .where(IssueAttachment.issue_id.in_([issue.id for issue in visible]))
-                .order_by(IssueAttachment.created_at)
-            )
-        ).all()
+        rows = list(
+            (
+                await self.session.scalars(
+                    select(IssueAttachment)
+                    .where(IssueAttachment.issue_id.in_([issue.id for issue in visible]))
+                    .order_by(IssueAttachment.created_at)
+                )
+            ).all()
+        )
         by_issue: dict[uuid.UUID, list[tuple[str, str, str]]] = {}
         for row in rows:
             by_issue.setdefault(row.issue_id, []).append(
@@ -217,7 +222,63 @@ class IssueService:
             (issue, await load_issue_images(storage, by_issue.get(issue.id, [])))
             for issue in rendered
         ]
-        return await issues_to_docx(documents, lang="vi" if lang == "vi" else "en")
+        docx_bytes, docx_filename = await issues_to_docx(
+            documents, lang="vi" if lang == "vi" else "en"
+        )
+        return docx_bytes, docx_filename, rows
+
+    async def export_docx(
+        self, storage: ObjectStorage, issue_ids: list[uuid.UUID], *, lang: str = "en"
+    ) -> tuple[bytes, str]:
+        """One or more issues as a single Word document, in the order given
+        (see ``app.modules.issues.export``). Returns the bytes and a filename.
+
+        An issue the caller may not see is left out, never named - same as
+        reading it. Not found only when none of them is visible."""
+        docx_bytes, docx_filename, _rows = await self._prepare_export(
+            storage, issue_ids, lang=lang
+        )
+        return docx_bytes, docx_filename
+
+    async def export_package(
+        self, storage: ObjectStorage, issue_ids: list[uuid.UUID], *, lang: str = "en"
+    ) -> tuple[bytes, str, str]:
+        """Export one or more issues as `.docx`, or as a `.zip` containing the
+        Word report plus each issue's attachments under `<issue_id>/<filename>`
+        whenever any exported issue has attachments."""
+        docx_bytes, docx_filename, rows = await self._prepare_export(
+            storage, issue_ids, lang=lang
+        )
+        if not rows:
+            return docx_bytes, DOCX_MIME, docx_filename
+
+        archive_buf = io.BytesIO()
+        used_paths: set[str] = {docx_filename}
+        with zipfile.ZipFile(archive_buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(docx_filename, docx_bytes)
+            for row in rows:
+                try:
+                    data = await storage.get(row.object_key)
+                except Exception:
+                    logger.warning(
+                        "issue_export_attachment_missing",
+                        issue_id=str(row.issue_id),
+                        object_key=row.object_key,
+                    )
+                    continue
+                base = row.filename
+                candidate = f"{row.issue_id}/{base}"
+                suffix_idx = 1
+                stem = Path(base).stem
+                ext = Path(base).suffix
+                while candidate in used_paths:
+                    candidate = f"{row.issue_id}/{stem}_{suffix_idx}{ext}"
+                    suffix_idx += 1
+                used_paths.add(candidate)
+                zf.writestr(candidate, data)
+
+        zip_filename = f"{Path(docx_filename).stem}.zip"
+        return archive_buf.getvalue(), ZIP_MIME, zip_filename
 
     async def list_mine(self, *, limit: int, offset: int) -> Page[IssueRead]:
         query = select(Issue).where(Issue.reporter_id == self.user.id)
@@ -411,23 +472,27 @@ class IssueService:
         issue = await self._load(issue_id)
         if issue.reporter_id != self.user.id:
             raise NotFoundError("Issue not found.", code="issue_not_found")
-        normalized = (content_type or "").lower()
-        if normalized not in ALLOWED_IMAGE_TYPES:
-            raise UnsupportedMediaTypeError("Attach a PNG, JPEG, GIF or WebP image.")
+        normalized = (content_type or "application/octet-stream").lower().split(";")[0].strip()
+        if not normalized:
+            normalized = "application/octet-stream"
+        default_name = "screenshot.png" if normalized in ALLOWED_IMAGE_TYPES else "attachment"
+        name = _safe_name(filename, default_name=default_name)
+        reject_svg(name, normalized)
         if not data:
-            raise BadRequestError("The image is empty.")
-        if len(data) > MAX_IMAGE_BYTES:
-            raise PayloadTooLargeError("Images must be 5 MB or smaller.")
+            raise BadRequestError("The attachment is empty.")
+        if len(data) > MAX_ATTACHMENT_BYTES:
+            raise PayloadTooLargeError("Attachments must be 20 MB or smaller.")
         existing = (
             await self.session.execute(
                 select(func.count()).where(IssueAttachment.issue_id == issue.id)
             )
         ).scalar_one()
-        if existing >= MAX_IMAGES_PER_ISSUE:
-            raise BadRequestError(f"An issue can have at most {MAX_IMAGES_PER_ISSUE} images.")
+        if existing >= MAX_ATTACHMENTS_PER_ISSUE:
+            raise BadRequestError(
+                f"An issue can have at most {MAX_ATTACHMENTS_PER_ISSUE} attachments."
+            )
 
         attachment_id = uuid.uuid4()
-        name = _safe_name(filename)
         attachment = IssueAttachment(
             id=attachment_id,
             issue_id=issue.id,
@@ -517,10 +582,6 @@ class IssueService:
 
         if assignee_id == self.user.id:
             return await self.claim(issue_id)
-        if not self.user.is_superuser:
-            raise PermissionDeniedError(
-                "Only a super administrator can give an issue to someone else."
-            )
         target = await self.session.get(User, assignee_id)
         if (
             target is None

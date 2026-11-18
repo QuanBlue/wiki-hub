@@ -38,7 +38,12 @@ import {
 } from "@/components/ui/select";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { ProfileImageViewer } from "@/components/users/profile-image-viewer";
-import { getUserAvatarColor } from "@/components/ui/avatar";
+import {
+  UserStatusBubble,
+  UserStatusDialog,
+  isUserStatusActive,
+} from "@/components/account/status-dialog";
+import { CroppedAvatarImage, getUserAvatarColor, versionedAvatarUrl } from "@/components/ui/avatar";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { formatDate, formatTime } from "@/lib/i18n/format";
@@ -784,6 +789,22 @@ export function UserProfile({
   const loadingRef = useRef(false);
   const { t, locale, apiErrorText } = useTranslation();
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [statusOverride, setStatusOverride] = useState<{
+    source: PublicUser;
+    emoji: string;
+    text: string;
+    expiresAt: string | null;
+  } | null>(null);
+  const effectiveStatusUser =
+    statusOverride && statusOverride.source === user
+      ? {
+          status_emoji: statusOverride.emoji,
+          status_text: statusOverride.text,
+          status_expires_at: statusOverride.expiresAt,
+        }
+      : user;
+  const hasStatus = isUserStatusActive(effectiveStatusUser);
   const [savedPageKeys, setSavedPageKeys] = useState<string[]>([]);
   // "Saved for later" only stores "spaceKey/slug" strings client-side, so the
   // list needs its own lookups for a title and a friendly space name -
@@ -1914,8 +1935,8 @@ export function UserProfile({
       </main>
 
       <aside className="space-y-5 lg:flex lg:h-full lg:flex-col lg:space-y-0 lg:gap-5">
-        <section className="border-border bg-surface relative shrink-0 overflow-hidden rounded-lg border">
-          <div className="bg-primary-subtle aspect-[15/4] overflow-hidden">
+        <section className="border-border bg-surface relative shrink-0 rounded-lg border">
+          <div className="bg-primary-subtle aspect-[15/4] overflow-hidden rounded-t-lg">
             {user.cover_url ? (
               <ProfileImageViewer src={user.cover_url} kind="cover" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.cover_updated_at} className="size-full">
                 <img src={user.cover_url} alt="" className="size-full object-cover" />
@@ -1936,20 +1957,28 @@ export function UserProfile({
             {/* Avatar overlaps the cover, name beside it, actions on the right. */}
             <div className="flex items-end gap-3">
               <div className="relative -mt-10 size-20 shrink-0">
-                <ProfileImageViewer src={user.avatar_url} kind="avatar" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.avatar_updated_at} className="size-full rounded-full focus-visible:rounded-full">
+                {/* WhatsApp-style Thought Bubble above Avatar */}
+                <div className="absolute bottom-[calc(100%+16px)] left-0 z-20 pointer-events-auto">
+                  <UserStatusBubble
+                    user={effectiveStatusUser}
+                    isOwner={isOwner}
+                    onClick={isOwner ? () => setStatusOpen(true) : undefined}
+                  />
+                </div>
+                <ProfileImageViewer src={versionedAvatarUrl(user.avatar_url, user.avatar_updated_at)} kind="avatar" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.avatar_updated_at} className="size-full rounded-full focus-visible:rounded-full">
                   <span
                     className={cn(
-                      "ring-surface flex size-20 items-center justify-center overflow-hidden rounded-full text-2xl font-semibold ring-4 select-none",
+                      "ring-surface relative flex size-20 items-center justify-center overflow-hidden rounded-full text-2xl font-semibold ring-4 select-none",
                       user.avatar_url
                         ? ""
                         : getUserAvatarColor(user.username || user.full_name || ""),
                     )}
                   >
                     {user.avatar_url ? (
-                      <img
-                        src={user.avatar_url}
-                        alt=""
-                        className="size-full object-cover"
+                      <CroppedAvatarImage
+                        src={versionedAvatarUrl(user.avatar_url, user.avatar_updated_at) ?? user.avatar_url}
+                        crop={user.avatar_crop}
+                        contentType={user.avatar_content_type}
                       />
                     ) : (
                       initials(user) || (
@@ -2081,6 +2110,21 @@ export function UserProfile({
           spaceKey={fullHistoryItem.space_key}
           slug={fullHistoryItem.slug}
           pageTitle={fullHistoryItem.title}
+        />
+      ) : null}
+      {isOwner && statusOpen ? (
+        <UserStatusDialog
+          open={statusOpen}
+          onOpenChange={setStatusOpen}
+          user={effectiveStatusUser}
+          onUpdated={(updated) =>
+            setStatusOverride({
+              source: user,
+              emoji: updated.status_emoji ?? "",
+              text: updated.status_text ?? "",
+              expiresAt: updated.status_expires_at ?? null,
+            })
+          }
         />
       ) : null}
     </div>

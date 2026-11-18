@@ -1,4 +1,6 @@
 import { Editor } from "@tiptap/core";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
+import { CellSelection } from "@tiptap/pm/tables";
 import StarterKit from "@tiptap/starter-kit";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -38,7 +40,13 @@ function makeEditor(html: string) {
   document.body.appendChild(element);
   const instance = new Editor({
     element,
-    extensions: [StarterKit],
+    extensions: [
+      StarterKit,
+      Table,
+      TableRow,
+      TableHeader,
+      TableCell,
+    ],
     content: html,
   });
   instance.view.coordsAtPos = () => ({
@@ -156,7 +164,7 @@ describe("WritingAssistant", () => {
     );
   });
 
-  it("continues a sentence at the caret from the / menu and inserts it after the text", async () => {
+  it("opens the AI prompt focused and waits for input or Continue writing from the / menu", async () => {
     const { instance, api } = await mount("<p>Restart the worker</p>");
     api.post.mockResolvedValue({ result: "when jobs stop moving." });
     await act(async () => {
@@ -167,6 +175,12 @@ describe("WritingAssistant", () => {
       window.dispatchEvent(new CustomEvent("wikihub:ai-assist"));
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
+
+    const box = await screen.findByPlaceholderText("Ask AI to write anything...");
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(api.post).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: /Continue writing/ }));
 
     expect(
       await screen.findByText("when jobs stop moving."),
@@ -183,6 +197,38 @@ describe("WritingAssistant", () => {
     expect(instance.getText()).toBe(
       "Restart the worker when jobs stop moving.",
     );
+  });
+
+  it("waits for the author to submit a prompt after choosing Continue with AI from the / menu", async () => {
+    const { instance, api } = await mount("<p></p>");
+    api.post.mockResolvedValue({
+      result: "Runbook checklist",
+      html: "<p>Runbook checklist</p>",
+    });
+    await act(async () => {
+      instance.commands.setTextSelection(1);
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("wikihub:ai-assist"));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    const box = await screen.findByPlaceholderText("Ask AI to write anything...");
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(api.post).not.toHaveBeenCalled();
+
+    await userEvent.type(box, "Write a short checklist{Enter}");
+
+    expect(await screen.findByText(/Runbook checklist/)).toBeInTheDocument();
+    expect(api.post).toHaveBeenCalledWith("/api/v1/ai/spaces/ENG/assist", {
+      action: "write",
+      text: "",
+      instruction: "Write a short checklist",
+      draft: "",
+      before: "",
+      after: "",
+    });
   });
 
   it("will not overwrite text that changed while the AI was working", async () => {
@@ -587,7 +633,7 @@ describe("WritingAssistant edge cases", () => {
     expect(screen.getByRole("dialog").style.top).toBe(startedAt);
   });
 
-  it("asks for a few words before continuing a sentence that has none", async () => {
+  it("does not offer Continue writing when the text before the caret is too short", async () => {
     const { instance, api } = await mount("<p>Hi</p>");
     await act(async () => {
       instance.commands.setTextSelection(3);
@@ -597,7 +643,9 @@ describe("WritingAssistant edge cases", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/few words first/);
+    const box = await screen.findByPlaceholderText("Ask AI to write anything...");
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(screen.queryByRole("button", { name: /Continue writing/ })).toBeNull();
     expect(api.post).not.toHaveBeenCalled();
   });
 
@@ -726,5 +774,196 @@ describe("WritingAssistant dismissal", () => {
 
     fireEvent.pointerDown(document.body);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("minimizes to a Generating pill while a request is in flight and restores the dialog when clicked", async () => {
+    let resolvePost!: (value: { result: string; html?: string }) => void;
+    const { instance, api } = await mount("<p>Me and him goes there.</p>");
+    api.post.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        }),
+    );
+    await select(instance, 1, 23);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Writing assistant" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Fix grammar/ }));
+
+    expect(screen.getByText("Working...")).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+
+    const pill = await screen.findByTestId("writing-assistant-minimized");
+    expect(pill).toHaveTextContent("Generating…");
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await act(async () => {
+      resolvePost({ result: "He and I go there." });
+    });
+    expect(await screen.findByText("AI draft ready")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "AI draft ready" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "He and I go there.",
+    );
+  });
+
+  it("continues writing from the preceding paragraph when /Continue writing is run on an empty line", async () => {
+    const { instance, api } = await mount("<p>Restart the worker</p><p></p>");
+    api.post.mockResolvedValue({ result: "when jobs stop moving." });
+    await act(async () => {
+      instance.commands.setTextSelection(21); // inside the empty second paragraph
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("wikihub:ai-assist"));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    const box = await screen.findByPlaceholderText("Ask AI to write anything...");
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(api.post).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: /Continue writing/ }));
+
+    expect(
+      await screen.findByText("when jobs stop moving."),
+    ).toBeInTheDocument();
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/v1/ai/spaces/ENG/assist",
+      expect.objectContaining({
+        action: "complete",
+        text: "Restart the worker",
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Insert" }));
+    expect(instance.getText()).toContain("when jobs stop moving.");
+  });
+
+  it("uploads reference files and sends attachment_ids when asking the AI", async () => {
+    const { instance, api } = await mount("<p></p>");
+    api.post
+      .mockResolvedValueOnce({ id: "file-uuid-1", filename: "notes.md", chars: 42 })
+      .mockResolvedValueOnce({ result: "Summary.", html: "<p>Summary.</p>" });
+    await act(async () => {
+      instance.commands.setTextSelection(1);
+      instance.view.dom.dispatchEvent(
+        new KeyboardEvent("keydown", { ctrlKey: true, code: "Space", bubbles: true }),
+      );
+    });
+
+    const input = screen.getByTestId("writing-assistant-file-input") as HTMLInputElement;
+    const file = new File(["hello"], "notes.md", { type: "text/markdown" });
+    await userEvent.upload(input, file);
+    expect(await screen.findByText("notes.md")).toBeInTheDocument();
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Ask the AI" }),
+      "Summarize the attached notes{Enter}",
+    );
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        "/api/v1/ai/spaces/ENG/assist",
+        expect.objectContaining({
+          action: "write",
+          instruction: "Summarize the attached notes",
+          attachment_ids: ["file-uuid-1"],
+        }),
+      ),
+    );
+  });
+
+  it("supports multi-cell table CellSelection and passes table header context", async () => {
+    const { instance, api } = await mount(
+      "<table><tbody><tr><th>Name</th><th>Role</th></tr><tr><td>Ada</td><td>Eng</td></tr></tbody></table>",
+    );
+    api.post.mockResolvedValue({ result: "Reviewed table rows." });
+
+    const cells: number[] = [];
+    instance.state.doc.descendants((node, pos) => {
+      if (node.type.name === "tableCell") cells.push(pos);
+    });
+    expect(cells.length).toBe(2);
+
+    await act(async () => {
+      const tr = instance.state.tr.setSelection(
+        CellSelection.create(instance.state.doc, cells[0]!, cells[1]!),
+      );
+      instance.view.dispatch(tr);
+    });
+
+    const trigger = await screen.findByRole("button", { name: "Writing assistant" });
+    await userEvent.click(trigger);
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Ask the AI" }),
+      "Check rows{Enter}",
+    );
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        "/api/v1/ai/spaces/ENG/assist",
+        expect.objectContaining({
+          action: "edit",
+          text: "| Ada | Eng |",
+          before: "| Name | Role |",
+        }),
+      ),
+    );
+  });
+
+  it("discards a generated suggestion when the Discard button is clicked", async () => {
+    const { instance, api } = await mount("<p></p>");
+    api.post.mockResolvedValue({
+      result: "Draft text",
+      html: "<p>Draft text</p>",
+    });
+    await act(async () => {
+      instance.commands.setTextSelection(1);
+    });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("wikihub:ai-assist"));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    const box = await screen.findByPlaceholderText("Ask AI to write anything...");
+    await userEvent.type(box, "Write something{Enter}");
+    expect(await screen.findByText(/Draft text/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(instance.getText()).toBe("");
+  });
+
+  it("attaches a file dropped onto the Continue with AI dialog", async () => {
+    const { instance, api } = await mount("<p></p>");
+    api.post.mockResolvedValueOnce({
+      id: "dropped-file-1",
+      filename: "spec.md",
+      chars: 25,
+    });
+    await act(async () => {
+      instance.commands.setTextSelection(1);
+    });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("wikihub:ai-assist"));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    const dialog = await screen.findByRole("dialog");
+    const file = new File(["# Spec"], "spec.md", { type: "text/markdown" });
+    const dataTransfer = {
+      types: ["Files"],
+      files: [file],
+      items: [{ kind: "file", getAsFile: () => file }],
+      dropEffect: "none",
+    };
+
+    fireEvent.dragEnter(dialog, { dataTransfer });
+    fireEvent.dragOver(dialog, { dataTransfer });
+    fireEvent.drop(dialog, { dataTransfer });
+
+    expect(await screen.findByText("spec.md")).toBeInTheDocument();
   });
 });

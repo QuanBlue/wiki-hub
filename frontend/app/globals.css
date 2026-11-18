@@ -482,9 +482,9 @@
 
   /* --- neutral ramp (slightly cool grey) --- */
   --wh-neutral-0: #ffffff;
-  --wh-neutral-50: #f7f8fa;
-  --wh-neutral-100: #eef0f4;
-  --wh-neutral-200: #e2e5eb;
+  --wh-neutral-50: #f6f8fb;
+  --wh-neutral-100: #e3e8f0;
+  --wh-neutral-200: #d5dce6;
   --wh-neutral-300: #cbd1da;
   --wh-neutral-400: #9aa3b2;
   --wh-neutral-500: #6b7484;
@@ -544,7 +544,7 @@
   --surface-sunken: var(--wh-neutral-50);
   --surface-raised: var(--wh-neutral-0);
   --surface-hover: var(--wh-neutral-100);
-  --surface-selected: var(--wh-brand-50);
+  --surface-selected: color-mix(in oklab, var(--wh-brand-100) 55%, var(--wh-brand-50));
   --surface-selected-hover: var(--wh-brand-200);
   --border: var(--wh-neutral-200);
   --border-strong: var(--wh-neutral-300);
@@ -599,7 +599,7 @@
   --background: #1f2330;
   --foreground: #f1f5f9;
   --surface: #272c3b;
-  --surface-sunken: #191c27;
+  --surface-sunken: #151922;
   --surface-raised: #2f3546;
   --surface-hover: #33394c;
   --surface-selected: color-mix(in oklab, var(--wh-brand-500) 24%, transparent);
@@ -1010,6 +1010,26 @@
     vertical-align: top;
   }
 
+  .ProseMirror .react-renderer.node-attachment {
+    display: inline-block;
+    vertical-align: top;
+    line-height: normal;
+  }
+
+  .ProseMirror .react-renderer.node-attachment:has([data-display-mode="link"]) {
+    vertical-align: baseline;
+  }
+
+  .wikihub-reader a[data-attachment][data-caption]:not([data-caption=""])::after {
+    content: attr(data-caption);
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    font-style: italic;
+    color: var(--muted-foreground);
+    text-align: center;
+  }
+
   /* The options toolbar floats above the image. An image at the very top of
      the document has only the editor's padding plus the figure's own margin
      above it, which is less than the toolbar needs, so the scrolling editor
@@ -1362,6 +1382,12 @@
     color: var(--primary);
     background-color: var(--primary-subtle);
     text-decoration-color: var(--primary);
+  }
+
+  /* Hide the empty-line AI/slash hint while the inline writing assistant is open
+     or minimized on that line so the pill never collides with placeholder text. */
+  .ProseMirror[data-ai-active="true"] .wh-empty-line-hint {
+    display: none;
   }
 
   /* Dynamic page typography for page title, overview, reader, and editor prose */

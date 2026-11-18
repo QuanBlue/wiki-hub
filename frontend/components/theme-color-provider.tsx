@@ -62,7 +62,10 @@ function applyPrimaryVariables(root: HTMLElement, palette: ThemePalette) {
     root.style.setProperty("--primary", palette[600]);
     root.style.setProperty("--primary-hover", palette[700]);
     root.style.setProperty("--primary-subtle", palette[50]);
-    root.style.setProperty("--surface-selected", palette[50]);
+    root.style.setProperty(
+      "--surface-selected",
+      `color-mix(in oklab, ${palette[100]} 55%, ${palette[50]})`,
+    );
     root.style.setProperty("--ring", palette[500]);
   }
 }

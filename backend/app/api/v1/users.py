@@ -131,15 +131,26 @@ async def _store_original(
     crop: str | None,
     limit: int,
     storage: ObjectStorage,
+    keep_crop_without_original: bool = False,
 ) -> list[str]:
     """Keep (or refresh) the uncropped picture behind a just-uploaded crop.
 
     Without a new ``original`` the stored one stays and only its crop moves;
-    that is how repositioning avoids re-sending the picture. Returns the keys
-    to delete once the transaction is safe.
+    that is how repositioning avoids re-sending the picture. Animated GIFs
+    are stored uncropped directly, so they clear any stale original while
+    keeping ``crop`` for CSS positioning. Returns the keys to delete once
+    the transaction is safe.
     """
     parsed = _parse_crop(crop)
     stale: list[str] = []
+    if original is None and (parsed is None or keep_crop_without_original):
+        old = getattr(user, f"{kind}_original_key", None)
+        if old:
+            stale.append(old)
+        setattr(user, f"{kind}_original_key", None)
+        setattr(user, f"{kind}_original_content_type", None)
+        setattr(user, f"{kind}_crop", parsed if keep_crop_without_original else None)
+        return stale
     if original is not None:
         content_type = (original.content_type or "").lower()
         if content_type not in AVATAR_TYPES:
@@ -196,7 +207,15 @@ async def upload_own_avatar(
     user.avatar_content_type = content_type
     user.avatar_url = avatar_endpoint(request, user.id)
     user.avatar_updated_at = datetime.now(UTC)
-    stale = await _store_original(user, "avatar", original, crop, MAX_AVATAR_BYTES, storage)
+    stale = await _store_original(
+        user,
+        "avatar",
+        original,
+        crop,
+        MAX_AVATAR_BYTES,
+        storage,
+        keep_crop_without_original=content_type == "image/gif",
+    )
     if old_key and old_key != key:
         stale.append(old_key)
     await session.flush()

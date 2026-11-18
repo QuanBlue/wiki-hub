@@ -107,9 +107,16 @@ class AuditService:
         The allowlist is the point: it makes it impossible to diff a column
         like ``password_hash`` into the audit trail by widening a query.
         """
+        def _safe(v: Any) -> Any:
+            if hasattr(v, "isoformat"):
+                return v.isoformat()
+            if isinstance(v, uuid.UUID):
+                return str(v)
+            return v
+
         diff: dict[str, dict[str, Any]] = {}
         for field in fields:
             old, new = before.get(field), after.get(field)
             if old != new:
-                diff[field] = {"from": old, "to": new}
+                diff[field] = {"from": _safe(old), "to": _safe(new)}
         return diff

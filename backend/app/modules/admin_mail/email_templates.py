@@ -702,3 +702,40 @@ def issue_created(
             footer=f"You are receiving this because you can manage {brand.site_name} issues.",
         ),
     )
+
+
+def issue_assigned(
+    brand: Brand,
+    *,
+    name: str,
+    username: str,
+    assigned_by: str,
+    issue_title: str,
+    description: str,
+    labels: list[str] | None,
+    issue_url: str | None,
+    signature: Signature,
+) -> tuple[str, str]:
+    """Tells a triager that an issue has been assigned to them."""
+    greeting = f"Hello {' '.join(name.split()) or username},"
+    intro = f'{assigned_by} assigned you an issue: "{issue_title}".'
+    excerpt = " ".join(description.split())
+    if len(excerpt) > 400:
+        excerpt = excerpt[:400].rstrip() + "..."
+    rows = [Row("Issue", issue_title), Row("Assigned by", assigned_by)]
+    if labels:
+        rows.append(Row("Labels", ", ".join(labels)))
+    return render(
+        brand,
+        EmailContent(
+            preheader=intro,
+            title="You've been assigned an issue",
+            paragraphs=[f"{greeting} {intro[0].lower()}{intro[1:]}"],
+            rows=rows,
+            quote_label="Description" if excerpt else None,
+            quote=excerpt or None,
+            button=("Open issue", issue_url) if issue_url else None,
+            signature=signature,
+            footer=f"This message was sent by a {brand.site_name} administrator.",
+        ),
+    )

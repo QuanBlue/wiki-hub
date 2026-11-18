@@ -376,7 +376,7 @@ export default async function RootLayout({
                   --primary: ${palette[600]};
                   --primary-hover: ${palette[700]};
                   --primary-subtle: ${palette[50]};
-                  --surface-selected: ${palette[50]};
+                  --surface-selected: color-mix(in oklab, ${palette[100]} 55%, ${palette[50]});
                   --ring: ${palette[500]};
                 }
                 .dark {

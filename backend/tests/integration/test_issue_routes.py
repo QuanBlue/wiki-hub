@@ -179,26 +179,52 @@ class TestRoutes:
         assert result.updated == 1
         assert (await IssueService(session, admin).read(issue.id)).assignee is None
 
-    async def test_exports_one_or_many_issues_as_word(self, session: AsyncSession) -> None:
+    async def test_exports_one_or_many_issues_as_word_or_zip_with_attachments(
+        self, session: AsyncSession
+    ) -> None:
+        import zipfile
+
         reporter = await _user(session)
         admin = await _superuser(session)
         storage = _Storage()
         first = await _report(session, reporter, "First")
         second = await _report(session, reporter, "Second")
-        await IssueService(session, reporter).add_attachment(
-            storage, first.id, filename="a.png", content_type="image/png", data=PNG
-        )
 
         with _fake_pandoc(_pandoc_like_docx()):
-            single = await routes.export_issue_docx(first.id, admin, session, storage, lang="vi")
-            many = await routes.export_issues_docx(
+            plain_single = await routes.export_issue_docx(
+                first.id, admin, session, storage, lang="vi"
+            )
+            assert (
+                plain_single.headers["content-disposition"]
+                == 'attachment; filename="issue-first.docx"'
+            )
+            assert plain_single.headers["cache-control"] == "no-store"
+            assert _load(plain_single.body).styles["WH Issue Eyebrow"] is not None
+
+            await IssueService(session, reporter).add_attachment(
+                storage, first.id, filename="a.png", content_type="image/png", data=PNG
+            )
+            zip_single = await routes.export_issue_docx(
+                first.id, admin, session, storage, lang="vi"
+            )
+            zip_many = await routes.export_issues_docx(
                 admin, session, storage, ids=[first.id, second.id, first.id], lang="en"
             )
 
-        assert single.headers["content-disposition"] == 'attachment; filename="issue-first.docx"'
-        assert single.headers["cache-control"] == "no-store"
-        assert _load(single.body).styles["WH Issue Eyebrow"] is not None
-        assert many.headers["content-disposition"].startswith('attachment; filename="issues-2-')
+        assert (
+            zip_single.headers["content-disposition"]
+            == 'attachment; filename="issue-first.zip"'
+        )
+        assert zip_single.media_type == "application/zip"
+        with zipfile.ZipFile(io.BytesIO(zip_single.body)) as zf:
+            names = set(zf.namelist())
+            assert "issue-first.docx" in names
+            assert f"{first.id}/a.png" in names
+            assert zf.read(f"{first.id}/a.png") == PNG
+        assert zip_many.headers["content-disposition"].startswith(
+            'attachment; filename="issues-2-'
+        )
+        assert zip_many.headers["content-disposition"].endswith('.zip"')
 
     async def test_an_export_of_nothing_visible_is_not_found(self, session: AsyncSession) -> None:
         issue = await _report(session, await _user(session))

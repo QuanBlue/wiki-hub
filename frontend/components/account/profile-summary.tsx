@@ -14,10 +14,15 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import {
+  UserStatusBubble,
+  UserStatusDialog,
+  isUserStatusActive,
+} from "@/components/account/status-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProfileImageViewer } from "@/components/users/profile-image-viewer";
-import { getUserAvatarColor, resolveAvatarUrl } from "@/components/ui/avatar";
+import { CroppedAvatarImage, getUserAvatarColor, versionedAvatarUrl } from "@/components/ui/avatar";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { Me } from "@/types/api";
@@ -50,7 +55,17 @@ function ExternalProfileLink({ href, children }: { href: string; children: React
 export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void }) {
   const { t } = useTranslation();
   const [imgError, setImgError] = useState(false);
-  const effectiveAvatarUrl = resolveAvatarUrl(user.avatar_url);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [statusOverride, setStatusOverride] = useState<{
+    source: Me;
+    updated: { status_emoji?: string; status_text?: string; status_expires_at?: string | null };
+  } | null>(null);
+  const statusUser =
+    statusOverride && statusOverride.source === user
+      ? statusOverride.updated
+      : user;
+  const hasStatus = isUserStatusActive(statusUser);
+  const effectiveAvatarUrl = versionedAvatarUrl(user.avatar_url, user.avatar_updated_at);
 
   return (
     <section className="w-full max-w-[37.5rem] space-y-6">
@@ -67,8 +82,8 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
       </div>
 
       {/* Main Profile Card */}
-      <div className="border-border bg-surface relative w-full overflow-hidden rounded-lg border">
-        <div className="bg-primary-subtle relative aspect-[15/4] overflow-hidden">
+      <div className="border-border bg-surface relative w-full rounded-lg border">
+        <div className="bg-primary-subtle relative aspect-[15/4] overflow-hidden rounded-t-lg">
           {user.cover_url ? (
             <ProfileImageViewer src={user.cover_url} kind="cover" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.cover_updated_at} className="absolute inset-0 size-full">
               <img src={user.cover_url} alt="" className="absolute inset-0 size-full object-cover" />
@@ -79,6 +94,14 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
         <div className="px-4 pb-4 sm:px-6 sm:pb-6">
           <div className="flex items-start gap-3 sm:gap-5">
             <div className="relative z-10 -mt-10 size-20 shrink-0 self-start sm:-mt-20 sm:size-40">
+              {/* WhatsApp-style Thought Bubble above Avatar */}
+              <div className="absolute bottom-[calc(100%+16px)] left-0 sm:left-2 z-20 pointer-events-auto">
+                <UserStatusBubble
+                  user={statusUser}
+                  isOwner={true}
+                  onClick={() => setStatusOpen(true)}
+                />
+              </div>
               <ProfileImageViewer
                 src={effectiveAvatarUrl && !imgError ? effectiveAvatarUrl : null}
                 kind="avatar"
@@ -90,17 +113,17 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
                 <span
                   aria-hidden
                   className={cn(
-                    "ring-surface flex size-full items-center justify-center overflow-hidden rounded-full text-3xl font-semibold ring-4 select-none sm:text-4xl",
+                    "ring-surface relative flex size-full items-center justify-center overflow-hidden rounded-full text-3xl font-semibold ring-4 select-none sm:text-4xl",
                     effectiveAvatarUrl && !imgError
                       ? ""
                       : getUserAvatarColor(user.username || user.full_name || ""),
                   )}
                 >
                   {effectiveAvatarUrl && !imgError ? (
-                    <img
+                    <CroppedAvatarImage
                       src={effectiveAvatarUrl}
-                      alt=""
-                      className="size-full object-cover"
+                      crop={user.avatar_crop}
+                      contentType={user.avatar_content_type}
                       onError={() => setImgError(true)}
                     />
                   ) : (
@@ -212,6 +235,23 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
           ) : null}
         </dl>
       </div>
+      {statusOpen ? (
+        <UserStatusDialog
+          open={statusOpen}
+          onOpenChange={setStatusOpen}
+          user={statusUser}
+          onUpdated={(updated) =>
+            setStatusOverride({
+              source: user,
+              updated: {
+                status_emoji: updated.status_emoji,
+                status_text: updated.status_text,
+                status_expires_at: updated.status_expires_at,
+              },
+            })
+          }
+        />
+      ) : null}
     </section>
   );
 }

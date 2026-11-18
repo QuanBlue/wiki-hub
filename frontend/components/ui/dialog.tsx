@@ -100,7 +100,10 @@ export function DialogFooter({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("mt-5 flex flex-wrap justify-end gap-2", className)}
+      className={cn(
+        "mt-5 flex flex-wrap items-center justify-end gap-2",
+        className,
+      )}
       {...props}
     />
   );

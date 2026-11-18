@@ -41,6 +41,8 @@ from app.modules.pages.export_service import _export_filename_stem
 from app.schemas.issue import IssueRead
 from app.services.storage import ObjectStorage
 
+_RASTER_IMAGE_TYPES: Final = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+
 logger = get_logger(__name__)
 
 ExportLanguage = Literal["en", "vi"]
@@ -66,6 +68,7 @@ _TEXT: Final[dict[str, dict[str, str]]] = {
         "description": "Description",
         "no_description": "No description was given.",
         "screenshots": "Screenshots",
+        "attachments": "Attachments",
         "notes": "Notes",
         "unassigned": "Unassigned",
         "none": "None",
@@ -101,6 +104,7 @@ _TEXT: Final[dict[str, dict[str, str]]] = {
         "description": "Mô tả",
         "no_description": "Không có mô tả.",
         "screenshots": "Ảnh chụp màn hình",
+        "attachments": "Tệp đính kèm",
         "notes": "Ghi chú",
         "unassigned": "Chưa giao",
         "none": "Không có",
@@ -179,6 +183,14 @@ def _badges(issue: IssueRead, text: dict[str, str]) -> str:
     return _para("WH Badges", " ".join(pills))
 
 
+def _format_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
 def build_issue_html(
     issue: IssueRead,
     images: list[tuple[str, str, bytes]],
@@ -247,6 +259,18 @@ def build_issue_html(
             )
             parts.append(_para("WH Caption", escape(filename)))
 
+    if issue.attachments:
+        parts.append(f"<h2>{escape(text['attachments'])}</h2>")
+        parts.append("<ul>")
+        for attachment in issue.attachments:
+            size_label = _format_size(attachment.size_bytes)
+            rel_path = f"{issue.id}/{attachment.filename}"
+            parts.append(
+                f"<li>{escape(attachment.filename)} ({escape(size_label)}) — "
+                f"<code>{escape(rel_path)}</code></li>"
+            )
+        parts.append("</ul>")
+
     public_notes = [note for note in issue.notes if note.public]
     if public_notes:
         parts.append(f"<h2>{escape(text['notes'])}</h2>")
@@ -292,7 +316,14 @@ def build_issues_html(
         "<thead><tr>"
         + "".join(
             f"<th>{_para('WH Table Head', escape(label))}</th>"
-            for label in ("#", text["title"], text["status"], text["assignee"], text["created"])
+            for label in (
+                "#",
+                text["id"],
+                text["title"],
+                text["status"],
+                text["assignee"],
+                text["created"],
+            )
         )
         + "</tr></thead>",
         "<tbody>",
@@ -300,6 +331,7 @@ def build_issues_html(
     for number, (issue, _images) in enumerate(issues, start=1):
         cells = (
             escape(str(number)),
+            escape(str(issue.id)),
             escape(issue.title),
             _status_pill(issue.status, text),
             escape(_person(issue.assignee, text["unassigned"])),
@@ -365,10 +397,12 @@ async def issues_to_docx(
 async def load_issue_images(
     storage: ObjectStorage, attachments: list[tuple[str, str, str]]
 ) -> list[tuple[str, str, bytes]]:
-    """Fetch each ``(filename, content_type, object_key)`` screenshot. One
-    that can no longer be read is skipped rather than failing the export."""
+    """Fetch each raster ``(filename, content_type, object_key)`` screenshot.
+    Non-image attachments and missing objects are skipped cleanly."""
     images: list[tuple[str, str, bytes]] = []
     for filename, content_type, object_key in attachments:
+        if content_type.lower() not in _RASTER_IMAGE_TYPES:
+            continue
         try:
             images.append((filename, content_type, await storage.get(object_key)))
         except Exception:

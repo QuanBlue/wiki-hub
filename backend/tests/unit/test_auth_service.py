@@ -168,18 +168,18 @@ async def test_create_update_profile_and_password_operations(
         UserCreate(username="New", email="NEW@example.com", full_name=" Name ", password="password")
     )
     assert created.username == "New" and created.email == "new@example.com"
-    assert created.receive_admin_emails is True
+    assert created.receive_admin_emails is False
 
-    created_muted = await svc.create_user(
+    created_opted_in = await svc.create_user(
         UserCreate(
-            username="Muted",
-            email="muted@example.com",
-            full_name="Muted Admin",
+            username="OptedIn",
+            email="optedin@example.com",
+            full_name="OptedIn Admin",
             password="password",
-            receive_admin_emails=False,
+            receive_admin_emails=True,
         )
     )
-    assert created_muted.receive_admin_emails is False
+    assert created_opted_in.receive_admin_emails is True
 
     target = user()
     svc.users.get = AsyncMock(return_value=target)

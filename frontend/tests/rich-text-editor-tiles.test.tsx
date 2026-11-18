@@ -350,4 +350,83 @@ describe("attachment icons and legacy markup", () => {
       await screen.findByRole("link", { name: "plain.txt" }),
     ).toBeInTheDocument();
   });
+
+  it("renders attachment captions via data-caption and keeps caret spacing padding on cards", async () => {
+    const { container } = render(
+      <RichTextContent
+        content={`<p><a href="${HREF}" data-attachment="spec.pdf" data-display-mode="card" data-caption="Q4 Specification">spec.pdf</a></p>`}
+      />,
+    );
+
+    const card = await screen.findByRole("link", { name: /spec\.pdf/ });
+    expect(card).toHaveAttribute("data-caption", "Q4 Specification");
+    expect(screen.getByText("Q4 Specification")).toBeInTheDocument();
+    const wrapper = container.querySelector("[data-node-view-wrapper]");
+    expect(wrapper?.className).toContain("px-1.5");
+    expect(wrapper?.className).toContain("align-top");
+  });
+
+  it("shows an uploading placeholder card with loading indicator and filename while importing", async () => {
+    let releaseUpload: (value: {
+      filename: string;
+      content_type: string;
+      content_url: string;
+    }) => void = () => {};
+
+    const onUploadFile = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseUpload = resolve;
+        }),
+    );
+
+    const { container } = render(
+      <RichTextEditor
+        content="<p></p>"
+        onChange={() => {}}
+        onUploadFile={onUploadFile}
+      />,
+    );
+
+    const editable = await waitFor(() => {
+      const found = container.querySelector('.ProseMirror[contenteditable="true"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+
+    fireEvent(
+      editable,
+      new CustomEvent("wikihub:editor-files", {
+        detail: [
+          new File(["sample"], "database_backup.sql", {
+            type: "application/sql",
+          }),
+        ],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("database_backup.sql")).toBeInTheDocument();
+    });
+
+    const placeholder = container.querySelector("[aria-busy='true']") as HTMLElement;
+    expect(placeholder).not.toBeNull();
+    expect(placeholder).toHaveAttribute("data-uploading", "true");
+
+    await act(async () => {
+      releaseUpload({
+        filename: "database_backup.sql",
+        content_type: "application/sql",
+        content_url: "/api/v1/attachments/file-123/content",
+      });
+    });
+
+    await waitFor(() => {
+      expect(placeholder).not.toHaveAttribute("aria-busy");
+      expect(placeholder).toHaveAttribute(
+        "data-attachment-href",
+        "/api/v1/attachments/file-123/content",
+      );
+    });
+  });
 });

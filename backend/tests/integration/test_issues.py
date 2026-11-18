@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.issues import _email_reporter
+from app.api.v1.issues import _email_assignee, _email_reporter
 from app.core.exceptions import (
     BadRequestError,
     ConflictError,
@@ -253,17 +253,31 @@ class TestScreenshots:
                 issue.id, attachment.id
             )
 
-    async def test_only_raster_images_are_accepted(self, session: AsyncSession) -> None:
+    async def test_general_files_are_accepted_except_svg(self, session: AsyncSession) -> None:
         reporter = await _user(session)
         issue = await _report(session, reporter)
-        for content_type in ("image/svg+xml", "text/html", "application/pdf"):
+        storage = _Storage()
+
+        pdf = await IssueService(session, reporter).add_attachment(
+            storage,  # type: ignore[arg-type]
+            issue.id,
+            filename="trace.pdf",
+            content_type="application/pdf",
+            data=b"%PDF-1.4",
+        )
+        assert pdf.filename == "trace.pdf"
+
+        for filename, content_type in (
+            ("icon.svg", "image/svg+xml"),
+            ("sneaky.SVG", "image/png"),
+        ):
             with pytest.raises(UnsupportedMediaTypeError):
                 await IssueService(session, reporter).add_attachment(
                     _Storage(),  # type: ignore[arg-type]
                     issue.id,
-                    filename="x",
+                    filename=filename,
                     content_type=content_type,
-                    data=b"data",
+                    data=b"<svg/>",
                 )
 
     async def test_someone_else_cannot_attach_to_my_issue(self, session: AsyncSession) -> None:
@@ -460,12 +474,38 @@ class TestEmails:
         body = envelope.content.decode(errors="replace")
         assert "Cannot save" in body and "Fixed it." in body
 
-    async def test_closing_your_own_issue_sends_nothing(self, session: AsyncSession) -> None:
+    async def test_closing_your_own_issue_still_emails_reporter(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+    ) -> None:
         admin = await _superuser(session)
-        issue = await _report(session, admin)
+        await _mailbox(session, admin, smtp_server)
+        issue = await _report(session, admin, "Self-reported bug")
+        smtp_server.envelopes.clear()
         done = await IssueService(session, admin).set_status(issue.id, "done")
 
-        assert await _email_reporter(session, admin, done, None) == "skipped"
+        assert await _email_reporter(session, admin, done, None) == "sent"
+        assert smtp_server.envelopes[0].rcpt_tos == [admin.email]
+
+    async def test_assigning_issue_emails_assignee(
+        self,
+        session: AsyncSession,
+        smtp_server: _Server,  # noqa: F811
+    ) -> None:
+        boss = await _superuser(session)
+        worker = await _manager(session)
+        await _mailbox(session, boss, smtp_server)
+        issue = await _report(session, await _user(session), "Need triage")
+        smtp_server.envelopes.clear()
+
+        assigned = await IssueService(session, boss).assign(issue.id, worker.id)
+        outcome = await _email_assignee(session, boss, assigned)
+
+        assert outcome == "sent"
+        assert smtp_server.envelopes[0].rcpt_tos == [worker.email]
+        body = smtp_server.envelopes[0].content.decode(errors="replace")
+        assert "Need triage" in body
 
     async def test_a_mail_problem_never_blocks_closing(self, session: AsyncSession) -> None:
         # No mailbox anywhere: the status change stands, the email is "failed".
@@ -498,14 +538,15 @@ class TestAssign:
         )
         assert "issue_assigned_reporter" in [n.kind for n in told.items]
 
-    async def test_a_manager_cannot_give_an_issue_to_someone_else(
+    async def test_a_manager_can_give_an_issue_to_another_manager_and_plain_user_cannot(
         self, session: AsyncSession
     ) -> None:
         issue = await _report(session, await _user(session))
+        m1, m2 = await _manager(session), await _manager(session)
         with pytest.raises(PermissionDeniedError):
-            await IssueService(session, await _manager(session)).assign(
-                issue.id, (await _manager(session)).id
-            )
+            await IssueService(session, await _user(session)).assign(issue.id, m2.id)
+        handed = await IssueService(session, m1).assign(issue.id, m2.id)
+        assert handed.assignee is not None and handed.assignee.id == m2.id
 
     async def test_assigning_yourself_is_taking_it(self, session: AsyncSession) -> None:
         issue = await _report(session, await _user(session))

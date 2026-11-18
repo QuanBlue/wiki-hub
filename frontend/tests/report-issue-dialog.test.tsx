@@ -116,7 +116,7 @@ describe("ReportIssueDialog sending", () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Your report was sent, but some images could not be attached.",
+        "Your report was sent, but some attachments could not be uploaded.",
       ),
     );
     expect(onOpenChange).toHaveBeenCalledWith(false);
