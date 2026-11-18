@@ -49,7 +49,7 @@ export function AddAdminDialog({
   const [members, setMembers] = useState<User[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
-  const [promoteReceiveEmails, setPromoteReceiveEmails] = useState(true);
+  const [promoteReceiveEmails, setPromoteReceiveEmails] = useState(false);
   const [promotePending, setPromotePending] = useState(false);
   const [promoteError, setPromoteError] = useState<string | null>(null);
 
@@ -59,7 +59,7 @@ export function AddAdminDialog({
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [createReceiveEmails, setCreateReceiveEmails] = useState(true);
+  const [createReceiveEmails, setCreateReceiveEmails] = useState(false);
   const [usernameCheck, setUsernameCheck] = useState<UsernameCheck>("idle");
   const [createPending, setCreatePending] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -129,14 +129,14 @@ export function AddAdminDialog({
   function reset() {
     setTab("promote");
     setSelectedUserId("");
-    setPromoteReceiveEmails(true);
+    setPromoteReceiveEmails(false);
     setPromoteError(null);
     setFirstName("");
     setLastName("");
     setUsername("");
     setEmail("");
     setPassword("");
-    setCreateReceiveEmails(true);
+    setCreateReceiveEmails(false);
     setUsernameCheck("idle");
     setCreateError(null);
   }

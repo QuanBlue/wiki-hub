@@ -94,3 +94,83 @@ it.each([
   expect((upload![1] as number)).toBeGreaterThan(0);
   expect(URL.revokeObjectURL).not.toHaveBeenCalled();
 });
+
+it("preserves animated GIF avatars instead of flattening them onto a canvas", async () => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: 240,
+    height: 240,
+  } as DOMRect);
+  const onApply = vi.fn();
+  const file = new File(["GIF89a"], "wave.gif", { type: "image/gif" });
+  render(
+    <ImageCropDialog
+      file={file}
+      kind="avatar"
+      onApply={onApply}
+      onClose={vi.fn()}
+    />,
+  );
+
+  const position = screen.getByRole("group", {
+    name: "Image position. Use arrow keys to move.",
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Use image" })).toBeEnabled(),
+  );
+  expect(document.querySelector("canvas")).not.toBeInTheDocument();
+  const preview = document.querySelector<HTMLImageElement>("img[src='blob:source']");
+  expect(preview).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole("slider", { name: "Zoom" }), {
+    target: { value: "2" },
+  });
+  fireEvent.keyDown(position, { key: "ArrowRight" });
+  fireEvent.click(screen.getByRole("button", { name: "Use image" }));
+
+  await waitFor(() => expect(onApply).toHaveBeenCalledOnce());
+  const [appliedFile, crop] = onApply.mock.calls[0]!;
+  expect(appliedFile).toBe(file);
+  expect((appliedFile as File).type).toBe("image/gif");
+  expect(crop.zoom).toBe(2);
+  expect(crop.x).toBeGreaterThan(0);
+  expect(drawImage).not.toHaveBeenCalled();
+});
+
+it("clamps GIF positioning so dragging cannot expose an empty gap", async () => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: 240,
+    height: 240,
+  } as DOMRect);
+  const onApply = vi.fn();
+  const file = new File(["GIF89a"], "wide.gif", { type: "image/gif" });
+  render(
+    <ImageCropDialog
+      file={file}
+      kind="avatar"
+      onApply={onApply}
+      onClose={vi.fn()}
+    />,
+  );
+
+  const position = screen.getByRole("group", {
+    name: "Image position. Use arrow keys to move.",
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Use image" })).toBeEnabled(),
+  );
+
+  // Move far past the right/up bounds (image is 1200x600 => 2:1, so at zoom=1 max x=0.5, max y=0).
+  for (let i = 0; i < 30; i += 1) {
+    fireEvent.keyDown(position, { key: "ArrowRight" });
+    fireEvent.keyDown(position, { key: "ArrowUp" });
+  }
+  const preview = document.querySelector<HTMLImageElement>("img[src='blob:source']")!;
+  expect(preview.style.width).toBe("200%");
+  expect(preview.style.height).toBe("100%");
+  expect(preview.style.left).toBe("100%");
+  expect(preview.style.top).toBe("50%");
+
+  fireEvent.click(screen.getByRole("button", { name: "Use image" }));
+  await waitFor(() => expect(onApply).toHaveBeenCalledOnce());
+  expect(onApply.mock.calls[0]![1]).toEqual({ zoom: 1, x: 0.5, y: 0 });
+});

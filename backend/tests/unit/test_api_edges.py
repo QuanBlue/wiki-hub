@@ -499,6 +499,44 @@ async def test_avatar_endpoints_validate_replace_and_remove_avatar() -> None:
     assert (await users.read_avatar(uuid.uuid4(), user, session, storage)).status_code == 404
 
 
+async def test_upload_gif_avatar_preserves_gif_type_and_clears_previous_original() -> None:
+    user = _user()
+    user.avatar_object_key = "avatars/old.png"
+    user.avatar_content_type = "image/png"
+    user.avatar_original_key = "avatars/original-old.png"
+    user.avatar_original_content_type = "image/png"
+    user.avatar_crop = {"zoom": 1.5, "x": 0.1, "y": 0.2}
+    session = AsyncMock(flush=AsyncMock(), get=AsyncMock(return_value=user))
+    storage = Mock(put=AsyncMock(), delete=AsyncMock(), get=AsyncMock(return_value=b"GIF89a"))
+    request = Request({"type": "http", "method": "POST", "path": "/api/v1/users/me/avatar"})
+
+    gif_upload = UploadFile(
+        file=io.BytesIO(b"GIF89a"),
+        filename="wave.gif",
+        headers=Headers({"content-type": "image/gif"}),
+    )
+    uploaded = await users.upload_own_avatar(
+        request,
+        gif_upload,
+        user,
+        session,
+        storage,
+        crop='{"zoom": 1.8, "x": 0.15, "y": -0.05}',
+    )
+    assert uploaded.avatar_content_type == "image/gif"
+    assert uploaded.avatar_has_original is False
+    assert uploaded.avatar_crop == {"zoom": 1.8, "x": 0.15, "y": -0.05}
+    assert user.avatar_object_key and user.avatar_object_key.endswith(".gif")
+    assert user.avatar_original_key is None
+    assert user.avatar_original_content_type is None
+    storage.delete.assert_any_await("avatars/original-old.png")
+    storage.delete.assert_any_await("avatars/old.png")
+
+    response = await users.read_avatar(user.id, user, session, storage)
+    assert response.status_code == 200
+    assert response.media_type == "image/gif"
+
+
 @pytest.mark.asyncio
 async def test_cover_endpoints_validate_replace_and_remove_cover() -> None:
     user = _user()

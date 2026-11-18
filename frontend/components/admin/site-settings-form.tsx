@@ -2504,7 +2504,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                   : previewPalette[50],
                 "--surface-selected": previewDarkMode
                   ? `color-mix(in oklab, ${previewPalette[500]} 25%, transparent)`
-                  : previewPalette[50],
+                  : `color-mix(in oklab, ${previewPalette[100]} 55%, ${previewPalette[50]})`,
                 "--ring": previewDarkMode
                   ? previewPalette[400]
                   : previewPalette[500],

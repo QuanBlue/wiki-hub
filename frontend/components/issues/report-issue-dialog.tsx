@@ -4,15 +4,16 @@ import {
   Bold,
   CheckSquare,
   Code,
+  FileText,
   Heading,
   Italic,
   Link2,
   List,
   ListOrdered,
   Loader2,
-  Paperclip,
   Quote,
   Tag,
+  Upload,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -37,11 +38,27 @@ import {
 import { cn } from "@/lib/utils";
 import type { Issue } from "@/types/api";
 
-const MAX_IMAGES = 5;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const ACCEPTED = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-/** An unsent report kept on this device (text only; images cannot be stored). */
+const MAX_IMAGES = 10;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+/** An unsent report kept on this device (text only; files cannot be stored). */
 const DRAFT_KEY = "wikihub:issue-draft";
+
+function isSvgFile(file: File): boolean {
+  return (
+    file.type.toLowerCase() === "image/svg+xml" ||
+    file.name.toLowerCase().endsWith(".svg")
+  );
+}
+
+function isPreviewableImage(file: File): boolean {
+  return file.type.toLowerCase().startsWith("image/") && !isSvgFile(file);
+}
+
+function formatAttachmentSize(sizeBytes: number): string {
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function readDraft(): { title: string; description: string } | null {
   try {
@@ -122,6 +139,15 @@ export function ReportIssueDialog({
   const [createMore, setCreateMore] = useState(false);
   const [pending, setPending] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDepth = useRef(0);
+
+  useEffect(() => {
+    if (!open) {
+      dragDepth.current = 0;
+      setIsDragging(false);
+    }
+  }, [open]);
 
   /** Whether closing would lose something: typed text not already saved as the draft, or images. */
   function hasUnsavedWork(): boolean {
@@ -134,11 +160,17 @@ export function ReportIssueDialog({
   }
 
   const previews = useMemo(
-    () => images.map((file) => URL.createObjectURL(file)),
+    () =>
+      images.map((file) =>
+        isPreviewableImage(file) ? URL.createObjectURL(file) : null,
+      ),
     [images],
   );
   useEffect(
-    () => () => previews.forEach((url) => URL.revokeObjectURL(url)),
+    () => () =>
+      previews.forEach((url) => {
+        if (url) URL.revokeObjectURL(url);
+      }),
     [previews],
   );
 
@@ -153,7 +185,7 @@ export function ReportIssueDialog({
   function addImages(files: File[]) {
     if (files.length === 0) return;
     const accepted = files.filter(
-      (file) => ACCEPTED.includes(file.type) && file.size <= MAX_IMAGE_BYTES,
+      (file) => !isSvgFile(file) && file.size <= MAX_IMAGE_BYTES,
     );
     if (accepted.length < files.length) toast.error(t("issues.imageRejected"));
     setImages((current) => [...current, ...accepted].slice(0, MAX_IMAGES));
@@ -256,8 +288,33 @@ export function ReportIssueDialog({
       >
         <DialogContent title={t("issues.reportTitle")} className="max-w-3xl">
           <form
+            className="relative"
             onSubmit={(event) => void submit(event)}
             onPaste={onPaste}
+            onDragEnter={(event) => {
+              if (!event.dataTransfer.types.includes("Files")) return;
+              event.preventDefault();
+              dragDepth.current += 1;
+              setIsDragging(true);
+            }}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes("Files")) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+            }}
+            onDragLeave={(event) => {
+              if (!event.dataTransfer.types.includes("Files")) return;
+              dragDepth.current = Math.max(0, dragDepth.current - 1);
+              if (dragDepth.current === 0) setIsDragging(false);
+            }}
+            onDrop={(event) => {
+              dragDepth.current = 0;
+              setIsDragging(false);
+              const files = Array.from(event.dataTransfer.files);
+              if (files.length === 0) return;
+              event.preventDefault();
+              addImages(files);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
                 event.preventDefault();
@@ -265,6 +322,22 @@ export function ReportIssueDialog({
               }
             }}
           >
+            {isDragging ? (
+              <div
+                aria-hidden
+                className="border-primary bg-surface/90 pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed backdrop-blur-[1px]"
+              >
+                <div className="bg-primary-subtle text-primary flex size-10 items-center justify-center rounded-full">
+                  <Upload className="size-5" />
+                </div>
+                <p className="text-foreground text-sm font-medium">
+                  {t("issues.dropFilesPrompt")}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  {t("issues.attachHint", { max: MAX_IMAGES })}
+                </p>
+              </div>
+            ) : null}
             <div className="space-y-4">
               <div className="space-y-2">
                 <label
@@ -317,19 +390,7 @@ export function ReportIssueDialog({
                 >
                   {t("issues.descriptionLabel")}
                 </label>
-                <div
-                  className="border-border bg-surface focus-within:border-border-strong focus-within:ring-ring overflow-hidden rounded-md border focus-within:ring-2"
-                  onDragOver={(event) => {
-                    if (event.dataTransfer.types.includes("Files"))
-                      event.preventDefault();
-                  }}
-                  onDrop={(event) => {
-                    const files = Array.from(event.dataTransfer.files);
-                    if (files.length === 0) return;
-                    event.preventDefault();
-                    addImages(files);
-                  }}
-                >
+                <div className="border-border bg-surface focus-within:border-border-strong focus-within:ring-ring overflow-hidden rounded-md border focus-within:ring-2">
                   <div className="border-border bg-surface-sunken flex flex-wrap items-center justify-between gap-2 border-b pr-1">
                     <div role="tablist" className="flex">
                       {(["write", "preview"] as const).map((value) => (
@@ -435,30 +496,49 @@ export function ReportIssueDialog({
                   )}
                 </div>
 
-                {previews.length > 0 ? (
+                {images.length > 0 ? (
                   <ul className="flex flex-wrap gap-2 pt-1">
-                    {previews.map((url, index) => (
-                      <li key={url} className="relative">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={url}
-                          alt={images[index]?.name ?? ""}
-                          className="border-border h-20 w-28 rounded-md border object-cover"
-                        />
-                        <button
-                          type="button"
-                          aria-label={t("issues.removeImage")}
-                          onClick={() =>
-                            setImages((current) =>
-                              current.filter((_, i) => i !== index),
-                            )
-                          }
-                          className="bg-surface border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring absolute -top-1.5 -right-1.5 flex size-5 cursor-pointer items-center justify-center rounded-full border transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                        >
-                          <X className="size-3" aria-hidden />
-                        </button>
-                      </li>
-                    ))}
+                    {images.map((file, index) => {
+                      const url = previews[index];
+                      return (
+                        <li key={`${file.name}-${file.size}-${index}`} className="relative">
+                          {url ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={url}
+                              alt={file.name}
+                              className="border-border h-20 w-28 rounded-md border object-cover"
+                            />
+                          ) : (
+                            <div className="border-border bg-surface-sunken flex h-20 max-w-56 items-center gap-2 rounded-md border px-3 pr-7">
+                              <FileText className="text-primary size-4 shrink-0" aria-hidden />
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-medium">{file.name}</p>
+                                <p className="text-muted-foreground text-[11px]">
+                                  {formatAttachmentSize(file.size)}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            aria-label={
+                              url
+                                ? t("issues.removeImage")
+                                : t("issues.removeAttachment", { name: file.name })
+                            }
+                            onClick={() =>
+                              setImages((current) =>
+                                current.filter((_, i) => i !== index),
+                              )
+                            }
+                            className="bg-surface border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:ring-ring absolute -top-1.5 -right-1.5 flex size-5 cursor-pointer items-center justify-center rounded-full border transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                          >
+                            <X className="size-3" aria-hidden />
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : null}
 
@@ -466,15 +546,33 @@ export function ReportIssueDialog({
                   type="button"
                   disabled={images.length >= MAX_IMAGES}
                   onClick={() => fileInput.current?.click()}
-                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring -ml-1 flex cursor-pointer items-center gap-1.5 rounded px-1 py-1 text-xs transition-colors duration-150 hover:underline focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:no-underline"
+                  className={cn(
+                    "border-border bg-surface-sunken/50 text-muted-foreground flex w-full cursor-pointer items-center justify-between gap-3 rounded-md border border-dashed px-3 py-2 text-left transition-colors duration-150",
+                    "hover:border-border-strong hover:bg-surface-hover hover:text-foreground",
+                    "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+                    "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-surface-sunken/50 disabled:hover:text-muted-foreground",
+                  )}
                 >
-                  <Paperclip className="size-3.5" aria-hidden />
-                  {t("issues.attachHint", { max: MAX_IMAGES })}
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className="bg-surface border-border flex size-7 shrink-0 items-center justify-center rounded border">
+                      <Upload className="size-3.5" aria-hidden />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="text-foreground block text-xs font-medium">
+                        {t("issues.attachDropzoneTitle")}
+                      </span>
+                      <span className="block truncate text-[11px]">
+                        {t("issues.attachHint", { max: MAX_IMAGES })}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="bg-surface border-border text-muted-foreground shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-medium tabular-nums">
+                    {images.length}/{MAX_IMAGES}
+                  </span>
                 </button>
                 <input
                   ref={fileInput}
                   type="file"
-                  accept={ACCEPTED.join(",")}
                   multiple
                   className="sr-only"
                   tabIndex={-1}

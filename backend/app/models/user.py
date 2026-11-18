@@ -77,6 +77,15 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         JSON, nullable=False, default=list, server_default="[]"
     )
     company: Mapped[str] = mapped_column(String(255), nullable=False, default="", server_default="")
+    status_emoji: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="", server_default=""
+    )
+    status_text: Mapped[str] = mapped_column(
+        String(140), nullable=False, default="", server_default=""
+    )
+    status_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     #: Argon2id hash. NULL for users that authenticate only through an external
     #: identity provider - those accounts must never fall back to a password.
@@ -87,7 +96,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Boolean, nullable=False, server_default=text("false")
     )
     receive_admin_emails: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default=text("true")
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
 
     #: Marks the built-in bootstrap administrator. A protected account cannot be

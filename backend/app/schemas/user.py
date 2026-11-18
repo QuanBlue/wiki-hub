@@ -8,15 +8,35 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import UTC, datetime
 from datetime import date as date_type
-from datetime import datetime
-
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator
-
 from typing import Literal
+
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.models.permission import GlobalPermission
 from app.schemas.page import PageRecentItem
+
+
+def _clear_expired_status(model: UserRead | PublicUserRead) -> None:
+    """Blank out personal status fields once their expiry instant has passed."""
+    if model.status_expires_at is None:
+        return
+    expires = model.status_expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=UTC)
+    if expires <= datetime.now(UTC):
+        model.status_emoji = ""
+        model.status_text = ""
+        model.status_expires_at = None
 
 
 class GlobalPermissionOverride(BaseModel):
@@ -52,6 +72,7 @@ class UserRead(BaseModel):
     email: str
     full_name: str
     avatar_url: str | None
+    avatar_content_type: str | None = None
     avatar_updated_at: datetime | None = None
     cover_url: str | None = None
     cover_updated_at: datetime | None = None
@@ -66,8 +87,16 @@ class UserRead(BaseModel):
     profile_url: str
     social_links: list[str] = Field(default_factory=list)
     company: str
+    status_emoji: str = ""
+    status_text: str = ""
+    status_expires_at: datetime | None = None
     is_active: bool
     is_superuser: bool
+
+    @model_validator(mode="after")
+    def _expire_personal_status(self) -> UserRead:
+        _clear_expired_status(self)
+        return self
 
     @field_validator("avatar_url", mode="before")
     @classmethod
@@ -141,6 +170,8 @@ class PublicUserRead(BaseModel):
     username: str
     full_name: str
     avatar_url: str | None
+    avatar_content_type: str | None = None
+    avatar_crop: dict[str, float] | None = None
     avatar_updated_at: datetime | None = None
     cover_url: str | None = None
     cover_updated_at: datetime | None = None
@@ -149,12 +180,20 @@ class PublicUserRead(BaseModel):
     profile_url: str
     social_links: list[str] = Field(default_factory=list)
     company: str
+    status_emoji: str = ""
+    status_text: str = ""
+    status_expires_at: datetime | None = None
     email: str
     created_at: datetime
     last_active_at: datetime | None = None
     #: Whether this member can administer the workspace. This is safe profile
     #: metadata and avoids presenting administrators as ordinary members.
     is_workspace_admin: bool = False
+
+    @model_validator(mode="after")
+    def _expire_personal_status(self) -> PublicUserRead:
+        _clear_expired_status(self)
+        return self
 
 
 class UserActivityPage(BaseModel):
@@ -273,7 +312,7 @@ class UserCreate(BaseModel):
     full_name: str = Field(default="", max_length=255)
     password: str = Field(min_length=8, max_length=128)
     is_superuser: bool = False
-    receive_admin_emails: bool = True
+    receive_admin_emails: bool = False
 
 
 class UserUpdate(BaseModel):
@@ -302,6 +341,10 @@ class SelfProfileUpdate(BaseModel):
     profile_url: AnyHttpUrl | None = Field(default=None, max_length=2048)
     social_links: list[AnyHttpUrl] | None = Field(default=None, max_length=2)
     company: str | None = Field(default=None, max_length=255)
+    status_emoji: str | None = Field(default=None, max_length=32)
+    status_text: str | None = Field(default=None, max_length=140)
+    status_expires_at: datetime | None = None
+    clear_status: bool = False
     receive_admin_emails: bool | None = None
 
     @field_validator("email")

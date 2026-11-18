@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import { croppedImageStyle } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import {
   cropGeometry,
@@ -54,6 +55,7 @@ export function ImageCropDialog({
   const initialApplied = useRef(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isAnimatedGifAvatar = kind === "avatar" && file.type === "image/gif";
 
   useEffect(() => {
     const url = URL.createObjectURL(file);
@@ -104,6 +106,7 @@ export function ImageCropDialog({
       : null;
 
   useEffect(() => {
+    if (isAnimatedGifAvatar) return;
     const canvas = previewRef.current;
     const image = imageRef.current;
     if (!canvas || !image || !geometry || !viewportSize || !imageUrl) return;
@@ -113,7 +116,7 @@ export function ImageCropDialog({
     const context = canvas.getContext("2d");
     if (!context) return;
     drawImageCrop(context, image, geometry, canvas.width, canvas.height);
-  }, [geometry, viewportSize, imageUrl]);
+  }, [geometry, viewportSize, imageUrl, isAnimatedGifAvatar]);
 
   function moveTo(next: ImageOffset) {
     if (!imageSize || !viewportSize) return;
@@ -159,6 +162,20 @@ export function ImageCropDialog({
     setSaving(true);
     setError(null);
     try {
+      const nextCrop = {
+        zoom,
+        x: (geometry?.x ?? 0) / viewportSize.width || 0,
+        y: (geometry?.y ?? 0) / viewportSize.height || 0,
+      };
+      if (isAnimatedGifAvatar) {
+        if (file.size > 5 * 1024 * 1024) {
+          setError(t("profile.avatarTooLarge"));
+          setSaving(false);
+          return;
+        }
+        onApply(file, nextCrop);
+        return;
+      }
       const cropped = await cropImageFile(
         file,
         imageRef.current,
@@ -178,11 +195,7 @@ export function ImageCropDialog({
         setSaving(false);
         return;
       }
-      onApply(cropped, {
-        zoom,
-        x: (geometry?.x ?? 0) / viewportSize.width,
-        y: (geometry?.y ?? 0) / viewportSize.height,
-      });
+      onApply(cropped, nextCrop);
     } catch {
       setError(t("profile.cropSaveError"));
       setSaving(false);
@@ -219,12 +232,29 @@ export function ImageCropDialog({
           }}
           className={`bg-surface-sunken ring-border hover:ring-border-strong active:ring-primary focus-visible:ring-ring relative mx-auto cursor-grab touch-none overflow-hidden rounded-md ring-1 ring-inset transition-colors focus-visible:ring-2 focus-visible:outline-none active:cursor-grabbing ${kind === "avatar" ? "aspect-square w-full max-w-64 rounded-full" : "aspect-[15/4] w-full"}`}
         >
-          {geometry && imageUrl ? (
-            <canvas
-              ref={previewRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 size-full"
-            />
+          {geometry && imageUrl && viewportSize && imageSize ? (
+            isAnimatedGifAvatar ? (
+              <img
+                src={imageUrl}
+                alt=""
+                aria-hidden="true"
+                className="pointer-events-none"
+                style={croppedImageStyle(
+                  {
+                    zoom,
+                    x: geometry.x / viewportSize.width,
+                    y: geometry.y / viewportSize.height,
+                  },
+                  imageSize,
+                )}
+              />
+            ) : (
+              <canvas
+                ref={previewRef}
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 size-full"
+              />
+            )
           ) : null}
         </div>
         <div className="mt-5 space-y-2">
@@ -245,7 +275,7 @@ export function ImageCropDialog({
             className="accent-primary focus-visible:ring-ring h-8 w-full cursor-pointer rounded-md hover:opacity-80 focus-visible:ring-2 focus-visible:outline-none active:opacity-70"
           />
         </div>
-        {file.type === "image/gif" ? (
+        {file.type === "image/gif" && kind === "cover" ? (
           <p className="text-muted-foreground mt-2 text-xs">
             {t("profile.cropGifHint")}
           </p>

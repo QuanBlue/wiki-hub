@@ -1095,6 +1095,52 @@ class AdminMailService:
         )
         return result
 
+    async def send_issue_assigned_email(
+        self,
+        actor: User,
+        *,
+        to_user: User,
+        issue_id: uuid.UUID,
+        issue_title: str,
+        description: str,
+        labels: list[str] | None = None,
+    ) -> AccountEmailResult:
+        """Email a triager when an issue is assigned to them."""
+        mailbox, own = await self._resolve_sender(actor)
+        site_name, brand, signature = await self._brand_and_signature(actor, mailbox, own=own)
+        assigned_by = " ".join((actor.full_name or actor.username).split())
+        text, html = email_templates.issue_assigned(
+            brand,
+            name=to_user.full_name or to_user.username,
+            username=to_user.username,
+            assigned_by=assigned_by,
+            issue_title=issue_title,
+            description=description,
+            labels=labels,
+            issue_url=public_link(f"/admin/issues?issue={issue_id}"),
+            signature=signature,
+        )
+        to_address = to_user.email
+        if not is_deliverable_address(to_address):
+            found = await self.repo.get_mailbox_for_user(to_user.id)
+            if found is not None and is_deliverable_address(found[0].email):
+                to_address = found[0].email
+        result = await self._deliver(
+            mailbox,
+            subject=f"[{site_name}] Issue assigned to you: {issue_title}",
+            text=text,
+            html=html,
+            to=to_address,
+            reply_to=self._actor_reply_to(actor, own=own),
+        )
+        logger.info(
+            "issue_assigned_email_sent",
+            username=to_user.username,
+            emailed=result.email_sent,
+            via_pool=not own,
+        )
+        return result
+
     async def send_space_access_email(
         self,
         actor: User,

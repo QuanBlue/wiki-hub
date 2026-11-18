@@ -74,8 +74,8 @@ DOCX_THEME: Final[dict[str, str]] = {
     "code_meta": "#9a6100",  # --wh-warning
 }
 
-#: Summary table column widths (cm): #, title, status, assignee, reported.
-_SUMMARY_WIDTHS: Final = (1.0, 6.4, 2.8, 3.6, 2.8)
+#: Summary table column widths (cm): #, id, title, status, assignee, reported.
+_SUMMARY_WIDTHS: Final = (0.8, 3.0, 4.4, 2.4, 3.2, 2.8)
 
 
 def status_style(status: str) -> str:

@@ -49,8 +49,65 @@ type Selection = {
 };
 
 const MAX_SELECTION = 2000;
+const MAX_TABLE_SELECTION = 4000;
 const PANEL_WIDTH = 360;
 const BLOCKS = "p,li,td,th,h1,h2,h3,h4,h5,h6,blockquote,pre,figcaption";
+
+function formatRowCells(row: HTMLTableRowElement): string {
+  const values = Array.from(row.cells).map((cell) =>
+    (cell.textContent ?? "").replace(/\s+/g, " ").trim(),
+  );
+  return `| ${values.join(" | ")} |`;
+}
+
+/** Formats multi-cell selections inside a table as Markdown and preserves its header row as context. */
+function extractTableSelection(
+  range: Range,
+  root: HTMLElement,
+): { text: string; context: string } | null {
+  const startNode =
+    range.startContainer instanceof Element
+      ? range.startContainer
+      : range.startContainer.parentElement;
+  const endNode =
+    range.endContainer instanceof Element
+      ? range.endContainer
+      : range.endContainer.parentElement;
+  const table =
+    startNode?.closest("table") ?? endNode?.closest("table") ?? null;
+  if (!table || !root.contains(table)) return null;
+
+  const selectedRows: string[] = [];
+  let selectedCellCount = 0;
+  let includesFirstRow = false;
+
+  const allRows = Array.from(table.rows);
+  allRows.forEach((row, index) => {
+    const rowCells = Array.from(row.cells).filter((cell) => {
+      try {
+        return range.intersectsNode(cell);
+      } catch {
+        return false;
+      }
+    });
+    if (rowCells.length === 0) return;
+    if (index === 0) includesFirstRow = true;
+    selectedCellCount += rowCells.length;
+    const textValues = rowCells.map((cell) =>
+      (cell.textContent ?? "").replace(/\s+/g, " ").trim(),
+    );
+    selectedRows.push(`| ${textValues.join(" | ")} |`);
+  });
+
+  if (selectedCellCount < 2 || selectedRows.length === 0) return null;
+  const headerRow = table.tHead?.rows[0] ?? table.rows[0] ?? null;
+  const headerContext =
+    !includesFirstRow && headerRow ? formatRowCells(headerRow) : "";
+  return {
+    text: selectedRows.join("\n"),
+    context: headerContext.slice(0, 1600),
+  };
+}
 
 /** The words the reader selected inside `root`, and where their selection ends. */
 function readSelection(
@@ -60,20 +117,27 @@ function readSelection(
   if (!current || current.rangeCount === 0 || current.isCollapsed) return null;
   const range = current.getRangeAt(0);
   if (!root.contains(range.commonAncestorContainer)) return null;
-  const text = current.toString().trim();
-  if (!text || text.length > MAX_SELECTION) return null;
+  const tableSelection = extractTableSelection(range, root);
+  const rawText = tableSelection
+    ? tableSelection.text
+    : current.toString().trim();
+  const limit = tableSelection ? MAX_TABLE_SELECTION : MAX_SELECTION;
+  if (!rawText || rawText.length > limit) return null;
   const rects = range.getClientRects();
   const last = rects[rects.length - 1] ?? range.getBoundingClientRect();
   if (!last || (last.width === 0 && last.height === 0)) return null;
   const node = range.commonAncestorContainer;
   const element = node instanceof Element ? node : node.parentElement;
-  const context = (element?.closest(BLOCKS)?.textContent ?? "")
+  const surrounding = (element?.closest(BLOCKS)?.textContent ?? "")
     .replace(/\s+/g, " ")
     .trim();
+  const context = tableSelection
+    ? tableSelection.context || surrounding
+    : surrounding;
   return {
     selection: {
-      text,
-      context: context.slice(0, 800),
+      text: rawText,
+      context: context.slice(0, tableSelection ? 1600 : 800),
       right: last.right,
       bottom: last.bottom,
     },

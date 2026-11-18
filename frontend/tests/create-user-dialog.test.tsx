@@ -167,7 +167,7 @@ describe("CreateUserDialog", () => {
       "/api/v1/users",
       expect.objectContaining({
         is_superuser: true,
-        receive_admin_emails: true,
+        receive_admin_emails: false,
       }),
     );
   });

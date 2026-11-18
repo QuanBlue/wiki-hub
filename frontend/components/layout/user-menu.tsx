@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ListChecks,
   LogOut,
+  Smile,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -14,13 +15,19 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import {
+  UserStatusBadge,
+  UserStatusDialog,
+  isUserStatusActive,
+} from "@/components/account/status-dialog";
+
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar } from "@/components/ui/avatar";
+import { Avatar, versionedAvatarUrl } from "@/components/ui/avatar";
 import { ReportIssueDialog } from "@/components/issues/report-issue-dialog";
 import { SwitchAccountMenu } from "@/components/layout/switch-account-dialog";
 import { clearStoredChats } from "@/lib/ai-chat";
@@ -41,7 +48,19 @@ export function UserMenu({ user }: { user: Me }) {
   const [pending, setPending] = useState(false);
   const [open, setOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [statusOverride, setStatusOverride] = useState<{
+    source: Me;
+    updated: User;
+  } | null>(null);
   const { t, apiErrorText } = useTranslation();
+
+  const currentUser =
+    statusOverride && statusOverride.source === user
+      ? { ...user, ...statusOverride.updated }
+      : user;
+  const hasStatus = isUserStatusActive(currentUser);
+  const avatarSrc = versionedAvatarUrl(user.avatar_url, user.avatar_updated_at);
 
   const displayName = user.full_name || user.username;
   const impersonator = user.impersonator;
@@ -76,7 +95,9 @@ export function UserMenu({ user }: { user: Me }) {
         <Avatar
           username={user.username}
           name={user.full_name}
-          src={user.avatar_url}
+          src={avatarSrc}
+          crop={user.avatar_crop}
+          contentType={user.avatar_content_type}
           className="size-7 text-[11px] ring-1 ring-white/20"
         />
         <span className="hidden max-w-40 truncate sm:inline">
@@ -123,6 +144,32 @@ export function UserMenu({ user }: { user: Me }) {
             {t("userMenu.yourAccount")}
           </Link>
         </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-foreground"
+          onSelect={() => setStatusOpen(true)}
+        >
+          <Smile />
+          <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+            <span>{hasStatus ? t("profile.updateStatus") : t("profile.setStatus")}</span>
+            {hasStatus && currentUser.status_emoji ? (
+              <span aria-hidden className="text-sm leading-none">
+                {currentUser.status_emoji}
+              </span>
+            ) : null}
+          </span>
+        </DropdownMenuItem>
+        {hasStatus ? (
+          <div className="px-2 pt-0.5 pb-1.5">
+            <UserStatusBadge
+              user={currentUser}
+              onClick={() => {
+                setOpen(false);
+                setStatusOpen(true);
+              }}
+              className="w-full justify-start"
+            />
+          </div>
+        ) : null}
 
         {/* The top bar's Help button gives way on a narrow phone: it lives here instead. */}
         <DropdownMenuItem asChild className="text-foreground min-[401px]:hidden">
@@ -164,6 +211,14 @@ export function UserMenu({ user }: { user: Me }) {
       </DropdownMenuContent>
       {/* A sibling of the content, so it outlives the menu closing. */}
       <ReportIssueDialog open={reportOpen} onOpenChange={setReportOpen} />
+      {statusOpen ? (
+        <UserStatusDialog
+          open={statusOpen}
+          onOpenChange={setStatusOpen}
+          user={currentUser}
+          onUpdated={(updated) => setStatusOverride({ source: user, updated })}
+        />
+      ) : null}
     </DropdownMenu>
   );
 }

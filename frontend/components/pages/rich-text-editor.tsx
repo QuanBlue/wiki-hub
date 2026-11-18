@@ -31,6 +31,7 @@ import {
 import {
   NodeSelection,
   Plugin,
+  PluginKey,
   TextSelection,
   type EditorState,
   type Transaction,
@@ -75,6 +76,7 @@ import {
   Code2,
   Crop,
   Ellipsis,
+  Eraser,
   FilePlus2,
   Heading1,
   Heading2,
@@ -123,6 +125,7 @@ import {
   Download,
   Loader2,
   Search,
+  Sparkles,
   LayoutGrid,
   ExternalLink,
   Copy,
@@ -133,6 +136,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  Component,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -164,6 +168,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   CODE_THEMES,
   DEFAULT_CODE_THEME,
@@ -211,6 +221,64 @@ const VideoAttachmentPreview = dynamic(
     ),
   { ssr: false },
 );
+class AttachmentModalErrorBoundary extends Component<
+  {
+    children: ReactNode;
+    onBackToPreview?: () => void;
+    backLabel: string;
+    retryLabel: string;
+    title: string;
+    description: string;
+  },
+  { hasError: boolean; message: string | null }
+> {
+  state = { hasError: false, message: null as string | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return {
+      hasError: true,
+      message: error?.message || null,
+    };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="text-muted-foreground flex h-full min-h-64 w-full flex-col items-center justify-center gap-3 p-6 text-center">
+          <p className="text-foreground text-sm font-semibold">{this.props.title}</p>
+          <p className="max-w-md text-sm">
+            {this.state.message || this.props.description}
+          </p>
+          <div className="flex items-center gap-2 pt-1">
+            {this.props.onBackToPreview ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  this.setState({ hasError: false, message: null });
+                  this.props.onBackToPreview?.();
+                }}
+              >
+                {this.props.backLabel}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => this.setState({ hasError: false, message: null })}
+            >
+              {this.props.retryLabel}
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const OfficeAttachmentEditor = dynamic(
   () =>
     import("@/components/pages/office-attachment-editor").then(
@@ -728,6 +796,11 @@ function persistTableColumnWidths(
   if (transaction.docChanged) view.dispatch(transaction);
 }
 
+const TABLE_COLUMN_HOVER_KEY = new PluginKey<{
+  key: string | null;
+  decorations: DecorationSet;
+}>("tableColumnResizeHover");
+
 /**
  * Keeps a table's overall width stable while a boundary moves. Tiptap's
  * default column plugin changes only one column, which lets every remaining
@@ -740,36 +813,63 @@ const TableColumnResize = Extension.create({
     let activeResize: TableColumnResizeState | undefined;
     let disposeDrag = () => undefined;
 
-    const clearColumnHover = (view: Editor["view"]) => {
-      view.dom
-        .querySelectorAll(".wikihub-column-resize-target")
-        .forEach((cell) =>
-          cell.classList.remove("wikihub-column-resize-target"),
-        );
+    // Highlight hovered column edges via ProseMirror decorations rather than
+    // mutating `<td>`/`<th>` classes directly. Direct classList edits trigger
+    // ProseMirror's DOMObserver (`readDOMChange`), which re-reads the hidden
+    // native selection inside the last cell and collapses an active
+    // CellSelection into a single-cell TextSelection.
+    const updateColumnHover = (
+      view: Editor["view"],
+      target: ReturnType<typeof resizeTarget>,
+    ) => {
+      const nextKey = target
+        ? `${target.context.start}:${target.leftColumn}`
+        : null;
+      const currentKey =
+        TABLE_COLUMN_HOVER_KEY.getState(view.state)?.key ?? null;
+      if (nextKey === currentKey) return;
+
+      let decorations = DecorationSet.empty;
+      if (target) {
+        // A merged cell spans several grid columns, and a rowspan cell is missing
+        // from the rows it covers, so a cell's index among its row's DOM children
+        // is not its grid column. Every lookup below goes through the TableMap.
+        const { map, context, leftColumn } = target;
+        const nodes: Decoration[] = [];
+        const seen = new Set<number>();
+        for (let row = 0; row < map.height; row += 1) {
+          const offset = map.map[row * map.width + leftColumn];
+          if (seen.has(offset)) continue;
+          seen.add(offset);
+          const cellNode = context.node.nodeAt(offset);
+          // Only a cell that *ends* at this boundary has a real edge here; one
+          // that merely spans across it has no line to grab, or to light up.
+          if (!cellNode) continue;
+          if (
+            map.colCount(offset) + cellNode.attrs.colspan - 1 !==
+            leftColumn
+          ) {
+            continue;
+          }
+          const pos = context.start + offset;
+          nodes.push(
+            Decoration.node(pos, pos + cellNode.nodeSize, {
+              class: "wikihub-column-resize-target",
+            }),
+          );
+        }
+        decorations = DecorationSet.create(view.state.doc, nodes);
+      }
+
+      view.dispatch(
+        view.state.tr
+          .setMeta(TABLE_COLUMN_HOVER_KEY, { key: nextKey, decorations })
+          .setMeta("addToHistory", false),
+      );
     };
 
-    // A merged cell spans several grid columns, and a rowspan cell is missing
-    // from the rows it covers, so a cell's index among its row's DOM children
-    // is not its grid column. Every lookup below goes through the TableMap.
-    const setColumnHover = (
-      view: Editor["view"],
-      target: NonNullable<ReturnType<typeof resizeTarget>>,
-    ) => {
-      const { map, context, leftColumn } = target;
-      for (let row = 0; row < map.height; row += 1) {
-        const offset = map.map[row * map.width + leftColumn];
-        const cellNode = context.node.nodeAt(offset);
-        // Only a cell that *ends* at this boundary has a real edge here; one
-        // that merely spans across it has no line to grab, or to light up.
-        if (!cellNode) continue;
-        if (map.colCount(offset) + cellNode.attrs.colspan - 1 !== leftColumn) {
-          continue;
-        }
-        const dom = view.nodeDOM(context.start + offset);
-        if (dom instanceof HTMLElement) {
-          dom.classList.add("wikihub-column-resize-target");
-        }
-      }
+    const clearColumnHover = (view: Editor["view"]) => {
+      updateColumnHover(view, null);
     };
 
     const resizeTarget = (view: Editor["view"], event: MouseEvent) => {
@@ -853,13 +953,30 @@ const TableColumnResize = Extension.create({
 
     return [
       new Plugin({
+        key: TABLE_COLUMN_HOVER_KEY,
+        state: {
+          init: () => ({ key: null, decorations: DecorationSet.empty }),
+          apply: (tr, value) => {
+            const next = tr.getMeta(TABLE_COLUMN_HOVER_KEY);
+            if (next !== undefined) return next;
+            if (tr.docChanged) {
+              const mapped = value.decorations.map(tr.mapping, tr.doc);
+              return mapped === DecorationSet.empty
+                ? { key: null, decorations: DecorationSet.empty }
+                : { key: value.key, decorations: mapped };
+            }
+            return value;
+          },
+        },
         props: {
+          decorations: (state) =>
+            TABLE_COLUMN_HOVER_KEY.getState(state)?.decorations ??
+            DecorationSet.empty,
           handleDOMEvents: {
             mousemove: (view, event) => {
               if (activeResize || !view.editable) return false;
-              clearColumnHover(view);
               const target = resizeTarget(view, event);
-              if (target) setColumnHover(view, target);
+              updateColumnHover(view, target);
               return false;
             },
             mouseleave: (view) => {
@@ -3322,7 +3439,7 @@ function buildEmptyLineHint(): HTMLElement {
   const locale = document.documentElement.lang === "vi" ? "vi" : "en";
   const hint = document.createElement("span");
   hint.className =
-    "pointer-events-none float-left h-0 text-muted-foreground opacity-60 select-none";
+    "wh-empty-line-hint pointer-events-none float-left h-0 text-muted-foreground opacity-60 select-none";
   translate(locale, "editor.aiPlaceholder")
     .split("`")
     .forEach((part, index) => {
@@ -3767,15 +3884,25 @@ function AttachmentTile({
   const href = String(node.attrs.href ?? "");
   const displayMode = String(node.attrs.displayMode ?? "card");
   const diffKind = String(node.attrs.diffKind ?? "");
+  const caption = String(node.attrs.caption ?? "");
   const [hovered, setHovered] = useState(false);
   const [toolbarBelow, setToolbarBelow] = useState(false);
+  const [captionOpen, setCaptionOpen] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState(caption);
   const attachmentRef = useRef<HTMLSpanElement>(null);
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
   const icon = attachmentIcon(filename);
   const { t } = useTranslation();
 
+  const isUploading = Boolean(node.attrs.uploading);
   const isCard = displayMode !== "link";
-  const showToolbar = editor.isEditable && (selected || hovered);
+  const showToolbar =
+    editor.isEditable && (selected || hovered) && !isUploading;
+
+  function saveAttachmentCaption() {
+    updateAttributes({ caption: captionDraft.trim() });
+    setCaptionOpen(false);
+  }
 
   const keepToolsVisible = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -3804,7 +3931,7 @@ function AttachmentTile({
   }, []);
 
   function handleSelectNode(e?: React.MouseEvent) {
-    if (!editor.isEditable) return;
+    if (!editor.isEditable || isUploading) return;
     e?.preventDefault();
     e?.stopPropagation();
     if (typeof getPos === "function") {
@@ -3819,7 +3946,7 @@ function AttachmentTile({
   // ProseMirror, so the editor's own handleDrop has to be told which node is
   // moving; without this the tile would be copied on drop, not moved.
   function beginMove(event: React.DragEvent<HTMLElement>) {
-    if (!editor.isEditable) {
+    if (!editor.isEditable || isUploading) {
       event.preventDefault();
       return;
     }
@@ -3918,6 +4045,24 @@ function AttachmentTile({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
+          setCaptionDraft(caption);
+          setCaptionOpen(true);
+        }}
+        aria-label={t("editor.attachmentCaption")}
+        title={t("editor.attachmentCaption")}
+        aria-pressed={Boolean(caption)}
+        className={cn(
+          "text-muted-foreground hover:text-foreground hover:bg-surface-sunken focus-visible:ring-ring cursor-pointer rounded p-1 transition-colors focus-visible:ring-2 focus-visible:outline-none",
+          caption && TOGGLE_ON_CLASS,
+        )}
+      >
+        <Type className="size-3.5" />
+      </button>
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
           const a = document.createElement("a");
           a.href = href;
           a.download = filename;
@@ -3946,52 +4091,133 @@ function AttachmentTile({
     </div>
   ) : null;
 
+  const attachmentCaptionDialog = (
+    <Dialog open={captionOpen} onOpenChange={setCaptionOpen}>
+      <DialogContent
+        title={t("editor.attachmentCaption")}
+        className="max-w-md"
+      >
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor="attachment-caption">
+            {t("editor.caption")}
+          </label>
+          <Input
+            id="attachment-caption"
+            value={captionDraft}
+            onChange={(event) => setCaptionDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                saveAttachmentCaption();
+              }
+            }}
+            placeholder={t("editor.attachmentCaptionPlaceholder")}
+            autoFocus
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setCaptionOpen(false)}
+          >
+            {t("common.cancel")}
+          </Button>
+          <Button type="button" variant="primary" onClick={saveAttachmentCaption}>
+            {t("editor.saveCaption")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (!isCard) {
     return (
       <NodeViewWrapper
         as="span"
         ref={attachmentRef}
-        className="group/attachment-wrapper relative my-0.5 mr-1.5 inline-block align-baseline"
-        onDragStartCapture={beginMove}
-        onDragEndCapture={endMove}
-        onMouseEnter={keepToolsVisible}
-        onMouseLeave={scheduleToolsHide}
+        className={cn(
+          "group/attachment-wrapper relative my-0.5 inline-block px-1 py-0.5 align-baseline",
+          isUploading && "pointer-events-none select-none",
+        )}
+        onDragStartCapture={isUploading ? (e) => e.preventDefault() : beginMove}
+        onDragEndCapture={isUploading ? undefined : endMove}
+        onMouseEnter={isUploading ? undefined : keepToolsVisible}
+        onMouseLeave={isUploading ? undefined : scheduleToolsHide}
       >
         {floatingToolbar}
+        {attachmentCaptionDialog}
         <a
-          href={editor.isEditable ? undefined : href}
-          data-attachment-href={href}
+          href={isUploading || editor.isEditable ? undefined : href}
+          data-attachment-href={href || undefined}
           data-diff-kind={diffKind || undefined}
           data-display-mode="link"
+          data-caption={caption || undefined}
+          data-uploading={isUploading ? "true" : undefined}
           title={filename}
           target="_self"
-          role={editor.isEditable ? "button" : undefined}
-          tabIndex={editor.isEditable ? 0 : undefined}
-          onClick={handleSelectNode}
+          role={editor.isEditable && !isUploading ? "button" : undefined}
+          tabIndex={editor.isEditable && !isUploading ? 0 : undefined}
+          onClick={isUploading ? undefined : handleSelectNode}
           onKeyDown={(event) => {
-            if (!editor.isEditable) return;
+            if (!editor.isEditable || isUploading) return;
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
               handleSelectNode();
             }
           }}
           contentEditable={false}
-          draggable={editor.isEditable}
+          draggable={editor.isEditable && !isUploading}
+          aria-busy={isUploading || undefined}
           className={cn(
-            "attachment-link text-primary inline-flex items-center gap-1 align-baseline text-xs font-medium hover:underline",
-            editor.isEditable
-              ? "cursor-grab active:cursor-grabbing"
-              : "cursor-pointer",
-            selected && "outline-primary/40 outline outline-2",
-            diffKind === "add" && "bg-success-bg text-success",
-            diffKind === "delete" && "bg-danger-bg text-danger line-through",
+            "attachment-link text-primary inline-flex items-center gap-1 align-baseline text-xs font-medium",
+            isUploading
+              ? "cursor-wait opacity-80"
+              : [
+                  "hover:underline",
+                  editor.isEditable
+                    ? "cursor-grab active:cursor-grabbing"
+                    : "cursor-pointer",
+                  selected && "outline-primary/40 outline outline-2",
+                  diffKind === "add" && "bg-success-bg text-success",
+                  diffKind === "delete" && "bg-danger-bg text-danger line-through",
+                ],
           )}
         >
           <span className="text-muted-foreground flex size-3.5 shrink-0 items-center justify-center">
-            <Paperclip className="size-3" />
+            {isUploading ? (
+              <Loader2 className="text-primary size-3 animate-spin" />
+            ) : (
+              <Paperclip className="size-3" />
+            )}
           </span>
           <span className="max-w-[260px] truncate">{filename}</span>
+          {isUploading ? (
+            <span className="text-muted-foreground text-[10px] italic">
+              ({t("editor.importingAttachment")})
+            </span>
+          ) : null}
         </a>
+        {!isUploading && caption ? (
+          <span
+            className={cn(
+              "text-muted-foreground ml-1.5 text-[11px] italic",
+              editor.isEditable && "hover:text-foreground cursor-pointer transition-colors",
+            )}
+            title={caption}
+            onClick={
+              editor.isEditable
+                ? (e) => {
+                    e.stopPropagation();
+                    setCaptionDraft(caption);
+                    setCaptionOpen(true);
+                  }
+                : undefined
+            }
+          >
+            ({caption})
+          </span>
+        ) : null}
       </NodeViewWrapper>
     );
   }
@@ -4000,44 +4226,60 @@ function AttachmentTile({
     <NodeViewWrapper
       as="span"
       ref={attachmentRef}
-      className="group/attachment-wrapper relative mr-2 mb-2 inline-block align-top"
-      onDragStartCapture={beginMove}
-      onDragEndCapture={endMove}
-      onMouseEnter={keepToolsVisible}
-      onMouseLeave={scheduleToolsHide}
+      className={cn(
+        "group/attachment-wrapper relative mx-0.5 my-1 inline-block px-1.5 py-0.5 align-top",
+        isUploading && "pointer-events-none select-none",
+      )}
+      onDragStartCapture={isUploading ? (e) => e.preventDefault() : beginMove}
+      onDragEndCapture={isUploading ? undefined : endMove}
+      onMouseEnter={isUploading ? undefined : keepToolsVisible}
+      onMouseLeave={isUploading ? undefined : scheduleToolsHide}
     >
       {floatingToolbar}
+      {attachmentCaptionDialog}
       <a
-        href={editor.isEditable ? undefined : href}
-        data-attachment-href={href}
+        href={isUploading || editor.isEditable ? undefined : href}
+        data-attachment-href={href || undefined}
         data-diff-kind={diffKind || undefined}
         data-display-mode="card"
+        data-caption={caption || undefined}
+        data-uploading={isUploading ? "true" : undefined}
         title={filename}
         target="_self"
-        role={editor.isEditable ? "button" : undefined}
-        tabIndex={editor.isEditable ? 0 : undefined}
-        onClick={handleSelectNode}
+        role={editor.isEditable && !isUploading ? "button" : undefined}
+        tabIndex={editor.isEditable && !isUploading ? 0 : undefined}
+        onClick={isUploading ? undefined : handleSelectNode}
         onKeyDown={(event) => {
-          if (!editor.isEditable) return;
+          if (!editor.isEditable || isUploading) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             handleSelectNode();
           }
         }}
         contentEditable={false}
-        draggable={editor.isEditable}
+        draggable={editor.isEditable && !isUploading}
+        aria-busy={isUploading || undefined}
         className={cn(
-          "group/attachment border-border bg-surface-raised hover:border-primary focus-visible:ring-ring flex w-28 flex-col items-center gap-1.5 rounded-md border p-2 !no-underline shadow-sm transition-colors focus-visible:ring-2 focus-visible:outline-none sm:w-32",
-          editor.isEditable
-            ? "cursor-grab active:cursor-grabbing"
-            : "cursor-pointer",
-          selected && "border-primary ring-primary/40 ring-2",
-          diffKind === "add" && "border-success bg-success-bg/60",
-          diffKind === "delete" && "border-danger bg-danger-bg/60",
+          "group/attachment border-border bg-surface-raised flex w-28 flex-col items-center gap-1.5 rounded-md border p-2 !no-underline shadow-sm transition-colors sm:w-32",
+          isUploading
+            ? "border-primary/40 bg-surface-raised/90 cursor-wait animate-pulse"
+            : [
+                "hover:border-primary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+                editor.isEditable
+                  ? "cursor-grab active:cursor-grabbing"
+                  : "cursor-pointer",
+                selected && "border-primary ring-primary/40 ring-2",
+                diffKind === "add" && "border-success bg-success-bg/60",
+                diffKind === "delete" && "border-danger bg-danger-bg/60",
+              ],
         )}
       >
-        <span className="bg-surface-sunken text-muted-foreground group-hover/attachment:text-primary flex h-16 w-full items-center justify-center overflow-hidden rounded p-1 transition-colors">
-          {/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(filename) && href ? (
+        <span className="bg-surface-sunken text-muted-foreground group-hover/attachment:text-primary relative flex h-16 w-full items-center justify-center overflow-hidden rounded p-1 transition-colors">
+          {isUploading ? (
+            <div className="flex flex-col items-center justify-center gap-1">
+              <Loader2 className="text-primary size-6 animate-spin" />
+            </div>
+          ) : /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(filename) && href ? (
             <img
               src={href}
               alt={filename}
@@ -4053,7 +4295,33 @@ function AttachmentTile({
         >
           {filename}
         </span>
+        {isUploading ? (
+          <span className="text-muted-foreground flex items-center justify-center gap-1 text-[10px] leading-none">
+            <span className="bg-primary size-1.5 rounded-full animate-pulse" />
+            {t("editor.importingAttachment")}
+          </span>
+        ) : null}
       </a>
+      {!isUploading && caption ? (
+        <span
+          className={cn(
+            "text-muted-foreground mt-1 block max-w-[16rem] truncate text-center text-xs italic",
+            editor.isEditable && "hover:text-foreground cursor-pointer transition-colors",
+          )}
+          title={caption}
+          onClick={
+            editor.isEditable
+              ? (e) => {
+                  e.stopPropagation();
+                  setCaptionDraft(caption);
+                  setCaptionOpen(true);
+                }
+              : undefined
+          }
+        >
+          {caption}
+        </span>
+      ) : null}
     </NodeViewWrapper>
   );
 }
@@ -4092,6 +4360,16 @@ const AttachmentNode = TiptapNode.create({
         default: null,
         parseHTML: (element) => element.getAttribute("data-diff-kind"),
       },
+      caption: {
+        default: "",
+        parseHTML: (element) => element.getAttribute("data-caption") ?? "",
+      },
+      uploading: {
+        default: false,
+      },
+      uploadId: {
+        default: null,
+      },
     };
   },
 
@@ -4129,6 +4407,7 @@ const AttachmentNode = TiptapNode.create({
             filename,
             displayMode: isExplicitLink ? "link" : "card",
             diffKind: el.getAttribute("data-diff-kind"),
+            caption: el.getAttribute("data-caption") ?? "",
           };
         },
       },
@@ -4149,6 +4428,7 @@ const AttachmentNode = TiptapNode.create({
             filename: text,
             displayMode: displayAttr === "card" ? "card" : "link",
             diffKind: el.getAttribute("data-diff-kind"),
+            caption: el.getAttribute("data-caption") ?? "",
           };
         },
       },
@@ -4158,15 +4438,19 @@ const AttachmentNode = TiptapNode.create({
   renderHTML({ node }) {
     const filename = String(node.attrs.filename ?? "attachment");
     const displayMode = String(node.attrs.displayMode ?? "card");
+    const caption = String(node.attrs.caption ?? "").trim();
+    const uploading = Boolean(node.attrs.uploading);
     return [
       "a",
       mergeAttributes({
-        href: node.attrs.href,
+        href: node.attrs.href || undefined,
         title: filename,
         target: "_self",
         "data-attachment": filename,
         "data-display-mode": displayMode,
         "data-diff-kind": node.attrs.diffKind || undefined,
+        "data-caption": caption || undefined,
+        "data-uploading": uploading ? "true" : undefined,
         class:
           displayMode === "link"
             ? "attachment-link inline-flex items-center gap-1 text-primary hover:underline font-medium text-xs align-baseline"
@@ -5105,32 +5389,50 @@ function TablePicker({ editor }: { editor: Editor | null }) {
   );
 }
 
-function CellColorMenu({ editor }: { editor: Editor | null }) {
+function CellColorMenu({
+  editor,
+  onSelectComplete,
+}: {
+  editor: Editor | null;
+  onSelectComplete?: () => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [tipOpen, setTipOpen] = useState(false);
   const { t } = useTranslation();
 
   function setCellColor(value: string | null) {
     editor?.chain().focus().setCellAttribute("backgroundColor", value).run();
     setOpen(false);
+    onSelectComplete?.();
   }
 
   return (
-    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label={t("editor.cellColour")}
-          title={t("editor.cellColour")}
-          disabled={!editor}
-          className="h-8 gap-1.5 px-2"
-        >
-          <Palette className="size-4" aria-hidden />
-          <span>{t("editor.cellColour")}</span>
-          <ChevronDown className="size-3.5" />
-        </Button>
-      </DropdownMenuTrigger>
+    <DropdownMenu
+      modal={false}
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setTipOpen(false);
+      }}
+    >
+      <Tooltip open={!open && tipOpen} onOpenChange={setTipOpen}>
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={t("editor.cellColour")}
+              disabled={!editor}
+              className="h-8 gap-0.5 px-1.5"
+            >
+              <Palette className="size-4" aria-hidden />
+              <ChevronDown className="size-3 opacity-70" aria-hidden />
+            </Button>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
+        <TooltipContent side="top">{t("editor.cellColour")}</TooltipContent>
+      </Tooltip>
       <ColorPaletteContent
         title={t("editor.cellColour")}
         paletteAria={t("editor.cellColourPaletteAria")}
@@ -5147,28 +5449,44 @@ function TableActionButton({
   label,
   onClick,
   disabled,
+  className,
   children,
 }: {
   editor: Editor | null;
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  className?: string;
   children: React.ReactNode;
 }) {
-  return (
+  const isDisabled = disabled || !editor;
+  const button = (
     <Button
       type="button"
       variant="ghost"
-      size="sm"
+      size="icon"
       aria-label={label}
-      title={label}
-      disabled={disabled || !editor}
+      disabled={isDisabled}
       onClick={onClick}
-      className="h-8 gap-1.5 px-2"
+      className={cn(isDisabled && "pointer-events-none", className)}
     >
       {children}
-      <span>{label}</span>
     </Button>
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {isDisabled ? (
+          <span className="inline-flex cursor-not-allowed" tabIndex={-1}>
+            {button}
+          </span>
+        ) : (
+          button
+        )}
+      </TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -5181,6 +5499,12 @@ type TableMenuPosition = { left: number; top: number };
  */
 function TableActionsMenu({ editor }: { editor: Editor | null }) {
   const [position, setPosition] = useState<TableMenuPosition | null>(null);
+  const [contextMenuPos, setContextMenuPos] =
+    useState<TableMenuPosition | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [addTipOpen, setAddTipOpen] = useState(false);
+  const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
+  const [deleteTipOpen, setDeleteTipOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredTable, setHoveredTable] = useState({ rows: 0, cols: 0 });
   const { t } = useTranslation();
@@ -5194,6 +5518,65 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
       .insertTable({ rows, cols, withHeaderRow: true })
       .run();
     setHoveredTable({ rows: 0, cols: 0 });
+    setContextMenuPos(null);
+  }
+
+  function clearSelectedCells() {
+    if (!editor) return;
+    editor
+      .chain()
+      .focus()
+      .command(({ state, tr, dispatch }) => {
+        const { selection, schema } = state;
+        const { $from, $to } = selection;
+        const emptyPara = schema.nodes.paragraph?.create();
+        if (!emptyPara) return false;
+
+        let tableDepth = -1;
+        for (let depth = $from.depth; depth >= 1; depth -= 1) {
+          if ($from.node(depth).type.name === "table") {
+            tableDepth = depth;
+            break;
+          }
+        }
+        if (tableDepth < 0) return false;
+
+        const tableNode = $from.node(tableDepth);
+        const tableStart = $from.before(tableDepth) + 1;
+        const cellRanges: Array<{ from: number; to: number }> = [];
+
+        tableNode.forEach((rowNode, rowOffset) => {
+          const rowStart = tableStart + rowOffset + 1;
+          rowNode.forEach((cellNode, cellOffset) => {
+            const cellPos = rowStart + cellOffset;
+            const cellStart = cellPos + 1;
+            const cellEnd = cellPos + cellNode.nodeSize - 1;
+            const matches =
+              selection.ranges.length > 1
+                ? selection.ranges.some(
+                    (range) =>
+                      range.$from.pos <= cellEnd && range.$to.pos >= cellStart,
+                  )
+                : selection.empty
+                  ? $from.pos >= cellPos && $from.pos <= cellEnd + 1
+                  : $from.pos <= cellEnd && $to.pos >= cellStart;
+            if (matches) {
+              cellRanges.push({ from: cellStart, to: cellEnd });
+            }
+          });
+        });
+
+        if (cellRanges.length === 0) return false;
+        cellRanges
+          .sort((a, b) => b.from - a.from)
+          .forEach(({ from, to }) => {
+            tr.replaceWith(from, to, emptyPara.copy(emptyPara.content));
+          });
+        if (dispatch) dispatch(tr);
+        return true;
+      })
+      .run();
+    setContextMenuPos(null);
   }
 
   const updatePosition = useCallback(() => {
@@ -5224,90 +5607,249 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
     )!.closest("table")!;
     const rect = table.getBoundingClientRect();
     setPosition({
-      // Leave enough room for the compact menu while keeping it on-screen.
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - 400)),
-      top: Math.min(rect.bottom + 6, window.innerHeight - 48),
+      // Leave enough room for the compact icon menu while keeping it on-screen.
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - 320)),
+      top: Math.min(rect.bottom + 6, window.innerHeight - 52),
     });
   }, [editor]);
 
   useLayoutEffect(() => {
     if (!editor) return;
 
-    editor.on("selectionUpdate", updatePosition);
-    editor.on("transaction", updatePosition);
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
+    const targetElement = (target: EventTarget | null): Element | null =>
+      target instanceof Element
+        ? target
+        : target instanceof Node
+          ? target.parentElement
+          : null;
+
+    const handleSelectionUpdate = () => {
+      setContextMenuPos(null);
+      updatePosition();
+    };
+    const handleTransaction = ({
+      transaction,
+    }: {
+      transaction: Transaction;
+    }) => {
+      if (transaction.getMeta(TABLE_COLUMN_HOVER_KEY)) return;
+      updatePosition();
+    };
+    const handleViewportChange = () => {
+      setContextMenuPos(null);
+      updatePosition();
+    };
+    const handleMouseDown = (event: MouseEvent) => {
+      if (
+        !editor.isEditable ||
+        event.button !== 2 ||
+        (!("$anchorCell" in editor.state.selection) &&
+          editor.state.selection.empty)
+      ) {
+        return;
+      }
+      const cell = targetElement(event.target)?.closest("td, th");
+      if (!cell || !editor.view.dom.contains(cell)) return;
+      // Stop the browser from collapsing an active selection to the right-clicked word.
+      event.preventDefault();
+    };
+    const handleContextMenu = (event: MouseEvent) => {
+      if (!editor.isEditable) return;
+      const cell = targetElement(event.target)?.closest("td, th");
+      if (!cell || !editor.view.dom.contains(cell)) return;
+      event.preventDefault();
+      if (!editor.isFocused) editor.view.focus();
+      // Preserve an existing multi-cell selection or active range under the cursor;
+      // otherwise focus the right-clicked cell.
+      const sel = editor.state.selection;
+      if (!("$anchorCell" in sel)) {
+        const coords = editor.view.posAtCoords({
+          left: event.clientX,
+          top: event.clientY,
+        });
+        const insideSelection =
+          !sel.empty &&
+          coords != null &&
+          coords.pos >= sel.from &&
+          coords.pos <= sel.to;
+        if (!insideSelection && coords && coords.pos >= 0) {
+          editor.commands.setTextSelection(coords.pos);
+        }
+      }
+      setContextMenuPos({
+        left: Math.max(8, Math.min(event.clientX, window.innerWidth - 320)),
+        top: Math.max(8, Math.min(event.clientY, window.innerHeight - 52)),
+      });
+    };
+    const handleOutsidePointer = (event: PointerEvent) => {
+      const target = targetElement(event.target);
+      if (
+        containerRef.current?.contains(target) ||
+        target?.closest('[role="menu"], [data-radix-menu-content]')
+      ) {
+        return;
+      }
+      setContextMenuPos(null);
+    };
+
+    const dom = editor.view.dom;
+    dom.addEventListener("mousedown", handleMouseDown, true);
+    dom.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("pointerdown", handleOutsidePointer);
+    editor.on("selectionUpdate", handleSelectionUpdate);
+    editor.on("transaction", handleTransaction);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- position the floating table toolbar on first render
     updatePosition();
 
     return () => {
-      editor.off("selectionUpdate", updatePosition);
-      editor.off("transaction", updatePosition);
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
+      dom.removeEventListener("mousedown", handleMouseDown, true);
+      dom.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("pointerdown", handleOutsidePointer);
+      editor.off("selectionUpdate", handleSelectionUpdate);
+      editor.off("transaction", handleTransaction);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
     };
   }, [editor, updatePosition]);
 
-  if (!position) return null;
+  const activePosition = contextMenuPos ?? position;
+  if (!activePosition) return null;
 
   return (
-    <div
-      ref={containerRef}
-      className="border-border bg-surface-raised fixed z-50 flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-0.5 rounded-md border p-1 shadow-lg"
-      style={position}
-      role="toolbar"
-      aria-label={t("editor.tableActionsAria")}
-      onMouseDown={(event) => {
-        // Keep the ProseMirror selection for button actions, but let the native
-        // colour picker receive its normal pointer interaction.
-        if ((event.target as HTMLElement).closest("button")) {
-          event.preventDefault();
-        }
-      }}
-    >
-      <TableActionButton
-        editor={editor}
-        label={t("editor.mergeSelectedCells")}
-        disabled={!editor?.can().mergeCells()}
-        onClick={() => editor?.chain().focus().mergeCells().run()}
+    <TooltipProvider delayDuration={200} disableHoverableContent>
+      <div
+        ref={containerRef}
+        className="border-border bg-surface-raised fixed z-50 flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-0.5 rounded-lg border p-1 shadow-lg"
+        style={activePosition}
+        role="toolbar"
+        aria-label={t("editor.tableActionsAria")}
+        onMouseDown={(event) => {
+          // Keep the ProseMirror selection for button actions, but let the native
+          // colour picker receive its normal pointer interaction.
+          if ((event.target as HTMLElement).closest("button")) {
+            event.preventDefault();
+          }
+        }}
       >
-        <TableCellsMerge />
-      </TableActionButton>
-      <TableActionButton
-        editor={editor}
-        label={t("editor.splitCell")}
-        disabled={!editor?.can().splitCell()}
-        onClick={() => editor?.chain().focus().splitCell().run()}
-      >
-        <SquareSplitHorizontal />
-      </TableActionButton>
-      <CellColorMenu editor={editor} />
+        <TableActionButton
+          editor={editor}
+          label={t("editor.tableAskAi")}
+          className="text-primary [&:not(:disabled)]:hover:text-primary"
+          onClick={() => {
+            setContextMenuPos(null);
+            window.dispatchEvent(
+              new CustomEvent("wikihub:ai-assist", {
+                detail: { mode: "prompt" },
+              }),
+            );
+          }}
+        >
+          <Sparkles aria-hidden />
+        </TableActionButton>
 
-      <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={!editor}
-            className="h-8 gap-1.5 px-2"
-          >
-            <Plus />
-            <span>{t("editor.add")}</span>
-            <ChevronDown className="size-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-40 p-1">
+        <span aria-hidden className="bg-border mx-0.5 h-5 w-px shrink-0" />
+
+        <TableActionButton
+          editor={editor}
+          label={t("editor.mergeSelectedCells")}
+          disabled={!editor?.can().mergeCells()}
+          onClick={() => {
+            editor?.chain().focus().mergeCells().run();
+            setContextMenuPos(null);
+          }}
+        >
+          <TableCellsMerge aria-hidden />
+        </TableActionButton>
+        <TableActionButton
+          editor={editor}
+          label={t("editor.splitCell")}
+          disabled={!editor?.can().splitCell()}
+          onClick={() => {
+            editor?.chain().focus().splitCell().run();
+            setContextMenuPos(null);
+          }}
+        >
+          <SquareSplitHorizontal aria-hidden />
+        </TableActionButton>
+        <TableActionButton
+          editor={editor}
+          label={t("editor.tableClearCells")}
+          onClick={clearSelectedCells}
+        >
+          <Eraser aria-hidden />
+        </TableActionButton>
+        <CellColorMenu
+          editor={editor}
+          onSelectComplete={() => setContextMenuPos(null)}
+        />
+
+        <span aria-hidden className="bg-border mx-0.5 h-5 w-px shrink-0" />
+
+        <DropdownMenu
+          modal={false}
+          open={addMenuOpen}
+          onOpenChange={(next) => {
+            setAddMenuOpen(next);
+            if (next) setAddTipOpen(false);
+          }}
+        >
+          <Tooltip open={!addMenuOpen && addTipOpen} onOpenChange={setAddTipOpen}>
+            <DropdownMenuTrigger asChild>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={t("editor.add")}
+                  disabled={!editor}
+                  className="h-8 gap-0.5 px-1.5"
+                >
+                  <Plus className="size-4" aria-hidden />
+                  <ChevronDown className="size-3 opacity-70" aria-hidden />
+                </Button>
+              </TooltipTrigger>
+            </DropdownMenuTrigger>
+            <TooltipContent side="top">{t("editor.add")}</TooltipContent>
+          </Tooltip>
+        <DropdownMenuContent align="start" className="w-44 p-1">
           <DropdownMenuItem
             className="text-muted-foreground data-[highlighted]:text-foreground"
-            onClick={() => editor?.chain().focus().addRowAfter().run()}
+            onClick={() => {
+              editor?.chain().focus().addRowBefore().run();
+              setContextMenuPos(null);
+            }}
+          >
+            <BetweenHorizontalEnd />
+            <span>{t("editor.addRowBefore")}</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-muted-foreground data-[highlighted]:text-foreground"
+            onClick={() => {
+              editor?.chain().focus().addRowAfter().run();
+              setContextMenuPos(null);
+            }}
           >
             <BetweenHorizontalEnd />
             <span>{t("editor.addRow")}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             className="text-muted-foreground data-[highlighted]:text-foreground"
-            onClick={() => editor?.chain().focus().addColumnAfter().run()}
+            onClick={() => {
+              editor?.chain().focus().addColumnBefore().run();
+              setContextMenuPos(null);
+            }}
+          >
+            <BetweenVerticalEnd />
+            <span>{t("editor.addColumnBefore")}</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-muted-foreground data-[highlighted]:text-foreground"
+            onClick={() => {
+              editor?.chain().focus().addColumnAfter().run();
+              setContextMenuPos(null);
+            }}
           >
             <BetweenVerticalEnd />
             <span>{t("editor.addColumn")}</span>
@@ -5366,45 +5908,70 @@ function TableActionsMenu({ editor }: { editor: Editor | null }) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={!editor}
-            className="text-danger hover:bg-danger-bg hover:text-danger active:bg-danger-bg/85 h-8 gap-1.5 px-2"
-          >
-            <Trash2 />
-            <span>{t("editor.delete")}</span>
-            <ChevronDown className="size-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
+      <DropdownMenu
+        modal={false}
+        open={deleteMenuOpen}
+        onOpenChange={(next) => {
+          setDeleteMenuOpen(next);
+          if (next) setDeleteTipOpen(false);
+        }}
+      >
+        <Tooltip
+          open={!deleteMenuOpen && deleteTipOpen}
+          onOpenChange={setDeleteTipOpen}
+        >
+          <DropdownMenuTrigger asChild>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label={t("editor.delete")}
+                disabled={!editor}
+                className="text-danger [&:not(:disabled)]:hover:bg-danger-bg [&:not(:disabled)]:hover:text-danger active:bg-danger-bg/85 h-8 gap-0.5 px-1.5"
+              >
+                <Trash2 className="size-4" aria-hidden />
+                <ChevronDown className="size-3 opacity-70" aria-hidden />
+              </Button>
+            </TooltipTrigger>
+          </DropdownMenuTrigger>
+          <TooltipContent side="top">{t("editor.delete")}</TooltipContent>
+        </Tooltip>
         <DropdownMenuContent align="start" className="w-40 p-1">
           <DropdownMenuItem
             destructive
-            onClick={() => editor?.chain().focus().deleteRow().run()}
+            onClick={() => {
+              editor?.chain().focus().deleteRow().run();
+              setContextMenuPos(null);
+            }}
           >
             <Trash2 />
             <span>{t("editor.deleteRow")}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             destructive
-            onClick={() => editor?.chain().focus().deleteColumn().run()}
+            onClick={() => {
+              editor?.chain().focus().deleteColumn().run();
+              setContextMenuPos(null);
+            }}
           >
             <Trash2 />
             <span>{t("editor.deleteColumn")}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             destructive
-            onClick={() => editor?.chain().focus().deleteTable().run()}
+            onClick={() => {
+              editor?.chain().focus().deleteTable().run();
+              setContextMenuPos(null);
+            }}
           >
             <Trash2 />
             <span>{t("editor.deleteTable")}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }
 
@@ -6102,27 +6669,87 @@ function RichTextToolbar({
     }
 
     setUploading(true);
+    const items = files.map((file, idx) => ({
+      file,
+      uploadId: `up-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 9)}`,
+    }));
+
+    const placeholders = items.map((item) => ({
+      type: "attachment",
+      attrs: {
+        filename: item.file.name,
+        displayMode: "card",
+        uploading: true,
+        uploadId: item.uploadId,
+      },
+    }));
+
+    editor.chain().focus().insertContent(placeholders).run();
+
     try {
-      for (const file of files) {
-        const uploaded = await onUploadFile(file);
-        if (uploaded.content_type.startsWith("image/")) {
-          editor
-            .chain()
-            .focus()
-            .setImage({ src: uploaded.content_url, alt: uploaded.filename })
-            .run();
-        } else {
-          editor
-            .chain()
-            .focus()
-            .insertContent({
-              type: "attachment",
-              attrs: {
+      for (const item of items) {
+        try {
+          const uploaded = await onUploadFile(item.file);
+          let targetPos: number | null = null;
+          let targetNode: PMNode | null = null;
+          editor.state.doc.descendants((node, pos) => {
+            if (
+              node.type.name === "attachment" &&
+              node.attrs.uploadId === item.uploadId
+            ) {
+              targetPos = pos;
+              targetNode = node;
+              return false;
+            }
+          });
+
+          if (targetPos !== null && targetNode) {
+            if (uploaded.content_type.startsWith("image/")) {
+              const imageType = editor.schema.nodes.image;
+              if (imageType) {
+                const imageNode = imageType.create({
+                  src: uploaded.content_url,
+                  alt: uploaded.filename,
+                });
+                const tr = editor.state.tr.replaceWith(
+                  targetPos,
+                  targetPos + (targetNode as PMNode).nodeSize,
+                  imageNode,
+                );
+                editor.view.dispatch(tr);
+              }
+            } else {
+              const tr = editor.state.tr.setNodeMarkup(targetPos, undefined, {
+                ...(targetNode as PMNode).attrs,
                 href: uploaded.content_url,
                 filename: uploaded.filename,
-              },
-            })
-            .run();
+                uploading: false,
+                uploadId: null,
+              });
+              editor.view.dispatch(tr);
+            }
+          }
+        } catch (itemErr) {
+          let targetPos: number | null = null;
+          let targetNode: PMNode | null = null;
+          editor.state.doc.descendants((node, pos) => {
+            if (
+              node.type.name === "attachment" &&
+              node.attrs.uploadId === item.uploadId
+            ) {
+              targetPos = pos;
+              targetNode = node;
+              return false;
+            }
+          });
+          if (targetPos !== null && targetNode) {
+            const tr = editor.state.tr.delete(
+              targetPos,
+              targetPos + (targetNode as PMNode).nodeSize,
+            );
+            editor.view.dispatch(tr);
+          }
+          throw itemErr;
         }
       }
     } catch (error) {
@@ -6992,8 +7619,10 @@ export function RichTextEditor({
       lastEmittedHtml.current = createdEditor.getHTML();
     },
     onUpdate: ({ editor: updatedEditor }) => emitEditorContent(updatedEditor),
-    onTransaction: ({ editor: updatedEditor }) =>
-      emitEditorContent(updatedEditor),
+    onTransaction: ({ editor: updatedEditor, transaction }) => {
+      if (transaction.getMeta(TABLE_COLUMN_HOVER_KEY)) return;
+      emitEditorContent(updatedEditor);
+    },
   });
 
   const handleDroppedFiles = useCallback(
@@ -7570,6 +8199,7 @@ type AttachmentMetadata = {
   content_type: string;
   created_at: string;
   size_bytes: number;
+  office_revision?: number;
 };
 
 function escapeRegExp(string: string) {
@@ -7715,6 +8345,8 @@ function AttachmentDetailsModal({
   const [activeMatchIdx, setActiveMatchIdx] = useState(0);
   const [isEditingOffice, setIsEditingOffice] = useState(false);
   const [attachmentRevision, setAttachmentRevision] = useState(0);
+  const [syncingOfficeSave, setSyncingOfficeSave] = useState(false);
+  const revisionBeforeEditRef = useRef<number>(0);
   const [isPdfExpanded, setIsPdfExpanded] = useState(false);
   const [isOfficeExpanded, setIsOfficeExpanded] = useState(false);
   const [previewToolbarContainer, setPreviewToolbarContainer] =
@@ -7845,7 +8477,9 @@ function AttachmentDetailsModal({
   // All hooks above — safe to do early return now
   if (!attachmentId) return null;
 
-  const contentUrl = `/api/v1/attachments/${attachmentId}/content${attachmentRevision ? `?v=${attachmentRevision}` : ""}`;
+  const effectiveVersion =
+    (metadata?.office_revision ?? 0) + attachmentRevision;
+  const contentUrl = `/api/v1/attachments/${attachmentId}/content${effectiveVersion ? `?v=${effectiveVersion}` : ""}`;
 
   const formatSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes";
@@ -7931,18 +8565,54 @@ function AttachmentDetailsModal({
     }
   };
 
+  useEffect(() => {
+    if (!syncingOfficeSave || !attachmentId || isEditingOffice) return;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 12; // ~18s window for ONLYOFFICE close/forcesave callback
+
+    const timer = window.setInterval(async () => {
+      attempts += 1;
+      try {
+        const response = await fetch(`/api/v1/attachments/${attachmentId}`);
+        if (response.ok && !cancelled) {
+          const updated = (await response.json()) as AttachmentMetadata;
+          if (
+            typeof updated.office_revision === "number" &&
+            updated.office_revision > revisionBeforeEditRef.current
+          ) {
+            setMetadata(updated);
+            setAttachmentRevision((revision) => revision + 1);
+            setSyncingOfficeSave(false);
+            return;
+          }
+        }
+      } catch {
+        // Ignore transient network errors while polling.
+      }
+      if (attempts === 1 && !cancelled) {
+        // Refresh once after 1.5s even if office_revision is unavailable or not yet bumped.
+        setAttachmentRevision((revision) => revision + 1);
+      }
+      if (attempts >= maxAttempts && !cancelled) {
+        setSyncingOfficeSave(false);
+      }
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [attachmentId, isEditingOffice, syncingOfficeSave]);
+
   const toggleOfficeEditing = () => {
     if (isEditingOffice) {
       setIsEditingOffice(false);
-      // A force-save callback is asynchronous. Refresh the preview after it
-      // has had time to replace the object so returning from the editor never
-      // keeps a stale browser-cached document on screen.
-      window.setTimeout(
-        () => setAttachmentRevision((revision) => revision + 1),
-        1500,
-      );
+      setSyncingOfficeSave(true);
       return;
     }
+    revisionBeforeEditRef.current = metadata?.office_revision ?? 0;
+    setSyncingOfficeSave(false);
     setIsEditingOffice(true);
   };
 
@@ -8174,95 +8844,106 @@ function AttachmentDetailsModal({
                                 : "flex max-h-96",
                 )}
               >
-                {isEditingOffice && canEditOffice && isEditableOffice ? (
-                  <OfficeAttachmentEditor
-                    attachmentId={attachmentId}
-                    filename={metadata.filename}
-                  />
-                ) : isOffice ? (
-                  <OfficeAttachmentPreview
-                    contentUrl={contentUrl}
-                    filename={metadata.filename}
-                    contentType={metadata.content_type}
-                    expanded={isOfficeExpanded}
-                    onExpandedChange={setIsOfficeExpanded}
-                    toolbarContainer={previewToolbarContainer}
-                  />
-                ) : isImage ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={contentUrl}
-                    alt={metadata.filename}
-                    className="max-h-80 w-auto rounded border object-contain shadow-sm"
-                  />
-                ) : isVideo ? (
-                  <div className="h-full max-h-[min(70vh,36rem)] w-full">
-                    <VideoAttachmentPreview
-                      key={attachmentId}
+                <AttachmentModalErrorBoundary
+                  key={`${attachmentId}-${isEditingOffice}`}
+                  onBackToPreview={
+                    isEditingOffice ? () => setIsEditingOffice(false) : undefined
+                  }
+                  backLabel={t("editor.backToPreview")}
+                  retryLabel={t("common.tryAgain")}
+                  title={t("editor.attachmentPreviewErrorTitle")}
+                  description={t("editor.attachmentPreviewErrorDescription")}
+                >
+                  {isEditingOffice && canEditOffice && isEditableOffice ? (
+                    <OfficeAttachmentEditor
                       attachmentId={attachmentId}
+                      filename={metadata.filename}
+                    />
+                  ) : isOffice ? (
+                    <OfficeAttachmentPreview
+                      contentUrl={contentUrl}
+                      filename={metadata.filename}
+                      contentType={metadata.content_type}
+                      expanded={isOfficeExpanded}
+                      onExpandedChange={setIsOfficeExpanded}
+                      toolbarContainer={previewToolbarContainer}
+                    />
+                  ) : isImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={contentUrl}
+                      alt={metadata.filename}
+                      className="max-h-80 w-auto rounded border object-contain shadow-sm"
+                    />
+                  ) : isVideo ? (
+                    <div className="h-full max-h-[min(70vh,36rem)] w-full">
+                      <VideoAttachmentPreview
+                        key={attachmentId}
+                        attachmentId={attachmentId}
+                        contentUrl={contentUrl}
+                        contentType={mediaType}
+                        filename={metadata.filename}
+                        toolbarContainer={previewToolbarContainer}
+                        onEnterPictureInPicture={onClose}
+                      />
+                    </div>
+                  ) : isAudio ? (
+                    <AudioAttachmentPreview
                       contentUrl={contentUrl}
                       contentType={mediaType}
                       filename={metadata.filename}
-                      toolbarContainer={previewToolbarContainer}
-                      onEnterPictureInPicture={onClose}
                     />
-                  </div>
-                ) : isAudio ? (
-                  <AudioAttachmentPreview
-                    contentUrl={contentUrl}
-                    contentType={mediaType}
-                    filename={metadata.filename}
-                  />
-                ) : textContent !== null ? (
-                  <div className="wikihub-code bg-code-bg border-code-border h-full max-h-none w-full overflow-auto rounded border font-mono text-xs leading-relaxed select-text">
-                    {lines.map((line, idx) => (
-                      <div
-                        key={idx}
-                        data-line-idx={idx}
-                        className={cn(
-                          "hover:bg-code-inset flex",
-                          matches[activeMatchIdx]?.lineIdx === idx &&
-                            searchQuery &&
-                            "bg-code-highlight/15 hover:bg-code-highlight/25",
-                        )}
-                      >
-                        <span className="text-code-muted border-code-border w-12 shrink-0 border-r pr-2.5 text-right tabular-nums select-none">
-                          {idx + 1}
-                        </span>
-                        <span
+                  ) : textContent !== null ? (
+                    <div className="wikihub-code bg-code-bg border-code-border h-full max-h-none w-full overflow-auto rounded border font-mono text-xs leading-relaxed select-text">
+                      {lines.map((line, idx) => (
+                        <div
+                          key={idx}
+                          data-line-idx={idx}
                           className={cn(
-                            "pl-3",
-                            wrapLines ? "break-all whitespace-pre-wrap" : "",
+                            "hover:bg-code-inset flex",
+                            matches[activeMatchIdx]?.lineIdx === idx &&
+                              searchQuery &&
+                              "bg-code-highlight/15 hover:bg-code-highlight/25",
                           )}
                         >
-                          <HighlightedText
-                            text={line}
-                            tokens={tokenLines?.[idx]}
-                            query={searchQuery}
-                            lineIdx={idx}
-                            activeMatchIdx={activeMatchIdx}
-                            matches={matches}
-                          />
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : isPdf ? (
-                  <PdfAttachmentPreview
-                    contentUrl={contentUrl}
-                    filename={metadata.filename}
-                    expanded={isPdfExpanded}
-                    onExpandedChange={setIsPdfExpanded}
-                    toolbarContainer={previewToolbarContainer}
-                  />
-                ) : (
-                  <div className="py-6 text-center">
-                    <FileText className="text-muted-foreground mx-auto size-12" />
-                    <p className="text-muted-foreground mt-2 text-sm">
-                      {t("editor.noPreview")}
-                    </p>
-                  </div>
-                )}
+                          <span className="text-code-muted border-code-border w-12 shrink-0 border-r pr-2.5 text-right tabular-nums select-none">
+                            {idx + 1}
+                          </span>
+                          <span
+                            className={cn(
+                              "pl-3",
+                              wrapLines ? "break-all whitespace-pre-wrap" : "",
+                            )}
+                          >
+                            <HighlightedText
+                              text={line}
+                              tokens={tokenLines?.[idx]}
+                              query={searchQuery}
+                              lineIdx={idx}
+                              activeMatchIdx={activeMatchIdx}
+                              matches={matches}
+                            />
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : isPdf ? (
+                    <PdfAttachmentPreview
+                      contentUrl={contentUrl}
+                      filename={metadata.filename}
+                      expanded={isPdfExpanded}
+                      onExpandedChange={setIsPdfExpanded}
+                      toolbarContainer={previewToolbarContainer}
+                    />
+                  ) : (
+                    <div className="py-6 text-center">
+                      <FileText className="text-muted-foreground mx-auto size-12" />
+                      <p className="text-muted-foreground mt-2 text-sm">
+                        {t("editor.noPreview")}
+                      </p>
+                    </div>
+                  )}
+                </AttachmentModalErrorBoundary>
               </div>
             </div>
           </div>

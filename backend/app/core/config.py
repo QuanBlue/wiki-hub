@@ -7,6 +7,7 @@ instance is exposed through :func:`get_settings`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 from enum import StrEnum
@@ -306,6 +307,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _harden_production(self) -> Settings:
+        if self.env is not Environment.production and "secret_key" not in self.model_fields_set:
+            # Keep dev/staging multi-container secrets consistent across
+            # backend, worker, and ollama-controller when WIKIHUB_SECRET_KEY
+            # is omitted from .env.
+            self.secret_key = hashlib.sha256(
+                f"wikihub-fallback-secret:{self.postgres_user}:{self.postgres_password}:{self.postgres_db}".encode()
+            ).hexdigest()
         if self.onlyoffice_enabled:
             if not self.onlyoffice_backend_url or not self.onlyoffice_internal_url:
                 raise ValueError(

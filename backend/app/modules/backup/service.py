@@ -642,6 +642,9 @@ class BackupService:
             entry.profile_url = user.profile_url
             entry.social_links = user.social_links
             entry.company = user.company
+            entry.status_emoji = getattr(user, "status_emoji", "") or ""
+            entry.status_text = getattr(user, "status_text", "") or ""
+            entry.status_expires_at = getattr(user, "status_expires_at", None)
             # Never retain internal avatar endpoints without their object data.
             entry.avatar_url = (
                 user.avatar_url if user.avatar_url and not user.avatar_object_key else None
@@ -1965,6 +1968,9 @@ class BackupService:
                 profile_url=user_entry.profile_url.strip(),
                 social_links=[str(link).strip() for link in user_entry.social_links],
                 company=user_entry.company.strip(),
+                status_emoji=user_entry.status_emoji.strip(),
+                status_text=user_entry.status_text.strip(),
+                status_expires_at=user_entry.status_expires_at,
                 avatar_url=user_entry.avatar_url,
                 avatar_updated_at=user_entry.avatar_updated_at,
                 cover_updated_at=user_entry.cover_updated_at,

@@ -49,6 +49,26 @@ def test_audit_csv_and_json_serialization() -> None:
     assert parsed[0]["details"]["space_key"] == "ENG"
 
 
+def test_audit_service_changes_and_scrub_datetime() -> None:
+    from app.core.logging import scrub_mapping
+    from app.services.audit import AuditService
+
+    now = datetime(2026, 11, 18, 14, 0, tzinfo=UTC)
+    uid = uuid.uuid4()
+    diff = AuditService.changes(
+        before={"status_expires_at": None, "id": uid},
+        after={"status_expires_at": now, "id": uid},
+        fields=["status_expires_at", "id"],
+    )
+    assert diff["status_expires_at"]["from"] is None
+    assert diff["status_expires_at"]["to"] == now.isoformat()
+
+    # Ensure json.dumps succeeds without TypeError
+    dumped = json.dumps(scrub_mapping({"changes": diff, "raw_time": now, "raw_id": uid}))
+    assert now.isoformat() in dumped
+    assert str(uid) in dumped
+
+
 @pytest.mark.asyncio
 async def test_audit_log_endpoints_and_export() -> None:
     entry = _sample_entry()

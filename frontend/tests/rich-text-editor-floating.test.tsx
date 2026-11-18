@@ -309,6 +309,124 @@ describe("table actions", () => {
     fireEvent.click(cell);
     expect(editor.getHTML()).toContain("<table");
   });
+
+  it("preserves CellSelection and keeps the context menu open at the cursor on right-click", async () => {
+    const { editor, dom, cells, user } = await inTable();
+
+    act(() => {
+      const { doc, tr } = editor.state;
+      editor.view.dispatch(
+        tr.setSelection(CellSelection.create(doc, cells[0]!, cells[1]!)),
+      );
+    });
+
+    const td = dom.querySelectorAll("td")[1]!;
+    const mouseDownEvent = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 2,
+      clientX: 120,
+      clientY: 140,
+    });
+    act(() => {
+      td.dispatchEvent(mouseDownEvent);
+    });
+    expect(mouseDownEvent.defaultPrevented).toBe(true);
+
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 120,
+      clientY: 140,
+    });
+    act(() => {
+      td.dispatchEvent(contextMenuEvent);
+    });
+    expect(contextMenuEvent.defaultPrevented).toBe(true);
+
+    const toolbar = await screen.findByRole("toolbar", { name: "Table actions" });
+    expect(toolbar).toHaveStyle({ left: "120px", top: "140px" });
+    expect(
+      screen.getByRole("button", { name: "Merge selected cells" }),
+    ).toBeEnabled();
+    expect("$anchorCell" in editor.state.selection).toBe(true);
+
+    // Moving across a column resize edge and leaving the table must not trigger
+    // a ProseMirror DOMObserver readDOMChange that collapses CellSelection.
+    const allCells = Array.from(dom.querySelectorAll("td"));
+    allCells.forEach((cell, idx) => {
+      const col = idx % 2;
+      const row = Math.floor(idx / 2);
+      Object.defineProperty(cell, "getBoundingClientRect", {
+        configurable: true,
+        value: () => ({
+          left: col * 200,
+          right: (col + 1) * 200,
+          width: 200,
+          top: row * 40,
+          bottom: (row + 1) * 40,
+          height: 40,
+          x: col * 200,
+          y: row * 40,
+        }),
+      });
+    });
+
+    act(() => {
+      fireEvent.mouseMove(allCells[0]!, { clientX: 198 });
+    });
+    expect(allCells[0]!.classList.contains("wikihub-column-resize-target")).toBe(
+      true,
+    );
+    act(() => {
+      fireEvent.mouseMove(allCells[1]!, { clientX: 250 });
+      fireEvent.mouseLeave(dom);
+    });
+    expect(allCells[0]!.classList.contains("wikihub-column-resize-target")).toBe(
+      false,
+    );
+
+    // Flush any queued MutationObserver records.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect("$anchorCell" in editor.state.selection).toBe(true);
+    expect(toolbar).toHaveStyle({ left: "120px", top: "140px" });
+    expect(
+      screen.getByRole("button", { name: "Merge selected cells" }),
+    ).toBeEnabled();
+
+    // Opening a portaled submenu should keep the context menu anchored at the cursor.
+    await user.click(screen.getByRole("button", { name: /^Add$/ }));
+    const addRowItem = await screen.findByRole("menuitem", { name: "Add row" });
+    fireEvent.pointerDown(addRowItem);
+    expect(toolbar).toHaveStyle({ left: "120px", top: "140px" });
+  });
+
+  it("renders icon-only controls and shows hover tooltips for enabled and disabled buttons", async () => {
+    const { user } = await inTable();
+    const toolbar = await screen.findByRole("toolbar", { name: "Table actions" });
+
+    // No inline text labels inside the compact icon toolbar.
+    expect(toolbar.textContent).toBe("");
+
+    const askAiBtn = screen.getByRole("button", {
+      name: "Ask AI about selection",
+    });
+    await user.hover(askAiBtn);
+    expect(
+      await screen.findByRole("tooltip", { name: "Ask AI about selection" }),
+    ).toBeInTheDocument();
+    await user.unhover(askAiBtn);
+
+    // Disabled buttons are wrapped so hovering still reveals what they do.
+    const mergeBtn = screen.getByRole("button", {
+      name: "Merge selected cells",
+    });
+    expect(mergeBtn).toBeDisabled();
+    await user.hover(mergeBtn.parentElement!);
+    expect(
+      await screen.findByRole("tooltip", { name: "Merge selected cells" }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("the link toolbar", () => {

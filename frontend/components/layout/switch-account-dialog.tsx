@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Avatar } from "@/components/ui/avatar";
+import { Avatar, versionedAvatarUrl } from "@/components/ui/avatar";
 import { clearStoredChats } from "@/lib/ai-chat";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
@@ -114,7 +114,9 @@ export function SwitchAccountMenu({
         <Avatar
           username={currentUser.username}
           name={currentUser.full_name}
-          src={currentUser.avatar_url}
+          src={versionedAvatarUrl(currentUser.avatar_url, currentUser.avatar_updated_at)}
+          crop={currentUser.avatar_crop}
+          contentType={currentUser.avatar_content_type}
           className="size-10 text-sm"
         />
         <span className="min-w-0 flex-1">
@@ -265,7 +267,9 @@ export function SwitchAccountMenu({
                           <Avatar
                             username={user.username}
                             name={user.full_name}
-                            src={user.avatar_url}
+                            src={versionedAvatarUrl(user.avatar_url, user.avatar_updated_at)}
+                            crop={user.avatar_crop}
+                            contentType={user.avatar_content_type}
                             className="size-7 text-xs"
                           />
                           <span className="min-w-0 flex-1">

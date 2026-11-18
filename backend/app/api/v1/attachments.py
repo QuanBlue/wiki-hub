@@ -92,6 +92,8 @@ class AttachmentMetadataRead(BaseModel):
     text_status: str | None = None
     #: Characters of text read from it.
     text_chars: int = 0
+    #: Monotonically incremented each time ONLYOFFICE or a replacement saves the file.
+    office_revision: int = 0
 
 
 class OfficeEditorConfigRead(BaseModel):
@@ -209,6 +211,7 @@ async def get_attachment_metadata(
         created_at=attachment.created_at.isoformat(),
         text_status=status,
         text_chars=reading.chars if current else 0,  # type: ignore[union-attr]
+        office_revision=attachment.office_revision,
     )
 
 
@@ -241,7 +244,11 @@ async def read_attachment(
     content_disposition = (
         f"{disposition}; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename}"
     )
-    headers = {"Content-Disposition": content_disposition, "Accept-Ranges": "bytes"}
+    headers = {
+        "Content-Disposition": content_disposition,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "private, no-cache",
+    }
     requested = parse_byte_range(request.headers.get("range"), attachment.size_bytes)
     if isinstance(requested, UnsatisfiableRange):
         return Response(
@@ -659,4 +666,5 @@ async def replace_attachment(
         content_type=attachment.content_type,
         size_bytes=attachment.size_bytes,
         created_at=attachment.created_at.isoformat(),
+        office_revision=attachment.office_revision,
     )

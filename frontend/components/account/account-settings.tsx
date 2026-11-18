@@ -40,6 +40,7 @@ export function AccountSettings({
   const [profileEditing, setProfileEditing] = useState(false);
   const [savedUser, setSavedUser] = useState<{ source: Me; current: Me } | null>(null);
   const [avatarVersion, setAvatarVersion] = useState(0);
+  const [coverVersion, setCoverVersion] = useState(0);
   const [passwordEditing, setPasswordEditing] = useState(
     openChangePassword && initialTab === "security",
   );
@@ -56,17 +57,24 @@ export function AccountSettings({
     save: async () => (await profileSaveRef.current?.()) ?? false,
   });
   const currentUser = savedUser?.source === user ? savedUser.current : user;
-  const profileUser: Me = avatarVersion && currentUser.avatar_url
-    ? {
-        ...currentUser,
-        avatar_url: `${currentUser.avatar_url}${currentUser.avatar_url.includes("?") ? "&" : "?"}v=${avatarVersion}`,
-      }
-    : currentUser;
+  const appendVersion = (url: string | null | undefined, version: number) =>
+    version && url ? `${url}${url.includes("?") ? "&" : "?"}v=${version}` : (url ?? null);
+  const profileUser: Me =
+    (avatarVersion && currentUser.avatar_url) || (coverVersion && currentUser.cover_url)
+      ? {
+          ...currentUser,
+          avatar_url: appendVersion(currentUser.avatar_url, avatarVersion),
+          cover_url: appendVersion(currentUser.cover_url, coverVersion),
+        }
+      : currentUser;
 
-  function handleProfileSaved(updated: User, avatarChanged: boolean) {
+  function handleProfileSaved(updated: User, avatarChanged: boolean, coverChanged = false) {
     setSavedUser({ source: user, current: { ...currentUser, ...updated } });
     if (avatarChanged) {
       setAvatarVersion((previous) => Math.max(Date.now(), previous + 1));
+    }
+    if (coverChanged) {
+      setCoverVersion((previous) => Math.max(Date.now(), previous + 1));
     }
     setProfileEditing(false);
   }

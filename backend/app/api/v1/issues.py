@@ -14,7 +14,11 @@ from app.core.exceptions import WikiHubError
 from app.core.logging import get_logger
 from app.models.user import User
 from app.modules.admin_mail.service import AdminMailService, is_deliverable_address
-from app.modules.issues.service import MAX_IMAGE_BYTES, IssueService
+from app.modules.issues.service import (
+    ALLOWED_IMAGE_TYPES,
+    MAX_ATTACHMENT_BYTES,
+    IssueService,
+)
 from app.schemas.issue import (
     IssueAssign,
     IssueAttachmentRead,
@@ -128,6 +132,9 @@ async def bulk_update_issues(
     for issue in closed:
         if await _email_reporter(session, user, issue, payload.note) == "sent":
             emailed += 1
+    if payload.action == "assign":
+        for issue in updated:
+            await _email_assignee(session, user, issue)
     return IssueBulkResult(
         updated=len(updated),
         failed=[IssueBulkFailure(id=issue_id, reason=reason) for issue_id, reason in failed],
@@ -143,7 +150,7 @@ async def read_issue(issue_id: uuid.UUID, user: CurrentUser, session: DbSession)
 @router.get(
     "/{issue_id}/export/docx",
     response_class=Response,
-    summary="Download an issue as a Word document",
+    summary="Download an issue as a Word document or ZIP package",
 )
 async def export_issue_docx(
     issue_id: uuid.UUID,
@@ -152,16 +159,16 @@ async def export_issue_docx(
     storage: StorageDep,
     lang: Literal["en", "vi"] = "en",
 ) -> Response:
-    content, filename = await IssueService(session, user).export_docx(
+    content, media_type, filename = await IssueService(session, user).export_package(
         storage, [issue_id], lang=lang
     )
-    return _docx_response(content, filename)
+    return _download_response(content, media_type, filename)
 
 
 @router.get(
     "/export/docx",
     response_class=Response,
-    summary="Download several issues as one Word document",
+    summary="Download several issues as one Word document or ZIP package",
 )
 async def export_issues_docx(
     user: CurrentUser,
@@ -173,16 +180,16 @@ async def export_issues_docx(
     """A GET with repeated ``ids`` so the browser can download it as a plain
     link, the same way a single issue (or a page) is exported. Issues the
     caller may not see are left out."""
-    content, filename = await IssueService(session, user).export_docx(
+    content, media_type, filename = await IssueService(session, user).export_package(
         storage, ids, lang=lang
     )
-    return _docx_response(content, filename)
+    return _download_response(content, media_type, filename)
 
 
-def _docx_response(content: bytes, filename: str) -> Response:
+def _download_response(content: bytes, media_type: str, filename: str) -> Response:
     return Response(
         content=content,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=media_type,
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",
@@ -199,7 +206,16 @@ async def claim_issue(issue_id: uuid.UUID, user: CurrentUser, session: DbSession
 async def assign_issue(
     issue_id: uuid.UUID, payload: IssueAssign, user: CurrentUser, session: DbSession
 ) -> IssueRead:
-    return await IssueService(session, user).assign(issue_id, payload.assignee_id)
+    service = IssueService(session, user)
+    before = await service.read(issue_id)
+    result = await service.assign(issue_id, payload.assignee_id)
+    if (
+        payload.assignee_id is not None
+        and result.assignee is not None
+        and (before.assignee is None or before.assignee.id != result.assignee.id)
+    ):
+        await _email_assignee(session, user, result)
+    return result
 
 
 @router.patch("/{issue_id}/status", response_model=IssueRead, summary="Change an issue's status")
@@ -217,6 +233,38 @@ async def update_issue_status(
     return result
 
 
+async def _email_assignee(
+    session: DbSession, actor: User, issue: IssueRead
+) -> Literal["sent", "failed", "skipped"]:
+    """Tell the assigned triager an issue was handed to them, by email."""
+    if issue.assignee is None or issue.assignee.id == actor.id:
+        return "skipped"
+    assignee = await session.get(User, issue.assignee.id)
+    if assignee is None or not assignee.is_active:
+        return "skipped"
+    mail_service = AdminMailService(session, actor=actor)
+    if not is_deliverable_address(assignee.email):
+        found = await mail_service.repo.get_mailbox_for_user(assignee.id)
+        if found is None or not is_deliverable_address(found[0].email):
+            return "skipped"
+    try:
+        sent = await mail_service.send_issue_assigned_email(
+            actor,
+            to_user=assignee,
+            issue_id=issue.id,
+            issue_title=issue.title,
+            description=issue.description,
+            labels=issue.labels,
+        )
+    except WikiHubError as error:
+        logger.warning("issue_assigned_email_unavailable", reason=error.code)
+        return "failed"
+    except Exception:
+        logger.exception("issue_assigned_email_error")
+        return "failed"
+    return "sent" if sent.email_sent else "failed"
+
+
 async def _email_reporter(
     session: DbSession, actor: User, issue: IssueRead, note: str | None
 ) -> Literal["sent", "failed", "skipped"]:
@@ -224,10 +272,10 @@ async def _email_reporter(
 
     Best effort: closing the issue has already happened and must not be undone
     or failed by a mail problem, so every failure becomes ``failed``. Nothing is
-    sent when the person closing it is the reporter (they know), or when the
-    reporter's account is gone or inactive.
+    sent when the reporter's account is gone or inactive, or when not closing
+    and the reporter is the actor.
     """
-    if issue.reporter.id == actor.id:
+    if issue.status != "done" and issue.reporter.id == actor.id:
         return "skipped"
     reporter = await session.get(User, issue.reporter.id)
     if reporter is None or not reporter.is_active:
@@ -276,17 +324,17 @@ async def add_issue_note(
     "/{issue_id}/attachments",
     response_model=IssueAttachmentRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Attach a screenshot to my issue",
+    summary="Attach a file to my issue",
 )
 async def upload_issue_attachment(
     issue_id: uuid.UUID,
-    file: Annotated[UploadFile, File(description="A PNG, JPEG, GIF or WebP image")],
+    file: Annotated[UploadFile, File(description="A non-SVG file up to 20 MB")],
     user: CurrentUser,
     session: DbSession,
     storage: StorageDep,
 ) -> IssueAttachmentRead:
     # One byte over the ceiling is enough to know it is over the ceiling.
-    data = await file.read(MAX_IMAGE_BYTES + 1)
+    data = await file.read(MAX_ATTACHMENT_BYTES + 1)
     return await IssueService(session, user).add_attachment(
         storage,
         issue_id,
@@ -299,7 +347,7 @@ async def upload_issue_attachment(
 @router.get(
     "/{issue_id}/attachments/{attachment_id}/content",
     response_class=Response,
-    summary="Read an issue screenshot",
+    summary="Read an issue attachment",
 )
 async def read_issue_attachment(
     issue_id: uuid.UUID,
@@ -311,11 +359,16 @@ async def read_issue_attachment(
     attachment = await IssueService(session, user).get_attachment(issue_id, attachment_id)
     filename = re.sub(r'[\r\n\\"]+', "", attachment.filename)
     ascii_name = re.sub(r"[^\x20-\x7e]", "_", filename)
+    disposition = (
+        "inline"
+        if attachment.content_type.lower() in (ALLOWED_IMAGE_TYPES | {"application/pdf"})
+        else "attachment"
+    )
     return Response(
         content=await storage.get(attachment.object_key),
         media_type=attachment.content_type,
         headers={
-            "Content-Disposition": f'inline; filename="{ascii_name}"',
+            "Content-Disposition": f'{disposition}; filename="{ascii_name}"',
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "private, max-age=3600",
         },

@@ -191,4 +191,34 @@ describe("OfficeAttachmentEditor", () => {
     await waitFor(() => expect(editors).toHaveLength(2));
     expect(scripts).toHaveLength(1);
   });
+
+  it("mounts OnlyOffice inside a non-React child node and shows a Retry action after the 15s load timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      okConfig();
+      installDocsApi();
+      const { container, unmount } = await mount("att-timeout");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(editors).toHaveLength(1);
+      // Host wrapper manages a child div outside React virtual DOM.
+      const hostChild = container.querySelector("#onlyoffice-editor-att-timeout");
+      expect(hostChild).not.toBeNull();
+      expect(hostChild?.parentElement).not.toBe(container);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(
+        screen.getByText(/took too long to respond/i),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+      // Unmounting never throws React removeChild NotFoundError even after DocsAPI mutated hostChild.
+      hostChild?.appendChild(document.createElement("iframe"));
+      expect(() => unmount()).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

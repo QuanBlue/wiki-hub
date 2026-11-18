@@ -51,6 +51,9 @@ class BackupUser(BaseModel):
     profile_url: str = ""
     social_links: list[str] = Field(default_factory=list)
     company: str = ""
+    status_emoji: str = ""
+    status_text: str = ""
+    status_expires_at: datetime | None = None
     # Object-storage avatar bytes are deliberately not represented as a URL:
     # an internal avatar URL points at the source instance and would be broken
     # after restore. External URLs remain safe to preserve.

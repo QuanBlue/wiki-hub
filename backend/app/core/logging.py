@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
+import uuid
 from collections.abc import Mapping
 from contextvars import ContextVar
 from typing import Any
@@ -47,6 +48,10 @@ def scrub_value(value: Any, depth: int = 0) -> Any:
         }
     if isinstance(value, (list, tuple)):
         return [scrub_value(v, depth + 1) for v in value]
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
     return value
 
 

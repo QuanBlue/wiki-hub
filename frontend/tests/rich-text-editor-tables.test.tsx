@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { RichTextEditor } from "@/components/pages/rich-text-editor";
@@ -337,5 +337,42 @@ describe("table column resize with merged cells", () => {
 
     fireEvent.mouseDown(cells2[0]!, { button: 0, clientX: 398, clientY: 20 });
     fireEvent.mouseUp(cells2[0]!);
+  });
+
+  it("opens table actions on right-click and supports clearing cell contents and Ask AI", async () => {
+    const onChange = vi.fn();
+    const { table, container } = await renderTable(GRID, onChange);
+    layOut(table);
+    const firstCell = cellsOf(table)[0]!;
+    const aiSpy = vi.fn();
+    window.addEventListener("wikihub:ai-assist", aiSpy);
+
+    try {
+      const editorEl = container.querySelector(".ProseMirror") as HTMLElement & {
+        editor?: { commands: { setTextSelection: (pos: number) => void } };
+      };
+      // Focus the first cell, then trigger right-click contextmenu on it.
+      fireEvent.click(firstCell);
+      editorEl.editor?.commands.setTextSelection(4);
+      fireEvent.contextMenu(firstCell, { clientX: 50, clientY: 50 });
+
+      const askBtn = await screen.findByRole("button", {
+        name: "Ask AI about selection",
+      });
+      fireEvent.click(askBtn);
+      expect(aiSpy).toHaveBeenCalledTimes(1);
+
+      fireEvent.contextMenu(firstCell, { clientX: 60, clientY: 60 });
+      const clearBtn = await screen.findByRole("button", {
+        name: "Clear cell contents",
+      });
+      fireEvent.click(clearBtn);
+
+      await waitFor(() =>
+        expect(firstCell.textContent?.trim()).toBe(""),
+      );
+    } finally {
+      window.removeEventListener("wikihub:ai-assist", aiSpy);
+    }
   });
 });
