@@ -22,8 +22,8 @@ export function AppMain({
   /** Reserve room for the fixed impersonation bar so it covers no content. */
   hasBanner?: boolean;
   /** A strip shown across the top of the content, under the top bar. Part of
-   * the flow, so it pushes the page down instead of covering it, and sticky so
-   * it stays visible while the page scrolls. */
+   * the flow, so it pushes the page down, and sticky so it stays in the same
+   * place under the top bar on every page. */
   banner?: React.ReactNode;
   contentClassName?: string;
   disableSidebarOffset?: boolean;
@@ -59,8 +59,9 @@ export function AppMain({
       }
     >
       {banner ? (
-        // z-29: just under the TopBar (z-30), so seasonal art hanging off the
-        // bar's lower edge (garlands, icicles) is drawn over the banner, not cut by it.
+        // Sticky flush under the TopBar so it sits in the same place on every page.
+        // z-29: just under the TopBar (z-30), so seasonal art hanging off the bar's
+        // lower edge is drawn over the banner's top padding instead of being cut by it.
         <div ref={bannerWrapRef} className="top-topbar sticky z-[29]">
           {banner}
         </div>

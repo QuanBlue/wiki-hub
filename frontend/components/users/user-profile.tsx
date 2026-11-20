@@ -1282,7 +1282,15 @@ export function UserProfile({
         return;
       }
       root.style.overflow = "hidden";
-      el.style.height = `${Math.max(320, window.innerHeight - el.getBoundingClientRect().top - 24)}px`;
+      // Measure from the top of the document (not the viewport) and leave room
+      // for the content column's own bottom padding, so the page is never taller
+      // than the window. Otherwise it can end up scrolled a few pixels with no
+      // way back (overflow is hidden), sliding the header under the banner.
+      const parent = el.parentElement;
+      const padBottom = parent ? parseFloat(getComputedStyle(parent).paddingBottom) || 0 : 0;
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      el.style.height = `${Math.max(320, window.innerHeight - top - padBottom)}px`;
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
     };
     fit();
     window.addEventListener("resize", fit);
