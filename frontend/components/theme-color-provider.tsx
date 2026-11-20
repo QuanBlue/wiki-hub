@@ -14,7 +14,19 @@ import {
   getPresetOrCustomPalette,
   renderFaviconPngDataUrl,
 } from "@/lib/theme-presets";
-import type { InstanceInfo } from "@/types/api";
+import type {
+  ActiveSeasonalTheme,
+  InstanceInfo,
+  SeasonalEffectPresetId,
+} from "@/types/api";
+
+const EMPTY_SEASONAL_THEME: ActiveSeasonalTheme = {
+  preset: "none",
+  event_id: null,
+  event_name_en: null,
+  event_name_vi: null,
+  source: "off",
+};
 
 interface ThemeSettingsContextValue {
   siteName: string;
@@ -22,11 +34,16 @@ interface ThemeSettingsContextValue {
   defaultFont: string;
   logoIcon: string;
   customLogoUrl: string | null;
+  seasonalTheme: ActiveSeasonalTheme;
+  previewSeasonalPreset: SeasonalEffectPresetId | null;
+  effectiveSeasonalPreset: SeasonalEffectPresetId;
   setSiteName: (name: string) => void;
   setThemeColor: (color: string) => void;
   setDefaultFont: (font: string) => void;
   setLogoIcon: (icon: string) => void;
   setCustomLogoUrl: (url: string | null) => void;
+  setSeasonalTheme: (theme: ActiveSeasonalTheme) => void;
+  setPreviewSeasonalPreset: (preset: SeasonalEffectPresetId | null) => void;
 }
 
 const ThemeSettingsContext = createContext<ThemeSettingsContextValue>({
@@ -35,11 +52,16 @@ const ThemeSettingsContext = createContext<ThemeSettingsContextValue>({
   defaultFont: "inter",
   logoIcon: "default",
   customLogoUrl: null,
+  seasonalTheme: EMPTY_SEASONAL_THEME,
+  previewSeasonalPreset: null,
+  effectiveSeasonalPreset: "none",
   setSiteName: () => {},
   setThemeColor: () => {},
   setDefaultFont: () => {},
   setLogoIcon: () => {},
   setCustomLogoUrl: () => {},
+  setSeasonalTheme: () => {},
+  setPreviewSeasonalPreset: () => {},
 });
 
 type ThemePalette = ReturnType<typeof getPresetOrCustomPalette>;
@@ -80,6 +102,7 @@ export function ThemeColorProvider({
   initialDefaultFont = "inter",
   initialLogoIcon = "default",
   initialCustomLogoUrl = null,
+  initialSeasonalTheme = EMPTY_SEASONAL_THEME,
   children,
 }: {
   initialSiteName?: string;
@@ -87,6 +110,7 @@ export function ThemeColorProvider({
   initialDefaultFont?: string;
   initialLogoIcon?: string;
   initialCustomLogoUrl?: string | null;
+  initialSeasonalTheme?: ActiveSeasonalTheme;
   children: ReactNode;
 }) {
   const [siteName, setSiteNameState] = useState(() => {
@@ -128,6 +152,12 @@ export function ThemeColorProvider({
     }
     return initialCustomLogoUrl;
   });
+
+  const [seasonalTheme, setSeasonalThemeState] = useState<ActiveSeasonalTheme>(
+    initialSeasonalTheme,
+  );
+  const [previewSeasonalPreset, setPreviewSeasonalPreset] =
+    useState<SeasonalEffectPresetId | null>(null);
 
   const setSiteName = (name: string) => {
     const nextName = name.trim() || "WikiHub";
@@ -214,6 +244,10 @@ export function ThemeColorProvider({
     setCustomLogoUrlState(initialCustomLogoUrl);
   }, [initialCustomLogoUrl]);
 
+  useEffect(() => {
+    if (initialSeasonalTheme) setSeasonalThemeState(initialSeasonalTheme);
+  }, [initialSeasonalTheme]);
+
   // Fetch meta on mount to ensure cache is updated with latest server state
   useEffect(() => {
     let active = true;
@@ -248,6 +282,9 @@ export function ThemeColorProvider({
           } else {
             window.localStorage.removeItem("wikihub:custom-logo-url");
           }
+        }
+        if (data.seasonal_theme) {
+          setSeasonalThemeState(data.seasonal_theme);
         }
       })
       .catch(() => {});
@@ -362,6 +399,9 @@ export function ThemeColorProvider({
     };
   }, [themeColor, logoIcon, customLogoUrl, palette]);
 
+  const effectiveSeasonalPreset: SeasonalEffectPresetId =
+    previewSeasonalPreset ?? seasonalTheme.preset ?? "none";
+
   const value = useMemo(
     () => ({
       siteName,
@@ -369,13 +409,27 @@ export function ThemeColorProvider({
       defaultFont,
       logoIcon,
       customLogoUrl,
+      seasonalTheme,
+      previewSeasonalPreset,
+      effectiveSeasonalPreset,
       setSiteName,
       setThemeColor,
       setDefaultFont,
       setLogoIcon,
       setCustomLogoUrl,
+      setSeasonalTheme: setSeasonalThemeState,
+      setPreviewSeasonalPreset,
     }),
-    [siteName, themeColor, defaultFont, logoIcon, customLogoUrl],
+    [
+      siteName,
+      themeColor,
+      defaultFont,
+      logoIcon,
+      customLogoUrl,
+      seasonalTheme,
+      previewSeasonalPreset,
+      effectiveSeasonalPreset,
+    ],
   );
 
   return (

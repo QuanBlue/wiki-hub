@@ -32,6 +32,7 @@ import { useEffect, useState } from "react";
 
 import { useMailSummary } from "@/components/layout/mail-summary-provider";
 import { useSidebar } from "@/components/layout/sidebar-context";
+import { SeasonalSidebarOverlay } from "@/components/seasonal/seasonal-sidebar-overlay";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useTranslation } from "@/lib/i18n/context";
@@ -623,6 +624,7 @@ export function Sidebar({
           } as CSSProperties
         }
       >
+        <SeasonalSidebarOverlay collapsed={railCollapsed} />
         <div className="wh-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 py-3">
         <NavSection
           title={t("nav.overview")}

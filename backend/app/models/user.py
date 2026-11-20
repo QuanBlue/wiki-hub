@@ -86,6 +86,12 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    welcome_effect: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="", server_default=""
+    )
+    welcome_message: Mapped[str] = mapped_column(
+        String(140), nullable=False, default="", server_default=""
+    )
 
     #: Argon2id hash. NULL for users that authenticate only through an external
     #: identity provider - those accounts must never fall back to a password.

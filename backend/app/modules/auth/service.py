@@ -53,6 +53,8 @@ AUDITED_USER_FIELDS = (
     "status_emoji",
     "status_text",
     "status_expires_at",
+    "welcome_effect",
+    "welcome_message",
     "is_active",
     "is_superuser",
     "receive_admin_emails",
@@ -399,6 +401,10 @@ class AuthService:
             await self.assert_actor_is_system_admin(
                 "change a user's Global Access permissions"
             )
+        if "welcome_effect" in data or "welcome_message" in data:
+            await self.assert_actor_is_system_admin(
+                "change a user's welcome effect"
+            )
 
         # Guard the two ways an administrator can lock themselves out, before
         # anything is mutated.
@@ -433,8 +439,16 @@ class AuthService:
             user.is_active = bool(data["is_active"])
         if data.get("is_superuser") is not None:
             user.is_superuser = bool(data["is_superuser"])
-        if data.get("receive_admin_emails") is not None:
+        if "receive_admin_emails" in data and data["receive_admin_emails"] is not None:
             user.receive_admin_emails = bool(data["receive_admin_emails"])
+        if "welcome_effect" in data and data["welcome_effect"] is not None:
+            user.welcome_effect = str(data["welcome_effect"])
+            if not user.welcome_effect and "welcome_message" not in data:
+                user.welcome_message = ""
+        if "welcome_message" in data:
+            user.welcome_message = (
+                str(data["welcome_message"]).strip() if data["welcome_message"] else ""
+            )
 
         overrides = data.get("global_permission_overrides")
         if overrides:
@@ -554,6 +568,25 @@ class AuthService:
             ]
         if "receive_admin_emails" in data and data["receive_admin_emails"] is not None:
             user.receive_admin_emails = bool(data["receive_admin_emails"])
+        if "welcome_effect" in data or "welcome_message" in data:
+            from app.models.permission import GlobalPermission
+            from app.modules.permissions.service import PermissionService
+
+            if not await PermissionService(self.session).has_global(
+                user, GlobalPermission.customize_profile_welcome
+            ):
+                raise PermissionDeniedError(
+                    "You do not have permission to customize your welcome effect.",
+                    code="welcome_effect_forbidden",
+                )
+            if "welcome_effect" in data and data["welcome_effect"] is not None:
+                user.welcome_effect = str(data["welcome_effect"])
+                if not user.welcome_effect and "welcome_message" not in data:
+                    user.welcome_message = ""
+            if "welcome_message" in data:
+                user.welcome_message = (
+                    str(data["welcome_message"]).strip() if data["welcome_message"] else ""
+                )
 
         await self.session.flush()
         after = {field: getattr(user, field, None) for field in AUDITED_USER_FIELDS}

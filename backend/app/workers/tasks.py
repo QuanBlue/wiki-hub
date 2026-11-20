@@ -128,6 +128,16 @@ async def check_admin_mailboxes(ctx: dict[str, Any]) -> None:
         logger.info("admin_mailboxes_checked", checked=summary.checked)
 
 
+async def check_seasonal_theme_reminders(ctx: dict[str, Any]) -> None:
+    """Daily: notify system administrators about upcoming holiday/seasonal events."""
+    from app.services.seasonal_theme import dispatch_upcoming_seasonal_reminders
+
+    async with session_scope() as session:
+        result = await dispatch_upcoming_seasonal_reminders(session)
+    if result["events"]:
+        logger.info("seasonal_theme_reminders_sent", **result)
+
+
 async def check_ai_connections(ctx: dict[str, Any]) -> int:
     """Every five minutes: re-check each saved AI connection.
 

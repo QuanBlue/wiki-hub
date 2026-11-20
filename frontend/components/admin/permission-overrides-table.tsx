@@ -12,6 +12,7 @@ const PERMISSION_LABEL: Record<GlobalPermission, string> = {
   manage_users: "Manage users",
   manage_groups: "Manage groups",
   manage_issues: "Manage issues",
+  customize_profile_welcome: "My Home welcome effect",
   system_admin: "System administrator",
 };
 

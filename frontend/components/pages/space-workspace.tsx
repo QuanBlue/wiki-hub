@@ -44,6 +44,7 @@ import {
 import Link from "next/link";
 import { LikersPopover } from "@/components/comments/likers-popover";
 import { PageComments, type CommentsUser } from "@/components/comments/page-comments";
+import { SeasonalSidebarOverlay } from "@/components/seasonal/seasonal-sidebar-overlay";
 import { useRouter } from "next/navigation";
 import {
   useEffect,
@@ -2064,7 +2065,8 @@ export function SpaceWorkspace({
         }
       >
         {showPanel ? (
-          <div className="border-border bg-surface-sunken flex h-full w-full max-w-full flex-col overflow-hidden border-r md:w-(--space-sidebar-panel-width)">
+          <div className="border-border bg-surface-sunken relative flex h-full w-full max-w-full flex-col overflow-hidden border-r md:w-(--space-sidebar-panel-width)">
+            <SeasonalSidebarOverlay />
             <div className="flex min-w-0 shrink-0 flex-col px-5 py-4">
               <div className="flex items-start gap-3">
                 <SpaceAvatar space={space} />

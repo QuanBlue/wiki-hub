@@ -25,6 +25,25 @@ from pydantic import (
 from app.models.permission import GlobalPermission
 from app.schemas.page import PageRecentItem
 
+WelcomeEffectPreset = Literal[
+    "",
+    "phoenix",
+    "hacker",
+    "admin",
+    "aurora",
+    "sakura",
+    "fireworks",
+    "ocean",
+    "neon",
+    "vice",
+    "storm",
+    "cosmos",
+    "snow",
+    "lantern",
+    "arcade",
+    "koi",
+]
+
 
 def _clear_expired_status(model: UserRead | PublicUserRead) -> None:
     """Blank out personal status fields once their expiry instant has passed."""
@@ -75,6 +94,7 @@ class UserRead(BaseModel):
     avatar_content_type: str | None = None
     avatar_updated_at: datetime | None = None
     cover_url: str | None = None
+    cover_content_type: str | None = None
     cover_updated_at: datetime | None = None
     #: Whether the uncropped picture is kept (owner can reopen it to
     #: reposition) and the crop last applied.
@@ -90,6 +110,8 @@ class UserRead(BaseModel):
     status_emoji: str = ""
     status_text: str = ""
     status_expires_at: datetime | None = None
+    welcome_effect: WelcomeEffectPreset = ""
+    welcome_message: str = ""
     is_active: bool
     is_superuser: bool
 
@@ -167,6 +189,7 @@ class PublicUserRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: uuid.UUID
     username: str
     full_name: str
     avatar_url: str | None
@@ -174,6 +197,8 @@ class PublicUserRead(BaseModel):
     avatar_crop: dict[str, float] | None = None
     avatar_updated_at: datetime | None = None
     cover_url: str | None = None
+    cover_content_type: str | None = None
+    cover_crop: dict[str, float] | None = None
     cover_updated_at: datetime | None = None
     bio: str
     pronouns: str
@@ -183,6 +208,8 @@ class PublicUserRead(BaseModel):
     status_emoji: str = ""
     status_text: str = ""
     status_expires_at: datetime | None = None
+    welcome_effect: WelcomeEffectPreset = ""
+    welcome_message: str = ""
     email: str
     created_at: datetime
     last_active_at: datetime | None = None
@@ -321,6 +348,8 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
     is_superuser: bool | None = None
     receive_admin_emails: bool | None = None
+    welcome_effect: WelcomeEffectPreset | None = None
+    welcome_message: str | None = Field(default=None, max_length=140)
     #: Keyed by permission; `True`/`False` sets that permission's override,
     #: `None` clears it back to "inherit from groups". Only the permissions
     #: present are touched - omit a key to leave its current override alone.
@@ -345,6 +374,8 @@ class SelfProfileUpdate(BaseModel):
     status_text: str | None = Field(default=None, max_length=140)
     status_expires_at: datetime | None = None
     clear_status: bool = False
+    welcome_effect: WelcomeEffectPreset | None = None
+    welcome_message: str | None = Field(default=None, max_length=140)
     receive_admin_emails: bool | None = None
 
     @field_validator("email")

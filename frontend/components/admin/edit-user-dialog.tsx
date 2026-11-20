@@ -428,6 +428,12 @@ const PERMISSION_CONFIG: Record<
       "Allows seeing every reported issue and taking one on. Only the person who took an issue, or a super administrator, can change its status.",
     icon: Bug,
   },
+  customize_profile_welcome: {
+    label: "My Home welcome effect",
+    description:
+      "Allows choosing and customizing a guest welcome effect (such as Phoenix, Hacker, Admin, or Aurora) on this member's own profile page.",
+    icon: Sparkles,
+  },
   system_admin: {
     label: "System administrator",
     description: (

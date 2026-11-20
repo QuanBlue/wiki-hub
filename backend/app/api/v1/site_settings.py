@@ -10,9 +10,11 @@ from app.api.deps import ClientInfoDep, CurrentSuperuser, CurrentUser, DbSession
 from app.core.exceptions import BadRequestError, PayloadTooLargeError, UnsupportedMediaTypeError
 from app.schemas.site_settings import (
     AnnouncementRead,
+    SeasonalActivateRequest,
     SidebarPermissionsRead,
     SiteSettingsRead,
     SiteSettingsUpdate,
+    UpcomingSeasonalReminder,
 )
 from app.services.site_settings import SiteSettingsService
 from app.services.storage import ObjectStorage, S3ObjectStorage
@@ -129,3 +131,29 @@ async def delete_login_image(
     storage: ObjectStorage = Depends(get_login_image_storage),
 ) -> SiteSettingsRead:
     return await service.clear_login_image(storage)
+
+
+@router.get(
+    "/seasonal-reminders",
+    response_model=list[UpcomingSeasonalReminder],
+    summary="Upcoming seasonal / holiday reminders for system administrators",
+)
+async def read_seasonal_reminders(
+    _admin: CurrentSuperuser,
+    service: SiteSettingsServiceDep,
+) -> list[UpcomingSeasonalReminder]:
+    return await service.read_seasonal_reminders()
+
+
+@router.post(
+    "/seasonal-theme/activate",
+    response_model=SiteSettingsRead,
+    summary="Quick-activate a seasonal theme preset",
+)
+async def activate_seasonal_theme(
+    payload: SeasonalActivateRequest,
+    service: ActingSiteSettingsServiceDep,
+    _admin: CurrentSuperuser,
+) -> SiteSettingsRead:
+    await service.activate_seasonal_preset(payload.preset)
+    return await service.read()

@@ -147,10 +147,29 @@ export interface InstanceInfo {
   trash_retention_days?: number;
   public_shares_enabled?: boolean;
   announcement?: SystemAnnouncement | null;
+  seasonal_theme?: ActiveSeasonalTheme;
   login_panel?: LoginPanel;
   login_image_url?: string | null;
   features: InstanceFeatures;
 }
+
+export type WelcomeEffect =
+  | ""
+  | "phoenix"
+  | "hacker"
+  | "admin"
+  | "aurora"
+  | "sakura"
+  | "fireworks"
+  | "ocean"
+  | "neon"
+  | "vice"
+  | "storm"
+  | "cosmos"
+  | "snow"
+  | "lantern"
+  | "arcade"
+  | "koi";
 
 export interface User {
   id: string;
@@ -161,6 +180,7 @@ export interface User {
   avatar_content_type?: string | null;
   avatar_updated_at?: string | null;
   cover_url?: string | null;
+  cover_content_type?: string | null;
   cover_updated_at?: string | null;
   /** The uncropped picture is kept, so "Reposition" can reopen it. */
   avatar_has_original?: boolean;
@@ -175,6 +195,8 @@ export interface User {
   status_emoji?: string;
   status_text?: string;
   status_expires_at?: string | null;
+  welcome_effect?: WelcomeEffect;
+  welcome_message?: string;
   is_active: boolean;
   is_superuser: boolean;
   /** Whether this account currently holds `system_admin` from any source -
@@ -244,6 +266,7 @@ export interface Me extends User {
 
 /** Collaboration-safe profile data for another signed-in workspace member. */
 export interface PublicUser {
+  id?: string;
   username: string;
   full_name: string;
   avatar_url: string | null;
@@ -251,6 +274,8 @@ export interface PublicUser {
   avatar_crop?: { zoom: number; x: number; y: number } | null;
   avatar_updated_at?: string | null;
   cover_url?: string | null;
+  cover_content_type?: string | null;
+  cover_crop?: { zoom: number; x: number; y: number } | null;
   cover_updated_at?: string | null;
   bio: string;
   pronouns: string;
@@ -260,6 +285,8 @@ export interface PublicUser {
   status_emoji?: string;
   status_text?: string;
   status_expires_at?: string | null;
+  welcome_effect?: WelcomeEffect;
+  welcome_message?: string;
   email: string;
   created_at: string;
   last_active_at: string | null;
@@ -363,6 +390,7 @@ export type GlobalPermission =
   | "manage_users"
   | "manage_groups"
   | "manage_issues"
+  | "customize_profile_welcome"
   | "system_admin";
 export interface GlobalPermissionOverride {
   permission: GlobalPermission;
@@ -805,6 +833,109 @@ export interface AnnouncementRead {
   announcement: SystemAnnouncement | null;
 }
 
+export type SeasonalEffectPresetId =
+  | "none"
+  | "new_year"
+  | "lunar_new_year"
+  | "floral_pink"
+  | "heritage_gold"
+  | "national_red_gold"
+  | "lotus_gold"
+  | "memorial_candle"
+  | "mid_autumn"
+  | "halloween"
+  | "blue_neon"
+  | "christmas"
+  | "valentine"
+  | "spring_green"
+  | "easter"
+  | "kids_party"
+  | "autumn_harvest"
+  | "teachers_day";
+
+/** `easter` = Western Easter Sunday; `weekday` = Nth weekday of a month. */
+export type SeasonalCalendarType = "solar" | "lunar" | "easter" | "weekday";
+export type SeasonalThemeMode = "off" | "auto" | "manual";
+
+export interface SeasonalEventItem {
+  id: string;
+  builtin: boolean;
+  name_en: string;
+  name_vi: string;
+  preset: SeasonalEffectPresetId;
+  calendar_type: SeasonalCalendarType;
+  event_month: number;
+  event_day: number;
+  start_month: number;
+  start_day: number;
+  end_month: number;
+  end_day: number;
+  is_public_holiday: boolean;
+  holiday_days: number;
+  holiday_note_en: string | null;
+  holiday_note_vi: string | null;
+  /** `weekday` calendars: 0 = Monday ... 6 = Sunday. */
+  weekday: number;
+  /** `weekday` calendars: 1-5 = nth, -1 = last. */
+  week_of_month: number;
+  /** Days the effect runs before / after the date (`easter` and `weekday`). */
+  window_before: number;
+  window_after: number;
+  enabled: boolean;
+  auto_activate: boolean;
+  show_on_home_calendar: boolean;
+}
+
+export interface SeasonalThemeSettings {
+  mode: SeasonalThemeMode;
+  manual_preset: SeasonalEffectPresetId;
+  reminder_enabled: boolean;
+  reminder_days_before: number;
+  reminder_send_email: boolean;
+  events: SeasonalEventItem[];
+  notified_occurrences: Record<string, string>;
+}
+
+export interface ActiveSeasonalTheme {
+  preset: SeasonalEffectPresetId;
+  event_id: string | null;
+  event_name_en: string | null;
+  event_name_vi: string | null;
+  source: SeasonalThemeMode;
+}
+
+export interface UpcomingSeasonalReminder {
+  event_id: string;
+  occurrence_key: string;
+  name_en: string;
+  name_vi: string;
+  preset: SeasonalEffectPresetId;
+  event_date: string;
+  starts_on: string;
+  ends_on: string;
+  days_until: number;
+  auto_activate: boolean;
+}
+
+export interface SeasonalCalendarEntry {
+  event_id: string;
+  name_en: string;
+  name_vi: string;
+  preset: SeasonalEffectPresetId;
+  calendar_type: SeasonalCalendarType;
+  lunar_label: string | null;
+  event_date: string;
+  starts_on: string;
+  ends_on: string;
+  days_until: number;
+  is_active: boolean;
+  is_today: boolean;
+  is_public_holiday: boolean;
+  holiday_days: number;
+  holiday_note_en: string | null;
+  holiday_note_vi: string | null;
+}
+
 export interface SiteSettingsOverrides {
   site_name: string | null;
   theme_color: string | null;
@@ -816,6 +947,7 @@ export interface SiteSettingsOverrides {
   allowed_attachment_types: string[] | null;
   sidebar_permissions: SidebarPermissions | null;
   announcement?: SystemAnnouncement | null;
+  seasonal_theme?: SeasonalThemeSettings | null;
   login_panel?: LoginPanel | null;
   session_ttl_hours: number | null;
   trash_retention_days: number | null;
@@ -835,6 +967,7 @@ export interface EffectiveSettings {
   allowed_attachment_types: string[];
   sidebar_permissions: SidebarPermissions;
   announcement?: SystemAnnouncement;
+  seasonal_theme?: SeasonalThemeSettings;
   login_panel?: LoginPanel;
   login_image_url?: string | null;
   session_ttl_hours: number;

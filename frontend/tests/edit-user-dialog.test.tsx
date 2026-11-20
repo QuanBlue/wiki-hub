@@ -148,6 +148,7 @@ describe("EditUserDialog general tab", () => {
         manage_users: true,
         manage_groups: true,
         manage_issues: true,
+        customize_profile_welcome: true,
         system_admin: true,
       },
     });

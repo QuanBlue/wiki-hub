@@ -254,6 +254,7 @@ export const vi: Dictionary = {
       "page_comment": "**{actor}** đã bình luận trong Page *{title}* của bạn.",
       "page_shared": "**{actor}** đã chia sẻ *{title}* với bạn.",
       "question_answered": "Đã có trang trả lời câu hỏi “{question}” của bạn: *{title}*.",
+      "seasonal_theme_upcoming": "Sắp tới **{name_vi}** (còn {days} ngày, từ {starts_on}). Bấm để cấu hình hoặc bật hiệu ứng lễ hội.",
       "unknown": "Có thay đổi mới trên tài khoản của bạn.",
       "page_updated": "**{actor}** updated *{title}*.",
       "page_created": "**{actor}** created *{title}* in *{space}*."
@@ -580,6 +581,8 @@ export const vi: Dictionary = {
     "imageDimensions": "Độ phân giải",
     "imageUpdatedAt": "Cập nhật lần cuối",
     "imageDateUnknown": "Chưa ghi nhận",
+    "downloadImage": "Tải xuống",
+    "downloadImageError": "Không thể tải ảnh này xuống.",
     "changeCover": "Đổi ảnh bìa hồ sơ",
     "removeCover": "Xóa ảnh bìa hồ sơ",
     "coverTypes": "JPEG, PNG, GIF hoặc WebP. Tối đa 10 MB. Ảnh ngang sẽ hiển thị đẹp nhất.",
@@ -3593,6 +3596,211 @@ export const vi: Dictionary = {
       "admin_mailbox_updated": "Admin mailbox updated",
       "admin_mailbox_password_updated": "Admin mailbox password updated",
       "admin_mailbox_deleted": "Admin mailbox deleted"
+    }
+  },
+  "welcomeEffect": {
+    "title": "Hiệu ứng chào khách",
+    "description": "Chọn hiệu ứng và lời chào hiển thị khi khách ghé thăm trang cá nhân này.",
+    "configure": "Hiệu ứng Welcome",
+    "replay": "Phát lại hiệu ứng",
+    "skip": "Bỏ qua",
+    "preview": "Xem trước",
+    "previewTheme": "Xem trước {name}",
+    "previewTitle": "Xem trước trang Home — {name}",
+    "useTheme": "Chọn hiệu ứng này",
+    "close": "Đóng",
+    "save": "Lưu hiệu ứng",
+    "saving": "Đang lưu…",
+    "saved": "Đã cập nhật hiệu ứng chào khách.",
+    "saveError": "Không thể cập nhật hiệu ứng chào khách.",
+    "messageLabel": "Lời chào tùy chỉnh (không bắt buộc)",
+    "messagePlaceholder": "VD: Chào mừng bạn đến với trang cá nhân của mình!",
+    "messageHint": "Tối đa 140 ký tự. Hiển thị cùng hiệu ứng chào mừng.",
+    "noPermission": "Chỉ quản trị viên hoặc thành viên được cấp quyền mới có thể thay đổi hiệu ứng này.",
+    "adminEditing": "Đang chỉnh sửa hiệu ứng chào khách cho {name} với quyền quản trị viên.",
+    "welcomeTo": "Chào mừng đến với nhà của {name}",
+    "presets": {
+      "none": {
+        "label": "Không dùng",
+        "desc": "Vào trang bình thường, không có hiệu ứng."
+      },
+      "phoenix": {
+        "label": "Phượng hoàng",
+        "desc": "Lửa phượng hoàng và tàn tro vàng rực rỡ bay lên."
+      },
+      "hacker": {
+        "label": "Hacker",
+        "desc": "Giao diện terminal bảo mật: lưới gợn sóng, mưa mã và giải mã “Access granted”."
+      },
+      "admin": {
+        "label": "Admin",
+        "desc": "Quạt vàng art-deco, vương miện nguyệt quế, bụi vàng rơi và vệt sáng lướt qua."
+      },
+      "aurora": {
+        "label": "Cực quang",
+        "desc": "Dải cực quang chuyển sắc mượt mà cùng ánh sao."
+      },
+      "sakura": {
+        "label": "Hoa anh đào",
+        "desc": "Cành hoa nở rộ và cánh anh đào bay theo gió."
+      },
+      "fireworks": {
+        "label": "Pháo hoa",
+        "desc": "Màn pháo hoa trên nền phố: nổ hoa mẫu đơn, vòng tròn, liễu rủ và trái tim."
+      },
+      "ocean": {
+        "label": "Đại dương",
+        "desc": "Sóng biển dâng, bọt nước nổi lên và nắng xuyên qua làn nước."
+      },
+      "neon": {
+        "label": "Neon",
+        "desc": "Sàn lưới synthwave và khung đèn neon bừng sáng."
+      },
+      "vice": {
+        "label": "Vice City",
+        "desc": "Hoàng hôn nhiệt đới kiểu retro-wave: mặt trời sọc, cọ đung đưa và chiếc xe neon chạy dọc biển."
+      },
+      "storm": {
+        "label": "Bão sấm sét",
+        "desc": "Mây giông cuồn cuộn, mưa xối xả và những tia sét tím."
+      },
+      "cosmos": {
+        "label": "Thiên hà",
+        "desc": "Tinh vân, thiên hà xoắn ốc, chòm sao tự nối và hành tinh có vành đai cùng mặt trăng."
+      },
+      "snow": {
+        "label": "Tuyết rơi",
+        "desc": "Bông tuyết pha lê, nhũ băng và tuyết chất dần ở đáy."
+      },
+      "lantern": {
+        "label": "Đèn lồng",
+        "desc": "Đèn lồng giấy phát sáng bay lên bầu trời đêm cùng đốm lửa."
+      },
+      "arcade": {
+        "label": "Arcade",
+        "desc": "Quái vật 8-bit, khẩu pháo pixel, bảng điểm và khối đồng xu."
+      },
+      "koi": {
+        "label": "Hồ cá koi",
+        "desc": "Cá koi bơi lượn giữa lá sen, hoa sen nở và gợn nước."
+      }
+    }
+  },
+  "seasonal": {
+    "banner": {
+      "upcomingTitle": "Sắp tới ngày lễ: {name} (còn {days} ngày)",
+      "autoNote": "Hiệu ứng sẽ tự động kích hoạt vào ngày {date}.",
+      "manualNote": "Bắt đầu từ ngày {date}. Bạn có thể bật ngay hoặc vào trang Cài đặt.",
+      "activateNow": "Bật ngay",
+      "configure": "Cài đặt",
+      "dismiss": "Bỏ qua nhắc nhở",
+      "activatedToast": "Đã bật hiệu ứng lễ hội cho {name}.",
+      "activateFailed": "Không thể kích hoạt hiệu ứng lễ hội."
+    },
+    "calendar": {
+      "title": "Lịch ngày lễ",
+      "viewAll": "Cả năm",
+      "modalTitle": "Lịch ngày lễ trong năm",
+      "detailTitle": "Chi tiết ngày lễ",
+      "viewDetail": "Xem chi tiết",
+      "effectWindow": "Khung hiệu ứng",
+      "effectPack": "Gói hiệu ứng",
+      "prevMonth": "Tháng trước",
+      "nextMonth": "Tháng sau",
+      "today": "Hôm nay",
+      "active": "Đang diễn ra",
+      "inDays": "Còn {days} ngày",
+      "daysOff": "Nghỉ {days} ngày",
+      "filterAll": "Tất cả sự kiện",
+      "filterPublic": "Ngày nghỉ lễ",
+      "manageEffects": "Quản lý hiệu ứng",
+      "nextUp": "Sắp tới",
+      "noEventOnDay": "Không có ngày lễ vào ngày này.",
+      "quickJump": "Các ngày lễ trong năm",
+      "legendPublic": "Nghỉ lễ chính thức",
+      "legendObservance": "Ngày lễ kỷ niệm",
+      "nextEventLabel": "Sự kiện kế tiếp",
+      "nextPublicLabel": "Kỳ nghỉ lễ kế tiếp",
+      "jumpToday": "Hôm nay"
+    },
+    "admin": {
+      "title": "Hiệu ứng lễ hội",
+      "subtitle": "Phủ hiệu ứng trang trí lên thanh đầu trang, thanh bên và nền theo dịp lễ. Tự động tôn trọng chế độ giảm chuyển động của hệ điều hành.",
+      "currentlyActive": "Đang bật",
+      "currentlyNone": "Chưa bật hiệu ứng",
+      "previewing": "Đang xem thử trực tiếp: {name} (chỉ hiển thị với bạn cho đến khi lưu)",
+      "stopPreview": "Dừng xem thử",
+      "preview": "Xem thử",
+      "choose": "Chọn",
+      "selected": "Đang chọn",
+      "modeOff": "Tắt",
+      "modeOffDesc": "Không hiển thị hiệu ứng lễ hội trên toàn trang.",
+      "modeAuto": "Tự động theo lịch",
+      "modeAutoDesc": "Tự động kích hoạt hiệu ứng khi đến khung ngày của sự kiện đang bật.",
+      "modeManual": "Chọn thủ công",
+      "modeManualDesc": "Giữ cố định một gói hiệu ứng được chọn ngay lập tức.",
+      "presetsTitle": "Bộ gói hiệu ứng cài sẵn",
+      "presetsManualHint": "Chọn một gói để bật ngay hoặc bấm Xem thử để xem trực tiếp trên giao diện.",
+      "presetsPreviewHint": "Bấm Xem thử để xem trước trực tiếp trên thanh header, sidebar và nền trước khi lưu.",
+      "remindersTitle": "Nhắc nhở Quản trị viên trước sự kiện",
+      "remindersDesc": "Nhắc quản trị viên trước khi sự kiện bắt đầu qua Chuông thông báo, Banner quản trị và Email (nếu có).",
+      "reminderEnabled": "Bật nhắc nhở trước sự kiện sắp tới",
+      "reminderEnabledHint": "Gửi thông báo vào Chuông và hiển thị Banner nhắc quản trị viên kèm nút Bật ngay.",
+      "reminderDaysBefore": "Nhắc trước số ngày",
+      "daysUnit": "ngày trước khi bắt đầu",
+      "reminderSendEmail": "Gửi kèm email nhắc nhở",
+      "reminderSendEmailHint": "Sử dụng hộp thư SMTP quản trị đang hoạt động tại mục",
+      "configureMailLink": "Email quản trị",
+      "eventsTitle": "Lịch sự kiện & Ngày lễ",
+      "eventsDesc": "Gồm hơn 35 ngày lễ Việt Nam & Quốc tế (Dương lịch + Âm lịch) và sự kiện tùy chỉnh. Đồng bộ trực tiếp với Lịch trang Home.",
+      "resetDefaults": "Khôi phục mặc định",
+      "resetConfirmTitle": "Khôi phục cài đặt lễ hội mặc định?",
+      "resetConfirmDesc": "Thao tác này sẽ khôi phục lại các ngày lễ mặc định và cài đặt nhắc nhở ban đầu. Các sự kiện tùy chỉnh sẽ bị xóa.",
+      "addEvent": "Thêm sự kiện tùy chỉnh",
+      "addEventTitle": "Thêm sự kiện / ngày lễ tùy chỉnh",
+      "editEvent": "Chỉnh sửa sự kiện",
+      "editEventTitle": "Chỉnh sửa sự kiện / ngày lễ",
+      "deleteEvent": "Xóa sự kiện tùy chỉnh",
+      "customBadge": "Tùy chỉnh",
+      "colEvent": "Sự kiện",
+      "colWindow": "Khung hiệu ứng",
+      "colPreset": "Gói hiệu ứng",
+      "colAuto": "Tự bật",
+      "colHome": "Lịch Home",
+      "colEnabled": "Bật",
+      "colActions": "Thao tác",
+      "fieldNameVi": "Tên tiếng Việt",
+      "fieldNameEn": "Tên tiếng Anh",
+      "fieldCalendar": "Loại lịch",
+      "calendarSolar": "Dương lịch",
+      "calendarLunar": "Âm lịch Việt Nam (UTC+7)",
+      "calendarEaster": "Lễ Phục sinh (tự tính)",
+      "calendarWeekday": "Thứ N trong tháng (tự tính)",
+      "fieldWindowBefore": "Số ngày hiệu ứng trước lễ",
+      "fieldWindowAfter": "Số ngày hiệu ứng sau lễ",
+      "fieldMainDate": "Ngày chính (Ngày / Tháng)",
+      "fieldStartDate": "Bắt đầu hiệu ứng (Ngày / Tháng)",
+      "fieldEndDate": "Kết thúc hiệu ứng (Ngày / Tháng)",
+      "fieldPublicHoliday": "Ngày nghỉ lễ chính thức",
+      "fieldDaysOff": "Số ngày nghỉ",
+      "saveChanges": "Lưu thay đổi",
+      "saving": "Đang lưu…",
+      "unsaved": "Chưa lưu thay đổi",
+      "nowShowing": "Đang hiển thị",
+      "previewTag": "Xem thử",
+      "liveTag": "Đang bật",
+      "noneDesc": "Hiện không có ngày lễ nào trong khung hiệu ứng. Giao diện giữ như bình thường.",
+      "modeLabel": "Chế độ",
+      "usedBy": "{count} ngày lễ",
+      "usedByNone": "Chưa gắn với ngày lễ nào",
+      "searchEvents": "Tìm ngày lễ…",
+      "filterAll": "Tất cả",
+      "filterOn": "Đang bật",
+      "filterOff": "Đang tắt",
+      "filterCustom": "Tùy chỉnh",
+      "noMatch": "Không có ngày lễ nào khớp bộ lọc.",
+      "priorityHint": "Khi hai khung hiệu ứng trùng nhau, ngày lễ nằm trên trong danh sách được ưu tiên.",
+      "eventsOnCount": "{on}/{total} đang bật"
     }
   }
 };

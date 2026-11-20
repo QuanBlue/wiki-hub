@@ -17,7 +17,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.v1.site_settings import SiteSettingsServiceDep, get_login_image_storage
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.schemas.site_settings import LoginPanel, SystemAnnouncement
+from app.schemas.site_settings import (
+    ActiveSeasonalTheme,
+    LoginPanel,
+    SeasonalCalendarEntry,
+    SystemAnnouncement,
+)
+from app.services.seasonal_theme import build_home_calendar, resolve_active_seasonal_theme
 from app.services.site_settings import SiteSettingsService
 from app.services.storage import ObjectStorage
 
@@ -55,6 +61,8 @@ class InstanceInfo(BaseModel):
     public_shares_enabled: bool = True
     #: Active announcement shown on public pages (/login, /contact-admin) when enabled.
     announcement: SystemAnnouncement | None = None
+    #: Resolved global seasonal / holiday theme effect currently active.
+    seasonal_theme: ActiveSeasonalTheme = ActiveSeasonalTheme()
     #: Administrator copy for the sign-in page's left panel (per language).
     login_panel: LoginPanel = LoginPanel()
     #: Public URL of the uploaded sign-in illustration, if one was uploaded.
@@ -103,6 +111,7 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
             and effective.announcement.show_on_login
             else None
         ),
+        seasonal_theme=resolve_active_seasonal_theme(effective.seasonal_theme),
         features=InstanceFeatures(
             local_auth=settings.auth_provider == "local",
             oidc_auth=False,  # OIDC provider is a documented stub in this build
@@ -135,3 +144,18 @@ async def read_login_image(
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+@router.get(
+    "/seasonal-calendar",
+    response_model=list[SeasonalCalendarEntry],
+    summary="Upcoming seasonal / holiday calendar for the Home page",
+)
+async def seasonal_calendar(
+    settings_service: SiteSettingsServiceDep,
+) -> list[SeasonalCalendarEntry]:
+    try:
+        effective = await settings_service.get_effective()
+    except (SQLAlchemyError, OSError):
+        effective = SiteSettingsService.env_defaults()
+    return build_home_calendar(effective.seasonal_theme)

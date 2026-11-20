@@ -304,7 +304,15 @@ async def upload_own_cover(
     user.cover_content_type = content_type
     user.cover_url = f"{settings.api_v1_prefix}/users/{user.id}/cover"
     user.cover_updated_at = datetime.now(UTC)
-    stale = await _store_original(user, "cover", original, crop, MAX_COVER_BYTES, storage)
+    stale = await _store_original(
+        user,
+        "cover",
+        original,
+        crop,
+        MAX_COVER_BYTES,
+        storage,
+        keep_crop_without_original=content_type == "image/gif",
+    )
     if old_key and old_key != key:
         stale.append(old_key)
     await session.flush()

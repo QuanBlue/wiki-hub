@@ -14,8 +14,10 @@ import {
   PanelLeft,
   Pencil,
   Pin,
+  Play,
   RotateCcw,
   Search,
+  Sparkles,
   Star,
   ThumbsUp,
   UserRound,
@@ -28,6 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageChangeDialog } from "@/components/pages/page-change-dialog";
 import { PageHistoryModal } from "@/components/pages/page-history-modal";
 import { FeatureDiscovery } from "@/components/home/feature-discovery";
+import { UpcomingHolidaysCard } from "@/components/home/upcoming-holidays-card";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -38,6 +41,8 @@ import {
 } from "@/components/ui/select";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { ProfileImageViewer } from "@/components/users/profile-image-viewer";
+import { WelcomeEffectDialog } from "@/components/users/welcome-effect-dialog";
+import { WelcomeEffectOverlay } from "@/components/users/welcome-effect-overlay";
 import {
   UserStatusBubble,
   UserStatusDialog,
@@ -61,6 +66,7 @@ import type {
   UserPinnedPageItem,
   UserPageLabelItem,
   Space,
+  WelcomeEffect,
   WikiPage,
 } from "@/types/api";
 
@@ -756,9 +762,11 @@ export function UserProfile({
   drafts,
   isOwner,
   isAdmin,
+  canCustomizeWelcome = false,
   favoriteSpaces,
   pinnedPages,
   likedPages,
+  seasonalCalendar = [],
 }: {
   user: PublicUser;
   initialActivity: UserActivityPage;
@@ -767,9 +775,11 @@ export function UserProfile({
   drafts: UserDraftItem[];
   isOwner: boolean;
   isAdmin: boolean;
+  canCustomizeWelcome?: boolean;
   favoriteSpaces: Space[];
   pinnedPages: UserPinnedPageItem[];
   likedPages: UserPinnedPageItem[];
+  seasonalCalendar?: import("@/types/api").SeasonalCalendarEntry[];
 }) {
   const [items, setItems] = useState(initialActivity.items);
   const [nextCursor, setNextCursor] = useState(initialActivity.next_cursor);
@@ -782,7 +792,42 @@ export function UserProfile({
   const [allActivityLoading, setAllActivityLoading] = useState(false);
   const [allActivityError, setAllActivityError] = useState<string | null>(null);
   const [historyItem, setHistoryItem] = useState<RecentPageItem | null>(null);
-  const [fullHistoryItem, setFullHistoryItem] =
+  const [fullHistoryItem, setFullHistoryItem] = useState<RecentPageItem | null>(null);
+  const [welcomeOverride, setWelcomeOverride] = useState<{
+    source: PublicUser;
+    effect: WelcomeEffect;
+    message: string;
+  } | null>(null);
+  const [welcomeDialogOpen, setWelcomeDialogOpen] = useState(false);
+  const [activeWelcome, setActiveWelcome] = useState<{
+    effect: WelcomeEffect;
+    message: string;
+  } | null>(null);
+
+  const effectiveWelcomeEffect: WelcomeEffect =
+    welcomeOverride && welcomeOverride.source === user
+      ? welcomeOverride.effect
+      : (user.welcome_effect ?? "");
+  const effectiveWelcomeMessage =
+    welcomeOverride && welcomeOverride.source === user
+      ? welcomeOverride.message
+      : (user.welcome_message ?? "");
+  const canEditWelcome = (isOwner && canCustomizeWelcome) || isAdmin;
+
+  useEffect(() => {
+    if (!effectiveWelcomeEffect) return;
+    const storageKey = `wikihub:welcome-played:${user.username.toLowerCase()}`;
+    try {
+      if (window.sessionStorage.getItem(storageKey)) return;
+      window.sessionStorage.setItem(storageKey, "1");
+    } catch {
+      // Ignore storage errors in restricted environments.
+    }
+    setActiveWelcome({
+      effect: effectiveWelcomeEffect,
+      message: effectiveWelcomeMessage,
+    });
+  }, [user.username, effectiveWelcomeEffect, effectiveWelcomeMessage]);
     useState<RecentPageItem | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activityScrollRef = useRef<HTMLDivElement | null>(null);
@@ -1938,21 +1983,55 @@ export function UserProfile({
         <section className="border-border bg-surface relative shrink-0 rounded-lg border">
           <div className="bg-primary-subtle aspect-[15/4] overflow-hidden rounded-t-lg">
             {user.cover_url ? (
-              <ProfileImageViewer src={user.cover_url} kind="cover" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.cover_updated_at} className="size-full">
-                <img src={user.cover_url} alt="" className="size-full object-cover" />
+              <ProfileImageViewer src={versionedAvatarUrl(user.cover_url, user.cover_updated_at) ?? user.cover_url} kind="cover" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.cover_updated_at} crop={user.cover_crop} contentType={user.cover_content_type} className="relative size-full overflow-hidden">
+                <CroppedAvatarImage
+                  src={versionedAvatarUrl(user.cover_url, user.cover_updated_at) ?? user.cover_url}
+                  crop={user.cover_crop}
+                  contentType={user.cover_content_type}
+                  viewportRatio={15 / 4}
+                />
               </ProfileImageViewer>
             ) : null}
           </div>
-          {isOwner ? (
-            <Link
-              href="/account"
-              aria-label={t("profile.editProfile")}
-              title={t("profile.editProfile")}
-              className="text-muted-foreground hover:text-foreground hover:bg-surface-hover bg-surface/70 focus-visible:ring-ring absolute top-2 right-2 flex size-8 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
-            >
-              <Pencil className="size-4" aria-hidden />
-            </Link>
-          ) : null}
+          <div className="absolute top-2 right-2 flex items-center gap-1.5">
+            {effectiveWelcomeEffect ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveWelcome({
+                    effect: effectiveWelcomeEffect,
+                    message: effectiveWelcomeMessage,
+                  })
+                }
+                aria-label={t("welcomeEffect.replay")}
+                title={t("welcomeEffect.replay")}
+                className="text-muted-foreground hover:text-foreground hover:bg-surface-hover bg-surface/75 focus-visible:ring-ring flex size-8 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <Play className="size-3.5" aria-hidden />
+              </button>
+            ) : null}
+            {canEditWelcome ? (
+              <button
+                type="button"
+                onClick={() => setWelcomeDialogOpen(true)}
+                aria-label={t("welcomeEffect.configure")}
+                title={t("welcomeEffect.configure")}
+                className="text-muted-foreground hover:text-foreground hover:bg-surface-hover bg-surface/75 focus-visible:ring-ring flex size-8 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <Sparkles className="size-4" aria-hidden />
+              </button>
+            ) : null}
+            {isOwner ? (
+              <Link
+                href="/account"
+                aria-label={t("profile.editProfile")}
+                title={t("profile.editProfile")}
+                className="text-muted-foreground hover:text-foreground hover:bg-surface-hover bg-surface/75 focus-visible:ring-ring flex size-8 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <Pencil className="size-4" aria-hidden />
+              </Link>
+            ) : null}
+          </div>
           <div className="px-4 pb-4">
             {/* Avatar overlaps the cover, name beside it, actions on the right. */}
             <div className="flex items-end gap-3">
@@ -1965,7 +2044,7 @@ export function UserProfile({
                     onClick={isOwner ? () => setStatusOpen(true) : undefined}
                   />
                 </div>
-                <ProfileImageViewer src={versionedAvatarUrl(user.avatar_url, user.avatar_updated_at)} kind="avatar" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.avatar_updated_at} className="size-full rounded-full focus-visible:rounded-full">
+                <ProfileImageViewer src={versionedAvatarUrl(user.avatar_url, user.avatar_updated_at)} kind="avatar" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.avatar_updated_at} crop={user.avatar_crop} contentType={user.avatar_content_type} className="size-full rounded-full focus-visible:rounded-full">
                   <span
                     className={cn(
                       "ring-surface relative flex size-20 items-center justify-center overflow-hidden rounded-full text-2xl font-semibold ring-4 select-none",
@@ -2076,6 +2155,9 @@ export function UserProfile({
         </section>
         {/* Only what sits under the profile card scrolls when it does not fit. */}
         <div className="wh-scroll space-y-5 lg:-mr-2.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          {isOwner && seasonalCalendar.length > 0 ? (
+            <UpcomingHolidaysCard entries={seasonalCalendar} isAdmin={isAdmin} />
+          ) : null}
           {isOwner && <FeatureDiscovery />}
           {!isOwner && isAdmin ? (
             <SideCard title={t("userProfile.draftAccess")}>
@@ -2125,6 +2207,35 @@ export function UserProfile({
               expiresAt: updated.status_expires_at ?? null,
             })
           }
+        />
+      ) : null}
+      {canEditWelcome && welcomeDialogOpen ? (
+        <WelcomeEffectDialog
+          open={welcomeDialogOpen}
+          onOpenChange={setWelcomeDialogOpen}
+          targetUserId={user.id}
+          targetName={displayName}
+          targetUsername={user.username}
+          targetAvatarUrl={versionedAvatarUrl(user.avatar_url, user.avatar_updated_at)}
+          targetCoverUrl={versionedAvatarUrl(user.cover_url, user.cover_updated_at)}
+          isOwner={isOwner}
+          initialEffect={effectiveWelcomeEffect}
+          initialMessage={effectiveWelcomeMessage}
+          onSaved={(effect, message) =>
+            setWelcomeOverride({
+              source: user,
+              effect,
+              message,
+            })
+          }
+        />
+      ) : null}
+      {activeWelcome && activeWelcome.effect ? (
+        <WelcomeEffectOverlay
+          effect={activeWelcome.effect}
+          ownerName={displayName}
+          message={activeWelcome.message}
+          onComplete={() => setActiveWelcome(null)}
         />
       ) : null}
     </div>

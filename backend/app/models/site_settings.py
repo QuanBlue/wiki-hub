@@ -71,6 +71,9 @@ class SiteSettings(TimestampMixin, Base):
     #: Top-of-page system announcement banner (rich HTML content, level, schedule,
     #: dismissibility). NULL = no announcement configured.
     announcement: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    #: Global seasonal / holiday theme effects, calendar events, and admin reminder
+    #: configuration. NULL = built-in defaults (auto mode with 15 default holidays).
+    seasonal_theme: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     #: Copy for the left panel of the sign-in page, per language (see
     #: ``schemas.site_settings.LoginPanel``). NULL = the built-in text.
     login_panel: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
