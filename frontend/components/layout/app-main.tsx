@@ -59,7 +59,9 @@ export function AppMain({
       }
     >
       {banner ? (
-        <div ref={bannerWrapRef} className="top-topbar sticky z-30">
+        // z-29: just under the TopBar (z-30), so seasonal art hanging off the
+        // bar's lower edge (garlands, icicles) is drawn over the banner, not cut by it.
+        <div ref={bannerWrapRef} className="top-topbar sticky z-[29]">
           {banner}
         </div>
       ) : null}
