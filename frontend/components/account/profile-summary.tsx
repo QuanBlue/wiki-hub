@@ -66,6 +66,7 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
       : user;
   const hasStatus = isUserStatusActive(statusUser);
   const effectiveAvatarUrl = versionedAvatarUrl(user.avatar_url, user.avatar_updated_at);
+  const effectiveCoverUrl = user.cover_url;
 
   return (
     <section className="w-full max-w-[37.5rem] space-y-6">
@@ -84,9 +85,15 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
       {/* Main Profile Card */}
       <div className="border-border bg-surface relative w-full rounded-lg border">
         <div className="bg-primary-subtle relative aspect-[15/4] overflow-hidden rounded-t-lg">
-          {user.cover_url ? (
-            <ProfileImageViewer src={user.cover_url} kind="cover" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.cover_updated_at} className="absolute inset-0 size-full">
-              <img src={user.cover_url} alt="" className="absolute inset-0 size-full object-cover" />
+          {effectiveCoverUrl ? (
+            <ProfileImageViewer src={effectiveCoverUrl} kind="cover" ownerName={user.full_name} ownerUsername={user.username} updatedAt={user.cover_updated_at} crop={user.cover_crop} contentType={user.cover_content_type} className="absolute inset-0 size-full overflow-hidden">
+              <CroppedAvatarImage
+                src={effectiveCoverUrl}
+                crop={user.cover_crop}
+                contentType={user.cover_content_type}
+                viewportRatio={15 / 4}
+                className="absolute inset-0"
+              />
             </ProfileImageViewer>
           ) : null}
         </div>
@@ -108,6 +115,8 @@ export function ProfileSummary({ user, onEdit }: { user: Me; onEdit: () => void 
                 ownerName={user.full_name}
                 ownerUsername={user.username}
                 updatedAt={user.avatar_updated_at}
+                crop={user.avatar_crop}
+                contentType={user.avatar_content_type}
                 className="size-full rounded-full focus-visible:rounded-full"
               >
                 <span

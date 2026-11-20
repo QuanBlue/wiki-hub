@@ -4842,6 +4842,69 @@ export const sectionsEn: HelpSection[] = [
     ),
   },
   {
+    id: "seasonal-effects",
+    title: "Seasonal effects & holiday calendar",
+    category: "Administration",
+    description:
+      "Decorate the top bar, sidebars and background for Vietnamese and international holidays - automatically or by hand.",
+    keywords: [
+      "seasonal",
+      "holiday",
+      "theme",
+      "tet",
+      "lunar new year",
+      "christmas",
+      "halloween",
+      "valentine",
+      "easter",
+      "thanksgiving",
+      "mid-autumn",
+      "effects",
+      "decoration",
+      "calendar",
+    ],
+    body: (
+      <>
+        <p>
+          <strong>Administration → Settings → Seasonal Effects</strong> adds hand-drawn
+          decoration to the top bar, the sidebars and the page margins. It never covers
+          text or buttons and switches itself off for people who ask their device to reduce
+          motion.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Mode</strong>: <em>Off</em>, <em>Auto</em> (turns on by date, see below)
+            or <em>Manual</em> (keeps one effect pack on).
+          </li>
+          <li>
+            <strong>Preview</strong> any pack from its card without saving; Light and Dark
+            themes are both supported.
+          </li>
+          <li>
+            <strong>Holiday calendar</strong>: more than 35 built-in Vietnamese and major
+            international holidays, solar and lunar (including Tết, Giỗ Tổ, Trung Thu, Vu
+            Lan) plus Easter, Mother&apos;s Day, Father&apos;s Day and Thanksgiving, which are
+            worked out each year. Each has an effect window, a reminder, and can be turned
+            off. You can add your own events too.
+          </li>
+          <li>
+            <strong>Overlaps</strong>: when two windows overlap, the one higher in the list
+            wins.
+          </li>
+          <li>
+            <strong>Reminders</strong>: administrators get a notification (and optionally an
+            e-mail) a few days before a holiday starts.
+          </li>
+        </ul>
+        <Callout variant="note" title="WHAT PEOPLE SEE">
+          Everyone sees the active effect. The Home page lists the upcoming holidays, with a
+          short history of each one.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
     id: "safe-operation",
     title: "Safe Operation & System Troubleshooting",
     category: "Administration",

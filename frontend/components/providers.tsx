@@ -10,6 +10,7 @@ import { NavigationLoading } from "@/components/navigation-loading";
 import { ThemeColorProvider } from "@/components/theme-color-provider";
 import { ScrollToTop } from "@/components/ui/scroll-to-top";
 import { Toaster } from "@/components/ui/toaster";
+import type { ActiveSeasonalTheme } from "@/types/api";
 
 function makeQueryClient() {
   return new QueryClient({
@@ -35,6 +36,7 @@ export function Providers({
   initialDefaultFont,
   initialLogoIcon,
   initialCustomLogoUrl,
+  initialSeasonalTheme,
   initialLocale,
 }: {
   children: React.ReactNode;
@@ -43,6 +45,7 @@ export function Providers({
   initialDefaultFont?: string;
   initialLogoIcon?: string;
   initialCustomLogoUrl?: string | null;
+  initialSeasonalTheme?: ActiveSeasonalTheme;
   initialLocale?: Locale;
 }) {
   // Held in state so each browser session gets exactly one client, and so a
@@ -65,6 +68,7 @@ export function Providers({
             initialDefaultFont={initialDefaultFont}
             initialLogoIcon={initialLogoIcon}
             initialCustomLogoUrl={initialCustomLogoUrl}
+            initialSeasonalTheme={initialSeasonalTheme}
           >
             {children}
             <NavigationLoading />

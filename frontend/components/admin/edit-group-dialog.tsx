@@ -13,6 +13,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   UserMinus,
   UserPlus,
   Users,
@@ -99,6 +100,12 @@ const PERMISSION_CONFIG: Record<
     description:
       "Allows seeing every reported issue and taking one on. Only the person who took an issue, or a super administrator, can change its status.",
     icon: Bug,
+  },
+  customize_profile_welcome: {
+    label: "My Home welcome effect",
+    description:
+      "Allows members to choose and customize a guest welcome effect (such as Phoenix, Hacker, Admin, or Aurora) on their own profile page.",
+    icon: Sparkles,
   },
   system_admin: {
     label: "System administrator",

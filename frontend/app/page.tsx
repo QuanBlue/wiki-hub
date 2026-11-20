@@ -5,6 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { UserProfile } from "@/components/users/user-profile";
 import { getCurrentUser } from "@/lib/auth";
 import { SITE_NAME } from "@/lib/env";
+import { serverGet } from "@/lib/server-api";
 import {
   getPublicUser,
   getUserProfileStats,
@@ -15,6 +16,7 @@ import {
   listOwnPinnedPages,
   listOwnLikedPages,
 } from "@/lib/pages";
+import type { SeasonalCalendarEntry } from "@/types/api";
 
 export const metadata: Metadata = { title: "Home" };
 export const dynamic = "force-dynamic";
@@ -24,7 +26,7 @@ export default async function HomePage() {
   if (!user) redirect("/login");
 
   const isAdmin = user.is_superuser || user.global_permissions.includes("system_admin");
-  const [profile, activity, allActivity, stats, drafts, favoriteSpaces, pinnedPages, likedPages] = await Promise.all([
+  const [profile, activity, allActivity, stats, drafts, favoriteSpaces, pinnedPages, likedPages, seasonalCalendar] = await Promise.all([
     getPublicUser(user.username),
     listUserActivity(user.username),
     listRecentPages(50),
@@ -33,6 +35,7 @@ export default async function HomePage() {
     listOwnFavoriteSpaces().catch(() => []),
     listOwnPinnedPages().catch(() => []),
     listOwnLikedPages().catch(() => []),
+    serverGet<SeasonalCalendarEntry[]>("/api/v1/meta/seasonal-calendar").catch(() => []),
   ]);
 
   return (
@@ -48,6 +51,7 @@ export default async function HomePage() {
         favoriteSpaces={favoriteSpaces}
         pinnedPages={pinnedPages}
         likedPages={likedPages}
+        seasonalCalendar={seasonalCalendar}
       />
     </AppShell>
   );

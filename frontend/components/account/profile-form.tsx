@@ -179,6 +179,10 @@ export function ProfileForm({
     : !avatarRemoved && user.avatar_content_type === "image/gif";
   const effectiveAvatarCrop = selectedFile ? avatarCrop : (!avatarRemoved ? user.avatar_crop : null);
   const canRepositionAvatar = Boolean(displayAvatar && !imgError);
+  const isGifCover = coverFile
+    ? coverFile.type === "image/gif"
+    : !coverRemoved && user.cover_content_type === "image/gif";
+  const effectiveCoverCrop = coverFile ? coverCrop : (!coverRemoved ? user.cover_crop : null);
 
   function chooseCover(file: File | undefined) {
     if (!file) return;
@@ -228,6 +232,10 @@ export function ProfileForm({
       setCropTarget({ file: pendingOriginal, kind, isNewOriginal: true, initialCrop: pendingCrop });
       return;
     }
+    if (isCover && coverFile?.type === "image/gif") {
+      setCropTarget({ file: coverFile, kind, isNewOriginal: false, initialCrop: pendingCrop });
+      return;
+    }
     if (!isCover && selectedFile?.type === "image/gif") {
       setCropTarget({ file: selectedFile, kind, isNewOriginal: false, initialCrop: pendingCrop });
       return;
@@ -246,14 +254,14 @@ export function ProfileForm({
       if (!response.ok) throw new Error(String(response.status));
       const blob = await response.blob();
       const responseType = blob.type || response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || "";
-      const fallbackType = !isCover ? user.avatar_content_type : null;
+      const fallbackType = isCover ? user.cover_content_type : user.avatar_content_type;
       const type = AVATAR_TYPES.includes(responseType)
         ? responseType
         : fallbackType && AVATAR_TYPES.includes(fallbackType)
           ? fallbackType
           : "image/png";
       const file = new File([blob], kind === "cover" ? "cover" : "avatar", { type });
-      const isGif = !isCover && type === "image/gif";
+      const isGif = type === "image/gif";
       setError(null);
       setCropTarget({
         file,
@@ -268,8 +276,8 @@ export function ProfileForm({
   }
 
   function applyCroppedImage(file: File, crop: CropState) {
-    const isGifAvatarCrop = cropTarget?.kind === "avatar" && file.type === "image/gif";
-    const original = cropTarget?.isNewOriginal && !isGifAvatarCrop ? cropTarget.file : null;
+    const isGifCrop = file.type === "image/gif";
+    const original = cropTarget?.isNewOriginal && !isGifCrop ? cropTarget.file : null;
     if (cropTarget?.kind === "cover") {
       if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
       setCoverOriginal(original);
@@ -434,7 +442,15 @@ export function ProfileForm({
             onReposition={() => void reposition("cover")}
             className="bg-primary-subtle relative block aspect-[15/4] w-full overflow-hidden rounded-md border border-border"
           >
-            {displayCover ? <img src={displayCover} alt="" className="absolute inset-0 size-full object-cover" /> : null}
+            {displayCover ? (
+              <CroppedAvatarImage
+                src={displayCover}
+                crop={effectiveCoverCrop}
+                contentType={isGifCover ? "image/gif" : null}
+                viewportRatio={15 / 4}
+                className="absolute inset-0"
+              />
+            ) : null}
           </ImageActions>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>

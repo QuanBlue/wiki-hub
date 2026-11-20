@@ -68,6 +68,8 @@ export default async function UserProfilePage({
   const { username } = await params;
   const isAdmin =
     user.is_superuser || user.global_permissions.includes("system_admin");
+  const canCustomizeWelcome =
+    isAdmin || user.global_permissions.includes("customize_profile_welcome");
   const data = await loadProfile(
     username,
     user.username.toLowerCase() === username.toLowerCase(),
@@ -84,6 +86,7 @@ export default async function UserProfilePage({
         drafts={data.drafts}
         isOwner={user.username.toLowerCase() === username.toLowerCase()}
         isAdmin={isAdmin}
+        canCustomizeWelcome={canCustomizeWelcome}
         favoriteSpaces={data.favoriteSpaces}
         pinnedPages={data.pinnedPages}
         likedPages={data.likedPages}

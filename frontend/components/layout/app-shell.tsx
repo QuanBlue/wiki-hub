@@ -11,6 +11,8 @@ import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
 import { SystemAnnouncementProvider } from "@/components/layout/system-announcement-provider";
 import { TopBar } from "@/components/layout/top-bar";
+import { SeasonalAmbientLayer } from "@/components/seasonal/seasonal-ambient-layer";
+import { SeasonalReminderBanner } from "@/components/seasonal/seasonal-reminder-banner";
 import { getMailSummary, NO_MAILBOX } from "@/lib/admin-mail";
 import { getNotificationSummary } from "@/lib/notifications";
 import { getSidebarPermissions, getSystemAnnouncement } from "@/lib/navigation";
@@ -78,6 +80,7 @@ export async function AppShell({
       >
       <NavigationProgressProvider>
       <div className="bg-background min-h-screen">
+        <SeasonalAmbientLayer />
         <TopBar siteName={siteName} user={user} />
         {hideSidebar ? null : (
           <Sidebar
@@ -96,6 +99,7 @@ export async function AppShell({
                   announcement={systemAnnouncement}
                   isAdmin={isSystemAdmin}
                 />
+                <SeasonalReminderBanner isAdmin={isSystemAdmin} />
                 <MailboxPasswordBanner />
               </>
             )

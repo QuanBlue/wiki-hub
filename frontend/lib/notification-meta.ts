@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Share2,
   ShieldCheck,
+  Sparkles,
   ThumbsUp,
   UserCheck,
   UserCog,
@@ -61,6 +62,7 @@ const KINDS: Record<string, KindMeta> = {
   page_updated: { icon: Eye, tone: "info" },
   page_created: { icon: FileText, tone: "success" },
   question_answered: { icon: MessageCircleQuestion, tone: "success" },
+  seasonal_theme_upcoming: { icon: Sparkles, tone: "info" },
 };
 
 const FALLBACK: KindMeta = { icon: Bell, tone: "info" };
@@ -90,6 +92,10 @@ export function describeNotification(t: Translate, item: AppNotification): strin
     space: p.space ?? "",
     group: p.group ?? "",
     name: p.name ?? "",
+    name_en: p.name_en ?? "",
+    name_vi: p.name_vi ?? "",
+    days: p.days ?? "",
+    starts_on: p.starts_on ?? "",
     title: p.title ?? "",
     role: word(t, "role", p.role),
     permission: word(t, "permission", p.permission),

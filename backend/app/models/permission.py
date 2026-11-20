@@ -29,6 +29,7 @@ class GlobalPermission(StrEnum):
     manage_users = "manage_users"
     manage_groups = "manage_groups"
     manage_issues = "manage_issues"
+    customize_profile_welcome = "customize_profile_welcome"
     system_admin = "system_admin"
 
 

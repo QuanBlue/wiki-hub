@@ -1982,3 +1982,393 @@ html[data-export="true"] .wh-toaster {
   padding: 0.625rem 0.875rem !important;
   font-size: 0.875rem;
 }
+
+
+/* ==========================================================================
+   Seasonal / Holiday Theme Effects
+   Respects prefers-reduced-motion; GPU-composited transform/opacity only.
+   ========================================================================== */
+
+@keyframes wh-seasonal-fall {
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--wh-particle-opacity, 0.72);
+  }
+  85% {
+    opacity: var(--wh-particle-opacity, 0.72);
+  }
+  100% {
+    transform: translate3d(var(--wh-drift-x, 24px), 108vh, 0)
+      rotate(var(--wh-spin, 180deg));
+    opacity: 0;
+  }
+}
+
+@keyframes wh-seasonal-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(0.92);
+    opacity: 0.25;
+  }
+  50% {
+    transform: translate3d(var(--wh-drift-x, 14px), -28px, 0) scale(1.12);
+    opacity: var(--wh-particle-opacity, 0.85);
+  }
+}
+
+@keyframes wh-seasonal-twinkle {
+  0%,
+  100% {
+    opacity: 0.48;
+    filter: brightness(0.9);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.35);
+  }
+}
+
+@keyframes wh-seasonal-sway {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes wh-seasonal-neon-pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.wh-seasonal-fall {
+  animation-name: wh-seasonal-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+.wh-seasonal-float {
+  animation-name: wh-seasonal-float;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+.wh-seasonal-twinkle {
+  animation: wh-seasonal-twinkle 2.4s ease-in-out infinite;
+}
+
+.wh-seasonal-sway {
+  transform-origin: top center;
+  animation: wh-seasonal-sway 4.2s ease-in-out infinite;
+}
+
+.wh-seasonal-neon-pulse {
+  animation: wh-seasonal-neon-pulse 3.6s ease-in-out infinite;
+}
+
+
+@keyframes wh-seasonal-rise {
+  0% {
+    transform: translate3d(0, 10vh, 0);
+    opacity: 0;
+  }
+  15% {
+    opacity: var(--wh-particle-opacity, 0.72);
+  }
+  85% {
+    opacity: var(--wh-particle-opacity, 0.72);
+  }
+  100% {
+    transform: translate3d(var(--wh-drift-x, 24px), -110vh, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes wh-seasonal-wobble {
+  0%,
+  100% {
+    transform: translate3d(calc(var(--wh-wobble, 12px) * -1), 0, 0) rotate(-7deg);
+  }
+  50% {
+    transform: translate3d(var(--wh-wobble, 12px), 0, 0) rotate(7deg);
+  }
+}
+
+@keyframes wh-seasonal-tumble {
+  from {
+    transform: perspective(160px) rotate3d(1, 0.6, 0.25, 0deg);
+  }
+  to {
+    transform: perspective(160px) rotate3d(1, 0.6, 0.25, 360deg);
+  }
+}
+
+@keyframes wh-seasonal-flicker {
+  0%,
+  100% {
+    transform: scale(1, 1) skewX(0deg);
+    opacity: 1;
+  }
+  30% {
+    transform: scale(0.94, 1.06) skewX(-2deg);
+    opacity: 0.92;
+  }
+  55% {
+    transform: scale(1.04, 0.96) skewX(1.5deg);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(0.97, 1.04) skewX(-1deg);
+    opacity: 0.94;
+  }
+}
+
+@keyframes wh-seasonal-halo {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes wh-seasonal-flap {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1, 0.72);
+  }
+}
+
+@keyframes wh-seasonal-bat-glide {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-4deg);
+  }
+  50% {
+    transform: translate3d(-22px, 8px, 0) rotate(5deg);
+  }
+}
+
+.wh-seasonal-rise {
+  animation-name: wh-seasonal-rise;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+.wh-seasonal-wobble {
+  animation: wh-seasonal-wobble 3.6s ease-in-out infinite;
+}
+
+.wh-seasonal-tumble {
+  animation: wh-seasonal-tumble 5s linear infinite;
+}
+
+.wh-seasonal-flicker,
+.wh-seasonal-flap {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.wh-seasonal-flicker {
+  animation: wh-seasonal-flicker 2.2s ease-in-out infinite;
+}
+
+.wh-seasonal-flap {
+  transform-origin: 50% 40%;
+  animation: wh-seasonal-flap 0.7s ease-in-out infinite;
+}
+
+.wh-seasonal-halo {
+  animation: wh-seasonal-halo 4.4s ease-in-out infinite;
+}
+
+.wh-seasonal-bat {
+  animation: wh-seasonal-bat-glide 5.5s ease-in-out infinite;
+}
+
+@keyframes wh-seasonal-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes wh-seasonal-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.09);
+  }
+}
+
+@keyframes wh-seasonal-bob {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-2deg);
+  }
+  50% {
+    transform: translate3d(0, -3.5px, 0) rotate(2deg);
+  }
+}
+
+@keyframes wh-seasonal-hop {
+  0%,
+  60%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  30% {
+    transform: translate3d(0, -5px, 0);
+  }
+}
+
+@keyframes wh-seasonal-drift-x {
+  0%,
+  100% {
+    transform: translate3d(-5px, 0, 0);
+  }
+  50% {
+    transform: translate3d(6px, 0, 0);
+  }
+}
+
+@keyframes wh-seasonal-leaf {
+  0%,
+  100% {
+    transform: rotate(-7deg);
+  }
+  50% {
+    transform: rotate(7deg);
+  }
+}
+
+@keyframes wh-seasonal-tile-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(calc(var(--wh-tile, 64px) * -1), 0, 0);
+  }
+}
+
+@keyframes wh-seasonal-tile-drift-y {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, calc(var(--wh-tile, 64px) * -1), 0);
+  }
+}
+
+.wh-anim {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+.wh-anim-top {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+}
+
+.wh-anim-bottom {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.wh-seasonal-spin {
+  animation: wh-seasonal-spin 40s linear infinite;
+}
+
+.wh-seasonal-pulse {
+  animation: wh-seasonal-pulse 2.6s ease-in-out infinite;
+}
+
+.wh-seasonal-bob {
+  animation: wh-seasonal-bob 4.6s ease-in-out infinite;
+}
+
+.wh-seasonal-hop {
+  animation: wh-seasonal-hop 3.4s ease-in-out infinite;
+}
+
+.wh-seasonal-drift-x {
+  animation: wh-seasonal-drift-x 9s ease-in-out infinite;
+}
+
+.wh-seasonal-leaf {
+  animation: wh-seasonal-leaf 5s ease-in-out infinite;
+}
+
+.wh-seasonal-tile-drift {
+  animation: wh-seasonal-tile-drift 70s linear infinite;
+  will-change: transform;
+}
+
+.wh-seasonal-tile-drift-y {
+  animation: wh-seasonal-tile-drift-y 90s linear infinite;
+  will-change: transform;
+}
+
+/* Light sweep across the selected sidebar row (layer 2 of its background). */
+@keyframes wh-nav-shimmer {
+  0%,
+  58% {
+    background-position:
+      right 4px center,
+      130% 0;
+  }
+  100% {
+    background-position:
+      right 4px center,
+      -40% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wh-seasonal-fall,
+  .wh-seasonal-rise,
+  .wh-seasonal-float {
+    display: none !important;
+  }
+
+  .wh-seasonal-twinkle,
+  .wh-seasonal-wobble,
+  .wh-seasonal-tumble,
+  .wh-seasonal-flicker,
+  .wh-seasonal-flap,
+  .wh-seasonal-halo,
+  .wh-seasonal-bat,
+  .wh-seasonal-spin,
+  .wh-seasonal-pulse,
+  .wh-seasonal-bob,
+  .wh-seasonal-hop,
+  .wh-seasonal-drift-x,
+  .wh-seasonal-leaf,
+  .wh-seasonal-tile-drift,
+  .wh-seasonal-tile-drift-y,
+  .wh-seasonal-sway,
+  .wh-seasonal-neon-pulse {
+    animation: none !important;
+  }
+}

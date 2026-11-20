@@ -39,7 +39,7 @@ import {
   generateFaviconSvg,
   getPresetOrCustomPalette,
 } from "@/lib/theme-presets";
-import type { InstanceInfo } from "@/types/api";
+import type { ActiveSeasonalTheme, InstanceInfo } from "@/types/api";
 
 import "./globals.css";
 
@@ -301,6 +301,13 @@ export default async function RootLayout({
   let initialLogoIcon =
     preferenceCookies.get(LOGO_ICON_COOKIE)?.value || "default";
   let initialCustomLogoUrl: string | null = null;
+  let initialSeasonalTheme: ActiveSeasonalTheme = {
+    preset: "none",
+    event_id: null,
+    event_name_en: null,
+    event_name_vi: null,
+    source: "off",
+  };
 
   try {
     const meta = await serverGet<InstanceInfo>("/api/v1/meta");
@@ -311,6 +318,9 @@ export default async function RootLayout({
       if (meta.logo_icon) initialLogoIcon = meta.logo_icon;
       if (meta.custom_logo_url !== undefined) {
         initialCustomLogoUrl = meta.custom_logo_url;
+      }
+      if (meta.seasonal_theme) {
+        initialSeasonalTheme = meta.seasonal_theme;
       }
     }
   } catch {
@@ -408,6 +418,7 @@ export default async function RootLayout({
           initialDefaultFont={initialDefaultFont}
           initialLogoIcon={initialLogoIcon}
           initialCustomLogoUrl={initialCustomLogoUrl}
+          initialSeasonalTheme={initialSeasonalTheme}
           initialLocale={initialLocale}
         >
           {children}

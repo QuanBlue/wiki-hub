@@ -4956,6 +4956,65 @@ export const sectionsVi: HelpSection[] = [
     ),
   },
   {
+    id: "seasonal-effects",
+    title: "Hiệu ứng lễ hội & lịch ngày lễ",
+    category: "Administration",
+    description:
+      "Trang trí thanh trên, sidebar và nền theo các ngày lễ Việt Nam và quốc tế - tự động hoặc bật tay.",
+    keywords: [
+      "hiệu ứng lễ hội",
+      "seasonal",
+      "ngày lễ",
+      "tết",
+      "giáng sinh",
+      "halloween",
+      "valentine",
+      "phục sinh",
+      "lễ tạ ơn",
+      "trung thu",
+      "trang trí",
+      "lịch",
+    ],
+    body: (
+      <>
+        <p>
+          <strong>Quản trị → Cài đặt → Hiệu ứng lễ hội</strong> thêm hoạ tiết vẽ tay lên thanh
+          trên, các sidebar và hai bên lề trang. Hiệu ứng không che chữ hay nút bấm và tự tắt
+          với người đã bật chế độ giảm chuyển động trên thiết bị.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+          <li>
+            <strong>Chế độ</strong>: <em>Tắt</em>, <em>Tự động</em> (bật theo ngày, xem bên
+            dưới) hoặc <em>Thủ công</em> (giữ một gói hiệu ứng luôn bật).
+          </li>
+          <li>
+            <strong>Xem thử</strong> từng gói ngay trên thẻ mà không cần lưu; hỗ trợ cả giao
+            diện Sáng và Tối.
+          </li>
+          <li>
+            <strong>Lịch ngày lễ</strong>: hơn 35 ngày lễ Việt Nam và quốc tế có sẵn, gồm cả
+            Dương lịch và Âm lịch (Tết, Giỗ Tổ, Trung Thu, Vu Lan...) cùng Lễ Phục sinh, Ngày
+            của Mẹ, Ngày của Cha, Lễ Tạ ơn được tự tính mỗi năm. Mỗi ngày lễ có khung thời gian
+            hiệu ứng, nhắc nhở và có thể tắt riêng. Bạn cũng thêm được sự kiện của riêng mình.
+          </li>
+          <li>
+            <strong>Trùng thời gian</strong>: khi hai khung thời gian trùng nhau, ngày lễ nằm
+            trên trong danh sách được ưu tiên.
+          </li>
+          <li>
+            <strong>Nhắc nhở</strong>: quản trị viên nhận thông báo (và email nếu bật) trước
+            ngày lễ vài ngày.
+          </li>
+        </ul>
+        <Callout variant="note" title="NGƯỜI DÙNG THẤY GÌ">
+          Mọi người đều thấy hiệu ứng đang bật. Trang chủ liệt kê các ngày lễ sắp tới kèm
+          đôi nét về nguồn gốc của từng ngày.
+        </Callout>
+      </>
+    ),
+  },
+
+  {
     id: "safe-operation",
     title: "Vận hành an toàn & Xử lý sự cố hệ thống",
     category: "Administration",

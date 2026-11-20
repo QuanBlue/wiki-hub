@@ -9,13 +9,38 @@ cannot tell a deliberate setting from an inherited default.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AppRole = Literal["admin", "member"]
 AnnouncementLevel = Literal["info", "warning", "danger", "success"]
+SeasonalEffectPresetId = Literal[
+    "none",
+    "new_year",
+    "lunar_new_year",
+    "floral_pink",
+    "heritage_gold",
+    "national_red_gold",
+    "lotus_gold",
+    "memorial_candle",
+    "mid_autumn",
+    "halloween",
+    "blue_neon",
+    "christmas",
+    "valentine",
+    "spring_green",
+    "easter",
+    "kids_party",
+    "autumn_harvest",
+    "teachers_day",
+]
+#: ``easter`` = Western Easter Sunday; ``weekday`` = Nth weekday of a month
+#: (e.g. Mother's Day, Thanksgiving). Both derive their window from
+#: ``window_before`` / ``window_after`` instead of the fixed start/end fields.
+SeasonalCalendarType = Literal["solar", "lunar", "easter", "weekday"]
+SeasonalThemeMode = Literal["off", "auto", "manual"]
 
 
 def _strip_empty_html(value: str) -> str:
@@ -208,6 +233,136 @@ class SidebarPermissions(BaseModel):
         return self
 
 
+class SeasonalEventItem(BaseModel):
+    """One recurring holiday/event entry (built-in or administrator-created)."""
+
+    id: str = Field(min_length=1, max_length=64)
+    builtin: bool = False
+    name_en: str = Field(min_length=1, max_length=140)
+    name_vi: str = Field(min_length=1, max_length=140)
+    preset: SeasonalEffectPresetId = "new_year"
+    calendar_type: SeasonalCalendarType = "solar"
+    #: Primary date of the holiday (used for Home calendar countdown & display).
+    event_month: int = Field(ge=1, le=12)
+    event_day: int = Field(ge=1, le=31)
+    #: Active effect window (inclusive; supports year wrap-around e.g. 12/29 -> 01/02).
+    start_month: int = Field(ge=1, le=12)
+    start_day: int = Field(ge=1, le=31)
+    end_month: int = Field(ge=1, le=12)
+    end_day: int = Field(ge=1, le=31)
+    #: Official public holiday metadata (displayed on the Home calendar).
+    is_public_holiday: bool = False
+    holiday_days: int = Field(default=0, ge=0, le=15)
+    holiday_note_en: str | None = Field(default=None, max_length=200)
+    holiday_note_vi: str | None = Field(default=None, max_length=200)
+    #: ``weekday`` calendars: 0 = Monday ... 6 = Sunday; 1-4 = nth, -1 = last.
+    weekday: int = Field(default=0, ge=0, le=6)
+    week_of_month: int = Field(default=1, ge=-1, le=5)
+    #: Days before / after the date that the effect stays active
+    #: (``easter`` and ``weekday`` calendars only).
+    window_before: int = Field(default=2, ge=0, le=30)
+    window_after: int = Field(default=1, ge=0, le=30)
+    enabled: bool = True
+    auto_activate: bool = True
+    show_on_home_calendar: bool = True
+
+    @field_validator("id", "name_en", "name_vi")
+    @classmethod
+    def _clean_required(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Field cannot be blank.")
+        return stripped
+
+    @field_validator("holiday_note_en", "holiday_note_vi")
+    @classmethod
+    def _clean_optional(cls, value: str | None) -> str | None:
+        return _blank_to_none(value)
+
+
+def _default_seasonal_events_factory() -> list[SeasonalEventItem]:
+    from app.services.seasonal_theme import default_seasonal_events
+
+    return default_seasonal_events()
+
+
+class SeasonalThemeSettings(BaseModel):
+    """Administrator configuration for global seasonal / holiday effects."""
+
+    mode: SeasonalThemeMode = "auto"
+    manual_preset: SeasonalEffectPresetId = "none"
+    reminder_enabled: bool = True
+    reminder_days_before: int = Field(default=7, ge=1, le=30)
+    reminder_send_email: bool = True
+    events: list[SeasonalEventItem] = Field(default_factory=_default_seasonal_events_factory)
+    #: Maps ``"<event_id>:<year>"`` -> ISO timestamp to prevent duplicate reminders.
+    notified_occurrences: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("events")
+    @classmethod
+    def _unique_event_ids(cls, value: list[SeasonalEventItem]) -> list[SeasonalEventItem]:
+        seen: set[str] = set()
+        deduped: list[SeasonalEventItem] = []
+        for item in value:
+            if item.id in seen:
+                continue
+            seen.add(item.id)
+            deduped.append(item)
+        return deduped[:60]
+
+
+class ActiveSeasonalTheme(BaseModel):
+    """Resolved active seasonal effect exposed via ``/api/v1/meta`` to all users."""
+
+    preset: SeasonalEffectPresetId = "none"
+    event_id: str | None = None
+    event_name_en: str | None = None
+    event_name_vi: str | None = None
+    source: SeasonalThemeMode = "off"
+
+
+class UpcomingSeasonalReminder(BaseModel):
+    """An upcoming holiday within the admin reminder window."""
+
+    event_id: str
+    occurrence_key: str
+    name_en: str
+    name_vi: str
+    preset: SeasonalEffectPresetId
+    event_date: date
+    starts_on: date
+    ends_on: date
+    days_until: int
+    auto_activate: bool
+
+
+class SeasonalCalendarEntry(BaseModel):
+    """One resolved holiday entry for the Home page upcoming calendar."""
+
+    event_id: str
+    name_en: str
+    name_vi: str
+    preset: SeasonalEffectPresetId
+    calendar_type: SeasonalCalendarType
+    lunar_label: str | None = None
+    event_date: date
+    starts_on: date
+    ends_on: date
+    days_until: int
+    is_active: bool
+    is_today: bool
+    is_public_holiday: bool
+    holiday_days: int
+    holiday_note_en: str | None = None
+    holiday_note_vi: str | None = None
+
+
+class SeasonalActivateRequest(BaseModel):
+    """Quick-activate a seasonal preset from the admin reminder banner."""
+
+    preset: SeasonalEffectPresetId
+
+
 class SiteSettingsOverrides(BaseModel):
     """The stored values. ``None`` means "inherit from the environment"."""
 
@@ -223,6 +378,7 @@ class SiteSettingsOverrides(BaseModel):
     allowed_attachment_types: list[str] | None = None
     sidebar_permissions: SidebarPermissions | None = None
     announcement: SystemAnnouncement | None = None
+    seasonal_theme: SeasonalThemeSettings | None = None
     login_panel: LoginPanel | None = None
     session_ttl_hours: int | None = None
     trash_retention_days: int | None = None
@@ -244,6 +400,7 @@ class EffectiveSettings(BaseModel):
     allowed_attachment_types: list[str]
     sidebar_permissions: SidebarPermissions
     announcement: SystemAnnouncement = Field(default_factory=SystemAnnouncement)
+    seasonal_theme: SeasonalThemeSettings = Field(default_factory=SeasonalThemeSettings)
     login_panel: LoginPanel = Field(default_factory=LoginPanel)
     #: Public URL of the uploaded sign-in illustration, ``None`` if there is none.
     login_image_url: str | None = None
@@ -290,6 +447,7 @@ class SiteSettingsUpdate(BaseModel):
     allowed_attachment_types: list[str] | None = Field(default=None, max_length=100)
     sidebar_permissions: SidebarPermissions | None = None
     announcement: SystemAnnouncement | None = None
+    seasonal_theme: SeasonalThemeSettings | None = None
     login_panel: LoginPanel | None = None
     session_ttl_hours: int | None = Field(default=None, ge=1, le=8760)
     trash_retention_days: int | None = Field(default=None, ge=1, le=3650)

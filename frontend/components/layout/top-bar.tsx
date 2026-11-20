@@ -15,6 +15,10 @@ import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { LanguageToggle } from "@/components/layout/language-toggle";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { UserMenu } from "@/components/layout/user-menu";
+import {
+  SeasonalTopBarGreeting,
+  SeasonalTopBarOverlay,
+} from "@/components/seasonal/seasonal-topbar-overlay";
 import { formatBinding, matchesShortcut, useShortcutBindings } from "@/lib/keyboard-shortcuts";
 import { useTranslation } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
@@ -77,6 +81,8 @@ export function TopBar({
           <Wordmark siteName={effectiveSiteName} nameClassName="max-sm:sr-only" />
         </Link>
 
+        <SeasonalTopBarGreeting />
+
         {/* A phone has no room for the search field: it becomes one icon button. */}
         <div className="mx-auto w-full max-w-md min-w-0 max-sm:mr-0 max-sm:ml-auto max-sm:w-auto">
           <button
@@ -123,6 +129,7 @@ export function TopBar({
         user={user}
       />
       <QuickShortcutsModal />
+      <SeasonalTopBarOverlay />
     </header>
   );
 }

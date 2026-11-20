@@ -82,13 +82,15 @@ function hasActiveGifCrop(
 
 /**
  * Exact positioning style for an uncropped image inside a `relative overflow-hidden`
- * square container, matching `cropGeometry` without `object-cover` clipping.
+ * container of aspect ratio `viewportRatio` (1 for square avatars, 15/4 for covers),
+ * matching `cropGeometry` without `object-cover` clipping.
  */
 export function croppedImageStyle(
   crop: AvatarCrop,
   imageSize: { width: number; height: number },
+  viewportRatio = 1,
 ): CSSProperties {
-  const ratio = imageSize.width / imageSize.height;
+  const effectiveRatio = imageSize.width / imageSize.height / viewportRatio;
   return {
     position: "absolute",
     maxWidth: "none",
@@ -96,14 +98,14 @@ export function croppedImageStyle(
     left: `${50 + crop.x * 100}%`,
     top: `${50 + crop.y * 100}%`,
     transform: "translate(-50%, -50%)",
-    ...(ratio >= 1
-      ? { height: `${crop.zoom * 100}%`, width: `${crop.zoom * ratio * 100}%` }
-      : { width: `${crop.zoom * 100}%`, height: `${(crop.zoom / ratio) * 100}%` }),
+    ...(effectiveRatio >= 1
+      ? { height: `${crop.zoom * 100}%`, width: `${crop.zoom * effectiveRatio * 100}%` }
+      : { width: `${crop.zoom * 100}%`, height: `${(crop.zoom / effectiveRatio) * 100}%` }),
   };
 }
 
 /**
- * Renders an avatar `<img>` inside a `relative overflow-hidden` square container,
+ * Renders an avatar or cover `<img>` inside a `relative overflow-hidden` container,
  * applying `crop` without `object-cover` clipping when `contentType === "image/gif"`.
  */
 export function CroppedAvatarImage({
@@ -111,15 +113,19 @@ export function CroppedAvatarImage({
   alt = "",
   crop,
   contentType,
+  viewportRatio = 1,
   className,
   onError,
+  onImageLoad,
 }: {
   src: string;
   alt?: string;
   crop?: AvatarCrop | null;
   contentType?: string | null;
+  viewportRatio?: number;
   className?: string;
   onError?: () => void;
+  onImageLoad?: (size: { width: number; height: number }) => void;
 }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [naturalSize, setNaturalSize] = useState<{
@@ -132,9 +138,11 @@ export function CroppedAvatarImage({
   useEffect(() => {
     const img = imgRef.current;
     if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-      setNaturalSize({ src, width: img.naturalWidth, height: img.naturalHeight });
+      const size = { width: img.naturalWidth, height: img.naturalHeight };
+      setNaturalSize({ src, ...size });
+      onImageLoad?.(size);
     }
-  }, [src]);
+  }, [src, onImageLoad]);
 
   const sizeForSrc =
     naturalSize && naturalSize.src === src && naturalSize.width > 0 && naturalSize.height > 0
@@ -149,7 +157,9 @@ export function CroppedAvatarImage({
       onLoad={(event) => {
         const img = event.currentTarget;
         if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-          setNaturalSize({ src, width: img.naturalWidth, height: img.naturalHeight });
+          const size = { width: img.naturalWidth, height: img.naturalHeight };
+          setNaturalSize({ src, ...size });
+          onImageLoad?.(size);
         }
       }}
       onError={onError}
@@ -158,7 +168,7 @@ export function CroppedAvatarImage({
           ? className
           : cn("size-full object-cover", className)
       }
-      style={activeCrop && sizeForSrc ? croppedImageStyle(activeCrop, sizeForSrc) : undefined}
+      style={activeCrop && sizeForSrc ? croppedImageStyle(activeCrop, sizeForSrc, viewportRatio) : undefined}
     />
   );
 }

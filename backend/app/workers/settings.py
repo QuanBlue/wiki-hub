@@ -22,6 +22,7 @@ from app.workers.tasks import (
     build_page_graph,
     check_admin_mailboxes,
     check_ai_connections,
+    check_seasonal_theme_reminders,
     extract_attachment_texts,
     index_search_pages,
     keep_ollama_running,
@@ -107,6 +108,8 @@ class WorkerSettings:
         cron(purge_expired_trash, hour=3, minute=15, second=0, run_at_startup=False),
         # Daily: unanswered questions, and who asked them, are kept 90 days at most.
         cron(purge_unanswered_questions, hour=3, minute=25, second=0, run_at_startup=False),
+        # Daily at 01:00 UTC (08:00 UTC+7): remind admins about upcoming seasonal events.
+        cron(check_seasonal_theme_reminders, hour=1, minute=0, second=0, run_at_startup=False),
     ]
     redis_settings = redis_settings()
     on_startup = startup

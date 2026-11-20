@@ -41,6 +41,7 @@ import {
   Moon,
   MoreHorizontal,
   Network,
+  PartyPopper,
   Palette,
   PanelLeft,
   Pencil,
@@ -96,6 +97,7 @@ import { FontPicker } from "@/components/admin/font-picker";
 import { FontSpecimenModal } from "@/components/admin/font-specimen-modal";
 import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
 import { LoginPanelSettings } from "@/components/admin/login-panel-settings";
+import { SeasonalThemeSettingsPanel } from "@/components/admin/seasonal-theme-settings";
 import { RichTextEditor } from "@/components/pages/rich-text-editor";
 import { api, ApiError } from "@/lib/api-client";
 import {
@@ -113,7 +115,9 @@ import { cn } from "@/lib/utils";
 import type {
   AnnouncementLevel,
   AppRole,
+  InstanceInfo,
   LoginPanel,
+  SeasonalThemeSettings,
   SidebarPermissions,
   SiteSettings,
   SystemAnnouncement,
@@ -249,12 +253,13 @@ const ROLE_OPTIONS: Array<{
 ];
 
 const SETTINGS_TABS: Array<{
-  id: "appearance" | "general" | "sidebar" | "announcement" | "login";
+  id: "appearance" | "seasonal" | "general" | "sidebar" | "announcement" | "login";
   labelEn: string;
   labelVi: string;
   icon: LucideIcon;
 }> = [
   { id: "appearance", labelEn: "Theme & Branding", labelVi: "Giao diện & Thương hiệu", icon: Palette },
+  { id: "seasonal", labelEn: "Seasonal Effects", labelVi: "Hiệu ứng lễ hội", icon: PartyPopper },
   { id: "general", labelEn: "General & Sessions", labelVi: "Cấu hình chung & Phiên", icon: SlidersHorizontal },
   { id: "sidebar", labelEn: "Sidebar access", labelVi: "Phân quyền thanh bên", icon: ShieldCheck },
   { id: "announcement", labelEn: "System Announcement", labelVi: "Thông báo hệ thống", icon: Volume2 },
@@ -485,8 +490,29 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     setLoginPanel(initialLoginPanel);
   }, [initialLoginPanel]);
 
+  const initialSeasonalTheme = useMemo<SeasonalThemeSettings>(
+    () =>
+      settings.effective.seasonal_theme ?? {
+        mode: "auto",
+        manual_preset: "none",
+        reminder_enabled: true,
+        reminder_days_before: 7,
+        reminder_send_email: true,
+        events: [],
+        notified_occurrences: {},
+      },
+    [settings.effective.seasonal_theme],
+  );
+  const [seasonalTheme, setSeasonalTheme] =
+    useState<SeasonalThemeSettings>(initialSeasonalTheme);
+  useEffect(() => {
+    setSeasonalTheme(initialSeasonalTheme);
+  }, [initialSeasonalTheme]);
+  const seasonalChanged =
+    JSON.stringify(seasonalTheme) !== JSON.stringify(initialSeasonalTheme);
+
   const [activeTab, setActiveTab] = useState<
-    "appearance" | "general" | "sidebar" | "announcement" | "login"
+    "appearance" | "seasonal" | "general" | "sidebar" | "announcement" | "login"
   >("appearance");
 
   useEffect(() => {
@@ -495,6 +521,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
       const tabParam = params.get("tab") || window.location.hash.replace("#", "");
       if (
         tabParam === "general" ||
+        tabParam === "seasonal" ||
         tabParam === "sidebar" ||
         tabParam === "appearance" ||
         tabParam === "announcement" ||
@@ -577,6 +604,19 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
         themeContext.setDefaultFont(updated.effective.default_font || "inter");
         themeContext.setLogoIcon(updated.effective.logo_icon || "default");
         themeContext.setCustomLogoUrl(updated.effective.custom_logo_url || null);
+        if (updated.effective.seasonal_theme) {
+          setSeasonalTheme(updated.effective.seasonal_theme);
+        }
+        themeContext.setPreviewSeasonalPreset(null);
+        // Refresh resolved active seasonal effect from /api/v1/meta immediately.
+        fetch("/api/v1/meta")
+          .then((res) => (res.ok ? res.json() : null))
+          .then((meta: InstanceInfo | null) => {
+            if (meta?.seasonal_theme) {
+              themeContext.setSeasonalTheme(meta.seasonal_theme);
+            }
+          })
+          .catch(() => {});
       }
       toast.success("Settings saved successfully.");
       setPreviewModalOpen(false);
@@ -621,6 +661,7 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
       custom_logo_url: customLogoUrl || null,
       sidebar_permissions: sidebarPermissions,
       announcement: announcementPayload,
+      seasonal_theme: seasonalTheme,
       login_panel: loginPanel,
       session_ttl_hours: sessionTtlHours.trim()
         ? Number(sessionTtlHours)
@@ -2294,6 +2335,20 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
             </section>
 
             {/* Error alert */}
+            {activeTab === "seasonal" ? (
+              <section className="space-y-6">
+                <SeasonalThemeSettingsPanel
+                  value={seasonalTheme}
+                  onChange={setSeasonalTheme}
+                  onResetDefaults={() => {
+                    void save({ seasonal_theme: null });
+                  }}
+                  pending={pending}
+                  dirty={seasonalChanged}
+                />
+              </section>
+            ) : null}
+
             {error ? (
               <p
                 role="alert"

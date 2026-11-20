@@ -537,6 +537,38 @@ async def test_upload_gif_avatar_preserves_gif_type_and_clears_previous_original
     assert response.media_type == "image/gif"
 
 
+async def test_upload_gif_cover_preserves_gif_type_and_saves_crop() -> None:
+    user = _user()
+    user.cover_object_key = "covers/old.png"
+    user.cover_content_type = "image/png"
+    user.cover_original_key = "covers/original-old.png"
+    user.cover_original_content_type = "image/png"
+    user.cover_crop = {"zoom": 1.2, "x": 0.0, "y": 0.1}
+    session = AsyncMock(flush=AsyncMock(), get=AsyncMock(return_value=user))
+    storage = Mock(put=AsyncMock(), delete=AsyncMock(), get=AsyncMock(return_value=b"GIF89a"))
+
+    gif_upload = UploadFile(
+        file=io.BytesIO(b"GIF89a"),
+        filename="banner.gif",
+        headers=Headers({"content-type": "image/gif"}),
+    )
+    uploaded = await users.upload_own_cover(
+        gif_upload,
+        user,
+        session,
+        storage,
+        crop='{"zoom": 1.4, "x": 0.0, "y": -0.2}',
+    )
+    assert uploaded.cover_content_type == "image/gif"
+    assert uploaded.cover_has_original is False
+    assert uploaded.cover_crop == {"zoom": 1.4, "x": 0.0, "y": -0.2}
+    assert user.cover_object_key and user.cover_object_key.endswith(".gif")
+    assert user.cover_original_key is None
+    assert user.cover_original_content_type is None
+    storage.delete.assert_any_await("covers/original-old.png")
+    storage.delete.assert_any_await("covers/old.png")
+
+
 @pytest.mark.asyncio
 async def test_cover_endpoints_validate_replace_and_remove_cover() -> None:
     user = _user()

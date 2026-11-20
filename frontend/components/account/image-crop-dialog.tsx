@@ -55,7 +55,7 @@ export function ImageCropDialog({
   const initialApplied = useRef(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const isAnimatedGifAvatar = kind === "avatar" && file.type === "image/gif";
+  const isAnimatedGif = file.type === "image/gif";
 
   useEffect(() => {
     const url = URL.createObjectURL(file);
@@ -106,7 +106,7 @@ export function ImageCropDialog({
       : null;
 
   useEffect(() => {
-    if (isAnimatedGifAvatar) return;
+    if (isAnimatedGif) return;
     const canvas = previewRef.current;
     const image = imageRef.current;
     if (!canvas || !image || !geometry || !viewportSize || !imageUrl) return;
@@ -116,7 +116,7 @@ export function ImageCropDialog({
     const context = canvas.getContext("2d");
     if (!context) return;
     drawImageCrop(context, image, geometry, canvas.width, canvas.height);
-  }, [geometry, viewportSize, imageUrl, isAnimatedGifAvatar]);
+  }, [geometry, viewportSize, imageUrl, isAnimatedGif]);
 
   function moveTo(next: ImageOffset) {
     if (!imageSize || !viewportSize) return;
@@ -167,9 +167,15 @@ export function ImageCropDialog({
         x: (geometry?.x ?? 0) / viewportSize.width || 0,
         y: (geometry?.y ?? 0) / viewportSize.height || 0,
       };
-      if (isAnimatedGifAvatar) {
-        if (file.size > 5 * 1024 * 1024) {
-          setError(t("profile.avatarTooLarge"));
+      if (isAnimatedGif) {
+        if (file.size > (kind === "avatar" ? 5 : 10) * 1024 * 1024) {
+          setError(
+            t(
+              kind === "avatar"
+                ? "profile.avatarTooLarge"
+                : "profile.coverTooLarge",
+            ),
+          );
           setSaving(false);
           return;
         }
@@ -233,7 +239,7 @@ export function ImageCropDialog({
           className={`bg-surface-sunken ring-border hover:ring-border-strong active:ring-primary focus-visible:ring-ring relative mx-auto cursor-grab touch-none overflow-hidden rounded-md ring-1 ring-inset transition-colors focus-visible:ring-2 focus-visible:outline-none active:cursor-grabbing ${kind === "avatar" ? "aspect-square w-full max-w-64 rounded-full" : "aspect-[15/4] w-full"}`}
         >
           {geometry && imageUrl && viewportSize && imageSize ? (
-            isAnimatedGifAvatar ? (
+            isAnimatedGif ? (
               <img
                 src={imageUrl}
                 alt=""
@@ -246,6 +252,7 @@ export function ImageCropDialog({
                     y: geometry.y / viewportSize.height,
                   },
                   imageSize,
+                  kind === "cover" ? 15 / 4 : 1,
                 )}
               />
             ) : (
@@ -275,11 +282,6 @@ export function ImageCropDialog({
             className="accent-primary focus-visible:ring-ring h-8 w-full cursor-pointer rounded-md hover:opacity-80 focus-visible:ring-2 focus-visible:outline-none active:opacity-70"
           />
         </div>
-        {file.type === "image/gif" && kind === "cover" ? (
-          <p className="text-muted-foreground mt-2 text-xs">
-            {t("profile.cropGifHint")}
-          </p>
-        ) : null}
         {error ? (
           <p role="alert" className="text-danger mt-3 text-sm">
             {error}

@@ -26,17 +26,28 @@ from app.models.audit import AuditAction
 from app.models.site_settings import DEFAULT_TRASH_RETENTION_DAYS, SINGLETON_ID, SiteSettings
 from app.models.user import User
 from app.schemas.site_settings import (
+    ActiveSeasonalTheme,
     AnnouncementRead,
     EffectiveSettings,
     LoginPanel,
+    SeasonalCalendarEntry,
+    SeasonalEffectPresetId,
+    SeasonalThemeSettings,
     SidebarPermissions,
     SidebarPermissionsRead,
     SiteSettingsOverrides,
     SiteSettingsRead,
     SiteSettingsUpdate,
     SystemAnnouncement,
+    UpcomingSeasonalReminder,
 )
 from app.services.audit import AuditService, ClientInfo
+from app.services.seasonal_theme import (
+    build_home_calendar,
+    find_upcoming_reminders,
+    merge_builtin_events,
+    resolve_active_seasonal_theme,
+)
 from app.services.storage import ObjectStorage
 
 logger = get_logger(__name__)
@@ -53,6 +64,7 @@ AUDITED_FIELDS = (
     "allowed_attachment_types",
     "sidebar_permissions",
     "announcement",
+    "seasonal_theme",
     "login_panel",
     "session_ttl_hours",
     "trash_retention_days",
@@ -99,6 +111,24 @@ class SiteSettingsService:
             announcement=announcement if announcement.is_currently_active() else None
         )
 
+    async def read_seasonal_reminders(self) -> list[UpcomingSeasonalReminder]:
+        effective = await self.get_effective()
+        return find_upcoming_reminders(effective.seasonal_theme)
+
+    async def read_seasonal_calendar(self) -> list[SeasonalCalendarEntry]:
+        effective = await self.get_effective()
+        return build_home_calendar(effective.seasonal_theme)
+
+    async def activate_seasonal_preset(
+        self, preset: SeasonalEffectPresetId
+    ) -> ActiveSeasonalTheme:
+        effective = await self.get_effective()
+        updated = effective.seasonal_theme.model_copy(
+            update={"mode": "manual", "manual_preset": preset}
+        )
+        await self.update(SiteSettingsUpdate(seasonal_theme=updated))
+        return resolve_active_seasonal_theme(updated)
+
     @classmethod
     def env_defaults(cls) -> EffectiveSettings:
         """Effective settings with no database involved.
@@ -132,6 +162,16 @@ class SiteSettingsService:
             if announcement_raw is not None
             else SystemAnnouncement()
         )
+        seasonal_raw = getattr(row, "seasonal_theme", None)
+        seasonal_theme = (
+            SeasonalThemeSettings.model_validate(seasonal_raw)
+            if seasonal_raw is not None
+            else SeasonalThemeSettings()
+        )
+        # Older installs stored only the original built-ins; surface new ones.
+        seasonal_theme = seasonal_theme.model_copy(
+            update={"events": merge_builtin_events(seasonal_theme.events)}
+        )
         login_panel_raw = getattr(row, "login_panel", None)
         login_panel = (
             LoginPanel.model_validate(login_panel_raw)
@@ -160,6 +200,7 @@ class SiteSettingsService:
             allowed_attachment_types=list(types),
             sidebar_permissions=sidebar_permissions,
             announcement=announcement,
+            seasonal_theme=seasonal_theme,
             login_panel=login_panel,
             login_image_url=login_image_url,
             session_ttl_hours=session_ttl_hours,
@@ -256,6 +297,18 @@ class SiteSettingsService:
                 update={"updated_at": datetime.now(UTC)}
             )
             data["announcement"] = stamped.model_dump(mode="json")
+        if "seasonal_theme" in data and payload.seasonal_theme is not None:
+            # Preserve server-managed notification history when the UI saves settings.
+            existing_notified = (
+                (row.seasonal_theme or {}).get("notified_occurrences", {})
+                if isinstance(row.seasonal_theme, dict)
+                else {}
+            )
+            merged_notified = {**existing_notified, **payload.seasonal_theme.notified_occurrences}
+            stamped_seasonal = payload.seasonal_theme.model_copy(
+                update={"notified_occurrences": merged_notified}
+            )
+            data["seasonal_theme"] = stamped_seasonal.model_dump(mode="json")
         for field in AUDITED_FIELDS:
             if field in data:
                 setattr(row, field, data[field])

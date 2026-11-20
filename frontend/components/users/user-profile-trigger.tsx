@@ -1,12 +1,16 @@
 "use client";
 
-import { Building2, Clock3, Loader2, UserRound } from "lucide-react";
+import { Building2, Clock3, Loader2, UserRound, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   isUserStatusActive,
 } from "@/components/account/status-dialog";
+import {
+  WelcomePopoverBadge,
+  WelcomePopoverEffect,
+} from "@/components/users/welcome-effect-overlay";
 import { CroppedAvatarImage, getUserAvatarColor, versionedAvatarUrl } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +36,8 @@ export function UserProfileTrigger({
   username,
   fullName,
   avatarUrl,
+  avatarCrop,
+  avatarContentType,
   variant = "name",
   className,
   openOnHover = variant === "mention" || variant === "avatar",
@@ -43,6 +49,8 @@ export function UserProfileTrigger({
   username: string;
   fullName?: string | null;
   avatarUrl?: string | null;
+  avatarCrop?: { zoom: number; x: number; y: number } | null;
+  avatarContentType?: string | null;
   variant?: "name" | "avatar" | "mention";
   className?: string;
   /** Also open the card when the pointer rests on the name (and close it after leaving). */
@@ -103,8 +111,31 @@ export function UserProfileTrigger({
       }
     }
     window.addEventListener("wikihub:user-status-changed", onStatusChanged);
+    function onWelcomeChanged(e: Event) {
+      const customEvent = e as CustomEvent<{
+        username: string;
+        welcome_effect?: PublicUser["welcome_effect"];
+        welcome_message?: string;
+      }>;
+      if (
+        customEvent.detail?.username &&
+        customEvent.detail.username.toLowerCase() === username.toLowerCase()
+      ) {
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                welcome_effect: customEvent.detail.welcome_effect ?? "",
+                welcome_message: customEvent.detail.welcome_message ?? "",
+              }
+            : null,
+        );
+      }
+    }
+    window.addEventListener("wikihub:user-welcome-changed", onWelcomeChanged);
     return () => {
       window.removeEventListener("wikihub:user-status-changed", onStatusChanged);
+      window.removeEventListener("wikihub:user-welcome-changed", onWelcomeChanged);
     };
   }, [username]);
 
@@ -135,22 +166,17 @@ export function UserProfileTrigger({
     profile?.avatar_url ?? avatarUrl ?? null,
     profile?.avatar_updated_at,
   );
-  const useCroppedAvatar = Boolean(
-    effectiveAvatarUrl &&
-      profile?.avatar_content_type === "image/gif" &&
-      profile?.avatar_crop &&
-      !(
-        profile.avatar_crop.zoom === 1 &&
-        profile.avatar_crop.x === 0 &&
-        profile.avatar_crop.y === 0
-      ),
-  );
+  const effectiveAvatarCrop = profile?.avatar_crop ?? avatarCrop ?? null;
+  const effectiveAvatarContentType =
+    profile?.avatar_content_type ?? avatarContentType ?? null;
   const displayProfile = profile ?? {
     username,
     full_name: fullName || "",
     avatar_url: effectiveAvatarUrl,
     avatar_content_type: null,
     avatar_crop: null,
+    cover_url: null,
+    cover_updated_at: null,
     bio: "",
     pronouns: "",
     profile_url: "",
@@ -159,7 +185,16 @@ export function UserProfileTrigger({
     status_emoji: null,
     status_text: null,
     status_expires_at: null,
+    welcome_effect: "" as const,
+    welcome_message: "",
+    is_workspace_admin: false,
   };
+  const welcomeEffect = displayProfile.welcome_effect ?? "";
+  const welcomeMessage = displayProfile.welcome_message?.trim() ?? "";
+  const effectiveCoverUrl = versionedAvatarUrl(
+    displayProfile.cover_url ?? null,
+    displayProfile.cover_updated_at,
+  );
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -170,14 +205,6 @@ export function UserProfileTrigger({
             onMouseEnter={() => hoverTo(true)}
             onMouseLeave={() => hoverTo(false)}
             aria-label={t("userProfile.profileSummaryAria", { name: label })}
-            style={
-              effectiveAvatarUrl && !useCroppedAvatar
-                ? {
-                    backgroundImage: `url(${effectiveAvatarUrl})`,
-                    backgroundSize: "cover",
-                  }
-                : undefined
-            }
             className={cn(
               "focus-visible:ring-ring relative flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none select-none ring-1 ring-inset ring-black/5 dark:ring-white/10",
               !children &&
@@ -191,13 +218,11 @@ export function UserProfileTrigger({
           >
             {children ?? (
               effectiveAvatarUrl ? (
-                useCroppedAvatar ? (
-                  <CroppedAvatarImage
-                    src={effectiveAvatarUrl}
-                    crop={profile?.avatar_crop}
-                    contentType={profile?.avatar_content_type}
-                  />
-                ) : null
+                <CroppedAvatarImage
+                  src={effectiveAvatarUrl}
+                  crop={effectiveAvatarCrop}
+                  contentType={effectiveAvatarContentType}
+                />
               ) : (
                 initials(label, username) || (
                   <UserRound className="size-4" aria-hidden />
@@ -249,26 +274,46 @@ export function UserProfileTrigger({
 
       <PopoverContent
         align={popoverAlign}
-        className="w-72 p-4"
+        className="w-72 overflow-hidden p-0"
         onMouseEnter={() => hoverTo(true)}
         onMouseLeave={() => hoverTo(false)}
       >
         {loading ? (
-          <div className="text-muted-foreground flex items-center justify-center gap-2 py-5 text-sm">
+          <div className="text-muted-foreground flex items-center justify-center gap-2 px-4 py-6 text-sm">
             <Loader2 className="text-primary size-4 animate-spin" aria-hidden />
             {t("userProfile.loadingProfile")}
           </div>
         ) : profile || !loadError ? (
           <div>
-            <div className="flex items-start gap-3">
-              <span
-                className={cn(
-                  "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold select-none ring-1 ring-inset ring-black/5 dark:ring-white/10",
-                  displayProfile.avatar_url
-                    ? ""
-                    : getUserAvatarColor(displayProfile.username || displayProfile.full_name || ""),
-                )}
-              >
+            {/* Cover banner matching Home profile card */}
+            <div className="bg-primary-subtle relative aspect-[15/4] w-full overflow-hidden">
+              {effectiveCoverUrl ? (
+                <img
+                  src={effectiveCoverUrl}
+                  alt=""
+                  className="size-full object-cover"
+                />
+              ) : null}
+              {welcomeEffect ? (
+                <div className="absolute top-2 right-2">
+                  <WelcomePopoverBadge effect={welcomeEffect} />
+                </div>
+              ) : null}
+            </div>
+
+            {/* Lower body with welcome effect rendered underneath readable content */}
+            <div className="relative px-4 pb-4">
+              {welcomeEffect ? <WelcomePopoverEffect effect={welcomeEffect} /> : null}
+              <div className="relative z-10">
+                <div className="flex items-end gap-3">
+                  <span
+                    className={cn(
+                      "ring-surface relative -mt-8 flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-semibold ring-4 select-none",
+                      displayProfile.avatar_url
+                        ? ""
+                        : getUserAvatarColor(displayProfile.username || displayProfile.full_name || ""),
+                    )}
+                  >
                 {displayProfile.avatar_url ? (
                   <CroppedAvatarImage
                     src={effectiveAvatarUrl ?? displayProfile.avatar_url}
@@ -279,12 +324,12 @@ export function UserProfileTrigger({
                   initials(
                     displayProfile.full_name,
                     displayProfile.username,
-                  ) || <UserRound className="size-4" aria-hidden />
+                  ) || <UserRound className="size-6" aria-hidden />
                 )}
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1 pb-0.5">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <p className="truncate text-sm font-semibold">
+                  <p className="truncate text-[15px] leading-tight font-semibold tracking-tight">
                     {displayProfile.full_name || displayProfile.username}
                   </p>
                   {statusBadge}
@@ -331,6 +376,11 @@ export function UserProfileTrigger({
                 </div>
               </div>
             ) : null}
+            {welcomeEffect && welcomeMessage ? (
+              <p className="bg-surface/80 border-border/70 text-foreground mt-2.5 rounded-md border px-2.5 py-1.5 text-xs leading-snug backdrop-blur-xs">
+                {welcomeMessage}
+              </p>
+            ) : null}
             {displayProfile.bio ? (
               <p className="text-muted-foreground mt-3 line-clamp-3 text-sm leading-5">
                 {displayProfile.bio}
@@ -342,14 +392,29 @@ export function UserProfileTrigger({
                 <span className="truncate">{displayProfile.company}</span>
               </p>
             ) : null}
-            <Button className="mt-4 w-full" size="sm" asChild>
-              <Link href={`/users/${encodeURIComponent(username)}`}>
-                {t("userProfile.viewProfile")}
-              </Link>
-            </Button>
+            {profile ? (
+              <div className="border-border/70 mt-3 flex items-center gap-2 border-t pt-2.5 text-xs">
+                <UsersRound className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+                <span className="text-muted-foreground">
+                  {t("profile.workspaceRole")}
+                </span>
+                <span className="text-foreground ml-auto font-medium">
+                  {displayProfile.is_workspace_admin
+                    ? t("profile.administrator")
+                    : t("profile.member")}
+                </span>
+              </div>
+            ) : null}
+                <Button className="mt-3 w-full" size="sm" asChild>
+                  <Link href={`/users/${encodeURIComponent(username)}`}>
+                    {t("userProfile.viewProfile")}
+                  </Link>
+                </Button>
+              </div>
+            </div>
           </div>
         ) : (
-          <p className="text-muted-foreground py-3 text-center text-sm">
+          <p className="text-muted-foreground px-4 py-4 text-center text-sm">
             {t("userProfile.profileUnavailable")}
           </p>
         )}

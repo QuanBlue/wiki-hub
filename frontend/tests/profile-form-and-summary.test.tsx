@@ -317,6 +317,29 @@ describe("ProfileSummary", () => {
     expect(within(avatarDialog).getByRole("img", { name: "Profile picture" })).toHaveAttribute("src", "/me.png");
   });
 
+  it("downloads the viewed GIF avatar with a .gif filename", async () => {
+    const actor = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["GIF89a"], { type: "image/gif" }), {
+      headers: { "Content-Type": "image/gif" },
+    })));
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    render(<ProfileSummary user={me({
+      avatar_url: "/me.gif",
+      avatar_content_type: "image/gif",
+      avatar_crop: { zoom: 1.5, x: 0.1, y: 0 },
+    })} onEdit={vi.fn()} />);
+
+    await actor.click(screen.getByRole("button", { name: "View profile picture" }));
+    const avatarDialog = screen.getByRole("dialog", { name: "Profile picture" });
+    await actor.click(within(avatarDialog).getByRole("button", { name: "Download" }));
+
+    await waitFor(() => expect(clickSpy).toHaveBeenCalledOnce());
+    expect(fetch).toHaveBeenCalledWith("/me.gif", { credentials: "same-origin" });
+    expect(URL.revokeObjectURL).toHaveBeenCalled();
+    clickSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
   it("shows the essentials for a bare member", () => {
     const onEdit = vi.fn();
     render(<ProfileSummary user={me()} onEdit={onEdit} />);
