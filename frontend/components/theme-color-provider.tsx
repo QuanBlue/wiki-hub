@@ -44,7 +44,7 @@ interface ThemeSettingsContextValue {
   setLogoIcon: (icon: string) => void;
   setCustomLogoUrl: (url: string | null) => void;
   setSeasonalTheme: (theme: ActiveSeasonalTheme) => void;
-  /** Re-read the active holiday from the server (a no-op if asked again within 2 s). */
+  /** Re-read the active holiday from the server (a no-op if asked again within 30 s). */
   refreshSeasonalTheme: () => void;
   setPreviewSeasonalPreset: (preset: SeasonalEffectPresetId | null) => void;
 }
@@ -67,6 +67,8 @@ const ThemeSettingsContext = createContext<ThemeSettingsContextValue>({
   refreshSeasonalTheme: () => {},
   setPreviewSeasonalPreset: () => {},
 });
+
+const SEASONAL_REFRESH_MIN_MS = 30_000;
 
 type ThemePalette = ReturnType<typeof getPresetOrCustomPalette>;
 
@@ -309,7 +311,9 @@ export function ThemeColorProvider({
   // another tab announces a change.
   const refreshSeasonalTheme = useCallback(() => {
     const now = Date.now();
-    if (now - lastSeasonalFetch.current < 2000) return;
+    // Page changes can come every few seconds; one small request per 30 s is plenty
+    // to notice a holiday change and keeps load off a small server.
+    if (now - lastSeasonalFetch.current < SEASONAL_REFRESH_MIN_MS) return;
     lastSeasonalFetch.current = now;
     fetch("/api/v1/meta", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))

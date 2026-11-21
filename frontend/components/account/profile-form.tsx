@@ -1,6 +1,7 @@
 "use client";
 
 import { Link2, Loader2, Move, PartyPopper, Trash2, Upload, UserRound } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -18,11 +19,16 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { CroppedAvatarImage, getUserAvatarColor, resolveAvatarUrl } from "@/components/ui/avatar";
-import { WelcomeEffectDialog } from "@/components/users/welcome-effect-dialog";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import type { Me, User } from "@/types/api";
+
+// Only needed once the picker opens; keeps the renderers out of the account page's bundle.
+const WelcomeEffectDialog = dynamic(
+  () => import("@/components/users/welcome-effect-dialog").then((m) => m.WelcomeEffectDialog),
+  { ssr: false },
+);
 
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 const MAX_COVER_BYTES = 10 * 1024 * 1024;

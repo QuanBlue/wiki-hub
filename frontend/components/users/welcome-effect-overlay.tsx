@@ -100,7 +100,7 @@ import {
 } from "@/components/users/welcome-effects/helpers";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
-import type { PlayableWelcomeEffect, WelcomeEffect } from "@/types/api";
+import type { PlayableWelcomeEffect } from "@/types/api";
 
 interface WelcomeEffectOverlayProps {
   effect: PlayableWelcomeEffect;
@@ -3738,7 +3738,23 @@ export function WelcomeEffectOverlay({
     if (!ctx) return;
 
     let rafId = 0;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Pixel density of the canvas. A full-window canvas at 2x is 4x the pixels to
+    // fill (gradients, glows and blurred strokes dominate the cost), which a weak
+    // machine cannot keep up with, so it is capped at 1.5x and then stepped down
+    // by the quality governor below whenever frames arrive late.
+    const baseDpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const lowEnd =
+      (navigator.hardwareConcurrency ?? 8) <= 4 ||
+      ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
+    // [resolution multiplier, minimum ms between drawn frames]
+    const LEVELS: Array<[number, number]> = [
+      [1, 0],
+      [0.75, 0],
+      [0.5, 0],
+      [0.5, 33],
+    ];
+    let level = lowEnd ? 1 : 0;
+    let dpr = baseDpr * LEVELS[level]![0];
 
     const getSize = () => {
       if (contained && canvas.parentElement) {
@@ -3752,8 +3768,8 @@ export function WelcomeEffectOverlay({
 
     const resize = () => {
       const { width, height } = getSize();
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
@@ -3780,12 +3796,30 @@ export function WelcomeEffectOverlay({
       };
     };
 
+    // Layout reads (getBoundingClientRect, offsetWidth) force a synchronous layout, so
+    // they are done a few times a second instead of on every frame.
+    let focusCache: Focus | null = null;
+    let focusAt = -Infinity;
+    const cachedFocus = (width: number, height: number, now: number): Focus => {
+      if (!focusCache || now - focusAt > 120) {
+        focusCache = measureFocus(width, height);
+        focusAt = now;
+      }
+      return focusCache;
+    };
+    let bubbleSize = { w: 0, h: 0 };
+    let bubbleAt = -Infinity;
+
     const placeBubble = (focus: Focus, width: number, height: number, elapsed: number) => {
       const b = bubbleRef.current;
       if (!b) return;
       const layout = mascotLayout(focus, width, height, spec.restY);
-      const bw = b.offsetWidth;
-      const bh = b.offsetHeight;
+      if (elapsed - bubbleAt > 250) {
+        bubbleSize = { w: b.offsetWidth, h: b.offsetHeight };
+        bubbleAt = elapsed;
+      }
+      const bw = bubbleSize.w;
+      const bh = bubbleSize.h;
       // Speech bubble centred above Hubby's head.
       const left = Math.max(8, Math.min(width - bw - 8, layout.x - bw / 2));
       let top = Math.max(8, layout.y - layout.size * 0.62 - bh - 10);
@@ -3802,10 +3836,34 @@ export function WelcomeEffectOverlay({
     };
 
     const startTime = performance.now();
+    // Quality governor: when frames keep arriving late (a smoothed gap above ~26 ms,
+    // under 38 fps), drop the canvas resolution one step, and as a last resort draw
+    // every other frame. The animation is driven by elapsed time, so it keeps its
+    // pace; it just gets coarser instead of stuttering.
+    let lastTick = 0;
+    let lastDrawn = -Infinity;
+    let gapAvg = 16.7;
+    let nextCheck = 600;
     const tick = (now: number) => {
-      const { width, height } = getSize();
       const elapsed = now - startTime;
-      const focus = measureFocus(width, height);
+      if (lastTick) gapAvg = gapAvg * 0.85 + (now - lastTick) * 0.15;
+      lastTick = now;
+      if (elapsed > nextCheck) {
+        nextCheck = elapsed + 500;
+        if (gapAvg > 26 && level < LEVELS.length - 1 && !document.hidden) {
+          level += 1;
+          dpr = baseDpr * LEVELS[level]![0];
+          resize();
+          gapAvg = 16.7;
+        }
+      }
+      if (now - lastDrawn < LEVELS[level]![1] - 3) {
+        rafId = window.requestAnimationFrame(tick);
+        return;
+      }
+      lastDrawn = now;
+      const { width, height } = getSize();
+      const focus = cachedFocus(width, height, now);
       renderFrame(ctx, width, height, elapsed, focus);
       if (effect !== "memorial") drawScene(ctx, width, height, elapsed, focus, spec);
       placeBubble(focus, width, height, elapsed);
@@ -3907,30 +3965,6 @@ export function WelcomeEffectOverlay({
   );
 }
 
-/**
- * Frosted theme pill badge placed in the corner of the quick-profile cover,
- * matching WikiHub's surface token aesthetic.
- */
-export function WelcomePopoverBadge({ effect }: { effect: WelcomeEffect }) {
-  const { t } = useTranslation();
-  if (!effect) return null;
-  const meta = EFFECT_META[effect];
-  if (!meta) return null;
-  const Icon = meta.Icon;
-
-  return (
-    <span className="border-border/70 bg-surface/85 text-foreground inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium shadow-2xs backdrop-blur-sm">
-      <Icon className={cn("size-3", meta.badgeIconClass)} aria-hidden />
-      {t(`welcomeEffect.presets.${effect}.label`)}
-    </span>
-  );
-}
-
-/**
- * Kept as a lightweight hook point for the quick-profile popover body.
- * Currently returns null to preserve the clean `bg-surface` card body
- * without background gradient washes.
- */
-export function WelcomePopoverEffect({ effect: _effect }: { effect: WelcomeEffect }) {
-  return null;
-}
+// The popover badge lives in welcome-effect-badge.tsx so pages that only show it do not
+// load every renderer; re-exported here for existing imports.
+export { WelcomePopoverBadge, WelcomePopoverEffect } from "@/components/users/welcome-effect-badge";

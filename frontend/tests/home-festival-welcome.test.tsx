@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { UserProfile } from "@/components/users/user-profile";
 import { api } from "@/lib/api-client";
@@ -70,6 +70,10 @@ function visitHome(user: PublicUser = USER) {
   );
 }
 
+// The effects load on demand (next/dynamic); warm the chunk so tests only wait a tick.
+beforeAll(() => import("@/components/users/welcome-effect-overlay"));
+const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 60))));
+
 beforeEach(() => {
   vi.clearAllMocks();
   window.sessionStorage.clear();
@@ -80,35 +84,37 @@ beforeEach(() => {
 });
 
 describe("Home welcome effect during a festival", () => {
-  it("greets the member on every visit to Home", () => {
+  it("greets the member on every visit to Home", async () => {
     seasonal.preset = "christmas";
     const first = visitHome();
-    expect(screen.getByRole("status")).toHaveTextContent("Merry Christmas");
+    expect(await screen.findByRole("status")).toHaveTextContent("Merry Christmas");
     first.unmount();
 
     visitHome();
-    expect(screen.getByRole("status")).toHaveTextContent("Merry Christmas");
+    expect(await screen.findByRole("status")).toHaveTextContent("Merry Christmas");
   });
 
   it("stays quiet for the rest of the session once the member presses Skip", async () => {
     seasonal.preset = "christmas";
     const user = userEvent.setup();
     const first = visitHome();
-    await user.click(screen.getByRole("button", { name: /skip/i }));
+    await user.click(await screen.findByRole("button", { name: /skip/i }));
     expect(screen.queryByRole("status")).toBeNull();
     first.unmount();
 
     visitHome();
+    await settle();
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("still plays the member's own effect only once per session outside a festival", () => {
+  it("still plays the member's own effect only once per session outside a festival", async () => {
     const withEffect: PublicUser = { ...USER, welcome_effect: "hacker", welcome_message: "Hi" };
     const first = visitHome(withEffect);
-    expect(screen.getByRole("status")).toHaveTextContent("Hi");
+    expect(await screen.findByRole("status")).toHaveTextContent("Hi");
     first.unmount();
 
     visitHome(withEffect);
+    await settle();
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
