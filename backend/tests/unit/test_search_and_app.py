@@ -31,8 +31,13 @@ def test_extract_snippet_handles_empty_query_and_matches() -> None:
 
 @pytest.mark.asyncio
 async def test_search_returns_visible_spaces_and_pages(monkeypatch: pytest.MonkeyPatch) -> None:
-    visible_space = SimpleNamespace(id="space-1", key="ENG", name="Engineering", description=None)
-    hidden_space = SimpleNamespace(id="space-2", key="OPS", name="Ops", description="Ops")
+    # Spaces are ranked in Python by how well the query names them (see ``names``): one
+    # whose description holds the query, one whose name starts with it, and an unrelated one.
+    visible_space = SimpleNamespace(
+        id="space-1", key="ENG", name="Engineering", description="Runbook library"
+    )
+    hidden_space = SimpleNamespace(id="space-2", key="OPS", name="Runbooks", description="Ops")
+    unrelated = SimpleNamespace(id="space-3", key="HR", name="People", description=None)
     visible_page = SimpleNamespace(
         id="page-1",
         title="Runbook",
@@ -50,14 +55,17 @@ async def test_search_returns_visible_spaces_and_pages(monkeypatch: pytest.Monke
         space=hidden_space,
     )
     first = Mock(
-        scalars=Mock(return_value=Mock(all=Mock(return_value=[visible_space, hidden_space])))
+        scalars=Mock(
+            return_value=Mock(all=Mock(return_value=[visible_space, hidden_space, unrelated]))
+        )
     )
     second = Mock(
         scalars=Mock(return_value=Mock(all=Mock(return_value=[visible_page, hidden_page])))
     )
     session = Mock(execute=AsyncMock(side_effect=[first, second]))
+    # Best match first: "Runbooks" (hidden from this user), then "Engineering".
     permissions = SimpleNamespace(
-        effective_permissions=AsyncMock(side_effect=[[Permission.view], []]),
+        effective_permissions=AsyncMock(side_effect=[[], [Permission.view]]),
         can_view_page=AsyncMock(side_effect=[True, False]),
     )
     monkeypatch.setattr(search_module, "PermissionService", lambda _session: permissions)
@@ -71,10 +79,13 @@ async def test_search_returns_visible_spaces_and_pages(monkeypatch: pytest.Monke
     )
     monkeypatch.setattr(SearchService, "_file_hits", AsyncMock(return_value={}))
     monkeypatch.setattr(SearchService, "_named_space_pages", AsyncMock(return_value=[]))
+    monkeypatch.setattr(SearchService, "_compact_title_pages", AsyncMock(return_value=[]))
+    monkeypatch.setattr(SearchService, "_match_users", AsyncMock(return_value=[]))
 
     result = await SearchService(session).search(" runbook ", SimpleNamespace(id="u"), limit=5)
     assert result.query == "runbook"
     assert [space.key for space in result.spaces] == ["ENG"]
+    assert result.users == []
     assert [page.slug for page in result.pages] == ["runbook"]
     assert "Deploy runbook" in result.pages[0].snippet
 

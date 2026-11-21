@@ -21,6 +21,7 @@ import {
   SearchAnswer,
   type AnswerState,
 } from "@/components/layout/search-answer";
+import { Avatar, versionedAvatarUrl } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { AnswerTimeoutError, askWiki, sourceHref, type AnswerSource } from "@/lib/ai-answer";
@@ -30,7 +31,7 @@ import { aiStatus } from "@/lib/ai-summary";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { matchesShortcut } from "@/lib/keyboard-shortcuts";
-import { highlightRanges } from "@/lib/search-highlight";
+import { compactRanges, highlightRanges } from "@/lib/search-highlight";
 import { isLocalFindActive } from "@/lib/local-find-registry";
 import {
   appendFilterToQuery,
@@ -56,6 +57,7 @@ import type {
   Me,
   SearchResultPage,
   SearchResultSpace,
+  SearchResultUser,
   SearchResults,
 } from "@/types/api";
 
@@ -63,6 +65,7 @@ type SearchItem =
   | { kind: "guide"; data: GuideMatch }
   | { kind: "nav"; data: NavigationMatch }
   | { kind: "space"; data: SearchResultSpace }
+  | { kind: "user"; data: SearchResultUser }
   | { kind: "page"; data: SearchResultPage };
 
 function HighlightText({
@@ -86,31 +89,38 @@ function HighlightText({
     </mark>
   );
 
-  if (terms?.length) {
-    const ranges = highlightRanges(text, terms);
-    if (ranges.length === 0) return <>{text}</>;
-    const parts: React.ReactNode[] = [];
-    let cursor = 0;
-    ranges.forEach(([start, end], index) => {
-      if (start > cursor) parts.push(text.slice(cursor, start));
-      parts.push(mark(text.slice(start, end), index));
-      cursor = end;
-    });
-    if (cursor < text.length) parts.push(text.slice(cursor));
-    return <>{parts}</>;
+  // The server's words (or the query as typed); failing those, the query squashed ("dms_1"
+  // marks "dms1.0"), since a name is found however its breaks, accents and capitals were typed.
+  let ranges = terms?.length
+    ? highlightRanges(text, terms)
+    : literalRanges(text, query.trim());
+  if (ranges.length === 0) ranges = compactRanges(text, query);
+  if (ranges.length === 0) return <>{text}</>;
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  ranges.forEach(([start, end], index) => {
+    if (start > cursor) parts.push(text.slice(cursor, start));
+    parts.push(mark(text.slice(start, end), index));
+    cursor = end;
+  });
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return <>{parts}</>;
+}
+
+/** Every place `text` holds `query` as typed, capitals aside. */
+function literalRanges(text: string, query: string): [number, number][] {
+  const ranges: [number, number][] = [];
+  if (!query) return ranges;
+  const haystack = text.toLowerCase();
+  const needle = query.toLowerCase();
+  // Lower-casing can change a string's length (rare letters): then only the squashed match.
+  if (haystack.length !== text.length) return ranges;
+  let start = haystack.indexOf(needle);
+  while (start >= 0) {
+    ranges.push([start, start + needle.length]);
+    start = haystack.indexOf(needle, start + needle.length);
   }
-
-  const trimmed = query.trim();
-  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
-
-  return (
-    <>
-      {parts.map((part, index) =>
-        part.toLowerCase() === trimmed.toLowerCase() ? mark(part, index) : part,
-      )}
-    </>
-  );
+  return ranges;
 }
 
 const SMART_TIPS = [
@@ -318,6 +328,9 @@ export function SearchModal({
     for (const space of results.spaces) {
       items.push({ kind: "space", data: space });
     }
+    for (const person of results.users ?? []) {
+      items.push({ kind: "user", data: person });
+    }
     for (const page of results.pages) {
       items.push({ kind: "page", data: page });
     }
@@ -374,6 +387,8 @@ export function SearchModal({
         } else navigate(item.data.entry.href);
       } else if (item.kind === "space") {
         navigate(`/spaces/${encodeURIComponent(item.data.key)}`);
+      } else if (item.kind === "user") {
+        navigate(`/users/${encodeURIComponent(item.data.username)}`);
       } else {
         navigate(
           `/spaces/${encodeURIComponent(item.data.space_key)}/pages/${encodeURIComponent(item.data.slug)}`,
@@ -458,6 +473,12 @@ export function SearchModal({
               placeholder={t("search.inputPlaceholder", { siteName })}
               className="text-foreground placeholder:text-muted-foreground w-full bg-transparent text-base outline-none"
             />
+            {loading && results ? (
+              <Loader2
+                className="text-primary mr-2 size-4 shrink-0 animate-spin"
+                aria-label={t("search.searching", { siteName })}
+              />
+            ) : null}
             {query ? (
               <button
                 type="button"
@@ -657,7 +678,9 @@ export function SearchModal({
                     )}
                   </div>
                 ) : null}
-                {loading ? (
+                {/* The previous results stay up while the next ones load (no flash of a
+                    spinner per keystroke); the spinner in the box says a search is on. */}
+                {loading && !results ? (
                   <div className="text-muted-foreground flex items-center justify-center py-12 text-sm">
                     <Loader2 className="text-primary mr-2 size-5 animate-spin" />
                     {t("search.searching", { siteName })}
@@ -746,7 +769,7 @@ export function SearchModal({
                       </button>
                     </div>
                   </div>
-                ) : (results || command) && flatItems.length === 0 ? (
+                ) : (results || command) && flatItems.length === 0 && !loading ? (
                   <div className="text-muted-foreground py-12 text-center text-sm">
                     {t("search.noResults", { query })}
                   </div>
@@ -756,7 +779,9 @@ export function SearchModal({
                     {results?.spaces && results.spaces.length > 0 ? (
                       <div>
                         <div className="text-muted-foreground px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase">
-                          Spaces ({results.spaces.length})
+                          {t("search.sectionSpaces", {
+                            count: results.spaces.length,
+                          })}
                         </div>
                         <ul className="space-y-1">
                           {results.spaces.map((space) => {
@@ -819,11 +844,79 @@ export function SearchModal({
                       </div>
                     ) : null}
 
+                    {/* People Section */}
+                    {results?.users && results.users.length > 0 ? (
+                      <div>
+                        <div className="text-muted-foreground px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase">
+                          {t("search.sectionPeople", {
+                            count: results.users.length,
+                          })}
+                        </div>
+                        <ul className="space-y-1">
+                          {results.users.map((person) => {
+                            const itemIndex = flatItems.findIndex(
+                              (i) => i.kind === "user" && i.data.id === person.id,
+                            );
+                            const isSelected = itemIndex === selectedIndex;
+                            return (
+                              <li key={person.id}>
+                                <button
+                                  ref={(el) => {
+                                    itemRefs.current[itemIndex] = el;
+                                  }}
+                                  type="button"
+                                  onClick={() =>
+                                    selectItem({ kind: "user", data: person })
+                                  }
+                                  onMouseEnter={() =>
+                                    setSelectedIndex(itemIndex)
+                                  }
+                                  className={cn(
+                                    "focus-visible:ring-ring flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                                    isSelected
+                                      ? "bg-surface-selected text-primary"
+                                      : "hover:bg-surface-hover text-foreground",
+                                  )}
+                                >
+                                  <Avatar
+                                    name={person.full_name}
+                                    username={person.username}
+                                    src={versionedAvatarUrl(
+                                      person.avatar_url,
+                                      person.avatar_updated_at,
+                                    )}
+                                    crop={person.avatar_crop}
+                                    contentType={person.avatar_content_type}
+                                    className="size-6 text-[10px]"
+                                  />
+                                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                                    <HighlightText
+                                      text={person.full_name || person.username}
+                                      query={cleanQuery || query}
+                                    />
+                                  </span>
+                                  <span className="text-muted-foreground shrink-0 truncate font-mono text-[11px]">
+                                    @
+                                    <HighlightText
+                                      text={person.username}
+                                      query={cleanQuery || query}
+                                    />
+                                  </span>
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+
                     {/* Pages Section */}
                     {results?.pages && results.pages.length > 0 ? (
                       <div>
                         <div className="text-muted-foreground px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase">
-                          Pages ({results.pages.length})
+                          {t("search.sectionPages", {
+                            count: results.pages.length,
+                          })}
                         </div>
                         <ul className="space-y-1">
                           {results.pages.map((page) => {
