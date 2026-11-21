@@ -111,14 +111,28 @@ function drawBlossomTree(
   kind: "dao" | "mai",
   grow: number,
   clock: number,
+  /** "static" = pot, trunk and blossoms (cacheable); "lixi" = the swinging packets; default both. */
+  part: "all" | "static" | "lixi" = "all",
 ) {
   if (grow <= 0.02 || H < 30) return;
+  const doStatic = part !== "lixi";
+  const doLixi = part !== "static";
   const pot = H * 0.1;
   const P = (u: number, v: number): [number, number] => [x + side * u * H, baseY - pot - v * H * grow];
   const petal = kind === "dao" ? "#f9a8d4" : "#fde047";
   const edge = kind === "dao" ? "#be185d" : "#b45309";
   const core = kind === "dao" ? "#fde047" : "#f97316";
 
+  // trunk and branches: [start u,v, control u,v, end u,v]
+  const branches: [number, number, number, number, number, number][] = [
+    [0, 0, 0.03, 0.32, 0.01, 0.62],
+    [0.02, 0.3, 0.12, 0.38, 0.27, 0.6],
+    [0.015, 0.48, 0.09, 0.62, 0.17, 0.88],
+    [0.012, 0.62, -0.08, 0.7, -0.12, 0.84],
+    [0.01, 0.62, 0.15, 0.78, 0.3, 0.96],
+  ];
+  const qb = (a: number, b: number, c: number, u: number) => (1 - u) * (1 - u) * a + 2 * (1 - u) * u * b + u * u * c;
+  if (doStatic) {
   // red pot with a gold band
   ctx.beginPath();
   ctx.moveTo(x - pot * 0.9, baseY - pot);
@@ -130,14 +144,6 @@ function drawBlossomTree(
   ctx.fillStyle = "#fbbf24";
   ctx.fillRect(x - pot * 0.85, baseY - pot * 0.8, pot * 1.7, pot * 0.16);
 
-  // trunk and branches: [start u,v, control u,v, end u,v]
-  const branches: [number, number, number, number, number, number][] = [
-    [0, 0, 0.03, 0.32, 0.01, 0.62],
-    [0.02, 0.3, 0.12, 0.38, 0.27, 0.6],
-    [0.015, 0.48, 0.09, 0.62, 0.17, 0.88],
-    [0.012, 0.62, -0.08, 0.7, -0.12, 0.84],
-    [0.01, 0.62, 0.15, 0.78, 0.3, 0.96],
-  ];
   ctx.lineCap = "round";
   branches.forEach(([a, b, c, d, e, f], i) => {
     const [x0, y0] = P(a, b);
@@ -154,7 +160,6 @@ function drawBlossomTree(
   });
 
   // blossoms along each branch, opening towards the tips as the tree grows
-  const qb = (a: number, b: number, c: number, u: number) => (1 - u) * (1 - u) * a + 2 * (1 - u) * u * b + u * u * c;
   branches.forEach(([a, b, c, d, e, f], i) => {
     if (i === 0) return;
     for (let k = 0; k < 7; k++) {
@@ -168,8 +173,10 @@ function drawBlossomTree(
     }
   });
 
+  }
+
   // lì xì swinging from two branches
-  if (grow >= 0.9) {
+  if (doLixi && grow >= 0.9) {
     [2, 4].forEach((bi, i) => {
       const [a, b, c, d, e, f] = branches[bi]!;
       const u = 0.78 + i * 0.12;
@@ -189,7 +196,39 @@ function drawBlossomTree(
   }
 }
 
+/**
+ * The two blossom trees stop changing once they have grown (only the lì xì on them
+ * swing), yet redrawing ~80 blossoms every frame was the costliest part of this scene.
+ * So once grown they are painted once into an off-screen layer at the screen's pixel
+ * density and that image is drawn each frame. Falls back to direct drawing where an
+ * off-screen canvas is unavailable.
+ */
+function makeTreeLayer() {
+  let layer: HTMLCanvasElement | null = null;
+  let key = "";
+  return (ctx: CanvasRenderingContext2D, w: number, h: number, treeH: number, clock: number): boolean => {
+    if (typeof document === "undefined") return false;
+    const sc = ctx.getTransform?.()?.a || 1;
+    const k = `${w}|${h}|${treeH}|${sc}`;
+    if (!layer || key !== k) {
+      const c = document.createElement("canvas");
+      const g = c.getContext("2d");
+      if (!g) return false;
+      c.width = Math.max(1, Math.round(w * sc));
+      c.height = Math.max(1, Math.round(h * sc));
+      g.setTransform(sc, 0, 0, sc, 0, 0);
+      drawBlossomTree(g, w * 0.035, h - 2, treeH, 1, "dao", 1, clock, "static");
+      drawBlossomTree(g, w * 0.965, h - 2, treeH, -1, "mai", 1, clock, "static");
+      layer = c;
+      key = k;
+    }
+    ctx.drawImage(layer, 0, 0, w, h);
+    return true;
+  };
+}
+
 export function createTetRenderer(): FrameRenderer {
+  const treeLayer = makeTreeLayer();
   return (ctx, w, h, ms, focus) => {
     ctx.clearRect(0, 0, w, h);
     const t = clamp01(ms / DURATION_MS);
@@ -218,8 +257,13 @@ export function createTetRenderer(): FrameRenderer {
     // with lì xì hanging from their branches
     const treeH = Math.min(h * 0.62, w * 0.36, 300);
     const grow = easeOutCubic(clamp01((t - 0.02) / 0.3));
-    drawBlossomTree(ctx, w * 0.035, h - 2, treeH, 1, "dao", grow, clock);
-    drawBlossomTree(ctx, w * 0.965, h - 2, treeH, -1, "mai", grow, clock);
+    if (grow >= 0.999 && treeLayer(ctx, w, h, treeH, clock)) {
+      drawBlossomTree(ctx, w * 0.035, h - 2, treeH, 1, "dao", 1, clock, "lixi");
+      drawBlossomTree(ctx, w * 0.965, h - 2, treeH, -1, "mai", 1, clock, "lixi");
+    } else {
+      drawBlossomTree(ctx, w * 0.035, h - 2, treeH, 1, "dao", grow, clock);
+      drawBlossomTree(ctx, w * 0.965, h - 2, treeH, -1, "mai", grow, clock);
+    }
 
     // lì xì falling along the edges
     for (let i = 0; i < 12; i++) {
@@ -291,7 +335,9 @@ export function createTetRenderer(): FrameRenderer {
 
       // Body: sampled densely and painted in passes (outline, fill, belly, gloss) so it
       // reads as one smooth serpent, not a chain of segments.
-      const m = 190;
+      // Circles ~5 px apart under a body ~25 px thick already look continuous; 190
+      // samples were 4x denser than the eye can tell and made this the costliest scene.
+      const m = 100;
       const samples: [number, number, number, number][] = [];
       for (let k = m; k >= 1; k--) {
         const a = head - DIR * (k / m) * span;
@@ -306,7 +352,7 @@ export function createTetRenderer(): FrameRenderer {
         fs(ctx, "#7f1d1d", null);
       }
       // dorsal flame fins, few and large
-      for (let k = 14; k < samples.length - 10; k += 26) {
+      for (let k = 7; k < samples.length - 6; k += 14) {
         const [px, py, r, ang] = samples[k];
         const out = ang + Math.PI;
         const flick = 1 + Math.sin(clock * 10 + k) * 0.15;
@@ -369,7 +415,7 @@ export function createTetRenderer(): FrameRenderer {
       }
       // scale texture: soft arcs on the back, belly plates on the gold stripe
       ctx.lineWidth = 1.2;
-      for (let k = 4; k < samples.length; k += 5) {
+      for (let k = 2; k < samples.length; k += 3) {
         const [px, py, r, ang] = samples[k];
         const out = ang + Math.PI;
         ctx.strokeStyle = "rgba(127,29,29,0.55)";

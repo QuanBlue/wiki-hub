@@ -10,7 +10,7 @@ import {
 import {
   WelcomePopoverBadge,
   WelcomePopoverEffect,
-} from "@/components/users/welcome-effect-overlay";
+} from "@/components/users/welcome-effect-badge";
 import { CroppedAvatarImage, getUserAvatarColor, versionedAvatarUrl } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {

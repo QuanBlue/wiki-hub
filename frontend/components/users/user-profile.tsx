@@ -24,6 +24,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -41,8 +42,6 @@ import {
 } from "@/components/ui/select";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { ProfileImageViewer } from "@/components/users/profile-image-viewer";
-import { WelcomeEffectDialog } from "@/components/users/welcome-effect-dialog";
-import { WelcomeEffectOverlay } from "@/components/users/welcome-effect-overlay";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { getSeasonalEventGreeting } from "@/components/seasonal/seasonal-presets";
 import { seasonalWelcomeEffect } from "@/components/users/welcome-effects/seasonal";
@@ -73,6 +72,17 @@ import type {
   WelcomeEffect,
   WikiPage,
 } from "@/types/api";
+
+// The welcome effects (every canvas renderer, a few hundred KB) are only needed once an
+// effect actually plays or the picker opens, so they load on demand instead of with Home.
+const WelcomeEffectOverlay = dynamic(
+  () => import("@/components/users/welcome-effect-overlay").then((m) => m.WelcomeEffectOverlay),
+  { ssr: false },
+);
+const WelcomeEffectDialog = dynamic(
+  () => import("@/components/users/welcome-effect-dialog").then((m) => m.WelcomeEffectDialog),
+  { ssr: false },
+);
 
 type ActivityTab = "all" | "mine" | "drafts" | "knowledge";
 type KnowledgeSection = "favourites" | "pinned" | "liked" | "saved";

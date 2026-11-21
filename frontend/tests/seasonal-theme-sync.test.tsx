@@ -48,12 +48,12 @@ describe("active holiday stays in sync while the app is open", () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId("preset")).toHaveTextContent("none");
 
-    // Applied in another tab; 2 s throttle has to pass first.
+    // Applied in another tab; the 30 s throttle has to pass first.
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       meta.preset = "christmas";
       await act(async () => {
-        vi.advanceTimersByTime(2500);
+        vi.advanceTimersByTime(31_000);
         window.dispatchEvent(new Event("focus"));
       });
       await waitFor(() => expect(screen.getByTestId("preset")).toHaveTextContent("christmas"));
@@ -62,7 +62,7 @@ describe("active holiday stays in sync while the app is open", () => {
     }
   });
 
-  it("does not hit the server twice within two seconds", async () => {
+  it("does not hit the server again within 30 seconds", async () => {
     render(
       <ThemeColorProvider>
         <Probe />
