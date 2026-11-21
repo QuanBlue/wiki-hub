@@ -102,6 +102,10 @@ real interface.
 
 <sub>The same flow at phone width — see <a href="docs/demo#small-screens">docs/demo</a> for details.</sub>
 
+<img src="docs/demo/assets/screenshot-festival-home.png" alt="Home during a seasonal festival: a themed top bar, falling hearts and Hubby the owl presenting a greeting" width="720">
+
+<sub>A seasonal festival on Home — Hubby greets you in the holiday's own scene. See <a href="docs/demo#seasonal-effects--festivals">docs/demo</a>.</sub>
+
 **Full walkthrough with screenshots of every feature: [`docs/demo`](docs/demo).**
 The editing and search captures were retaken on 3 November 2026; the phone capture is from 18 October 2026 (see [docs/demo](docs/demo) for which is which).
 
@@ -184,6 +188,38 @@ The editing and search captures were retaken on 3 November 2026; the phone captu
   assistant is off.
 - **Theming & branding** — curated color palettes or a custom hex color, logo
   presets or a custom upload, and a live preview before anything goes live.
+- **Seasonal effects & holiday calendar** — *Administration → Settings → Seasonal
+  Effects* dresses WikiHub for the occasion with hand-drawn art: a line-art
+  watermark and a doodle-framed holiday greeting on the top bar, a glow that sweeps
+  across it while you navigate, decorated page margins and falling particles. Set
+  it *Off*, *Auto* (by date, from a calendar of 35+ Vietnamese and international
+  holidays, solar and lunar — Tết, Giỗ Tổ, Trung Thu, Quốc khánh, Halloween,
+  Christmas…, each with a short history, and editable) or *Manual*. Every change is
+  saved as you make it; *Preview* opens a scaled copy of Home or of the sign-in page
+  first. Administrators are reminded a few days ahead (bell and optional e-mail),
+  Home lists the upcoming holidays with an *Activate now* button, and the effect
+  switches itself off for people who ask their device to reduce motion.
+- **Welcome effects on Home** — each person picks, from the palette button over their
+  cover or *Your account → Edit profile*, one of 26 themes (Classic, Games, Adventure,
+  Styles) that plays for about five seconds when someone visits their Home: **Hubby**,
+  the WikiHub owl, presents the avatar beside a halo and sparkles, with an optional
+  140-character greeting in a speech bubble. Press the play button on a card to preview
+  it in a mock Home; visitors can *Skip*, and a still greeting replaces the animation
+  under reduced motion. While a seasonal theme is running, your own Home instead plays
+  the holiday's scene with a festive greeting and Hubby dressed for it (an áo dài for
+  Tết), skippable for the rest of the session.
+- **Personal status** — *Set status* in the account menu shares an icon and up to 140
+  characters (or a preset such as *Free to chat*) with the workspace as a thought bubble
+  on your profile and avatar, cleared automatically after 1 hour, 4 hours, 24 hours,
+  7 days or never.
+- **Profiles** — a cover and avatar that can be repositioned without re-uploading, an
+  image viewer, a contribution chart per year, and the personal-data policy accepted at
+  sign-in (administrators see who has accepted under *Users*).
+- **Sign-in page & announcements** — administrators rewrite the left panel of the
+  sign-in page (headline, blurbs, footer, illustration) separately for English and
+  Vietnamese with a live preview, and publish a scheduled system-announcement banner
+  (Information / Warning / Critical / Resolved, dismissible or not) to every signed-in
+  user.
 - **English & Vietnamese UI** — a top-bar language switch translates the whole
   interface instantly, no reload; the choice is remembered per browser.
 - **Admin backup & restore** — scheduled, resumable WikiHub backups with password

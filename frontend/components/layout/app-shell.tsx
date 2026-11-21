@@ -12,7 +12,6 @@ import { SystemAnnouncementBanner } from "@/components/layout/system-announcemen
 import { SystemAnnouncementProvider } from "@/components/layout/system-announcement-provider";
 import { TopBar } from "@/components/layout/top-bar";
 import { SeasonalAmbientLayer } from "@/components/seasonal/seasonal-ambient-layer";
-import { SeasonalReminderBanner } from "@/components/seasonal/seasonal-reminder-banner";
 import { getMailSummary, NO_MAILBOX } from "@/lib/admin-mail";
 import { getNotificationSummary } from "@/lib/notifications";
 import { getSidebarPermissions, getSystemAnnouncement } from "@/lib/navigation";
@@ -99,7 +98,6 @@ export async function AppShell({
                   announcement={systemAnnouncement}
                   isAdmin={isSystemAdmin}
                 />
-                <SeasonalReminderBanner isAdmin={isSystemAdmin} />
                 <MailboxPasswordBanner />
               </>
             )

@@ -78,6 +78,12 @@ export function AccountSettings({
     }
     setProfileEditing(false);
   }
+  function handleWelcomeSaved(effect: User["welcome_effect"], message: string) {
+    setSavedUser({
+      source: user,
+      current: { ...currentUser, welcome_effect: effect, welcome_message: message },
+    });
+  }
   const tabRefs = useRef<Record<AccountTab, HTMLButtonElement | null>>({
     profile: null,
     security: null,
@@ -160,6 +166,7 @@ export function AccountSettings({
               user={profileUser}
               onCancel={() => guard.attempt(() => setProfileEditing(false))}
               onSaved={handleProfileSaved}
+              onWelcomeSaved={handleWelcomeSaved}
               onDirtyChange={setProfileDirty}
               registerSave={registerProfileSave}
             />

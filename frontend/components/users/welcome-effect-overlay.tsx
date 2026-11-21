@@ -17,116 +17,111 @@ import {
   X,
   Zap,
   CloudLightning,
+  Anchor,
+  Candy,
+  Cog,
+  Cpu,
+  Flag,
+  Ghost,
+  Gift,
+  Heart,
+  Leaf,
+  Moon,
+  Pickaxe,
+  Rocket,
+  Star,
+  Swords,
+  TreePine,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  bubbleOpacity,
+  DURATION_MS,
+  drawScene,
+  FADE_START_MS,
+  fallbackFocus,
+  type FrameRenderer,
+  mascotLayout,
+  type Focus,
+} from "@/components/users/welcome-effects/engine";
+import { MASCOTS } from "@/components/users/welcome-effects/mascots";
+import {
+  createBlockcraftRenderer,
+  createPlatformerRenderer,
+  createRacingRenderer,
+} from "@/components/users/welcome-effects/themes-game";
+import {
+  createTetRenderer,
+  createHalloweenRenderer,
+  createChristmasRenderer,
+  createMidautumnRenderer,
+} from "@/components/users/welcome-effects/themes-festival";
+import {
+  createPirateRenderer,
+  createNinjaRenderer,
+  createRocketRenderer,
+  createJungleRenderer,
+} from "@/components/users/welcome-effects/themes-adventure";
+import {
+  createCyberpunkRenderer,
+  createSteampunkRenderer,
+  createCandyRenderer,
+  createKawaiiRenderer,
+} from "@/components/users/welcome-effects/themes-style";
+import {
+  createValentineRenderer,
+  createFloralRenderer,
+  createTeachersRenderer,
+  createMensdayRenderer,
+  createKidsRenderer,
+  createEasterRenderer,
+  createSpringRenderer,
+  createHarvestRenderer,
+} from "@/components/users/welcome-effects/themes-holiday";
+import {
+  createNationalRenderer,
+  createHeritageRenderer,
+  createLotusRenderer,
+  createMemorialRenderer,
+} from "@/components/users/welcome-effects/themes-holiday-national";
+import {
+  clamp01,
+  drawGlow,
+  drawSparkle,
+  easeOutBack,
+  easeOutCubic,
+  envelope,
+  hash,
+  lerp,
+  smooth,
+} from "@/components/users/welcome-effects/helpers";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
-import type { WelcomeEffect } from "@/types/api";
+import type { PlayableWelcomeEffect, WelcomeEffect } from "@/types/api";
 
 interface WelcomeEffectOverlayProps {
-  effect: WelcomeEffect;
+  effect: PlayableWelcomeEffect;
   ownerName: string;
   message?: string;
   onComplete: () => void;
   /** Render inside a parent container (`absolute inset-0`) instead of full viewport (`fixed inset-0`). */
   contained?: boolean;
+  /** The avatar to spotlight. Effects never cover it; Hubby (the mascot) presents it. */
+  focusRef?: RefObject<HTMLElement | null>;
+  /** Hide the Skip button (a non-interactive preview supplies its own replay control). */
+  hideSkip?: boolean;
+  /** Called when the viewer presses Skip (before `onComplete`), not when the run simply ends. */
+  onSkip?: () => void;
 }
 
-const DURATION_MS = 4000;
-const FADE_START_MS = 3200;
-
 const MATRIX_CHARS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄ0123456789ABCDEF<>{}[]#$%&*";
-
-type FrameRenderer = (
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  elapsedMs: number,
-) => void;
 
 /* ------------------------------------------------------------------ */
 /* Shared helpers                                                      */
 /* ------------------------------------------------------------------ */
-
-const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
-const smooth = (x: number) => {
-  const u = clamp01(x);
-  return u * u * (3 - 2 * u);
-};
-
-function easeOutBack(x: number): number {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
-  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
-}
-
-function easeOutCubic(x: number): number {
-  return 1 - Math.pow(1 - x, 3);
-}
-
-/** Opening → climax → dissolve envelope shared by every theme (0..1). */
-function envelope(t: number): number {
-  return smooth(t / 0.14) * (1 - smooth((t - 0.76) / 0.24));
-}
-
-/** Deterministic pseudo-random in [0, 1) so glitches don't depend on frame rate. */
-function hash(n: number): number {
-  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
-  return s - Math.floor(s);
-}
-
-/** Four-point sparkle with an optional dark outline so it stays visible on white. */
-function drawSparkle(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  radius: number,
-  fill: string,
-  stroke: string | null,
-  alpha: number,
-) {
-  if (alpha <= 0.01 || radius <= 0.2) return;
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  ctx.moveTo(x, y - radius * 2.1);
-  ctx.quadraticCurveTo(x, y, x + radius * 2.1, y);
-  ctx.quadraticCurveTo(x, y, x, y + radius * 2.1);
-  ctx.quadraticCurveTo(x, y, x - radius * 2.1, y);
-  ctx.quadraticCurveTo(x, y, x, y - radius * 2.1);
-  ctx.closePath();
-  ctx.fill();
-  if (stroke) {
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-/** Soft glow disc (cheaper than shadowBlur for many particles). */
-function drawGlow(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  r: number,
-  rgb: string,
-  alpha: number,
-) {
-  if (alpha <= 0.005 || r <= 0.3) return;
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, `rgba(${rgb}, ${alpha})`);
-  g.addColorStop(1, `rgba(${rgb}, 0)`);
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-}
 
 /* ------------------------------------------------------------------ */
 /* Phoenix                                                             */
@@ -2149,6 +2144,7 @@ function createStormRenderer(initW: number, initH: number): FrameRenderer {
     { at: 1500, xr: 0.8, pts: [], branch: [] },
     { at: 2250, xr: 0.5, pts: [], branch: [] },
     { at: 2950, xr: 0.32, pts: [], branch: [] },
+    { at: 3550, xr: 0.68, pts: [], branch: [] },
   ];
   const ripples: Ripple[] = [];
   let lastMs = 0;
@@ -3133,7 +3129,7 @@ function createKoiRenderer(initW: number, initH: number): FrameRenderer {
         const off = Math.sin(elapsedMs * 0.007 - i * 0.55) * L * 0.05 * (i / N) * 2;
         return [x + (-ty / len) * off, y + (tx / len) * off, tx / len, ty / len] as [number, number, number, number];
       });
-      const widthAt = (i: number) => L * 0.17 * Math.pow(Math.sin((Math.PI * (i + 1.6)) / (N + 2.2)), 0.8) * (1 - (i / N) * 0.35);
+      const widthAt = (i: number) => L * 0.34 * Math.pow(Math.sin((Math.PI * (i + 1.6)) / (N + 2.2)), 0.8) * (1 - (i / N) * 0.35);
 
       ctx.save();
       ctx.globalAlpha = env;
@@ -3279,7 +3275,7 @@ function createKoiRenderer(initW: number, initH: number): FrameRenderer {
 /* Per-effect configuration                                            */
 /* ------------------------------------------------------------------ */
 
-type EffectId = Exclude<WelcomeEffect, "">;
+type EffectId = Exclude<PlayableWelcomeEffect, "">;
 
 interface EffectMeta {
   create: (w: number, h: number) => FrameRenderer;
@@ -3431,7 +3427,260 @@ const EFFECT_META: Record<EffectId, EffectMeta> = {
     card: "border-teal-300/60 bg-teal-950/90 text-teal-50 shadow-teal-500/30",
     accent: "via-orange-300",
   },
+  blockcraft: {
+    create: createBlockcraftRenderer,
+    Icon: Pickaxe,
+    cardIconClass: "text-lime-300",
+    badgeIconClass: "text-lime-600 dark:text-lime-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(74,222,128,0.16)_100%)]",
+    card: "border-lime-400/60 bg-stone-900/92 font-mono text-lime-50 shadow-lime-500/30",
+    accent: "via-lime-300",
+  },
+  platformer: {
+    create: createPlatformerRenderer,
+    Icon: Star,
+    cardIconClass: "text-yellow-300",
+    badgeIconClass: "text-yellow-600 dark:text-yellow-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(56,189,248,0.14)_100%)]",
+    card: "border-yellow-300/70 bg-sky-900/92 font-mono text-yellow-50 shadow-yellow-500/30",
+    accent: "via-yellow-300",
+  },
+  racing: {
+    create: createRacingRenderer,
+    Icon: Flag,
+    cardIconClass: "text-red-300",
+    badgeIconClass: "text-red-600 dark:text-red-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(239,68,68,0.14)_100%)]",
+    card: "border-red-400/60 bg-neutral-900/92 text-white shadow-red-500/30",
+    accent: "via-red-400",
+  },
+  tet: {
+    create: createTetRenderer,
+    Icon: Gift,
+    cardIconClass: "text-yellow-300",
+    badgeIconClass: "text-red-600 dark:text-yellow-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(220,38,38,0.16)_100%)]",
+    card: "border-yellow-400/70 bg-red-950/92 text-yellow-50 shadow-red-500/40",
+    accent: "via-yellow-300",
+  },
+  halloween: {
+    create: createHalloweenRenderer,
+    Icon: Ghost,
+    cardIconClass: "text-orange-300",
+    badgeIconClass: "text-orange-600 dark:text-orange-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(124,58,237,0.16)_100%)]",
+    card: "border-orange-400/60 bg-purple-950/92 text-orange-50 shadow-orange-500/30",
+    accent: "via-orange-400",
+  },
+  christmas: {
+    create: createChristmasRenderer,
+    Icon: TreePine,
+    cardIconClass: "text-green-300",
+    badgeIconClass: "text-green-700 dark:text-green-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(220,38,38,0.12)_100%)]",
+    card: "border-red-300/60 bg-green-950/92 text-red-50 shadow-green-500/30",
+    accent: "via-red-300",
+  },
+  midautumn: {
+    create: createMidautumnRenderer,
+    Icon: Moon,
+    cardIconClass: "text-yellow-200",
+    badgeIconClass: "text-amber-600 dark:text-amber-300",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(245,158,11,0.16)_100%)]",
+    card: "border-amber-300/60 bg-amber-950/92 text-amber-50 shadow-amber-500/30",
+    accent: "via-amber-300",
+  },
+  valentine: {
+    create: createValentineRenderer,
+    Icon: Heart,
+    cardIconClass: "text-rose-300",
+    badgeIconClass: "text-rose-600 dark:text-rose-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(225,29,72,0.16)_100%)]",
+    card: "border-rose-300/60 bg-rose-950/92 text-rose-50 shadow-rose-500/30",
+    accent: "via-rose-300",
+  },
+  floral: {
+    create: createFloralRenderer,
+    Icon: Flower2,
+    cardIconClass: "text-pink-200",
+    badgeIconClass: "text-pink-600 dark:text-pink-300",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(244,114,182,0.16)_100%)]",
+    card: "border-pink-300/60 bg-rose-950/90 text-pink-50 shadow-pink-500/30",
+    accent: "via-pink-300",
+  },
+  teachers: {
+    create: createTeachersRenderer,
+    Icon: Star,
+    cardIconClass: "text-amber-300",
+    badgeIconClass: "text-teal-700 dark:text-teal-300",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(15,118,110,0.16)_100%)]",
+    card: "border-amber-300/60 bg-teal-950/92 text-teal-50 shadow-teal-500/30",
+    accent: "via-amber-300",
+  },
+  mensday: {
+    create: createMensdayRenderer,
+    Icon: Zap,
+    cardIconClass: "text-cyan-300",
+    badgeIconClass: "text-sky-600 dark:text-cyan-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(6,182,212,0.16)_100%)]",
+    card: "border-cyan-300/60 bg-slate-950/92 text-cyan-50 shadow-cyan-500/30",
+    accent: "via-cyan-300",
+  },
+  national: {
+    create: createNationalRenderer,
+    Icon: Flag,
+    cardIconClass: "text-yellow-300",
+    badgeIconClass: "text-red-600 dark:text-yellow-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(220,38,38,0.16)_100%)]",
+    card: "border-yellow-400/70 bg-red-950/92 text-yellow-50 shadow-red-500/40",
+    accent: "via-yellow-300",
+  },
+  heritage: {
+    create: createHeritageRenderer,
+    Icon: Crown,
+    cardIconClass: "text-amber-300",
+    badgeIconClass: "text-amber-700 dark:text-amber-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(180,83,9,0.16)_100%)]",
+    card: "border-amber-400/60 bg-stone-950/92 text-amber-50 shadow-amber-500/30",
+    accent: "via-amber-400",
+  },
+  lotus: {
+    create: createLotusRenderer,
+    Icon: Flower2,
+    cardIconClass: "text-pink-200",
+    badgeIconClass: "text-pink-600 dark:text-pink-300",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(236,72,153,0.16)_100%)]",
+    card: "border-pink-300/60 bg-teal-950/90 text-pink-50 shadow-pink-500/30",
+    accent: "via-amber-300",
+  },
+  kids: {
+    create: createKidsRenderer,
+    Icon: PartyPopper,
+    cardIconClass: "text-yellow-300",
+    badgeIconClass: "text-orange-600 dark:text-orange-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(249,115,22,0.16)_100%)]",
+    card: "border-sky-300/60 bg-indigo-950/90 text-yellow-50 shadow-orange-500/30",
+    accent: "via-yellow-300",
+  },
+  easter: {
+    create: createEasterRenderer,
+    Icon: Sparkles,
+    cardIconClass: "text-violet-200",
+    badgeIconClass: "text-violet-600 dark:text-violet-300",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(167,139,250,0.16)_100%)]",
+    card: "border-violet-300/60 bg-violet-950/90 text-violet-50 shadow-violet-500/30",
+    accent: "via-emerald-300",
+  },
+  spring: {
+    create: createSpringRenderer,
+    Icon: Leaf,
+    cardIconClass: "text-green-300",
+    badgeIconClass: "text-green-700 dark:text-green-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(22,163,74,0.16)_100%)]",
+    card: "border-green-300/60 bg-green-950/92 text-green-50 shadow-green-500/30",
+    accent: "via-lime-300",
+  },
+  harvest: {
+    create: createHarvestRenderer,
+    Icon: Leaf,
+    cardIconClass: "text-orange-300",
+    badgeIconClass: "text-orange-700 dark:text-orange-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(194,65,12,0.16)_100%)]",
+    card: "border-orange-300/60 bg-amber-950/92 text-orange-50 shadow-orange-500/30",
+    accent: "via-amber-300",
+  },
+  memorial: {
+    create: createMemorialRenderer,
+    Icon: Flame,
+    cardIconClass: "text-amber-300",
+    badgeIconClass: "text-amber-700 dark:text-amber-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(180,83,9,0.16)_100%)]",
+    card: "border-amber-400/50 bg-stone-950/92 text-amber-50 shadow-amber-500/20",
+    accent: "via-amber-400",
+  },
+  pirate: {
+    create: createPirateRenderer,
+    Icon: Anchor,
+    cardIconClass: "text-sky-200",
+    badgeIconClass: "text-sky-700 dark:text-sky-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(2,132,199,0.16)_100%)]",
+    card: "border-amber-300/60 bg-slate-900/92 text-amber-50 shadow-sky-500/30",
+    accent: "via-amber-300",
+  },
+  ninja: {
+    create: createNinjaRenderer,
+    Icon: Swords,
+    cardIconClass: "text-slate-200",
+    badgeIconClass: "text-slate-700 dark:text-slate-300",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(51,65,85,0.18)_100%)]",
+    card: "border-red-400/60 bg-slate-950/92 text-slate-100 shadow-slate-500/40",
+    accent: "via-red-500",
+  },
+  rocket: {
+    create: createRocketRenderer,
+    Icon: Rocket,
+    cardIconClass: "text-indigo-200",
+    badgeIconClass: "text-indigo-600 dark:text-indigo-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(79,70,229,0.16)_100%)]",
+    card: "border-indigo-300/60 bg-indigo-950/92 text-indigo-50 shadow-indigo-500/40",
+    accent: "via-orange-300",
+  },
+  jungle: {
+    create: createJungleRenderer,
+    Icon: Leaf,
+    cardIconClass: "text-green-300",
+    badgeIconClass: "text-green-700 dark:text-green-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(22,163,74,0.18)_100%)]",
+    card: "border-green-300/60 bg-green-950/92 text-green-50 shadow-green-500/30",
+    accent: "via-lime-300",
+  },
+  cyberpunk: {
+    create: createCyberpunkRenderer,
+    Icon: Cpu,
+    cardIconClass: "text-cyan-300",
+    badgeIconClass: "text-cyan-600 dark:text-cyan-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(6,182,212,0.16)_100%)]",
+    card: "border-pink-400/70 bg-slate-950/92 font-mono text-cyan-100 shadow-pink-500/40",
+    accent: "via-pink-400",
+  },
+  steampunk: {
+    create: createSteampunkRenderer,
+    Icon: Cog,
+    cardIconClass: "text-amber-300",
+    badgeIconClass: "text-amber-700 dark:text-amber-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(180,83,9,0.18)_100%)]",
+    card: "border-amber-400/60 bg-stone-950/92 text-amber-50 shadow-amber-500/30",
+    accent: "via-amber-400",
+  },
+  candy: {
+    create: createCandyRenderer,
+    Icon: Candy,
+    cardIconClass: "text-pink-200",
+    badgeIconClass: "text-pink-600 dark:text-pink-400",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(244,114,182,0.18)_100%)]",
+    card: "border-pink-300/70 bg-fuchsia-900/90 text-pink-50 shadow-pink-500/30",
+    accent: "via-pink-300",
+  },
+  kawaii: {
+    create: createKawaiiRenderer,
+    Icon: Heart,
+    cardIconClass: "text-pink-500",
+    badgeIconClass: "text-pink-500 dark:text-pink-300",
+    backdrop: "bg-[radial-gradient(ellipse_at_center,transparent_58%,rgba(251,113,133,0.14)_100%)]",
+    card: "border-pink-300/80 bg-pink-100/95 text-pink-950 shadow-pink-400/30",
+    accent: "via-pink-300",
+  },
 };
+
+/** A theme's own scene renderer (no mascot/stage), or null for an unknown effect. */
+export function createWelcomeRenderer(
+  effect: PlayableWelcomeEffect,
+  w: number,
+  h: number,
+): FrameRenderer | null {
+  const meta = effect ? EFFECT_META[effect] : undefined;
+  return meta ? meta.create(w, h) : null;
+}
 
 /* ------------------------------------------------------------------ */
 /* Overlay component                                                   */
@@ -3443,9 +3692,13 @@ export function WelcomeEffectOverlay({
   message,
   onComplete,
   contained = false,
+  focusRef,
+  hideSkip = false,
+  onSkip,
 }: WelcomeEffectOverlayProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const bubbleRef = useRef<HTMLDivElement | null>(null);
   const [fading, setFading] = useState(false);
   const [reducedMotion] = useState(() =>
     typeof window !== "undefined"
@@ -3453,20 +3706,27 @@ export function WelcomeEffectOverlay({
       : false,
   );
 
+  // Callers usually pass an inline arrow; keep the latest one in a ref so a re-render
+  // never restarts the timers (that is what froze the overlay half-faded).
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  });
+
   useEffect(() => {
     if (!effect) {
-      onComplete();
+      onCompleteRef.current();
       return;
     }
 
     const fadeTimer = window.setTimeout(() => setFading(true), FADE_START_MS);
-    const doneTimer = window.setTimeout(() => onComplete(), DURATION_MS);
+    const doneTimer = window.setTimeout(() => onCompleteRef.current(), DURATION_MS);
 
     return () => {
       window.clearTimeout(fadeTimer);
       window.clearTimeout(doneTimer);
     };
-  }, [effect, onComplete]);
+  }, [effect]);
 
   useEffect(() => {
     if (!effect || reducedMotion) return;
@@ -3502,10 +3762,53 @@ export function WelcomeEffectOverlay({
     const { width: initW, height: initH } = getSize();
     const renderFrame = meta.create(initW, initH);
 
+    const spec = MASCOTS[effect] ?? MASCOTS.aurora;
+
+    // The avatar's centre/radius in canvas pixels (re-read every frame: the page may scroll/resize).
+    const measureFocus = (width: number, height: number): Focus => {
+      const el = focusRef?.current;
+      if (!el) return fallbackFocus(width, height);
+      const a = el.getBoundingClientRect();
+      if (a.width < 4) return fallbackFocus(width, height);
+      const c = canvas.getBoundingClientRect();
+      // A CSS-scaled parent (the admin preview frame) shrinks both rects: convert back to canvas units.
+      const k = canvas.clientWidth > 0 && c.width > 0 ? c.width / canvas.clientWidth : 1;
+      return {
+        x: (a.left - c.left + a.width / 2) / k,
+        y: (a.top - c.top + a.height / 2) / k,
+        r: Math.max(a.width, a.height) / 2 / k,
+      };
+    };
+
+    const placeBubble = (focus: Focus, width: number, height: number, elapsed: number) => {
+      const b = bubbleRef.current;
+      if (!b) return;
+      const layout = mascotLayout(focus, width, height, spec.restY);
+      const bw = b.offsetWidth;
+      const bh = b.offsetHeight;
+      // Speech bubble centred above Hubby's head.
+      const left = Math.max(8, Math.min(width - bw - 8, layout.x - bw / 2));
+      let top = Math.max(8, layout.y - layout.size * 0.62 - bh - 10);
+      // never sit on the avatar: move under Hubby instead
+      const hit =
+        left < focus.x + focus.r * 1.3 &&
+        left + bw > focus.x - focus.r * 1.3 &&
+        top < focus.y + focus.r * 1.3 &&
+        top + bh > focus.y - focus.r * 1.3;
+      if (hit) top = layout.y + layout.size * 0.75;
+      top = Math.min(height - bh - 8, top);
+      b.style.transform = `translate(${left}px, ${top}px)`;
+      b.style.opacity = String(bubbleOpacity(elapsed));
+    };
+
     const startTime = performance.now();
     const tick = (now: number) => {
       const { width, height } = getSize();
-      renderFrame(ctx, width, height, now - startTime);
+      const elapsed = now - startTime;
+      const focus = measureFocus(width, height);
+      renderFrame(ctx, width, height, elapsed, focus);
+      if (effect !== "memorial") drawScene(ctx, width, height, elapsed, focus, spec);
+      placeBubble(focus, width, height, elapsed);
       rafId = window.requestAnimationFrame(tick);
     };
     rafId = window.requestAnimationFrame(tick);
@@ -3514,12 +3817,14 @@ export function WelcomeEffectOverlay({
       window.cancelAnimationFrame(rafId);
       window.removeEventListener("resize", resize);
     };
-  }, [effect, reducedMotion, contained]);
+  }, [effect, reducedMotion, contained, focusRef]);
 
   if (!effect) return null;
   // Unknown value (e.g. a newer preset saved by a newer server): fall back to Aurora styling.
   const meta = EFFECT_META[effect] ?? EFFECT_META.aurora;
   const BadgeIcon = meta.Icon;
+  // With an avatar to point at, the greeting is Hubby's speech bubble instead of a centred card.
+  const anchored = focusRef !== undefined && !reducedMotion;
 
   return (
     <div
@@ -3542,10 +3847,17 @@ export function WelcomeEffectOverlay({
 
       {message?.trim() ? (
         <div
+          ref={bubbleRef}
+          style={anchored ? { opacity: 0 } : undefined}
           className={cn(
-            "relative mx-4 flex max-w-md flex-col items-center gap-2 overflow-hidden rounded-xl border px-7 py-5 text-center shadow-2xl backdrop-blur-md transition-transform duration-500",
+            "flex flex-col items-center gap-2 overflow-hidden rounded-xl border text-center shadow-2xl backdrop-blur-md",
             meta.card,
-            fading ? "scale-95" : "scale-100 animate-in fade-in zoom-in-95",
+            anchored
+              ? "absolute top-0 left-0 w-max max-w-[min(18rem,calc(100%-1rem))] gap-1 px-4 py-3 will-change-transform"
+              : cn(
+                  "relative mx-4 max-w-md px-7 py-5 transition-transform duration-500",
+                  fading ? "scale-95" : "scale-100 animate-in fade-in zoom-in-95",
+                ),
           )}
         >
           <span
@@ -3555,26 +3867,42 @@ export function WelcomeEffectOverlay({
               meta.accent,
             )}
           />
-          <div className="flex size-12 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/25">
-            <BadgeIcon className={cn("size-6", meta.cardIconClass)} aria-hidden />
-          </div>
-          <p className="text-lg font-semibold tracking-tight">
-            {t("welcomeEffect.welcomeTo", { name: ownerName })}
+          {anchored ? null : (
+            <div className="flex size-12 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/25">
+              <BadgeIcon className={cn("size-6", meta.cardIconClass)} aria-hidden />
+            </div>
+          )}
+          {anchored ? null : (
+            <p className="text-lg font-semibold tracking-tight">
+              {t("welcomeEffect.welcomeTo", { name: ownerName })}
+            </p>
+          )}
+          <p
+            className={cn(
+              "leading-relaxed",
+              anchored ? "text-sm font-medium" : "text-sm opacity-90",
+            )}
+          >
+            {message.trim()}
           </p>
-          <p className="text-sm leading-relaxed opacity-90">{message.trim()}</p>
         </div>
       ) : null}
 
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        onClick={onComplete}
-        className="pointer-events-auto absolute top-5 right-5 gap-1.5 shadow-md"
-      >
-        <X className="size-3.5" aria-hidden />
-        {t("welcomeEffect.skip")}
-      </Button>
+      {hideSkip ? null : (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            onSkip?.();
+            onComplete();
+          }}
+          className="pointer-events-auto absolute top-5 right-5 gap-1.5 shadow-md"
+        >
+          <X className="size-3.5" aria-hidden />
+          {t("welcomeEffect.skip")}
+        </Button>
+      )}
     </div>
   );
 }

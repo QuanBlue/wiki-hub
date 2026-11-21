@@ -35,7 +35,15 @@ export const sectionsVi: HelpSection[] = [
         <Callout variant="note" title="TÌM KIẾM THỰC SỰ KHỚP VỚI NHỮNG GÌ">
           Tìm kiếm tìm các từ của bạn bên trong tên/khoá/mô tả của space và tiêu
           đề/nội dung trang, bỏ qua dấu và chữ hoa (<Code>giam sat</Code> tìm ra{" "}
-          <Code>Giám sát</Code>) và chấp nhận gõ sai nhẹ ở tiêu đề. Bạn có thể gõ cả một câu
+          <Code>Giám sát</Code>) và chấp nhận gõ sai nhẹ ở tiêu đề. Một{" "}
+          <strong>cái tên</strong> được tìm ra dù bạn gõ khoảng trắng, dấu chấm hay gạch dưới
+          thế nào: với space tên <Code>dms1.0</Code>, gõ <Code>dms1</Code>, <Code>DMs1</Code>,{" "}
+          <Code>dms 1</Code>, <Code>dms_1</Code> hay <Code>DMS10</Code> đều ra (space khớp nhất
+          lên đầu, tối đa sáu), tiêu đề trang cũng vậy. Tìm kiếm còn liệt kê{" "}
+          <strong>Mọi người</strong>: gõ một phần họ tên hoặc username, có dấu hay không dấu,
+          theo thứ tự nào cũng được (<Code>quan nguyen</Code> tìm ra{" "}
+          <Code>Nguyễn Văn Quân</Code>), rồi nhấn <Kbd>Enter</Kbd> để mở trang cá nhân của họ.
+          Khi trong ô đã có bộ lọc thì không liệt kê người. Bạn có thể gõ cả một câu
           hỏi, ví dụ <Code>ip của Kestrel Atlas là bao nhiêu?</Code> - các từ đệm sẽ bị bỏ
           qua. Từ càng hiếm càng quan trọng (trong <Code>tài khoản cloud của nord</Code> thì
           từ <Code>nord</Code> quyết định), khớp ở <strong>tiêu đề</strong> được cộng thêm
@@ -47,8 +55,10 @@ export const sectionsVi: HelpSection[] = [
           theo <strong>ý nghĩa</strong>, kể cả khi không trùng từ nào với bạn gõ. Nó cũng tìm
           trong tên tệp đính kèm và nội dung tệp đính kèm (PDF, Word, Excel, PowerPoint, HTML, text),
           và chỉ hiển thị những kết quả bạn có quyền xem. Bạn có thể lọc nhanh trực tiếp trong ô tìm kiếm
-          với các cú pháp: <Code>space:KEY</Code> (ví dụ <Code>space:ENG</Code>),{" "}
-          <Code>author:tên</Code> (ví dụ <Code>author:john</Code>),{" "}
+          với các cú pháp: <Code>space:KEY</Code> (ví dụ <Code>space:ENG</Code>, hoặc tên space
+          gõ gần đúng như <Code>space:dms_1</Code>),{" "}
+          <Code>author:tên</Code> (ví dụ <Code>author:john</Code>, hoặc một phần họ tên không
+          dấu như <Code>author:quan</Code>),{" "}
           <Code>label:nhãn</Code> (ví dụ <Code>label:runbook</Code>; chỉ khớp nhãn riêng của bạn),{" "}
           <Code>type:định_dạng</Code> (ví dụ <Code>type:pdf</Code>), và{" "}
           <Code>updated:khoảng_thời_gian</Code> (ví dụ <Code>updated:&gt;2026-01</Code>).
@@ -2572,6 +2582,56 @@ export const sectionsVi: HelpSection[] = [
           <strong> Cập nhật 6 lần</strong>. Bấm vào dòng đó để xem từng lần sửa kèm liên kết{" "}
           <strong>xem thay đổi</strong>.
         </p>
+        <p className="mt-3 font-semibold text-foreground">Trạng thái cá nhân:</p>
+        <p className="mt-1 text-sm">
+          Mở menu tài khoản và chọn <strong>Đặt trạng thái</strong> (<strong>Cập nhật trạng thái</strong>{" "}
+          khi đã có) để chia sẻ một dòng ngắn với mọi người trong workspace: chọn biểu tượng, gõ tối đa
+          140 ký tự hoặc bắt đầu từ mẫu có sẵn (<em>Rảnh rỗi trò chuyện</em>, <em>Phản hồi chậm</em>,
+          <em> Đang đi du lịch</em>...), rồi chọn <strong>Xoá trạng thái sau</strong> 1 giờ, 4 giờ, 24 giờ,
+          7 ngày hoặc không tự xoá. Trạng thái hiện thành bóng suy nghĩ trên hồ sơ và cạnh ảnh đại
+          diện, tooltip cho biết thời điểm hết hạn. Nó tự biến mất khi hết hạn, hoặc bấm{" "}
+          <strong>Xoá trạng thái</strong>.
+        </p>
+        <p className="mt-3 font-semibold text-foreground">Hiệu ứng chào khách:</p>
+        <p className="mt-1 text-sm">
+          Trên trang Home của bạn, bấm nút <strong>bảng màu</strong> trên ảnh bìa, hoặc dùng dòng
+          <strong> Welcome effect</strong> trong <strong>Tài khoản → Chỉnh sửa hồ sơ</strong>, để chọn hiệu ứng
+          chào mừng phát cho khách khi họ ghé thăm (khoảng 5 giây). Có 26 theme chia thành bốn
+          nhóm: <strong>Cổ điển</strong>, <strong>Trò chơi</strong> (Block Craft, Phiêu lưu 2D,
+          Đua xe), <strong>Phiêu lưu</strong> (Cướp biển, Ninja, Tên lửa, Rừng nhiệt đới) và{" "}
+          <strong>Phong cách</strong> (Cyberpunk, Steampunk, Kẹo ngọt, Kawaii). Cảnh các ngày lễ
+          không nằm trong danh sách này mà đến từ chủ đề lễ hội (xem bên dưới).
+        </p>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+          <li>
+            Mọi theme đều theo cùng một kịch bản: cảnh mở ra, <strong>Hubby</strong> (chú cú linh vật
+            WikiHub, mặc trang phục theo theme) chạy tới cạnh avatar và giới thiệu avatar, vòng
+            sáng cùng các tia lấp lánh làm avatar nổi bật, rồi Hubby vẫy tay và mọi thứ mờ dần.
+            Hiệu ứng không bao giờ che avatar của bạn.
+          </li>
+          <li>
+            Bấm nút <strong>phát</strong> tròn trên mỗi thẻ để xem thử trong Home giả, sau đó bấm{" "}
+            <strong>Use this theme</strong> để chọn và lưu ngay. Bạn cũng có thể bấm vào thẻ rồi chọn <strong>Save effect</strong>.
+          </li>
+          <li>
+            <strong>Lời chào tuỳ chỉnh</strong> (tuỳ chọn, tối đa 140 ký tự) hiện thành bóng thoại
+            của Hubby. Để trống thì không có bóng thoại. Khách có thể bấm <strong>Skip</strong> bất
+            cứ lúc nào; nếu hệ thống của họ bật giảm chuyển động, hiệu ứng được thay bằng lời chào
+            tĩnh.
+          </li>
+          <li>
+            <strong>Hiệu ứng lễ hội trên Home:</strong> khi một chủ đề lễ hội đang chạy (Tết,
+            Valentine, 20/11, Thiếu nhi, Quốc khánh, Halloween, Giáng sinh và các dịp khác), trang
+            Home của bạn phát cảnh riêng của dịp lễ đó kèm lời chúc mỗi lần bạn quay về Home, Hubby
+            mặc trang phục theo dịp (ví dụ áo dài cho Tết). Bấm <strong>Skip</strong> để tắt trong
+            phần còn lại của phiên; nút <strong>phát</strong> trên ảnh bìa vẫn phát lại được. Hiệu
+            ứng lễ được ưu tiên hơn hiệu ứng chào mừng của bạn trên Home (hiệu ứng riêng chỉ phát
+            một lần mỗi phiên). Khi vào trang cá nhân của người
+            khác, bạn vẫn thấy hiệu ứng riêng của họ. Cảnh lễ hội không nằm trong danh sách theme để
+            chọn.
+          </li>
+          <li>Quản trị viên có thể đặt hiệu ứng cho thành viên khác từ trang hồ sơ của họ.</li>
+        </ul>
         <p className="mt-3 font-semibold text-foreground">1. Cài đặt hồ sơ người dùng:</p>
         <ul className="list-disc pl-5 space-y-1 text-sm">
           <li>
@@ -4979,17 +5039,26 @@ export const sectionsVi: HelpSection[] = [
       <>
         <p>
           <strong>Quản trị → Cài đặt → Hiệu ứng lễ hội</strong> thêm hoạ tiết vẽ tay lên thanh
-          trên, các sidebar và hai bên lề trang. Hiệu ứng không che chữ hay nút bấm và tự tắt
+          trên, hai bên lề trang và cả trang đăng nhập. Thanh trên có hoa văn chìm của dịp lễ,
+          còn lời chúc cạnh logo được trang trí như một doodle ngày lễ: mỗi bên một hình nhỏ
+          (hoa đào và hoa mai cho Tết, sao vàng cho Quốc khánh, bí ngô và dơi cho Halloween...).
+          Khi bạn chuyển sang trang khác, một vệt sáng màu lễ quét ngang thanh trên, dẫn đầu là đường sáng,
+          chuỗi đốm sao và chính hình trang trí đó. Sidebar giữ gọn, chỉ tô màu lễ cho mục
+          trang đang mở. Hiệu ứng không che chữ hay nút bấm và tự tắt
           với người đã bật chế độ giảm chuyển động trên thiết bị.
         </p>
         <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
             <strong>Chế độ</strong>: <em>Tắt</em>, <em>Tự động</em> (bật theo ngày, xem bên
-            dưới) hoặc <em>Thủ công</em> (giữ một gói hiệu ứng luôn bật).
+            dưới) hoặc <em>Thủ công</em> (giữ một gói hiệu ứng luôn bật). Ở chế độ Thủ công, bấm
+            vào một gói để bật nó. Tab này không có nút Lưu: mọi thay đổi, kể cả các công tắc
+            trong lịch ngày lễ và phần nhắc nhở, được lưu ngay khi bạn thực hiện.
           </li>
           <li>
-            <strong>Xem thử</strong> từng gói ngay trên thẻ mà không cần lưu; hỗ trợ cả giao
-            diện Sáng và Tối.
+            Bấm <strong>Xem thử</strong> trên thẻ của gói (hoặc trong khung{" "}
+            <strong>Đang hiển thị</strong>) để mở cửa sổ có bản thu nhỏ của Trang chủ với đầy
+            đủ hiệu ứng của gói mà không cần lưu; chuyển sang tab <strong>Trang đăng nhập</strong>{" "}
+            để xem màn hình đăng nhập sẽ trông thế nào. Hỗ trợ cả giao diện Sáng và Tối.
           </li>
           <li>
             <strong>Lịch ngày lễ</strong>: hơn 35 ngày lễ Việt Nam và quốc tế có sẵn, gồm cả
@@ -5003,11 +5072,16 @@ export const sectionsVi: HelpSection[] = [
           </li>
           <li>
             <strong>Nhắc nhở</strong>: quản trị viên nhận thông báo (và email nếu bật) trước
-            ngày lễ vài ngày.
+            ngày lễ vài ngày. Trong khoảng đó, lịch ngày lễ ở Trang chủ hiện ngày lễ kèm nút{" "}
+            <strong>Bật ngay</strong> để bật hiệu ứng sớm.
           </li>
         </ul>
         <Callout variant="note" title="NGƯỜI DÙNG THẤY GÌ">
-          Mọi người đều thấy hiệu ứng đang bật. Trang chủ liệt kê các ngày lễ sắp tới kèm
+          Thay đổi hiện ra mà không cần tải lại trang: các trang đang mở cập nhật khi người dùng
+          chuyển sang trang khác hoặc quay lại tab, còn các tab khác của bạn đổi ngay lập tức.
+          Mọi người đều thấy hiệu ứng đang bật, kể cả ở trang đăng nhập trước khi đăng nhập:
+          hạt rơi, dải trang trí trên thẻ đăng nhập, cảnh trang trí ở chân khung thương hiệu và
+          lời chào ngày lễ. Trang chủ liệt kê các ngày lễ sắp tới kèm
           đôi nét về nguồn gốc của từng ngày.
         </Callout>
       </>

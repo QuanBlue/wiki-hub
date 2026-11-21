@@ -73,6 +73,19 @@ const fileInput = () => document.querySelector<HTMLInputElement>('input[type="fi
 const coverInput = () => screen.getByLabelText("Profile cover") as HTMLInputElement;
 
 describe("ProfileForm", () => {
+  it("lets a member with the welcome permission change their welcome effect", async () => {
+    const actor = userEvent.setup();
+    renderForm(me({ global_permissions: ["customize_profile_welcome"], welcome_effect: "tet" }));
+    expect(screen.getByText("Lunar New Year")).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Welcome effect" }));
+    expect(screen.getByLabelText("Custom greeting (optional)")).toBeInTheDocument();
+  });
+
+  it("hides the welcome effect row without the permission", () => {
+    renderForm(me());
+    expect(screen.queryByRole("button", { name: "Welcome effect" })).not.toBeInTheDocument();
+  });
+
   it("saves trimmed values and shows success", async () => {
     const actor = userEvent.setup();
     const { onSaved } = renderForm(me({ social_links: ["https://a.example"], pronouns: "they/them" }));

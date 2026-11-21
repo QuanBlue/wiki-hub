@@ -508,8 +508,6 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
   useEffect(() => {
     setSeasonalTheme(initialSeasonalTheme);
   }, [initialSeasonalTheme]);
-  const seasonalChanged =
-    JSON.stringify(seasonalTheme) !== JSON.stringify(initialSeasonalTheme);
 
   const [activeTab, setActiveTab] = useState<
     "appearance" | "seasonal" | "general" | "sidebar" | "announcement" | "login"
@@ -593,7 +591,15 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  async function save(payload: Record<string, unknown>) {
+  /** Seasonal edits save the moment they are made; a failed save rolls back. */
+  async function commitSeasonal(next: SeasonalThemeSettings) {
+    const previous = seasonalTheme;
+    setSeasonalTheme(next);
+    const ok = await save({ seasonal_theme: next });
+    if (!ok) setSeasonalTheme(previous);
+  }
+
+  async function save(payload: Record<string, unknown>): Promise<boolean> {
     setPending(true);
     setError(null);
     try {
@@ -621,10 +627,12 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
       toast.success("Settings saved successfully.");
       setPreviewModalOpen(false);
       router.refresh();
+      return true;
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Could not save the settings.",
       );
+      return false;
     } finally {
       setPending(false);
     }
@@ -2340,11 +2348,13 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
                 <SeasonalThemeSettingsPanel
                   value={seasonalTheme}
                   onChange={setSeasonalTheme}
+                  onCommit={(next) => void commitSeasonal(next)}
                   onResetDefaults={() => {
                     void save({ seasonal_theme: null });
                   }}
                   pending={pending}
-                  dirty={seasonalChanged}
+                  loginPanel={loginPanel}
+                  loginImageUrl={loginImageUrl}
                 />
               </section>
             ) : null}

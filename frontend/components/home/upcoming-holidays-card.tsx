@@ -8,19 +8,26 @@ import {
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import {
   HOLIDAY_DETAILS,
   HolidayThumbnail,
 } from "@/components/seasonal/holiday-details";
 import { getSeasonalPresetMeta } from "@/components/seasonal/seasonal-presets";
+import { useThemeSettings } from "@/components/theme-color-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
-import type { SeasonalCalendarEntry } from "@/types/api";
+import type {
+  SeasonalCalendarEntry,
+  SiteSettings,
+  UpcomingSeasonalReminder,
+} from "@/types/api";
 
 function parseIsoDate(iso: string): Date {
   return new Date(`${iso}T00:00:00`);
@@ -47,6 +54,13 @@ function formatShortDate(iso: string, locale: string): string {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+  }).format(parseIsoDate(iso));
+}
+
+function formatDayMonth(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale === "vi" ? "vi-VN" : "en-US", {
+    day: "2-digit",
+    month: "2-digit",
   }).format(parseIsoDate(iso));
 }
 
@@ -132,6 +146,58 @@ export function UpcomingHolidaysCard({
     }
     return { exact, solarByMonthDay };
   }, [entries]);
+
+  // Admin-only: holidays inside their reminder window, so the effect can be
+  // switched on early from the calendar (this replaced a page-wide banner).
+  const { seasonalTheme, setSeasonalTheme } = useThemeSettings();
+  const [reminders, setReminders] = useState<UpcomingSeasonalReminder[]>([]);
+  const [activating, setActivating] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let active = true;
+    void api
+      .get<UpcomingSeasonalReminder[]>("/api/v1/settings/seasonal-reminders")
+      .then((list) => {
+        if (active && Array.isArray(list)) setReminders(list);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isAdmin]);
+
+  const pendingReminders = isAdmin
+    ? reminders.filter((item) => seasonalTheme.preset !== item.preset)
+    : [];
+  const nextReminder = pendingReminders[0] ?? null;
+
+  function reminderFor(eventId: string): UpcomingSeasonalReminder | null {
+    return pendingReminders.find((item) => item.event_id === eventId) ?? null;
+  }
+
+  async function activateReminder(reminder: UpcomingSeasonalReminder) {
+    if (activating) return;
+    const name = locale === "vi" ? reminder.name_vi : reminder.name_en;
+    setActivating(true);
+    try {
+      await api.post<SiteSettings>("/api/v1/settings/seasonal-theme/activate", {
+        preset: reminder.preset,
+      });
+      setSeasonalTheme({
+        preset: reminder.preset,
+        event_id: reminder.event_id,
+        event_name_en: reminder.name_en,
+        event_name_vi: reminder.name_vi,
+        source: "manual",
+      });
+      toast.success(t("seasonal.banner.activatedToast", { name }));
+    } catch {
+      toast.error(t("seasonal.banner.activateFailed"));
+    } finally {
+      setActivating(false);
+    }
+  }
 
   if (!entries || entries.length === 0) return null;
 
@@ -438,6 +504,42 @@ export function UpcomingHolidaysCard({
             {renderCountdown(nextUpcoming)}
           </button>
         ) : null}
+
+        {nextReminder ? (
+          <div
+            role="status"
+            title={t("seasonal.banner.upcomingTitle", {
+              name:
+                locale === "vi" ? nextReminder.name_vi : nextReminder.name_en,
+              days: nextReminder.days_until,
+            })}
+            className="bg-primary-subtle mt-1.5 flex items-center justify-between gap-2 rounded-md py-1 pr-1 pl-2 text-[11px]"
+          >
+            <span className="text-primary min-w-0 truncate font-medium">
+              {t(
+                nextReminder.auto_activate
+                  ? "seasonal.calendar.reminderAuto"
+                  : "seasonal.calendar.reminderManual",
+                {
+                  name:
+                    locale === "vi"
+                      ? nextReminder.name_vi
+                      : nextReminder.name_en,
+                  date: formatDayMonth(nextReminder.starts_on, locale),
+                },
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => void activateReminder(nextReminder)}
+              disabled={activating}
+              className="text-primary hover:bg-primary/10 active:bg-primary/15 focus-visible:ring-ring inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-default disabled:opacity-60"
+            >
+              <Sparkles className="size-3" aria-hidden />
+              {t("seasonal.banner.activateNow")}
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {/* Unified Two-Column Calendar Detail Modal */}
@@ -682,6 +784,7 @@ export function UpcomingHolidaysCard({
                         : item.holiday_note_en;
                     const presetMeta = getSeasonalPresetMeta(item.preset);
                     const detail = HOLIDAY_DETAILS[item.event_id];
+                    const itemReminder = reminderFor(item.event_id);
                     return (
                       <div
                         key={item.event_id}
@@ -770,6 +873,36 @@ export function UpcomingHolidaysCard({
                                   ? presetMeta.labelVi
                                   : presetMeta.labelEn}
                               </span>
+                            </div>
+                          ) : null}
+
+                          {itemReminder ? (
+                            <div className="bg-primary-subtle/60 flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5">
+                              <span className="text-muted-foreground min-w-0 text-[11px]">
+                                {itemReminder.auto_activate
+                                  ? t("seasonal.banner.autoNote", {
+                                      date: formatDayMonth(
+                                        itemReminder.starts_on,
+                                        locale,
+                                      ),
+                                    })
+                                  : t("seasonal.banner.manualNote", {
+                                      date: formatDayMonth(
+                                        itemReminder.starts_on,
+                                        locale,
+                                      ),
+                                    })}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                onClick={() => void activateReminder(itemReminder)}
+                                disabled={activating}
+                                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                              >
+                                <Sparkles className="size-3.5" aria-hidden />
+                                {t("seasonal.banner.activateNow")}
+                              </Button>
                             </div>
                           ) : null}
                         </div>

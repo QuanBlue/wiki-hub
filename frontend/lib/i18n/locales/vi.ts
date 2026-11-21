@@ -357,8 +357,11 @@ export const vi: Dictionary = {
     "clearQuery": "Xóa từ khóa tìm kiếm",
     "searching": "Đang tìm kiếm trong {siteName}...",
     "quickSearchTitle": "Tìm kiếm nhanh trong {siteName}",
-    "quickSearchHint": "Nhập tên space, tiêu đề page hoặc từ khóa để tìm tài liệu ngay lập tức.",
-    "noResults": "Không có space hoặc page nào khớp “{query}”",
+    "quickSearchHint": "Nhập tên space, tiêu đề page, tên người hoặc từ khóa - không cần đúng dấu, hoa thường hay khoảng trắng.",
+    "noResults": "Không có space, page hoặc người nào khớp “{query}”",
+    "sectionSpaces": "Space ({count})",
+    "sectionPeople": "Mọi người ({count})",
+    "sectionPages": "Page ({count})",
     "hintNavigate": "để di chuyển",
     "hintSelect": "để chọn",
     "hintClose": "để đóng",
@@ -3602,6 +3605,8 @@ export const vi: Dictionary = {
     "title": "Hiệu ứng chào khách",
     "description": "Chọn hiệu ứng và lời chào hiển thị khi khách ghé thăm trang cá nhân này.",
     "configure": "Hiệu ứng Welcome",
+    "change": "Thay đổi",
+    "currentLabel": "Phát khi khách mở trang Home của bạn",
     "replay": "Phát lại hiệu ứng",
     "skip": "Bỏ qua",
     "preview": "Xem trước",
@@ -3683,7 +3688,92 @@ export const vi: Dictionary = {
       "koi": {
         "label": "Hồ cá koi",
         "desc": "Cá koi bơi lượn giữa lá sen, hoa sen nở và gợn nước."
+      },
+      "blockcraft": {
+        "label": "Khối vuông",
+        "desc": "Khối voxel rơi, mặt đất pixel và tia kim cương bay về phía avatar."
+      },
+      "platformer": {
+        "label": "Phiêu lưu 2D",
+        "desc": "Ống xanh, khối ? nảy và đồng xu xoay tròn."
+      },
+      "racing": {
+        "label": "Đua xe",
+        "desc": "Cờ caro, vệt tốc độ và đếm ngược 3-2-1-GO."
+      },
+      "tet": {
+        "label": "Tết",
+        "desc": "Rồng bay lượn khắp trang giữa hoa mai, hoa đào và bao lì xì."
+      },
+      "halloween": {
+        "label": "Halloween",
+        "desc": "Trăng lớn, dơi bay, bí ngô phát sáng và làn khói tím."
+      },
+      "christmas": {
+        "label": "Giáng sinh",
+        "desc": "Dây đèn nhấp nháy, cây thông, quà và bông tuyết."
+      },
+      "midautumn": {
+        "label": "Trung thu",
+        "desc": "Trăng rằm, đèn ông sao, bánh trung thu và đom đóm."
+      },
+      "pirate": {
+        "label": "Cướp biển",
+        "desc": "Con thuyền lướt sóng, bản đồ nét đứt dẫn tới kho báu."
+      },
+      "ninja": {
+        "label": "Ninja",
+        "desc": "Ánh trăng, phi tiêu xoay, vệt chém mực và lá đỏ."
+      },
+      "rocket": {
+        "label": "Tên lửa",
+        "desc": "Tên lửa bay quanh avatar giữa những ngôi sao băng."
+      },
+      "jungle": {
+        "label": "Rừng nhiệt đới",
+        "desc": "Lá lớn, dây leo, bướm, đom đóm và hoa nở."
+      },
+      "cyberpunk": {
+        "label": "Cyberpunk",
+        "desc": "Mưa neon, biển hiệu chớp giật và drone quét."
+      },
+      "steampunk": {
+        "label": "Steampunk",
+        "desc": "Bánh răng đồng ăn khớp, hơi nước và khí cầu bay."
+      },
+      "candy": {
+        "label": "Kẹo ngọt",
+        "desc": "Sô-cô-la chảy, kẹo mút nảy, kẹo dẻo và cốm rắc."
+      },
+      "kawaii": {
+        "label": "Kawaii",
+        "desc": "Mây mỉm cười, cầu vồng, tim và sao."
       }
+    },
+    "seasonalGreeting": {
+      "new_year": "Chúc mừng năm mới! Một khởi đầu thật rạng rỡ.",
+      "lunar_new_year": "Chúc mừng năm mới! Vạn sự như ý, sức khoẻ dồi dào.",
+      "mid_autumn": "Chúc Tết Trung thu vui vẻ! Cùng ngắm trăng rằm nhé.",
+      "halloween": "Halloween vui vẻ! Cho kẹo hay bị ghẹo?",
+      "christmas": "Giáng sinh an lành! Chúc bạn thật nhiều niềm vui.",
+      "valentine": "Valentine vui vẻ! Gửi đến bạn thật nhiều yêu thương.",
+      "floral_pink": "Chúc mừng ngày lễ! Ngập tràn hoa và niềm vui.",
+      "teachers_day": "Chúc mừng Ngày Nhà giáo! Cảm ơn những người truyền tri thức.",
+      "blue_neon": "Chúc mừng Ngày Quốc tế Nam giới!",
+      "national_red_gold": "Chào mừng ngày lễ trọng đại của dân tộc!",
+      "heritage_gold": "Nhớ về cội nguồn nhân ngày Giỗ Tổ Hùng Vương.",
+      "lotus_gold": "Một ngày tưởng nhớ và tri ân.",
+      "kids_party": "Chúc mừng Ngày Thiếu nhi! Luôn vui tươi nhé.",
+      "easter": "Chúc mừng Lễ Phục sinh! Ngày mới đầy bất ngờ.",
+      "spring_green": "Chào mùa xuân xanh! Khởi đầu thật tươi mới.",
+      "autumn_harvest": "Lễ Tạ ơn vui vẻ! Biết ơn cả đội ngũ.",
+      "memorial_candle": "Tri ân và tưởng nhớ."
+    },
+    "groups": {
+      "classic": "Cổ điển",
+      "game": "Trò chơi",
+      "adventure": "Phiêu lưu",
+      "style": "Phong cách"
     }
   },
   "seasonal": {
@@ -3692,8 +3782,6 @@ export const vi: Dictionary = {
       "autoNote": "Hiệu ứng sẽ tự động kích hoạt vào ngày {date}.",
       "manualNote": "Bắt đầu từ ngày {date}. Bạn có thể bật ngay hoặc vào trang Cài đặt.",
       "activateNow": "Bật ngay",
-      "configure": "Cài đặt",
-      "dismiss": "Bỏ qua nhắc nhở",
       "activatedToast": "Đã bật hiệu ứng lễ hội cho {name}.",
       "activateFailed": "Không thể kích hoạt hiệu ứng lễ hội."
     },
@@ -3714,6 +3802,8 @@ export const vi: Dictionary = {
       "filterAll": "Tất cả sự kiện",
       "filterPublic": "Ngày nghỉ lễ",
       "manageEffects": "Quản lý hiệu ứng",
+      "reminderAuto": "{name}: tự bật hiệu ứng ngày {date}",
+      "reminderManual": "{name}: bắt đầu ngày {date}",
       "nextUp": "Sắp tới",
       "noEventOnDay": "Không có ngày lễ vào ngày này.",
       "quickJump": "Các ngày lễ trong năm",
@@ -3740,8 +3830,8 @@ export const vi: Dictionary = {
       "modeManual": "Chọn thủ công",
       "modeManualDesc": "Giữ cố định một gói hiệu ứng được chọn ngay lập tức.",
       "presetsTitle": "Bộ gói hiệu ứng cài sẵn",
-      "presetsManualHint": "Chọn một gói để bật ngay hoặc bấm Xem thử để xem trực tiếp trên giao diện.",
-      "presetsPreviewHint": "Bấm Xem thử để xem trước trực tiếp trên thanh header, sidebar và nền trước khi lưu.",
+      "presetsManualHint": "Bấm vào một gói để bật ngay. Bấm vào hình để xem thử trên trang chủ và trang đăng nhập.",
+      "presetsPreviewHint": "Bấm Xem thử để xem gói trên trang chủ và trang đăng nhập trước khi lưu.",
       "remindersTitle": "Nhắc nhở Quản trị viên trước sự kiện",
       "remindersDesc": "Nhắc quản trị viên trước khi sự kiện bắt đầu qua Chuông thông báo, Banner quản trị và Email (nếu có).",
       "reminderEnabled": "Bật nhắc nhở trước sự kiện sắp tới",
@@ -3786,9 +3876,25 @@ export const vi: Dictionary = {
       "saveChanges": "Lưu thay đổi",
       "saving": "Đang lưu…",
       "unsaved": "Chưa lưu thay đổi",
+      "autoSaved": "Thay đổi được lưu tự động",
       "nowShowing": "Đang hiển thị",
       "previewTag": "Xem thử",
       "liveTag": "Đang bật",
+      "mockTabs": "Trang xem thử",
+      "mockApp": "Trong ứng dụng",
+      "mockLogin": "Trang đăng nhập",
+      "mockCaption": "Bản thu nhỏ với đầy đủ hiệu ứng của gói.",
+      "playWelcome": "Phát hiệu ứng chào mừng",
+      "previewModalTitle": "Xem thử: {name}",
+      "closePreview": "Đóng",
+      "mockGreeting": "Chào mừng trở lại",
+      "mockRecent": "Gần đây",
+      "mockFavorites": "Yêu thích",
+      "mockRecentPages": "Xem gần đây",
+      "mockSpaces": "Không gian của bạn",
+      "mockSignIn": "Đăng nhập",
+      "mockEmail": "Email hoặc tên đăng nhập",
+      "mockPassword": "Mật khẩu",
       "noneDesc": "Hiện không có ngày lễ nào trong khung hiệu ứng. Giao diện giữ như bình thường.",
       "modeLabel": "Chế độ",
       "usedBy": "{count} ngày lễ",

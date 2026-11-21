@@ -34,7 +34,15 @@ export const sectionsEn: HelpSection[] = [
         <Callout variant="note" title="WHAT SEARCH ACTUALLY MATCHES">
           Search looks for your words inside space names/keys/descriptions and page
           titles/content, ignores accents and capitals (<Code>giam sat</Code> finds{" "}
-          <Code>Giám sát</Code>) and forgives small typos in titles. You can type a whole
+          <Code>Giám sát</Code>) and forgives small typos in titles. A{" "}
+          <strong>name</strong> is found however you type its spacing and punctuation: for a
+          space called <Code>dms1.0</Code>, any of <Code>dms1</Code>, <Code>DMs1</Code>,{" "}
+          <Code>dms 1</Code>, <Code>dms_1</Code> or <Code>DMS10</Code> lists it (the closest
+          spaces first, at most six), and the same goes for page titles. Search also lists{" "}
+          <strong>People</strong>: type part of someone&apos;s name or username, with or
+          without accents and in any order (<Code>quan nguyen</Code> finds{" "}
+          <Code>Nguyễn Văn Quân</Code>), and press <Kbd>Enter</Kbd> to open their profile.
+          People are not listed once a filter is in the box. You can type a whole
           question, such as <Code>ip của Kestrel Atlas là bao nhiêu?</Code> - filler words
           are ignored. Rarer words count for more (in <Code>tài khoản cloud của nord</Code>{" "}
           the word <Code>nord</Code> decides), a match in the <strong>title</strong> counts
@@ -47,8 +55,10 @@ export const sectionsEn: HelpSection[] = [
           <strong>meaning</strong>, even when they share none of your words. It also searches
           attachment filenames and attachment text (PDF, Word, Excel, PowerPoint, HTML, text),
           and only ever shows results you have permission to see. You can narrow results using
-          fast search filters directly in the search box: <Code>space:KEY</Code> (e.g. <Code>space:ENG</Code>),{" "}
-          <Code>author:username</Code> (e.g. <Code>author:john</Code>),{" "}
+          fast search filters directly in the search box: <Code>space:KEY</Code> (e.g. <Code>space:ENG</Code>,
+          or a space&apos;s name typed loosely, as in <Code>space:dms_1</Code>),{" "}
+          <Code>author:username</Code> (e.g. <Code>author:john</Code>, or part of a name without
+          accents, as in <Code>author:quan</Code>),{" "}
           <Code>label:tag</Code> (e.g. <Code>label:runbook</Code>; matches your own private labels),{" "}
           <Code>type:format</Code> (e.g. <Code>type:pdf</Code>), and{" "}
           <Code>updated:range</Code> (e.g. <Code>updated:&gt;2026-01</Code>).
@@ -2524,6 +2534,56 @@ export const sectionsEn: HelpSection[] = [
           <strong> Updated 6 times</strong>. Click it to see every edit with its own{" "}
           <strong>view change</strong> link.
         </p>
+        <p className="mt-3 font-semibold text-foreground">Personal status:</p>
+        <p className="mt-1 text-sm">
+          Open the account menu and choose <strong>Set status</strong> (<strong>Update status</strong>{" "}
+          once one is set) to share a short note with everyone in the workspace: pick an icon,
+          type up to 140 characters or start from a preset (<em>Free to chat</em>, <em>Slow to
+          respond</em>, <em>Travelling</em>...), and choose <strong>Clear status after</strong> 1
+          hour, 4 hours, 24 hours, 7 days or never. The status shows as a thought bubble on your
+          profile and next to your avatar, with the time it lasts in its tooltip. It disappears
+          by itself when it expires, or press <strong>Clear status</strong>.
+        </p>
+        <p className="mt-3 font-semibold text-foreground">Guest welcome effect:</p>
+        <p className="mt-1 text-sm">
+          On your own Home, click the <strong>palette</strong> button over the cover, or use the
+          <strong> Welcome effect</strong> row in <strong>Your account → Edit profile</strong>, to pick a
+          welcome effect that plays for visitors for about 5 seconds. There are 26 themes in four
+          groups: <strong>Classic</strong>, <strong>Games</strong> (Block Craft, Platformer,
+          Racing), <strong>Adventure</strong> (Pirate, Ninja, Rocket, Jungle) and{" "}
+          <strong>Styles</strong> (Cyberpunk, Steampunk, Candy, Kawaii). Holiday scenes are not in
+          this list: they come from the seasonal theme (see below).
+        </p>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+          <li>
+            Every theme follows the same script: the scene opens, <strong>Hubby</strong> (the
+            WikiHub owl mascot, dressed for the theme) arrives beside your avatar and presents it, a
+            halo and sparkles light the avatar up, then Hubby waves and everything fades. The
+            effects never cover your avatar.
+          </li>
+          <li>
+            Press the round <strong>play</strong> button on a card to preview it in a mock Home,
+            then <strong>Use this theme</strong> to choose and save it in one step. You can also click a card and press <strong>Save effect</strong>.
+          </li>
+          <li>
+            The optional <strong>Custom greeting</strong> (up to 140 characters) appears as
+            the speech bubble of Hubby. Leave it empty for no bubble. Visitors can press{" "}
+            <strong>Skip</strong> at any time, and the effect is replaced by a still greeting if
+            their system asks to reduce motion.
+          </li>
+          <li>
+            <strong>Festival effects on Home:</strong> while a seasonal theme is running (Tết,
+            Valentine, Teachers&apos; Day, Children&apos;s Day, National Day, Halloween, Christmas and
+            the other holidays), your Home plays that holiday&apos;s own scene with a festive
+            greeting every time you come back to Home, with Hubby dressed for the occasion (an áo
+            dài for Tết, for example). Press <strong>Skip</strong> to stop it for the rest of the
+            session; the <strong>play</strong> button on the cover still replays it. It takes
+            priority over your own welcome effect on Home, which plays once per session. On someone
+            else&apos;s profile you still see that person&apos;s own effect. Holiday scenes are not
+            selectable themes.
+          </li>
+          <li>Administrators can set the effect for other members from their profile.</li>
+        </ul>
         <p className="mt-3 font-semibold text-foreground">1. User Profile Settings:</p>
         <ul className="list-disc pl-5 space-y-1 text-sm">
           <li>
@@ -4867,18 +4927,29 @@ export const sectionsEn: HelpSection[] = [
       <>
         <p>
           <strong>Administration → Settings → Seasonal Effects</strong> adds hand-drawn
-          decoration to the top bar, the sidebars and the page margins. It never covers
+          decoration to the top bar and the page margins, and to the sign-in page. The top
+          bar carries a faint line-art watermark of the holiday, and the holiday greeting next
+          to the logo is dressed like a holiday doodle: a small motif on each side (peach and
+          apricot blossoms for Tết, a gold star for National Day, a pumpkin and a bat for
+          Halloween...). While you switch to another page, a soft glow in the holiday colours sweeps across
+          the top bar, led by a bright line, a trail of sparkles and the same motif. The sidebars stay
+          plain; only the page you are on is highlighted in the holiday colour. It never covers
           text or buttons and switches itself off for people who ask their device to reduce
           motion.
         </p>
         <ul className="list-disc pl-5 space-y-2 text-sm">
           <li>
             <strong>Mode</strong>: <em>Off</em>, <em>Auto</em> (turns on by date, see below)
-            or <em>Manual</em> (keeps one effect pack on).
+            or <em>Manual</em> (keeps one effect pack on). In Manual, click a pack to turn it
+            on. There is no Save button on this tab: every change here, including switches in
+            the holiday calendar and the reminders, is saved the moment you make it.
           </li>
           <li>
-            <strong>Preview</strong> any pack from its card without saving; Light and Dark
-            themes are both supported.
+            Click <strong>Preview</strong> on a pack&apos;s card (or in the{" "}
+            <strong>Showing now</strong> box) to open a window with a scaled copy of the Home
+            page and every effect of the pack, without saving anything; switch its tab to{" "}
+            <strong>Sign-in page</strong> to see how the sign-in screen will look. Light and
+            Dark themes are both supported.
           </li>
           <li>
             <strong>Holiday calendar</strong>: more than 35 built-in Vietnamese and major
@@ -4893,11 +4964,17 @@ export const sectionsEn: HelpSection[] = [
           </li>
           <li>
             <strong>Reminders</strong>: administrators get a notification (and optionally an
-            e-mail) a few days before a holiday starts.
+            e-mail) a few days before a holiday starts. During that window the Home holiday
+            calendar shows the holiday with an <strong>Activate now</strong> button, so you can
+            switch the effect on early.
           </li>
         </ul>
         <Callout variant="note" title="WHAT PEOPLE SEE">
-          Everyone sees the active effect. The Home page lists the upcoming holidays, with a
+          A change shows up without refreshing: open pages pick it up when the person moves to
+          another page or comes back to the tab, and your other tabs update straight away.
+          Everyone sees the active effect, including on the sign-in page before they sign
+          in: falling particles, a band on top of the sign-in card, a scene at the foot of the
+          brand panel and the holiday greeting. The Home page lists the upcoming holidays, with a
           short history of each one.
         </Callout>
       </>

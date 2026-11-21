@@ -68,6 +68,32 @@ describe("WelcomeEffectOverlay", () => {
   });
 });
 
+describe("WelcomeEffectOverlay timers", () => {
+  it("is not restarted or frozen by a parent re-render with a new onComplete", () => {
+    vi.useFakeTimers();
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = render(
+      <WelcomeEffectOverlay effect="tet" ownerName="Alice" onComplete={first} />,
+    );
+    vi.advanceTimersByTime(3000);
+    rerender(<WelcomeEffectOverlay effect="tet" ownerName="Alice" onComplete={second} />);
+    vi.advanceTimersByTime(2100);
+    // finished once, on the original schedule, through the latest callback
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+});
+
 describe("WelcomeEffectDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -113,20 +139,37 @@ describe("WelcomeEffectDialog", () => {
       screen.getByRole("heading", { name: "Home preview — Hacker" }),
     ).toBeInTheDocument();
 
+    // "Use this theme" selects and saves in one step
     await user.click(screen.getByRole("button", { name: "Use this theme" }));
-
-    const input = screen.getByLabelText("Custom greeting (optional)");
-    await user.type(input, "Access granted");
-
-    await user.click(screen.getByRole("button", { name: "Save effect" }));
     await waitFor(() => {
       expect(mockedApi.patch).toHaveBeenCalledWith("/api/v1/users/me", {
         welcome_effect: "hacker",
-        welcome_message: "Access granted",
+        welcome_message: "",
       });
     });
     expect(onSaved).toHaveBeenCalledWith("hacker", "Access granted");
     expect(toastSuccess).toHaveBeenCalled();
+  });
+
+  it("does not offer holiday themes: those come from the seasonal theme", () => {
+    render(
+      <WelcomeEffectDialog
+        open
+        onOpenChange={vi.fn()}
+        targetName="Alice"
+        targetUsername="alice"
+        isOwner
+        initialEffect=""
+        initialMessage=""
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Preview Hacker" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Festivals" })).toBeNull();
+    for (const name of ["Lunar New Year", "Halloween", "Christmas", "Mid-Autumn"]) {
+      expect(screen.queryByRole("button", { name: `Preview ${name}` })).toBeNull();
+    }
   });
 
   it("lets administrator update another member's welcome effect via /users/{id}", async () => {

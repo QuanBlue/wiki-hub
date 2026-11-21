@@ -11,7 +11,9 @@ editing and search GIFs, and the page, code block, search, drafts,
 permissions, Help centre, backup and theme screenshots. The other images
 (sign-in, the *Go to* and Help search captures, language switching, the phone
 GIF and the like/pin GIF) are from 18 October 2026 and show the interface as
-it was then.
+it was then. The seasonal-effects, festival, welcome-effect, status, sign-in
+settings and announcement captures were taken on **21 November 2026** on a local test instance,
+with the Valentine's Day pack live.
 
 Nothing is edited except what is hidden at capture time: the Next.js
 development badge (not part of the product) and, on the test instance, a
@@ -30,6 +32,10 @@ come back.
 - [Help centre](#help-centre)
 - [Backup & migration](#backup--migration)
 - [Theme & branding](#theme--branding)
+- [Seasonal effects & festivals](#seasonal-effects--festivals)
+- [Welcome effects & personal status](#welcome-effects--personal-status)
+- [Customising the sign-in page](#customising-the-sign-in-page)
+- [System announcements](#system-announcements)
 - [Language switching](#language-switching)
 - [Small screens](#small-screens)
 - [AI features](#ai-features)
@@ -225,6 +231,69 @@ and pick the default page typeface. **Preview Theme** shows the result before
 from environment* comes from the server's configuration until it is changed
 here. The other sections are **General & Sessions**, **Sidebar access** and
 **System Announcement** (a scheduled banner for everyone).
+
+## Seasonal effects & festivals
+
+<img src="assets/screenshot-seasonal.png" alt="Administration, Settings, Seasonal effects: a Showing now box with Off, Automatic schedule and Manual override, and a grid of effect packs such as Christmas, Lunar New Year, Halloween and Valentine's Day marked Live" width="720">
+
+**Administration → Settings → Seasonal Effects** dresses WikiHub for the
+occasion. Choose *Off*, *Automatic schedule* (switches on by date from an
+editable calendar of 35+ Vietnamese and international holidays, solar and lunar)
+or *Manual override* (click a pack to keep it on). There is no Save button:
+every change applies as you make it.
+
+<img src="assets/screenshot-seasonal-preview.png" alt="The Preview window: a scaled copy of the Home page with the Valentine's Day pack, with tabs for In the app and Sign-in page and a Play welcome effect button" width="720">
+
+**Preview** opens a scaled copy of Home, with every effect of the pack, without
+saving anything; its second tab shows the sign-in page.
+
+<img src="assets/screenshot-festival-home.png" alt="Home during Valentine's Day: a lace edge and a greeting on the top bar, falling hearts, and Hubby the owl with a speech bubble beside the profile card" width="720">
+
+While a pack is live, every return to **Home** plays its festival scene: here
+Hubby, the WikiHub owl, dressed for Valentine's Day, with a festive greeting.
+**Skip** stops it for the session. The top bar carries a line-art edge and the
+holiday greeting, and a glow sweeps across it while you move between pages.
+
+<img src="assets/screenshot-login-festival.png" alt="The sign-in page with a Valentine's Day greeting above the card, a lace band, and a scene along the foot of the blue brand panel" width="720">
+
+The sign-in page wears the same pack before anyone signs in.
+
+## Welcome effects & personal status
+
+<img src="assets/screenshot-welcome-effect.png" alt="The Guest welcome effect dialog: a None option and cards for Phoenix, Hacker, Admin, Aurora, Sakura, Fireworks, Ocean, Neon and more, each with a play button" width="720">
+
+The palette button over the cover on your own Home (or **Welcome effect** in
+**Edit profile**) opens 26 themes in four groups: Classic, Games, Adventure and
+Styles. The chosen one plays for about five seconds when someone visits your
+profile.
+
+<img src="assets/screenshot-welcome-preview.png" alt="Home preview - Sakura: a mock Home with falling petals and Hubby the owl wearing a flower, with Replay welcome and Use this theme buttons" width="720">
+
+The play button on a card previews it in a mock Home; **Use this theme** picks
+and saves it. An optional greeting becomes Hubby's speech bubble.
+
+<img src="assets/screenshot-status.png" alt="The Set a status dialog: an icon button, a What's happening box with a 140 character counter, a Clear status after list and presets such as Free to chat and Travelling" width="720">
+
+**Set status** in the account menu (or on your profile) shares an icon and up to
+140 characters, from a preset or your own words, with the workspace. It clears
+itself after 1 hour, 4 hours, 24 hours or 7 days, or never.
+
+## Customising the sign-in page
+
+<img src="assets/screenshot-signin-settings.png" alt="Administration, Settings, Sign-in page: English and Tieng Viet tabs, text fields for the headline and description, feature blurbs, and a live preview of the panel" width="720">
+
+**Settings → Sign-in page** edits the left panel of the sign-in screen
+(headline, description, three feature blurbs, footer and illustration)
+separately for English and Tiếng Việt, with a live preview as you type.
+
+## System announcements
+
+<img src="assets/screenshot-announcement.png" alt="Administration, Settings, System Announcement: a live banner preview, a banner tone of Information, Warning, Critical or Completed, a rich-text message and a display schedule, with the banner already showing above the page" width="720">
+
+**Settings → System Announcement** pins a banner above every signed-in page: a
+title, a rich-text message, a tone (*Information*, *Warning*, *Critical* or
+*Completed*), a schedule from one hour to no expiry, and whether each person can
+dismiss it. A live preview shows exactly what people will see.
 
 ## Language switching
 

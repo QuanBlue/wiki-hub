@@ -1,6 +1,6 @@
 "use client";
 
-import { Link2, Loader2, Move, Trash2, Upload, UserRound } from "lucide-react";
+import { Link2, Loader2, Move, PartyPopper, Trash2, Upload, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { CroppedAvatarImage, getUserAvatarColor, resolveAvatarUrl } from "@/components/ui/avatar";
+import { WelcomeEffectDialog } from "@/components/users/welcome-effect-dialog";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
@@ -102,12 +103,15 @@ export function ProfileForm({
   user,
   onCancel,
   onSaved,
+  onWelcomeSaved,
   onDirtyChange,
   registerSave,
 }: {
   user: Me;
   onCancel: () => void;
   onSaved: (user: User, avatarChanged: boolean, coverChanged?: boolean) => void;
+  /** The welcome effect saves on its own (its own dialog), so the parent keeps the new value. */
+  onWelcomeSaved?: (effect: User["welcome_effect"], message: string) => void;
   /** Told whenever the form gains or loses unsaved changes. */
   onDirtyChange?: (dirty: boolean) => void;
   /**
@@ -121,6 +125,13 @@ export function ProfileForm({
   const fileInputId = useId();
   const coverInputId = useId();
   const { t, apiErrorText } = useTranslation();
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const canEditWelcome =
+    user.is_superuser ||
+    user.global_permissions?.includes("system_admin") ||
+    user.global_permissions?.includes("customize_profile_welcome");
+  const welcomeEffect = user.welcome_effect ?? "";
+  const welcomeMessage = user.welcome_message ?? "";
   const [fullName, setFullName] = useState(user.full_name);
   const [email, setEmail] = useState(user.email);
   const [bio, setBio] = useState(user.bio);
@@ -710,6 +721,37 @@ export function ProfileForm({
             </div>
           </div>
         </div>
+
+        {/* Guest welcome effect: saved on its own from its dialog */}
+        {canEditWelcome ? (
+          <div className="p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="bg-surface-sunken text-primary flex size-9 shrink-0 items-center justify-center rounded-md border border-border">
+                  <PartyPopper className="size-4" aria-hidden />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{t("welcomeEffect.configure")}</p>
+                  <p className="text-muted-foreground truncate text-xs">
+                    {t(`welcomeEffect.presets.${welcomeEffect || "none"}.label`)}
+                    {welcomeMessage ? ` · ${welcomeMessage}` : ""}
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={pending}
+                aria-label={t("welcomeEffect.configure")}
+                onClick={() => setWelcomeOpen(true)}
+              >
+                {t("welcomeEffect.change")}
+              </Button>
+            </div>
+            <p className="text-muted-foreground mt-2 text-xs">{t("welcomeEffect.description")}</p>
+          </div>
+        ) : null}
       </div>
 
       {error ? (
@@ -729,6 +771,20 @@ export function ProfileForm({
         </Button>
       </footer>
     </form>
+    {welcomeOpen ? (
+      <WelcomeEffectDialog
+        open={welcomeOpen}
+        onOpenChange={setWelcomeOpen}
+        targetName={user.full_name || user.username}
+        targetUsername={user.username}
+        targetAvatarUrl={user.avatar_url}
+        targetCoverUrl={user.cover_url}
+        isOwner
+        initialEffect={welcomeEffect}
+        initialMessage={welcomeMessage}
+        onSaved={(effect, message) => onWelcomeSaved?.(effect, message)}
+      />
+    ) : null}
     {cropTarget ? (
       <ImageCropDialog
         key={cropTarget.file.name + cropTarget.file.lastModified + cropTarget.kind}

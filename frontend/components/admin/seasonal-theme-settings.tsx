@@ -5,10 +5,9 @@ import {
   Bell,
   Calendar,
   CalendarDays,
-  CalendarOff,
   Check,
+  ChevronDown,
   Eye,
-  EyeOff,
   Loader2,
   Mail,
   PartyPopper,
@@ -16,18 +15,18 @@ import {
   Plus,
   Power,
   RotateCcw,
-  Save,
   Search,
   Trash2,
   Wand2,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import {
   SEASONAL_PRESETS,
   getSeasonalPresetMeta,
 } from "@/components/seasonal/seasonal-presets";
+import { SeasonalPreviewMock } from "@/components/seasonal/seasonal-preview-mock";
 import { ThumbScene } from "@/components/seasonal/seasonal-thumb-scenes";
 import { useThemeSettings } from "@/components/theme-color-provider";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +54,7 @@ import type {
   SeasonalEventItem,
   SeasonalThemeMode,
   SeasonalThemeSettings,
+  LoginPanel,
 } from "@/types/api";
 
 function pad2(n: number): string {
@@ -139,23 +139,29 @@ function emptyCustomEvent(): SeasonalEventItem {
 export function SeasonalThemeSettingsPanel({
   value,
   onChange,
+  onCommit,
   onResetDefaults,
   pending,
-  dirty = false,
+  loginPanel,
+  loginImageUrl,
 }: {
   value: SeasonalThemeSettings;
+  /** Updates the draft without saving (used while typing a number). */
   onChange: (next: SeasonalThemeSettings) => void;
+  /** Saves immediately. Every discrete choice goes through this; falls back to `onChange`. */
+  onCommit?: (next: SeasonalThemeSettings) => void;
   onResetDefaults: () => void;
   pending: boolean;
-  /** Unsaved edits exist; enables the header's Save button. */
-  dirty?: boolean;
+  /** The sign-in panel copy, so the sign-in preview matches the real page. */
+  loginPanel?: LoginPanel | null;
+  loginImageUrl?: string | null;
 }) {
   const { locale, t } = useTranslation();
   const {
     seasonalTheme,
-    previewSeasonalPreset,
-    setPreviewSeasonalPreset,
   } = useThemeSettings();
+  // The pack shown in the preview modal; null while the modal is closed.
+  const [previewPreset, setPreviewPreset] = useState<SeasonalEffectPresetId | null>(null);
 
   const [editingEvent, setEditingEvent] = useState<SeasonalEventItem | null>(null);
   const [isNewEvent, setIsNewEvent] = useState(false);
@@ -163,29 +169,33 @@ export function SeasonalThemeSettingsPanel({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "on" | "off" | "custom">("all");
 
-  // Stop live preview automatically if the admin leaves this panel.
-  useEffect(() => {
-    return () => {
-      setPreviewSeasonalPreset(null);
-    };
-  }, [setPreviewSeasonalPreset]);
+  const commit = onCommit ?? onChange;
+  // Open by default only where the calendar matters: automatic scheduling.
+  const [calendarOpen, setCalendarOpen] = useState(value.mode === "auto");
+  const [reminderDays, setReminderDays] = useState(String(value.reminder_days_before ?? 7));
 
   function updateField<K extends keyof SeasonalThemeSettings>(
     key: K,
     nextVal: SeasonalThemeSettings[K],
   ) {
-    onChange({ ...value, [key]: nextVal });
+    commit({ ...value, [key]: nextVal });
+  }
+
+  function commitReminderDays() {
+    const days = Math.min(30, Math.max(1, Number(reminderDays) || 7));
+    setReminderDays(String(days));
+    if (days !== value.reminder_days_before) updateField("reminder_days_before", days);
   }
 
   function updateEvent(id: string, patch: Partial<SeasonalEventItem>) {
-    onChange({
+    commit({
       ...value,
       events: value.events.map((ev) => (ev.id === id ? { ...ev, ...patch } : ev)),
     });
   }
 
   function deleteEvent(id: string) {
-    onChange({
+    commit({
       ...value,
       events: value.events.filter((ev) => ev.id !== id),
     });
@@ -220,9 +230,9 @@ export function SeasonalThemeSettingsPanel({
     if (!cleaned.name_vi) return;
 
     if (isNewEvent) {
-      onChange({ ...value, events: [...value.events, cleaned] });
+      commit({ ...value, events: [...value.events, cleaned] });
     } else {
-      onChange({
+      commit({
         ...value,
         events: value.events.map((ev) => (ev.id === cleaned.id ? cleaned : ev)),
       });
@@ -258,11 +268,9 @@ export function SeasonalThemeSettingsPanel({
   const currentMode = modeOptions.find((m) => m.id === value.mode) ?? modeOptions[1];
 
   // What the workspace shows right now: the admin's live preview wins.
-  const shownPreset: SeasonalEffectPresetId = previewSeasonalPreset ?? seasonalTheme.preset;
+  const shownPreset: SeasonalEffectPresetId = seasonalTheme.preset;
   const shownMeta = shownPreset !== "none" ? getSeasonalPresetMeta(shownPreset) : undefined;
-  const shownName = previewSeasonalPreset
-    ? label(getSeasonalPresetMeta(previewSeasonalPreset), previewSeasonalPreset)
-    : shownMeta
+  const shownName = shownMeta
       ? locale === "vi"
         ? seasonalTheme.event_name_vi || shownMeta.labelVi
         : seasonalTheme.event_name_en || shownMeta.labelEn
@@ -275,6 +283,8 @@ export function SeasonalThemeSettingsPanel({
     if (!meta) return fallback;
     return locale === "vi" ? meta.labelVi : meta.labelEn;
   }
+
+  const previewMeta = previewPreset ? getSeasonalPresetMeta(previewPreset) : undefined;
 
   const usage = new Map<string, number>();
   for (const ev of value.events) {
@@ -299,181 +309,129 @@ export function SeasonalThemeSettingsPanel({
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Sticky header, same pattern as the other settings tabs */}
-      <div className="border-border bg-surface/98 sticky top-topbar z-20 flex items-center justify-between gap-3 border-b py-3.5 backdrop-blur-md">
+      <div className="border-border bg-surface/98 sticky top-topbar z-20 flex items-center justify-between gap-3 border-b py-2.5 backdrop-blur-md">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <PartyPopper className="text-primary size-5 shrink-0" aria-hidden />
           <div className="min-w-0">
             <h3 className="text-foreground text-sm font-semibold sm:text-base">
               {t("seasonal.admin.title")}
             </h3>
-            <p className="text-muted-foreground mt-0.5 hidden text-xs sm:block">
+            <p className="text-muted-foreground hidden truncate text-xs sm:block">
               {t("seasonal.admin.subtitle")}
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
-          {dirty ? (
-            <span className="text-warning hidden items-center gap-1.5 text-xs font-medium sm:flex">
-              <span className="bg-warning size-1.5 rounded-full" aria-hidden />
-              {t("seasonal.admin.unsaved")}
-            </span>
-          ) : null}
-          <Button
-            type="submit"
-            variant="primary"
-            size="sm"
-            className="h-8 gap-1.5 text-xs font-semibold shadow-xs"
-            disabled={pending || !dirty}
-          >
-            {pending ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                {t("seasonal.admin.saving")}
-              </>
-            ) : (
-              <>
-                <Save className="size-3.5" aria-hidden />
-                {t("seasonal.admin.saveChanges")}
-              </>
-            )}
-          </Button>
-        </div>
+        <p
+          role="status"
+          className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs"
+        >
+          {pending ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              {t("seasonal.admin.saving")}
+            </>
+          ) : (
+            <>
+              <Check className="text-success size-3.5" aria-hidden />
+              <span className="hidden sm:inline">{t("seasonal.admin.autoSaved")}</span>
+            </>
+          )}
+        </p>
       </div>
 
-      {/* Now showing + mode */}
-      <section className="border-border bg-surface overflow-hidden rounded-lg border">
-        <div className="grid md:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
-          <div className="border-border relative h-36 border-b md:h-auto md:min-h-44 md:border-r md:border-b-0">
-            {shownMeta ? (
-              <div className="absolute inset-0" style={{ background: shownMeta.swatchGradient }}>
-                <ThumbScene preset={shownPreset} />
-              </div>
-            ) : (
-              <div className="bg-surface-sunken text-muted-foreground absolute inset-0 flex items-center justify-center">
-                <CalendarOff className="size-8 opacity-50" aria-hidden />
-              </div>
-            )}
-            {shownMeta ? (
-              <span
-                className={cn(
-                  "absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold shadow-sm",
-                  previewSeasonalPreset
-                    ? "bg-surface text-primary"
-                    : "bg-surface text-success",
-                )}
-              >
-                {previewSeasonalPreset ? (
-                  <Eye className="size-3" aria-hidden />
-                ) : (
-                  <span className="bg-success size-1.5 rounded-full" aria-hidden />
-                )}
-                {previewSeasonalPreset
-                  ? t("seasonal.admin.previewTag")
-                  : t("seasonal.admin.liveTag")}
-              </span>
-            ) : null}
+      {/* Now showing + mode: one compact strip */}
+      <section className="border-border bg-surface flex flex-col gap-3 rounded-lg border px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0">
+            <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.06em] uppercase">
+              {t("seasonal.admin.nowShowing")}
+            </p>
+            <p className="text-foreground truncate text-sm font-semibold">{shownName}</p>
+            <p className="text-muted-foreground line-clamp-1 text-xs">
+              {shownMeta
+                ? locale === "vi"
+                  ? shownMeta.descVi
+                  : shownMeta.descEn
+                : t("seasonal.admin.noneDesc")}
+            </p>
           </div>
+          {shownMeta ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => setPreviewPreset(shownPreset)}
+              className="h-7 shrink-0 gap-1.5 text-xs"
+            >
+              <Eye className="size-3.5" aria-hidden />
+              {t("seasonal.admin.preview")}
+            </Button>
+          ) : null}
+        </div>
 
-          <div className="flex min-w-0 flex-col gap-4 p-5">
-            <div className="min-w-0">
-              <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.06em] uppercase">
-                {t("seasonal.admin.nowShowing")}
-              </p>
-              <p className="text-foreground mt-1 truncate text-lg font-semibold">{shownName}</p>
-              <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
-                {shownMeta
-                  ? locale === "vi"
-                    ? shownMeta.descVi
-                    : shownMeta.descEn
-                  : t("seasonal.admin.noneDesc")}
-              </p>
-              {previewSeasonalPreset ? (
-                <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground text-xs">
-                    {t("seasonal.admin.previewing", { name: shownName })}
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setPreviewSeasonalPreset(null)}
-                    className="h-7 gap-1.5 text-xs"
-                  >
-                    <EyeOff className="size-3.5" aria-hidden />
-                    {t("seasonal.admin.stopPreview")}
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-
-            <div>
-              <p
-                id="seasonal-mode-label"
-                className="text-foreground mb-1.5 text-xs font-medium"
-              >
-                {t("seasonal.admin.modeLabel")}
-              </p>
-              <div
-                role="radiogroup"
-                aria-labelledby="seasonal-mode-label"
-                className="bg-surface-sunken border-border inline-flex w-full max-w-md rounded-md border p-0.5"
-              >
-                {modeOptions.map((opt) => {
-                  const Icon = opt.icon;
-                  const selected = value.mode === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      disabled={pending}
-                      onClick={() => updateField("mode", opt.id)}
-                      className={cn(
-                        "focus-visible:ring-ring flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed",
-                        selected
-                          ? "bg-surface text-primary shadow-xs"
-                          : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-                      )}
-                    >
-                      <Icon className="size-3.5 shrink-0" aria-hidden />
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
-                {currentMode.desc}
-              </p>
-            </div>
+        <div className="lg:w-[24rem] lg:shrink-0">
+          <p id="seasonal-mode-label" className="sr-only">
+            {t("seasonal.admin.modeLabel")}
+          </p>
+          <div
+            role="radiogroup"
+            aria-labelledby="seasonal-mode-label"
+            className="bg-surface-sunken border-border inline-flex w-full rounded-md border p-0.5"
+          >
+            {modeOptions.map((opt) => {
+              const Icon = opt.icon;
+              const selected = value.mode === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  title={opt.desc}
+                  disabled={pending}
+                  onClick={() => {
+                    if (!selected) updateField("mode", opt.id);
+                  }}
+                  className={cn(
+                    "focus-visible:ring-ring flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed",
+                    selected
+                      ? "bg-surface text-primary shadow-xs"
+                      : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-3.5 shrink-0" aria-hidden />
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
+          <p className="text-muted-foreground mt-1 text-[11px] leading-snug">{currentMode.desc}</p>
         </div>
       </section>
 
       {/* Preset gallery */}
-      <section className="border-border bg-surface rounded-lg border p-5">
-        <div className="mb-4">
+      <section className="border-border bg-surface rounded-lg border p-4">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
           <h4 className="text-foreground text-sm font-semibold">
             {t("seasonal.admin.presetsTitle")}
             <span className="text-muted-foreground ml-1.5 font-normal">
               {SEASONAL_PRESETS.length}
             </span>
           </h4>
-          <p className="text-muted-foreground mt-0.5 text-xs">
+          <p className="text-muted-foreground text-xs">
             {value.mode === "manual"
               ? t("seasonal.admin.presetsManualHint")
               : t("seasonal.admin.presetsPreviewHint")}
           </p>
         </div>
 
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5">
           {SEASONAL_PRESETS.map((preset) => {
-            const isSelectedManual =
-              value.mode === "manual" && value.manual_preset === preset.id;
-            const isPreviewing = previewSeasonalPreset === preset.id;
-            const isLive = !previewSeasonalPreset && seasonalTheme.preset === preset.id;
+            const isManual = value.mode === "manual";
+            const isSelectedManual = isManual && value.manual_preset === preset.id;
+            const isLive = seasonalTheme.preset === preset.id;
             const name = locale === "vi" ? preset.labelVi : preset.labelEn;
             const used = usage.get(preset.id) ?? 0;
             return (
@@ -481,78 +439,64 @@ export function SeasonalThemeSettingsPanel({
                 key={preset.id}
                 className={cn(
                   "group bg-surface flex flex-col overflow-hidden rounded-lg border transition-[border-color,box-shadow] duration-150",
-                  isSelectedManual || isPreviewing
+                  isSelectedManual
                     ? "border-primary ring-primary/25 ring-2"
                     : "border-border hover:border-border-strong hover:shadow-sm",
                 )}
               >
                 <button
                   type="button"
-                  aria-pressed={isPreviewing}
-                  aria-label={`${isPreviewing ? t("seasonal.admin.stopPreview") : t("seasonal.admin.preview")}: ${name}`}
-                  onClick={() => setPreviewSeasonalPreset(isPreviewing ? null : preset.id)}
-                  className="focus-visible:ring-ring relative h-20 w-full cursor-pointer overflow-hidden focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
+                  aria-label={`${t("seasonal.admin.preview")}: ${name}`}
+                  onClick={() => setPreviewPreset(preset.id)}
+                  className="focus-visible:ring-ring relative h-14 w-full cursor-pointer overflow-hidden focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
                   style={{ background: preset.swatchGradient }}
                 >
                   <span className="absolute inset-0 transition-transform duration-300 group-hover:scale-[1.04]">
                     <ThumbScene preset={preset.id} />
                   </span>
-                  <span
-                    className={cn(
-                      "bg-surface/95 text-foreground absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium shadow-sm transition-opacity duration-150",
-                      isPreviewing
-                        ? "opacity-100"
-                        : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-                    )}
-                  >
-                    {isPreviewing ? (
-                      <EyeOff className="size-3" aria-hidden />
-                    ) : (
-                      <Eye className="size-3" aria-hidden />
-                    )}
-                    {isPreviewing ? t("seasonal.admin.stopPreview") : t("seasonal.admin.preview")}
+                  <span className="bg-surface/95 text-foreground absolute right-1.5 bottom-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium opacity-0 shadow-sm transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+                    <Eye className="size-3" aria-hidden />
+                    {t("seasonal.admin.preview")}
                   </span>
                   {isLive ? (
-                    <span className="bg-surface/95 text-success absolute top-2 left-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold shadow-sm">
+                    <span className="bg-surface/95 text-success absolute top-1.5 left-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold shadow-sm">
                       <span className="bg-success size-1.5 rounded-full" aria-hidden />
                       {t("seasonal.admin.liveTag")}
                     </span>
                   ) : null}
                 </button>
 
-                <div className="flex flex-1 flex-col p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-foreground text-sm font-semibold">{name}</p>
-                    {isSelectedManual ? (
-                      <Check className="text-primary size-4 shrink-0" aria-hidden />
-                    ) : null}
-                  </div>
-                  <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed">
-                    {locale === "vi" ? preset.descVi : preset.descEn}
-                  </p>
-                  <div className="mt-auto flex items-center justify-between gap-2 pt-3">
-                    <span className="text-muted-foreground inline-flex items-center gap-1 text-[11px]">
+                {/* In manual mode the label strip picks the pack and saves at once. */}
+                <button
+                  type="button"
+                  disabled={!isManual || pending}
+                  aria-pressed={isManual ? isSelectedManual : undefined}
+                  title={locale === "vi" ? preset.descVi : preset.descEn}
+                  onClick={() => {
+                    if (!isSelectedManual) updateField("manual_preset", preset.id);
+                  }}
+                  className={cn(
+                    "focus-visible:ring-ring flex flex-1 items-start justify-between gap-2 px-2.5 py-2 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset",
+                    isManual
+                      ? "hover:bg-surface-hover cursor-pointer"
+                      : "cursor-default disabled:opacity-100",
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="text-foreground block text-xs leading-snug font-semibold">
+                      {name}
+                    </span>
+                    <span className="text-muted-foreground mt-0.5 inline-flex items-center gap-1 text-[11px]">
                       <CalendarDays className="size-3" aria-hidden />
                       {used > 0
                         ? t("seasonal.admin.usedBy", { count: used })
                         : t("seasonal.admin.usedByNone")}
                     </span>
-                    {value.mode === "manual" ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={isSelectedManual ? "secondary" : "primary"}
-                        disabled={pending || isSelectedManual}
-                        onClick={() => updateField("manual_preset", preset.id)}
-                        className="h-7 px-2.5 text-xs"
-                      >
-                        {isSelectedManual
-                          ? t("seasonal.admin.selected")
-                          : t("seasonal.admin.choose")}
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
+                  </span>
+                  {isSelectedManual ? (
+                    <Check className="text-primary mt-0.5 size-4 shrink-0" aria-hidden />
+                  ) : null}
+                </button>
               </div>
             );
           })}
@@ -561,21 +505,35 @@ export function SeasonalThemeSettingsPanel({
 
       {/* Holiday calendar */}
       <section className="border-border bg-surface rounded-lg border">
-        <div className="flex flex-wrap items-start justify-between gap-3 p-5 pb-3">
-          <div>
-            <h4 className="text-foreground text-sm font-semibold">
-              {t("seasonal.admin.eventsTitle")}
-              <span className="text-muted-foreground ml-1.5 font-normal">
-                {t("seasonal.admin.eventsOnCount", {
-                  on: enabledCount,
-                  total: value.events.length,
-                })}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <button
+            type="button"
+            aria-expanded={calendarOpen}
+            onClick={() => setCalendarOpen((open) => !open)}
+            className="hover:bg-surface-hover focus-visible:ring-ring -mx-2 flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+          >
+            <ChevronDown
+              className={cn(
+                "text-muted-foreground size-4 shrink-0 transition-transform duration-150",
+                !calendarOpen && "-rotate-90",
+              )}
+              aria-hidden
+            />
+            <span className="min-w-0">
+              <span className="text-foreground block text-sm font-semibold">
+                {t("seasonal.admin.eventsTitle")}
+                <span className="text-muted-foreground ml-1.5 font-normal">
+                  {t("seasonal.admin.eventsOnCount", {
+                    on: enabledCount,
+                    total: value.events.length,
+                  })}
+                </span>
               </span>
-            </h4>
-            <p className="text-muted-foreground mt-0.5 text-xs">
-              {t("seasonal.admin.eventsDesc")}
-            </p>
-          </div>
+              <span className="text-muted-foreground block truncate text-xs">
+                {t("seasonal.admin.eventsDesc")}
+              </span>
+            </span>
+          </button>
           <div className="flex items-center gap-2">
             <Button
               type="button"
@@ -602,7 +560,9 @@ export function SeasonalThemeSettingsPanel({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 px-5 pb-3">
+        {calendarOpen ? (
+        <>
+        <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
           <div className="relative w-full sm:w-64">
             <Search
               className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
@@ -776,10 +736,12 @@ export function SeasonalThemeSettingsPanel({
             </tbody>
           </table>
         </div>
+        </>
+        ) : null}
       </section>
 
       {/* Admin reminders */}
-      <section className="border-border bg-surface rounded-lg border p-5">
+      <section className="border-border bg-surface rounded-lg border p-4">
         <h4 className="text-foreground flex items-center gap-2 text-sm font-semibold">
           <Bell className="text-muted-foreground size-4" aria-hidden />
           {t("seasonal.admin.remindersTitle")}
@@ -788,8 +750,8 @@ export function SeasonalThemeSettingsPanel({
           {t("seasonal.admin.remindersDesc")}
         </p>
 
-        <div className="border-border divide-border mt-4 divide-y rounded-md border">
-          <div className="flex items-center justify-between gap-4 px-4 py-3">
+        <div className="border-border divide-border mt-3 divide-y rounded-md border">
+          <div className="flex items-center justify-between gap-4 px-3 py-2.5">
             <div className="min-w-0">
               <p id="seasonal-reminder-label" className="text-foreground text-sm font-medium">
                 {t("seasonal.admin.reminderEnabled")}
@@ -808,7 +770,7 @@ export function SeasonalThemeSettingsPanel({
 
           {value.reminder_enabled ? (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-4 px-3 py-2.5">
                 <Label htmlFor="seasonal-reminder-days" className="text-sm font-medium">
                   {t("seasonal.admin.reminderDaysBefore")}
                 </Label>
@@ -819,13 +781,12 @@ export function SeasonalThemeSettingsPanel({
                     min={1}
                     max={30}
                     disabled={pending}
-                    value={value.reminder_days_before}
-                    onChange={(e) =>
-                      updateField(
-                        "reminder_days_before",
-                        Math.min(30, Math.max(1, Number(e.target.value) || 7)),
-                      )
-                    }
+                    value={reminderDays}
+                    onChange={(e) => setReminderDays(e.target.value)}
+                    onBlur={commitReminderDays}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                    }}
                     className="h-8 w-20 text-center text-sm"
                   />
                   <span className="text-muted-foreground text-xs">
@@ -834,7 +795,7 @@ export function SeasonalThemeSettingsPanel({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div className="flex items-center justify-between gap-4 px-3 py-2.5">
                 <div className="min-w-0">
                   <p
                     id="seasonal-reminder-mail-label"
@@ -1192,6 +1153,43 @@ export function SeasonalThemeSettingsPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Preview modal: the pack on the Home page and on the sign-in page */}
+      {previewMeta ? (
+        <Dialog open onOpenChange={(open) => (open ? undefined : setPreviewPreset(null))}>
+          <DialogContent
+            className="max-w-5xl"
+            title={t("seasonal.admin.previewModalTitle", {
+              name: locale === "vi" ? previewMeta.labelVi : previewMeta.labelEn,
+            })}
+            description={locale === "vi" ? previewMeta.descVi : previewMeta.descEn}
+          >
+            <SeasonalPreviewMock
+              preset={previewMeta.id}
+              loginPanel={loginPanel}
+              loginImageUrl={loginImageUrl}
+            />
+            <DialogFooter>
+              <Button type="button" variant="secondary" onClick={() => setPreviewPreset(null)}>
+                {t("seasonal.admin.closePreview")}
+              </Button>
+              {value.mode === "manual" ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={pending || value.manual_preset === previewMeta.id}
+                  onClick={() => {
+                    updateField("manual_preset", previewMeta.id);
+                    setPreviewPreset(null);
+                  }}
+                >
+                  {t("seasonal.admin.choose")}
+                </Button>
+              ) : null}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       {/* Reset defaults confirmation modal (never window.confirm) */}
       <Dialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>

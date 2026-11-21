@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { FolderTree, ShieldCheck, Sparkles, type LucideIcon } from "lucide-react";
 
 import { Wordmark } from "@/components/brand/logo";
@@ -17,16 +18,19 @@ const GRID_COLS = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3" } as co
  * server-rendered login page and the admin live preview share one markup.
  *
  * `preview` drops the "hidden below lg" / sticky behaviour so it can be shown
- * at a fixed size inside the settings form.
+ * at a fixed size inside the settings form. `decor` is painted behind the
+ * copy (the seasonal foot scene).
  */
 export function LoginShowcase({
   panel,
   siteName,
   preview = false,
+  decor,
 }: {
   panel: ResolvedLoginPanel;
   siteName: string;
   preview?: boolean;
+  decor?: ReactNode;
 }) {
   const columns = GRID_COLS[Math.min(Math.max(panel.features.length, 1), 3) as 1 | 2 | 3];
 
@@ -66,6 +70,8 @@ export function LoginShowcase({
           strokeWidth="2"
         />
       </svg>
+
+      {decor}
 
       <div className="relative mx-auto flex h-full max-h-[52rem] w-full max-w-2xl flex-col justify-between gap-4 lg:gap-6 [@media(max-height:850px)]:gap-3">
         <Wordmark siteName={siteName} className="text-lg" />
