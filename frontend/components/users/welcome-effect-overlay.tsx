@@ -252,7 +252,9 @@ function createPhoenixRenderer(initW: number, initH: number): FrameRenderer {
     furnace.addColorStop(0.5, `rgba(220, 38, 38, ${0.2 * pulse * env})`);
     furnace.addColorStop(1, "rgba(220, 38, 38, 0)");
     ctx.fillStyle = furnace;
-    ctx.fillRect(0, 0, w, h);
+    // The gradient is transparent beyond 0.8h from its centre, so only that box needs
+    // filling (not the whole window every frame).
+    ctx.fillRect(cx - h * 0.8, h * 0.2, h * 1.6, h * 0.85);
 
     // 2. Wall of flame tongues along the bottom edge.
     const tongues = Math.max(9, Math.round(w / 56));
@@ -3746,15 +3748,29 @@ export function WelcomeEffectOverlay({
     const lowEnd =
       (navigator.hardwareConcurrency ?? 8) <= 4 ||
       ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
-    // [resolution multiplier, minimum ms between drawn frames]
-    const LEVELS: Array<[number, number]> = [
-      [1, 0],
-      [0.75, 0],
-      [0.5, 0],
-      [0.5, 33],
+    // [resolution multiplier, minimum ms between drawn frames, glow (shadowBlur) on].
+    // The Gaussian glow on long strokes is by far the costliest thing the scenes do
+    // (measured: Neon 32 → 4 ms, Phoenix 40 → 18 ms per frame without it), so it goes
+    // first; resolution and frame rate follow only if that is not enough.
+    const LEVELS: Array<[number, number, boolean]> = [
+      [1, 0, true],
+      [1, 0, false],
+      [0.75, 0, false],
+      [0.5, 0, false],
+      [0.5, 33, false],
     ];
     let level = lowEnd ? 1 : 0;
     let dpr = baseDpr * LEVELS[level]![0];
+    const applyGlow = () => {
+      if (LEVELS[level]![2]) {
+        // back to the prototype's own accessor
+        delete (ctx as unknown as Record<string, unknown>).shadowBlur;
+      } else {
+        // an own accessor that swallows writes: every scene's `shadowBlur = n` becomes a no-op
+        Object.defineProperty(ctx, "shadowBlur", { set() {}, get: () => 0, configurable: true });
+      }
+    };
+    applyGlow();
 
     const getSize = () => {
       if (contained && canvas.parentElement) {
@@ -3852,8 +3868,10 @@ export function WelcomeEffectOverlay({
         nextCheck = elapsed + 500;
         if (gapAvg > 26 && level < LEVELS.length - 1 && !document.hidden) {
           level += 1;
+          const prevDpr = dpr;
           dpr = baseDpr * LEVELS[level]![0];
-          resize();
+          applyGlow();
+          if (dpr !== prevDpr) resize();
           gapAvg = 16.7;
         }
       }
@@ -3874,6 +3892,7 @@ export function WelcomeEffectOverlay({
     return () => {
       window.cancelAnimationFrame(rafId);
       window.removeEventListener("resize", resize);
+      delete (ctx as unknown as Record<string, unknown>).shadowBlur;
     };
   }, [effect, reducedMotion, contained, focusRef]);
 
