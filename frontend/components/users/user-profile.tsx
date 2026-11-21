@@ -12,12 +12,12 @@ import {
   FolderOpen,
   Mail,
   PanelLeft,
+  Palette,
   Pencil,
   Pin,
   Play,
   RotateCcw,
   Search,
-  Sparkles,
   Star,
   ThumbsUp,
   UserRound,
@@ -43,12 +43,15 @@ import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { ProfileImageViewer } from "@/components/users/profile-image-viewer";
 import { WelcomeEffectDialog } from "@/components/users/welcome-effect-dialog";
 import { WelcomeEffectOverlay } from "@/components/users/welcome-effect-overlay";
+import { useThemeSettings } from "@/components/theme-color-provider";
+import { getSeasonalEventGreeting } from "@/components/seasonal/seasonal-presets";
+import { seasonalWelcomeEffect } from "@/components/users/welcome-effects/seasonal";
 import {
   UserStatusBubble,
   UserStatusDialog,
   isUserStatusActive,
 } from "@/components/account/status-dialog";
-import { CroppedAvatarImage, getUserAvatarColor, versionedAvatarUrl } from "@/components/ui/avatar";
+import { CroppedAvatarImage, getUserAvatarColor, useGifPairSync, versionedAvatarUrl } from "@/components/ui/avatar";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { formatDate, formatTime } from "@/lib/i18n/format";
@@ -66,6 +69,7 @@ import type {
   UserPinnedPageItem,
   UserPageLabelItem,
   Space,
+  PlayableWelcomeEffect,
   WelcomeEffect,
   WikiPage,
 } from "@/types/api";
@@ -754,6 +758,11 @@ function CompactActivityFeed({
   );
 }
 
+// Round-ish icon buttons floating on the cover. The hover state must stand out from
+// the translucent resting surface, so it turns opaque, lifts and gets a hairline ring.
+const COVER_ACTION_CLASS =
+  "text-muted-foreground bg-surface/75 ring-border/0 focus-visible:ring-ring flex size-8 cursor-pointer items-center justify-center rounded-md shadow-xs backdrop-blur-xs transition-all duration-150 hover:bg-surface hover:text-foreground hover:ring-1 hover:ring-border hover:shadow-md hover:-translate-y-px active:translate-y-0 active:scale-95 active:shadow-xs focus-visible:ring-2 focus-visible:outline-none";
+
 export function UserProfile({
   user,
   initialActivity,
@@ -767,6 +776,7 @@ export function UserProfile({
   pinnedPages,
   likedPages,
   seasonalCalendar = [],
+  isHome = false,
 }: {
   user: PublicUser;
   initialActivity: UserActivityPage;
@@ -780,6 +790,8 @@ export function UserProfile({
   pinnedPages: UserPinnedPageItem[];
   likedPages: UserPinnedPageItem[];
   seasonalCalendar?: import("@/types/api").SeasonalCalendarEntry[];
+  /** The signed-in member's Home page: the festival effect plays here and wins over their own. */
+  isHome?: boolean;
 }) {
   const [items, setItems] = useState(initialActivity.items);
   const [nextCursor, setNextCursor] = useState(initialActivity.next_cursor);
@@ -799,9 +811,16 @@ export function UserProfile({
     message: string;
   } | null>(null);
   const [welcomeDialogOpen, setWelcomeDialogOpen] = useState(false);
+  const welcomeAvatarRef = useRef<HTMLDivElement | null>(null);
+  const gifSync = useGifPairSync(
+    user.avatar_content_type === "image/gif" && user.cover_content_type === "image/gif",
+    `${user.avatar_url}|${user.avatar_updated_at}|${user.cover_url}|${user.cover_updated_at}`,
+  );
   const [activeWelcome, setActiveWelcome] = useState<{
-    effect: WelcomeEffect;
+    effect: PlayableWelcomeEffect;
     message: string;
+    /** Bumped on every play so a replay mounts a fresh overlay (restarts the 5 s run). */
+    run: number;
   } | null>(null);
 
   const effectiveWelcomeEffect: WelcomeEffect =
@@ -814,25 +833,50 @@ export function UserProfile({
       : (user.welcome_message ?? "");
   const canEditWelcome = (isOwner && canCustomizeWelcome) || isAdmin;
 
-  useEffect(() => {
-    if (!effectiveWelcomeEffect) return;
-    const storageKey = `wikihub:welcome-played:${user.username.toLowerCase()}`;
-    try {
-      if (window.sessionStorage.getItem(storageKey)) return;
-      window.sessionStorage.setItem(storageKey, "1");
-    } catch {
-      // Ignore storage errors in restricted environments.
-    }
-    setActiveWelcome({
-      effect: effectiveWelcomeEffect,
-      message: effectiveWelcomeMessage,
-    });
-  }, [user.username, effectiveWelcomeEffect, effectiveWelcomeMessage]);
     useState<RecentPageItem | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const activityScrollRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
   const { t, locale, apiErrorText } = useTranslation();
+  const { seasonalTheme } = useThemeSettings();
+
+  // On Home a running festival (Tết, Halloween, Valentine, Teachers' Day...) plays its own
+  // scene with a festive greeting and wins over the member's effect. Anywhere else
+  // (another member's profile) the owner's own effect plays.
+  const seasonalEffect = isHome ? seasonalWelcomeEffect(seasonalTheme.preset) : "";
+  const homeWelcomeEffect: PlayableWelcomeEffect = seasonalEffect || effectiveWelcomeEffect;
+  const homeWelcomeMessage = seasonalEffect
+    ? (getSeasonalEventGreeting(seasonalTheme.event_id, locale) ??
+      t(`welcomeEffect.seasonalGreeting.${seasonalTheme.preset}`))
+    : effectiveWelcomeMessage;
+
+  // Pressing Skip on the festival scene silences it for the rest of the session.
+  const seasonalSkipKey = seasonalEffect
+    ? `wikihub:seasonal-skipped:${user.username.toLowerCase()}:${seasonalEffect}`
+    : "";
+
+  useEffect(() => {
+    if (!homeWelcomeEffect) return;
+    try {
+      if (seasonalEffect) {
+        // During a festival the scene greets the member on every visit to Home,
+        // until they press Skip.
+        if (window.sessionStorage.getItem(seasonalSkipKey)) return;
+      } else {
+        // A member's own effect plays once per session.
+        const storageKey = `wikihub:welcome-played:${user.username.toLowerCase()}:${homeWelcomeEffect}`;
+        if (window.sessionStorage.getItem(storageKey)) return;
+        window.sessionStorage.setItem(storageKey, "1");
+      }
+    } catch {
+      // Ignore storage errors in restricted environments.
+    }
+    setActiveWelcome((prev) => ({
+      effect: homeWelcomeEffect,
+      message: homeWelcomeMessage,
+      run: (prev?.run ?? 0) + 1,
+    }));
+  }, [user.username, homeWelcomeEffect, homeWelcomeMessage, seasonalEffect, seasonalSkipKey]);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusOverride, setStatusOverride] = useState<{
@@ -1997,23 +2041,26 @@ export function UserProfile({
                   crop={user.cover_crop}
                   contentType={user.cover_content_type}
                   viewportRatio={15 / 4}
+                  syncKey={gifSync.syncKey}
+                  onImageLoad={gifSync.onCoverLoad}
                 />
               </ProfileImageViewer>
             ) : null}
           </div>
           <div className="absolute top-2 right-2 flex items-center gap-1.5">
-            {effectiveWelcomeEffect ? (
+            {homeWelcomeEffect ? (
               <button
                 type="button"
                 onClick={() =>
-                  setActiveWelcome({
-                    effect: effectiveWelcomeEffect,
-                    message: effectiveWelcomeMessage,
-                  })
+                  setActiveWelcome((prev) => ({
+                    effect: homeWelcomeEffect,
+                    message: homeWelcomeMessage,
+                    run: (prev?.run ?? 0) + 1,
+                  }))
                 }
                 aria-label={t("welcomeEffect.replay")}
                 title={t("welcomeEffect.replay")}
-                className="text-muted-foreground hover:text-foreground hover:bg-surface-hover bg-surface/75 focus-visible:ring-ring flex size-8 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                className={COVER_ACTION_CLASS}
               >
                 <Play className="size-3.5" aria-hidden />
               </button>
@@ -2024,9 +2071,9 @@ export function UserProfile({
                 onClick={() => setWelcomeDialogOpen(true)}
                 aria-label={t("welcomeEffect.configure")}
                 title={t("welcomeEffect.configure")}
-                className="text-muted-foreground hover:text-foreground hover:bg-surface-hover bg-surface/75 focus-visible:ring-ring flex size-8 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                className={COVER_ACTION_CLASS}
               >
-                <Sparkles className="size-4" aria-hidden />
+                <Palette className="size-4" aria-hidden />
               </button>
             ) : null}
             {isOwner ? (
@@ -2034,7 +2081,7 @@ export function UserProfile({
                 href="/account"
                 aria-label={t("profile.editProfile")}
                 title={t("profile.editProfile")}
-                className="text-muted-foreground hover:text-foreground hover:bg-surface-hover bg-surface/75 focus-visible:ring-ring flex size-8 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                className={COVER_ACTION_CLASS}
               >
                 <Pencil className="size-4" aria-hidden />
               </Link>
@@ -2043,7 +2090,7 @@ export function UserProfile({
           <div className="px-4 pb-4">
             {/* Avatar overlaps the cover, name beside it, actions on the right. */}
             <div className="flex items-end gap-3">
-              <div className="relative -mt-10 size-20 shrink-0">
+              <div ref={welcomeAvatarRef} className="relative -mt-10 size-20 shrink-0">
                 {/* WhatsApp-style Thought Bubble above Avatar */}
                 <div className="absolute bottom-[calc(100%+16px)] left-0 z-20 pointer-events-auto">
                   <UserStatusBubble
@@ -2066,6 +2113,8 @@ export function UserProfile({
                         src={versionedAvatarUrl(user.avatar_url, user.avatar_updated_at) ?? user.avatar_url}
                         crop={user.avatar_crop}
                         contentType={user.avatar_content_type}
+                        syncKey={gifSync.syncKey}
+                        onImageLoad={gifSync.onAvatarLoad}
                       />
                     ) : (
                       initials(user) || (
@@ -2240,10 +2289,23 @@ export function UserProfile({
       ) : null}
       {activeWelcome && activeWelcome.effect ? (
         <WelcomeEffectOverlay
+          key={activeWelcome.run}
+          focusRef={welcomeAvatarRef}
           effect={activeWelcome.effect}
           ownerName={displayName}
           message={activeWelcome.message}
           onComplete={() => setActiveWelcome(null)}
+          onSkip={
+            seasonalSkipKey && activeWelcome.effect === seasonalEffect
+              ? () => {
+                  try {
+                    window.sessionStorage.setItem(seasonalSkipKey, "1");
+                  } catch {
+                    // Ignore storage errors in restricted environments.
+                  }
+                }
+              : undefined
+          }
         />
       ) : null}
     </div>

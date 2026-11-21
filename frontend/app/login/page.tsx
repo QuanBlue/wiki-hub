@@ -8,6 +8,12 @@ import { AuthPanels } from "@/components/auth/auth-panels";
 import { LoginShowcase } from "@/components/auth/login-showcase";
 import { Wordmark } from "@/components/brand/logo";
 import { LanguageToggle } from "@/components/layout/language-toggle";
+import {
+  SeasonalLoginAtmosphere,
+  SeasonalLoginCardEdge,
+  SeasonalLoginGreeting,
+  SeasonalShowcaseFoot,
+} from "@/components/seasonal/seasonal-login-decor";
 import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
 import { SITE_NAME } from "@/lib/env";
 import { getServerLocale } from "@/lib/i18n/server";
@@ -44,7 +50,11 @@ export default async function LoginPage({
 
   return (
     <main className="grid min-h-dvh lg:h-dvh lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] lg:overflow-hidden">
-      <LoginShowcase panel={showcase} siteName={SITE_NAME} />
+      <LoginShowcase
+        panel={showcase}
+        siteName={SITE_NAME}
+        decor={<SeasonalShowcaseFoot />}
+      />
 
       <section className="bg-surface-sunken/60 relative flex min-h-full flex-col justify-between overflow-x-hidden overflow-y-auto lg:overflow-hidden">
         {/* Subtle dot matrix texture across the canvas */}
@@ -101,23 +111,28 @@ export default async function LoginPage({
               <Wordmark siteName={SITE_NAME} className="text-base" />
             </div>
 
-            <div className="border-border/80 bg-surface overflow-hidden rounded-2xl border shadow-lg shadow-black/[0.03]">
-              <div className="p-5 sm:p-7 [@media(max-height:750px)]:p-4.5 [@media(max-height:850px)]:p-5.5">
-                {/* useSearchParams needs a Suspense boundary during prerender. */}
-                <Suspense fallback={null}>
-                  <AuthPanels
-                    siteName={SITE_NAME}
-                    initialView={view === "contact" ? "contact" : "login"}
-                  />
-                </Suspense>
-                {/* Full width of the card's content, inset from its edges. */}
-                {publicAnnouncement ? (
-                  <SystemAnnouncementBanner
-                    announcement={publicAnnouncement}
-                    allowDismiss={false}
-                    className="mt-4 w-full rounded-xl border px-4 py-2.5 text-xs shadow-2xs"
-                  />
-                ) : null}
+            <SeasonalLoginGreeting className="mb-3" />
+
+            <div className="relative">
+              <SeasonalLoginCardEdge />
+              <div className="border-border/80 bg-surface overflow-hidden rounded-2xl border shadow-lg shadow-black/[0.03]">
+                <div className="p-5 sm:p-7 [@media(max-height:750px)]:p-4.5 [@media(max-height:850px)]:p-5.5">
+                  {/* useSearchParams needs a Suspense boundary during prerender. */}
+                  <Suspense fallback={null}>
+                    <AuthPanels
+                      siteName={SITE_NAME}
+                      initialView={view === "contact" ? "contact" : "login"}
+                    />
+                  </Suspense>
+                  {/* Full width of the card's content, inset from its edges. */}
+                  {publicAnnouncement ? (
+                    <SystemAnnouncementBanner
+                      announcement={publicAnnouncement}
+                      allowDismiss={false}
+                      className="mt-4 w-full rounded-xl border px-4 py-2.5 text-xs shadow-2xs"
+                    />
+                  ) : null}
+                </div>
               </div>
             </div>
             {/* A notice, not a consent box: signing in is not a tick of agreement. */}
@@ -142,6 +157,9 @@ export default async function LoginPage({
           </div>
         </footer>
       </section>
+
+      {/* Seasonal particles: over the brand panel, under the sign-in card. */}
+      <SeasonalLoginAtmosphere />
     </main>
   );
 }

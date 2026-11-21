@@ -42,6 +42,21 @@ WelcomeEffectPreset = Literal[
     "lantern",
     "arcade",
     "koi",
+    "blockcraft",
+    "platformer",
+    "racing",
+    "tet",
+    "halloween",
+    "christmas",
+    "midautumn",
+    "pirate",
+    "ninja",
+    "rocket",
+    "jungle",
+    "cyberpunk",
+    "steampunk",
+    "candy",
+    "kawaii",
 ]
 
 

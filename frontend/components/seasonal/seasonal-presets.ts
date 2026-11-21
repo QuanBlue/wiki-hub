@@ -236,6 +236,16 @@ const EVENT_GREETINGS: Record<string, { vi: string; en: string }> = {
   kitchen_gods: { vi: "Ông Công, Ông Táo chầu trời 23/12 ÂL", en: "Kitchen Gods' Day" },
 };
 
+/** The per-festival greeting (e.g. 8/3 vs 20/10 share a preset), or null when the event has none. */
+export function getSeasonalEventGreeting(
+  eventId: string | null | undefined,
+  locale: string,
+): string | null {
+  const entry = eventId ? EVENT_GREETINGS[eventId] : undefined;
+  if (!entry) return null;
+  return locale === "vi" ? entry.vi : entry.en;
+}
+
 const PRESET_GREETINGS: Record<SeasonalEffectPresetId, { vi: string; en: string }> = {
   none: { vi: "", en: "" },
   christmas: { vi: "Giáng sinh an lành!", en: "Merry Christmas!" },

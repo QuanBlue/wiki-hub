@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -72,6 +72,43 @@ export function versionedAvatarUrl(
   return `${resolved}?v=${version}`;
 }
 
+/**
+ * Avatar and cover are different URLs, so the browser decodes them as two
+ * separate GIFs that start whenever each download finishes - even when both
+ * are the same file they drift out of phase. Once both have loaded, remount
+ * the two <img> elements together (from the memory cache) so both animations
+ * restart on the same frame. Pass `syncKey` to `CroppedAvatarImage`.
+ */
+export function useGifPairSync(
+  enabled: boolean,
+  resetToken: string,
+): { syncKey: number; onAvatarLoad: () => void; onCoverLoad: () => void } {
+  const [state, setState] = useState({ token: resetToken, key: 0 });
+  const loaded = useRef({ avatar: false, cover: false, token: resetToken });
+  if (loaded.current.token !== resetToken) {
+    loaded.current = { avatar: false, cover: false, token: resetToken };
+  }
+  const key = state.token === resetToken ? state.key : 0;
+
+  const check = useCallback(() => {
+    const l = loaded.current;
+    if (enabled && l.avatar && l.cover) {
+      setState((s) =>
+        s.token === l.token && s.key > 0 ? s : { token: l.token, key: 1 },
+      );
+    }
+  }, [enabled]);
+  const onAvatarLoad = useCallback(() => {
+    loaded.current.avatar = true;
+    check();
+  }, [check]);
+  const onCoverLoad = useCallback(() => {
+    loaded.current.cover = true;
+    check();
+  }, [check]);
+  return { syncKey: key, onAvatarLoad, onCoverLoad };
+}
+
 function hasActiveGifCrop(
   crop?: AvatarCrop | null,
   contentType?: string | null,
@@ -117,12 +154,15 @@ export function CroppedAvatarImage({
   className,
   onError,
   onImageLoad,
+  syncKey,
 }: {
   src: string;
   alt?: string;
   crop?: AvatarCrop | null;
   contentType?: string | null;
   viewportRatio?: number;
+  /** Changing this remounts the <img> so a GIF restarts (see `useGifPairSync`). */
+  syncKey?: number;
   className?: string;
   onError?: () => void;
   onImageLoad?: (size: { width: number; height: number }) => void;
@@ -151,6 +191,7 @@ export function CroppedAvatarImage({
 
   return (
     <img
+      key={syncKey}
       ref={imgRef}
       src={src}
       alt={alt}

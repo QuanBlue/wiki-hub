@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -43,6 +44,8 @@ interface ThemeSettingsContextValue {
   setLogoIcon: (icon: string) => void;
   setCustomLogoUrl: (url: string | null) => void;
   setSeasonalTheme: (theme: ActiveSeasonalTheme) => void;
+  /** Re-read the active holiday from the server (a no-op if asked again within 2 s). */
+  refreshSeasonalTheme: () => void;
   setPreviewSeasonalPreset: (preset: SeasonalEffectPresetId | null) => void;
 }
 
@@ -61,6 +64,7 @@ const ThemeSettingsContext = createContext<ThemeSettingsContextValue>({
   setLogoIcon: () => {},
   setCustomLogoUrl: () => {},
   setSeasonalTheme: () => {},
+  refreshSeasonalTheme: () => {},
   setPreviewSeasonalPreset: () => {},
 });
 
@@ -248,9 +252,14 @@ export function ThemeColorProvider({
     if (initialSeasonalTheme) setSeasonalThemeState(initialSeasonalTheme);
   }, [initialSeasonalTheme]);
 
+  // When the active holiday was last read from the server (see refreshSeasonalTheme).
+  const lastSeasonalFetch = useRef(0);
+
   // Fetch meta on mount to ensure cache is updated with latest server state
   useEffect(() => {
     let active = true;
+    // This load already reads the holiday; don't ask again for the first page view.
+    lastSeasonalFetch.current = Date.now();
     fetch("/api/v1/meta")
       .then((res) => (res.ok ? res.json() : null))
       .then((data: InstanceInfo | null) => {
@@ -291,6 +300,61 @@ export function ThemeColorProvider({
     return () => {
       active = false;
     };
+  }, []);
+
+  // The active holiday can change while the app is open (another tab or an
+  // administrator applies it, or Auto mode crosses midnight), and the shell is not
+  // re-rendered by client-side navigation. So it is re-read on every page change
+  // (see NavigationLoading), when the window regains focus, and straight away when
+  // another tab announces a change.
+  const refreshSeasonalTheme = useCallback(() => {
+    const now = Date.now();
+    if (now - lastSeasonalFetch.current < 2000) return;
+    lastSeasonalFetch.current = now;
+    fetch("/api/v1/meta", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: InstanceInfo | null) => {
+        const next = data?.seasonal_theme;
+        if (!next) return;
+        setSeasonalThemeState((prev) =>
+          JSON.stringify(prev) === JSON.stringify(next) ? prev : next,
+        );
+      })
+      .catch(() => {});
+  }, []);
+
+  const seasonalChannel = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshSeasonalTheme();
+    };
+    window.addEventListener("focus", refreshSeasonalTheme);
+    document.addEventListener("visibilitychange", onVisible);
+    let channel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== "undefined") {
+      channel = new BroadcastChannel("wikihub-seasonal-theme");
+      channel.onmessage = () => {
+        lastSeasonalFetch.current = 0;
+        refreshSeasonalTheme();
+      };
+      seasonalChannel.current = channel;
+    }
+    return () => {
+      window.removeEventListener("focus", refreshSeasonalTheme);
+      document.removeEventListener("visibilitychange", onVisible);
+      channel?.close();
+      seasonalChannel.current = null;
+    };
+  }, [refreshSeasonalTheme]);
+
+  /** Apply a holiday locally and tell the app's other tabs to re-read it. */
+  const setSeasonalTheme = useCallback((theme: ActiveSeasonalTheme) => {
+    setSeasonalThemeState(theme);
+    try {
+      seasonalChannel.current?.postMessage("changed");
+    } catch {
+      // The channel is only an optimisation; the other tabs still refresh on focus.
+    }
   }, []);
 
   // Dynamically update CSS font variable on root
@@ -417,7 +481,8 @@ export function ThemeColorProvider({
       setDefaultFont,
       setLogoIcon,
       setCustomLogoUrl,
-      setSeasonalTheme: setSeasonalThemeState,
+      setSeasonalTheme,
+      refreshSeasonalTheme,
       setPreviewSeasonalPreset,
     }),
     [
@@ -429,6 +494,8 @@ export function ThemeColorProvider({
       seasonalTheme,
       previewSeasonalPreset,
       effectiveSeasonalPreset,
+      setSeasonalTheme,
+      refreshSeasonalTheme,
     ],
   );
 

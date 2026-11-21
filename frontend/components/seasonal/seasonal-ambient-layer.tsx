@@ -17,6 +17,7 @@ import {
   SparkleShape,
 } from "@/components/seasonal/seasonal-motifs";
 import { useThemeSettings } from "@/components/theme-color-provider";
+import { cn } from "@/lib/utils";
 import type { SeasonalEffectPresetId } from "@/types/api";
 
 type Motion = "fall" | "rise" | "float";
@@ -300,9 +301,24 @@ const MOTION_CLASS: Record<Motion, string> = {
  * - Strictly pointer-events-none and z-20 (below TopBar z-30 and modals z-50).
  * - Particles keep to the left/right margins; the reading column stays clear.
  * - Hidden for `memorial_candle` (solemn) and under prefers-reduced-motion.
+ *
+ * `preset` overrides the workspace's active pack; `contained` keeps the layer
+ * inside its nearest positioned ancestor (the settings preview) instead of the
+ * viewport. Set `--wh-fall-span` on that ancestor to its height so particles
+ * cross it fully.
  */
-export function SeasonalAmbientLayer() {
-  const { effectiveSeasonalPreset: preset } = useThemeSettings();
+export function SeasonalAmbientLayer({
+  preset: presetOverride,
+  contained = false,
+  className,
+}: {
+  preset?: SeasonalEffectPresetId;
+  contained?: boolean;
+  /** Extra classes, e.g. a different stacking order on the sign-in page. */
+  className?: string;
+} = {}) {
+  const { effectiveSeasonalPreset } = useThemeSettings();
+  const preset = presetOverride ?? effectiveSeasonalPreset;
   if (!preset || preset === "none" || preset === "memorial_candle") return null;
 
   const cfg = CONFIG[preset];
@@ -311,7 +327,11 @@ export function SeasonalAmbientLayer() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-20 overflow-hidden select-none"
+      className={cn(
+        "pointer-events-none inset-0 overflow-hidden select-none",
+        contained ? "absolute" : "fixed z-20",
+        className,
+      )}
     >
       {cfg.particles.map((p, idx) => (
         <span

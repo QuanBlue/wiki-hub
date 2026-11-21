@@ -76,6 +76,21 @@ def test_welcome_effect_schema_validation() -> None:
         "lantern",
         "arcade",
         "koi",
+        "blockcraft",
+        "platformer",
+        "racing",
+        "tet",
+        "halloween",
+        "christmas",
+        "midautumn",
+        "pirate",
+        "ninja",
+        "rocket",
+        "jungle",
+        "cyberpunk",
+        "steampunk",
+        "candy",
+        "kawaii",
     ):
         assert SelfProfileUpdate(welcome_effect=preset).welcome_effect == preset
         assert UserUpdate(welcome_effect=preset).welcome_effect == preset

@@ -47,6 +47,7 @@ export default async function HomePage() {
         stats={stats}
         drafts={drafts}
         isOwner
+        isHome
         isAdmin={isAdmin}
         favoriteSpaces={favoriteSpaces}
         pinnedPages={pinnedPages}

@@ -3,6 +3,8 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
+import { HolidayLoader, useHolidayPreset } from "@/components/layout/holiday-loader";
+import { useThemeSettings } from "@/components/theme-color-provider";
 import { useTranslation } from "@/lib/i18n/context";
 
 let navigationPending = false;
@@ -32,6 +34,13 @@ export function NavigationLoading() {
   const pathname = usePathname();
   const [loading, setLoading] = useState(false);
   const { t } = useTranslation();
+  const holiday = useHolidayPreset();
+  const { refreshSeasonalTheme } = useThemeSettings();
+
+  // A new page: check whether the active holiday changed since this tab loaded.
+  useEffect(() => {
+    refreshSeasonalTheme();
+  }, [pathname, refreshSeasonalTheme]);
 
   useEffect(() => {
     setNavigationPending(loading);
@@ -95,6 +104,10 @@ export function NavigationLoading() {
   }, [loading]);
 
   if (!loading) return null;
+
+  // During a holiday the strip under the header is not used for loading: the
+  // holiday loader runs across the header itself instead.
+  if (holiday) return <HolidayLoader preset={holiday} pending />;
 
   return (
     <div

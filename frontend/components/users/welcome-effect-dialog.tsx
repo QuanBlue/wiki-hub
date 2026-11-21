@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Anchor,
   Ban,
   Check,
   CloudLightning,
@@ -22,8 +23,18 @@ import {
   UserRound,
   Waves,
   Zap,
+  Candy,
+  Cog,
+  Cpu,
+  Flag,
+  Heart,
+  Leaf,
+  Pickaxe,
+  Rocket,
+  Star,
+  Swords,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { getUserAvatarColor } from "@/components/ui/avatar";
@@ -529,6 +540,140 @@ id: "aurora",
       </svg>
     ),
   },
+  {
+    id: "blockcraft",
+    icon: <Pickaxe className="size-4 text-lime-200" aria-hidden />,
+    bannerClass: "bg-gradient-to-b from-sky-400 via-sky-500 to-lime-600",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-lime-100/50",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><rect y="62" width="240" height="18" fill="#92400e"/><rect y="62" width="240" height="7" fill="#4ade80"/><rect x="0" y="62" width="24" height="18" fill="none" stroke="#14532d" strokeOpacity=".45"/><rect x="24" y="62" width="24" height="18" fill="none" stroke="#14532d" strokeOpacity=".45"/><rect x="48" y="62" width="24" height="18" fill="none" stroke="#14532d" strokeOpacity=".45"/><rect x="72" y="62" width="24" height="18" fill="none" stroke="#14532d" strokeOpacity=".45"/><rect x="96" y="62" width="24" height="18" fill="none" stroke="#14532d" strokeOpacity=".45"/><rect x="120" y="62" width="24" height="18" fill="none" stroke="#14532d" strokeOpacity=".45"/><rect x="144" y="62" width="24" height="18" fill="none" stroke="#14532d" strokeOpacity=".45"/><rect x="168" y="62" width="24" height="18" fill="none" stroke="#14532d" strokeOpacity=".45"/><rect x="192" y="62" width="24" height="18" fill="none" stroke="#14532d" strokeOpacity=".45"/><rect x="216" y="62" width="24" height="18" fill="none" stroke="#14532d" strokeOpacity=".45"/><g stroke="#1f2937" strokeWidth=".8"><polygon points="104,16 120,24 104,32 88,24" fill="#86efac"/><polygon points="88,24 104,32 104,50 88,42" fill="#92400e"/><polygon points="120,24 104,32 104,50 120,42" fill="#78350f"/><polygon points="168,30 178,35 168,40 158,35" fill="#d6d3d1"/><polygon points="158,35 168,40 168,52 158,47" fill="#78716c"/><polygon points="178,35 168,40 168,52 178,47" fill="#57534e"/></g><rect x="196" y="40" width="8" height="8" fill="#67e8f9" stroke="#0e7490" transform="rotate(45 200 44)"/><rect x="60" y="30" width="5" height="5" fill="#fde047"/><rect x="74" y="44" width="4" height="4" fill="#bef264"/></svg>
+    ),
+  },
+  {
+    id: "platformer",
+    icon: <Star className="size-4 text-yellow-200" aria-hidden />,
+    bannerClass: "bg-gradient-to-b from-sky-300 via-sky-500 to-orange-500",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-yellow-100/50",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><ellipse cx="60" cy="14" rx="16" ry="6" fill="#fff" opacity=".9"/><ellipse cx="46" cy="16" rx="9" ry="5" fill="#fff" opacity=".9"/><rect y="66" width="240" height="14" fill="#f97316"/><path d="M0 66H240" stroke="#7c2d12" strokeWidth="1.5"/><rect x="196" y="40" width="30" height="28" fill="#22c55e" stroke="#14532d" strokeWidth="1.5"/><rect x="192" y="34" width="38" height="10" fill="#4ade80" stroke="#14532d" strokeWidth="1.5"/><rect x="100" y="30" width="22" height="22" fill="#fbbf24" stroke="#78350f" strokeWidth="1.5"/><text x="111" y="46" textAnchor="middle" fontSize="15" fontWeight="900" fill="#fff7ed" stroke="#78350f" strokeWidth=".8">?</text><ellipse cx="111" cy="20" rx="4" ry="6" fill="#fde047" stroke="#a16207"/><ellipse cx="150" cy="38" rx="3" ry="5" fill="#fde047" stroke="#a16207"/></svg>
+    ),
+  },
+  {
+    id: "racing",
+    icon: <Flag className="size-4 text-white" aria-hidden />,
+    bannerClass: "bg-gradient-to-br from-zinc-900 via-red-700 to-red-500",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-white/45",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><rect x="0" y="70" width="10" height="5" fill="#111827"/><rect x="0" y="75" width="10" height="5" fill="#fff"/><rect x="10" y="70" width="10" height="5" fill="#fff"/><rect x="10" y="75" width="10" height="5" fill="#111827"/><rect x="20" y="70" width="10" height="5" fill="#111827"/><rect x="20" y="75" width="10" height="5" fill="#fff"/><rect x="30" y="70" width="10" height="5" fill="#fff"/><rect x="30" y="75" width="10" height="5" fill="#111827"/><rect x="40" y="70" width="10" height="5" fill="#111827"/><rect x="40" y="75" width="10" height="5" fill="#fff"/><rect x="50" y="70" width="10" height="5" fill="#fff"/><rect x="50" y="75" width="10" height="5" fill="#111827"/><rect x="60" y="70" width="10" height="5" fill="#111827"/><rect x="60" y="75" width="10" height="5" fill="#fff"/><rect x="70" y="70" width="10" height="5" fill="#fff"/><rect x="70" y="75" width="10" height="5" fill="#111827"/><rect x="80" y="70" width="10" height="5" fill="#111827"/><rect x="80" y="75" width="10" height="5" fill="#fff"/><rect x="90" y="70" width="10" height="5" fill="#fff"/><rect x="90" y="75" width="10" height="5" fill="#111827"/><rect x="100" y="70" width="10" height="5" fill="#111827"/><rect x="100" y="75" width="10" height="5" fill="#fff"/><rect x="110" y="70" width="10" height="5" fill="#fff"/><rect x="110" y="75" width="10" height="5" fill="#111827"/><rect x="120" y="70" width="10" height="5" fill="#111827"/><rect x="120" y="75" width="10" height="5" fill="#fff"/><rect x="130" y="70" width="10" height="5" fill="#fff"/><rect x="130" y="75" width="10" height="5" fill="#111827"/><rect x="140" y="70" width="10" height="5" fill="#111827"/><rect x="140" y="75" width="10" height="5" fill="#fff"/><rect x="150" y="70" width="10" height="5" fill="#fff"/><rect x="150" y="75" width="10" height="5" fill="#111827"/><rect x="160" y="70" width="10" height="5" fill="#111827"/><rect x="160" y="75" width="10" height="5" fill="#fff"/><rect x="170" y="70" width="10" height="5" fill="#fff"/><rect x="170" y="75" width="10" height="5" fill="#111827"/><rect x="180" y="70" width="10" height="5" fill="#111827"/><rect x="180" y="75" width="10" height="5" fill="#fff"/><rect x="190" y="70" width="10" height="5" fill="#fff"/><rect x="190" y="75" width="10" height="5" fill="#111827"/><rect x="200" y="70" width="10" height="5" fill="#111827"/><rect x="200" y="75" width="10" height="5" fill="#fff"/><rect x="210" y="70" width="10" height="5" fill="#fff"/><rect x="210" y="75" width="10" height="5" fill="#111827"/><rect x="220" y="70" width="10" height="5" fill="#111827"/><rect x="220" y="75" width="10" height="5" fill="#fff"/><rect x="230" y="70" width="10" height="5" fill="#fff"/><rect x="230" y="75" width="10" height="5" fill="#111827"/><g stroke="#fff" strokeWidth="2" opacity=".7"><path d="M20 24H70M10 36H56M150 20H200M170 32H228"/></g><path d="M78 56q4-14 22-14l8-10h26l10 12q14 2 14 12z" fill="#ef4444" stroke="#1f2937" strokeWidth="1.5"/><path d="M104 44l6-8h18l7 8z" fill="#bae6fd" stroke="#1f2937"/><circle cx="98" cy="62" r="7" fill="#111827" stroke="#1f2937"/><circle cx="98" cy="62" r="3" fill="#e5e7eb"/><circle cx="146" cy="62" r="7" fill="#111827" stroke="#1f2937"/><circle cx="146" cy="62" r="3" fill="#e5e7eb"/></svg>
+    ),
+  },
+  {
+    id: "pirate",
+    icon: <Anchor className="size-4 text-sky-100" aria-hidden />,
+    bannerClass: "bg-gradient-to-b from-sky-300 via-sky-600 to-slate-900",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-amber-200/50",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><path d="M0 66q15-8 30 0t30 0t30 0t30 0t30 0t30 0t30 0t30 0V80H0z" fill="#0ea5e9" stroke="#0369a1" strokeWidth="1.5"/><path d="M0 72q15-6 30 0t30 0t30 0t30 0t30 0t30 0t30 0t30 0V80H0z" fill="#0284c7"/><path d="M96 54h56l-8 12h-40z" fill="#92400e" stroke="#451a03" strokeWidth="1.5"/><line x1="124" y1="20" x2="124" y2="54" stroke="#451a03" strokeWidth="2"/><path d="M126 22q20 14 0 28z" fill="#fef3c7" stroke="#78350f"/><path d="M122 26q-16 12 0 24z" fill="#fde68a" stroke="#78350f"/><path d="M18 74Q60 60 94 56" fill="none" stroke="#b91c1c" strokeWidth="2" strokeDasharray="5 4"/><path d="M186 22l10 10M196 22l-10 10" stroke="#b91c1c" strokeWidth="2.5"/><circle cx="206" cy="58" r="4" fill="#fde047" stroke="#a16207"/></svg>
+    ),
+  },
+  {
+    id: "ninja",
+    icon: <Swords className="size-4 text-slate-100" aria-hidden />,
+    bannerClass: "bg-gradient-to-br from-slate-950 via-slate-800 to-red-700",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-red-200/40",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><circle cx="150" cy="30" r="18" fill="#f8fafc" stroke="#64748b" strokeWidth="1.5"/><path d="M0 60q40-4 60-20q-30 20-60 24z" fill="#1e293b" stroke="#94a3b8"/><path d="M180 64q30-6 60-22v30z" fill="#1e293b" stroke="#94a3b8"/><path d="M60 74L210 12" stroke="#0f172a" strokeWidth="5" strokeLinecap="round"/><path d="M60 74L210 12" stroke="#f8fafc" strokeWidth="1"/><g transform="translate(96 40) rotate(20)"><polygon points="0,-12 4,-4 12,0 4,4 0,12 -4,4 -12,0 -4,-4" fill="#cbd5e1" stroke="#1f2937" strokeWidth="1"/><circle r="2.5" fill="#334155"/></g><path d="M30 24q4 6 0 12q-4-6 0-12M200 56q4 6 0 12q-4-6 0-12" fill="#dc2626" stroke="#7f1d1d"/></svg>
+    ),
+  },
+  {
+    id: "rocket",
+    icon: <Rocket className="size-4 text-indigo-100" aria-hidden />,
+    bannerClass: "bg-gradient-to-b from-indigo-950 via-indigo-700 to-orange-500",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-orange-100/45",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><circle cx="30" cy="20" r="1.8" fill="#fde047" opacity="1"/><circle cx="70" cy="48" r="1.8" fill="#fde047" opacity="1"/><circle cx="200" cy="66" r="1.8" fill="#fde047" opacity="1"/><circle cx="176" cy="14" r="1.8" fill="#fde047" opacity="1"/><circle cx="50" cy="64" r="1.8" fill="#fde047" opacity="1"/><circle cx="110" cy="14" r="1.8" fill="#fde047" opacity="1"/><circle cx="200" cy="30" r="14" fill="#fb923c" stroke="#9a3412" strokeWidth="1.5"/><ellipse cx="200" cy="30" rx="24" ry="5" fill="none" stroke="#fde68a" strokeWidth="2.5" transform="rotate(-20 200 30)"/><g transform="translate(120 40) rotate(40)"><path d="M0-24Q12-8 9 14H-9Q-12-8 0-24z" fill="#f8fafc" stroke="#1f2937" strokeWidth="1.5"/><path d="M0-24Q7-18 8-12H-8Q-7-18 0-24z" fill="#ef4444" stroke="#1f2937"/><circle cy="-2" r="5" fill="#38bdf8" stroke="#1f2937"/><path d="M-9 8l-8 10l8-4zM9 8l8 10l-8-4z" fill="#ef4444" stroke="#1f2937"/><path d="M-5 14Q0 36 5 14" fill="#fb923c" stroke="#b45309"/></g><path d="M60 70Q80 60 100 54" fill="none" stroke="#fb923c" strokeWidth="4" strokeLinecap="round" opacity=".5"/></svg>
+    ),
+  },
+  {
+    id: "jungle",
+    icon: <Leaf className="size-4 text-lime-100" aria-hidden />,
+    bannerClass: "bg-gradient-to-br from-green-950 via-green-700 to-lime-500",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-lime-100/45",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><g stroke="#14532d" strokeWidth="1.2"><ellipse cx="190" cy="58" rx="40" ry="12" fill="#16a34a" transform="rotate(-30 190 58)"/><ellipse cx="220" cy="46" rx="34" ry="10" fill="#22c55e" transform="rotate(-60 220 46)"/><ellipse cx="40" cy="64" rx="36" ry="11" fill="#22c55e" transform="rotate(25 40 64)"/><ellipse cx="14" cy="50" rx="30" ry="9" fill="#16a34a" transform="rotate(60 14 50)"/></g><path d="M110 0q8 20 -2 36" fill="none" stroke="#15803d" strokeWidth="2.5"/><ellipse cx="108" cy="22" rx="6" ry="3" fill="#4ade80" stroke="#14532d" transform="rotate(30 108 22)"/><g transform="translate(130 34)"><ellipse cx="-6" cy="-3" rx="7" ry="9" fill="#f97316" stroke="#1f2937" transform="rotate(-30)"/><ellipse cx="6" cy="-3" rx="7" ry="9" fill="#f97316" stroke="#1f2937" transform="rotate(30)"/><rect x="-1" y="-8" width="2" height="14" fill="#1f2937"/></g><circle cx="90" cy="54" r="2.4" fill="#fde047" opacity="1"/><circle cx="160" cy="22" r="2.4" fill="#fde047" opacity="1"/><circle cx="76" cy="20" r="2.4" fill="#fde047" opacity="1"/></svg>
+    ),
+  },
+  {
+    id: "cyberpunk",
+    icon: <Cpu className="size-4 text-cyan-200" aria-hidden />,
+    bannerClass: "bg-gradient-to-br from-slate-950 via-fuchsia-900 to-cyan-600",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-cyan-200/50",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><g stroke="#22d3ee" strokeWidth="1" opacity=".7"><path d="M88 52L-40 80"/><path d="M96 52L0 80"/><path d="M104 52L40 80"/><path d="M112 52L80 80"/><path d="M120 52L120 80"/><path d="M128 52L160 80"/><path d="M136 52L200 80"/><path d="M144 52L240 80"/><path d="M152 52L280 80"/><path d="M0 58H240M0 66H240M0 75H240"/></g><rect x="96" y="14" width="56" height="26" rx="5" fill="#0f172a" stroke="#f472b6" strokeWidth="2"/><text x="124" y="32" textAnchor="middle" fontSize="15" fontWeight="900" fill="#22d3ee">ネオ</text><g stroke="#ec4899" strokeWidth="1.6" strokeLinecap="round" opacity=".9"><path d="M40 6l-6 20M60 14l-6 20M186 8l-6 20M206 26l-6 20M20 40l-6 20"/></g><rect x="0" y="30" width="46" height="4" fill="#f43f5e" opacity=".6"/><rect x="190" y="50" width="50" height="4" fill="#22d3ee" opacity=".6"/></svg>
+    ),
+  },
+  {
+    id: "steampunk",
+    icon: <Cog className="size-4 text-amber-200" aria-hidden />,
+    bannerClass: "bg-gradient-to-br from-stone-950 via-amber-800 to-amber-500",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-amber-200/50",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><rect y="0" width="240" height="8" fill="#b45309" stroke="#78350f"/><g><circle cx="120" cy="42" r="22" fill="#b45309" stroke="#78350f" strokeWidth="1.5"/><circle cx="120" cy="42" r="23" fill="none" stroke="#fbbf24" strokeWidth="6" strokeDasharray="5 5"/><circle cx="120" cy="42" r="7" fill="#fde68a" stroke="#78350f"/></g><g><circle cx="164" cy="28" r="13" fill="#d97706" stroke="#78350f" strokeWidth="1.5"/><circle cx="164" cy="28" r="14" fill="none" stroke="#fde68a" strokeWidth="5" strokeDasharray="4 4"/><circle cx="164" cy="28" r="4" fill="#fef3c7" stroke="#78350f"/></g><ellipse cx="60" cy="26" rx="26" ry="11" fill="#fbbf24" stroke="#78350f" strokeWidth="1.5"/><rect x="50" y="40" width="20" height="8" fill="#78350f"/><circle cx="200" cy="60" r="7" fill="#e2e8f0" opacity="0.8"/><circle cx="212" cy="48" r="7" fill="#e2e8f0" opacity="0.8"/><circle cx="190" cy="70" r="7" fill="#e2e8f0" opacity="0.8"/></svg>
+    ),
+  },
+  {
+    id: "candy",
+    icon: <Candy className="size-4 text-pink-100" aria-hidden />,
+    bannerClass: "bg-gradient-to-br from-pink-400 via-fuchsia-400 to-sky-300",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-white/55",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><path d="M0 0H240V6q-10 14-20 0t-30 6t-30-4t-30 8t-30-6t-30 4t-30-6t-20 4z" fill="#78350f" stroke="#451a03"/><g stroke="#f8fafc" strokeWidth="3"><path d="M100 40V74M160 44V76"/></g><circle cx="100" cy="34" r="14" fill="#f472b6" stroke="#1f2937" strokeWidth="1.2"/><path d="M100 34m-7 0a7 7 0 1 1 14 0" fill="none" stroke="#fff" strokeWidth="2.5"/><circle cx="160" cy="38" r="14" fill="#38bdf8" stroke="#1f2937" strokeWidth="1.2"/><path d="M160 38m-7 0a7 7 0 1 1 14 0" fill="none" stroke="#fff" strokeWidth="2.5"/><path d="M200 74a12 12 0 0 1 24 0z" fill="#4ade80" stroke="#1f2937"/><path d="M60 74a12 12 0 0 1 24 0z" fill="#fb923c" stroke="#1f2937"/><g strokeWidth="3" strokeLinecap="round"><path d="M30 30l5 -3" stroke="#facc15"/><path d="M130 24l4 4" stroke="#f472b6"/><path d="M190 22l5 -2" stroke="#4ade80"/><path d="M130 62l4 -3" stroke="#38bdf8"/></g></svg>
+    ),
+  },
+  {
+    id: "kawaii",
+    icon: <Heart className="size-4 text-pink-50" aria-hidden />,
+    bannerClass: "bg-gradient-to-br from-pink-300 via-rose-300 to-violet-300",
+    decorClass:
+      "bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.28),transparent_55%)]",
+    iconWrapClass: "bg-black/30 ring-1 ring-white/60",
+    motif: (
+      <svg aria-hidden="true" viewBox="0 0 240 80" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 size-full"><g fill="none" strokeWidth="5"><path d="M180 80A60 60 0 0 1 240 20" stroke="#f87171"/><path d="M186 80A54 54 0 0 1 240 26" stroke="#fb923c"/><path d="M192 80A48 48 0 0 1 240 32" stroke="#facc15"/><path d="M198 80A42 42 0 0 1 240 38" stroke="#4ade80"/><path d="M204 80A36 36 0 0 1 240 44" stroke="#38bdf8"/><path d="M210 80A30 30 0 0 1 240 50" stroke="#a78bfa"/></g><path d="M70 44a10 10 0 0 1 4-18a14 14 0 0 1 26 2a9 9 0 0 1 2 16z" fill="#fff" stroke="#7dd3fc" strokeWidth="1.5"/><circle cx="84" cy="38" r="1.6" fill="#1f2937"/><circle cx="96" cy="38" r="1.6" fill="#1f2937"/><path d="M86 42q4 3 8 0" fill="none" stroke="#1f2937"/><circle cx="80" cy="42" r="2" fill="#fb7185" opacity=".6"/><circle cx="100" cy="42" r="2" fill="#fb7185" opacity=".6"/><path d="M150 22c-8-8-14 2-6 8l6 5l6-5c8-6 2-16-6-8z" fill="#f9a8d4" stroke="#be185d"/><polygon points="40,20 43,28 52,28 45,33 48,42 40,37 32,42 35,33 28,28 37,28" fill="#fde68a" stroke="#b45309" strokeWidth=".8"/></svg>
+    ),
+  },
+];
+
+const THEME_GROUPS: { key: string; ids: readonly string[] }[] = [
+  {
+    key: "classic",
+    ids: [
+      "phoenix", "hacker", "admin", "aurora", "sakura", "fireworks", "ocean", "neon",
+      "vice", "storm", "cosmos", "snow", "lantern", "arcade", "koi",
+    ],
+  },
+  { key: "game", ids: ["blockcraft", "platformer", "racing"] },
+  { key: "adventure", ids: ["pirate", "ninja", "rocket", "jungle"] },
+  { key: "style", ids: ["cyberpunk", "steampunk", "candy", "kawaii"] },
 ];
 
 function previewInitials(name: string, username?: string): string {
@@ -558,6 +703,7 @@ export function WelcomeEffectDialog({
   const [selected, setSelected] = useState<WelcomeEffect>(initialEffect);
   const [message, setMessage] = useState(initialMessage);
   const [saving, setSaving] = useState(false);
+  const previewAvatarRef = useRef<HTMLSpanElement | null>(null);
 
   // Stacked Home preview modal state
   const [previewEffect, setPreviewEffect] = useState<WelcomeEffect | null>(null);
@@ -579,21 +725,23 @@ export function WelcomeEffectDialog({
     setPreviewRunId((prev) => prev + 1);
   }
 
-  async function handleSave() {
+  /** `override` saves that theme straight away (the preview's "Use this theme"). */
+  async function handleSave(override?: Exclude<WelcomeEffect, "">) {
+    const effect = override ?? selected;
     setSaving(true);
     try {
       const payload = {
-        welcome_effect: selected,
-        welcome_message: selected ? message.trim() : "",
+        welcome_effect: effect,
+        welcome_message: effect ? message.trim() : "",
       };
       if (isOwner) {
         const updated = await api.patch<User>("/api/v1/users/me", payload);
-        onSaved(updated.welcome_effect ?? selected, updated.welcome_message ?? "");
+        onSaved(updated.welcome_effect ?? effect, updated.welcome_message ?? "");
         window.dispatchEvent(
           new CustomEvent("wikihub:user-welcome-changed", {
             detail: {
               username: updated.username,
-              welcome_effect: updated.welcome_effect ?? selected,
+              welcome_effect: updated.welcome_effect ?? effect,
               welcome_message: updated.welcome_message ?? "",
             },
           }),
@@ -603,18 +751,20 @@ export function WelcomeEffectDialog({
           `/api/v1/users/${targetUserId}`,
           payload,
         );
-        onSaved(updated.welcome_effect ?? selected, updated.welcome_message ?? "");
+        onSaved(updated.welcome_effect ?? effect, updated.welcome_message ?? "");
         window.dispatchEvent(
           new CustomEvent("wikihub:user-welcome-changed", {
             detail: {
               username: updated.username,
-              welcome_effect: updated.welcome_effect ?? selected,
+              welcome_effect: updated.welcome_effect ?? effect,
               welcome_message: updated.welcome_message ?? "",
             },
           }),
         );
       }
       toast.success(t("welcomeEffect.saved"));
+      setPreviewEffect(null);
+      setPreviewPlaying(false);
       onOpenChange(false);
     } catch (error) {
       toast.error(
@@ -644,7 +794,7 @@ export function WelcomeEffectDialog({
               ? t("welcomeEffect.description")
               : t("welcomeEffect.adminEditing", { name: targetName })
           }
-          className="sm:max-w-4xl"
+          className="sm:max-w-[min(94vw,82rem)]"
         >
           <div className="space-y-4">
             {/* Compact full-width "None" option */}
@@ -676,8 +826,13 @@ export function WelcomeEffectDialog({
             </button>
 
             {/* Theme gallery: every theme visible at once, no inner scrolling */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              {THEME_PRESETS.map((preset) => {
+            {THEME_GROUPS.map((group) => (
+              <section key={group.key} className="space-y-2">
+                <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                  {t(`welcomeEffect.groups.${group.key}`)}
+                </h3>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+              {THEME_PRESETS.filter((p) => group.ids.includes(p.id)).map((preset) => {
                 const label = t(`welcomeEffect.presets.${preset.id}.label`);
                 const desc = t(`welcomeEffect.presets.${preset.id}.desc`);
                 const active = selected === preset.id;
@@ -753,7 +908,9 @@ export function WelcomeEffectDialog({
                   </div>
                 );
               })}
-            </div>
+                </div>
+              </section>
+            ))}
 
             {/* Custom greeting input */}
             {selected ? (
@@ -868,6 +1025,7 @@ export function WelcomeEffectDialog({
                 <div className="px-3 pb-3">
                   <div className="flex items-end gap-2">
                     <span
+                      ref={previewAvatarRef}
                       className={cn(
                         "ring-surface relative -mt-6 flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-semibold ring-4",
                         targetAvatarUrl
@@ -915,6 +1073,7 @@ export function WelcomeEffectDialog({
               <WelcomeEffectOverlay
                 key={previewRunId}
                 contained
+                focusRef={previewAvatarRef}
                 effect={previewEffect}
                 ownerName={targetName}
                 message={message}
@@ -948,10 +1107,10 @@ export function WelcomeEffectDialog({
                 <Button
                   type="button"
                   variant="primary"
+                  disabled={saving}
                   onClick={() => {
                     setSelected(previewEffect);
-                    setPreviewEffect(null);
-                    setPreviewPlaying(false);
+                    void handleSave(previewEffect);
                   }}
                   className="gap-1.5"
                 >

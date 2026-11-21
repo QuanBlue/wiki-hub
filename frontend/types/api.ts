@@ -30,10 +30,23 @@ export interface SearchResultSpace {
   description: string;
 }
 
+/** A member whose name answers the query: what their public profile shows (no email). */
+export interface SearchResultUser {
+  id: string;
+  username: string;
+  full_name: string;
+  avatar_url?: string | null;
+  avatar_content_type?: string | null;
+  avatar_crop?: { zoom: number; x: number; y: number } | null;
+  avatar_updated_at?: string | null;
+}
+
 export interface SearchResults {
   query: string;
   pages: SearchResultPage[];
   spaces: SearchResultSpace[];
+  /** People whose name answers the query (absent on older servers). */
+  users?: SearchResultUser[];
   /** Folded words and synonyms to highlight (absent on older servers). */
   terms?: string[];
   /** Applied search filters when parsed by the server. */
@@ -169,7 +182,39 @@ export type WelcomeEffect =
   | "snow"
   | "lantern"
   | "arcade"
-  | "koi";
+  | "koi"
+  | "blockcraft"
+  | "platformer"
+  | "racing"
+  | "tet"
+  | "halloween"
+  | "christmas"
+  | "midautumn"
+  | "pirate"
+  | "ninja"
+  | "rocket"
+  | "jungle"
+  | "cyberpunk"
+  | "steampunk"
+  | "candy"
+  | "kawaii";
+
+/** Festival-only scenes: played on Home during the matching seasonal theme, never member-pickable. */
+export type SeasonalWelcomeEffect =
+  | "valentine"
+  | "floral"
+  | "teachers"
+  | "mensday"
+  | "national"
+  | "heritage"
+  | "lotus"
+  | "kids"
+  | "easter"
+  | "spring"
+  | "harvest"
+  | "memorial";
+
+export type PlayableWelcomeEffect = WelcomeEffect | SeasonalWelcomeEffect;
 
 export interface User {
   id: string;

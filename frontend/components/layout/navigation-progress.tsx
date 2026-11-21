@@ -11,6 +11,8 @@ import {
   useTransition,
 } from "react";
 
+import { HolidayLoader, useHolidayPreset } from "@/components/layout/holiday-loader";
+
 type NavigationProgressValue = {
   /** Navigate and show the page-transition bar until the route has rendered. */
   navigate: (href: string) => void;
@@ -53,20 +55,25 @@ export function NavigationProgressProvider({ children }: { children: React.React
   );
 
   const value = useMemo(() => ({ navigate }), [navigate]);
+  const holiday = useHolidayPreset();
 
   return (
     <NavigationProgressContext.Provider value={value}>
-      <div
-        role="progressbar"
-        aria-label="Loading page"
-        aria-hidden={!pending}
-        className={
-          "pointer-events-none fixed inset-x-0 top-[calc(var(--wh-topbar-height)-4px)] z-[70] h-1 overflow-hidden bg-[color-mix(in_oklab,var(--wh-neutral-0)_25%,transparent)] transition-opacity duration-200 " +
-          (pending ? "opacity-100" : "opacity-0")
-        }
-      >
-        <div className="nav-progress-bar absolute inset-y-0 w-1/2 rounded-full bg-[var(--wh-neutral-0)] shadow-[0_0_12px_2px_var(--wh-neutral-0)]" />
-      </div>
+      {holiday ? (
+        <HolidayLoader preset={holiday} pending={pending} />
+      ) : (
+        <div
+          role="progressbar"
+          aria-label="Loading page"
+          aria-hidden={!pending}
+          className={
+            "pointer-events-none fixed inset-x-0 top-[calc(var(--wh-topbar-height)-4px)] z-[70] h-1 overflow-hidden bg-[color-mix(in_oklab,var(--wh-neutral-0)_25%,transparent)] transition-opacity duration-200 " +
+            (pending ? "opacity-100" : "opacity-0")
+          }
+        >
+          <div className="nav-progress-bar absolute inset-y-0 w-1/2 rounded-full bg-[var(--wh-neutral-0)] shadow-[0_0_12px_2px_var(--wh-neutral-0)]" />
+        </div>
+      )}
       {/* Soften the outgoing page so the switch reads as a page transition. */}
       <div
         aria-hidden

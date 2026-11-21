@@ -1991,7 +1991,7 @@ html[data-export="true"] .wh-toaster {
 
 @keyframes wh-seasonal-fall {
   0% {
-    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    transform: translate3d(0, calc(var(--wh-fall-span, 100vh) * -0.1), 0) rotate(0deg);
     opacity: 0;
   }
   12% {
@@ -2001,7 +2001,7 @@ html[data-export="true"] .wh-toaster {
     opacity: var(--wh-particle-opacity, 0.72);
   }
   100% {
-    transform: translate3d(var(--wh-drift-x, 24px), 108vh, 0)
+    transform: translate3d(var(--wh-drift-x, 24px), calc(var(--wh-fall-span, 100vh) * 1.08), 0)
       rotate(var(--wh-spin, 180deg));
     opacity: 0;
   }
@@ -2081,7 +2081,7 @@ html[data-export="true"] .wh-toaster {
 
 @keyframes wh-seasonal-rise {
   0% {
-    transform: translate3d(0, 10vh, 0);
+    transform: translate3d(0, calc(var(--wh-fall-span, 100vh) * 0.1), 0);
     opacity: 0;
   }
   15% {
@@ -2091,7 +2091,7 @@ html[data-export="true"] .wh-toaster {
     opacity: var(--wh-particle-opacity, 0.72);
   }
   100% {
-    transform: translate3d(var(--wh-drift-x, 24px), -110vh, 0);
+    transform: translate3d(var(--wh-drift-x, 24px), calc(var(--wh-fall-span, 100vh) * -1.1), 0);
     opacity: 0;
   }
 }

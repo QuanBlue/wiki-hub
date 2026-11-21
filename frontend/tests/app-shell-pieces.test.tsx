@@ -42,7 +42,13 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: m.routerPush, replace: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("@/components/theme-color-provider", () => ({
-  useThemeSettings: () => (m.theme.siteName === undefined ? undefined : { siteName: m.theme.siteName }),
+  // The seasonal pieces in the top bar read the active pack from the same context.
+  useThemeSettings: () => ({
+    siteName: m.theme.siteName,
+    seasonalTheme: { preset: "none", event_id: null, event_name_en: null, event_name_vi: null, source: "off" },
+    previewSeasonalPreset: null,
+    effectiveSeasonalPreset: "none",
+  }),
   ThemeColorProvider: ({ children, ...props }: { children: React.ReactNode } & Record<string, unknown>) => (
     <div data-testid="theme" data-props={JSON.stringify(props)}>
       {children}

@@ -349,3 +349,80 @@ export function PatternLayer({
     </svg>
   );
 }
+
+/**
+ * Sparse spots for the scattered watermark: position in a 420 x 56 strip and
+ * the size of each copy of the tile (px). Mixed sizes and uneven gaps keep it
+ * from reading as a grid.
+ */
+const SCATTER: Array<{ x: number; y: number; size: number; rot: number }> = [
+  { x: 6, y: 4, size: 46, rot: -8 },
+  { x: 96, y: 26, size: 22, rot: 12 },
+  { x: 168, y: -6, size: 34, rot: 4 },
+  { x: 262, y: 22, size: 28, rot: -14 },
+  { x: 340, y: 2, size: 18, rot: 20 },
+];
+const SCATTER_W = 420;
+
+/**
+ * Like `PatternLayer`, but a few copies of the preset's tile are scattered at
+ * different sizes with wide gaps, for a quieter watermark on a short bar.
+ */
+export function ScatterPatternLayer({
+  preset,
+  stroke,
+  drift = "x",
+  className = "",
+}: {
+  preset: SeasonalEffectPresetId;
+  /** Any CSS colour, including `var(--token)`. */
+  stroke: string;
+  drift?: "x" | "none";
+  className?: string;
+}) {
+  const uid = useSeasonalUid();
+  const tile = TILES[preset];
+  if (!tile) return null;
+  const id = `${uid}-scatter`;
+  return (
+    <svg
+      aria-hidden="true"
+      data-scatter-pattern=""
+      className={`absolute top-0 left-0 ${drift === "x" ? "wh-seasonal-tile-drift" : ""} ${className}`}
+      style={
+        {
+          width: drift === "x" ? `calc(100% + ${SCATTER_W * 2}px)` : "100%",
+          height: "100%",
+          "--wh-tile": `${SCATTER_W}px`,
+        } as CSSProperties
+      }
+    >
+      <defs>
+        <pattern id={id} width={SCATTER_W} height={56} patternUnits="userSpaceOnUse">
+          {SCATTER.map((s, i) => (
+            <svg
+              key={i}
+              x={s.x}
+              y={s.y}
+              width={s.size}
+              height={s.size}
+              viewBox={`0 0 ${tile.w} ${tile.h}`}
+              overflow="visible"
+            >
+              <g
+                transform={`rotate(${s.rot} ${tile.w / 2} ${tile.h / 2})`}
+                fill="none"
+                strokeWidth={tile.w / s.size}
+                strokeLinecap="round"
+                style={{ stroke }}
+              >
+                {tile.draw()}
+              </g>
+            </svg>
+          ))}
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill={`url(#${id})`} />
+    </svg>
+  );
+}

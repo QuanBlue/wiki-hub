@@ -190,6 +190,35 @@ darker for busier days, with the other years one click away.
 
 In the activity feed, repeated edits of one page fold into a single row ("Updated 6 times"); click it to list each edit.
 
+### Personal status
+
+Choose **Set status** (later **Update status**) in the account menu to share a short note with
+everyone in the workspace. Pick an icon, type up to 140 characters or start from a preset
+(*Free to chat*, *Slow to respond*, *Travelling*...), and choose when it clears: after 1 hour,
+4 hours, 24 hours, 7 days or never. It appears as a thought bubble on your profile and next to
+your avatar, and goes away by itself when it expires or when you press **Clear status**.
+
+### Welcome effect on your Home
+
+Click the palette button over the cover on your own Home, or use **Welcome effect** in
+**Edit profile**, to choose an effect that plays for visitors for about five seconds. There are
+26 themes in four groups: Classic, Games, Adventure and Styles. In every one **Hubby**, the
+WikiHub owl, arrives beside your avatar, presents it with a halo and sparkles, waves and
+leaves; the avatar is never covered. Press the play button on a card to preview it in a mock
+Home, then **Use this theme** to save it. An optional **Custom greeting** (up to 140 characters)
+becomes Hubby's speech bubble. Visitors can **Skip** at any time, and people who ask their
+device to reduce motion see a still greeting instead. An administrator can set the effect for
+other members from their profile.
+
+### Festival effects
+
+While an administrator has a seasonal theme running (Tết, Valentine, Teachers' Day, Children's
+Day, National Day, Halloween, Christmas and more), your Home plays that holiday's own scene and
+greeting every time you return to it, with Hubby dressed for the occasion. **Skip** stops it for
+the rest of the session and the play button on the cover replays it. It takes priority over your
+own welcome effect on Home. The top bar, page margins and the sign-in page also carry the
+holiday's decoration, and Home lists the upcoming holidays with a short history of each.
+
 ## Administration
 
 Administrators can manage users, groups, spaces, workspace settings, backups,
@@ -232,6 +261,20 @@ uptime and WikiHub's own Docker containers (not other services on the same host)
 uptime, CPU, memory and health. Click a column header to sort; *Logs* shows a
 container's last lines with credentials hidden. It refreshes every few seconds while
 the page is open and is read-only.
+
+Under **Settings → Seasonal Effects**, administrators dress WikiHub for the holidays: choose
+*Off*, *Auto* (switches on by date from a calendar of 35+ Vietnamese and international
+holidays, which you can edit) or *Manual*. Every change saves immediately - there is no Save
+button. **Preview** opens a scaled copy of Home or the sign-in page with the pack before
+anything is shown to people. Administrators are reminded a few days before a holiday (and by
+e-mail if enabled), and Home then offers **Activate now**. The effect is off for people whose
+device asks for reduced motion.
+
+Under **Settings → Sign-in page**, edit the headline, description, three feature blurbs, footer
+and illustration of the sign-in screen separately in English and Tiếng Việt, with a live
+preview. Under **Settings → System Announcement**, publish a banner for every signed-in user
+with a level (Information, Warning, Critical, Resolved), a schedule and an optional dismiss
+button.
 
 Workspace settings control the site name, session duration, upload/archive
 limits, attachment types, and role visibility for sidebar areas. Storage lets
