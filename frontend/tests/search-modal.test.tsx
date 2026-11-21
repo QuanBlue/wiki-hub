@@ -106,6 +106,82 @@ describe("SearchModal", () => {
     expect(screen.getAllByText("OPS").length).toBeGreaterThan(0);
   });
 
+  it("lists people by name and opens a profile, with the name marked however typed", async () => {
+    mocked.get.mockResolvedValue({
+      query: "quan nguyen",
+      spaces: [{ id: "s1", key: "DMS10", name: "dms1.0", description: "" }],
+      pages: [],
+      users: [
+        {
+          id: "u1",
+          username: "quannv",
+          full_name: "Nguyễn Văn Quân",
+          avatar_url: null,
+          avatar_updated_at: null,
+        },
+        { id: "u2", username: "bot.dms", full_name: "", avatar_url: "/a.png" },
+      ],
+    } satisfies SearchResults);
+    const actor = userEvent.setup();
+    render(<Harness />);
+    await actor.type(screen.getByPlaceholderText("Search WikiHub..."), "quân");
+
+    expect(await screen.findByText("People (2)")).toBeInTheDocument();
+    // Accents aside, the typed name is marked inside the stored one.
+    expect(
+      [...document.querySelectorAll("mark")].map((m) => m.textContent),
+    ).toContain("Quân");
+    // A person without a full name is shown by their username.
+    expect(screen.getAllByText("bot.dms").length).toBeGreaterThan(0);
+
+    // Space first, then people, in keyboard order: two steps down is the second person.
+    const input = screen.getByPlaceholderText("Search WikiHub...");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(navigate).toHaveBeenCalledWith("/users/quannv");
+  });
+
+  it("marks a name typed with other breaks than the stored one", async () => {
+    mocked.get.mockResolvedValue({
+      query: "DMS10",
+      spaces: [{ id: "s1", key: "DMS10", name: "dms1.0", description: "" }],
+      pages: [],
+      terms: ["dms10"],
+    } satisfies SearchResults);
+    const actor = userEvent.setup();
+    render(<Harness />);
+    await actor.type(screen.getByPlaceholderText("Search WikiHub..."), "DMS10");
+
+    await screen.findByText("Spaces (1)");
+    // The server's term "dms10" is no word of "dms1.0"; the squashed query marks the name.
+    expect(
+      [...document.querySelectorAll("mark")].map((m) => m.textContent),
+    ).toContain("dms1.0");
+  });
+
+  it("keeps the last results on screen while the next search runs", async () => {
+    let finish: (value: SearchResults) => void = () => undefined;
+    const actor = userEvent.setup();
+    render(<Harness />);
+    const input = screen.getByPlaceholderText("Search WikiHub...");
+    await actor.type(input, "ops");
+    await screen.findByText("Pages (2)");
+
+    mocked.get.mockImplementationOnce(
+      () => new Promise<SearchResults>((resolve) => (finish = resolve)),
+    );
+    await actor.type(input, "x");
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(2));
+    // Still the old list, with the spinner in the box instead of an empty panel.
+    expect(screen.getByText("Pages (2)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Searching WikiHub...")).toBeInTheDocument();
+
+    await act(async () => finish({ query: "opsx", spaces: [], pages: [] }));
+    expect(
+      await screen.findByText(/No spaces, pages or people matched/),
+    ).toBeInTheDocument();
+  });
+
   it("escapes regex characters in the query when highlighting", async () => {
     const actor = userEvent.setup();
     render(<Harness />);
@@ -228,14 +304,14 @@ describe("SearchModal", () => {
     const input = screen.getByPlaceholderText("Search WikiHub...");
     await actor.type(input, "zzz");
     expect(
-      await screen.findByText(/No spaces or pages matched/),
+      await screen.findByText(/No spaces, pages or people matched/),
     ).toBeInTheDocument();
 
     mocked.get.mockRejectedValueOnce(new Error("offline"));
     await actor.type(input, "y");
     await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(2));
     expect(
-      await screen.findByText(/No spaces or pages matched/),
+      await screen.findByText(/No spaces, pages or people matched/),
     ).toBeInTheDocument();
   });
 

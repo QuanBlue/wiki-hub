@@ -57,12 +57,19 @@ from app.modules.search.filters import (
     build_page_filter_clauses,
     file_type_clause,
     parse_search_query,
-    space_clause,
 )
 from app.modules.search.indexer import (
     SEARCH_INDEX_LOCK,
     semantic_tables_exist,
     vector_literal,
+)
+from app.modules.search.names import (
+    COMPACT_SQL_PATTERN,
+    STRONG,
+    best_name_score,
+    compact,
+    mentions_all_words,
+    name_words,
 )
 from app.modules.search.query import (
     Concept,
@@ -133,6 +140,21 @@ _FILES_PER_PAGE = 3
 _SPACE_WEIGHT = 1.2
 #: Name parts too common to say which space is meant ("2.team_frontend" is not every team).
 _GENERIC_NAME_PARTS = frozenset({"team", "teams", "trungtam", "thong", "chung", "remove", "test"})
+#: How much "a page whose title is the name typed, squashed" counts beside the other rankings:
+#: "DMS10" or "dms_1" for the page "dms1.0 overview", which the word index splits apart.
+_COMPACT_TITLE_WEIGHT = 1.0
+#: People listed for one search: a name rarely fits more than a handful.
+_USER_LIMIT = 5
+#: Spaces listed for one search: the closest few, so they never push the pages out of view.
+_SPACE_LIMIT = 6
+#: Accounts a person search considers before ranking them by how well the name fits.
+_USER_CANDIDATES = 100
+#: Trigram likeness a squashed name needs to be considered for a slip of the keyboard.
+_USER_SIMILARITY = 0.3
+#: Space scores: a description holding every typed word, and a word of a longer question
+#: that names the space ("dms4 server list" names "3DMS40").
+_SPACE_DESCRIPTION_SCORE = 30.0
+_SPACE_NAMED_SCORE = 45.0
 
 
 @dataclass(slots=True)
@@ -198,6 +220,19 @@ class SearchResultSpace:
 
 
 @dataclass(slots=True)
+class SearchResultUser:
+    """A member whose name answers the query: what their public profile shows, no more."""
+
+    id: uuid.UUID
+    username: str
+    full_name: str
+    avatar_url: str | None = None
+    avatar_content_type: str | None = None
+    avatar_crop: dict[str, float] | None = None
+    avatar_updated_at: datetime | None = None
+
+
+@dataclass(slots=True)
 class SearchResults:
     query: str
     pages: list[SearchResultPage]
@@ -205,6 +240,7 @@ class SearchResults:
     #: Folded words and synonyms worth highlighting in the titles and snippets.
     terms: list[str] = field(default_factory=list)
     filters: dict[str, Any] | None = None
+    users: list[SearchResultUser] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -242,6 +278,8 @@ class SearchService:
         self.last_file_hits: dict[uuid.UUID, FileHit] = {}
         #: ``page id -> its matching attached files``, best first (a page may hold several).
         self.last_page_files: dict[uuid.UUID, list[FileHit]] = {}
+        #: Every active space, once read (see ``_active_spaces``).
+        self._spaces_cache: list[Space] | None = None
 
     async def search(
         self,
@@ -266,41 +304,21 @@ class SearchService:
         if not clean_query and effective_filters.is_empty:
             return SearchResults(query=display_query, pages=[], spaces=[])
 
-        # 1. Search spaces
-        space_results: list[SearchResultSpace] = []
         permissions = PermissionService(self.session)
-        # Spaces only make sense to list if no page-only filters (type, label, author) were supplied
-        if not (effective_filters.types or effective_filters.labels or effective_filters.authors):
-            space_preds: list[sa.ColumnElement[bool]] = [Space.status == SpaceStatus.active]
-            if effective_filters.spaces:
-                space_preds.extend(
-                    space_clause(Space, s)
-                    for s in effective_filters.spaces
-                )
-            elif clean_query:
-                space_preds.append(
-                    ilike_contains(Space.name, clean_query)
-                    | ilike_contains(Space.key, clean_query)
-                    | ilike_contains(Space.description, clean_query)
-                )
-            spaces_stmt = select(Space).where(*space_preds).limit(limit)
-            spaces_result = await self.session.execute(spaces_stmt)
-            matched_spaces = list(spaces_result.scalars().all())
-            matched_spaces = [
-                space
-                for space in matched_spaces
-                if Permission.view in await permissions.effective_permissions(space, user)
-            ]
+        # "space:dms1" and "author:quan" name a space or a person however they were typed.
+        await self._resolve_filters(effective_filters)
 
-            space_results = [
-                SearchResultSpace(
-                    id=s.id,
-                    key=s.key,
-                    name=s.name,
-                    description=s.description or "",
-                )
-                for s in matched_spaces
-            ]
+        # 1. Spaces. Only worth listing when no page-only filter (type, label, author) is set.
+        space_results: list[SearchResultSpace] = []
+        if not (effective_filters.types or effective_filters.labels or effective_filters.authors):
+            space_results = await self._match_spaces(
+                clean_query, user, min(limit, _SPACE_LIMIT), permissions, effective_filters
+            )
+
+        # 2. People: a name typed on its own, without filters about pages.
+        user_results: list[SearchResultUser] = []
+        if clean_query and effective_filters.is_empty:
+            user_results = await self._match_users(clean_query)
 
         page_results, terms = await self._search_pages(
             clean_query, user, limit, permissions, filters=effective_filters
@@ -312,7 +330,174 @@ class SearchService:
             spaces=space_results,
             terms=terms,
             filters=effective_filters.to_dict() if not effective_filters.is_empty else None,
+            users=user_results,
         )
+
+    # ----------------------------------------------------------- spaces, people
+
+    async def _active_spaces(self) -> list[Space]:
+        """Every active space, read once per request (search reads them for several things)."""
+        cached = self._spaces_cache
+        if cached is None:
+            cached = list(
+                (
+                    await self.session.execute(
+                        select(Space).where(Space.status == SpaceStatus.active)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self._spaces_cache = cached
+        return cached
+
+    async def _match_spaces(
+        self,
+        query: str,
+        user: User,
+        limit: int,
+        permissions: PermissionService,
+        filters: SearchFilters,
+    ) -> list[SearchResultSpace]:
+        """The spaces ``query`` (or a ``space:`` filter) names, best match first.
+
+        A space is matched by its key and name however they are typed (see ``names``), by a
+        description holding every typed word, or by one word of a longer question naming it
+        ("dms4 server" for ``3DMS40``). Ranked first, then trimmed to what ``user`` may see,
+        so a hidden space never pushes a visible one off the list.
+        """
+        spaces = await self._active_spaces()
+        scored: list[tuple[float, Space]] = []
+        if filters.spaces:
+            wanted = {i for ids in filters.space_ids if ids for i in ids}
+            for space in spaces:
+                raw = any(
+                    space.key.lower() == value.lower() or value.lower() in space.name.lower()
+                    for value in filters.spaces
+                )
+                if space.id in wanted or raw:
+                    scored.append((max(_space_score(v, space) for v in filters.spaces), space))
+        elif query:
+            tokens = {t for t in name_words(query) if len(t) >= 3}
+            for space in spaces:
+                score = _space_score(query, space)
+                if not score and any(_names_space(t, space.key, space.name) for t in tokens):
+                    score = _SPACE_NAMED_SCORE
+                if score:
+                    scored.append((score, space))
+        scored.sort(key=lambda item: (-item[0], item[1].name.lower()))
+        found: list[SearchResultSpace] = []
+        for _score, space in scored:
+            if Permission.view not in await permissions.effective_permissions(space, user):
+                continue
+            found.append(
+                SearchResultSpace(
+                    id=space.id, key=space.key, name=space.name, description=space.description or ""
+                )
+            )
+            if len(found) >= limit:
+                break
+        return found
+
+    async def _user_candidates(self, query: str, limit: int) -> list[User]:
+        """Active accounts whose name could be what ``query`` means, roughly; ranked later.
+
+        Compared folded (no accents, no capitals, no punctuation), so "quan" finds "Quân" and
+        "dms_bot" finds "dms.bot"; a trigram likeness lets a slip of the keyboard through.
+        Without the search functions in the database, a plain word match stands in.
+        """
+        typed = compact(query)
+        words = [w for w in name_words(query) if len(w) >= 2] or [typed]
+        active = User.is_active.is_(True)
+        try:
+            async with self.session.begin_nested():
+                hay = sa.func.wh_title_key(sa.func.concat_ws(" ", User.username, User.full_name))
+                squashed = _squashed_sql(hay)
+                options: list[sa.ColumnElement[bool]] = [
+                    squashed.like(f"%{like_escape(typed)}%", escape="\\")
+                ]
+                options.append(
+                    sa.and_(*(hay.like(f"%{like_escape(w)}%", escape="\\") for w in words))
+                )
+                if len(typed) >= 4:
+                    options.append(sa.func.similarity(squashed, typed) >= _USER_SIMILARITY)
+                return list(
+                    (
+                        await self.session.execute(
+                            select(User).where(active, sa.or_(*options)).limit(limit)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+        except SQLAlchemyError:
+            logger.debug("search_people_folded_unavailable", exc_info=True)
+        return list(
+            (
+                await self.session.execute(
+                    select(User)
+                    .where(
+                        active,
+                        sa.or_(
+                            *(
+                                ilike_contains(User.username, w) | ilike_contains(User.full_name, w)
+                                for w in words
+                            )
+                        ),
+                    )
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def _match_users(self, query: str, limit: int = _USER_LIMIT) -> list[SearchResultUser]:
+        """The members ``query`` names, best match first (their public profile, no email)."""
+        if len(compact(query)) < 2:
+            return []
+        candidates = await self._user_candidates(query, _USER_CANDIDATES)
+        scored = [
+            (score, member)
+            for member in candidates
+            if (score := best_name_score(query, member.username, member.full_name))
+        ]
+        scored.sort(key=lambda item: (-item[0], (item[1].full_name or item[1].username).lower()))
+        return [
+            SearchResultUser(
+                id=member.id,
+                username=member.username,
+                full_name=member.full_name or "",
+                avatar_url=member.avatar_url,
+                avatar_content_type=member.avatar_content_type,
+                avatar_crop=member.avatar_crop,
+                avatar_updated_at=member.avatar_updated_at,
+            )
+            for _score, member in scored[:limit]
+        ]
+
+    async def _resolve_filters(self, filters: SearchFilters) -> None:
+        """Fill ``space_ids`` and ``author_ids``: what each ``space:``/``author:`` value names.
+
+        Only a close match counts ("space:dms1" is the space "DMS 1.0", not every space that
+        shares a word with it). A value that names nothing keeps the plain match it always had.
+        """
+        if filters.spaces:
+            spaces = await self._active_spaces()
+            filters.space_ids = []
+            for value in filters.spaces:
+                ids = [s.id for s in spaces if _space_score(value, s, descriptions=False) >= STRONG]
+                filters.space_ids.append(ids or None)
+        if filters.authors:
+            filters.author_ids = []
+            for value in filters.authors:
+                people = await self._user_candidates(value, _USER_CANDIDATES)
+                ids = [
+                    p.id
+                    for p in people
+                    if best_name_score(value, p.username, p.full_name) >= STRONG
+                ]
+                filters.author_ids.append(ids or None)
 
     # ------------------------------------------------------------------ pages
 
@@ -393,6 +578,7 @@ class SearchService:
             )
             files = await self._file_hits(query, concepts, wanted, filters=filters)
             in_spaces = await self._named_space_pages(query, concepts, wanted)
+            by_name = await self._compact_title_pages(query, wanted, filter_clauses)
             keyword_seconds = time.perf_counter() - mark
             mark = time.perf_counter()
             semantic = await self._semantic_hits(embedding, wanted, config)
@@ -407,7 +593,8 @@ class SearchService:
             list(semantic),
             list(files),
             in_spaces,
-            weights=(1.0, _SEMANTIC_WEIGHT, _FILE_WEIGHT, _SPACE_WEIGHT),
+            by_name,
+            weights=(1.0, _SEMANTIC_WEIGHT, _FILE_WEIGHT, _SPACE_WEIGHT, _COMPACT_TITLE_WEIGHT),
         )
         terms = _highlight_terms(concepts, ranked.weights)
         self.last_confidence = "none"
@@ -1203,17 +1390,12 @@ class SearchService:
         tokens = {t for t in re.findall(r"[a-z0-9]+", fold(query)) if len(t) >= 3}
         if not tokens:
             return []
-        spaces = (
-            await self.session.execute(
-                select(Space.id, Space.key, Space.name).where(Space.status == SpaceStatus.active)
-            )
-        ).all()
         named: list[uuid.UUID] = []
         used: set[str] = set()
-        for space_id, key, name in spaces:
+        for space in await self._active_spaces():
             for token in tokens:
-                if _names_space(token, key, name):
-                    named.append(space_id)
+                if _names_space(token, space.key, space.name):
+                    named.append(space.id)
                     used.add(token)
         rest = [c for c in concepts if not any(w in used for w in c.words)]
         if not named or not rest:
@@ -1243,6 +1425,55 @@ class SearchService:
                 )
         except SQLAlchemyError:
             logger.debug("search_named_space_unavailable", exc_info=True)
+            return []
+
+    async def _compact_title_pages(
+        self,
+        query: str,
+        wanted: int,
+        filter_clauses: list[sa.ColumnElement[bool]] | None = None,
+    ) -> list[uuid.UUID]:
+        """Pages whose title holds the query once both are squashed: "DMS10", "dms_1" or
+        "dms 1" for "dms1.0 overview".
+
+        The word index splits "dms1.0" into "dms1" and "0", so a name typed with other breaks
+        (or none) misses it. Only for what looks like a name - a digit, or several pieces - since
+        a plain word is the word index's job (and "test" squashed is inside "latest"). An exact
+        title first, then one starting with it, then the most alike.
+        """
+        typed = compact(query)
+        if len(typed) < 3 or len(typed) > 64:
+            return []
+        if not (any(ch.isdigit() for ch in typed) or len(name_words(query)) > 1):
+            return []
+        squashed = _squashed_sql(sa.func.wh_title_key(WikiPage.title))
+        try:
+            async with self.session.begin_nested():
+                return list(
+                    (
+                        await self.session.scalars(
+                            select(WikiPage.id)
+                            .join(Space, WikiPage.space_id == Space.id)
+                            .where(
+                                Space.status == SpaceStatus.active,
+                                squashed.like(f"%{like_escape(typed)}%", escape="\\"),
+                                *(filter_clauses or []),
+                            )
+                            .order_by(
+                                sa.case(
+                                    (squashed == typed, 0),
+                                    (squashed.like(f"{like_escape(typed)}%", escape="\\"), 1),
+                                    else_=2,
+                                ),
+                                sa.func.length(squashed),
+                                WikiPage.updated_at.desc(),
+                            )
+                            .limit(wanted)
+                        )
+                    ).all()
+                )
+        except SQLAlchemyError:
+            logger.debug("search_compact_title_unavailable", exc_info=True)
             return []
 
     async def unknown_terms(self, query: str) -> list[str]:
@@ -1405,6 +1636,27 @@ def _names_space(token: str, key: str, name: str) -> bool:
     return any(char.isdigit() for char in token) and any(
         alias.startswith(token) and len(alias) - len(token) <= 2 for alias in whole
     )
+
+
+def _squashed_sql(folded: sa.ColumnElement[str]) -> sa.ColumnElement[str]:
+    """Folded text with all but its letters and digits taken out: the SQL twin of
+    ``names.compact``. Constants, not bound values, so it is the very expression the
+    trigram index ``ix_pages_title_compact_trgm`` is built on (``ddl.COMPACT_TITLE_SQL``)."""
+    return sa.func.regexp_replace(
+        folded,
+        sa.literal_column(f"'{COMPACT_SQL_PATTERN}'"),
+        sa.literal_column("''"),
+        sa.literal_column("'g'"),
+    )
+
+
+def _space_score(query: str, space: Space, *, descriptions: bool = True) -> float:
+    """How well ``query`` names ``space``: by its key or name however typed, else (with
+    ``descriptions``) by a description holding every typed word. 0 when it does not."""
+    score = best_name_score(query, space.key, space.name)
+    if not score and descriptions and mentions_all_words(query, space.description or ""):
+        score = _SPACE_DESCRIPTION_SCORE
+    return score
 
 
 def _holds(passage: str, terms: list[tuple[str, float]]) -> float:

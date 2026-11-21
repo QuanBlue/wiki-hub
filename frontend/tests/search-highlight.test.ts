@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { foldText, highlightRanges } from "@/lib/search-highlight";
+import {
+  compactRanges,
+  compactText,
+  foldText,
+  highlightRanges,
+} from "@/lib/search-highlight";
 
 function marked(text: string, terms: string[]): string[] {
   return highlightRanges(text, terms).map(([start, end]) =>
@@ -65,5 +70,24 @@ describe("highlighting IP addresses", () => {
     );
 
     expect(marked).toEqual(["dms", "10.0.0.1"]);
+  });
+});
+
+describe("highlighting a name typed with other breaks", () => {
+  const cut = (text: string, query: string) =>
+    compactRanges(text, query).map(([a, b]) => text.slice(a, b));
+
+  it("marks the stored name whatever breaks, capitals or accents were typed", () => {
+    expect(cut("dms1.0 overview", "DMS10")).toEqual(["dms1.0"]);
+    expect(cut("dms1.0 overview", "dms_1")).toEqual(["dms1"]);
+    expect(cut("Nguyễn Văn Quân", "van quan")).toEqual(["Văn Quân"]);
+    expect(cut("a-b a-b", "ab")).toEqual(["a-b", "a-b"]);
+    expect(compactText("DMS 1.0")).toBe("dms10");
+  });
+
+  it("marks nothing for a query too short or not there", () => {
+    expect(compactRanges("dms1.0", "d")).toEqual([]);
+    expect(compactRanges("", "dms")).toEqual([]);
+    expect(compactRanges("dms1.0", "billing")).toEqual([]);
   });
 });

@@ -66,6 +66,11 @@ class SearchFilters:
     raw_tokens: dict[str, str] = field(default_factory=dict)
     #: Whose private labels ``label:`` may match. Set by the service, never by the query.
     viewer_id: uuid.UUID | None = None
+    #: The spaces each ``space:`` value names, however it was typed ("space:dms1" for the
+    #: space "DMS 1.0"), resolved by the service; ``None`` for a value that named none.
+    space_ids: list[list[uuid.UUID] | None] = field(default_factory=list)
+    #: The people each ``author:`` value names ("author:quan" for "Nguyễn Văn Quân").
+    author_ids: list[list[uuid.UUID] | None] = field(default_factory=list)
 
     @property
     def is_empty(self) -> bool:
@@ -237,23 +242,30 @@ def build_page_filter_clauses(
     """Generate SQLAlchemy WHERE clauses for WikiPage filtering."""
     clauses: list[sa.ColumnElement[bool]] = []
 
-    # 1. Space
-    for sp in filters.spaces:
-        clauses.append(space_clause(space_cls, sp))
+    # 1. Space: the spaces the value names (resolved by the service), else the raw match.
+    for index, sp in enumerate(filters.spaces):
+        resolved = filters.space_ids[index] if index < len(filters.space_ids) else None
+        clause = space_clause(space_cls, sp)
+        if resolved:
+            clause = sa.or_(space_cls.id.in_(resolved), clause)
+        clauses.append(clause)
 
     # 2. Author / Creator
-    for auth in filters.authors:
+    for index, auth in enumerate(filters.authors):
+        resolved = filters.author_ids[index] if index < len(filters.author_ids) else None
         # Match creator username, creator full name, or Confluence-imported author labels
-        clauses.append(
-            sa.or_(
-                equals_ci(page_cls.created_by_label, auth),
-                equals_ci(page_cls.updated_by_label, auth),
-                page_cls.created_by.has(equals_ci(user_cls.username, auth)),
-                page_cls.created_by.has(
-                    user_cls.full_name.ilike(f"%{like_escape(auth)}%", escape=_ESC)
-                ),
-            )
-        )
+        options = [
+            equals_ci(page_cls.created_by_label, auth),
+            equals_ci(page_cls.updated_by_label, auth),
+            page_cls.created_by.has(equals_ci(user_cls.username, auth)),
+            page_cls.created_by.has(
+                user_cls.full_name.ilike(f"%{like_escape(auth)}%", escape=_ESC)
+            ),
+        ]
+        if resolved:
+            # The people the value names however it was typed ("quan" for "Quân").
+            options.append(page_cls.created_by_id.in_(resolved))
+        clauses.append(sa.or_(*options))
 
     # 3. Label. Labels are private to the member who set them, so only the searcher's own count.
     for lbl in filters.labels:

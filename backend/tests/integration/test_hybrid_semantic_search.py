@@ -31,6 +31,7 @@ from app.modules.search import indexer
 from app.modules.search import service as search_module
 from app.modules.search.ddl import (
     ATTACHMENT_VECTOR_STATEMENTS,
+    COMPACT_TITLE_INDEX_STATEMENTS,
     SEMANTIC_TABLE_STATEMENTS,
     STORED_VECTOR_STATEMENTS,
     functions_sql,
@@ -114,6 +115,8 @@ async def installed(session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> A
     for statement in SEMANTIC_TABLE_STATEMENTS:
         await session.execute(text(statement))
     for statement in ATTACHMENT_VECTOR_STATEMENTS:
+        await session.execute(text(statement))
+    for statement in COMPACT_TITLE_INDEX_STATEMENTS:
         await session.execute(text(statement))
 
     async def fake_embed(config: AIConfig, texts: list[str]) -> list[list[float]]:

@@ -62,3 +62,35 @@ export function highlightRanges(
   // Words and addresses together, in reading order.
   return [...ranges, ...ipRanges].sort((a, b) => a[0] - b[0]);
 }
+
+/** Folded text without anything but letters and digits: "DMS 1.0" -> "dms10". */
+export function compactText(value: string): string {
+  return foldText(value).replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/**
+ * Where `query` sits in `text` once both are squashed to letters and digits:
+ * "dms_1" or "DMS10" marks "dms1.0" in "dms1.0 overview". The search finds names
+ * typed with other breaks (or none); this shows where. `[]` when it is not there.
+ */
+export function compactRanges(text: string, query: string): [number, number][] {
+  const wanted = compactText(query);
+  if (!text || wanted.length < 2) return [];
+  const folded = foldText(text);
+  // Where each letter or digit kept stands in `text` (folding keeps one character for one).
+  const where: number[] = [];
+  let squashed = "";
+  for (let index = 0; index < folded.length; index += 1) {
+    if (/[\p{L}\p{N}]/u.test(folded[index]!)) {
+      where.push(index);
+      squashed += folded[index];
+    }
+  }
+  const ranges: [number, number][] = [];
+  let start = squashed.indexOf(wanted);
+  while (start >= 0) {
+    ranges.push([where[start]!, where[start + wanted.length - 1]! + 1]);
+    start = squashed.indexOf(wanted, start + wanted.length);
+  }
+  return ranges;
+}

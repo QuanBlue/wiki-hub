@@ -47,18 +47,33 @@ class SearchResultSpaceSchema(BaseModel):
     description: str
 
 
+class SearchResultUserSchema(BaseModel):
+    """A member whose name answers the query: their public profile's name and picture only."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    username: str
+    full_name: str
+    avatar_url: str | None = None
+    avatar_content_type: str | None = None
+    avatar_crop: dict[str, float] | None = None
+    avatar_updated_at: datetime | None = None
+
+
 class SearchResponseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     query: str
     pages: list[SearchResultPageSchema]
     spaces: list[SearchResultSpaceSchema]
+    users: list[SearchResultUserSchema] = []
     #: Folded (accent-free, lower-case) words and synonyms to highlight in results.
     terms: list[str] = []
     filters: dict[str, Any] | None = None
 
 
-@router.get("", response_model=SearchResponseSchema, summary="Search spaces and pages")
+@router.get("", response_model=SearchResponseSchema, summary="Search spaces, pages and people")
 async def search(
     user: CurrentUser,
     service: SearchServiceDep,

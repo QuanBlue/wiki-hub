@@ -82,6 +82,17 @@ INDEX_STATEMENTS = (
     "ON pages USING gin (wh_title_key(title) gin_trgm_ops)",
 )
 
+#: A title squashed to its letters and digits ("dms1.0 Overview" -> "dms10overview"), so a
+#: name typed with other breaks or none ("DMS10", "dms_1") still finds it. Written with
+#: constants only: an expression index is used only by a query repeating it exactly, and
+#: a bound parameter in its place would not match.
+COMPACT_TITLE_SQL = "regexp_replace(wh_title_key(title), '[^a-z0-9]+', '', 'g')"
+
+COMPACT_TITLE_INDEX_STATEMENTS = (
+    f"CREATE INDEX IF NOT EXISTS ix_pages_title_compact_trgm "
+    f"ON pages USING gin (({COMPACT_TITLE_SQL}) gin_trgm_ops)",
+)
+
 #: A passage read from an attached file is stored with the page it is attached to, and
 #: says which file it came from, so an answer can cite the file itself.
 ATTACHMENT_CHUNK_STATEMENTS = (
