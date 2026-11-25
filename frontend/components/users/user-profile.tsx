@@ -34,6 +34,13 @@ import { FeatureDiscovery } from "@/components/home/feature-discovery";
 import { UpcomingHolidaysCard } from "@/components/home/upcoming-holidays-card";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -42,8 +49,12 @@ import {
 } from "@/components/ui/select";
 import { UserProfileTrigger } from "@/components/users/user-profile-trigger";
 import { ProfileImageViewer } from "@/components/users/profile-image-viewer";
+import { EFFECT_BADGE } from "@/components/users/welcome-effect-badge";
 import { useThemeSettings } from "@/components/theme-color-provider";
-import { getSeasonalEventGreeting } from "@/components/seasonal/seasonal-presets";
+import {
+  getSeasonalEventGreeting,
+  getSeasonalPresetMeta,
+} from "@/components/seasonal/seasonal-presets";
 import { seasonalWelcomeEffect } from "@/components/users/welcome-effects/seasonal";
 import {
   UserStatusBubble,
@@ -829,9 +840,23 @@ export function UserProfile({
   const [activeWelcome, setActiveWelcome] = useState<{
     effect: PlayableWelcomeEffect;
     message: string;
+    isSeasonal: boolean;
     /** Bumped on every play so a replay mounts a fresh overlay (restarts the 5 s run). */
     run: number;
   } | null>(null);
+
+  const playWelcomeEffect = useCallback(
+    (effect: PlayableWelcomeEffect, message: string, isSeasonal: boolean) => {
+      if (!effect) return;
+      setActiveWelcome((prev) => ({
+        effect,
+        message,
+        isSeasonal,
+        run: (prev?.run ?? 0) + 1,
+      }));
+    },
+    [],
+  );
 
   const effectiveWelcomeEffect: WelcomeEffect =
     welcomeOverride && welcomeOverride.source === user
@@ -854,11 +879,26 @@ export function UserProfile({
   // scene with a festive greeting and wins over the member's effect. Anywhere else
   // (another member's profile) the owner's own effect plays.
   const seasonalEffect = isHome ? seasonalWelcomeEffect(seasonalTheme.preset) : "";
-  const homeWelcomeEffect: PlayableWelcomeEffect = seasonalEffect || effectiveWelcomeEffect;
-  const homeWelcomeMessage = seasonalEffect
+  const seasonalMessage = seasonalEffect
     ? (getSeasonalEventGreeting(seasonalTheme.event_id, locale) ??
       t(`welcomeEffect.seasonalGreeting.${seasonalTheme.preset}`))
-    : effectiveWelcomeMessage;
+    : "";
+  const seasonalPresetMeta = seasonalEffect
+    ? getSeasonalPresetMeta(seasonalTheme.preset)
+    : undefined;
+  const seasonalLabel = seasonalEffect
+    ? ((locale === "vi"
+        ? seasonalTheme.event_name_vi || seasonalTheme.event_name_en
+        : seasonalTheme.event_name_en || seasonalTheme.event_name_vi) ||
+      (seasonalPresetMeta
+        ? locale === "vi"
+          ? seasonalPresetMeta.labelVi
+          : seasonalPresetMeta.labelEn
+        : t(`welcomeEffect.presets.${seasonalEffect}.label`)))
+    : "";
+  const hasBothWelcomeEffects = Boolean(seasonalEffect && effectiveWelcomeEffect);
+  const homeWelcomeEffect: PlayableWelcomeEffect = seasonalEffect || effectiveWelcomeEffect;
+  const homeWelcomeMessage = seasonalEffect ? seasonalMessage : effectiveWelcomeMessage;
 
   // Pressing Skip on the festival scene silences it for the rest of the session.
   const seasonalSkipKey = seasonalEffect
@@ -884,6 +924,7 @@ export function UserProfile({
     setActiveWelcome((prev) => ({
       effect: homeWelcomeEffect,
       message: homeWelcomeMessage,
+      isSeasonal: Boolean(seasonalEffect),
       run: (prev?.run ?? 0) + 1,
     }));
   }, [user.username, homeWelcomeEffect, homeWelcomeMessage, seasonalEffect, seasonalSkipKey]);
@@ -2058,15 +2099,89 @@ export function UserProfile({
             ) : null}
           </div>
           <div className="absolute top-2 right-2 flex items-center gap-1.5">
-            {homeWelcomeEffect ? (
+            {hasBothWelcomeEffects ? (
+              (() => {
+                const seasonalBadge = EFFECT_BADGE[seasonalEffect];
+                const SeasonalIcon = seasonalBadge?.Icon ?? Play;
+                const personalBadge = EFFECT_BADGE[effectiveWelcomeEffect];
+                const PersonalIcon = personalBadge?.Icon ?? Play;
+                return (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={t("welcomeEffect.replay")}
+                        title={t("welcomeEffect.replay")}
+                        className={COVER_ACTION_CLASS}
+                      >
+                        <Play className="size-3.5" aria-hidden />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-52">
+                      <DropdownMenuLabel className="text-muted-foreground py-1.5 text-xs font-medium">
+                        {t("welcomeEffect.replayChoose")}
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          playWelcomeEffect(seasonalEffect, seasonalMessage, true)
+                        }
+                        className="items-start py-2"
+                      >
+                        <SeasonalIcon
+                          className={cn(
+                            "mt-0.5 size-4 shrink-0",
+                            seasonalBadge?.badgeIconClass,
+                          )}
+                          aria-hidden
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="text-foreground block text-xs font-medium">
+                            {t("welcomeEffect.replayFestival")}
+                          </span>
+                          <span className="text-muted-foreground block truncate text-[11px]">
+                            {seasonalLabel}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          playWelcomeEffect(
+                            effectiveWelcomeEffect,
+                            effectiveWelcomeMessage,
+                            false,
+                          )
+                        }
+                        className="items-start py-2"
+                      >
+                        <PersonalIcon
+                          className={cn(
+                            "mt-0.5 size-4 shrink-0",
+                            personalBadge?.badgeIconClass,
+                          )}
+                          aria-hidden
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="text-foreground block text-xs font-medium">
+                            {t("welcomeEffect.replayPersonal")}
+                          </span>
+                          <span className="text-muted-foreground block truncate text-[11px]">
+                            {t(`welcomeEffect.presets.${effectiveWelcomeEffect}.label`)}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              })()
+            ) : homeWelcomeEffect ? (
               <button
                 type="button"
                 onClick={() =>
-                  setActiveWelcome((prev) => ({
-                    effect: homeWelcomeEffect,
-                    message: homeWelcomeMessage,
-                    run: (prev?.run ?? 0) + 1,
-                  }))
+                  playWelcomeEffect(
+                    homeWelcomeEffect,
+                    homeWelcomeMessage,
+                    Boolean(seasonalEffect),
+                  )
                 }
                 aria-label={t("welcomeEffect.replay")}
                 title={t("welcomeEffect.replay")}
@@ -2306,7 +2421,7 @@ export function UserProfile({
           message={activeWelcome.message}
           onComplete={() => setActiveWelcome(null)}
           onSkip={
-            seasonalSkipKey && activeWelcome.effect === seasonalEffect
+            seasonalSkipKey && activeWelcome.isSeasonal
               ? () => {
                   try {
                     window.sessionStorage.setItem(seasonalSkipKey, "1");

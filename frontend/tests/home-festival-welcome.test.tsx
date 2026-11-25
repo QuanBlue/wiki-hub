@@ -117,4 +117,49 @@ describe("Home welcome effect during a festival", () => {
     await settle();
     expect(screen.queryByRole("status")).toBeNull();
   });
+
+  it("shows a theme picker on Play when both festival and personal welcome themes exist", async () => {
+    seasonal.preset = "christmas";
+    const withEffect: PublicUser = {
+      ...USER,
+      welcome_effect: "hacker",
+      welcome_message: "Hello from Hacker",
+    };
+    const user = userEvent.setup();
+    visitHome(withEffect);
+
+    // Initial visit auto-plays the festival effect; dismiss it first.
+    await user.click(await screen.findByRole("button", { name: /skip/i }));
+    expect(screen.queryByRole("status")).toBeNull();
+
+    // Clicking Play opens a menu with both options instead of immediately playing.
+    await user.click(screen.getByRole("button", { name: /replay welcome/i }));
+    const festivalOption = await screen.findByRole("menuitem", { name: /festival theme/i });
+    const personalOption = screen.getByRole("menuitem", { name: /my welcome theme/i });
+    expect(festivalOption).toHaveTextContent(/christmas/i);
+    expect(personalOption).toHaveTextContent(/hacker/i);
+
+    // Choosing the personal theme plays the member's welcome effect and greeting.
+    await user.click(personalOption);
+    expect(await screen.findByRole("status")).toHaveTextContent("Hello from Hacker");
+    await user.click(screen.getByRole("button", { name: /skip/i }));
+
+    // Re-opening Play and choosing the festival theme plays the festival greeting.
+    await user.click(screen.getByRole("button", { name: /replay welcome/i }));
+    await user.click(await screen.findByRole("menuitem", { name: /festival theme/i }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Merry Christmas");
+  });
+
+  it("plays directly without a menu when only the festival theme is active", async () => {
+    seasonal.preset = "christmas";
+    const user = userEvent.setup();
+    visitHome();
+
+    await user.click(await screen.findByRole("button", { name: /skip/i }));
+    expect(screen.queryByRole("status")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /replay welcome/i }));
+    expect(screen.queryByRole("menuitem")).toBeNull();
+    expect(await screen.findByRole("status")).toHaveTextContent("Merry Christmas");
+  });
 });
