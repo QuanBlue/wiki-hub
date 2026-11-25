@@ -48,6 +48,7 @@ function finished(result: AnswerResult): Partial<Assistant> {
     webSources: result.web_sources ?? [],
     fileSources: result.file_sources ?? [],
     actions: result.actions ?? [],
+    usage: result.usage ?? undefined,
     plan: result.plan
       ? {
           steps: result.plan.steps,

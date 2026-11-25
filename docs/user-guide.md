@@ -120,6 +120,8 @@ you can already read, and has an hourly limit per person.
   Nothing changes before that, it runs with your own permissions (a step you may not take is
   listed as not offered), it stops at the first step that fails, and each finished step has an
   *Open* link.
+  A faint line at the end of an answer counts the tokens it took (read and written), when the
+  AI service reports them.
   Under the box, *Detail* sets the length of answers, as far as the source pages allow: *Brief*
   (the key details, about 120-220 words), *Balanced* (steps, values, reasons and conditions, about
   350-600) or *Detailed* (background, every step, examples, limits and troubleshooting, about

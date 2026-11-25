@@ -25,7 +25,7 @@ import contextlib
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 from redis.exceptions import RedisError
 
@@ -34,7 +34,7 @@ from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.modules.ai.answer import prompt_text
 from app.modules.ai.assistant_context import fold
-from app.modules.ai.client import chat_with_usage
+from app.modules.ai.client import Usage, chat_with_usage
 from app.modules.ai.config import AIConfig
 from app.modules.stats.recorder import record_ai_usage
 
@@ -151,6 +151,8 @@ def looks_time_sensitive(question: str) -> bool:
 class Verdict:
     kind: str  # "ok" | "search" | "weather" | "ask" | "notfound" | "failed"
     text: str = ""
+    #: What asking for it cost; not part of what was decided.
+    usage: Usage | None = field(default=None, compare=False)
 
 
 OK = Verdict("ok")
@@ -233,7 +235,7 @@ async def second_look(
         )
     verdict = parse_verdict(answer.text)
     logger.info("ai_chat_review", verdict=verdict.kind)
-    return verdict
+    return replace(verdict, usage=answer.usage)
 
 
 def _route_key(question: str) -> str:
@@ -294,4 +296,4 @@ async def route(
             json.dumps({"kind": verdict.kind, "text": verdict.text}),
             ex=_ROUTE_TTL_SECONDS,
         )
-    return verdict, True
+    return replace(verdict, usage=answer.usage), True

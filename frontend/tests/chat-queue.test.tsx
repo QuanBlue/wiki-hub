@@ -86,11 +86,11 @@ describe("questions asked while a reply is being written", () => {
 
     expect(box).toHaveValue("");
     expect(sent()).toEqual(["first"]);
-    expect(waiting()).toEqual(["1.second", "2.third"]);
+    expect(waiting()).toEqual(["second", "third"]);
 
     await reply(0);
     expect(sent()).toEqual(["first", "second"]);
-    expect(waiting()).toEqual(["1.third"]);
+    expect(waiting()).toEqual(["third"]);
     expect(streamChat.mock.calls[1][0]).toHaveLength(3);
 
     await reply(1);
@@ -98,6 +98,21 @@ describe("questions asked while a reply is being written", () => {
     expect(sent()).toEqual(["first", "second", "third"]);
     noQueue();
     expect(screen.getByText("reply 2")).toBeInTheDocument();
+  });
+
+  it("share one button with Stop: words in the box turn it into Send", async () => {
+    const { actor, box } = await open();
+    await actor.type(box, "first{Enter}");
+    const named = (name: string) => screen.queryByRole("button", { name });
+    expect(named("Stop")).toBeInTheDocument();
+
+    await actor.type(box, "second");
+    expect(named("Stop")).toBeNull();
+    expect(named("Send after this reply")).toBeEnabled();
+
+    await actor.clear(box);
+    expect(named("Send after this reply")).toBeNull();
+    expect(named("Stop")).toBeInTheDocument();
   });
 
   it("can be taken out before their turn", async () => {
@@ -121,7 +136,7 @@ describe("questions asked while a reply is being written", () => {
 
     await actor.click(screen.getByRole("button", { name: "Stop" }));
     expect(sent()).toEqual(["first"]);
-    expect(screen.getByText("Not sent yet (1)")).toBeInTheDocument();
+    expect(screen.getByText("Not sent yet")).toBeInTheDocument();
 
     await actor.click(screen.getByRole("button", { name: "Send now" }));
     expect(sent()).toEqual(["first", "second"]);
@@ -136,7 +151,7 @@ describe("questions asked while a reply is being written", () => {
     await act(async () => replies[0].fail());
 
     expect(sent()).toEqual(["first"]);
-    expect(waiting()).toEqual(["1.second"]);
+    expect(waiting()).toEqual(["second"]);
     expect(
       screen.getByRole("button", { name: "Send now" }),
     ).toBeInTheDocument();

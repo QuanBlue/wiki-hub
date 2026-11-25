@@ -33,7 +33,6 @@ import {
   ExternalLink,
   FileText,
   Info,
-  ListPlus,
   Loader2,
   Maximize2,
   Minimize2,
@@ -94,6 +93,7 @@ import {
   sourceHref,
   type AnswerAction,
   type AnswerSource,
+  type AnswerUsage,
   type FileSource,
   type WebSource,
 } from "@/lib/ai-answer";
@@ -518,6 +518,25 @@ function PlanCard({
   );
 }
 
+/** What the reply cost, faintly, under everything else. */
+function UsageLine({ usage }: { usage?: AnswerUsage }) {
+  const { t, locale } = useTranslation();
+  if (!usage) return null;
+  const shown = (count: number) => count.toLocaleString(locale);
+  return (
+    <p
+      title={t("chat.usageHint")}
+      className="text-muted-foreground/70 text-[11px] tabular-nums"
+    >
+      {t("chat.usage", {
+        total: shown(usage.prompt_tokens + usage.completion_tokens),
+        input: shown(usage.prompt_tokens),
+        output: shown(usage.completion_tokens),
+      })}
+    </p>
+  );
+}
+
 function AssistantMessage({
   entry,
   question,
@@ -641,6 +660,7 @@ function AssistantMessage({
           </section>
         ) : null}
         <ActionButtons actions={entry.actions} />
+        <UsageLine usage={entry.usage} />
       </div>
     );
   }
@@ -739,6 +759,7 @@ function AssistantMessage({
           pageIds={sources.map((source) => source.id)}
         />
       ) : null}
+      <UsageLine usage={entry.usage} />
     </div>
   );
 }
@@ -1235,6 +1256,13 @@ function ChatPanel({
   const roomForFiles =
     CHAT_MAX_FILES - sentFiles.length - queuedFiles - chips.length;
   const queueFull = busy && queue.length >= CHAT_QUEUE_MAX;
+  const sendLabel = reading
+    ? t("chat.fileWait")
+    : queueFull
+      ? t("chat.queueFull", { count: CHAT_QUEUE_MAX })
+      : busy
+        ? t("chat.queue")
+        : t("chat.send");
   const attach = useCallback(
     (picked: File[]) => {
       const taken = picked.slice(0, Math.max(roomForFiles, 0));
@@ -2144,29 +2172,8 @@ function ChatPanel({
               }
               className="placeholder:text-muted-foreground max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-5 outline-none"
             />
-            {busy && draft.trim() ? (
-              <Button
-                key="queue"
-                type="submit"
-                variant="ghost"
-                size="icon"
-                disabled={queueFull || reading}
-                aria-label={
-                  queueFull
-                    ? t("chat.queueFull", { count: CHAT_QUEUE_MAX })
-                    : t("chat.queue")
-                }
-                title={
-                  queueFull
-                    ? t("chat.queueFull", { count: CHAT_QUEUE_MAX })
-                    : t("chat.queue")
-                }
-                className="text-primary hover:bg-primary-subtle hover:text-primary size-9 shrink-0 rounded-full"
-              >
-                <ListPlus className="size-4" aria-hidden />
-              </Button>
-            ) : null}
-            {busy ? (
+            {/* One button: Stop while a reply is written, Send as soon as there are words. */}
+            {busy && !draft.trim() ? (
               <Button
                 key="stop"
                 type="button"
@@ -2185,9 +2192,9 @@ function ChatPanel({
                 type="submit"
                 variant="primary"
                 size="icon"
-                disabled={!draft.trim() || reading}
-                aria-label={reading ? t("chat.fileWait") : t("chat.send")}
-                title={reading ? t("chat.fileWait") : t("chat.send")}
+                disabled={!draft.trim() || reading || queueFull}
+                aria-label={sendLabel}
+                title={sendLabel}
                 className="size-9 rounded-full"
               >
                 <SendHorizontal className="size-4" aria-hidden />

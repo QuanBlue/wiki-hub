@@ -7,6 +7,7 @@ import type {
   AnswerPlanStep,
   AnswerResult,
   AnswerSource,
+  AnswerUsage,
   FileSource,
   WebSource,
 } from "@/lib/ai-answer";
@@ -117,6 +118,8 @@ export type ChatEntry =
       webSources?: WebSource[];
       /** The files attached in the chat that the answer cites. */
       fileSources?: FileSource[];
+      /** Tokens the reply cost, when reported. */
+      usage?: AnswerUsage;
       /** Steps proposed, to confirm before they run. */
       plan?: PlanState;
       /** Buttons to the pages the answer is about. */

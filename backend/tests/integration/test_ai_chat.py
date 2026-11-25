@@ -142,6 +142,8 @@ async def test_a_first_question_streams_and_ends_with_a_cited_answer(
     # A first question needs no rewrite: one model call, one use of the quota, and its tokens.
     assert model.rewrites == [] and len(_hits) == 1
     assert [u["feature"] for u in _usage] == ["chat"]
+    # The person sees the same count under the answer.
+    assert done["usage"] == {"prompt_tokens": 100, "completion_tokens": 20}
 
 
 async def test_a_follow_up_is_searched_as_a_question_that_stands_alone(
@@ -169,6 +171,7 @@ async def test_a_follow_up_is_searched_as_a_question_that_stands_alone(
     assert "billing server address" in stream[-1]["content"]
     # The rewrite and the answer are one turn: one use of the quota, both counted as usage.
     assert len(_hits) == 1 and len(_usage) == 2
+    assert events[-1]["result"]["usage"] == {"prompt_tokens": 130, "completion_tokens": 25}
 
 
 async def test_when_the_rewrite_fails_the_latest_questions_are_searched_as_typed(
