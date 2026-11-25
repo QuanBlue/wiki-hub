@@ -24,7 +24,7 @@ from app.modules.admin_mail.actions import RequestActionService
 from app.modules.admin_mail.service import AdminMailService
 from app.modules.permissions.service import PermissionService
 from app.modules.spaces.service import SpaceService
-from app.repositories.admin_mail import InboxStatus
+from app.repositories.admin_mail import InboxStatus, MailLogStatusFilter
 from app.repositories.user import UserRepository
 from app.schemas.admin_mail import (
     AccountEmailRequest,
@@ -42,6 +42,9 @@ from app.schemas.admin_mail import (
     MailboxRead,
     MailboxTestResult,
     MailboxUpdate,
+    MailLogCounts,
+    MailLogKindName,
+    MailLogRead,
     MailSummary,
     RequestActionPreview,
     RequestKindName,
@@ -275,7 +278,7 @@ async def notify_admin_granted(
 ) -> AccountEmailResult:
     """Called right after `PATCH /users/{id}` turns Role into Administrator, on
     the same "separate request" basis as the two notices above."""
-    await PermissionService(session).require_global(user, GlobalPermission.manage_users)
+    await PermissionService(session).require_global(user, GlobalPermission.system_admin)
     target = await _account_email_target(session, payload.user_id)
     return await service.send_admin_granted_email(
         user, to_user=target, login_url=payload.login_url
@@ -365,3 +368,35 @@ async def delete_mailbox(
 ) -> Response:
     await service.delete_mailbox(mailbox_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/logs", response_model=Page[MailLogRead], summary="List outbound email delivery logs")
+async def list_mail_logs(
+    _admin: CurrentSuperuser,
+    service: AdminMailServiceDep,
+    status_filter: Annotated[MailLogStatusFilter, Query(alias="status")] = "all",
+    kind: MailLogKindName | None = None,
+    mailbox_id: uuid.UUID | None = None,
+    q: Annotated[str | None, Query(max_length=128)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> Page[MailLogRead]:
+    return await service.list_logs(
+        status=status_filter,
+        kind=kind,
+        mailbox_id=mailbox_id,
+        q=q,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/logs/counts", response_model=MailLogCounts, summary="Delivery log totals by status")
+async def mail_log_counts(
+    _admin: CurrentSuperuser,
+    service: AdminMailServiceDep,
+    kind: MailLogKindName | None = None,
+    mailbox_id: uuid.UUID | None = None,
+    q: Annotated[str | None, Query(max_length=128)] = None,
+) -> MailLogCounts:
+    return await service.log_counts(kind=kind, mailbox_id=mailbox_id, q=q)

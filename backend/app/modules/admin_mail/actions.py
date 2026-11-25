@@ -31,11 +31,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.core.logging import get_logger
-from app.models.admin_mail import AdminMailbox, AdminRequest, AdminRequestRecipient, MailHealth
+from app.models.admin_mail import (
+    AdminMailbox,
+    AdminRequest,
+    AdminRequestRecipient,
+    MailLogKind,
+)
 from app.models.permission import GlobalPermission
 from app.models.user import User
-from app.modules.admin_mail import email_templates, smtp
-from app.modules.admin_mail.crypto import CredentialUnreadableError
+from app.modules.admin_mail import email_templates
 from app.modules.admin_mail.email_templates import Brand, Signature
 from app.modules.admin_mail.service import AdminMailService, public_link
 from app.modules.auth.service import AuthService
@@ -246,7 +250,8 @@ class RequestActionService:
                 email=request.requester_email,
                 full_name=request.requester_name[:255],
                 password=password,
-            )
+            ),
+            audit_details={"source": "inbox_request", "request_id": str(request.id)},
         )
         return await self._finish(
             request,
@@ -277,7 +282,11 @@ class RequestActionService:
         password = generate_password()
         # Sent to the address already on the account (which the request matched),
         # never to one that was merely typed into the form.
-        user = await self.auth.reset_password(plan.matched_account.id, password)
+        user = await self.auth.reset_password(
+            plan.matched_account.id,
+            password,
+            audit_details={"source": "inbox_request", "request_id": str(request.id)},
+        )
         return await self._finish(
             request,
             recipient,
@@ -306,9 +315,9 @@ class RequestActionService:
         # no mailbox anywhere the account is still created / reset and the
         # password is handed back instead (see below).
         try:
-            mailbox: AdminMailbox | None = (await self.mail._resolve_sender(self.actor))[0]
+            mailbox, own = await self.mail._resolve_sender(self.actor)
         except PermissionDeniedError:
-            mailbox = None
+            mailbox, own = None, False
         effective = await SiteSettingsService(self.session).get_effective()
         site_name = effective.site_name
         brand = Brand.from_settings(
@@ -317,13 +326,12 @@ class RequestActionService:
             custom_logo_url=getattr(effective, "custom_logo_url", None),
         )
         # Closes the message the way the administrator would: their own name.
-        own_mailbox = mailbox is not None and mailbox.user_id == self.actor.id
         signature = Signature(
-            name=(mailbox.display_name if own_mailbox and mailbox else None)
+            name=(mailbox.display_name if own and mailbox else None)
             or self.actor.full_name
             or self.actor.username,
             title=f"Administrator, {site_name}",
-            email=mailbox.email if own_mailbox and mailbox else None,
+            email=mailbox.email if own and mailbox else None,
             url=public_link(""),
         )
         text, html = email_templates.account_details(
@@ -340,28 +348,34 @@ class RequestActionService:
         subject_line = (
             "Your account has been created" if created else "Your password has been reset"
         )
+        full_subject = f"[{site_name}] {subject_line}"
+        mail_kind = MailLogKind.account_created if created else MailLogKind.password_reset
         if mailbox is None:
-            outcome = smtp.SmtpOutcome(
+            email_sent = False
+            email_error: str | None = "No administrator mailbox is set up to send this from."
+            self.mail._record_log(
+                kind=mail_kind,
+                to_email=to,
+                subject=full_subject,
                 ok=False,
-                health=MailHealth.unknown,
-                error="No administrator mailbox is set up to send this from.",
+                mailbox=None,
+                error_code="no_mailbox",
+                error=email_error,
+                actor=self.actor,
             )
         else:
-            try:
-                config = self.mail._config(mailbox)
-            except CredentialUnreadableError:
-                outcome = self.mail._unreadable()
-            else:
-                outcome = await smtp.send(
-                    config,
-                    subject=f"[{site_name}] {subject_line}",
-                    body=text,
-                    html=html,
-                    to=to,
-                    timeout_seconds=settings.mail_send_timeout_seconds,
-                )
-            # A send is as good a health check as the hourly one.
-            self.mail._apply(mailbox, outcome)
+            delivery = await self.mail._deliver(
+                mailbox,
+                kind=mail_kind,
+                subject=full_subject,
+                text=text,
+                html=html,
+                to=to,
+                reply_to=self.mail._actor_reply_to(self.actor, own=own),
+                actor=self.actor,
+            )
+            email_sent = delivery.email_sent
+            email_error = delivery.email_error
 
         # Handled, so it is resolved (and, obviously, read) for everyone.
         now = _now()
@@ -375,15 +389,15 @@ class RequestActionService:
             "admin_request_actioned",
             kind=request.kind,
             username=user.username,
-            emailed=outcome.ok,
+            emailed=email_sent,
         )
         return AutoActionResult(
             item=await self.mail.item_with_delivery(recipient, request),
             username=user.username,
             emailed_to=to,
-            email_sent=outcome.ok,
-            email_error=None if outcome.ok else outcome.error,
+            email_sent=email_sent,
+            email_error=email_error,
             # Only handed back when it could not be emailed: otherwise it goes
             # to the person it belongs to and nowhere else.
-            password=None if outcome.ok else password,
+            password=None if email_sent else password,
         )

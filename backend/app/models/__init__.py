@@ -6,7 +6,7 @@ Every model must be imported here: Alembic's autogenerate walks
 
 from __future__ import annotations
 
-from app.models.admin_mail import AdminMailbox, AdminRequest, AdminRequestRecipient
+from app.models.admin_mail import AdminMailbox, AdminMailLog, AdminRequest, AdminRequestRecipient
 from app.models.ai_connection import AiConnection
 from app.models.ai_embedding_settings import AiEmbeddingSettings
 from app.models.ai_question import AiQuestionGap
@@ -63,6 +63,7 @@ from app.models.user_tag import UserTag
 __all__ = [
     "SINGLETON_ID",
     "AdminMailbox",
+    "AdminMailLog",
     "AdminRequest",
     "AdminRequestRecipient",
     "AiConnection",

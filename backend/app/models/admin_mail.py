@@ -25,7 +25,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -68,6 +68,17 @@ class DeliveryStatus(StrEnum):
     #: emailed. Every system administrator gets a row (see
     #: `AdminMailService.submit_request`), so this is the common case.
     none = "none"
+
+
+class MailLogKind(StrEnum):
+    contact_request = "contact_request"
+    account_created = "account_created"
+    password_reset = "password_reset"  # noqa: S105 - an email category, not a credential
+    admin_granted = "admin_granted"
+    space_access = "space_access"
+    issue_created = "issue_created"
+    issue_assigned = "issue_assigned"
+    issue_closed = "issue_closed"
 
 
 class AdminMailbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -157,3 +168,40 @@ class AdminRequestRecipient(UUIDPrimaryKeyMixin, Base):
     )
     delivery_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AdminMailLog(UUIDPrimaryKeyMixin, Base):
+    """Append-only delivery log of every outbound email attempted by WikiHub."""
+
+    __tablename__ = "admin_mail_logs"
+    __table_args__ = (
+        Index("ix_admin_mail_logs_created_at", "created_at"),
+        Index("ix_admin_mail_logs_status_created_at", "status", "created_at"),
+        Index("ix_admin_mail_logs_kind_created_at", "kind", "created_at"),
+        Index("ix_admin_mail_logs_mailbox_created_at", "mailbox_id", "created_at"),
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    mailbox_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("admin_mailboxes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    from_email: Mapped[str] = mapped_column(String(320), nullable=False, server_default="")
+    to_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False, server_default="")
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    actor_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<AdminMailLog {self.kind} {self.status} -> {self.to_email}>"

@@ -163,7 +163,9 @@ export function CreateUserDialog({
           toast.success(`Sign-in details emailed to ${created.email}.`);
         } else {
           toast.error(
-            `Could not email the sign-in details to ${created.email}. Share the password another way.`,
+            outcome?.email_error
+              ? `Could not email the sign-in details to ${created.email} (${outcome.email_error}). Share the password another way.`
+              : `Could not email the sign-in details to ${created.email}. Share the password another way.`,
           );
         }
       }

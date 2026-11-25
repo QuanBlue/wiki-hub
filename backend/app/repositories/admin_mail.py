@@ -13,13 +13,15 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.admin_mail import AdminMailbox, AdminRequest, AdminRequestRecipient
+from app.models.admin_mail import AdminMailbox, AdminMailLog, AdminRequest, AdminRequestRecipient
 from app.models.user import User
+from app.repositories.filters import ilike_contains
 
 InboxStatus = Literal["all", "unread", "open", "resolved"]
+MailLogStatusFilter = Literal["all", "sent", "failed"]
 
 
 class AdminMailRepository:
@@ -76,6 +78,18 @@ class AdminMailRepository:
         )
         return list(rows.scalars())
 
+    async def healthcheck_mailboxes(self) -> list[AdminMailbox]:
+        """Every mailbox whose owner account is active — including mailboxes
+        switched off for incoming requests (`is_enabled=False`) because
+        `working_mailboxes()` still uses them in the outbound relay pool."""
+        rows = await self.session.execute(
+            select(AdminMailbox)
+            .join(User, User.id == AdminMailbox.user_id)
+            .where(User.is_active.is_(True))
+            .order_by(AdminMailbox.email)
+        )
+        return list(rows.scalars())
+
     async def working_mailboxes(self) -> list[AdminMailbox]:
         """The pool a send falls back to when the acting administrator has no
         mailbox of their own: connected right now (the send would just fail
@@ -102,7 +116,7 @@ class AdminMailRepository:
         )
         return list(fallback.scalars())
 
-    def add(self, entity: AdminMailbox | AdminRequest | AdminRequestRecipient) -> None:
+    def add(self, entity: AdminMailbox | AdminMailLog | AdminRequest | AdminRequestRecipient) -> None:
         self.session.add(entity)
 
     async def delete(self, entity: AdminMailbox) -> None:
@@ -229,3 +243,75 @@ class AdminMailRepository:
             )
             .values(read_at=at)
         )
+
+    # --- delivery logs ---------------------------------------------------
+
+    @staticmethod
+    def _filtered_logs(
+        *,
+        status: MailLogStatusFilter = "all",
+        kind: str | None = None,
+        mailbox_id: uuid.UUID | None = None,
+        q: str | None = None,
+    ) -> Select[tuple[AdminMailLog]]:
+        stmt = select(AdminMailLog)
+        if status in ("sent", "failed"):
+            stmt = stmt.where(AdminMailLog.status == status)
+        if kind:
+            stmt = stmt.where(AdminMailLog.kind == kind)
+        if mailbox_id:
+            stmt = stmt.where(AdminMailLog.mailbox_id == mailbox_id)
+        if q:
+            stmt = stmt.where(
+                or_(
+                    ilike_contains(AdminMailLog.to_email, q),
+                    ilike_contains(AdminMailLog.from_email, q),
+                    ilike_contains(AdminMailLog.subject, q),
+                    ilike_contains(AdminMailLog.actor_username, q),
+                    ilike_contains(AdminMailLog.error, q),
+                )
+            )
+        return stmt
+
+    async def list_logs(
+        self,
+        *,
+        status: MailLogStatusFilter = "all",
+        kind: str | None = None,
+        mailbox_id: uuid.UUID | None = None,
+        q: str | None = None,
+        limit: int = 25,
+        offset: int = 0,
+    ) -> tuple[Sequence[AdminMailLog], int]:
+        filtered = self._filtered_logs(status=status, kind=kind, mailbox_id=mailbox_id, q=q)
+        total = int(
+            (
+                await self.session.execute(select(func.count()).select_from(filtered.subquery()))
+            ).scalar_one()
+        )
+        rows = (
+            await self.session.execute(
+                filtered.order_by(AdminMailLog.created_at.desc(), AdminMailLog.id.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        ).scalars().all()
+        return rows, total
+
+    async def log_counts(
+        self,
+        *,
+        kind: str | None = None,
+        mailbox_id: uuid.UUID | None = None,
+        q: str | None = None,
+    ) -> dict[str, int]:
+        filtered = self._filtered_logs(
+            status="all", kind=kind, mailbox_id=mailbox_id, q=q
+        ).subquery()
+        query = select(
+            func.count(),
+            func.count().filter(filtered.c.status == "sent"),
+            func.count().filter(filtered.c.status == "failed"),
+        ).select_from(filtered)
+        every, sent, failed = (await self.session.execute(query)).one()
+        return {"all": int(every), "sent": int(sent), "failed": int(failed)}

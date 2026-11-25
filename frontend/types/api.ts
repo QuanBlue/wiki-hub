@@ -519,6 +519,35 @@ export type InboxCounts = Record<InboxFilter, number>;
 /** What happened to a request submitted from the public form. */
 export type ContactDelivery = "sent" | "failed" | "no_mailbox";
 
+export type MailLogStatus = "sent" | "failed";
+export type MailLogStatusFilter = "all" | MailLogStatus;
+export type MailLogKind =
+  | "contact_request"
+  | "account_created"
+  | "password_reset"
+  | "admin_granted"
+  | "space_access"
+  | "issue_created"
+  | "issue_assigned"
+  | "issue_closed";
+
+export interface AdminMailLog {
+  id: string;
+  created_at: string;
+  mailbox_id: string | null;
+  from_email: string;
+  to_email: string;
+  subject: string;
+  kind: MailLogKind;
+  status: MailLogStatus;
+  error_code: string | null;
+  error: string | null;
+  actor_id: string | null;
+  actor_username: string | null;
+}
+
+export type MailLogCounts = Record<MailLogStatusFilter, number>;
+
 export interface InboxItem {
   id: string;
   kind: AdminRequestKind;

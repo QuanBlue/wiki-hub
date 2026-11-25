@@ -23,6 +23,17 @@ SmtpSecurityName = Literal["ssl", "starttls", "none"]
 MailHealthName = Literal["unknown", "ok", "auth_failed", "unreachable", "error"]
 RequestKindName = Literal["account", "password_reset", "other"]
 DeliveryName = Literal["sent", "failed", "no_mailbox"]
+MailLogStatusName = Literal["sent", "failed"]
+MailLogKindName = Literal[
+    "contact_request",
+    "account_created",
+    "password_reset",
+    "admin_granted",
+    "space_access",
+    "issue_created",
+    "issue_assigned",
+    "issue_closed",
+]
 
 
 class MailboxCreate(BaseModel):
@@ -259,3 +270,26 @@ class ContactAdminResult(BaseModel):
     #: last two the request is still stored, so the client tells the requester
     #: to let an administrator know directly.
     delivery: DeliveryName
+
+
+class MailLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    created_at: datetime
+    mailbox_id: uuid.UUID | None = None
+    from_email: str
+    to_email: str
+    subject: str
+    kind: MailLogKindName
+    status: MailLogStatusName
+    error_code: str | None = None
+    error: str | None = None
+    actor_id: uuid.UUID | None = None
+    actor_username: str | None = None
+
+
+class MailLogCounts(BaseModel):
+    all: int
+    sent: int
+    failed: int

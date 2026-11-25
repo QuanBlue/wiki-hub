@@ -121,7 +121,7 @@ async def bulk_update_issues(
     to refuse the rest. Reporters of issues closed here are emailed, as they
     would be one by one.
     """
-    updated, failed, closed = await IssueService(session, user).bulk(
+    updated, failed, closed, assigned = await IssueService(session, user).bulk(
         payload.ids,
         action=payload.action,
         status=payload.status,
@@ -133,8 +133,9 @@ async def bulk_update_issues(
         if await _email_reporter(session, user, issue, payload.note) == "sent":
             emailed += 1
     if payload.action == "assign":
-        for issue in updated:
-            await _email_assignee(session, user, issue)
+        for issue in assigned:
+            if await _email_assignee(session, user, issue) == "sent":
+                emailed += 1
     return IssueBulkResult(
         updated=len(updated),
         failed=[IssueBulkFailure(id=issue_id, reason=reason) for issue_id, reason in failed],
@@ -275,7 +276,7 @@ async def _email_reporter(
     sent when the reporter's account is gone or inactive, or when not closing
     and the reporter is the actor.
     """
-    if issue.status != "done" and issue.reporter.id == actor.id:
+    if issue.reporter.id == actor.id:
         return "skipped"
     reporter = await session.get(User, issue.reporter.id)
     if reporter is None or not reporter.is_active:

@@ -329,7 +329,13 @@ class AuthService:
         return admin
 
     # -- account management ------------------------------------------------
-    async def create_user(self, payload: UserCreate, *, is_protected: bool = False) -> User:
+    async def create_user(
+        self,
+        payload: UserCreate,
+        *,
+        is_protected: bool = False,
+        audit_details: dict[str, object] | None = None,
+    ) -> User:
         # Same rule as promoting an existing account (see
         # `assert_actor_is_system_admin`): a `manage_users`-only actor may
         # create new Members freely, but not mint a new Administrator - that
@@ -358,12 +364,21 @@ class AuthService:
         self.users.add(user)
         await self.session.flush()
         logger.info("user_created", username=user.username, protected=is_protected)
+        details: dict[str, object] = {
+            "email": user.email,
+            "full_name": user.full_name,
+            "is_superuser": user.is_superuser,
+            "protected": is_protected,
+            "source": "manual",
+        }
+        if audit_details:
+            details.update(audit_details)
         await self.audit.record(
             AuditAction.user_created,
             entity_type="user",
             entity_id=user.id,
             entity_label=user.username,
-            details={"is_superuser": user.is_superuser, "protected": is_protected},
+            details=details,
         )
         return user
 
@@ -624,10 +639,17 @@ class AuthService:
             entity_type="user",
             entity_id=user.id,
             entity_label=user.username,
+            details={"email": user.email, "self_service": True},
         )
         return user
 
-    async def reset_password(self, user_id: uuid.UUID, new_password: str) -> User:
+    async def reset_password(
+        self,
+        user_id: uuid.UUID,
+        new_password: str,
+        *,
+        audit_details: dict[str, object] | None = None,
+    ) -> User:
         """Set a user's password without knowing the old one (administrator).
 
         This is the recovery path for a forgotten password, and the only way to
@@ -650,13 +672,20 @@ class AuthService:
         # An administrator changing it for them is worth a line in their bell
         # (a person resetting their own is not - `notify` skips that).
         await notify(self.session, user.id, "password_reset_by_admin", actor=self.actor)
+        details: dict[str, object] = {
+            "email": user.email,
+            "self_service": bool(self.actor and self.actor.id == user.id),
+            "source": "manual",
+        }
+        if audit_details:
+            details.update(audit_details)
         await self.audit.record(
             AuditAction.user_password_reset,
             entity_type="user",
             entity_id=user.id,
             entity_label=user.username,
             # The password itself is never recorded, here or anywhere.
-            details={"self_service": bool(self.actor and self.actor.id == user.id)},
+            details=details,
         )
         return user
 

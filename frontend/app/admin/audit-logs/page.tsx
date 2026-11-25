@@ -135,6 +135,24 @@ function summarizeDetails(entry: AuditLogEntry, emptyLabel: string): string[] {
   if (Array.isArray(details.removed) && details.removed.length > 0) {
     parts.push(`-${details.removed.join(", ")}`);
   }
+  if (typeof details.email === "string" && details.email) {
+    parts.push(`email: ${details.email}`);
+  }
+  if (typeof details.full_name === "string" && details.full_name) {
+    parts.push(`name: ${details.full_name}`);
+  }
+  if (typeof details.source === "string" && details.source) {
+    parts.push(`source: ${details.source}`);
+  }
+  if (typeof details.self_service === "boolean") {
+    parts.push(details.self_service ? "self-service" : "by admin");
+  }
+  if (typeof details.reason === "string" && details.reason) {
+    parts.push(`reason: ${details.reason}`);
+  }
+  if (typeof details.health === "string" && details.health) {
+    parts.push(`health: ${details.health}`);
+  }
   if (typeof details.is_superuser === "boolean") {
     parts.push(`is_superuser: ${details.is_superuser ? "true" : "false"}`);
   }
