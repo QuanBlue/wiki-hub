@@ -142,7 +142,7 @@ export function UserProfileTrigger({
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
     if (!nextOpen) return;
-    if (loading) return;
+    if (loading || loadError) return;
 
     // Show skeleton loader only if we don't have profile data yet
     if (!profile) {

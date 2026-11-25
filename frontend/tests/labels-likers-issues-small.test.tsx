@@ -171,11 +171,32 @@ describe("IssueScreenshots", () => {
   it("links each thumbnail to the full image", () => {
     render(
       <IssueScreenshots
-        attachments={[{ id: "1", filename: "shot.png", content_url: "/img/1" } as IssueAttachment]}
+        attachments={[
+          { id: "1", filename: "shot.png", content_url: "/img/1", content_type: "image/png" } as IssueAttachment,
+        ]}
       />,
     );
     expect(screen.getByRole("link")).toHaveAttribute("href", "/img/1");
     expect(screen.getByAltText("shot.png")).toBeInTheDocument();
+  });
+
+  it("renders non-image files with formatted sizes and download links", () => {
+    render(
+      <IssueScreenshots
+        attachments={[
+          { id: "2", filename: "doc.pdf", content_url: "/files/2", content_type: "application/pdf", size_bytes: 500 } as IssueAttachment,
+          { id: "3", filename: "archive.zip", content_url: "/files/3", size_bytes: 50 * 1024 } as IssueAttachment,
+          { id: "4", filename: "video.mp4", content_url: "/files/4", size_bytes: 5 * 1024 * 1024 } as IssueAttachment,
+          { id: "5", filename: "notes.txt", content_url: "/files/5", size_bytes: 0 } as IssueAttachment,
+        ]}
+      />,
+    );
+    expect(screen.getByText("doc.pdf")).toBeInTheDocument();
+    expect(screen.getByText("500 B")).toBeInTheDocument();
+    expect(screen.getByText("50.0 KB")).toBeInTheDocument();
+    expect(screen.getByText("5.0 MB")).toBeInTheDocument();
+    expect(screen.getByText("notes.txt")).toBeInTheDocument();
+    expect(screen.getAllByRole("link")).toHaveLength(4);
   });
 });
 

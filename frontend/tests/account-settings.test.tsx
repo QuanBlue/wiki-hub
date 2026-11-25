@@ -20,6 +20,11 @@ vi.mock("@/components/account/image-crop-dialog", () => ({
     <button type="button" onClick={() => onApply(file)}>Use image</button>
   ),
 }));
+vi.mock("@/components/users/welcome-effect-dialog", () => ({
+  WelcomeEffectDialog: ({ onSaved }: { onSaved?: (effect: string, message: string) => void }) => (
+    <button type="button" onClick={() => onSaved?.("phoenix", "Hello")}>Save welcome</button>
+  ),
+}));
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
   api: { patch: vi.fn(), post: vi.fn(), delete: vi.fn() },
@@ -93,6 +98,25 @@ describe("AccountSettings", () => {
     await actor.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Display name")).not.toBeInTheDocument();
     expect(screen.getByText("Alice Example")).toBeInTheDocument();
+  });
+
+  it("updates welcome effect and cover version when changed", async () => {
+    const actor = userEvent.setup();
+    const adminUser = { ...user, is_superuser: true };
+    render(<AccountSettings user={adminUser} />);
+
+    await actor.click(screen.getByRole("button", { name: "Edit profile" }));
+    // Change welcome effect
+    const changeWelcomeBtn = screen.getByRole("button", { name: "Welcome effect" });
+    await actor.click(changeWelcomeBtn);
+    await actor.click(screen.getByRole("button", { name: "Save welcome" }));
+
+    // Upload cover
+    const coverInput = screen.getByLabelText("Profile cover");
+    await actor.upload(coverInput, new File(["cover"], "cover.png", { type: "image/png" }));
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+    await actor.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit profile" })).toBeInTheDocument());
   });
 
   it("keeps password and session content isolated to their selected tabs", async () => {

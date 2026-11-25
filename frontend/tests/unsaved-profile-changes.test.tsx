@@ -172,6 +172,30 @@ describe("leaving the profile form with unsaved changes", () => {
     expect(m.push).toHaveBeenCalledWith("/spaces");
   });
 
+  it("asks before following an external link and assigns window.location", async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    vi.stubGlobal("location", { ...original, href: original.href, origin: original.origin, assign });
+    try {
+      const actor = userEvent.setup();
+      render(
+        <>
+          <a href="https://example.com/external">External</a>
+          <AccountSettings user={user} />
+        </>,
+      );
+      await actor.click(screen.getByRole("button", { name: "Edit profile" }));
+      await actor.type(screen.getByLabelText("Display name"), " Jr");
+      await actor.click(screen.getByRole("link", { name: "External" }));
+
+      expect(await screen.findByText(DIALOG)).toBeInTheDocument();
+      await actor.click(screen.getByRole("button", { name: "Leave without saving" }));
+      expect(assign).toHaveBeenCalledWith("https://example.com/external");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("lets links through when there is nothing unsaved", async () => {
     const actor = await startEditing();
     // The click is not intercepted, so the dialog never opens.

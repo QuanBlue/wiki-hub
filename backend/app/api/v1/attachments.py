@@ -211,7 +211,7 @@ async def get_attachment_metadata(
         created_at=attachment.created_at.isoformat(),
         text_status=status,
         text_chars=reading.chars if current else 0,  # type: ignore[union-attr]
-        office_revision=attachment.office_revision,
+        office_revision=getattr(attachment, "office_revision", None) or 0,
     )
 
 
@@ -617,7 +617,7 @@ async def save_attachment_from_office(
         "onlyoffice_document_saved",
         attachment_id=str(attachment_id),
         size_bytes=len(data),
-        office_revision=attachment.office_revision,
+        office_revision=getattr(attachment, "office_revision", None) or 0,
     )
     return {"error": 0}
 
@@ -666,5 +666,5 @@ async def replace_attachment(
         content_type=attachment.content_type,
         size_bytes=attachment.size_bytes,
         created_at=attachment.created_at.isoformat(),
-        office_revision=attachment.office_revision,
+        office_revision=getattr(attachment, "office_revision", None) or 0,
     )

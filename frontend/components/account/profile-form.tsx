@@ -260,11 +260,9 @@ export function ProfileForm({
     const keptOnServer = serverHasOriginal && !(isCover ? coverRemoved : avatarRemoved);
     const url = keptOnServer
       ? `/api/v1/users/me/${kind}/original`
-      : hasPending
-        ? (isCover ? coverPreviewUrl : previewUrl)
-        : isCover
-          ? displayCover
-          : displayAvatar;
+      : isCover
+        ? displayCover
+        : displayAvatar;
     if (!url) return;
     try {
       const response = await fetch(url, { credentials: "same-origin", cache: "no-store" });

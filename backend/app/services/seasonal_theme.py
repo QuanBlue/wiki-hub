@@ -481,10 +481,10 @@ def _candidate_years(today: date) -> tuple[int, int, int]:
 
 
 def resolve_active_seasonal_theme(
-    config: SeasonalThemeSettings, now: datetime | date | None = None
+    config: SeasonalThemeSettings | None = None, now: datetime | date | None = None
 ) -> ActiveSeasonalTheme:
     """Resolve which seasonal preset should be rendered right now."""
-    if config.mode == "off":
+    if config is None or config.mode == "off":
         return ActiveSeasonalTheme(preset="none", source="off")
 
     if config.mode == "manual":

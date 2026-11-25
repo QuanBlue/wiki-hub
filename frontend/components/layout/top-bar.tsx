@@ -68,8 +68,10 @@ export function TopBar({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [router]);
 
+  // z-[41]: above the AI assistant panel (z-40) so seasonal art hanging off the
+  // bar's lower edge is never covered by it. Dialogs (z-50) stay above.
   return (
-    <header className="h-topbar topbar-on-primary fixed inset-x-0 top-0 z-30">
+    <header className="h-topbar topbar-on-primary fixed inset-x-0 top-0 z-[41]">
       <div className="topbar-inner flex h-full items-center gap-3 px-4 max-sm:gap-1.5">
         <SidebarToggle />
 

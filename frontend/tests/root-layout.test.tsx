@@ -152,6 +152,7 @@ describe("RootLayout", () => {
       default_font: "mono",
       logo_icon: "layers",
       custom_logo_url: "/logo.png",
+      seasonal_theme: { preset: "tet", source: "auto" },
     });
     const markup = await html();
 
@@ -161,6 +162,7 @@ describe("RootLayout", () => {
       initialDefaultFont: "mono",
       initialLogoIcon: "layers",
       initialCustomLogoUrl: "/logo.png",
+      initialSeasonalTheme: { preset: "tet", source: "auto" },
     });
     expect(markup).toContain('type="image/png"');
     expect(markup).toContain('href="/logo.png"');

@@ -298,7 +298,7 @@ const MOTION_CLASS: Record<Motion, string> = {
 
 /**
  * Full-viewport ambient seasonal particle layer.
- * - Strictly pointer-events-none and z-20 (below TopBar z-30 and modals z-50).
+ * - Strictly pointer-events-none and z-20 (below TopBar z-[41] and modals z-50).
  * - Particles keep to the left/right margins; the reading column stays clear.
  * - Hidden for `memorial_candle` (solemn) and under prefers-reduced-motion.
  *

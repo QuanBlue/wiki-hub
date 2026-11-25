@@ -1477,7 +1477,7 @@ class BackupService:
                     "items_processed": 0,
                     "items_total": len(scanned.document.attachments)
                     + len(scanned.document.avatars)
-                    + len(scanned.document.covers)
+                    + len(getattr(scanned.document, "covers", []) or [])
                     + sum(len(issue.attachments) for issue in scanned.document.issues),
                 },
             )
@@ -1589,7 +1589,7 @@ class BackupService:
         total_items = (
             len(scanned.document.attachments)
             + len(scanned.document.avatars)
-            + len(scanned.document.covers)
+            + len(getattr(scanned.document, "covers", []) or [])
             + sum(len(issue.attachments) for issue in scanned.document.issues)
         )
         processed_items = 0

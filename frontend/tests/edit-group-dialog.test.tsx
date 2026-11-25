@@ -334,7 +334,7 @@ describe("EditGroupDialog global access", () => {
       "aria-checked",
       "true",
     );
-    expect(screen.getAllByText("Included via System administrator")).toHaveLength(4);
+    expect(screen.getAllByText("Included via System administrator")).toHaveLength(5);
   });
 
   it("keeps the dialog open on Global access when part of a save is refused", async () => {

@@ -22,6 +22,52 @@ vi.mock("@/components/account/image-crop-dialog", () => ({
     </div>
   ),
 }));
+vi.mock("@/components/users/welcome-effect-dialog", () => ({
+  WelcomeEffectDialog: ({
+    open,
+    onSaved,
+    onOpenChange,
+  }: {
+    open: boolean;
+    onSaved: (effect: string, message: string) => void;
+    onOpenChange: (open: boolean) => void;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label="Welcome effect dialog">
+        <label htmlFor="custom-greeting">Custom greeting (optional)</label>
+        <input id="custom-greeting" defaultValue="Hello" />
+        <button type="button" onClick={() => onSaved("phoenix", "Hello")}>
+          Save welcome
+        </button>
+        <button type="button" onClick={() => onOpenChange(false)}>
+          Close welcome
+        </button>
+      </div>
+    ) : null,
+}));
+vi.mock("@/components/account/status-dialog", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/account/status-dialog")>();
+  return {
+    ...actual,
+    UserStatusDialog: ({
+      open,
+      onUpdated,
+    }: {
+      open: boolean;
+      onUpdated: (u: Record<string, unknown>) => void;
+    }) =>
+      open ? (
+        <div role="dialog" aria-label="Status dialog">
+          <button
+            type="button"
+            onClick={() => onUpdated({ status_emoji: "🔥", status_text: "Busy", status_expires_at: null })}
+          >
+            Save status
+          </button>
+        </div>
+      ) : null,
+  };
+});
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
@@ -64,8 +110,9 @@ beforeEach(() => {
 function renderForm(user: Me = me(), props: Partial<React.ComponentProps<typeof ProfileForm>> = {}) {
   const onSaved = vi.fn();
   const onCancel = vi.fn();
-  render(<ProfileForm user={user} onCancel={onCancel} onSaved={onSaved} {...props} />);
-  return { onSaved, onCancel };
+  const onWelcomeSaved = vi.fn();
+  render(<ProfileForm user={user} onCancel={onCancel} onSaved={onSaved} onWelcomeSaved={onWelcomeSaved} {...props} />);
+  return { onSaved, onCancel, onWelcomeSaved };
 }
 
 const save = () => screen.getByRole("button", { name: "Save changes" });
@@ -75,10 +122,12 @@ const coverInput = () => screen.getByLabelText("Profile cover") as HTMLInputElem
 describe("ProfileForm", () => {
   it("lets a member with the welcome permission change their welcome effect", async () => {
     const actor = userEvent.setup();
-    renderForm(me({ global_permissions: ["customize_profile_welcome"], welcome_effect: "tet" }));
+    const { onWelcomeSaved } = renderForm(me({ global_permissions: ["customize_profile_welcome"], welcome_effect: "tet" }));
     expect(screen.getByText("Lunar New Year")).toBeInTheDocument();
     await actor.click(screen.getByRole("button", { name: "Welcome effect" }));
     expect(await screen.findByLabelText("Custom greeting (optional)")).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Save welcome" }));
+    expect(onWelcomeSaved).toHaveBeenCalledWith("phoenix", "Hello");
   });
 
   it("hides the welcome effect row without the permission", () => {
@@ -402,6 +451,15 @@ describe("ProfileSummary", () => {
     render(<ProfileSummary user={me({ profile_url: "https://site.example", company: "Acme" })} onEdit={vi.fn()} />);
     expect(screen.queryByText("Social links")).not.toBeInTheDocument();
   });
+
+  it("opens status dialog on bubble click", async () => {
+    const actor = userEvent.setup();
+    render(<ProfileSummary user={me({ status_emoji: "🚀", status_text: "Coding" })} onEdit={vi.fn()} />);
+    const bubble = screen.getByRole("button", { name: "Update status" });
+    await actor.click(bubble);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Save status" }));
+  });
 });
 
 describe("ProfileForm reposition", () => {
@@ -498,6 +556,89 @@ describe("ProfileForm reposition", () => {
     expect((body.get("file") as File).type).toBe("image/gif");
     expect(body.get("original")).toBeNull();
     expect(JSON.parse(body.get("crop") as string)).toEqual({ zoom: 2, x: 0.1, y: 0.2 });
+    vi.unstubAllGlobals();
+  });
+
+  it("shows an error when reposition fetch fails", async () => {
+    const actor = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 500 })));
+    renderForm(me({ avatar_url: "/me.png", avatar_has_original: true, avatar_crop: { zoom: 1, x: 0, y: 0 } }));
+
+    await actor.click(screen.getByRole("button", { name: "Reposition" }));
+    expect(await screen.findByText(/Could not open the current picture to reposition it/i)).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it("refuses an invalid cover image type", () => {
+    renderForm(me());
+    fireEvent.change(coverInput(), { target: { files: [new File(["text"], "file.txt", { type: "text/plain" })] } });
+    expect(screen.getByText("Choose a JPEG, PNG, GIF, or WebP image.")).toBeInTheDocument();
+  });
+
+  it("repositions a pending cover file", async () => {
+    const actor = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["x"], { type: "image/png" }))));
+    renderForm(me());
+    await actor.upload(coverInput(), new File(["gif"], "cover.gif", { type: "image/gif" }));
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+    const repositionButtons = screen.getAllByRole("button", { name: "Reposition" });
+    await actor.click(repositionButtons[0]!);
+    expect(await screen.findByRole("dialog", { name: "Position image" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("allows repositioning a saved cover without server original using fallback content type", async () => {
+    const actor = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["data"], { type: "" }))));
+    renderForm(me({
+      cover_url: "/cover.jpg",
+      cover_has_original: false,
+      cover_content_type: "image/jpeg",
+      cover_crop: { zoom: 1, x: 0, y: 0 },
+    }));
+
+    await actor.click(screen.getByRole("button", { name: "Reposition" }));
+    expect(await screen.findByRole("dialog", { name: "Position image" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("positions a newly chosen GIF avatar before saving", async () => {
+    const actor = userEvent.setup();
+    renderForm(me());
+    await actor.upload(fileInput(), new File(["GIF89a"], "avatar.gif", { type: "image/gif" }));
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+    const repositionButtons = screen.getAllByRole("button", { name: "Reposition" });
+    await actor.click(repositionButtons[repositionButtons.length - 1]!);
+    expect(await screen.findByRole("dialog", { name: "Position image" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+  });
+
+  it("repositions a pending PNG avatar using its kept original before saving", async () => {
+    const actor = userEvent.setup();
+    renderForm(me());
+    await actor.upload(fileInput(), new File(["png-data"], "avatar.png", { type: "image/png" }));
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+    const repositionButtons = screen.getAllByRole("button", { name: "Reposition" });
+    await actor.click(repositionButtons[repositionButtons.length - 1]!);
+    expect(await screen.findByRole("dialog", { name: "Position image" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
+  });
+
+  it("falls back to image/png when repositioning a saved image with no content type", async () => {
+    const actor = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["data"], { type: "" }))));
+    renderForm(me({
+      cover_url: "/cover.jpg",
+      cover_has_original: false,
+      cover_content_type: null,
+      cover_crop: { zoom: 1, x: 0, y: 0 },
+    }));
+
+    await actor.click(screen.getByRole("button", { name: "Reposition" }));
+    expect(await screen.findByRole("dialog", { name: "Position image" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Use image" }));
     vi.unstubAllGlobals();
   });
 });

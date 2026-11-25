@@ -28,6 +28,10 @@ BACKUP_VERSION: Literal[3] = 3
 SUPPORTED_BACKUP_VERSIONS = frozenset({1, 2, 3})
 
 
+def _str_or_empty(v: Any) -> str:
+    return "" if v is None else str(v)
+
+
 class BackupUser(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -51,8 +55,8 @@ class BackupUser(BaseModel):
     profile_url: str = ""
     social_links: list[str] = Field(default_factory=list)
     company: str = ""
-    status_emoji: str = ""
-    status_text: str = ""
+    status_emoji: Annotated[str, BeforeValidator(_str_or_empty)] = ""
+    status_text: Annotated[str, BeforeValidator(_str_or_empty)] = ""
     status_expires_at: datetime | None = None
     # Object-storage avatar bytes are deliberately not represented as a URL:
     # an internal avatar URL points at the source instance and would be broken

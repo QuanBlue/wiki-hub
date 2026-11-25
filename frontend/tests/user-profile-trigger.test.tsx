@@ -92,6 +92,19 @@ describe("UserProfileTrigger", () => {
     const user = userEvent.setup();
 
     render(<UserProfileTrigger username="carol" fullName="Carol White" />);
+
+    // Dispatch status change and welcome change when profile is null (covers null branches)
+    window.dispatchEvent(
+      new CustomEvent("wikihub:user-status-changed", {
+        detail: { username: "carol", status_emoji: "🏠" },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("wikihub:user-welcome-changed", {
+        detail: { username: "carol", welcome_effect: "phoenix" },
+      }),
+    );
+
     await user.click(screen.getByRole("button", { name: "Carol White" }));
 
     expect(await screen.findByRole("link", { name: "View profile" })).toBeInTheDocument();
@@ -110,5 +123,100 @@ describe("UserProfileTrigger", () => {
 
     expect(await screen.findByText("Working remotely")).toBeInTheDocument();
     expect(screen.getByText("🏠")).toBeInTheDocument();
+
+    // Dispatch welcome change event
+    window.dispatchEvent(
+      new CustomEvent("wikihub:user-welcome-changed", {
+        detail: {
+          username: "carol",
+          welcome_effect: "phoenix",
+          welcome_message: "Welcome to my profile!",
+        },
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Phoenix")).toBeInTheDocument();
+    });
+
+    // Dispatch status without emoji (covers null emoji branch)
+    window.dispatchEvent(
+      new CustomEvent("wikihub:user-status-changed", {
+        detail: {
+          username: "carol",
+          status_emoji: "",
+          status_text: "Busy in focus mode",
+        },
+      }),
+    );
+    expect(await screen.findByText("Busy in focus mode")).toBeInTheDocument();
+  });
+
+  it("renders cover image when profile has a cover URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          username: "dave",
+          full_name: "Dave Miller",
+          avatar_url: null,
+          cover_url: "/img/cover.jpg",
+          bio: "",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<UserProfileTrigger username="dave" fullName="Dave Miller" />);
+    await user.click(screen.getByRole("button", { name: "Dave Miller" }));
+
+    expect(await screen.findByRole("link", { name: "View profile" })).toBeInTheDocument();
+    const images = document.querySelectorAll("img");
+    expect([...images].some((img) => img.getAttribute("src")?.includes("/img/cover.jpg"))).toBe(true);
+  });
+
+  it("renders mention variant as span with or without children and handles hover", () => {
+    const { unmount } = render(
+      <UserProfileTrigger username="eve" variant="mention" asSpan>
+        <span>Custom Eve</span>
+      </UserProfileTrigger>,
+    );
+    const spanWithChildren = screen.getByRole("button", { name: "Custom Eve" });
+    expect(spanWithChildren.tagName.toLowerCase()).toBe("span");
+    spanWithChildren.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    spanWithChildren.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+    unmount();
+
+    render(<UserProfileTrigger username="eve" variant="mention" asSpan />);
+    const spanDefault = screen.getByRole("button", { name: "@eve" });
+    expect(spanDefault.tagName.toLowerCase()).toBe("span");
+    spanDefault.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    spanDefault.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+  });
+
+  it("displays administrator role when user is workspace admin", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          username: "frank",
+          full_name: "Frank Admin",
+          avatar_url: null,
+          bio: "",
+          pronouns: "",
+          profile_url: "",
+          social_links: [],
+          company: "",
+          is_workspace_admin: true,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<UserProfileTrigger username="frank" fullName="Frank Admin" />);
+    await user.click(screen.getByRole("button", { name: "Frank Admin" }));
+
+    expect(await screen.findByText("Administrator")).toBeInTheDocument();
   });
 });
