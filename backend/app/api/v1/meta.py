@@ -111,7 +111,7 @@ async def instance_info(settings_service: SiteSettingsServiceDep) -> InstanceInf
             and effective.announcement.show_on_login
             else None
         ),
-        seasonal_theme=resolve_active_seasonal_theme(effective.seasonal_theme),
+        seasonal_theme=resolve_active_seasonal_theme(getattr(effective, "seasonal_theme", None)),
         features=InstanceFeatures(
             local_auth=settings.auth_provider == "local",
             oidc_auth=False,  # OIDC provider is a documented stub in this build

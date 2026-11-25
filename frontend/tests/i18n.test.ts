@@ -31,9 +31,21 @@ describe("i18n dictionaries", () => {
 
   it("vi has no untranslated template that duplicates en placeholders mismatch", () => {
     // Placeholders must survive translation: {name} in en must exist in vi.
+    // seasonal_theme_upcoming intentionally uses {name_en} in en and {name_vi} in vi.
+    const intentionalVariants: Record<string, { en: string[]; vi: string[] }> = {
+      "notifications.kind.seasonal_theme_upcoming": {
+        en: ["{days}", "{name_en}", "{starts_on}"],
+        vi: ["{days}", "{name_vi}", "{starts_on}"],
+      },
+    };
     for (const key of flatten(en)) {
       const enVars = lookup(en, key)!.match(/\{(\w+)\}/g) ?? [];
       const viVars = lookup(vi, key)!.match(/\{(\w+)\}/g) ?? [];
+      if (intentionalVariants[key]) {
+        expect(enVars.sort()).toEqual(intentionalVariants[key].en.sort());
+        expect(viVars.sort()).toEqual(intentionalVariants[key].vi.sort());
+        continue;
+      }
       expect(viVars.sort(), `vi.${key} placeholders`).toEqual(enVars.sort());
     }
   });

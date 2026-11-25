@@ -5,7 +5,6 @@ import {
   getSeasonalGreeting,
   getSeasonalPresetMeta,
 } from "@/components/seasonal/seasonal-presets";
-import { RAIL } from "@/components/seasonal/seasonal-sidebar-overlay";
 import { TopBarScene } from "@/components/seasonal/seasonal-scenes";
 import { GreetingDoodle } from "@/components/seasonal/seasonal-greeting-doodle";
 import { ScatterPatternLayer } from "@/components/seasonal/seasonal-patterns";
@@ -102,17 +101,6 @@ export function SeasonalTopBarOverlay({
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 overflow-visible select-none"
     >
-      {/* Light mode: a soft glow of the theme colour just under the bar, so the
-          page does not look washed out next to the tinted sidebar. */}
-      {RAIL[preset] ? (
-        <div
-          className="absolute inset-x-0 top-full h-16 dark:hidden"
-          style={{
-            background: `linear-gradient(180deg, rgba(${RAIL[preset].tint}, 0.2), transparent)`,
-          }}
-        />
-      ) : null}
-
       {/* Sunken line-art watermark across the bar, behind its controls
           (negative z inside the header's stacking context). Drawn in the
           bar's own foreground colour so it reads on any theme colour, and

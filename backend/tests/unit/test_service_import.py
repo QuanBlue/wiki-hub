@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestError
 from app.modules.backup.service import BackupService
-from app.schemas.backup import BackupDocument
 
 
 def _mock_site_settings(service: BackupService):
@@ -45,6 +44,7 @@ async def test_restore_full_package(service: BackupService):
     mock_scanned.document.wikihub_backup.includes_credentials = False
     mock_scanned.document.attachments = []
     mock_scanned.document.avatars = []
+    mock_scanned.document.covers = []
     mock_scanned.document.issues = []
     
     with patch("app.modules.backup.service.scan_full_backup", return_value=mock_scanned), \

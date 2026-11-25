@@ -503,15 +503,18 @@ function SidebarLink({
   active,
   children,
   className,
+  onClick,
 }: {
   href: string;
   active?: boolean;
   children: React.ReactNode;
   className?: string;
+  onClick?: React.MouseEventHandler<HTMLAnchorElement>;
 }) {
   return (
     <Link
       href={href}
+      onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
         "focus-visible:ring-ring flex min-h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
@@ -653,7 +656,43 @@ function PageTree({
       const active = activeSlug === page.slug;
       return (
         <li key={page.id}>
-          <div className="flex min-h-8 items-stretch">
+          {/* The icon lives inside the link so the active/hover highlight (and
+              the seasonal rail styling, which targets the link) covers it and
+              it inherits the link's colour. The toggle button is an invisible
+              keyboard-focusable overlay; pointer clicks on the icon area are
+              routed to it from the link. */}
+          <div className="relative flex min-h-8 items-stretch">
+            <SidebarLink
+              href={pageHref(spaceKey, page.slug)}
+              active={active}
+              className="min-w-0 flex-1 gap-0 rounded-md px-0 pr-2"
+              onClick={(event) => {
+                if (
+                  hasChildren &&
+                  (event.target as HTMLElement).closest("[data-tree-icon]")
+                ) {
+                  event.preventDefault();
+                  togglePage(page.id);
+                }
+              }}
+            >
+              <span
+                data-tree-icon=""
+                className="flex w-8 shrink-0 items-center justify-center self-stretch"
+                aria-hidden
+              >
+                {hasChildren ? (
+                  expanded ? (
+                    <FolderOpen className="size-4" />
+                  ) : (
+                    <Folder className="size-4" />
+                  )
+                ) : (
+                  <FileText className="size-4" />
+                )}
+              </span>
+              <span className="truncate">{page.title}</span>
+            </SidebarLink>
             {hasChildren ? (
               <button
                 type="button"
@@ -665,35 +704,9 @@ function PageTree({
                     : "workspace.expandFolderAria",
                   { title: page.title },
                 )}
-                className={cn(
-                  "text-muted-foreground hover:bg-surface-hover active:bg-surface-selected focus-visible:ring-ring flex w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
-                  active && "bg-surface-selected text-primary",
-                )}
-              >
-                {expanded ? (
-                  <FolderOpen className="size-4" aria-hidden />
-                ) : (
-                  <Folder className="size-4" aria-hidden />
-                )}
-              </button>
-            ) : (
-              <span
-                className={cn(
-                  "text-muted-foreground flex w-8 shrink-0 items-center justify-center",
-                  active && "text-primary",
-                )}
-                aria-hidden
-              >
-                <FileText className="text-muted-foreground size-4" />
-              </span>
-            )}
-            <SidebarLink
-              href={pageHref(spaceKey, page.slug)}
-              active={active}
-              className="min-w-0 flex-1 rounded-md px-0 pr-2"
-            >
-              <span className="truncate">{page.title}</span>
-            </SidebarLink>
+                className="focus-visible:ring-ring pointer-events-none absolute inset-y-0 left-0 w-8 rounded-md focus-visible:ring-2 focus-visible:outline-none"
+              />
+            ) : null}
           </div>
           {hasChildren && expanded ? (
             <ul className="space-y-0.5 pl-4">{renderPages(page.id)}</ul>

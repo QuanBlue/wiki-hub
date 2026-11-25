@@ -613,13 +613,13 @@ export function SiteSettingsForm({ settings }: { settings: SiteSettings }) {
         if (updated.effective.seasonal_theme) {
           setSeasonalTheme(updated.effective.seasonal_theme);
         }
-        themeContext.setPreviewSeasonalPreset(null);
+        themeContext.setPreviewSeasonalPreset?.(null);
         // Refresh resolved active seasonal effect from /api/v1/meta immediately.
         fetch("/api/v1/meta")
           .then((res) => (res.ok ? res.json() : null))
           .then((meta: InstanceInfo | null) => {
             if (meta?.seasonal_theme) {
-              themeContext.setSeasonalTheme(meta.seasonal_theme);
+              themeContext.setSeasonalTheme?.(meta.seasonal_theme);
             }
           })
           .catch(() => {});

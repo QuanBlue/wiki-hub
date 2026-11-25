@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { UserProfile } from "@/components/users/user-profile";
+import { ThemeColorProvider } from "@/components/theme-color-provider";
 import { ApiError, api } from "@/lib/api-client";
 import { LocaleProvider } from "@/lib/i18n/context";
 import type {
@@ -89,6 +90,50 @@ vi.mock("@/components/users/user-profile-trigger", () => ({
     avatarUrl?: string | null;
   }) => <span data-variant={variant ?? "name"} data-avatar-url={avatarUrl ?? ""}>{fullName}</span>,
 }));
+vi.mock("@/components/users/welcome-effect-dialog", () => ({
+  WelcomeEffectDialog: ({
+    open,
+    onSaved,
+    onOpenChange,
+  }: {
+    open: boolean;
+    onSaved: (effect: string, message: string) => void;
+    onOpenChange: (open: boolean) => void;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label="Welcome effect dialog">
+        <button type="button" onClick={() => onSaved("phoenix", "Hello")}>
+          Save welcome
+        </button>
+        <button type="button" onClick={() => onOpenChange(false)}>
+          Close welcome
+        </button>
+      </div>
+    ) : null,
+}));
+vi.mock("@/components/account/status-dialog", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/account/status-dialog")>();
+  return {
+    ...actual,
+    UserStatusDialog: ({
+      open,
+      onUpdated,
+    }: {
+      open: boolean;
+      onUpdated: (u: Record<string, unknown>) => void;
+    }) =>
+      open ? (
+        <div role="dialog" aria-label="Status dialog">
+          <button
+            type="button"
+            onClick={() => onUpdated({ status_emoji: "🔥", status_text: "Busy", status_expires_at: null })}
+          >
+            Save status
+          </button>
+        </div>
+      ) : null,
+  };
+});
 
 const mocked = vi.mocked(api);
 
@@ -187,7 +232,7 @@ const DRAFT: UserDraftItem = {
 
 type Props = Parameters<typeof UserProfile>[0];
 
-function renderProfile(overrides: Partial<Props> = {}) {
+function renderProfile(overrides: Partial<Props> = {}, seasonalTheme?: any) {
   const props: Props = {
     user: USER,
     initialActivity: {
@@ -218,7 +263,16 @@ function renderProfile(overrides: Partial<Props> = {}) {
     likedPages: [],
     ...overrides,
   };
-  const view = render(<UserProfile {...props} />, { wrapper: LocaleProvider });
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return (
+      <LocaleProvider>
+        <ThemeColorProvider initialSeasonalTheme={seasonalTheme ?? ({ preset: "none", source: "off" } as any)}>
+          {children}
+        </ThemeColorProvider>
+      </LocaleProvider>
+    );
+  }
+  const view = render(<UserProfile {...props} />, { wrapper: Wrapper });
   return {
     view,
     props,
@@ -1009,5 +1063,96 @@ describe("UserProfile knowledge", () => {
     expect(
       JSON.parse(window.localStorage.getItem("wikihub:saved-page-keys")!),
     ).toEqual(["ENG/late"]);
+  });
+
+  it("handles cover image, status dialog, welcome dialog, and seasonal cards", async () => {
+    const userWithCover = {
+      ...USER,
+      is_superuser: true,
+      cover_url: "/cover.jpg",
+      cover_updated_at: "2026-11-04T12:00:00Z",
+      cover_crop: { zoom: 1, x: 0, y: 0 },
+      cover_content_type: "image/jpeg",
+      status_emoji: "🚀",
+      status_text: "Coding",
+      status_expires_at: new Date(Date.now() + 3600000).toISOString(),
+      welcome_effect: "phoenix" as const,
+      welcome_message: "Welcome home!",
+    };
+    const { actor } = renderProfile({
+      user: userWithCover,
+      isOwner: true,
+      isAdmin: true,
+      canCustomizeWelcome: true,
+      seasonalCalendar: [
+        {
+          event_id: "tet",
+          name_en: "Tet",
+          name_vi: "Tết",
+          event_date: "2026-02-17",
+          days_until: 5,
+          starts_on: "2026-02-10",
+          ends_on: "2026-02-20",
+          is_today: false,
+          is_active: false,
+          auto_activate: true,
+        } as any,
+      ],
+    });
+
+    // Welcome replay
+    const replayBtn = screen.getByRole("button", { name: "Replay welcome" });
+    await actor.click(replayBtn);
+
+    // Welcome dialog
+    const welcomeBtn = screen.getByRole("button", { name: "Welcome effect" });
+    await actor.click(welcomeBtn);
+    expect(await screen.findByRole("dialog", { name: "Welcome effect dialog" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Save welcome" }));
+
+    // Status dialog
+    const statusBubble = screen.getByRole("button", { name: "Update status" });
+    await actor.click(statusBubble);
+    expect(await screen.findByRole("dialog", { name: "Status dialog" })).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Save status" }));
+  });
+
+  it("handles storage errors gracefully when playing and skipping seasonal welcome effect", async () => {
+    const origGet = Storage.prototype.getItem;
+    const origSet = Storage.prototype.setItem;
+    const getItemSpy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: any, key: string) {
+      if (this === window.sessionStorage) {
+        throw new Error("QuotaExceededError");
+      }
+      return origGet.call(this, key);
+    });
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: any, key: string, val: string) {
+      if (this === window.sessionStorage) {
+        throw new Error("QuotaExceededError");
+      }
+      return origSet.call(this, key, val);
+    });
+
+    const userWithCover = {
+      ...USER,
+      welcome_effect: "phoenix" as const,
+      welcome_message: "Welcome!",
+    };
+
+    const { actor } = renderProfile(
+      {
+        user: userWithCover,
+        isOwner: true,
+        isAdmin: true,
+        isHome: true,
+      },
+      { preset: "lunar_new_year", source: "auto" },
+    );
+
+    const skipBtn = await screen.findByRole("button", { name: "Skip" });
+    await actor.click(skipBtn);
+
+    getItemSpy.mockRestore();
+    setItemSpy.mockRestore();
   });
 });

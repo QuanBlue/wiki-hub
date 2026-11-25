@@ -196,19 +196,10 @@ function FrostGlints({ count, bottom }: { count: number; bottom: number }) {
 
 function MemorialTop() {
   return (
-    <>
-      <div
-        className="absolute inset-x-0 top-full h-[1px]"
-        style={{ background: edgeGradient("memorial_candle", "90deg"), opacity: 0.9, marginTop: 3 }}
-      />
-      <div
-        className="absolute inset-x-0 top-full h-[14px]"
-        style={{
-          background:
-            "linear-gradient(to bottom, rgba(217,119,6,0.16), transparent)",
-        }}
-      />
-    </>
+    <div
+      className="absolute inset-x-0 top-full h-[1px]"
+      style={{ background: edgeGradient("memorial_candle", "90deg"), opacity: 0.9, marginTop: 3 }}
+    />
   );
 }
 

@@ -18,6 +18,9 @@ const { refresh, toastSuccess, toastError, toastInfo, theme } = vi.hoisted(() =>
     setDefaultFont: vi.fn(),
     setLogoIcon: vi.fn(),
     setCustomLogoUrl: vi.fn(),
+    setPreviewSeasonalPreset: vi.fn(),
+    setSeasonalTheme: vi.fn(),
+    seasonalTheme: { preset: "tet", source: "auto", mode: "auto" },
   },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
@@ -71,6 +74,7 @@ function makeSettings(
       },
       session_ttl_hours: 12,
       trash_retention_days: 30,
+      seasonal_theme: { mode: "auto", manual_preset: "none", reminder_enabled: true, reminder_days_before: 7, reminder_send_email: true, events: [], notified_occurrences: {} },
       ...effective,
     },
     updated_at: null,
@@ -823,5 +827,60 @@ describe("SiteSettingsForm sign-in page tab", () => {
     const actor = renderForm(makeSettings(), "vi");
     await openTab(actor, /Trang đăng nhập/);
     expect(screen.getByLabelText("Tiêu đề")).toBeInTheDocument();
+  });
+
+  describe("Seasonal tab", () => {
+    it("commits seasonal theme changes, handles rollback on failure, and resets defaults", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({ seasonal_theme: { preset: "tet", source: "auto" } }),
+              { headers: { "Content-Type": "application/json" } },
+            ),
+        ),
+      );
+      const actor = renderForm(makeSettings());
+      await openTab(actor, /Seasonal Effects/i);
+
+      const modeGroup = screen.getByRole("radiogroup", { name: "Mode" });
+      const offRadio = within(modeGroup).getByRole("radio", { name: /Off/i });
+      await actor.click(offRadio);
+      await waitFor(() => {
+        expect(mocked.patch).toHaveBeenCalledWith(
+          "/api/v1/settings",
+          expect.objectContaining({ seasonal_theme: expect.anything() }),
+        );
+      });
+      await waitFor(() => {
+        expect(theme.setSeasonalTheme).toHaveBeenCalled();
+      });
+
+      const resetBtn = screen.getByRole("button", { name: "Reset defaults" });
+      await actor.click(resetBtn);
+      const confirmDialog = await screen.findByRole("dialog");
+      const confirmResetBtn = within(confirmDialog).getByRole("button", { name: "Reset defaults" });
+      await actor.click(confirmResetBtn);
+      await waitFor(() => {
+        expect(mocked.patch).toHaveBeenCalledWith(
+          "/api/v1/settings",
+          expect.objectContaining({ seasonal_theme: null }),
+        );
+      });
+
+      mocked.patch.mockRejectedValueOnce(new ApiError(500, "boom", "Server down"));
+      await actor.click(within(modeGroup).getByRole("radio", { name: /Auto/i }));
+      await waitFor(() => {
+        expect(mocked.patch).toHaveBeenCalled();
+      });
+
+      vi.unstubAllGlobals();
+    });
+
+    it("falls back to default seasonal theme when effective seasonal_theme is undefined", () => {
+      renderForm(makeSettings({}, { seasonal_theme: null as any }));
+      expect(screen.getByRole("tab", { name: "Seasonal Effects" })).toBeInTheDocument();
+    });
   });
 });

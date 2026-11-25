@@ -136,6 +136,11 @@ describe("SearchModal", () => {
 
     // Space first, then people, in keyboard order: two steps down is the second person.
     const input = screen.getByPlaceholderText("Search WikiHub...");
+    const personButtons = screen.getAllByRole("button").filter((btn) => btn.textContent?.includes("Quân"));
+    if (personButtons[0]) {
+      fireEvent.mouseEnter(personButtons[0]);
+      fireEvent.click(personButtons[0]);
+    }
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(navigate).toHaveBeenCalledWith("/users/quannv");

@@ -268,12 +268,12 @@ export function SeasonalThemeSettingsPanel({
   const currentMode = modeOptions.find((m) => m.id === value.mode) ?? modeOptions[1];
 
   // What the workspace shows right now: the admin's live preview wins.
-  const shownPreset: SeasonalEffectPresetId = seasonalTheme.preset;
+  const shownPreset: SeasonalEffectPresetId = seasonalTheme?.preset ?? "none";
   const shownMeta = shownPreset !== "none" ? getSeasonalPresetMeta(shownPreset) : undefined;
   const shownName = shownMeta
       ? locale === "vi"
-        ? seasonalTheme.event_name_vi || shownMeta.labelVi
-        : seasonalTheme.event_name_en || shownMeta.labelEn
+        ? seasonalTheme?.event_name_vi || shownMeta.labelVi
+        : seasonalTheme?.event_name_en || shownMeta.labelEn
       : t("seasonal.admin.currentlyNone");
 
   function label(
