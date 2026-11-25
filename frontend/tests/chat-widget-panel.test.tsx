@@ -86,7 +86,7 @@ describe("the width of the panel", () => {
     const actor = userEvent.setup();
     const first = render(<Shell />);
     await openPanel(actor);
-    expect(panel().style.getPropertyValue("--chat-width")).toBe("416px");
+    expect(panel().style.getPropertyValue("--chat-width")).toBe("800px");
     first.unmount();
 
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
@@ -94,8 +94,20 @@ describe("the width of the panel", () => {
     });
     render(<Shell />);
     await openPanel(actor);
-    expect(panel().style.getPropertyValue("--chat-width")).toBe("416px");
+    expect(panel().style.getPropertyValue("--chat-width")).toBe("800px");
   });
+
+  it.each(["416", "760"])(
+    "takes the new default over the former %s every browser had kept",
+    async (former) => {
+      window.localStorage.setItem("wikihub:chat-width", former);
+      const actor = userEvent.setup();
+      render(<Shell />);
+      await openPanel(actor);
+
+      expect(panel().style.getPropertyValue("--chat-width")).toBe("800px");
+    },
+  );
 
   it("keeps working when the chosen width cannot be remembered", async () => {
     const actor = userEvent.setup();
@@ -107,7 +119,7 @@ describe("the width of the panel", () => {
 
     fireEvent.keyDown(screen.getByRole("separator"), { key: "ArrowLeft" });
 
-    expect(panel().style.getPropertyValue("--chat-width")).toBe("448px");
+    expect(panel().style.getPropertyValue("--chat-width")).toBe("832px");
   });
 
   it("is dragged by its left edge, narrower and wider, to the whole page, and not below a minimum", async () => {
@@ -145,14 +157,14 @@ describe("the width of the panel", () => {
 
     fireEvent.keyDown(edge, { key: "ArrowLeft" });
     fireEvent.keyDown(edge, { key: "ArrowLeft" });
-    expect(panel().style.getPropertyValue("--chat-width")).toBe("480px");
+    expect(panel().style.getPropertyValue("--chat-width")).toBe("864px");
     fireEvent.keyDown(edge, { key: "ArrowRight" });
-    expect(panel().style.getPropertyValue("--chat-width")).toBe("448px");
+    expect(panel().style.getPropertyValue("--chat-width")).toBe("832px");
     fireEvent.keyDown(edge, { key: "a" }); // not an arrow: left alone
-    expect(panel().style.getPropertyValue("--chat-width")).toBe("448px");
+    expect(panel().style.getPropertyValue("--chat-width")).toBe("832px");
 
     fireEvent.doubleClick(edge);
-    expect(panel().style.getPropertyValue("--chat-width")).toBe("416px");
+    expect(panel().style.getPropertyValue("--chat-width")).toBe("800px");
 
     // Wide enough with the arrows becomes the whole page.
     Object.defineProperty(window, "innerWidth", {

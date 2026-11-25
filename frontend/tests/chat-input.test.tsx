@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -199,7 +199,9 @@ describe("an answer that was cancelled", () => {
     await actor.type(box, "slow question{Enter}");
     await actor.click(await screen.findByRole("button", { name: "Stop" }));
 
-    expect(screen.getByText("slow question")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("log")).getByText("slow question"),
+    ).toBeInTheDocument();
     expect(screen.getByText("You cancelled this answer.")).toBeInTheDocument();
 
     await actor.click(screen.getByRole("button", { name: /Try again/ }));

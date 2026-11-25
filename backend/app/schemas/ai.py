@@ -626,6 +626,12 @@ CHAT_MAX_CHARS = 4000
 CHAT_HISTORY_CHARS = 2000
 #: Files the person attaches to a conversation from their computer.
 CHAT_MAX_FILES = 3
+#: The summary of a long thread's older turns, kept in the browser and sent with a question.
+CHAT_SUMMARY_CHARS = 1500
+#: The most turns summarised in one go.
+CHAT_COMPACT_MAX_MESSAGES = 40
+#: The longest name the assistant gives a thread.
+CHAT_TITLE_CHARS = 80
 
 
 class ChatMessage(BaseModel):
@@ -651,12 +657,52 @@ class ChatRequest(BaseModel):
     attachment_id: uuid.UUID | None = None
     #: Files attached in the chat itself (``POST /ai/chat/files``): read together with the wiki.
     file_ids: list[uuid.UUID] = Field(default_factory=list, max_length=CHAT_MAX_FILES)
+    #: What was said before the turns that are still sent, summarised (``/chat/compact``).
+    summary: str = Field(default="", max_length=CHAT_SUMMARY_CHARS)
 
     @model_validator(mode="after")
     def _ends_with_a_question(self) -> ChatRequest:
         if self.messages[-1].role != "user":
             raise ValueError("The last message must be a question from the user.")
         return self
+
+
+class ChatStorageKey(BaseModel):
+    """The key that opens the chat history one person's browser keeps."""
+
+    #: 32 bytes, base64.
+    key: str
+    #: Changes when the key does; says nothing about it.
+    key_id: str
+
+
+class ChatTitleRequest(BaseModel):
+    #: The first question of the thread, and the answer it was given.
+    question: str = Field(min_length=1, max_length=CHAT_MAX_CHARS)
+    answer: str = Field(default="", max_length=CHAT_MAX_CHARS)
+
+    @field_validator("question")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A question cannot be empty.")
+        return value
+
+
+class ChatTitleResult(BaseModel):
+    #: Empty when the model gave no usable name: the browser keeps the one it has.
+    title: str
+
+
+class ChatCompactRequest(BaseModel):
+    #: The summary so far, if the thread was summarised before.
+    summary: str = Field(default="", max_length=CHAT_SUMMARY_CHARS)
+    #: The turns to add to it, oldest first.
+    messages: list[ChatMessage] = Field(min_length=1, max_length=CHAT_COMPACT_MAX_MESSAGES)
+
+
+class ChatCompactResult(BaseModel):
+    summary: str
 
 
 class WebSearchRead(BaseModel):

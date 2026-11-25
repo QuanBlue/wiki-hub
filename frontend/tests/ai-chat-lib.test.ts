@@ -3,20 +3,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnswerResult } from "@/lib/ai-answer";
 import {
   ChatStreamError,
-  clearStoredChats,
   executePlan,
-  loadChat,
   messagesToSend,
   openChat,
   parseEvents,
   readDetail,
-  saveChat,
   saveDetail,
   streamChat,
   toggleChat,
   type ChatEntry,
   type ChatSlots,
+  type ChatState,
 } from "@/lib/ai-chat";
+import { chatThreadKey, loadThread, saveThread } from "@/lib/ai-chat-store";
+
+// One thread per person is enough to check how a conversation is kept.
+const saveChat = (userId: string, state: ChatState) =>
+  saveThread(userId, "t", state);
+const loadChat = (userId: string) => loadThread(userId, "t");
+const KEY_U1 = chatThreadKey("u1", "t");
 
 const RESULT: AnswerResult = {
   found: true,
@@ -385,7 +390,7 @@ describe("the conversation kept in the browser", () => {
     expect(loadChat("u1").entries).toHaveLength(1);
 
     window.localStorage.setItem(
-      "wikihub:chat:v1:u1",
+      KEY_U1,
       JSON.stringify({
         entries: [
           { id: "2", role: "assistant", content: "par", status: "streaming" },
@@ -397,18 +402,15 @@ describe("the conversation kept in the browser", () => {
   });
 
   it("ignores what is not a conversation", () => {
-    window.localStorage.setItem("wikihub:chat:v1:u1", "{not json");
+    window.localStorage.setItem(KEY_U1, "{not json");
     expect(loadChat("u1")).toEqual(state([]));
-    window.localStorage.setItem(
-      "wikihub:chat:v1:u1",
-      JSON.stringify([1, "x", {}]),
-    );
+    window.localStorage.setItem(KEY_U1, JSON.stringify([1, "x", {}]));
     expect(loadChat("u1")).toEqual(state([]));
   });
 
   it("reads the earlier format, a plain list of turns", () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:u1",
+      KEY_U1,
       JSON.stringify([{ id: "1", role: "user", content: "old" }]),
     );
 
@@ -418,16 +420,16 @@ describe("the conversation kept in the browser", () => {
   });
 
   it("keeps only the latest entries and forgets an empty conversation", () => {
-    const many: ChatEntry[] = Array.from({ length: 50 }, (_, i) => ({
+    const many: ChatEntry[] = Array.from({ length: 520 }, (_, i) => ({
       id: String(i),
       role: "user",
       content: `q${i}`,
     }));
     saveChat("u1", state(many));
-    expect(loadChat("u1").entries).toHaveLength(30);
+    expect(loadChat("u1").entries).toHaveLength(500);
 
     saveChat("u1", state([]));
-    expect(window.localStorage.getItem("wikihub:chat:v1:u1")).toBeNull();
+    expect(window.localStorage.getItem(KEY_U1)).toBeNull();
   });
 
   it("keeps the earlier versions of an edited question", () => {
@@ -470,7 +472,7 @@ describe("the conversation kept in the browser", () => {
 
   it("ignores versions that make no sense", () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:u1",
+      KEY_U1,
       JSON.stringify({
         entries: [{ id: "1", role: "user", content: "q", slot: "s" }],
         slots: {
@@ -641,7 +643,7 @@ describe("what the browser kept, when it is odd", () => {
 
   it("entries that are not a list are ignored", () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:u1",
+      KEY_U1,
       JSON.stringify({ entries: "nope", slots: {} }),
     );
 
@@ -682,62 +684,6 @@ describe("asking the chat panel to open", () => {
       ["open", {}],
       ["toggle", undefined],
     ]);
-  });
-});
-
-describe("clearing the conversations kept in the browser", () => {
-  const entries: ChatEntry[] = [{ id: "u", role: "user", content: "secret" }];
-  const keys = () =>
-    Object.keys(window.localStorage).filter((k) =>
-      k.startsWith("wikihub:chat:v1:"),
-    );
-
-  beforeEach(() => {
-    window.localStorage.clear();
-    saveChat("a", { entries, slots: {} });
-    saveChat("b", { entries, slots: {} });
-    window.localStorage.setItem("wikihub:chat-width", "480");
-    window.localStorage.setItem("wikihub:chat-detail", "detailed");
-    window.localStorage.setItem("something-else", "x");
-  });
-
-  it("removes everyone's conversations and keeps what is not one", () => {
-    clearStoredChats();
-
-    expect(keys()).toEqual([]);
-    expect(window.localStorage.getItem("wikihub:chat-width")).toBe("480");
-    expect(window.localStorage.getItem("wikihub:chat-detail")).toBe("detailed");
-    expect(window.localStorage.getItem("something-else")).toBe("x");
-    loadChat("a"); // lifts the stop on writing for the tests that follow
-  });
-
-  it("can spare one person's, and then writing goes on", () => {
-    clearStoredChats("a");
-
-    expect(keys()).toEqual(["wikihub:chat:v1:a"]);
-    saveChat("a", { entries, slots: {} });
-    expect(keys()).toEqual(["wikihub:chat:v1:a"]);
-  });
-
-  it("stops a reply still arriving from bringing the chat back, until one is loaded", () => {
-    clearStoredChats();
-    saveChat("a", { entries, slots: {} });
-    expect(keys()).toEqual([]);
-
-    // The next person's conversation is loaded: writing is allowed again.
-    expect(loadChat("c").entries).toEqual([]);
-    saveChat("c", { entries, slots: {} });
-    expect(keys()).toEqual(["wikihub:chat:v1:c"]);
-  });
-
-  it("does not fail where storage cannot be read", () => {
-    vi.spyOn(Storage.prototype, "key").mockImplementation(() => {
-      throw new Error("blocked");
-    });
-
-    expect(() => clearStoredChats()).not.toThrow();
-    vi.restoreAllMocks();
-    loadChat("a");
   });
 });
 

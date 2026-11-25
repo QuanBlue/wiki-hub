@@ -5,19 +5,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AnswerResult } from "@/lib/ai-answer";
 import {
   ChatStreamError,
-  clearStoredChats,
   conversationFiles,
   EMPTY_CHAT,
   executePlan,
   type ChatDetail,
-  loadChat,
+  messagesToCompact,
   messagesToSend,
-  saveChat,
   streamChat,
+  summarizeThread,
   type AttachedFile,
   type ChatEntry,
-  type ChatState,
 } from "@/lib/ai-chat";
+import {
+  chatThreadKey,
+  loadThread,
+  saveThread,
+  subscribeThreads,
+  type ThreadData,
+} from "@/lib/ai-chat-store";
 
 type Assistant = Extract<ChatEntry, { role: "assistant" }>;
 
@@ -56,21 +61,49 @@ function finished(result: AnswerResult): Partial<Assistant> {
   };
 }
 
+/** The summary that still holds: not one of turns the thread has since been edited past. */
+function summaryFor({ entries, compact }: Omit<ThreadData, "slots">) {
+  return compact && entries.some((entry) => entry.id === compact.upTo)
+    ? compact
+    : undefined;
+}
+
+/** The thread a conversation is kept in when no other is named. */
+export const DEFAULT_THREAD = "default";
+
+/** Told once a thread has the reply to its first question (to give the thread a name). */
+export type FirstAnswer = {
+  threadId: string;
+  question: string;
+  answer: string;
+};
+
 /**
- * The state of one conversation with the wiki: what was asked and answered, the reply that is
- * being written, and the means to ask, stop, edit a question (keeping its earlier versions to go
- * back to), try again and start over. It is kept in this browser for this person, and nowhere
- * else.
+ * The conversations with the wiki, one thread shown at a time: what was asked and answered, the
+ * reply that is being written, and the means to ask, stop, edit a question (keeping its earlier
+ * versions to go back to), try again and start over. Every thread keeps its own reply under way,
+ * so opening another thread does not stop one being written. Kept in this browser for this
+ * person, and nowhere else.
  */
 export function useChat(
   userId: string,
   detail: ChatDetail = "normal",
   fileId: string | null = null,
+  threadId: string = DEFAULT_THREAD,
+  onFirstAnswer?: (first: FirstAnswer) => void,
 ) {
-  const [state, setState] = useState<ChatState>(EMPTY_CHAT);
+  const [state, setState] = useState<ThreadData>(EMPTY_CHAT);
   const [loaded, setLoaded] = useState(false);
-  const stateRef = useRef<ChatState>(EMPTY_CHAT);
-  const controllerRef = useRef<AbortController | null>(null);
+  // Threads with a reply being written, for the list of threads.
+  const [running, setRunning] = useState<string[]>([]);
+  // Threads whose reply arrived while another thread was shown.
+  const [unread, setUnread] = useState<string[]>([]);
+  const threadsRef = useRef(new Map<string, ThreadData>());
+  const controllersRef = useRef(new Map<string, AbortController>());
+  // Threads whose older turns are being summarised.
+  const compactingRef = useRef(new Set<string>());
+  const activeRef = useRef(threadId);
+  const userRef = useRef(userId);
   // The level chosen now, read when a question is sent (also when one is asked again).
   const detailRef = useRef<ChatDetail>(detail);
   useEffect(() => {
@@ -81,53 +114,110 @@ export function useChat(
   useEffect(() => {
     fileRef.current = fileId;
   }, [fileId]);
+  const firstAnswerRef = useRef(onFirstAnswer);
+  useEffect(() => {
+    firstAnswerRef.current = onFirstAnswer;
+  }, [onFirstAnswer]);
 
-  const commit = useCallback((next: ChatState) => {
-    stateRef.current = next;
-    setState(next);
+  /** A thread as it is now: the one in memory, else as it was kept. */
+  const get = useCallback((tid: string): ThreadData => {
+    const known = threadsRef.current.get(tid);
+    if (known) return known;
+    const kept = loadThread(userRef.current, tid);
+    threadsRef.current.set(tid, kept);
+    return kept;
+  }, []);
+
+  /**
+   * Change a thread. It is kept at once, except while only the words of a reply arrive: those
+   * are kept when the reply ends.
+   */
+  const commit = useCallback((tid: string, next: ThreadData, keep = true) => {
+    threadsRef.current.set(tid, next);
+    if (keep) saveThread(userRef.current, tid, next);
+    if (tid === activeRef.current) setState(next);
+  }, []);
+
+  const syncRunning = useCallback(() => {
+    setRunning([...controllersRef.current.keys()]);
+  }, []);
+
+  // Another person, or no-one yet: nothing in memory belongs to them.
+  useEffect(() => {
+    userRef.current = userId;
+    for (const controller of controllersRef.current.values())
+      controller.abort();
+    controllersRef.current.clear();
+    threadsRef.current.clear();
+    syncRunning();
+  }, [userId, syncRunning]);
+
+  // Show the thread asked for - after mount, so the server and the first paint agree.
+  useEffect(() => {
+    activeRef.current = threadId;
+    setUnread((ids) => ids.filter((id) => id !== threadId));
+    setState(get(threadId));
+    setLoaded(true);
+  }, [userId, threadId, get]);
+
+  // Another tab changed a thread: read it again, unless a reply is being written into it here.
+  useEffect(
+    () =>
+      subscribeThreads(userId, (key) => {
+        for (const tid of [...threadsRef.current.keys()]) {
+          if (controllersRef.current.has(tid)) continue;
+          if (key && key !== chatThreadKey(userId, tid)) continue;
+          threadsRef.current.delete(tid);
+          if (tid === activeRef.current) setState(get(tid));
+        }
+      }),
+    [userId, get],
+  );
+
+  useEffect(() => {
+    const controllers = controllersRef.current;
+    return () => {
+      for (const controller of controllers.values()) controller.abort();
+    };
   }, []);
 
   const patchAssistant = useCallback(
-    (id: string, patch: (entry: Assistant) => Partial<Assistant>) => {
-      const { entries, slots } = stateRef.current;
-      commit({
-        slots,
-        entries: entries.map((entry) =>
-          entry.id === id && entry.role === "assistant"
-            ? ({ ...entry, ...patch(entry) } as ChatEntry)
-            : entry,
-        ),
-      });
+    (
+      tid: string,
+      id: string,
+      patch: (entry: Assistant) => Partial<Assistant>,
+      keep = true,
+    ) => {
+      const current = get(tid);
+      commit(
+        tid,
+        {
+          ...current,
+          entries: current.entries.map((entry) =>
+            entry.id === id && entry.role === "assistant"
+              ? ({ ...entry, ...patch(entry) } as ChatEntry)
+              : entry,
+          ),
+        },
+        keep,
+      );
     },
-    [commit],
+    [commit, get],
   );
 
   /** The edited question has its reply (or failed): going back is no longer a way to undo it. */
   const settle = useCallback(
-    (slot: string | undefined) => {
-      const { entries, slots } = stateRef.current;
+    (tid: string, slot: string | undefined) => {
+      const current = get(tid);
+      const { slots } = current;
       if (!slot || slots[slot]?.pending === undefined) return;
-      commit({
-        entries,
+      commit(tid, {
+        ...current,
         slots: { ...slots, [slot]: { ...slots[slot], pending: undefined } },
       });
     },
-    [commit],
+    [commit, get],
   );
-
-  // Read what this browser kept - after mount, so the server and the first paint agree.
-  useEffect(() => {
-    // Whatever another person left in this browser goes before this one's is read.
-    clearStoredChats(userId);
-    commit(loadChat(userId));
-    setLoaded(true);
-  }, [userId, commit]);
-
-  useEffect(() => {
-    if (loaded) saveChat(userId, state);
-  }, [userId, state, loaded]);
-
-  useEffect(() => () => controllerRef.current?.abort(), []);
 
   const busy = state.entries.some(
     (entry) => entry.role === "assistant" && entry.status === "streaming",
@@ -135,11 +225,11 @@ export function useChat(
 
   /** The server no longer has this file (or, unnamed, any of them): shown as expired, not sent. */
   const expire = useCallback(
-    (fileId: string | undefined) => {
-      const { entries, slots } = stateRef.current;
-      commit({
-        slots,
-        entries: entries.map((entry) =>
+    (tid: string, fileId: string | undefined) => {
+      const current = get(tid);
+      commit(tid, {
+        ...current,
+        entries: current.entries.map((entry) =>
           entry.role === "user" && entry.files?.length
             ? {
                 ...entry,
@@ -153,17 +243,62 @@ export function useChat(
         ),
       });
     },
-    [commit],
+    [commit, get],
   );
 
   /**
-   * Ask a question. ``files`` are the ones attached with it; the files of the questions before
-   * it are read again too, so a follow-up still knows them.
+   * Summarise a long thread's older turns, so they are still remembered once they are no
+   * longer read. Done after a reply, out of sight; when it fails it is tried after the next.
+   */
+  const compactOld = useCallback(
+    async (tid: string) => {
+      if (compactingRef.current.has(tid)) return;
+      const { entries, compact } = get(tid);
+      const before = summaryFor({ entries, compact });
+      const due = messagesToCompact(entries, before?.upTo);
+      if (!due) return;
+      compactingRef.current.add(tid);
+      const owner = userRef.current;
+      try {
+        const summary = await summarizeThread(
+          before?.summary ?? "",
+          due.messages,
+        );
+        const now = threadsRef.current.get(tid);
+        // Removed, edited past, or another person's by now: the summary is of nothing.
+        if (owner !== userRef.current || !now || !summary) return;
+        if (!now.entries.some((entry) => entry.id === due.upTo)) return;
+        commit(tid, {
+          ...now,
+          compact: {
+            summary,
+            upTo: due.upTo,
+            count: (before?.count ?? 0) + due.count,
+          },
+        });
+      } catch {
+        // The thread carries on; only its oldest turns are not remembered yet.
+      } finally {
+        compactingRef.current.delete(tid);
+      }
+    },
+    [commit, get],
+  );
+
+  /**
+   * Ask a question in the thread shown. ``files`` are the ones attached with it; the files of
+   * the questions before it are read again too, so a follow-up still knows them.
    */
   const send = useCallback(
-    async (text: string, slot?: string, files: AttachedFile[] = []) => {
+    async (
+      text: string,
+      slot?: string,
+      files: AttachedFile[] = [],
+      target?: string,
+    ) => {
+      const tid = target ?? activeRef.current;
       const question = text.trim();
-      if (!question || controllerRef.current) return;
+      if (!question || controllersRef.current.has(tid)) return;
 
       const reply: Assistant = {
         id: newId(),
@@ -171,9 +306,10 @@ export function useChat(
         content: "",
         status: "streaming",
       };
-      const { entries, slots } = stateRef.current;
+      const current = get(tid);
+      const first = !current.entries.length;
       const withQuestion: ChatEntry[] = [
-        ...entries,
+        ...current.entries,
         {
           id: newId(),
           role: "user",
@@ -186,49 +322,77 @@ export function useChat(
       const fileIds = conversationFiles(withQuestion)
         .filter((file) => !file.expired)
         .map((file) => file.id);
-      commit({ entries: [...withQuestion, reply], slots });
+      commit(tid, { ...current, entries: [...withQuestion, reply] });
 
       const controller = new AbortController();
-      controllerRef.current = controller;
+      controllersRef.current.set(tid, controller);
+      syncRunning();
+      // The file asked about is the shown thread's; another thread's question has none.
+      const scope = tid === activeRef.current ? fileRef.current : null;
       try {
         const result = await streamChat(toSend, {
           signal: controller.signal,
           detail: detailRef.current,
-          attachmentId: fileRef.current,
-          fileIds: fileRef.current ? [] : fileIds,
+          attachmentId: scope,
+          fileIds: scope ? [] : fileIds,
+          summary: summaryFor({ ...current, entries: withQuestion })?.summary,
           onDelta: (piece) =>
-            patchAssistant(reply.id, (entry) => ({
-              content: entry.content + piece,
-              searching: undefined,
-            })),
+            patchAssistant(
+              tid,
+              reply.id,
+              (entry) => ({
+                content: entry.content + piece,
+                searching: undefined,
+              }),
+              false,
+            ),
           onSearching: (query) =>
-            patchAssistant(reply.id, () => ({ searching: query })),
+            patchAssistant(tid, reply.id, () => ({ searching: query }), false),
           onReset: () =>
-            patchAssistant(reply.id, () => ({
-              content: "",
-              searching: undefined,
-            })),
+            patchAssistant(
+              tid,
+              reply.id,
+              () => ({ content: "", searching: undefined }),
+              false,
+            ),
         });
-        patchAssistant(reply.id, () => finished(result));
-        settle(slot);
+        patchAssistant(tid, reply.id, () => finished(result));
+        settle(tid, slot);
+        if (tid !== activeRef.current) {
+          setUnread((ids) => [...ids.filter((id) => id !== tid), tid]);
+        }
+        void compactOld(tid);
+        if (first && result.answer) {
+          firstAnswerRef.current?.({
+            threadId: tid,
+            question,
+            answer: result.answer,
+          });
+        }
       } catch (error) {
         if (controller.signal.aborted) return; // stopped on purpose: stop() has tidied up
         const failure =
           error instanceof ChatStreamError ? error.failure : "error";
         if (failure === "file_expired") {
-          expire(error instanceof ChatStreamError ? error.fileId : undefined);
+          expire(
+            tid,
+            error instanceof ChatStreamError ? error.fileId : undefined,
+          );
         }
-        patchAssistant(reply.id, () => ({
+        patchAssistant(tid, reply.id, () => ({
           status: "error",
           content: "",
           failure,
         }));
-        settle(slot);
+        settle(tid, slot);
       } finally {
-        if (controllerRef.current === controller) controllerRef.current = null;
+        if (controllersRef.current.get(tid) === controller) {
+          controllersRef.current.delete(tid);
+          syncRunning();
+        }
       }
     },
-    [commit, expire, patchAssistant, settle],
+    [commit, compactOld, expire, get, patchAssistant, settle, syncRunning],
   );
 
   /**
@@ -237,8 +401,10 @@ export function useChat(
    */
   const edit = useCallback(
     (id: string, text: string) => {
-      if (controllerRef.current || !text.trim()) return;
-      const { entries, slots } = stateRef.current;
+      const tid = activeRef.current;
+      if (controllersRef.current.has(tid) || !text.trim()) return;
+      const current = get(tid);
+      const { entries, slots } = current;
       const at = entries.findIndex(
         (entry) => entry.id === id && entry.role === "user",
       );
@@ -250,32 +416,46 @@ export function useChat(
         .map((entry, i) =>
           i === 0 && entry.role === "user" ? { ...entry, slot: slotId } : entry,
         );
-      const current = slots[slotId] ?? { variants: [tail], active: 0 };
-      const variants = [...current.variants];
-      variants[current.active] = tail;
+      const existing = slots[slotId] ?? { variants: [tail], active: 0 };
+      const variants = [...existing.variants];
+      variants[existing.active] = tail;
       variants.push([]); // the edited version: filled in when it is switched away from
-      commit({
-        entries: entries.slice(0, at),
-        slots: {
-          ...slots,
-          [slotId]: {
-            variants,
-            active: variants.length - 1,
-            pending: current.active,
+      // Not kept yet: ``send`` keeps it with the question, and an edit of the first question
+      // must not leave the thread empty in between (that removes it, with its name and pin).
+      commit(
+        tid,
+        {
+          ...current,
+          entries: entries.slice(0, at),
+          slots: {
+            ...slots,
+            [slotId]: {
+              variants,
+              active: variants.length - 1,
+              pending: existing.active,
+            },
           },
         },
-      });
+        false,
+      );
       // The edited question keeps the files the first version was sent with.
-      void send(text, slotId, first.role === "user" ? first.files : undefined);
+      void send(
+        text,
+        slotId,
+        first.role === "user" ? first.files : undefined,
+        tid,
+      );
     },
-    [commit, send],
+    [commit, get, send],
   );
 
   /** Show another version of an edited question, with what followed it. */
   const switchVersion = useCallback(
     (slotId: string, delta: -1 | 1) => {
-      if (controllerRef.current) return;
-      const { entries, slots } = stateRef.current;
+      const tid = activeRef.current;
+      if (controllersRef.current.has(tid)) return;
+      const current = get(tid);
+      const { entries, slots } = current;
       const slot = slots[slotId];
       const at = entries.findIndex(
         (entry) => entry.role === "user" && entry.slot === slotId,
@@ -286,41 +466,46 @@ export function useChat(
       }
       const variants = [...slot.variants];
       variants[slot.active] = entries.slice(at);
-      commit({
+      commit(tid, {
+        ...current,
         entries: [...entries.slice(0, at), ...variants[target]],
         slots: { ...slots, [slotId]: { variants, active: target } },
       });
     },
-    [commit],
+    [commit, get],
   );
 
   /**
-   * Give up on the reply being written. The question stays in the conversation, with what was
+   * Give up on the reply being written in the thread shown. The question stays, with what was
    * written of the reply and a note that it was cancelled; asking again is one press away.
    */
   const stop = useCallback((): void => {
-    const controller = controllerRef.current;
+    const tid = activeRef.current;
+    const controller = controllersRef.current.get(tid);
     if (!controller) return;
     controller.abort();
-    controllerRef.current = null;
-    const { entries } = stateRef.current;
+    controllersRef.current.delete(tid);
+    syncRunning();
+    const { entries } = get(tid);
     const last = entries[entries.length - 1];
     const asked = entries[entries.length - 2];
     // A reply is only ever under way as the last of a question and its reply, so the guard
     // below cannot trigger; it is there so a broken state is left alone rather than cut into.
     /* v8 ignore next 3 -- @preserve */
     if (last?.role !== "assistant" || last.status !== "streaming") return;
-    patchAssistant(last.id, () => ({
+    patchAssistant(tid, last.id, () => ({
       status: "cancelled",
       searching: undefined,
     }));
     // A cancelled edit stays too, next to the version it was made from.
-    settle(asked?.role === "user" ? asked.slot : undefined);
-  }, [patchAssistant, settle]);
+    settle(tid, asked?.role === "user" ? asked.slot : undefined);
+  }, [get, patchAssistant, settle, syncRunning]);
 
   /** Ask the last question again, after a reply that failed or was cancelled. */
   const retry = useCallback(() => {
-    const { entries, slots } = stateRef.current;
+    const tid = activeRef.current;
+    const current = get(tid);
+    const { entries } = current;
     const last = entries[entries.length - 1];
     const asked = entries[entries.length - 2];
     if (
@@ -330,9 +515,10 @@ export function useChat(
     ) {
       return;
     }
-    commit({ entries: entries.slice(0, -2), slots });
-    void send(asked.content, asked.slot, asked.files);
-  }, [commit, send]);
+    // Not kept on its own, as in ``edit``.
+    commit(tid, { ...current, entries: entries.slice(0, -2) }, false);
+    void send(asked.content, asked.slot, asked.files, tid);
+  }, [commit, get, send]);
 
   /**
    * Answer a question again. It is an edit that changes nothing: the earlier reply, with what
@@ -341,36 +527,39 @@ export function useChat(
    */
   const regenerate = useCallback(
     (id: string) => {
-      const asked = stateRef.current.entries.find((entry) => entry.id === id);
+      const asked = get(activeRef.current).entries.find(
+        (entry) => entry.id === id,
+      );
       if (asked?.role === "user") edit(id, asked.content);
     },
-    [edit],
+    [edit, get],
   );
 
   /** The person confirmed a proposed plan: run its steps, showing each as it ends. */
   const runPlan = useCallback(
     async (id: string, lang: string): Promise<boolean> => {
-      const found = stateRef.current.entries.find(
+      const tid = activeRef.current;
+      const found = get(tid).entries.find(
         (entry) => entry.id === id && entry.role === "assistant",
       ) as Assistant | undefined;
       if (!found?.plan || found.plan.status !== "pending") return false;
-      patchAssistant(id, (entry) => ({
+      patchAssistant(tid, id, (entry) => ({
         plan: { ...entry.plan!, status: "running", results: [] },
       }));
       try {
         const ok = await executePlan(found.plan.steps, {
           lang,
           onStep: (step) =>
-            patchAssistant(id, (entry) => ({
+            patchAssistant(tid, id, (entry) => ({
               plan: { ...entry.plan!, results: [...entry.plan!.results, step] },
             })),
         });
-        patchAssistant(id, (entry) => ({
+        patchAssistant(tid, id, (entry) => ({
           plan: { ...entry.plan!, status: ok ? "done" : "failed" },
         }));
         return ok;
       } catch (error) {
-        patchAssistant(id, (entry) => ({
+        patchAssistant(tid, id, (entry) => ({
           plan: {
             ...entry.plan!,
             status: "failed",
@@ -387,13 +576,13 @@ export function useChat(
         return false;
       }
     },
-    [patchAssistant],
+    [get, patchAssistant],
   );
 
   /** The person decided not to run the plan. */
   const cancelPlan = useCallback(
     (id: string) =>
-      patchAssistant(id, (entry) =>
+      patchAssistant(activeRef.current, id, (entry) =>
         entry.plan?.status === "pending"
           ? { plan: { ...entry.plan, status: "cancelled" } }
           : {},
@@ -401,21 +590,40 @@ export function useChat(
     [patchAssistant],
   );
 
-  const clear = useCallback(() => {
-    controllerRef.current?.abort();
-    controllerRef.current = null;
-    commit(EMPTY_CHAT);
-  }, [commit]);
+  /** Empty a thread (the one shown, unless another is named), stopping any reply under way. */
+  const clear = useCallback(
+    (target?: string) => {
+      const tid = target ?? activeRef.current;
+      controllersRef.current.get(tid)?.abort();
+      controllersRef.current.delete(tid);
+      syncRunning();
+      commit(tid, EMPTY_CHAT);
+    },
+    [commit, syncRunning],
+  );
 
-  /** Carry on from a question that was answered in the search box. */
+  /** Forget a thread that was removed: a reply under way in it stops, and nothing is kept again. */
+  const forget = useCallback(
+    (tid: string) => {
+      controllersRef.current.get(tid)?.abort();
+      controllersRef.current.delete(tid);
+      threadsRef.current.delete(tid);
+      syncRunning();
+      if (tid === activeRef.current) setState(EMPTY_CHAT);
+    },
+    [syncRunning],
+  );
+
+  /** Carry on from a question that was answered in the search box, in the thread named. */
   const adopt = useCallback(
-    (question: string, result: AnswerResult) => {
-      if (controllerRef.current) return;
-      const { entries, slots } = stateRef.current;
-      commit({
-        slots,
+    (question: string, result: AnswerResult, target?: string) => {
+      const tid = target ?? activeRef.current;
+      if (controllersRef.current.has(tid)) return;
+      const current = get(tid);
+      commit(tid, {
+        ...current,
         entries: [
-          ...entries,
+          ...current.entries,
           { id: newId(), role: "user", content: question },
           {
             id: newId(),
@@ -425,14 +633,17 @@ export function useChat(
         ],
       });
     },
-    [commit],
+    [commit, get],
   );
 
   return {
     entries: state.entries,
     slots: state.slots,
+    compact: summaryFor(state),
     loaded,
     busy,
+    running,
+    unread,
     send,
     edit,
     switchVersion,
@@ -442,6 +653,7 @@ export function useChat(
     runPlan,
     cancelPlan,
     clear,
+    forget,
     adopt,
   };
 }

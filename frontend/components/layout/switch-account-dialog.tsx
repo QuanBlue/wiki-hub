@@ -7,7 +7,6 @@ import { toast } from "sonner";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Avatar, versionedAvatarUrl } from "@/components/ui/avatar";
-import { clearStoredChats } from "@/lib/ai-chat";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
@@ -89,8 +88,6 @@ export function SwitchAccountMenu({
       });
       setExpanded(false);
       onSwitched();
-      // The administrator's own conversation does not follow into someone else's account.
-      clearStoredChats();
       // The cookie changed, so every server-rendered page is now stale.
       router.replace("/");
       router.refresh();

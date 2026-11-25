@@ -4,10 +4,9 @@ import type { AnswerResult } from "@/lib/ai-answer";
 import {
   CHAT_FILE_MAX_BYTES,
   ChatFileError,
-  clearStoredChats,
+  chatKey,
   loadAttached,
   saveAttached,
-  saveChat,
   streamChat,
   uploadChatFile,
 } from "@/lib/ai-chat";
@@ -143,7 +142,7 @@ describe("the files remembered in this browser", () => {
     expect(loadAttached("u2")).toEqual([]);
 
     window.localStorage.setItem(
-      "wikihub:chat:v1:files:u1",
+      chatKey("u1", "files", "new"),
       JSON.stringify([
         { id: "1", filename: "a" },
         { id: 2 },
@@ -155,29 +154,23 @@ describe("the files remembered in this browser", () => {
     );
     expect(loadAttached("u1").map((file) => file.id)).toEqual(["1", "3", "4"]);
 
-    window.localStorage.setItem("wikihub:chat:v1:files:u1", "{}");
+    window.localStorage.setItem(chatKey("u1", "files", "new"), "{}");
     expect(loadAttached("u1")).toEqual([]);
-    window.localStorage.setItem("wikihub:chat:v1:files:u1", "{broken");
+    window.localStorage.setItem(chatKey("u1", "files", "new"), "{broken");
     expect(loadAttached("u1")).toEqual([]);
 
     saveAttached("u1", []);
-    expect(window.localStorage.getItem("wikihub:chat:v1:files:u1")).toBeNull();
+    expect(
+      window.localStorage.getItem(chatKey("u1", "files", "new")),
+    ).toBeNull();
   });
 
-  it("survive the person's own conversation being read, and go when they sign out", () => {
+  it("stay when the person signs out, and each person has their own", () => {
     saveAttached("u1", [{ id: "1", filename: "a.txt" }]);
     saveAttached("u2", [{ id: "2", filename: "b.txt" }]);
-    saveChat("u1", {
-      entries: [{ id: "q", role: "user", content: "hi" }],
-      slots: {},
-    });
 
-    clearStoredChats("u1");
-    expect(loadAttached("u1")).toHaveLength(1);
-    expect(loadAttached("u2")).toEqual([]);
-
-    clearStoredChats();
-    expect(loadAttached("u1")).toEqual([]);
+    expect(loadAttached("u1").map((file) => file.id)).toEqual(["1"]);
+    expect(loadAttached("u2").map((file) => file.id)).toEqual(["2"]);
   });
 
   it("are simply not kept when storage refuses", () => {

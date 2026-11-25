@@ -385,7 +385,9 @@ export const sectionsVi: HelpSection[] = [
           <li>
             <strong>Kích thước</strong>: kéo cạnh trái của khung để rộng ra hoặc hẹp lại (bấm đúp vào
             cạnh để về mặc định), dùng nút mở rộng để chiếm cả trang, hoặc dùng phím mũi tên khi đang
-            chọn cạnh. Bấm ra ngoài khung thì khung đóng lại; cuộc trò chuyện vẫn còn.
+            chọn cạnh. Khi khung rộng, danh sách đoạn chat cũng chỉnh rộng hẹp theo cách đó bằng cạnh
+            phải của nó. Cả hai độ rộng được nhớ trong trình duyệt này. Bấm ra ngoài khung thì khung
+            đóng lại; cuộc trò chuyện vẫn còn.
           </li>
           <li>
             <strong>Câu trả lời đến từ đâu</strong>: trước hết là wiki của bạn, với các dấu số như{" "}
@@ -488,12 +490,49 @@ export const sectionsVi: HelpSection[] = [
             nhiều dòng, mũi tên di chuyển trong văn bản.
           </li>
           <li>
-            <strong>Cuộc trò chuyện</strong> chỉ lưu trong trình duyệt này, theo tài khoản của bạn, và bị xóa
-            khi bạn đăng xuất hoặc đổi tài khoản. Dùng{" "}
-            <Code>Chat mới</Code> để xóa. <Code>Dừng</Code> hủy câu trả lời: câu hỏi vẫn còn, kèm
+            <strong>Đoạn chat.</strong> Mỗi chủ đề có thể có một đoạn chat riêng. <Code>Chat mới</Code>{" "}
+            tạo đoạn mới (<Kbd>Ctrl+Shift+O</Kbd> khi đang ở trong khung chat) và các đoạn cũ vẫn còn
+            trong danh sách: nằm cạnh cuộc trò chuyện khi khung rộng, nếu không thì mở bằng nút ở góc
+            trên bên trái, và các đoạn gần nhất nằm dưới tên đoạn chat. <Code>Ẩn danh sách chat</Code> thu
+            danh sách cạnh cuộc trò chuyện thành một dải hẹp, từ đó vẫn tạo đoạn mới, tìm và mở lại
+            danh sách được; trên khung hẹp, đóng danh sách hoặc vuốt nó sang trái. Đoạn chat được đặt
+            tên theo câu hỏi đầu cho tới khi AI đặt cho một tên ngắn (tính vào hạn mức AI của bạn);
+            bạn có thể tự đổi tên bằng cách bấm vào tên ở đầu khung rộng, bằng{" "}
+            <Code>Đổi tên đoạn chat này</Code> dưới tên ở khung hẹp, hoặc bằng <Code>⋯</Code> hay{" "}
+            <Kbd>F2</Kbd> trong danh sách, và tên bạn đặt không bao giờ bị thay. Ghim để giữ đoạn chat
+            ở trên cùng. <Code>⋯</Code> còn có <Code>Xuất ra file</Code> cho riêng đoạn đó. Phần bạn
+            đang gõ chưa gửi và các tệp đang chờ trong ô nhập đi theo đúng đoạn chat đã đưa vào.{" "}
+            <Code>⋯</Code> hoặc <Kbd>Delete</Kbd> xóa đoạn chat
+            cùng toàn bộ nội dung, sau khi bạn xác nhận. <Code>Tìm đoạn chat</Code>{" "}
+            (<Kbd>Ctrl+K</Kbd> khi danh sách đang hiện) tìm trong tên và mọi nội dung, có dấu hay
+            không dấu đều được, rồi mở đúng tin nhắn tìm thấy. Bạn có thể mở đoạn chat khác trong
+            khi một câu trả lời đang được viết; dấu chấm cho biết đoạn nào có câu trả lời mới.
+          </li>
+          <li>
+            <strong>Trí nhớ của đoạn chat dài.</strong> AI đọc các tin nhắn gần nhất cùng mỗi câu
+            hỏi. Với đoạn chat dài, các tin cũ được tự động tóm tắt (cũng tính vào hạn mức AI), và
+            dòng <Code>Đã tóm tắt … tin nhắn trước để AI ghi nhớ</Code> đánh dấu vị trí; bấm vào để
+            xem AI đang nhớ gì.
+          </li>
+          <li>
+            <strong>Đoạn chat được lưu ở đâu.</strong> Chỉ trong trình duyệt này, theo tài khoản của
+            bạn - không lưu trên máy chủ, nên máy hoặc trình duyệt khác sẽ không thấy. Chúng được mã
+            hóa bằng khóa chỉ cấp cho bạn khi đang đăng nhập: sau khi bạn đăng xuất, người mở dữ liệu
+            trình duyệt không đọc được (kể cả tên file đính kèm và phần đang gõ dở). Với địa chỉ{" "}
+            <Code>http</Code> thường thì đường truyền mạng không được bảo vệ, và file đã xuất ra không
+            được mã hóa. Nếu quản trị viên đổi khóa của máy chủ, các đoạn đã lưu không đọc được cho tới
+            khi khóa cũ được đặt lại; nếu không lấy được khóa thì có thông báo, và không gì được lưu
+            thêm hay bị xóa cho tới khi bạn tải lại trang. Chúng vẫn còn sau khi bạn đăng xuất; xóa dữ liệu trình duyệt sẽ làm mất, và khi bộ nhớ trình duyệt đầy
+            thì các đoạn cũ nhất không được ghim sẽ bị bỏ, kèm thông báo tên những đoạn của bạn đã bị
+            bỏ (đoạn nào cần giữ lâu dài thì hãy xuất ra file). Trên máy dùng chung, hãy xóa những gì
+            người khác không nên thấy. Quản trị viên xem với tư cách người khác không thấy đoạn chat
+            của người đó và cũng không lưu lại gì.
+          </li>
+          <li>
+            <strong>Cuộc trò chuyện.</strong> <Code>Dừng</Code> hủy câu trả lời: câu hỏi vẫn còn, kèm
             phần đã viết và ghi chú bạn đã hủy, và <Code>Thử lại</Code> hỏi lại lần nữa. Rê chuột vào một câu hỏi và bấm <Code>Trả lời lại</Code> để nhận câu trả lời
             mới; câu trả lời cũ vẫn còn, dùng mũi tên <Code>1 / 2</Code> để quay lại. Từ một câu trả lời trong tìm kiếm, <Code>Tiếp tục trong chat</Code> sẽ chuyển
-            sang chat. Nút tải xuống cạnh <Code>Chat mới</Code> lưu cả cuộc trò chuyện thành file Markdown: mọi câu hỏi, câu trả lời kèm trang, tệp và trang web đã dùng - để lưu lại, hoặc gửi đi khi một câu trả lời sai. Câu trả lời quá dài phải dừng giữa chừng sẽ ghi rõ ở cuối; gõ <Code>tiếp tục</Code> (hoặc chỉ ra phần còn thiếu) để xem phần còn lại. Muốn hỏi nhiều câu một lúc - dán nguyên một bài kiểm tra hay biểu mẫu - hãy giữ số thứ tự (<Code>Câu hỏi 1</Code>, <Code>Câu 2</Code>...): mỗi câu được tìm riêng và trả lời lần lượt theo đúng số, với phương án đúng của câu trắc nghiệm. Mỗi câu hỏi dài tối đa 4.000 ký tự; gần tới giới hạn sẽ có bộ đếm. Muốn hỏi về tài liệu của riêng bạn, bấm biểu tượng kẹp giấy cạnh ô nhập (hoặc kéo-thả, dán file vào đó): tối đa 3 file mỗi cuộc trò chuyện, dạng Word, PDF, Excel, CSV, HTML, Markdown hoặc văn bản, mỗi file tối đa 20 MB. Trợ lý đọc file <em>cùng với</em> wiki - &ldquo;bản nháp của tôi có đúng quy định không?&rdquo; - và trích dẫn là <Code>[f1]</Code>, <Code>[f2]</Code>; bấm vào để xem đoạn đã đọc. File hiện ngay trên câu hỏi được gửi kèm, và mọi câu hỏi sau trong cuộc trò chuyện đều đọc lại nó, nên chỉ cần đính kèm một lần. File của bạn được ưu tiên: câu trả lời được tìm trong file trước, wiki chỉ dùng để bổ sung hoặc đối chiếu. Với file dài, trợ lý đọc phần đầu và các đoạn hoặc hàng bảng khớp với câu hỏi (mỗi hàng của bảng tính giữ tên dịch vụ hoặc mục mà nó thuộc về). Dán đoạn chữ dài hơn giới hạn của ô nhập thì đoạn đó tự được đính kèm thành file văn bản. Câu hỏi đếm hoặc liệt kê trên một bảng lớn trong trang (&ldquo;QuanNT phụ trách bao nhiêu tiêu chí?&rdquo;) sẽ đọc mọi hàng có nhắc tới điều bạn hỏi, nên con số đếm được tính trên cả bảng. Một cái tên được nhận ra dù bảng viết kiểu nào - <Code>QuanNT</Code>, <Code>QuânNT</Code>, <Code>Quan NT</Code> hay <Code>Quân NT</Code> - và tính là một, câu trả lời cũng nêu các cách viết đã gặp. Chỉ phần chữ được giữ, riêng cho bạn và trong một ngày kể từ câu hỏi cuối, không bao giờ lưu vào wiki; sau đó hãy đính kèm lại. PDF ảnh quét không có chữ để đọc.
+            sang chat. Nút tải xuống ở đầu khung chat lưu cả cuộc trò chuyện thành file Markdown: mọi câu hỏi, câu trả lời kèm trang, tệp và trang web đã dùng - để lưu lại, hoặc gửi đi khi một câu trả lời sai. Câu trả lời quá dài phải dừng giữa chừng sẽ ghi rõ ở cuối; gõ <Code>tiếp tục</Code> (hoặc chỉ ra phần còn thiếu) để xem phần còn lại. Muốn hỏi nhiều câu một lúc - dán nguyên một bài kiểm tra hay biểu mẫu - hãy giữ số thứ tự (<Code>Câu hỏi 1</Code>, <Code>Câu 2</Code>...): mỗi câu được tìm riêng và trả lời lần lượt theo đúng số, với phương án đúng của câu trắc nghiệm. Mỗi câu hỏi dài tối đa 4.000 ký tự; gần tới giới hạn sẽ có bộ đếm. Muốn hỏi về tài liệu của riêng bạn, bấm biểu tượng kẹp giấy cạnh ô nhập (hoặc kéo-thả, dán file vào đó): tối đa 3 file mỗi cuộc trò chuyện, dạng Word, PDF, Excel, CSV, HTML, Markdown hoặc văn bản, mỗi file tối đa 20 MB. Trợ lý đọc file <em>cùng với</em> wiki - &ldquo;bản nháp của tôi có đúng quy định không?&rdquo; - và trích dẫn là <Code>[f1]</Code>, <Code>[f2]</Code>; bấm vào để xem đoạn đã đọc. File hiện ngay trên câu hỏi được gửi kèm, và mọi câu hỏi sau trong cuộc trò chuyện đều đọc lại nó, nên chỉ cần đính kèm một lần. File của bạn được ưu tiên: câu trả lời được tìm trong file trước, wiki chỉ dùng để bổ sung hoặc đối chiếu. Với file dài, trợ lý đọc phần đầu và các đoạn hoặc hàng bảng khớp với câu hỏi (mỗi hàng của bảng tính giữ tên dịch vụ hoặc mục mà nó thuộc về). Dán đoạn chữ dài hơn giới hạn của ô nhập thì đoạn đó tự được đính kèm thành file văn bản. Câu hỏi đếm hoặc liệt kê trên một bảng lớn trong trang (&ldquo;QuanNT phụ trách bao nhiêu tiêu chí?&rdquo;) sẽ đọc mọi hàng có nhắc tới điều bạn hỏi, nên con số đếm được tính trên cả bảng. Một cái tên được nhận ra dù bảng viết kiểu nào - <Code>QuanNT</Code>, <Code>QuânNT</Code>, <Code>Quan NT</Code> hay <Code>Quân NT</Code> - và tính là một, câu trả lời cũng nêu các cách viết đã gặp. Chỉ phần chữ được giữ, riêng cho bạn và trong một ngày kể từ câu hỏi cuối, không bao giờ lưu vào wiki; sau đó hãy đính kèm lại. PDF ảnh quét không có chữ để đọc.
           </li>
           <li>
             <strong>Quản trị viên</strong> bật tại Quản trị, Trợ lý AI, <Code>Tìm kiếm web</Code>: chọn

@@ -35,6 +35,29 @@ vi.mock("@/components/layout/switch-account-dialog", () => ({
     </div>
   ),
 }));
+vi.mock("@/components/account/status-dialog", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/account/status-dialog")>();
+  return {
+    ...actual,
+    UserStatusDialog: ({
+      open,
+      onUpdated,
+    }: {
+      open: boolean;
+      onUpdated: (u: Record<string, unknown>) => void;
+    }) =>
+      open ? (
+        <div role="dialog" aria-label="Status dialog">
+          <button
+            type="button"
+            onClick={() => onUpdated({ status_emoji: "🔥", status_text: "Busy", status_expires_at: null })}
+          >
+            Save status
+          </button>
+        </div>
+      ) : null,
+  };
+});
 
 const mocked = vi.mocked(api);
 
@@ -144,7 +167,7 @@ describe("UserMenu", () => {
   });
 
   it("signs out and returns to the login page", async () => {
-    window.localStorage.setItem("wikihub:chat:v1:u-1", "[]");
+    window.localStorage.setItem("wikihub:chat:v2:u-1:index", "{}");
     window.localStorage.setItem("wikihub:chat-width", "500");
     const actor = userEvent.setup();
     render(<UserMenu user={makeUser()} />);
@@ -154,15 +177,15 @@ describe("UserMenu", () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
     expect(mocked.post).toHaveBeenCalledWith("/api/v1/auth/logout");
     expect(refresh).toHaveBeenCalled();
-    // What was asked of the assistant does not stay for the next person; a preference does.
-    expect(window.localStorage.getItem("wikihub:chat:v1:u-1")).toBeNull();
+    // The person's chats stay in this browser for when they sign in again, as a preference does.
+    expect(window.localStorage.getItem("wikihub:chat:v2:u-1:index")).toBe("{}");
     expect(window.localStorage.getItem("wikihub:chat-width")).toBe("500");
     window.localStorage.clear();
   });
 
   it("reports a failed sign-out and allows another try", async () => {
     mocked.post.mockRejectedValueOnce(new ApiError(500, "x", "Server down."));
-    window.localStorage.setItem("wikihub:chat:v1:u-1", "[]");
+    window.localStorage.setItem("wikihub:chat:v2:u-1:index", "{}");
     const actor = userEvent.setup();
     render(<UserMenu user={makeUser()} />);
     await actor.click(trigger("Ann Lee"));
@@ -171,10 +194,37 @@ describe("UserMenu", () => {
     await waitFor(() => expect(toastError).toHaveBeenCalled());
     expect(replace).not.toHaveBeenCalled();
     // Still signed in, so the conversation stays.
-    expect(window.localStorage.getItem("wikihub:chat:v1:u-1")).toBe("[]");
+    expect(window.localStorage.getItem("wikihub:chat:v2:u-1:index")).toBe("{}");
     window.localStorage.clear();
 
     await actor.click(trigger("Ann Lee"));
     expect(screen.getByRole("menuitem", { name: /Sign out/ })).not.toHaveAttribute("data-disabled");
+  });
+
+  it("shows active status emoji and opens status dialog on badge click", async () => {
+    const actor = userEvent.setup();
+    const userWithStatus = makeUser({
+      status_emoji: "🚀",
+      status_text: "Coding",
+      status_expires_at: new Date(Date.now() + 3600000).toISOString(),
+    });
+    render(<UserMenu user={userWithStatus} />);
+    await actor.click(trigger("Ann Lee"));
+    expect(screen.getAllByText("🚀").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Update status")).toBeInTheDocument();
+
+    const badge = screen.getByText("Coding");
+    await actor.click(badge);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await actor.click(screen.getByRole("button", { name: "Save status" }));
+  });
+
+  it("opens status dialog from menu item when user has no status", async () => {
+    const actor = userEvent.setup();
+    render(<UserMenu user={makeUser({ status_emoji: "", status_text: "" })} />);
+    await actor.click(trigger("Ann Lee"));
+    const setStatusItem = screen.getByRole("menuitem", { name: /Set status/i });
+    await actor.click(setStatusItem);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 });

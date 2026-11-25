@@ -108,7 +108,7 @@ export async function AppShell({
         >
           {children}
         </AppMain>
-        <ChatWidget userId={user.id} />
+        <ChatWidget userId={user.id} persist={!user.impersonator} />
         {/* An administrator acting as someone is not that person using the app. */}
         {user.impersonator ? null : <ActivityHeartbeat />}
         {user.impersonator ? (

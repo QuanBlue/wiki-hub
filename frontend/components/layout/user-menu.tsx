@@ -30,7 +30,6 @@ import {
 import { Avatar, versionedAvatarUrl } from "@/components/ui/avatar";
 import { ReportIssueDialog } from "@/components/issues/report-issue-dialog";
 import { SwitchAccountMenu } from "@/components/layout/switch-account-dialog";
-import { clearStoredChats } from "@/lib/ai-chat";
 import { api } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
@@ -70,8 +69,6 @@ export function UserMenu({ user }: { user: Me }) {
     try {
       // Clears the httpOnly cookie server-side; the client cannot delete it.
       await api.post<void>("/api/v1/auth/logout");
-      // What was asked of the assistant does not stay in the browser for the next person.
-      clearStoredChats();
       router.replace("/login");
       router.refresh();
     } catch (error) {

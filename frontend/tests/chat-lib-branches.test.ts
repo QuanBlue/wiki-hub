@@ -2,12 +2,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useChat } from "@/components/chat/use-chat";
-import {
-  executePlan,
-  loadChat,
-  saveDetail,
-  type ChatEntry,
-} from "@/lib/ai-chat";
+import { executePlan, saveDetail, type ChatEntry } from "@/lib/ai-chat";
+import { chatThreadKey, loadThread } from "@/lib/ai-chat-store";
 import { chatToMarkdown, downloadMarkdown } from "@/lib/chat-export";
 
 const LABELS = {
@@ -92,7 +88,7 @@ describe("what the browser keeps", () => {
 
   it("brings back a plan that was running as one that failed", () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:u1",
+      chatThreadKey("u1", "t"),
       JSON.stringify({
         entries: [
           { id: "q", role: "user", content: "do it" },
@@ -108,7 +104,7 @@ describe("what the browser keeps", () => {
       }),
     );
 
-    const [, answer] = loadChat("u1").entries;
+    const [, answer] = loadThread("u1", "t").entries;
     expect(answer.role === "assistant" && answer.plan?.status).toBe("failed");
   });
 });
@@ -144,7 +140,7 @@ describe("running a plan", () => {
 describe("cancelling a plan", () => {
   it("leaves a plan that is no longer waiting as it is", async () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:u1",
+      chatThreadKey("u1", "default"),
       JSON.stringify({
         entries: [
           { id: "q", role: "user", content: "do it" },

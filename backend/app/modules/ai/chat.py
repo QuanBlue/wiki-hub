@@ -86,6 +86,7 @@ from app.modules.stats.recorder import record_ai_usage
 from app.schemas.ai import (
     CHAT_HISTORY_CHARS,
     CHAT_MAX_MESSAGES,
+    CHAT_SUMMARY_CHARS,
     AnswerAction,
     AnswerResult,
     AnswerSource,
@@ -225,6 +226,26 @@ def _history(turns: list[ChatMessage]) -> list[dict[str, str]]:
         elif messages or turn.role == "user":
             messages.append({"role": turn.role, "content": text})
     return messages
+
+
+#: Tags framing the summary of earlier turns: its words must not close them.
+_SUMMARY_TAGS = re.compile(r"</?\s*earlier_conversation\b[^>]*>", re.IGNORECASE)
+
+
+def _remembered(summary: str) -> list[dict[str, str]]:
+    """The summary of the turns no longer sent, as an exchange before the history. It comes
+    from the browser like the history does, so it is read as what was said, not as rules."""
+    text = _SUMMARY_TAGS.sub(" ", prompt_text(summary))[:CHAT_SUMMARY_CHARS].strip()
+    if not text:
+        return []
+    return [
+        {
+            "role": "user",
+            "content": "<earlier_conversation>\nA summary of what we said before:\n"
+            f"{text}\n</earlier_conversation>",
+        },
+        {"role": "assistant", "content": "Understood."},
+    ]
 
 
 def _last_questions(turns: list[ChatMessage]) -> str:
@@ -1063,7 +1084,12 @@ class ChatService:
                 files=bool(attached),
             ),
         }
-        messages = [system, *_history(turns[:-1]), messages[-1]]
+        messages = [
+            system,
+            *_remembered(request.summary),
+            *_history(turns[:-1]),
+            messages[-1],
+        ]
         return ChatTurn(
             config,
             self.user,

@@ -124,7 +124,9 @@ describe("files attached in the chat", () => {
     expect(
       screen.queryByRole("button", { name: "Remove notes.txt" }),
     ).toBeNull();
-    expect(window.localStorage.getItem("wikihub:chat:v1:files:u1")).toBeNull();
+    expect(
+      window.localStorage.getItem("wikihub:chat:v2:u1:files:new"),
+    ).toBeNull();
   });
 
   it("sent earlier are read again by the next question, and count towards the three", async () => {
@@ -158,7 +160,11 @@ describe("files attached in the chat", () => {
     }));
     pick("b.txt", "c.txt", "d.txt");
     // One was sent already: two more fit.
-    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(3));
+    const uploads = () =>
+      vi
+        .mocked(api.post)
+        .mock.calls.filter(([path]) => path === "/api/v1/ai/chat/files");
+    await waitFor(() => expect(uploads()).toHaveLength(3));
   });
 
   it("go with a question that is edited", async () => {
@@ -246,7 +252,7 @@ describe("files attached in the chat", () => {
 
   it("that expired show so on their question, are not sent again, and free their place", async () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:files:u1",
+      "wikihub:chat:v2:u1:files:new",
       JSON.stringify([
         { id: "old", filename: "old.txt" },
         { id: "new", filename: "new.txt" },
@@ -276,7 +282,7 @@ describe("files attached in the chat", () => {
 
   it("show their kind by extension, or as a file without one", async () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:files:u1",
+      "wikihub:chat:v2:u1:files:new",
       JSON.stringify([
         { id: "1", filename: "Bang tham so.xlsx" },
         { id: "2", filename: "README" },
@@ -294,7 +300,7 @@ describe("files attached in the chat", () => {
 
   it("that the server cannot name are all shown as expired", async () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:files:u1",
+      "wikihub:chat:v2:u1:files:new",
       JSON.stringify([{ id: "old", filename: "old.txt" }]),
     );
     streamChat.mockRejectedValue(new ChatStreamError("file_expired"));
@@ -426,7 +432,7 @@ describe("attaching by dropping or pasting", () => {
 
   it("with three files attached, the drop area says there is no room", async () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:files:u1",
+      "wikihub:chat:v2:u1:files:new",
       JSON.stringify([
         { id: "1", filename: "a.txt" },
         { id: "2", filename: "b.txt" },
@@ -497,7 +503,7 @@ describe("attaching by dropping or pasting", () => {
 
   it("with no room for another file, long words are pasted as they are", async () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:files:u1",
+      "wikihub:chat:v2:u1:files:new",
       JSON.stringify([
         { id: "1", filename: "a.txt" },
         { id: "2", filename: "b.txt" },
@@ -525,7 +531,7 @@ describe("the answer's attached files", () => {
 
   it("open and close to show what was read, and go into the saved conversation", async () => {
     window.localStorage.setItem(
-      "wikihub:chat:v1:files:u1",
+      "wikihub:chat:v2:u1:files:new",
       JSON.stringify([{ id: "file-1", filename: "notes.txt" }]),
     );
     streamChat.mockResolvedValue({
@@ -579,7 +585,7 @@ describe("the answer's attached files", () => {
     await waitFor(() =>
       expect(
         JSON.parse(
-          window.localStorage.getItem("wikihub:chat:v1:files:u1") ?? "[]",
+          window.localStorage.getItem("wikihub:chat:v2:u1:files:new") ?? "[]",
         ),
       ).toEqual([{ id: "good", filename: "good.txt" }]),
     );
