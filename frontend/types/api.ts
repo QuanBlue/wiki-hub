@@ -519,8 +519,10 @@ export type InboxCounts = Record<InboxFilter, number>;
 /** What happened to a request submitted from the public form. */
 export type ContactDelivery = "sent" | "failed" | "no_mailbox";
 
-export type MailLogStatus = "sent" | "failed";
-export type MailLogStatusFilter = "all" | MailLogStatus;
+export type MailLogStatus = "sent" | "partial" | "failed";
+export type MailLogStatusFilter = "all" | "sent" | "failed";
+export type MailLogSortField = "created_at" | "status" | "kind" | "to_email" | "subject";
+export type MailLogSortOrder = "asc" | "desc";
 export type MailLogKind =
   | "contact_request"
   | "account_created"
@@ -530,6 +532,15 @@ export type MailLogKind =
   | "issue_created"
   | "issue_assigned"
   | "issue_closed";
+
+export interface MailLogRecipient {
+  to_email: string;
+  from_email: string;
+  mailbox_id: string | null;
+  status: "sent" | "failed";
+  error_code: string | null;
+  error: string | null;
+}
 
 export interface AdminMailLog {
   id: string;
@@ -542,6 +553,7 @@ export interface AdminMailLog {
   status: MailLogStatus;
   error_code: string | null;
   error: string | null;
+  recipients: MailLogRecipient[] | null;
   actor_id: string | null;
   actor_username: string | null;
 }

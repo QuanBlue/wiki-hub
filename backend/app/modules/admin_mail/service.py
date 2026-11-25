@@ -192,6 +192,67 @@ class AdminMailService:
             return
         cls._apply(mailbox, outcome)
 
+    def _record_batch_log(
+        self,
+        *,
+        kind: MailLogKind | str,
+        subject: str,
+        deliveries: list[dict[str, object]],
+        actor: User | None = None,
+    ) -> None:
+        """Record a single grouped log entry for a broadcast email sent to one
+        or more recipients (e.g. contact request or new issue notifications)."""
+        if not deliveries:
+            return
+        effective_actor = actor if actor is not None else self.actor
+        sent_count = sum(1 for item in deliveries if item.get("status") == "sent")
+        failed_items = [item for item in deliveries if item.get("status") != "sent"]
+        if sent_count == len(deliveries):
+            status = "sent"
+        elif sent_count == 0:
+            status = "failed"
+        else:
+            status = "partial"
+
+        to_emails = ", ".join(str(item["to_email"]) for item in deliveries if item.get("to_email"))
+        from_emails = ", ".join(
+            dict.fromkeys(str(item["from_email"]) for item in deliveries if item.get("from_email"))
+        )
+        first_mailbox_id: uuid.UUID | None = None
+        for item in deliveries:
+            raw_id = item.get("mailbox_id")
+            if raw_id:
+                first_mailbox_id = (
+                    raw_id if isinstance(raw_id, uuid.UUID) else uuid.UUID(str(raw_id))
+                )
+                break
+        error_code = (
+            str(failed_items[0].get("error_code") or "error")[:32] if failed_items else None
+        )
+        error_summary = (
+            "; ".join(
+                f"{item['to_email']}: {item.get('error') or item.get('error_code') or 'failed'}"
+                for item in failed_items
+            )
+            if failed_items
+            else None
+        )
+        self.repo.add(
+            AdminMailLog(
+                mailbox_id=first_mailbox_id,
+                from_email=from_emails[:320],
+                to_email=to_emails[:320],
+                subject=subject[:500],
+                kind=str(kind),
+                status=status,
+                error_code=error_code,
+                error=error_summary,
+                recipients=deliveries,
+                actor_id=effective_actor.id if effective_actor is not None else None,
+                actor_username=effective_actor.username if effective_actor is not None else None,
+            )
+        )
+
     def _record_log(
         self,
         *,
@@ -715,6 +776,7 @@ class AdminMailService:
         outcomes = await asyncio.gather(*(deliver(mailbox) for mailbox in mailboxes))
 
         delivered = 0
+        batch_deliveries: list[dict[str, object]] = []
         for mailbox, outcome in zip(mailboxes, outcomes, strict=True):
             recipient = recipients[mailbox.id]
             recipient.delivery_status = (
@@ -724,14 +786,15 @@ class AdminMailService:
             # A send is as good a check as the hourly one, and shows the
             # banner now instead of up to an hour later.
             self._apply_send_outcome(mailbox, outcome)
-            self._record_log(
-                kind=MailLogKind.contact_request,
-                to_email=mailbox.email,
-                subject=subject,
-                ok=outcome.ok,
-                mailbox=mailbox,
-                error_code=outcome.health.value,
-                error=outcome.error,
+            batch_deliveries.append(
+                {
+                    "to_email": mailbox.email,
+                    "from_email": mailbox.email,
+                    "mailbox_id": str(mailbox.id),
+                    "status": "sent" if outcome.ok else "failed",
+                    "error_code": None if outcome.ok else outcome.health.value,
+                    "error": None if outcome.ok else outcome.error,
+                }
             )
             delivered += int(outcome.ok)
 
@@ -740,19 +803,12 @@ class AdminMailService:
                 candidates = list(pool)
                 random.shuffle(candidates)
                 last_outcome: smtp.SmtpOutcome | None = None
+                last_box: AdminMailbox | None = None
                 for relay_box in candidates:
                     outcome = await deliver(relay_box, to=admin.email)
                     self._apply_send_outcome(relay_box, outcome)
-                    self._record_log(
-                        kind=MailLogKind.contact_request,
-                        to_email=admin.email,
-                        subject=subject,
-                        ok=outcome.ok,
-                        mailbox=relay_box,
-                        error_code=outcome.health.value,
-                        error=outcome.error,
-                    )
                     last_outcome = outcome
+                    last_box = relay_box
                     if outcome.ok or outcome.recipient_error:
                         break
                 recipient = rows[admin.id]
@@ -761,7 +817,23 @@ class AdminMailService:
                     DeliveryStatus.sent.value if ok else DeliveryStatus.failed.value
                 )
                 recipient.delivery_error = None if ok else (last_outcome.error if last_outcome else None)
+                batch_deliveries.append(
+                    {
+                        "to_email": admin.email,
+                        "from_email": last_box.email if last_box is not None else "",
+                        "mailbox_id": str(last_box.id) if last_box is not None else None,
+                        "status": "sent" if ok else "failed",
+                        "error_code": None if ok else (last_outcome.health.value if last_outcome else "error"),
+                        "error": None if ok else (last_outcome.error if last_outcome else None),
+                    }
+                )
                 delivered += int(ok)
+
+        self._record_batch_log(
+            kind=MailLogKind.contact_request,
+            subject=subject,
+            deliveries=batch_deliveries,
+        )
 
         await self.session.flush()
 
@@ -942,21 +1014,25 @@ class AdminMailService:
         to: str,
         reply_to: str | None = None,
         actor: User | None = None,
+        record_log: bool = True,
     ) -> AccountEmailResult:
         self._last_deliver_recipient_error = False
+        self._last_deliver_error_code: str | None = None
         if not is_deliverable_address(to):
             self._last_deliver_recipient_error = True
+            self._last_deliver_error_code = "undeliverable"
             reason = f"Recipient address '{to}' uses a non-routable or invalid domain."
-            self._record_log(
-                kind=kind,
-                to_email=to,
-                subject=subject,
-                ok=False,
-                mailbox=mailbox,
-                error_code="undeliverable",
-                error=reason,
-                actor=actor,
-            )
+            if record_log:
+                self._record_log(
+                    kind=kind,
+                    to_email=to,
+                    subject=subject,
+                    ok=False,
+                    mailbox=mailbox,
+                    error_code="undeliverable",
+                    error=reason,
+                    actor=actor,
+                )
             return AccountEmailResult(email_sent=False, email_error=reason)
         try:
             config = self._config(mailbox)
@@ -973,19 +1049,21 @@ class AdminMailService:
                 timeout_seconds=settings.mail_send_timeout_seconds,
             )
         self._last_deliver_recipient_error = bool(not outcome.ok and outcome.recipient_error)
+        self._last_deliver_error_code = None if outcome.ok else outcome.health.value
         # A send is as good a health check as the hourly one, unless the
         # failure was caused by a rejected recipient address.
         self._apply_send_outcome(mailbox, outcome)
-        self._record_log(
-            kind=kind,
-            to_email=to,
-            subject=subject,
-            ok=outcome.ok,
-            mailbox=mailbox,
-            error_code=outcome.health.value,
-            error=outcome.error,
-            actor=actor,
-        )
+        if record_log:
+            self._record_log(
+                kind=kind,
+                to_email=to,
+                subject=subject,
+                ok=outcome.ok,
+                mailbox=mailbox,
+                error_code=outcome.health.value,
+                error=outcome.error,
+                actor=actor,
+            )
         return AccountEmailResult(
             email_sent=outcome.ok, email_error=None if outcome.ok else outcome.error
         )
@@ -1001,11 +1079,14 @@ class AdminMailService:
         to: str,
         reply_to: str | None = None,
         actor: User | None = None,
-    ) -> AccountEmailResult:
+        record_log: bool = True,
+    ) -> tuple[AccountEmailResult, AdminMailbox | None]:
         candidates = list(pool)
         random.shuffle(candidates)
         last_result = AccountEmailResult(email_sent=False, email_error="No mailbox available.")
+        last_mailbox: AdminMailbox | None = None
         for mailbox in candidates:
+            last_mailbox = mailbox
             last_result = await self._deliver(
                 mailbox,
                 kind=kind,
@@ -1015,10 +1096,11 @@ class AdminMailService:
                 to=to,
                 reply_to=reply_to,
                 actor=actor,
+                record_log=record_log,
             )
             if last_result.email_sent or getattr(self, "_last_deliver_recipient_error", False):
-                return last_result
-        return last_result
+                return last_result, mailbox
+        return last_result, last_mailbox
 
     async def send_account_email(
         self, actor: User, *, to_user: User, password: str, created: bool, login_url: str | None
@@ -1150,7 +1232,9 @@ class AdminMailService:
         reporter_name = " ".join((reporter.full_name or reporter.username).split())
         reply_to = reporter.email if is_deliverable_address(reporter.email) else None
 
+        subject = f"[{effective.site_name}] New issue: {issue_title}"
         sent = 0
+        batch_deliveries: list[dict[str, object]] = []
         for user, target_email in targets:
             text, html = email_templates.issue_created(
                 brand,
@@ -1162,21 +1246,52 @@ class AdminMailService:
                 issue_url=public_link(f"/admin/issues?issue={issue_id}"),
             )
             try:
-                result = await self._deliver_with_pool_fallback(
+                result, used_box = await self._deliver_with_pool_fallback(
                     pool,
                     kind=MailLogKind.issue_created,
-                    subject=f"[{effective.site_name}] New issue: {issue_title}",
+                    subject=subject,
                     text=text,
                     html=html,
                     to=target_email,
                     reply_to=reply_to,
                     actor=reporter,
+                    record_log=False,
+                )
+                batch_deliveries.append(
+                    {
+                        "to_email": target_email,
+                        "from_email": used_box.email if used_box is not None else "",
+                        "mailbox_id": str(used_box.id) if used_box is not None else None,
+                        "status": "sent" if result.email_sent else "failed",
+                        "error_code": (
+                            None
+                            if result.email_sent
+                            else getattr(self, "_last_deliver_error_code", "error")
+                        ),
+                        "error": None if result.email_sent else getattr(result, "email_error", None),
+                    }
                 )
                 if result.email_sent:
                     sent += 1
-            except Exception:
+            except Exception as exc:
                 logger.exception("issue_created_recipient_send_error", to=target_email)
+                batch_deliveries.append(
+                    {
+                        "to_email": target_email,
+                        "from_email": "",
+                        "mailbox_id": None,
+                        "status": "failed",
+                        "error_code": "error",
+                        "error": str(exc)[:300] or type(exc).__name__,
+                    }
+                )
 
+        self._record_batch_log(
+            kind=MailLogKind.issue_created,
+            subject=subject,
+            deliveries=batch_deliveries,
+            actor=reporter,
+        )
         logger.info("issue_created_email_sent", recipients=len(targets), sent=sent)
         return sent
 
@@ -1517,6 +1632,8 @@ class AdminMailService:
         kind: str | None = None,
         mailbox_id: uuid.UUID | None = None,
         q: str | None = None,
+        sort: str = "created_at",
+        order: str = "desc",
         limit: int = 25,
         offset: int = 0,
     ) -> Page[MailLogRead]:
@@ -1525,6 +1642,8 @@ class AdminMailService:
             kind=kind,
             mailbox_id=mailbox_id,
             q=q,
+            sort=sort,
+            order=order,
             limit=limit,
             offset=offset,
         )

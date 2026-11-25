@@ -1,6 +1,9 @@
 "use client";
 
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -10,6 +13,7 @@ import {
   Mail,
   RefreshCw,
   Search,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -36,6 +40,8 @@ import type {
   AdminMailLog,
   MailLogCounts,
   MailLogKind,
+  MailLogSortField,
+  MailLogSortOrder,
   MailLogStatusFilter,
   Page,
 } from "@/types/api";
@@ -56,6 +62,38 @@ const KIND_KEYS: Record<MailLogKind, string> = {
 
 const ALL_KINDS = Object.keys(KIND_KEYS) as MailLogKind[];
 
+function SortableHeader({
+  field,
+  label,
+  activeField,
+  order,
+  onSort,
+}: {
+  field: MailLogSortField;
+  label: string;
+  activeField: MailLogSortField;
+  order: MailLogSortOrder;
+  onSort: (field: MailLogSortField) => void;
+}) {
+  const active = activeField === field;
+  const Icon = !active ? ArrowUpDown : order === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th className="px-4 py-2.5 font-medium">
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        className={cn(
+          "focus-visible:ring-ring inline-flex cursor-pointer items-center gap-1 rounded-sm transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:outline-none",
+          active && "text-foreground font-semibold",
+        )}
+      >
+        {label}
+        <Icon className={cn("size-3.5 shrink-0", !active && "opacity-50")} aria-hidden />
+      </button>
+    </th>
+  );
+}
+
 export function MailDeliveryLogs({
   mailboxes,
 }: {
@@ -67,6 +105,8 @@ export function MailDeliveryLogs({
   const [mailboxId, setMailboxId] = useState<string>(ALL_VALUE);
   const [searchInput, setSearchInput] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [sort, setSort] = useState<MailLogSortField>("created_at");
+  const [order, setOrder] = useState<MailLogSortOrder>("desc");
   const [limit, setLimit] = useState<number>(25);
   const [offset, setOffset] = useState(0);
   const [tick, setTick] = useState(0);
@@ -92,6 +132,8 @@ export function MailDeliveryLogs({
     setLoading(true);
     const params = new URLSearchParams();
     params.set("status", status);
+    params.set("sort", sort);
+    params.set("order", order);
     params.set("limit", String(limit));
     params.set("offset", String(offset));
     if (kind !== ALL_VALUE) params.set("kind", kind);
@@ -124,7 +166,17 @@ export function MailDeliveryLogs({
     return () => {
       active = false;
     };
-  }, [status, kind, mailboxId, debouncedQuery, limit, offset, tick, apiErrorText]);
+  }, [status, kind, mailboxId, debouncedQuery, sort, order, limit, offset, tick, apiErrorText]);
+
+  function handleSort(field: MailLogSortField) {
+    if (sort === field) {
+      setOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSort(field);
+      setOrder(field === "created_at" ? "desc" : "asc");
+    }
+    setOffset(0);
+  }
 
   const hasFilters =
     status !== "all" ||
@@ -153,6 +205,36 @@ export function MailDeliveryLogs({
     { value: "sent", label: t("adminMail.logsFilterSent"), count: counts?.sent },
     { value: "failed", label: t("adminMail.logsFilterFailed"), count: counts?.failed },
   ];
+
+  function renderStatusBadge(log: AdminMailLog) {
+    if (log.status === "sent") {
+      return (
+        <Badge variant="success" className="gap-1">
+          <CircleCheck className="size-3" aria-hidden />
+          {t("adminMail.logsStatusSent")}
+        </Badge>
+      );
+    }
+    if (log.status === "partial") {
+      const list = log.recipients ?? [];
+      const sentCount = list.filter((r) => r.status === "sent").length;
+      return (
+        <Badge variant="warning" className="gap-1">
+          <TriangleAlert className="size-3" aria-hidden />
+          {t("adminMail.logsStatusPartial", {
+            sent: String(sentCount),
+            total: String(list.length || 0),
+          })}
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="danger" className="gap-1">
+        <CircleAlert className="size-3" aria-hidden />
+        {t("adminMail.logsStatusFailed")}
+      </Badge>
+    );
+  }
 
   return (
     <section className="border-border bg-surface overflow-hidden rounded-xl border shadow-sm">
@@ -320,11 +402,41 @@ export function MailDeliveryLogs({
         <table className="w-full min-w-[860px] text-sm">
           <thead>
             <tr className="bg-surface-sunken text-muted-foreground border-border border-b text-left text-xs">
-              <th className="px-4 py-2.5 font-medium">{t("adminMail.logsColTime")}</th>
-              <th className="px-4 py-2.5 font-medium">{t("adminMail.logsColStatus")}</th>
-              <th className="px-4 py-2.5 font-medium">{t("adminMail.logsColKind")}</th>
-              <th className="px-4 py-2.5 font-medium">{t("adminMail.logsColRoute")}</th>
-              <th className="px-4 py-2.5 font-medium">{t("adminMail.logsColSubject")}</th>
+              <SortableHeader
+                field="created_at"
+                label={t("adminMail.logsColTime")}
+                activeField={sort}
+                order={order}
+                onSort={handleSort}
+              />
+              <SortableHeader
+                field="status"
+                label={t("adminMail.logsColStatus")}
+                activeField={sort}
+                order={order}
+                onSort={handleSort}
+              />
+              <SortableHeader
+                field="kind"
+                label={t("adminMail.logsColKind")}
+                activeField={sort}
+                order={order}
+                onSort={handleSort}
+              />
+              <SortableHeader
+                field="to_email"
+                label={t("adminMail.logsColRoute")}
+                activeField={sort}
+                order={order}
+                onSort={handleSort}
+              />
+              <SortableHeader
+                field="subject"
+                label={t("adminMail.logsColSubject")}
+                activeField={sort}
+                order={order}
+                onSort={handleSort}
+              />
               <th className="px-4 py-2.5 font-medium">{t("adminMail.logsColReason")}</th>
               <th className="px-4 py-2.5 text-right font-medium">{t("adminMail.logsColActions")}</th>
             </tr>
@@ -349,6 +461,11 @@ export function MailDeliveryLogs({
             ) : (
               items.map((log) => {
                 const isSent = log.status === "sent";
+                const recipients = log.recipients ?? [];
+                const isGroup = recipients.length > 1;
+                const sentRecipients = recipients.filter((r) => r.status === "sent");
+                const failedRecipients = recipients.filter((r) => r.status !== "sent");
+
                 return (
                   <tr
                     key={log.id}
@@ -357,28 +474,63 @@ export function MailDeliveryLogs({
                     <td className="text-muted-foreground px-4 py-2.5 text-xs whitespace-nowrap">
                       {formatDateTime(log.created_at, locale)}
                     </td>
-                    <td className="px-4 py-2.5">
-                      <Badge variant={isSent ? "success" : "danger"} className="gap-1">
-                        {isSent ? (
-                          <CircleCheck className="size-3" aria-hidden />
-                        ) : (
-                          <CircleAlert className="size-3" aria-hidden />
-                        )}
-                        {isSent
-                          ? t("adminMail.logsStatusSent")
-                          : t("adminMail.logsStatusFailed")}
-                      </Badge>
-                    </td>
+                    <td className="px-4 py-2.5">{renderStatusBadge(log)}</td>
                     <td className="px-4 py-2.5">
                       <Badge variant="neutral">
                         {t(KIND_KEYS[log.kind] ?? "adminMail.logsKindContactRequest")}
                       </Badge>
                     </td>
-                    <td className="px-4 py-2.5 text-xs">
-                      <div className="font-medium break-all">{log.to_email}</div>
-                      <div className="text-muted-foreground mt-0.5 break-all">
-                        {log.from_email || t("adminMail.logsNoMailbox")}
-                      </div>
+                    <td className="max-w-64 px-4 py-2.5 text-xs">
+                      {isGroup ? (
+                        <div className="space-y-1">
+                          <div className="font-medium">
+                            {t("adminMail.logsRecipientsCount", {
+                              count: String(recipients.length),
+                            })}
+                            {failedRecipients.length > 0 ? (
+                              <span className="text-muted-foreground ml-1.5 font-normal">
+                                ({t("adminMail.logsRecipientsBreakdown", {
+                                  sent: String(sentRecipients.length),
+                                  failed: String(failedRecipients.length),
+                                })})
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {recipients.slice(0, 3).map((r, idx) => (
+                              <span
+                                key={`${r.to_email}-${idx}`}
+                                className={cn(
+                                  "inline-flex max-w-[180px] items-center gap-1 truncate rounded border px-1.5 py-0.5 text-[11px]",
+                                  r.status === "sent"
+                                    ? "border-border bg-surface-sunken text-foreground"
+                                    : "border-danger/30 bg-danger-bg/60 text-danger",
+                                )}
+                                title={r.error ? `${r.to_email}: ${r.error}` : r.to_email}
+                              >
+                                {r.status === "sent" ? (
+                                  <CircleCheck className="text-success size-3 shrink-0" aria-hidden />
+                                ) : (
+                                  <CircleAlert className="text-danger size-3 shrink-0" aria-hidden />
+                                )}
+                                <span className="truncate">{r.to_email}</span>
+                              </span>
+                            ))}
+                            {recipients.length > 3 ? (
+                              <span className="text-muted-foreground self-center text-[11px]">
+                                +{recipients.length - 3}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="font-medium break-all">{log.to_email}</div>
+                          <div className="text-muted-foreground mt-0.5 break-all">
+                            {log.from_email || t("adminMail.logsNoMailbox")}
+                          </div>
+                        </>
+                      )}
                     </td>
                     <td className="max-w-60 px-4 py-2.5 text-xs">
                       <div className="truncate font-medium" title={log.subject}>
@@ -483,19 +635,13 @@ export function MailDeliveryLogs({
             description={t("adminMail.logsDetailsSubtitle", {
               time: formatDateTime(selected.created_at, locale),
             })}
-            className="max-w-lg"
+            className="max-w-xl"
           >
             <div className="space-y-4 text-sm">
               <dl className="border-border bg-surface-sunken grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-lg border p-3.5 text-xs">
                 <div>
                   <dt className="text-muted-foreground">{t("adminMail.logsFieldStatus")}</dt>
-                  <dd className="mt-1">
-                    <Badge variant={selected.status === "sent" ? "success" : "danger"}>
-                      {selected.status === "sent"
-                        ? t("adminMail.logsStatusSent")
-                        : t("adminMail.logsStatusFailed")}
-                    </Badge>
-                  </dd>
+                  <dd className="mt-1">{renderStatusBadge(selected)}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t("adminMail.logsFieldKind")}</dt>
@@ -503,16 +649,20 @@ export function MailDeliveryLogs({
                     {t(KIND_KEYS[selected.kind] ?? "adminMail.logsKindContactRequest")}
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-muted-foreground">{t("adminMail.logsFieldFrom")}</dt>
-                  <dd className="mt-0.5 font-medium break-all">
-                    {selected.from_email || t("adminMail.logsNoMailbox")}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">{t("adminMail.logsFieldTo")}</dt>
-                  <dd className="mt-0.5 font-medium break-all">{selected.to_email}</dd>
-                </div>
+                {!(selected.recipients && selected.recipients.length > 1) ? (
+                  <>
+                    <div>
+                      <dt className="text-muted-foreground">{t("adminMail.logsFieldFrom")}</dt>
+                      <dd className="mt-0.5 font-medium break-all">
+                        {selected.from_email || t("adminMail.logsNoMailbox")}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">{t("adminMail.logsFieldTo")}</dt>
+                      <dd className="mt-0.5 font-medium break-all">{selected.to_email}</dd>
+                    </div>
+                  </>
+                ) : null}
                 <div className="col-span-2">
                   <dt className="text-muted-foreground">{t("adminMail.logsFieldSubject")}</dt>
                   <dd className="mt-0.5 font-medium break-words">{selected.subject || "—"}</dd>
@@ -531,7 +681,52 @@ export function MailDeliveryLogs({
                 ) : null}
               </dl>
 
-              {selected.status === "failed" && selected.error ? (
+              {selected.recipients && selected.recipients.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold">{t("adminMail.logsRecipientsTitle")}</p>
+                  <div className="border-border max-h-64 overflow-y-auto rounded-lg border">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-surface-sunken text-muted-foreground border-border border-b font-medium">
+                        <tr>
+                          <th className="px-3 py-2">{t("adminMail.logsRecipientColEmail")}</th>
+                          <th className="px-3 py-2">{t("adminMail.logsRecipientColFrom")}</th>
+                          <th className="px-3 py-2">{t("adminMail.logsRecipientColStatus")}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-border divide-y">
+                        {selected.recipients.map((rec, idx) => (
+                          <tr key={`${rec.to_email}-${idx}`} className="align-top">
+                            <td className="px-3 py-2 font-medium break-all">{rec.to_email}</td>
+                            <td className="text-muted-foreground px-3 py-2 break-all">
+                              {rec.from_email || t("adminMail.logsNoMailbox")}
+                            </td>
+                            <td className="px-3 py-2">
+                              <Badge
+                                variant={rec.status === "sent" ? "success" : "danger"}
+                                className="gap-1"
+                              >
+                                {rec.status === "sent" ? (
+                                  <CircleCheck className="size-3" aria-hidden />
+                                ) : (
+                                  <CircleAlert className="size-3" aria-hidden />
+                                )}
+                                {rec.status === "sent"
+                                  ? t("adminMail.logsStatusSent")
+                                  : t("adminMail.logsStatusFailed")}
+                              </Badge>
+                              {rec.status === "failed" && rec.error ? (
+                                <div className="mt-1.5">
+                                  <MailError raw={rec.error} />
+                                </div>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : selected.status !== "sent" && selected.error ? (
                 <div className="border-danger/30 bg-danger-bg/50 rounded-lg border p-3 text-xs">
                   <p className="text-danger mb-1.5 font-semibold">
                     {t("adminMail.logsFieldError")}
