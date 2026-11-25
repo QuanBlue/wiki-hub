@@ -33,6 +33,7 @@ import {
   ExternalLink,
   FileText,
   Info,
+  ListPlus,
   Loader2,
   Maximize2,
   Minimize2,
@@ -66,6 +67,7 @@ import {
   ChatThreadRail,
   ThreadNameInput,
 } from "@/components/chat/chat-thread-list";
+import { ChatQueue } from "@/components/chat/chat-queue";
 import { useChatBox } from "@/components/chat/use-chat-box";
 import { useChat, type FirstAnswer } from "@/components/chat/use-chat";
 import { useChatThreads } from "@/components/chat/use-chat-threads";
@@ -102,6 +104,7 @@ import {
   CHAT_FILE_TYPES,
   CHAT_MAX_CHARS,
   CHAT_MAX_FILES,
+  CHAT_QUEUE_MAX,
   CHAT_OPEN_EVENT,
   CHAT_TOGGLE_EVENT,
   ChatFileError,
@@ -1196,6 +1199,10 @@ function ChatPanel({
     running,
     unread,
     send,
+    queue,
+    ask,
+    unqueue,
+    resume,
     edit,
     switchVersion,
     stop,
@@ -1219,9 +1226,15 @@ function ChatPanel({
     [entries],
   );
   const reading = chips.some((chip) => chip.status === "reading");
-  // Three per conversation, counting the ones sent and the ones in the box - a refused file
-  // too, until it is dismissed.
-  const roomForFiles = CHAT_MAX_FILES - sentFiles.length - chips.length;
+  // Three per conversation, counting the ones sent, waiting to be sent and in the box - a
+  // refused file too, until it is dismissed.
+  const queuedFiles = queue.reduce(
+    (count, waiting) => count + (waiting.files?.length ?? 0),
+    0,
+  );
+  const roomForFiles =
+    CHAT_MAX_FILES - sentFiles.length - queuedFiles - chips.length;
+  const queueFull = busy && queue.length >= CHAT_QUEUE_MAX;
   const attach = useCallback(
     (picked: File[]) => {
       const taken = picked.slice(0, Math.max(roomForFiles, 0));
@@ -1412,7 +1425,7 @@ function ChatPanel({
   const submit = useCallback(
     (text: string) => {
       // A file still being read would be left out of the answer: wait for it.
-      if (!text.trim() || busy || reading) return;
+      if (!text.trim() || queueFull || reading) return;
       stickRef.current = true;
       browsing.current = null;
       // The files in the box go with the question and show on it; the box is empty again.
@@ -1427,16 +1440,17 @@ function ChatPanel({
         setDraft("");
         if (!file) setChips(() => []);
       }
-      void send(text, undefined, withFiles);
+      // While a reply is being written, this waits its turn.
+      ask(text, withFiles);
     },
     [
+      ask,
       boxId,
-      busy,
       chips,
       file,
+      queueFull,
       readyFiles,
       reading,
-      send,
       setChips,
       setDraft,
       startBox,
@@ -1863,6 +1877,21 @@ function ChatPanel({
               <ArrowDown className="size-4" aria-hidden />
             </button>
           ) : null}
+          {queue.length ? (
+            <ChatQueue
+              queue={queue}
+              held={!busy}
+              onRemove={(id) => {
+                unqueue(id);
+                inputRef.current?.focus();
+              }}
+              onResume={() => {
+                stickRef.current = true;
+                resume();
+                inputRef.current?.focus();
+              }}
+            />
+          ) : null}
           {file ? (
             <div className="mb-2 flex items-center gap-2 px-1">
               <span
@@ -2104,13 +2133,39 @@ function ChatPanel({
                 }
               }}
               placeholder={
-                file ? t("chat.filePlaceholder") : t("chat.placeholder")
+                busy
+                  ? t("chat.queuePlaceholder")
+                  : file
+                    ? t("chat.filePlaceholder")
+                    : t("chat.placeholder")
               }
               aria-label={
                 file ? t("chat.filePlaceholder") : t("chat.placeholder")
               }
               className="placeholder:text-muted-foreground max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-5 outline-none"
             />
+            {busy && draft.trim() ? (
+              <Button
+                key="queue"
+                type="submit"
+                variant="ghost"
+                size="icon"
+                disabled={queueFull || reading}
+                aria-label={
+                  queueFull
+                    ? t("chat.queueFull", { count: CHAT_QUEUE_MAX })
+                    : t("chat.queue")
+                }
+                title={
+                  queueFull
+                    ? t("chat.queueFull", { count: CHAT_QUEUE_MAX })
+                    : t("chat.queue")
+                }
+                className="text-primary hover:bg-primary-subtle hover:text-primary size-9 shrink-0 rounded-full"
+              >
+                <ListPlus className="size-4" aria-hidden />
+              </Button>
+            ) : null}
             {busy ? (
               <Button
                 key="stop"

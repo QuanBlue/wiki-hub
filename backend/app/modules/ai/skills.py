@@ -430,33 +430,40 @@ FORMAT_RULES = (
 )
 
 
-#: How long an answer is, as the person chose it (in the chat). All three used to come out
-#: short - "brief" two sentences, the usual one to four - and people asked for more detail.
+#: How long an answer is, as the person chose it (in the chat). People have asked twice for
+#: more detail at every level: "brief" is the key points, not one line.
 DETAIL_RULES = {
     "brief": (
-        "LENGTH - the person wants it SHORT; this replaces any other rule about length. Give the "
-        "answer and the details that matter most: three to five sentences, or up to five short "
-        "bullets (about 60 to 120 words). Name the exact values, names and the first step; leave "
-        "out background, alternatives and closing remarks."
+        "LENGTH - the person wants it SHORT but informative; this replaces any other rule about "
+        "length. Give the answer and the details that matter: about 120 to 220 words when the "
+        "sources allow - after the bold answer, three to six bullets or short sentences with the "
+        "exact names and values, the main steps in order, and the one condition or warning that "
+        "matters most. Leave out long background, alternatives and closing remarks."
     ),
     "normal": (
-        "LENGTH - the person wants a COMPLETE answer; this replaces any other rule about "
-        "brevity. After the bold answer, give the details that make it usable: the exact names, "
-        "values, addresses and settings; the steps in order when there is something to do; the "
-        "conditions, limits and the one thing to watch out for. About 150 to 350 words when the "
-        "sources allow - more for a list the question asks for in full. Organise it with a table "
-        "or a numbered list."
+        "LENGTH - the person wants a COMPLETE and detailed answer; this replaces any other rule "
+        "about brevity. About 350 to 600 words when the sources allow - more for a list the "
+        "question asks for in full. After the bold answer, explain it so it can be acted on "
+        "without opening the pages: the exact names, values, addresses and settings; the steps "
+        "in order when there is something to do, each saying where to go, what to enter and what "
+        "to expect; the reason or the way it works where the sources give it; an example when "
+        "they have one; the conditions, limits, exceptions and what to watch out for. Organise "
+        "it with tables, numbered lists and callouts. Never repeat yourself or pad: when the "
+        "sources hold less, a shorter answer is right."
     ),
     "detailed": (
         "LENGTH - the person wants it DETAILED and long; this replaces any other rule about "
-        "brevity. Write a thorough, well-organised answer of about 400 to 900 words when the "
-        "sources allow: what it is and the context it sits in; how or why it works; every step "
-        "in order with the exact commands, names, values and conditions; an example; the "
-        "limits, exceptions and risks; related facts from the other sources that help; and what "
-        "the sources do not say that the person may need. Use '### ' headings for the parts, "
-        "tables for anything with several attributes, lists for steps and callouts for risks. "
-        "Cover everything the sources say that bears on the question, add nothing they do not "
-        "say, and keep a citation on every fact."
+        "brevity. Write a thorough, well-organised answer of about 900 to 1600 words when the "
+        "sources allow: what it is and the context it sits in; how and why it works; what is "
+        "needed before starting; every step in order with the exact commands, names, values, "
+        "conditions and expected results; worked examples; the options compared with each "
+        "other; the limits, exceptions and risks; how to check it worked and what to do when it "
+        "did not; related facts from the other sources that help; and what the sources do not "
+        "say that the person may need. Use '### ' headings for the parts, tables for anything "
+        "with several attributes, lists for steps and callouts for risks. Cover everything the "
+        "sources say that bears on the question, with its particulars rather than a summary of "
+        "it, add nothing they do not say, never repeat yourself or pad to reach a length, and "
+        "keep a citation on every fact."
     ),
 }
 
@@ -469,36 +476,38 @@ RULE_3_USUAL = (
 )
 RULE_3_BY_DETAIL = {
     "brief": (
-        "3) Be short but useful: the answer and its key details in three to five sentences (five "
-        "short bullets at most), with no preamble and no closing remark, and do not mention 'the "
-        "sources' or 'the wiki'. "
+        "3) Be short but useful: the answer, then its key details - exact names, values, the "
+        "main steps and the main condition - in three to six bullets or short sentences, with no "
+        "preamble and no closing remark, and do not mention 'the sources' or 'the wiki'. "
     ),
     "normal": (
-        "3) Be complete: answer directly, then give the details that make the answer usable - "
-        "exact names, values, steps and conditions - with no preamble and no closing remark, and "
-        "do not mention 'the sources' or 'the wiki'. "
+        "3) Be complete: answer directly, then give in full the details that make the answer "
+        "usable - exact names, values, steps, reasons, examples, conditions and exceptions - with "
+        "no preamble and no closing remark, and do not mention 'the sources' or 'the wiki'. "
     ),
     "detailed": (
         "3) Be thorough: a complete, well-organised answer of several sections - what it is, how "
-        "or why, the steps in order, exact names, values and conditions, an example, the limits "
-        "and exceptions - using everything in the sources that bears on the question, and do not "
-        "mention 'the sources' or 'the wiki'. "
+        "and why, what is needed, the steps in order, exact names, values and conditions, "
+        "examples, the limits and exceptions, checking and troubleshooting - using everything in "
+        "the sources that bears on the question, and do not mention 'the sources' or 'the wiki'. "
     ),
 }
 #: Said again as the very last line of the question, where it is remembered best.
 LENGTH_REMINDER = {
     "brief": (
-        "(Length: SHORT - three to five sentences or up to five bullets, about 60-120 words; the "
-        "answer and its key details; no heading.)"
+        "(Length: SHORT - about 120-220 words when the sources allow: the answer, then three to "
+        "six points with exact values, the main steps and the main condition; no heading.)"
     ),
     "normal": (
-        "(Length: COMPLETE - about 150-350 words when the sources allow: the answer, then exact "
-        "names, values, steps and conditions; a table or numbered list; cite every fact.)"
+        "(Length: COMPLETE - about 350-600 words when the sources allow: the answer, then exact "
+        "names, values, each step, reasons, an example, conditions and exceptions; tables or "
+        "numbered lists; no padding; cite every fact.)"
     ),
     "detailed": (
-        "(Length: DETAILED - about 400-900 words when the sources allow: context, how it works, "
-        "every step with exact values, an example, limits and exceptions, related facts; use "
-        "headings, tables and lists; cite every fact.)"
+        "(Length: DETAILED - about 900-1600 words when the sources allow: context, how and why, "
+        "prerequisites, every step with exact values and results, examples, comparisons, limits, "
+        "troubleshooting, related facts; use headings, tables and lists; no padding; cite every "
+        "fact.)"
     ),
 }
 #: How the formatting rules end, by level (they used to say "keep it short" for all of them).
@@ -513,7 +522,7 @@ _FORMAT_END_BY_DETAIL = {
 }
 
 #: How many tokens the model may write for each level.
-DETAIL_TOKENS = {"brief": 700, "normal": 1800, "detailed": 4000}
+DETAIL_TOKENS = {"brief": 1400, "normal": 3500, "detailed": 6500}
 
 
 def answer_system_prompt(

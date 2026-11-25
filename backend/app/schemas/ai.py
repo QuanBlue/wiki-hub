@@ -622,7 +622,8 @@ CHAT_MAX_MESSAGES = 10
 #: The longest message: room for a test of twenty questions pasted whole.
 CHAT_MAX_CHARS = 4000
 #: An earlier turn is cut to this before it goes to the model again, so a long conversation
-#: does not crowd out the pages (a small self-hosted model has little room).
+#: does not crowd out the pages (a small self-hosted model has little room). The last answer
+#: alone may take up to ``CHAT_MAX_CHARS``.
 CHAT_HISTORY_CHARS = 2000
 #: Files the person attaches to a conversation from their computer.
 CHAT_MAX_FILES = 3

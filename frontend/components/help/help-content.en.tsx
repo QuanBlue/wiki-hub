@@ -467,11 +467,13 @@ export const sectionsEn: HelpSection[] = [
             the same way.
           </li>
           <li>
-            <strong>How much detail.</strong> Under the box, choose <Code>Brief</Code> (just the
-            key point), <Code>Balanced</Code> or <Code>Detailed</Code> (steps, values, examples and
-            limits). The choice is kept in this browser and applies to the next question; to see an
-            earlier answer at another level, change it and press <Code>Answer again</Code> on the
-            question.
+            <strong>How much detail.</strong> Under the box, choose <Code>Brief</Code> (the answer
+            and its key details in a few points), <Code>Balanced</Code> (a full answer with steps,
+            values, reasons and conditions) or <Code>Detailed</Code> (a long write-up: background,
+            every step, examples, limits and what to do when it fails). An answer is only as long as
+            the pages it comes from allow, and a longer one takes longer to write. The choice is kept
+            in this browser and applies to the next question; to see an earlier answer at another
+            level, change it and press <Code>Answer again</Code> on the question.
           </li>
           <li>
             <strong>Easier to read.</strong> Answers are laid out to be scanned: the answer in a bold
@@ -516,6 +518,14 @@ export const sectionsEn: HelpSection[] = [
             question. In a long chat the older ones are summarized automatically (this also counts
             against your AI limit), and a line <Code>Earlier messages summarized for context</Code>{" "}
             marks where; press it to read what is remembered.
+          </li>
+          <li>
+            <strong>Several questions in a row.</strong> You need not wait for a reply: keep typing
+            and press <Kbd>Enter</Kbd> (or the queue button beside <Code>Stop</Code>). Up to 10
+            questions wait above the box and go one by one as the replies arrive, in their own chat
+            even if you open another. The <Code>×</Code> takes one out. After you press{" "}
+            <Code>Stop</Code>, after a failed reply or after reloading the page they are held until
+            you press <Code>Send now</Code>. Each one counts against your AI limit when it is sent.
           </li>
           <li>
             <strong>Where chats are kept.</strong> Only in this browser, for your account - not on

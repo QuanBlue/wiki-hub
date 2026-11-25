@@ -343,8 +343,25 @@ describe("messagesToSend", () => {
     ]);
 
     expect(sent.map((message) => message.content.length)).toEqual([
-      2000, 2000, 3500,
+      2000, 3500, 3500,
     ]);
+  });
+
+  it("sends where the last answer began and where it stopped, cutting older ones", () => {
+    const long = `start ${"x".repeat(6000)} the end`;
+    const sent = messagesToSend([
+      { id: "1", role: "user", content: "q" },
+      done("2", long),
+      { id: "3", role: "user", content: "q" },
+      done("4", long),
+      { id: "5", role: "user", content: "continue" },
+    ]);
+
+    expect(sent[1].content).toBe(long.slice(0, 2000));
+    expect(sent[3].content).toHaveLength(4000);
+    expect(sent[3].content.startsWith("start ")).toBe(true);
+    expect(sent[3].content.endsWith(" the end")).toBe(true);
+    expect(sent[3].content).toContain("\n…\n");
   });
 });
 

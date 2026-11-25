@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { AnswerResult } from "@/lib/ai-answer";
 import {
+  CHAT_QUEUE_MAX,
   ChatStreamError,
   conversationFiles,
   EMPTY_CHAT,
@@ -21,6 +22,7 @@ import {
   loadThread,
   saveThread,
   subscribeThreads,
+  type QueuedQuestion,
   type ThreadData,
 } from "@/lib/ai-chat-store";
 
@@ -68,6 +70,8 @@ function summaryFor({ entries, compact }: Omit<ThreadData, "slots">) {
     : undefined;
 }
 
+const NOTHING_WAITING: QueuedQuestion[] = [];
+
 /** The thread a conversation is kept in when no other is named. */
 export const DEFAULT_THREAD = "default";
 
@@ -82,7 +86,8 @@ export type FirstAnswer = {
  * The conversations with the wiki, one thread shown at a time: what was asked and answered, the
  * reply that is being written, and the means to ask, stop, edit a question (keeping its earlier
  * versions to go back to), try again and start over. Every thread keeps its own reply under way,
- * so opening another thread does not stop one being written. Kept in this browser for this
+ * so opening another thread does not stop one being written. Questions asked meanwhile wait
+ * their turn, in each thread, and go one by one as the replies arrive. Kept in this browser for this
  * person, and nowhere else.
  */
 export function useChat(
@@ -285,6 +290,38 @@ export function useChat(
     [commit, get],
   );
 
+  // ``send``, declared below, for the question whose turn has come.
+  const sendRef = useRef<
+    | ((
+        text: string,
+        slot: undefined,
+        files: AttachedFile[] | undefined,
+        target: string,
+        scope: string | null,
+      ) => Promise<void>)
+    | null
+  >(null);
+
+  /** Send the question waiting longest in a thread, unless a reply is being written there. */
+  const sendNext = useCallback(
+    (tid: string) => {
+      if (controllersRef.current.has(tid)) return;
+      const current = get(tid);
+      const [next, ...queue] = current.queue ?? NOTHING_WAITING;
+      if (!next) return;
+      // Not kept on its own: ``send`` keeps it, as a question of the thread.
+      commit(tid, { ...current, queue }, false);
+      void sendRef.current?.(
+        next.content,
+        undefined,
+        next.files,
+        tid,
+        next.scope ?? null,
+      );
+    },
+    [commit, get],
+  );
+
   /**
    * Ask a question in the thread shown. ``files`` are the ones attached with it; the files of
    * the questions before it are read again too, so a follow-up still knows them.
@@ -295,6 +332,7 @@ export function useChat(
       slot?: string,
       files: AttachedFile[] = [],
       target?: string,
+      forced?: string | null,
     ) => {
       const tid = target ?? activeRef.current;
       const question = text.trim();
@@ -327,8 +365,11 @@ export function useChat(
       const controller = new AbortController();
       controllersRef.current.set(tid, controller);
       syncRunning();
-      // The file asked about is the shown thread's; another thread's question has none.
-      const scope = tid === activeRef.current ? fileRef.current : null;
+      // The file asked about is the shown thread's; another thread's question has none. A
+      // question that waited keeps the one it was typed with.
+      const shown = tid === activeRef.current ? fileRef.current : null;
+      const scope = forced === undefined ? shown : forced;
+      let answered = false;
       try {
         const result = await streamChat(toSend, {
           signal: controller.signal,
@@ -358,6 +399,7 @@ export function useChat(
         });
         patchAssistant(tid, reply.id, () => finished(result));
         settle(tid, slot);
+        answered = true;
         if (tid !== activeRef.current) {
           setUnread((ids) => [...ids.filter((id) => id !== tid), tid]);
         }
@@ -389,11 +431,67 @@ export function useChat(
         if (controllersRef.current.get(tid) === controller) {
           controllersRef.current.delete(tid);
           syncRunning();
+          // After a failure or a stop, what waits stays until the person sends it on.
+          if (answered) sendNext(tid);
         }
       }
     },
-    [commit, compactOld, expire, get, patchAssistant, settle, syncRunning],
+    [
+      commit,
+      compactOld,
+      expire,
+      get,
+      patchAssistant,
+      sendNext,
+      settle,
+      syncRunning,
+    ],
   );
+  useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
+
+  /** Ask in the thread shown: at once, or after the reply being written there. */
+  const ask = useCallback(
+    (text: string, files: AttachedFile[] = []) => {
+      const tid = activeRef.current;
+      const content = text.trim();
+      if (!content) return;
+      if (!controllersRef.current.has(tid)) {
+        void send(content, undefined, files, tid);
+        return;
+      }
+      const current = get(tid);
+      const queue = current.queue ?? NOTHING_WAITING;
+      if (queue.length >= CHAT_QUEUE_MAX) return;
+      const waiting: QueuedQuestion = {
+        id: newId(),
+        content,
+        ...(files.length ? { files } : {}),
+        ...(fileRef.current ? { scope: fileRef.current } : {}),
+      };
+      commit(tid, { ...current, queue: [...queue, waiting] });
+    },
+    [commit, get, send],
+  );
+
+  /** Take a question that is waiting out of the queue. */
+  const unqueue = useCallback(
+    (id: string) => {
+      const tid = activeRef.current;
+      const current = get(tid);
+      commit(tid, {
+        ...current,
+        queue: (current.queue ?? NOTHING_WAITING).filter(
+          (waiting) => waiting.id !== id,
+        ),
+      });
+    },
+    [commit, get],
+  );
+
+  /** Send what waits, after a stop or a failure held it back. */
+  const resume = useCallback(() => sendNext(activeRef.current), [sendNext]);
 
   /**
    * Ask a question again with other words. The old question, with everything that followed it,
@@ -645,6 +743,10 @@ export function useChat(
     running,
     unread,
     send,
+    queue: state.queue ?? NOTHING_WAITING,
+    ask,
+    unqueue,
+    resume,
     edit,
     switchVersion,
     stop,

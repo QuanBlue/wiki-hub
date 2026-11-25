@@ -85,6 +85,7 @@ from app.modules.search.service import SearchService
 from app.modules.stats.recorder import record_ai_usage
 from app.schemas.ai import (
     CHAT_HISTORY_CHARS,
+    CHAT_MAX_CHARS,
     CHAT_MAX_MESSAGES,
     CHAT_SUMMARY_CHARS,
     AnswerAction,
@@ -100,7 +101,7 @@ logger = get_logger(__name__)
 
 #: The longest a reply may take, as for the answer box - the web search and the second try
 #: of an answer that needed it are inside it.
-CHAT_DEADLINE_SECONDS = 150.0
+CHAT_DEADLINE_SECONDS = 240.0
 #: Understanding a follow-up is a small job; when it is slow the question is used as typed.
 REWRITE_DEADLINE_SECONDS = 15.0
 _MAX_TOKENS = 900
@@ -109,12 +110,15 @@ _QUERY_CHARS = 300
 #: What a question that needs facts combined reads: more pages, and more of each (a count over
 #: a table cut after 900 characters came out short).
 #: Room for a reply that lists everything, or works something out (whatever the detail chosen).
-LONG_REPLY_TOKENS = 3000
+LONG_REPLY_TOKENS = 5000
 REASONING_TOKENS = 1500
 #: Said under an answer the model had to stop writing: the person knows to ask for the rest.
 _CUT_SHORT_VI = "\n\n_(Câu trả lời dài nên bị cắt ở đây - gõ **tiếp tục** để xem phần còn lại.)_"
 _CUT_SHORT_EN = "\n\n_(The answer was too long and stops here - type **continue** for the rest.)_"
 REASONING_LIMITS = {"max_pages": 7, "passage_chars": 2400, "total_chars": 20000}
+#: What a "balanced" answer reads: more of each page than the search box's quick answer, or
+#: there is nothing to be detailed about.
+NORMAL_LIMITS = {"max_pages": 6, "passage_chars": 1600, "total_chars": 12000}
 #: The first characters of a reply are held back until they show what kind of reply it is
 #: (NOT_FOUND, SEARCH_WEB:, GENERAL:), so a marker is never flashed on screen.
 _HOLD_CHARS = 14
@@ -213,10 +217,14 @@ _FILE_CITATION = re.compile(r"[ ]?\[f(\d{1,2})\]")
 
 def _history(turns: list[ChatMessage]) -> list[dict[str, str]]:
     """Earlier turns as chat messages: cleaned, alternating, starting with the user, each cut
-    to ``CHAT_HISTORY_CHARS`` - the question being asked now is what needs the room."""
+    to ``CHAT_HISTORY_CHARS`` - the question being asked now is what needs the room. The last
+    answer is kept as sent: a follow-up ("continue", "explain step 5") is usually about it."""
     messages: list[dict[str, str]] = []
-    for turn in turns[-CHAT_MAX_MESSAGES:]:
-        text = prompt_text(turn.content)[:CHAT_HISTORY_CHARS]
+    recent = turns[-CHAT_MAX_MESSAGES:]
+    last_answer = next((turn for turn in reversed(recent) if turn.role == "assistant"), None)
+    for turn in recent:
+        limit = CHAT_MAX_CHARS if turn is last_answer else CHAT_HISTORY_CHARS
+        text = prompt_text(turn.content)[:limit]
         if turn.role == "assistant":
             text = _FILE_CITATION.sub("", _CITATION.sub("", text))
         if not text:
@@ -990,7 +998,13 @@ class ChatService:
                 # A count or a list over a table needs the rows that name what is asked about.
                 table_rows=reasoning or long_reply,
                 # A detailed answer, like one that works something out, needs more to read.
-                **(REASONING_LIMITS if reasoning or request.detail == "detailed" else {}),
+                **(
+                    REASONING_LIMITS
+                    if reasoning or request.detail == "detailed"
+                    else NORMAL_LIMITS
+                    if request.detail == "normal"
+                    else {}
+                ),
             )
         passages = context.passages
         attached = chat_files.passages(files, several or list(dict.fromkeys([question, query])))

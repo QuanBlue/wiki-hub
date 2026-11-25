@@ -198,6 +198,14 @@ export async function summarizeThread(
 
 // ------------------------------------------------------------ what goes to the server
 
+/** The text within ``max``, losing its middle: where it began and where it stopped matter. */
+function clipEnds(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const gap = "\n…\n";
+  const head = Math.floor((max - gap.length) / 2);
+  return text.slice(0, head) + gap + text.slice(-(max - gap.length - head));
+}
+
 /**
  * The conversation as the server takes it: what the person asked, and the answers that were
  * given. A turn that failed or found nothing has no answer in it, so it is left out; the
@@ -207,21 +215,27 @@ export function messagesToSend(entries: ChatEntry[]): ChatSend[] {
   const sent: ChatSend[] = [];
   for (const entry of entries) {
     if (entry.role === "user") {
-      sent.push({
-        role: "user",
-        content: entry.content.slice(0, CHAT_MAX_CHARS),
-      });
+      sent.push({ role: "user", content: entry.content });
     } else if (entry.status === "done" && entry.found && entry.content.trim()) {
-      sent.push({
-        role: "assistant",
-        content: entry.content.slice(0, CHAT_HISTORY_CHARS),
-      });
+      sent.push({ role: "assistant", content: entry.content });
     }
   }
-  // The earlier questions are cut short too; only the one asked now is sent whole.
-  for (let index = 0; index < sent.length - 1; index += 1) {
-    sent[index].content = sent[index].content.slice(0, CHAT_HISTORY_CHARS);
-  }
+  // Earlier turns are cut short; the question asked now is sent whole, and so is as much of
+  // the last answer as a message may hold, since a follow-up is usually about it.
+  const lastAnswer = sent
+    .map((message) => message.role)
+    .lastIndexOf("assistant");
+  sent.forEach((message, index) => {
+    if (index === lastAnswer) {
+      message.content = clipEnds(message.content, CHAT_MAX_CHARS);
+    } else {
+      const asked = index === sent.length - 1;
+      message.content = message.content.slice(
+        0,
+        asked ? CHAT_MAX_CHARS : CHAT_HISTORY_CHARS,
+      );
+    }
+  });
   const recent = sent.slice(-CHAT_MAX_MESSAGES);
   // The server wants the conversation to open with a question.
   while (recent.length > 1 && recent[0].role !== "user") recent.shift();
@@ -580,6 +594,9 @@ export function chatStorage(): Storage | null {
     return null;
   }
 }
+
+/** The most questions that wait their turn in one thread. */
+export const CHAT_QUEUE_MAX = 10;
 
 /** The box of a chat that has not been asked anything yet. */
 export const NEW_BOX = "new";
