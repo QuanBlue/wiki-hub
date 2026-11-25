@@ -35,19 +35,45 @@ const MAILBOX: AdminMailbox = {
   created_at: "2026-11-01T08:00:00Z",
 };
 
-const SENT_LOG: AdminMailLog = {
+const BROADCAST_LOG: AdminMailLog = {
   id: "log-1",
   created_at: "2026-11-25T09:00:00Z",
   mailbox_id: "mb-1",
   from_email: "ops@company.com",
-  to_email: "alice@company.com",
-  subject: "[WikiHub] Your account has been created",
-  kind: "account_created",
-  status: "sent",
-  error_code: null,
-  error: null,
-  actor_id: "u-1",
-  actor_username: "admin",
+  to_email: "a@company.com, b@company.com, c@company.com",
+  subject: "[WikiHub] Account request: qa",
+  kind: "contact_request",
+  status: "partial",
+  error_code: "auth_failed",
+  error: "c@company.com: 535 Bad credentials",
+  recipients: [
+    {
+      to_email: "a@company.com",
+      from_email: "a@company.com",
+      mailbox_id: "mb-1",
+      status: "sent",
+      error_code: null,
+      error: null,
+    },
+    {
+      to_email: "b@company.com",
+      from_email: "b@company.com",
+      mailbox_id: "mb-2",
+      status: "sent",
+      error_code: null,
+      error: null,
+    },
+    {
+      to_email: "c@company.com",
+      from_email: "c@company.com",
+      mailbox_id: "mb-3",
+      status: "failed",
+      error_code: "auth_failed",
+      error: "535 Bad credentials",
+    },
+  ],
+  actor_id: null,
+  actor_username: null,
 };
 
 const FAILED_LOG: AdminMailLog = {
@@ -61,22 +87,20 @@ const FAILED_LOG: AdminMailLog = {
   status: "failed",
   error_code: "undeliverable",
   error: "Recipient address 'bad@wikihub.local' uses a non-routable or invalid domain.",
+  recipients: null,
   actor_id: "u-1",
   actor_username: "admin",
 };
 
-const COUNTS: MailLogCounts = { all: 2, sent: 1, failed: 1 };
+const COUNTS: MailLogCounts = { all: 2, sent: 0, failed: 2 };
 
 describe("MailDeliveryLogs", () => {
   beforeEach(() => {
     mockedGet.mockReset();
     mockedGet.mockImplementation(async (url: string) => {
       if (url.includes("/logs/counts")) return COUNTS;
-      if (url.includes("status=failed")) {
-        return { items: [FAILED_LOG], total: 1, limit: 25, offset: 0 } satisfies Page<AdminMailLog>;
-      }
       return {
-        items: [FAILED_LOG, SENT_LOG],
+        items: [FAILED_LOG, BROADCAST_LOG],
         total: 2,
         limit: 25,
         offset: 0,
@@ -84,27 +108,27 @@ describe("MailDeliveryLogs", () => {
     });
   });
 
-  it("loads delivery logs, filters by failed status, and opens failure details", async () => {
+  it("renders grouped broadcast recipients, supports column sorting, and opens per-recipient breakdown", async () => {
     const actor = userEvent.setup();
     render(<MailDeliveryLogs mailboxes={[MAILBOX]} />);
 
     await waitFor(() => {
-      expect(screen.getByText("alice@company.com")).toBeInTheDocument();
-      expect(screen.getByText("bad@wikihub.local")).toBeInTheDocument();
+      expect(screen.getByText(/3 recipients/i)).toBeInTheDocument();
+      expect(screen.getByText(/Partial \(2\/3\)/i)).toBeInTheDocument();
     });
 
-    await actor.click(screen.getByRole("tab", { name: /Failed/i }));
+    await actor.click(screen.getByRole("button", { name: "Subject" }));
     await waitFor(() => {
       expect(mockedGet).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/admin-mail/logs?status=failed"),
+        expect.stringContaining("sort=subject&order=asc"),
       );
-      expect(screen.queryByText("alice@company.com")).not.toBeInTheDocument();
     });
 
-    await actor.click(screen.getByRole("button", { name: "Inspect" }));
+    const inspectButtons = screen.getAllByRole("button", { name: "Inspect" });
+    await actor.click(inspectButtons[1]!);
     await waitFor(() => {
-      expect(screen.getByText("Email delivery details")).toBeInTheDocument();
-      expect(screen.getByText("undeliverable")).toBeInTheDocument();
+      expect(screen.getByText("Recipients breakdown")).toBeInTheDocument();
+      expect(screen.getAllByText("c@company.com").length).toBeGreaterThanOrEqual(2);
     });
   });
 });

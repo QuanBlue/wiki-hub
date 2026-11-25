@@ -23,7 +23,9 @@ SmtpSecurityName = Literal["ssl", "starttls", "none"]
 MailHealthName = Literal["unknown", "ok", "auth_failed", "unreachable", "error"]
 RequestKindName = Literal["account", "password_reset", "other"]
 DeliveryName = Literal["sent", "failed", "no_mailbox"]
-MailLogStatusName = Literal["sent", "failed"]
+MailLogStatusName = Literal["sent", "partial", "failed"]
+MailLogSortField = Literal["created_at", "status", "kind", "to_email", "subject"]
+SortOrder = Literal["asc", "desc"]
 MailLogKindName = Literal[
     "contact_request",
     "account_created",
@@ -272,6 +274,15 @@ class ContactAdminResult(BaseModel):
     delivery: DeliveryName
 
 
+class MailLogRecipient(BaseModel):
+    to_email: str
+    from_email: str = ""
+    mailbox_id: uuid.UUID | None = None
+    status: Literal["sent", "failed"]
+    error_code: str | None = None
+    error: str | None = None
+
+
 class MailLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -285,6 +296,7 @@ class MailLogRead(BaseModel):
     status: MailLogStatusName
     error_code: str | None = None
     error: str | None = None
+    recipients: list[MailLogRecipient] | None = None
     actor_id: uuid.UUID | None = None
     actor_username: str | None = None
 

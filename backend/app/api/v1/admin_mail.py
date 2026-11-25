@@ -45,9 +45,11 @@ from app.schemas.admin_mail import (
     MailLogCounts,
     MailLogKindName,
     MailLogRead,
+    MailLogSortField,
     MailSummary,
     RequestActionPreview,
     RequestKindName,
+    SortOrder,
     SpaceAccessEmailRequest,
 )
 from app.schemas.pagination import Page
@@ -378,6 +380,8 @@ async def list_mail_logs(
     kind: MailLogKindName | None = None,
     mailbox_id: uuid.UUID | None = None,
     q: Annotated[str | None, Query(max_length=128)] = None,
+    sort: MailLogSortField = "created_at",
+    order: SortOrder = "desc",
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Page[MailLogRead]:
@@ -386,6 +390,8 @@ async def list_mail_logs(
         kind=kind,
         mailbox_id=mailbox_id,
         q=q,
+        sort=sort,
+        order=order,
         limit=limit,
         offset=offset,
     )

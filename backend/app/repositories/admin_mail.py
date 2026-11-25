@@ -255,12 +255,19 @@ class AdminMailRepository:
         q: str | None = None,
     ) -> Select[tuple[AdminMailLog]]:
         stmt = select(AdminMailLog)
-        if status in ("sent", "failed"):
-            stmt = stmt.where(AdminMailLog.status == status)
+        if status == "sent":
+            stmt = stmt.where(AdminMailLog.status == "sent")
+        elif status == "failed":
+            stmt = stmt.where(AdminMailLog.status.in_(("failed", "partial")))
         if kind:
             stmt = stmt.where(AdminMailLog.kind == kind)
         if mailbox_id:
-            stmt = stmt.where(AdminMailLog.mailbox_id == mailbox_id)
+            stmt = stmt.where(
+                or_(
+                    AdminMailLog.mailbox_id == mailbox_id,
+                    AdminMailLog.recipients.contains([{"mailbox_id": str(mailbox_id)}]),
+                )
+            )
         if q:
             stmt = stmt.where(
                 or_(
@@ -280,6 +287,8 @@ class AdminMailRepository:
         kind: str | None = None,
         mailbox_id: uuid.UUID | None = None,
         q: str | None = None,
+        sort: str = "created_at",
+        order: str = "desc",
         limit: int = 25,
         offset: int = 0,
     ) -> tuple[Sequence[AdminMailLog], int]:
@@ -289,9 +298,17 @@ class AdminMailRepository:
                 await self.session.execute(select(func.count()).select_from(filtered.subquery()))
             ).scalar_one()
         )
+        sort_col = {
+            "created_at": AdminMailLog.created_at,
+            "status": AdminMailLog.status,
+            "kind": AdminMailLog.kind,
+            "to_email": AdminMailLog.to_email,
+            "subject": AdminMailLog.subject,
+        }.get(sort, AdminMailLog.created_at)
+        primary = sort_col.asc() if order == "asc" else sort_col.desc()
         rows = (
             await self.session.execute(
-                filtered.order_by(AdminMailLog.created_at.desc(), AdminMailLog.id.desc())
+                filtered.order_by(primary, AdminMailLog.id.desc())
                 .limit(limit)
                 .offset(offset)
             )
@@ -311,7 +328,7 @@ class AdminMailRepository:
         query = select(
             func.count(),
             func.count().filter(filtered.c.status == "sent"),
-            func.count().filter(filtered.c.status == "failed"),
+            func.count().filter(filtered.c.status.in_(("failed", "partial"))),
         ).select_from(filtered)
         every, sent, failed = (await self.session.execute(query)).one()
         return {"all": int(every), "sent": int(sent), "failed": int(failed)}
