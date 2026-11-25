@@ -1,11 +1,25 @@
 "use client";
 
-import { Link2, Loader2, Move, PartyPopper, Trash2, Upload, UserRound } from "lucide-react";
+import {
+  Building2,
+  Check,
+  Globe,
+  ImagePlus,
+  Link2,
+  Loader2,
+  Move,
+  PartyPopper,
+  RotateCcw,
+  Trash2,
+  Upload,
+  UserRound,
+} from "lucide-react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ImageCropDialog, type CropState } from "@/components/account/image-crop-dialog";
 import {
@@ -433,20 +447,117 @@ export function ProfileForm({
     return () => registerSave?.(null);
   });
 
+  function resetForm() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl);
+    setFullName(user.full_name);
+    setEmail(user.email);
+    setBio(user.bio);
+    setPronouns(user.pronouns || "unspecified");
+    setProfileUrl(user.profile_url);
+    setSocialLinks(normalizeSocialLinks(user.social_links));
+    setCompany(user.company);
+    setAvatarUrl(user.avatar_url ?? "");
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setAvatarRemoved(false);
+    setCoverFile(null);
+    setCoverPreviewUrl(null);
+    setCoverRemoved(false);
+    setAvatarOriginal(null);
+    setAvatarCrop(null);
+    setCoverOriginal(null);
+    setCoverCrop(null);
+    setImgError(false);
+    setError(null);
+    setFieldErrors({});
+  }
+
+  const statusBadge = (customized: boolean) =>
+    customized ? (
+      <Badge variant="info" className="gap-1 text-[11px] font-medium shadow-2xs">
+        <Check className="size-3" aria-hidden />
+        {t("profile.statusCustom")}
+      </Badge>
+    ) : (
+      <Badge variant="neutral" className="gap-1 text-[11px] font-medium shadow-2xs">
+        <span className="bg-muted-foreground/60 size-1.5 rounded-full" aria-hidden />
+        {t("profile.statusNotSet")}
+      </Badge>
+    );
+
   return (
     <>
-    <form onSubmit={submit} className="w-full max-w-4xl space-y-6" noValidate>
-      {/* Header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">{t("profile.profileTitle")}</h2>
-          <p className="text-muted-foreground mt-0.5 text-sm">{t("account.pageDescription")}</p>
+    <form onSubmit={submit} className="w-full max-w-4xl" noValidate>
+      {/* Sticky Header with Action & Save Buttons - Flush with TopBar */}
+      <div className="border-border bg-surface/98 sticky top-topbar z-20 flex flex-wrap items-center justify-between gap-3 border-b py-3.5 backdrop-blur-md transition-colors duration-150">
+        <div className="flex items-center gap-2.5">
+          <UserRound className="text-primary size-5 shrink-0" aria-hidden />
+          <div>
+            <h2 className="text-foreground text-sm font-semibold sm:text-base">
+              {t("profile.profileTitle")}
+            </h2>
+            <p className="text-muted-foreground mt-0.5 hidden text-xs sm:block">
+              {t("account.pageDescription")}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={onCancel}
+            disabled={pending}
+          >
+            {t("profile.cancel")}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={resetForm}
+            disabled={pending || !dirty}
+          >
+            <RotateCcw className="size-3.5" aria-hidden />
+            {t("profile.resetChanges")}
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            disabled={pending || !email.trim()}
+            className="h-8 gap-1.5 text-xs font-semibold shadow-xs"
+          >
+            {pending ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Check className="size-3.5" aria-hidden />
+            )}
+            {t("profile.saveChanges")}
+          </Button>
         </div>
       </div>
 
-      {/* Main Form Card */}
-      <div className="border-border bg-surface divide-border rounded-xl border divide-y shadow-xs overflow-hidden">
-        <div className="flex flex-col gap-4 p-6">
+      <div className="space-y-6 pt-6">
+        {error ? (
+          <p role="alert" className="border-danger/30 bg-danger/10 text-danger rounded-lg border px-3.5 py-2.5 text-sm">
+            {error}
+          </p>
+        ) : null}
+
+        {/* Profile Cover Section */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <Label className="text-foreground text-sm font-semibold">
+              {t("profile.coverPicture")}
+            </Label>
+            {statusBadge(Boolean(displayCover))}
+          </div>
+          <p className="text-muted-foreground text-xs">{t("profile.coverTypes")}</p>
+
           <ImageActions
             label={t("profile.imageOptions")}
             uploadLabel={t("profile.uploadNew")}
@@ -455,7 +566,7 @@ export function ProfileForm({
             disabled={pending}
             onUpload={() => document.getElementById(coverInputId)?.click()}
             onReposition={() => void reposition("cover")}
-            className="bg-primary-subtle relative block aspect-[15/4] w-full overflow-hidden rounded-md border border-border"
+            className="bg-primary-subtle border-border relative block aspect-[15/4] w-full overflow-hidden rounded-lg border"
           >
             {displayCover ? (
               <CroppedAvatarImage
@@ -465,167 +576,226 @@ export function ProfileForm({
                 viewportRatio={15 / 4}
                 className="absolute inset-0"
               />
-            ) : null}
+            ) : (
+              <span className="text-muted-foreground/70 absolute inset-0 flex items-center justify-center">
+                <ImagePlus className="size-6" aria-hidden />
+              </span>
+            )}
           </ImageActions>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <Label className="text-sm font-semibold text-foreground">{t("profile.coverPicture")}</Label>
-              <p className="text-muted-foreground mt-0.5 text-xs">{t("profile.coverTypes")}</p>
+
+          <div className="border-border bg-surface-sunken/60 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3.5">
+            <div className="flex items-center gap-3">
+              <div className="border-border bg-surface text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded border border-dashed">
+                <ImagePlus className="size-4" aria-hidden />
+              </div>
+              <div>
+                <p className="text-foreground text-xs font-medium">
+                  {displayCover ? t("profile.coverUploaded") : t("profile.coverPicture")}
+                </p>
+                <p className="text-muted-foreground text-[11px]">{t("profile.coverTypes")}</p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button type="button" variant="secondary" size="sm" disabled={pending}
-                onClick={() => document.getElementById(coverInputId)?.click()} className="gap-1.5"
-                aria-label={t("profile.changeCover")}>
-                <Upload className="size-3.5" aria-hidden />
-                {t("profile.change")}
-              </Button>
-              {displayCover ? (
-                <Button type="button" variant="secondary" size="sm" disabled={pending}
-                  onClick={() => void reposition("cover")} className="gap-1.5">
-                  <Move className="size-3.5" aria-hidden />
-                  {t("profile.reposition")}
-                </Button>
-              ) : null}
-              {displayCover ? (
-                <Button type="button" variant="ghost" size="sm" disabled={pending}
-                  onClick={removeCover} className="text-danger hover:text-danger hover:bg-danger/10 gap-1.5"
-                  aria-label={t("profile.removeCover")}>
-                  <Trash2 className="size-3.5" aria-hidden />
-                  {t("profile.remove")}
-                </Button>
-              ) : null}
-              <input id={coverInputId} type="file" accept={AVATAR_TYPES.join(",")} className="sr-only"
-                aria-label={t("profile.coverPicture")} disabled={pending}
-                onChange={(event) => {
-                  chooseCover(event.target.files?.[0]);
-                  event.currentTarget.value = "";
-                }} />
-            </div>
-          </div>
-        </div>
-        {/* Avatar Section */}
-        <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-          <div className="flex items-center gap-4">
-            <ImageActions
-              label={t("profile.imageOptions")}
-              uploadLabel={t("profile.uploadNew")}
-              repositionLabel={t("profile.reposition")}
-              canReposition={canRepositionAvatar}
-              disabled={pending}
-              onUpload={() => document.getElementById(fileInputId)?.click()}
-              onReposition={() => void reposition("avatar")}
-              className={cn(
-                "relative flex size-16 sm:size-20 shrink-0 items-center justify-center overflow-hidden rounded-full text-2xl font-bold ring-1 ring-border shadow-xs select-none",
-                displayAvatar && !imgError
-                  ? ""
-                  : getUserAvatarColor(user.username || fullName || ""),
-              )}
-            >
-              {displayAvatar && !imgError ? (
-                <CroppedAvatarImage
-                  src={displayAvatar}
-                  crop={effectiveAvatarCrop}
-                  contentType={isGifAvatar ? "image/gif" : null}
-                  onError={() => setImgError(true)}
-                />
-              ) : (
-                initials(fullName, user.username) || <UserRound className="size-8" />
-              )}
-            </ImageActions>
-            <div>
-              <Label className="text-sm font-semibold text-foreground">{t("profile.profilePicture")}</Label>
-              <p className="text-muted-foreground text-xs mt-0.5">{t("profile.avatarTypes")}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 self-start sm:self-center">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={pending}
-              onClick={() => document.getElementById(fileInputId)?.click()}
-              className="gap-1.5"
-            >
-              <Upload className="size-3.5" aria-hidden />
-              {t("profile.change")}
-            </Button>
-            {canRepositionAvatar ? (
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
                 disabled={pending}
-                onClick={() => void reposition("avatar")}
+                onClick={() => document.getElementById(coverInputId)?.click()}
                 className="gap-1.5"
+                aria-label={t("profile.changeCover")}
               >
-                <Move className="size-3.5" aria-hidden />
-                {t("profile.reposition")}
+                <Upload className="size-3.5" aria-hidden />
+                {t("profile.change")}
               </Button>
-            ) : null}
-            {displayAvatar ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
+              {displayCover ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => void reposition("cover")}
+                  className="gap-1.5"
+                >
+                  <Move className="size-3.5" aria-hidden />
+                  {t("profile.reposition")}
+                </Button>
+              ) : null}
+              {displayCover ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  onClick={removeCover}
+                  className="text-danger hover:text-danger hover:bg-danger/10 gap-1.5"
+                  aria-label={t("profile.removeCover")}
+                >
+                  <Trash2 className="size-3.5" aria-hidden />
+                  {t("profile.remove")}
+                </Button>
+              ) : null}
+              <input
+                id={coverInputId}
+                type="file"
+                accept={AVATAR_TYPES.join(",")}
+                className="sr-only"
+                aria-label={t("profile.coverPicture")}
                 disabled={pending}
-                onClick={removeAvatar}
-                className="text-danger hover:text-danger hover:bg-danger/10 gap-1.5"
-              >
-                <Trash2 className="size-3.5" aria-hidden />
-                {t("profile.remove")}
-              </Button>
-            ) : null}
-            <input
-              id={fileInputId}
-              type="file"
-              accept={AVATAR_TYPES.join(",")}
-              className="sr-only"
-              onChange={(event) => {
-                chooseFile(event.target.files?.[0]);
-                event.currentTarget.value = "";
-              }}
-              disabled={pending}
-            />
+                onChange={(event) => {
+                  chooseCover(event.target.files?.[0]);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Basic Fields */}
-        <div className="p-6 space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="profile-name">{t("profile.displayName")}</Label>
-            <Input
-              id="profile-name"
-              value={fullName}
-              onChange={(event) => setFullName(event.target.value)}
-              onBlur={() => validateField("fullName")}
-              disabled={pending}
-              aria-invalid={Boolean(fieldErrors.fullName)}
-              maxLength={255}
-            />
-            <p className="text-muted-foreground text-xs">{t("profile.displayNameHint")}</p>
-            {fieldErrors.fullName ? <p className="text-danger text-xs">{fieldErrors.fullName}</p> : null}
+        {/* Profile Picture Section */}
+        <div className="border-border space-y-3 border-t pt-6">
+          <div className="flex items-center justify-between gap-3">
+            <Label className="text-foreground text-sm font-semibold">
+              {t("profile.profilePicture")}
+            </Label>
+            {statusBadge(Boolean(displayAvatar && !imgError))}
+          </div>
+          <p className="text-muted-foreground text-xs">{t("profile.profilePictureHint")}</p>
+
+          <div className="border-border bg-surface-sunken/60 flex flex-wrap items-center justify-between gap-4 rounded-lg border p-3.5">
+            <div className="flex items-center gap-3.5">
+              <ImageActions
+                label={t("profile.imageOptions")}
+                uploadLabel={t("profile.uploadNew")}
+                repositionLabel={t("profile.reposition")}
+                canReposition={canRepositionAvatar}
+                disabled={pending}
+                onUpload={() => document.getElementById(fileInputId)?.click()}
+                onReposition={() => void reposition("avatar")}
+                className={cn(
+                  "ring-border relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full text-xl font-bold shadow-xs ring-1 select-none sm:size-16 sm:text-2xl",
+                  displayAvatar && !imgError
+                    ? ""
+                    : getUserAvatarColor(user.username || fullName || ""),
+                )}
+              >
+                {displayAvatar && !imgError ? (
+                  <CroppedAvatarImage
+                    src={displayAvatar}
+                    crop={effectiveAvatarCrop}
+                    contentType={isGifAvatar ? "image/gif" : null}
+                    onError={() => setImgError(true)}
+                  />
+                ) : (
+                  initials(fullName, user.username) || <UserRound className="size-7" />
+                )}
+              </ImageActions>
+              <div>
+                <p className="text-foreground text-xs font-medium">{t("profile.profilePicture")}</p>
+                <p className="text-muted-foreground mt-0.5 text-[11px]">{t("profile.avatarTypes")}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={pending}
+                onClick={() => document.getElementById(fileInputId)?.click()}
+                className="gap-1.5"
+              >
+                <Upload className="size-3.5" aria-hidden />
+                {t("profile.change")}
+              </Button>
+              {canRepositionAvatar ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => void reposition("avatar")}
+                  className="gap-1.5"
+                >
+                  <Move className="size-3.5" aria-hidden />
+                  {t("profile.reposition")}
+                </Button>
+              ) : null}
+              {displayAvatar ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  onClick={removeAvatar}
+                  className="text-danger hover:text-danger hover:bg-danger/10 gap-1.5"
+                >
+                  <Trash2 className="size-3.5" aria-hidden />
+                  {t("profile.remove")}
+                </Button>
+              ) : null}
+              <input
+                id={fileInputId}
+                type="file"
+                accept={AVATAR_TYPES.join(",")}
+                className="sr-only"
+                onChange={(event) => {
+                  chooseFile(event.target.files?.[0]);
+                  event.currentTarget.value = "";
+                }}
+                disabled={pending}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Basic Information Section */}
+        <div className="border-border space-y-4 border-t pt-6">
+          <div>
+            <h3 className="text-foreground flex items-center gap-2 text-sm font-semibold">
+              <UserRound className="text-primary size-4 shrink-0" aria-hidden />
+              {t("profile.sectionBasicInfo")}
+            </h3>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              {t("profile.sectionBasicInfoDesc")}
+            </p>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="profile-email">{t("profile.email")}</Label>
-            <Input
-              id="profile-email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              onBlur={() => validateField("email")}
-              disabled={pending}
-              aria-invalid={Boolean(fieldErrors.email)}
-              required
-            />
-            {fieldErrors.email ? <p className="text-danger text-xs">{fieldErrors.email}</p> : null}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-name">{t("profile.displayName")}</Label>
+              <Input
+                id="profile-name"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                onBlur={() => validateField("fullName")}
+                disabled={pending}
+                aria-invalid={Boolean(fieldErrors.fullName)}
+                maxLength={255}
+              />
+              <p className="text-muted-foreground text-xs">{t("profile.displayNameHint")}</p>
+              {fieldErrors.fullName ? <p className="text-danger text-xs">{fieldErrors.fullName}</p> : null}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-email">{t("profile.email")}</Label>
+              <Input
+                id="profile-email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                onBlur={() => validateField("email")}
+                disabled={pending}
+                aria-invalid={Boolean(fieldErrors.email)}
+                required
+              />
+              {fieldErrors.email ? <p className="text-danger text-xs">{fieldErrors.email}</p> : null}
+            </div>
           </div>
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label htmlFor="profile-bio">{t("profile.bio")}</Label>
-              <span className="text-muted-foreground text-xs font-mono">{bio.length}/500</span>
+              <span className="text-muted-foreground font-mono text-xs">{bio.length}/500</span>
             </div>
             <Textarea
               id="profile-bio"
@@ -642,9 +812,19 @@ export function ProfileForm({
           </div>
         </div>
 
-        {/* Organization Fields */}
-        <div className="p-6 space-y-4">
-          <div className="grid gap-5 sm:grid-cols-2">
+        {/* Organization & Details Section */}
+        <div className="border-border space-y-4 border-t pt-6">
+          <div>
+            <h3 className="text-foreground flex items-center gap-2 text-sm font-semibold">
+              <Building2 className="text-primary size-4 shrink-0" aria-hidden />
+              {t("profile.sectionWorkDetails")}
+            </h3>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              {t("profile.sectionWorkDetailsDesc")}
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>{t("profile.pronouns")}</Label>
               <Select value={pronouns} onValueChange={setPronouns} disabled={pending}>
@@ -677,8 +857,16 @@ export function ProfileForm({
           </div>
         </div>
 
-        {/* Links Fields */}
-        <div className="p-6 space-y-4">
+        {/* Website & Social Links Section */}
+        <div className="border-border space-y-4 border-t pt-6">
+          <div>
+            <h3 className="text-foreground flex items-center gap-2 text-sm font-semibold">
+              <Globe className="text-primary size-4 shrink-0" aria-hidden />
+              {t("profile.sectionLinks")}
+            </h3>
+            <p className="text-muted-foreground mt-0.5 text-xs">{t("profile.socialLinksHint")}</p>
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="profile-url">{t("profile.website")}</Label>
             <Input
@@ -695,17 +883,14 @@ export function ProfileForm({
           </div>
 
           <div className="space-y-2">
-            <div>
-              <Label>{t("profile.socialLinks")}</Label>
-              <p className="text-muted-foreground mt-1 text-xs">{t("profile.socialLinksHint")}</p>
-            </div>
-            <div className="space-y-2.5">
+            <Label>{t("profile.socialLinks")}</Label>
+            <div className="grid gap-3 sm:grid-cols-2">
               {socialLinks.map((link, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <div className="bg-surface-sunken text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md border border-border">
-                    <Link2 className="size-4" aria-hidden />
-                  </div>
-                  <div className="min-w-0 flex-1">
+                <div key={index} className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-surface-sunken border-border text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md border">
+                      <Link2 className="size-4" aria-hidden />
+                    </div>
                     <Input
                       aria-label={t("profile.socialLinkLabel", { index: index + 1 })}
                       type="url"
@@ -715,11 +900,12 @@ export function ProfileForm({
                       disabled={pending}
                       aria-invalid={Boolean(fieldErrors[`social-${index}`])}
                       placeholder={t("profile.socialLinkPlaceholder", { index: index + 1 })}
+                      className="min-w-0 flex-1"
                     />
-                    {fieldErrors[`social-${index}`] ? (
-                      <p className="text-danger mt-1 text-xs">{fieldErrors[`social-${index}`]}</p>
-                    ) : null}
                   </div>
+                  {fieldErrors[`social-${index}`] ? (
+                    <p className="text-danger pl-11 text-xs">{fieldErrors[`social-${index}`]}</p>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -728,15 +914,26 @@ export function ProfileForm({
 
         {/* Guest welcome effect: saved on its own from its dialog */}
         {canEditWelcome ? (
-          <div className="p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="border-border space-y-3 border-t pt-6">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-foreground flex items-center gap-2 text-sm font-semibold">
+                  <PartyPopper className="text-primary size-4 shrink-0" aria-hidden />
+                  {t("welcomeEffect.configure")}
+                </h3>
+                <p className="text-muted-foreground mt-0.5 text-xs">{t("welcomeEffect.description")}</p>
+              </div>
+              {statusBadge(Boolean(welcomeEffect))}
+            </div>
+
+            <div className="border-border bg-surface-sunken/60 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3.5">
               <div className="flex min-w-0 items-center gap-3">
-                <span className="bg-surface-sunken text-primary flex size-9 shrink-0 items-center justify-center rounded-md border border-border">
+                <span className="bg-surface border-border text-primary flex size-9 shrink-0 items-center justify-center rounded border">
                   <PartyPopper className="size-4" aria-hidden />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium">{t("welcomeEffect.configure")}</p>
-                  <p className="text-muted-foreground truncate text-xs">
+                  <p className="text-foreground text-xs font-medium">{t("welcomeEffect.configure")}</p>
+                  <p className="text-muted-foreground truncate text-[11px]">
                     {t(`welcomeEffect.presets.${welcomeEffect || "none"}.label`)}
                     {welcomeMessage ? ` · ${welcomeMessage}` : ""}
                   </p>
@@ -753,27 +950,9 @@ export function ProfileForm({
                 {t("welcomeEffect.change")}
               </Button>
             </div>
-            <p className="text-muted-foreground mt-2 text-xs">{t("welcomeEffect.description")}</p>
           </div>
         ) : null}
       </div>
-
-      {error ? (
-        <p role="alert" className="border-danger/30 bg-danger/10 text-danger rounded-md border px-3 py-2 text-sm">
-          {error}
-        </p>
-      ) : null}
-
-      {/* Footer Actions */}
-      <footer className="border-border flex flex-wrap justify-end gap-3 border-t pt-5">
-        <Button type="button" variant="secondary" onClick={onCancel} disabled={pending}>
-          {t("profile.cancel")}
-        </Button>
-        <Button type="submit" variant="primary" disabled={pending || !email.trim()} className="gap-2">
-          {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-          {t("profile.saveChanges")}
-        </Button>
-      </footer>
     </form>
     {welcomeOpen ? (
       <WelcomeEffectDialog

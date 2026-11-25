@@ -15,6 +15,7 @@ import {
   Inbox,
   Layers,
   LayoutGrid,
+  LayoutTemplate,
   Mail,
   MoreHorizontal,
   PanelLeft,
@@ -113,6 +114,12 @@ const ADMIN_NAV: NavItem[] = [
     href: "/admin/spaces",
     labelKey: "nav.spaces",
     icon: FolderCog,
+    permission: "settings",
+  },
+  {
+    href: "/admin/templates",
+    labelKey: "nav.templates",
+    icon: LayoutTemplate,
     permission: "settings",
   },
   {

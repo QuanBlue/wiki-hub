@@ -343,13 +343,23 @@ class PageService:
             if not await self.spaces.permissions.can_view_page(parent, creator):
                 raise NotFoundError("Parent page not found.")
         slug = await self.unique_slug(space, title)
+        content = payload.content.strip()
+        content_format = payload.content_format
+        if payload.template_id and not content:
+            from app.modules.templates.service import PageTemplateService
+
+            content, content_format = await PageTemplateService(
+                self.session
+            ).resolve_for_page_creation(
+                payload.template_id, creator, lang=payload.template_lang
+            )
         page = WikiPage(
             space_id=space.id,
             parent_id=payload.parent_id,
             title=title,
             slug=slug,
-            content=payload.content.strip(),
-            content_format=payload.content_format,
+            content=content,
+            content_format=content_format,
             created_by_id=creator.id,
             updated_by_id=creator.id,
         )

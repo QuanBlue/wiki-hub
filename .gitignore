@@ -16,6 +16,7 @@ venv/
 htmlcov/
 coverage.xml
 coverage.json
+coverage-*.json
 dist/
 build/
 
@@ -43,6 +44,7 @@ Thumbs.db
 # --- Local runtime artifacts -------------------------------------------------
 *.log
 cookies.txt
+runtime-*.png
 tmp/
 .tmp/
 

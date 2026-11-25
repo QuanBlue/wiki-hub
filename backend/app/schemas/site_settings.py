@@ -15,6 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AppRole = Literal["admin", "member"]
+Require2FAMode = Literal["off", "admins", "all"]
 AnnouncementLevel = Literal["info", "warning", "danger", "success"]
 SeasonalEffectPresetId = Literal[
     "none",
@@ -383,6 +384,7 @@ class SiteSettingsOverrides(BaseModel):
     session_ttl_hours: int | None = None
     trash_retention_days: int | None = None
     public_shares_enabled: bool | None = None
+    require_2fa_mode: Require2FAMode | None = None
 
 
 class EffectiveSettings(BaseModel):
@@ -407,6 +409,7 @@ class EffectiveSettings(BaseModel):
     session_ttl_hours: int
     trash_retention_days: int
     public_shares_enabled: bool = True
+    require_2fa_mode: Require2FAMode = "off"
 
 
 class SiteSettingsRead(BaseModel):
@@ -452,6 +455,7 @@ class SiteSettingsUpdate(BaseModel):
     session_ttl_hours: int | None = Field(default=None, ge=1, le=8760)
     trash_retention_days: int | None = Field(default=None, ge=1, le=3650)
     public_shares_enabled: bool | None = None
+    require_2fa_mode: Require2FAMode | None = None
 
     @field_validator("site_name")
     @classmethod

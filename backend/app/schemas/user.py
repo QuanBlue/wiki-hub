@@ -158,6 +158,7 @@ class UserRead(BaseModel):
     #: this field is the cheap yes/no version for everywhere else.
     is_effective_admin: bool = False
     is_protected: bool
+    totp_enabled: bool = False
     receive_admin_emails: bool = True
     last_login_at: datetime | None
     privacy_accepted_at: datetime | None = None
@@ -455,12 +456,68 @@ class LoginResponse(BaseModel):
 
     It is echoed in the body so non-browser clients (CLI, tests, integrations)
     can use the bearer header without parsing Set-Cookie.
+
+    When two-factor authentication is required (either verification or initial
+    enforced setup), ``requires_2fa`` is True, ``challenge_token`` is set, and
+    no access token is issued until the second factor completes.
     """
 
-    access_token: str
+    access_token: str | None = None
     token_type: str = "bearer"  # noqa: S105 - a scheme name, not a credential
-    expires_at: datetime
-    user: UserRead
+    expires_at: datetime | None = None
+    user: UserRead | None = None
+    requires_2fa: bool = False
+    requires_2fa_setup: bool = False
+    challenge_token: str | None = None
+
+
+class TwoFactorStatusRead(BaseModel):
+    enabled: bool
+    enabled_at: datetime | None = None
+    recovery_codes_remaining: int = 0
+    enforced: bool = False
+
+
+class TwoFactorSetupRequest(BaseModel):
+    challenge_token: str | None = None
+
+
+class TwoFactorSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class TwoFactorConfirmRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    challenge_token: str | None = None
+
+
+class TwoFactorConfirmResponse(BaseModel):
+    enabled: bool = True
+    recovery_codes: list[str]
+    access_token: str | None = None
+    token_type: str = "bearer"  # noqa: S105 - a scheme name, not a credential
+    expires_at: datetime | None = None
+    user: UserRead | None = None
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    challenge_token: str = Field(min_length=1)
+    code: str = Field(min_length=1, max_length=32)
+
+
+class TwoFactorDisableRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+    code: str = Field(min_length=1, max_length=32)
+
+
+class TwoFactorRegenerateCodesRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+    code: str = Field(min_length=1, max_length=32)
+
+
+class TwoFactorRecoveryCodesResponse(BaseModel):
+    recovery_codes: list[str]
 
 
 class SessionRead(BaseModel):

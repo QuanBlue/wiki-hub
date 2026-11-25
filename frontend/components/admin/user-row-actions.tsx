@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, ShieldOff, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -9,15 +9,18 @@ import { EditUserDialog } from "@/components/admin/edit-user-dialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/context";
+import { resetUserTwoFactor } from "@/lib/two-factor";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/api";
 
 /**
  * Per-row administrative actions: Edit (role, status, password and
- * permission overrides, all in one modal - see `EditUserDialog`) and
- * Delete, matching the Edit/Delete pair `GroupManager`'s rows already use.
+ * permission overrides, all in one modal - see `EditUserDialog`),
+ * Reset 2FA (when TOTP is enabled on the user), and Delete, matching
+ * the Edit/Delete pair `GroupManager`'s rows already use.
  *
- * For the protected bootstrap account both buttons are **absent**, not
+ * For the protected bootstrap account all buttons are **absent**, not
  * disabled: the backend answers 403 for every one of these, so a greyed-out
  * button would only invite a click that cannot succeed. The "protected"
  * badge next to the name already says why.
@@ -44,9 +47,12 @@ export function UserRowActions({
   viewerIsSystemAdmin: boolean;
 }) {
   const router = useRouter();
+  const { t } = useTranslation();
   const [pending, setPending] = useState(false);
+  const [reset2faPending, setReset2faPending] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmReset2fa, setConfirmReset2fa] = useState(false);
 
   if (user.is_protected) {
     return (
@@ -77,6 +83,26 @@ export function UserRowActions({
     }
   }
 
+  async function handleReset2fa() {
+    setReset2faPending(true);
+    try {
+      await resetUserTwoFactor(user.id);
+      toast.success(
+        t("adminUsers.resetTwoFactorSuccess", { username: user.username }),
+      );
+      setConfirmReset2fa(false);
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof ApiError
+          ? error.message
+          : t("adminUsers.resetTwoFactorError"),
+      );
+    } finally {
+      setReset2faPending(false);
+    }
+  }
+
   return (
     <div className="flex items-center justify-end gap-1">
       <Button
@@ -91,6 +117,29 @@ export function UserRowActions({
         <Pencil />
         Edit
       </Button>
+      {user.totp_enabled ? (
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => setConfirmReset2fa(true)}
+          disabled={peerAdminBlocked}
+          title={
+            peerAdminBlocked
+              ? peerAdminTitle
+              : t("adminUsers.resetTwoFactorAction", { username: user.username })
+          }
+          aria-label={t("adminUsers.resetTwoFactorAction", {
+            username: user.username,
+          })}
+          className={cn(
+            "hover:bg-warning-bg! hover:text-warning!",
+            peerAdminBlocked &&
+              "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-inherit",
+          )}
+        >
+          <ShieldOff />
+        </Button>
+      ) : null}
       <Button
         size="icon"
         variant="ghost"
@@ -119,6 +168,19 @@ export function UserRowActions({
         viewerIsSystemAdmin={viewerIsSystemAdmin}
         open={editOpen}
         onOpenChange={setEditOpen}
+      />
+
+      <ConfirmDialog
+        open={confirmReset2fa}
+        onOpenChange={setConfirmReset2fa}
+        title={t("adminUsers.resetTwoFactorTitle", { username: user.username })}
+        description={t("adminUsers.resetTwoFactorDescription", {
+          username: user.username,
+        })}
+        confirmLabel={t("adminUsers.resetTwoFactorConfirm")}
+        destructive
+        pending={reset2faPending}
+        onConfirm={handleReset2fa}
       />
 
       <ConfirmDialog

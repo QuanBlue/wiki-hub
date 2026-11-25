@@ -96,6 +96,8 @@ class PageCreate(BaseModel):
     content: str = Field(default="", max_length=MAX_PAGE_CONTENT_CHARS)
     content_format: Literal["html", "markdown"] = "html"
     parent_id: uuid.UUID | None = None
+    template_id: str | None = Field(default=None, max_length=128)
+    template_lang: Literal["en", "vi"] = "en"
 
 
 class PageMove(BaseModel):

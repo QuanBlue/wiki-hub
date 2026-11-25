@@ -2,10 +2,13 @@
 
 import {
   FilePlus2,
+  FileText,
   Info,
+  LayoutTemplate,
   Loader2,
   Maximize2,
   RefreshCw,
+  Search,
   Sparkles,
   TriangleAlert,
   X,
@@ -14,11 +17,13 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { AiClarifyQuestions } from "@/components/pages/ai-clarify-questions";
 import { AiNotSetUp } from "@/components/pages/ai-not-set-up";
+import { TemplateIcon } from "@/components/templates/template-icon";
+import { Badge } from "@/components/ui/badge";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import {
   Dialog,
@@ -37,8 +42,10 @@ import {
 } from "@/lib/ai-summary";
 import { api, ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/context";
+import { markdownToHtml } from "@/lib/markdown-html";
+import { listSpaceTemplates } from "@/lib/templates";
 import { cn } from "@/lib/utils";
-import type { WikiPage } from "@/types/api";
+import type { PageTemplate, PageTemplateScope, WikiPage } from "@/types/api";
 
 const AI_SUGGESTIONS = ["runbook", "meeting", "howto", "brief"] as const;
 
@@ -88,6 +95,14 @@ export function CreatePageDialog({
   const [answers, setAnswers] = useState<PageAnswer[]>([]);
   const [asking, setAsking] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<PageTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
+    null,
+  );
+  const [templateSearch, setTemplateSearch] = useState("");
+  const [templateScope, setTemplateScope] = useState<"all" | PageTemplateScope>(
+    "all",
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -98,10 +113,38 @@ export function CreatePageDialog({
       setCanConfigure(Boolean(status?.can_configure));
       setAiKnown(true);
     });
+    void listSpaceTemplates(spaceKey, locale)
+      .then((items) => {
+        if (active) setTemplates(items);
+      })
+      .catch(() => {
+        if (active) setTemplates([]);
+      });
     return () => {
       active = false;
     };
-  }, [open]);
+  }, [locale, open, spaceKey]);
+
+  const selectedTemplate = useMemo(
+    () =>
+      selectedTemplateId
+        ? (templates.find((item) => item.id === selectedTemplateId) ?? null)
+        : null,
+    [selectedTemplateId, templates],
+  );
+
+  const filteredTemplates = useMemo(() => {
+    const query = templateSearch.trim().toLowerCase();
+    return templates.filter((item) => {
+      if (templateScope !== "all" && item.scope !== templateScope) return false;
+      if (!query) return true;
+      return (
+        item.name.toLowerCase().includes(query) ||
+        item.description.toLowerCase().includes(query) ||
+        item.category.toLowerCase().includes(query)
+      );
+    });
+  }, [templateScope, templateSearch, templates]);
 
   // The AI first looks the request up in the wiki and may ask questions; the
   // answers (and the pages it found) are kept so Regenerate does not ask again.
@@ -218,13 +261,20 @@ export function CreatePageDialog({
 
     setPending(true);
     try {
+      const useTemplate =
+        (mode === "write" || !aiOn) && draft === null && selectedTemplate !== null;
+      const payload: Record<string, unknown> = {
+        title: trimmedTitle,
+        content: useTemplate ? "" : (draft ?? content),
+        parent_id: parentPage?.id ?? null,
+      };
+      if (useTemplate && selectedTemplate) {
+        payload.template_id = selectedTemplate.id;
+        payload.template_lang = locale;
+      }
       const page = await api.post<WikiPage>(
         `/api/v1/spaces/${encodeURIComponent(spaceKey)}/pages`,
-        {
-          title: trimmedTitle,
-          content: draft ?? content,
-          parent_id: parentPage?.id ?? null,
-        },
+        payload,
       );
       toast.success(t("pageCreate.createdToast", { title: page.title }));
       setOpen(false);
@@ -233,6 +283,9 @@ export function CreatePageDialog({
       setDraft(null);
       setMode("write");
       setAiPrompt("");
+      setSelectedTemplateId(null);
+      setTemplateSearch("");
+      setTemplateScope("all");
       router.push(
         `/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(page.slug)}`,
       );
@@ -266,7 +319,7 @@ export function CreatePageDialog({
         </Button>
       </DialogTrigger>
       <DialogContent
-        className={aiKnown ? "max-w-4xl" : undefined}
+        className={aiKnown || templates.length > 0 ? "max-w-4xl" : undefined}
         title={
           parentPage
             ? t("pageCreate.createChildTitle")
@@ -330,45 +383,290 @@ export function CreatePageDialog({
               </div>
             ) : mode === "write" || !aiOn ? (
               <div
-                className={cn("flex flex-col gap-2", aiKnown && "md:h-[22rem]")}
-              >
-                {aiKnown ? null : (
-                  <Label htmlFor="page-content">
-                    {t("pageCreate.contentLabel")}
-                  </Label>
+                className={cn(
+                  "flex flex-col gap-3",
+                  aiKnown && templates.length === 0 && "md:h-[22rem]",
                 )}
-                <textarea
-                  id="page-content"
-                  aria-label={
-                    aiKnown ? t("pageCreate.contentLabel") : undefined
-                  }
-                  value={content}
-                  onChange={(event) => setContent(event.target.value)}
-                  className={cn(
-                    inputClassName,
-                    "min-h-40 flex-1 py-2 leading-6",
-                    aiKnown ? "resize-none" : "resize-y",
-                  )}
-                  placeholder={t("pageCreate.contentPlaceholder")}
-                  maxLength={200000}
-                />
-                {aiOn ? (
-                  <div className="bg-surface-sunken flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md px-3 py-2">
-                    <p className="text-muted-foreground flex min-w-0 flex-1 items-start gap-2 text-xs">
-                      <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                      {t("pageCreate.writeHint")}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={draftFromWritten}
-                    >
-                      <Sparkles aria-hidden />
-                      {t("pageCreate.writeSwitchAi")}
-                    </Button>
+              >
+                {templates.length > 0 ? (
+                  <div className="grid gap-4 md:h-[22rem] md:grid-cols-[17rem_1fr]">
+                    <div className="flex min-h-0 flex-col gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-foreground flex items-center gap-1.5 text-xs font-semibold">
+                          <LayoutTemplate className="size-3.5" aria-hidden />
+                          {t("templates.pickerLabel")}
+                        </span>
+                      </div>
+
+                      <div className="relative">
+                        <Search
+                          className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
+                          aria-hidden
+                        />
+                        <input
+                          type="search"
+                          value={templateSearch}
+                          onChange={(event) =>
+                            setTemplateSearch(event.target.value)
+                          }
+                          placeholder={t("templates.searchPlaceholder")}
+                          aria-label={t("templates.searchPlaceholder")}
+                          className={cn(inputClassName, "h-8 pl-8 text-xs")}
+                        />
+                      </div>
+
+                      <div
+                        role="group"
+                        aria-label={t("templates.scopeLabel")}
+                        className="flex flex-wrap gap-1"
+                      >
+                        {(["all", "space", "global", "builtin"] as const).map(
+                          (scope) => (
+                            <button
+                              key={scope}
+                              type="button"
+                              aria-pressed={templateScope === scope}
+                              onClick={() => setTemplateScope(scope)}
+                              className={cn(
+                                "focus-visible:ring-ring cursor-pointer rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                                templateScope === scope
+                                  ? "border-primary bg-primary-subtle text-primary"
+                                  : "border-border bg-surface text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-surface-selected",
+                              )}
+                            >
+                              {scope === "all"
+                                ? t("templates.scopeAll")
+                                : scope === "space"
+                                  ? t("templates.scopeSpace")
+                                  : scope === "global"
+                                    ? t("templates.scopeGlobal")
+                                    : t("templates.scopeBuiltin")}
+                            </button>
+                          ),
+                        )}
+                      </div>
+
+                      <div
+                        role="radiogroup"
+                        aria-label={t("templates.pickerLabel")}
+                        className="border-border bg-surface-sunken wh-scroll min-h-0 flex-1 space-y-1 overflow-y-auto rounded-md border p-1.5"
+                      >
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={selectedTemplate === null}
+                          onClick={() => setSelectedTemplateId(null)}
+                          className={cn(
+                            "focus-visible:ring-ring flex w-full cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                            selectedTemplate === null
+                              ? "border-primary bg-surface text-foreground shadow-xs"
+                              : "hover:bg-surface-hover active:bg-surface-selected border-transparent text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          <FileText
+                            className="text-muted-foreground mt-0.5 size-4 shrink-0"
+                            aria-hidden
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="text-foreground block truncate text-xs font-medium">
+                              {t("templates.blankPage")}
+                            </span>
+                            <span className="text-muted-foreground block truncate text-[11px]">
+                              {t("templates.blankPageDescription")}
+                            </span>
+                          </span>
+                        </button>
+
+                        {filteredTemplates.map((tpl) => {
+                          const isSelected = selectedTemplate?.id === tpl.id;
+                          return (
+                            <button
+                              key={tpl.id}
+                              type="button"
+                              role="radio"
+                              aria-checked={isSelected}
+                              onClick={() => setSelectedTemplateId(tpl.id)}
+                              className={cn(
+                                "focus-visible:ring-ring flex w-full cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                                isSelected
+                                  ? "border-primary bg-surface text-foreground shadow-xs"
+                                  : "hover:bg-surface-hover active:bg-surface-selected border-transparent text-muted-foreground hover:text-foreground",
+                              )}
+                            >
+                              <span
+                                className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-sm leading-none"
+                                aria-hidden
+                              >
+                                <TemplateIcon icon={tpl.icon} className="size-3.5" />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex items-center justify-between gap-1">
+                                  <span className="text-foreground truncate text-xs font-medium">
+                                    {tpl.name}
+                                  </span>
+                                  <Badge
+                                    variant={
+                                      tpl.scope === "space"
+                                        ? "info"
+                                        : tpl.scope === "global"
+                                          ? "success"
+                                          : "neutral"
+                                    }
+                                    className="px-1 py-0 text-[10px]"
+                                  >
+                                    {tpl.scope === "space"
+                                      ? t("templates.scopeSpace")
+                                      : tpl.scope === "global"
+                                        ? t("templates.scopeGlobal")
+                                        : t("templates.scopeBuiltin")}
+                                  </Badge>
+                                </span>
+                                {tpl.description ? (
+                                  <span className="text-muted-foreground mt-0.5 block truncate text-[11px]">
+                                    {tpl.description}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex min-h-0 flex-col gap-2">
+                      {selectedTemplate ? (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <span className="text-foreground truncate text-sm font-medium">
+                                {selectedTemplate.name}
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 shrink-0 px-2 text-xs"
+                              onClick={() => setSelectedTemplateId(null)}
+                            >
+                              <X aria-hidden />
+                              {t("templates.useBlankPage")}
+                            </Button>
+                          </div>
+                          <div
+                            role="region"
+                            aria-label={t("templates.previewTitle")}
+                            className="border-border bg-surface wh-scroll min-h-40 flex-1 overflow-y-auto rounded-md border px-4 py-3"
+                          >
+                            {selectedTemplate.content.trim() ? (
+                              <DraftPreview
+                                content={
+                                  selectedTemplate.content_format === "markdown"
+                                    ? markdownToHtml(selectedTemplate.content)
+                                    : selectedTemplate.content
+                                }
+                              />
+                            ) : (
+                              <p className="text-muted-foreground text-xs">
+                                {t("templates.previewEmpty")}
+                              </p>
+                            )}
+                          </div>
+                          <p className="text-muted-foreground text-xs">
+                            {t("templates.selectedNotice", {
+                              name: selectedTemplate.name,
+                            })}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          {aiKnown ? null : (
+                            <Label htmlFor="page-content">
+                              {t("pageCreate.contentLabel")}
+                            </Label>
+                          )}
+                          <textarea
+                            id="page-content"
+                            aria-label={
+                              aiKnown ? t("pageCreate.contentLabel") : undefined
+                            }
+                            value={content}
+                            onChange={(event) => setContent(event.target.value)}
+                            className={cn(
+                              inputClassName,
+                              "min-h-40 flex-1 resize-none py-2 leading-6",
+                            )}
+                            placeholder={t("pageCreate.contentPlaceholder")}
+                            maxLength={200000}
+                          />
+                          {aiOn ? (
+                            <div className="bg-surface-sunken flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md px-3 py-2">
+                              <p className="text-muted-foreground flex min-w-0 flex-1 items-start gap-2 text-xs">
+                                <Info
+                                  className="mt-0.5 size-3.5 shrink-0"
+                                  aria-hidden
+                                />
+                                {t("pageCreate.writeHint")}
+                              </p>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={draftFromWritten}
+                              >
+                                <Sparkles aria-hidden />
+                                {t("pageCreate.writeSwitchAi")}
+                              </Button>
+                            </div>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
                   </div>
-                ) : null}
+                ) : (
+                  <>
+                    {aiKnown ? null : (
+                      <Label htmlFor="page-content">
+                        {t("pageCreate.contentLabel")}
+                      </Label>
+                    )}
+                    <textarea
+                      id="page-content"
+                      aria-label={
+                        aiKnown ? t("pageCreate.contentLabel") : undefined
+                      }
+                      value={content}
+                      onChange={(event) => setContent(event.target.value)}
+                      className={cn(
+                        inputClassName,
+                        "min-h-40 flex-1 py-2 leading-6",
+                        aiKnown ? "resize-none" : "resize-y",
+                      )}
+                      placeholder={t("pageCreate.contentPlaceholder")}
+                      maxLength={200000}
+                    />
+                    {aiOn ? (
+                      <div className="bg-surface-sunken flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md px-3 py-2">
+                        <p className="text-muted-foreground flex min-w-0 flex-1 items-start gap-2 text-xs">
+                          <Info
+                            className="mt-0.5 size-3.5 shrink-0"
+                            aria-hidden
+                          />
+                          {t("pageCreate.writeHint")}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={draftFromWritten}
+                        >
+                          <Sparkles aria-hidden />
+                          {t("pageCreate.writeSwitchAi")}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </>
+                )}
               </div>
             ) : (
               <div className="grid gap-5 md:h-[22rem] md:grid-cols-2">

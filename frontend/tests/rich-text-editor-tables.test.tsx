@@ -1,7 +1,13 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { RichTextEditor } from "@/components/pages/rich-text-editor";
+import {
+  RichTextContent,
+  RichTextEditor,
+} from "@/components/pages/rich-text-editor";
 
 function rect(
   element: Element,
@@ -374,5 +380,24 @@ describe("table column resize with merged cells", () => {
     } finally {
       window.removeEventListener("wikihub:ai-assist", aiSpy);
     }
+  });
+});
+
+describe("read-only table cell selection", () => {
+  it("styles .ProseMirror .selectedCell globally so view-mode multi-cell selection stays visible", async () => {
+    const view = render(<RichTextContent content={GRID} />);
+    await waitFor(() =>
+      expect(
+        view.container.querySelector('.ProseMirror[contenteditable="false"]'),
+      ).not.toBeNull(),
+    );
+
+    const globalsCss = fs.readFileSync(
+      path.resolve(process.cwd(), "app/globals.css"),
+      "utf8",
+    );
+    expect(globalsCss).toMatch(
+      /\.ProseMirror\s+\.selectedCell\s*\{[\s\S]*?var\(--selection\)/,
+    );
   });
 });

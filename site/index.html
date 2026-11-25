@@ -377,13 +377,13 @@ footer a { color: var(--muted); } footer a:hover { color: var(--fg); }
         <p>One modular application, started with one Docker Compose command. Every feature here ships today; pick a topic.</p>
       </div>
       <div class="ftabs rv" role="tablist" aria-label="Feature groups">
-        <button class="ftab" type="button" data-g="write" aria-selected="true">Write <span>10</span></button>
+        <button class="ftab" type="button" data-g="write" aria-selected="true">Write <span>11</span></button>
         <button class="ftab" type="button" data-g="collab" aria-selected="false">Collaborate <span>12</span></button>
         <button class="ftab" type="button" data-g="find" aria-selected="false">Find <span>9</span></button>
         <button class="ftab" type="button" data-g="ai" aria-selected="false">AI <span>12</span></button>
-        <button class="ftab" type="button" data-g="control" aria-selected="false">Control <span>8</span></button>
+        <button class="ftab" type="button" data-g="control" aria-selected="false">Control <span>9</span></button>
         <button class="ftab" type="button" data-g="move" aria-selected="false">Migrate <span>8</span></button>
-        <button class="ftab" type="button" data-g="ops" aria-selected="false">Operate <span>11</span></button>
+        <button class="ftab" type="button" data-g="ops" aria-selected="false">Operate <span>12</span></button>
       </div>
       <div class="fpanel" data-g="write" role="tabpanel">
         <h3 class="label fhead">Write &amp; organise</h3>
@@ -398,6 +398,7 @@ footer a { color: var(--muted); } footer a:hover { color: var(--fg); }
           <div class="card" style="--k:7"><span class="n">08</span><h3>Diagrams as text</h3><p>Type <code>/diagram</code> for Mermaid flowcharts, sequence, class, state, ER and git graphs, with a hand-drawn look and PNG, SVG or <code>.mmd</code> download.</p></div>
           <div class="card" style="--k:8"><span class="n">09</span><h3>Slide decks without PowerPoint</h3><p>Open an attached PowerPoint deck and present it full screen straight from the wiki, nothing installed on the presenting computer.</p></div>
           <div class="card" style="--k:9"><span class="n">10</span><h3>Labels and related pages</h3><p>Label pages and let WikiHub suggest labels and existing pages on the same topic, one click to add.</p></div>
+          <div class="card" style="--k:10"><span class="n">11</span><h3>Page templates</h3><p>Start from 18 built-in EN/VI templates (PRD, Runbook, ADR, Post-mortem, API Spec, Sprint Retro, SOP and more), global or per-space templates, or save any page as a reusable template.</p></div>
         </div>
       </div>
       <div class="fpanel" data-g="collab" role="tabpanel">
@@ -459,6 +460,7 @@ footer a { color: var(--muted); } footer a:hover { color: var(--fg); }
           <div class="card" style="--k:5"><span class="n">06</span><h3>Audit log</h3><p>Administrator actions are recorded and can be browsed, filtered and exported.</p></div>
           <div class="card" style="--k:6"><span class="n">07</span><h3>Your account</h3><p>Profile with avatar, bio and links, a strong-password generator, and a list of active sessions you can sign out.</p></div>
           <div class="card" style="--k:7"><span class="n">08</span><h3>Hardened by default</h3><p>Argon2id passwords and rotating refresh tokens. Uploads checked by extension, MIME type and magic bytes. A strict CSP, and logs that redact secrets.</p></div>
+          <div class="card" style="--k:8"><span class="n">09</span><h3>Two-factor authentication (2FA)</h3><p>Standard TOTP authenticator apps with offline QR setup, 10 one-time recovery codes, seamless QR rotation, optional enforcement for admins or everyone, and audited admin resets.</p></div>
         </div>
       </div>
       <div class="fpanel" data-g="move" role="tabpanel">
@@ -471,7 +473,7 @@ footer a { color: var(--muted); } footer a:hover { color: var(--fg); }
           <div class="card" style="--k:4"><span class="n">05</span><h3>Import review</h3><p>Each page is checked against its source file for lost text, headings, lists and tables. A fix is kept only if the page agrees with the file better, as its own revision.</p></div>
           <div class="card" style="--k:5"><span class="n">06</span><h3>Translate on import</h3><p>Optionally translate each page into English or Vietnamese, accepting a piece only when its tags, links, images and code are unchanged.</p></div>
           <div class="card" style="--k:6"><span class="n">07</span><h3>Export anything</h3><p>Markdown, HTML or Word for a page, a subtree, a space or the whole instance as an offline ZIP, plus Export PDF for a page.</p></div>
-          <div class="card" style="--k:7"><span class="n">08</span><h3>Scheduled backups</h3><p>Resumable backups that carry permissions, groups, comments, likes and history, with checks against uploading the wrong archive.</p></div>
+          <div class="card" style="--k:7"><span class="n">08</span><h3>Scheduled backups</h3><p>Resumable backups that carry permissions, groups, templates, comments, likes and history (with optional credentials and 2FA), plus checks against uploading the wrong archive.</p></div>
         </div>
       </div>
       <div class="fpanel" data-g="ops" role="tabpanel">
@@ -488,6 +490,7 @@ footer a { color: var(--muted); } footer a:hover { color: var(--fg); }
           <div class="card" style="--k:8"><span class="n">09</span><h3>Seasonal effects and festivals</h3><p>Hand-drawn holiday art on the top bar, margins and sign-in page, switched on by date from an editable calendar of 35+ Vietnamese and international holidays. Home plays the festival scene with a greeting.</p></div>
           <div class="card" style="--k:9"><span class="n">10</span><h3>Your own sign-in page</h3><p>Rewrite the headline, blurbs, footer and illustration of the sign-in screen in English and Vietnamese, with a live preview.</p></div>
           <div class="card" style="--k:10"><span class="n">11</span><h3>System announcements</h3><p>A scheduled banner for everyone: information, warning, critical or resolved, dismissible or not.</p></div>
+          <div class="card" style="--k:11"><span class="n">12</span><h3>Admin mail &amp; delivery logs</h3><p>Connect outbound SMTP mailboxes, reply to user requests from the inbox, send broadcasts, and inspect grouped, sortable delivery logs.</p></div>
         </div>
       </div>
       <p class="fnote">Every screen is documented in the <a href="https://github.com/QuanBlue/wiki-hub/tree/master/docs/demo">walkthrough</a>, and in the app's own Help centre.</p>

@@ -1,6 +1,7 @@
 "use client";
 
 import { SeasonalAmbientLayer } from "@/components/seasonal/seasonal-ambient-layer";
+import { PatternLayer } from "@/components/seasonal/seasonal-patterns";
 import { getSeasonalPresetMeta } from "@/components/seasonal/seasonal-presets";
 import {
   TopBarScene,
@@ -19,6 +20,7 @@ import type { SeasonalEffectPresetId } from "@/types/api";
  *   - the header-edge band                      -> SeasonalLoginCardEdge (top of the card)
  *   - the sidebar foot scene                    -> SeasonalShowcaseFoot (foot of the brand panel)
  *   - the top-bar greeting                      -> SeasonalLoginGreeting (above the card)
+ *   - the sunken line-art watermark             -> SeasonalLoginWatermark (right-side canvas)
  * Every piece is decorative: pointer-events-none and hidden from assistive tech.
  * `preset` overrides the workspace's active pack (used by the settings preview).
  */
@@ -139,5 +141,42 @@ export function SeasonalLoginGreeting({
       />
       <span className="truncate">{text}</span>
     </p>
+  );
+}
+
+/**
+ * Sunken line-art watermark tiled across the right-side sign-in canvas,
+ * behind the sign-in card. Still for solemn packs and under reduced motion.
+ */
+export function SeasonalLoginWatermark({
+  preset: override,
+}: {
+  preset?: SeasonalEffectPresetId;
+}) {
+  const preset = useShownPreset(override);
+  if (!preset) return null;
+  const meta = getSeasonalPresetMeta(preset);
+  const stroke = RAIL[preset]?.pattern ?? "var(--primary)";
+
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="seasonal-login-watermark"
+      className="pointer-events-none absolute inset-0 overflow-hidden select-none"
+      style={{
+        WebkitMaskImage:
+          "radial-gradient(ellipse 90% 90% at 50% 50%, #000 55%, transparent 100%)",
+        maskImage:
+          "radial-gradient(ellipse 90% 90% at 50% 50%, #000 55%, transparent 100%)",
+      }}
+    >
+      <PatternLayer
+        preset={preset}
+        stroke={stroke}
+        scale={1.35}
+        drift={meta?.solemn ? "none" : "y"}
+        className="opacity-[0.13] dark:opacity-[0.16]"
+      />
+    </div>
   );
 }

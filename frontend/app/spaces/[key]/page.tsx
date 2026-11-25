@@ -61,6 +61,9 @@ export default async function SpaceDetailPage({ params }: Params) {
       canManageRestrictions={
         user.is_superuser || space.my_permissions?.includes("restrictions") === true
       }
+      isSystemAdmin={Boolean(
+        user.is_superuser || user.global_permissions.includes("system_admin"),
+      )}
       canExport={space.my_permissions?.includes("export") === true}
       canEdit={
         user.is_superuser ||

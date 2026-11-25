@@ -10,7 +10,7 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 import jwt
 from argon2 import PasswordHasher
@@ -23,6 +23,9 @@ _hasher = PasswordHasher()
 
 TOKEN_TYPE_ACCESS: Final = "access"  # noqa: S105 - a token *type* label, not a credential
 TOKEN_TYPE_EXPORT: Final = "export"  # noqa: S105 - a token *type* label, not a credential
+TOKEN_TYPE_2FA_CHALLENGE: Final = "2fa_challenge"  # noqa: S105 - a token *type* label
+TOKEN_TYPE_2FA_SETUP: Final = "2fa_setup"  # noqa: S105 - a token *type* label
+TwoFactorTokenType = Literal["2fa_challenge", "2fa_setup"]
 
 #: A throwaway hash used to burn CPU when the username does not exist, so a
 #: caller cannot distinguish "no such user" from "wrong password" by timing.
@@ -226,3 +229,59 @@ def decode_export_token(token: str) -> ExportTokenIdentity:
     return ExportTokenIdentity(
         subject=subject, space_id=space_id, page_id=page_id, fmt=fmt, jti=jti
     )
+
+
+def create_2fa_token(
+    subject: str,
+    *,
+    token_type: TwoFactorTokenType,
+    expires_in: int,
+) -> tuple[str, datetime]:
+    """Return a short-lived ``(token, expires_at)`` for a 2FA login challenge or setup."""
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(seconds=expires_in)
+
+    payload: dict[str, Any] = {
+        "sub": subject,
+        "type": token_type,
+        "iat": int(now.timestamp()),
+        "exp": int(expires_at.timestamp()),
+        "jti": str(uuid.uuid4()),
+    }
+    token = jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+    return token, expires_at
+
+
+def decode_2fa_token(token: str, *, expected_type: TwoFactorTokenType) -> uuid.UUID:
+    """Validate a 2FA challenge/setup token and return the user id it identifies."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"require": ["exp", "sub"]},
+        )
+    except jwt.ExpiredSignatureError as exc:
+        raise AuthenticationError(
+            "Your two-factor verification session has expired. Please sign in again.",
+            code="2fa_challenge_expired",
+        ) from exc
+    except jwt.InvalidTokenError as exc:
+        raise AuthenticationError(
+            "Invalid two-factor authentication token.",
+            code="2fa_token_invalid",
+        ) from exc
+
+    if payload.get("type") != expected_type:
+        raise AuthenticationError(
+            "Invalid two-factor authentication token.",
+            code="2fa_token_invalid",
+        )
+
+    try:
+        return uuid.UUID(str(payload["sub"]))
+    except (KeyError, ValueError) as exc:
+        raise AuthenticationError(
+            "Invalid two-factor authentication token.",
+            code="2fa_token_invalid",
+        ) from exc

@@ -50,6 +50,11 @@ class BackupUser(BaseModel):
     created_at: datetime | None = None
     #: Argon2 hash. Only populated when the export explicitly opted in.
     password_hash: str | None = None
+    #: Two-factor authentication state. Populated only when credentials are exported.
+    totp_enabled: bool = False
+    totp_enabled_at: datetime | None = None
+    totp_secret_encrypted: str | None = None
+    totp_recovery_codes: list[str] = Field(default_factory=list)
     bio: str = ""
     pronouns: str = ""
     profile_url: str = ""
@@ -347,6 +352,24 @@ class BackupIssue(BaseModel):
     attachments: list[BackupIssueAttachment] = Field(default_factory=list)
 
 
+class BackupPageTemplate(BaseModel):
+    """A reusable global or space-scoped page template."""
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    scope: Literal["global", "space"]
+    space_key: str | None = None
+    name: str
+    description: str = ""
+    category: str = "general"
+    icon: str = ""
+    content: str = ""
+    content_format: Literal["html", "markdown"] = "html"
+    created_by_username: str | None = None
+    updated_by_username: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class BackupSiteSettings(BaseModel):
     site_name: str | None = None
     max_upload_size_mb: int | None = None
@@ -398,6 +421,7 @@ class BackupDocument(BaseModel):
     avatars: list[BackupAvatar] = Field(default_factory=list)
     covers: list[BackupCover] = Field(default_factory=list)
     issues: list[BackupIssue] = Field(default_factory=list)
+    page_templates: list[BackupPageTemplate] = Field(default_factory=list)
     site_settings: BackupSiteSettings | None = None
 
 

@@ -3,7 +3,7 @@ import { FolderTree, ShieldCheck, Sparkles, type LucideIcon } from "lucide-react
 
 import { Wordmark } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
-import type { LoginFeatureIcon, ResolvedLoginPanel } from "@/lib/login-panel";
+import { DEFAULT_LOGIN_IMAGE, type LoginFeatureIcon, type ResolvedLoginPanel } from "@/lib/login-panel";
 
 const ICONS: Record<LoginFeatureIcon, LucideIcon> = {
   ask: Sparkles,
@@ -89,6 +89,8 @@ export function LoginShowcase({
         {panel.image ? (
           // A real capture of the application (docs/demo/assets), cropped to its
           // top-left corner, unless the administrator uploaded their own.
+          // The default capture has a transparent header bar so it inherits the
+          // selected brand theme colour from `--wh-brand-600`.
           <div className="border-primary-foreground/20 aspect-[16/8.5] overflow-hidden rounded-xl border shadow-2xl [@media(max-height:720px)]:hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -96,7 +98,12 @@ export function LoginShowcase({
               alt={panel.image.alt}
               width={1420}
               height={900}
-              className="bg-surface w-full object-cover object-left-top"
+              className={cn(
+                "w-full object-cover object-left-top",
+                panel.image.src === DEFAULT_LOGIN_IMAGE
+                  ? "bg-[var(--wh-brand-600)]"
+                  : "bg-surface",
+              )}
             />
           </div>
         ) : null}

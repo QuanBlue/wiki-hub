@@ -75,6 +75,15 @@ class AuditAction(StrEnum):
     admin_mailbox_password_updated = "admin_mailbox_password_updated"
     admin_mailbox_deleted = "admin_mailbox_deleted"
 
+    two_factor_enabled = "two_factor_enabled"
+    two_factor_disabled = "two_factor_disabled"
+    two_factor_reset = "two_factor_reset"
+    two_factor_recovery_used = "two_factor_recovery_used"
+
+    template_created = "template_created"
+    template_updated = "template_updated"
+    template_deleted = "template_deleted"
+
 
 class AuditLog(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "audit_logs"

@@ -883,4 +883,30 @@ describe("SiteSettingsForm sign-in page tab", () => {
       expect(screen.getByRole("tab", { name: "Seasonal Effects" })).toBeInTheDocument();
     });
   });
+
+  describe("Two-factor authentication policy", () => {
+    it("renders the policy options, bootstrap admin note, and saves require_2fa_mode", async () => {
+      const actor = renderForm(makeSettings({}, { require_2fa_mode: "off" }));
+      await openTab(actor, /General & Sessions/);
+      const section = document.getElementById("two-factor-policy-settings") as HTMLElement;
+
+      expect(within(section).getByText("Two-factor authentication policy")).toBeInTheDocument();
+      expect(
+        within(section).getByText(/protected bootstrap administrator account is always exempt/i),
+      ).toBeInTheDocument();
+      expect(within(section).getByRole("radio", { name: /Optional for everyone/i })).toBeChecked();
+
+      await actor.click(within(section).getByRole("radio", { name: /Required for administrators/i }));
+      expect(within(section).getByRole("radio", { name: /Required for administrators/i })).toBeChecked();
+
+      const general = panel("general-settings");
+      await actor.click(within(general).getByRole("button", { name: /Save General/ }));
+      await waitFor(() =>
+        expect(mocked.patch).toHaveBeenCalledWith(
+          "/api/v1/settings",
+          expect.objectContaining({ require_2fa_mode: "admins" }),
+        ),
+      );
+    });
+  });
 });

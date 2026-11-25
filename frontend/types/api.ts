@@ -257,6 +257,8 @@ export interface User {
   is_protected: boolean;
   /** Whether this administrator receives notification emails for user requests and issues. */
   receive_admin_emails: boolean;
+  /** Whether TOTP two-factor authentication is enabled on this account. */
+  totp_enabled?: boolean;
   last_login_at: string | null;
   privacy_accepted_at: string | null;
   /** Only filled in by the People directory list (`GET /users`). */
@@ -401,10 +403,39 @@ export interface UserPageLabelItem extends PageLabel {
 }
 
 export interface LoginResponse {
-  access_token: string;
+  access_token: string | null;
   token_type: string;
-  expires_at: string;
-  user: User;
+  expires_at: string | null;
+  user: User | null;
+  requires_2fa?: boolean;
+  requires_2fa_setup?: boolean;
+  challenge_token?: string | null;
+}
+
+export type RequireTwoFactorMode = "off" | "admins" | "all";
+
+export interface TwoFactorStatus {
+  enabled: boolean;
+  enabled_at: string | null;
+  recovery_codes_remaining: number;
+  enforced: boolean;
+}
+
+export interface TwoFactorSetupResponse {
+  secret: string;
+  otpauth_uri: string;
+}
+
+export interface TwoFactorConfirmResponse {
+  enabled: true;
+  recovery_codes: string[];
+  access_token?: string | null;
+  expires_at?: string | null;
+  user?: User | null;
+}
+
+export interface TwoFactorRecoveryCodesResponse {
+  recovery_codes: string[];
 }
 
 export interface AccountSession {
@@ -1038,6 +1069,7 @@ export interface SiteSettingsOverrides {
   session_ttl_hours: number | null;
   trash_retention_days: number | null;
   public_shares_enabled?: boolean | null;
+  require_2fa_mode?: RequireTwoFactorMode | null;
 }
 
 export interface EffectiveSettings {
@@ -1059,6 +1091,7 @@ export interface EffectiveSettings {
   session_ttl_hours: number;
   trash_retention_days: number;
   public_shares_enabled?: boolean;
+  require_2fa_mode?: RequireTwoFactorMode;
 }
 
 export type AppRole = "admin" | "member";
@@ -1844,4 +1877,50 @@ export interface AuditLogEntry {
   actor_full_name?: string | null;
   impersonator_avatar_url?: string | null;
   impersonator_full_name?: string | null;
+}
+
+export type PageTemplateScope = "builtin" | "global" | "space";
+
+export interface PageTemplate {
+  id: string;
+  scope: PageTemplateScope;
+  is_builtin: boolean;
+  space_id: string | null;
+  space_key: string | null;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  content: string;
+  content_format: PageContentFormat;
+  created_by_username: string | null;
+  updated_by_username: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PageTemplateCreatePayload {
+  name: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  content?: string;
+  content_format?: PageContentFormat;
+}
+
+export interface PageTemplateUpdatePayload {
+  name?: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  content?: string;
+  content_format?: PageContentFormat;
+}
+
+export interface SavePageAsTemplatePayload {
+  name: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  scope: "space" | "global";
 }

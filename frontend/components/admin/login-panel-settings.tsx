@@ -1,7 +1,8 @@
 "use client";
 
 import { Check, ImageUp, Loader2, LogIn, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useTheme } from "next-themes";
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
 import { toast } from "sonner";
 
 import { LoginShowcase } from "@/components/auth/login-showcase";
@@ -18,6 +19,7 @@ import {
   LOGIN_FEATURE_ICONS,
   resolveLoginPanel,
 } from "@/lib/login-panel";
+import { getPresetOrCustomPalette } from "@/lib/theme-presets";
 import { cn } from "@/lib/utils";
 import type { LoginPanel, LoginPanelCopy, LoginPanelFeature, SiteSettings } from "@/types/api";
 
@@ -42,6 +44,7 @@ export function LoginPanelSettings({
   onImageUrlChange,
   hasUploadedImage,
   siteName,
+  themeColor,
   pending,
   dirty,
 }: {
@@ -52,12 +55,24 @@ export function LoginPanelSettings({
   onImageUrlChange: (url: string | null) => void;
   hasUploadedImage: boolean;
   siteName: string;
+  /** Draft or effective brand theme colour (preset id or hex) for the live preview. */
+  themeColor?: string;
   pending: boolean;
   dirty: boolean;
 }) {
   const { locale } = useTranslation();
+  const { resolvedTheme } = useTheme();
   const vi = locale === "vi";
   const L = (en: string, viText: string) => (vi ? viText : en);
+  const previewBrandVars = themeColor
+    ? (() => {
+        const palette = getPresetOrCustomPalette(themeColor);
+        return {
+          "--wh-brand-600": palette[600],
+          "--primary": resolvedTheme === "dark" ? palette[400] : palette[600],
+        } as CSSProperties;
+      })()
+    : undefined;
 
   const [lang, setLang] = useState<Locale>(locale);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -379,7 +394,7 @@ export function LoginPanelSettings({
           <p className="text-muted-foreground mb-1.5 text-[10px] font-semibold tracking-wider uppercase">
             {L("Live preview", "Xem trước trực tiếp")} · {lang === "vi" ? "VI" : "EN"}
           </p>
-          <ScaledPreview>
+          <ScaledPreview style={previewBrandVars}>
             <LoginShowcase
               preview
               siteName={siteName}
@@ -409,7 +424,13 @@ export function LoginPanelSettings({
 }
 
 /** Lays the panel out at desktop size, then scales it to fit the available width. */
-function ScaledPreview({ children }: { children: React.ReactNode }) {
+function ScaledPreview({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: CSSProperties;
+}) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(0.5);
 
@@ -429,7 +450,7 @@ function ScaledPreview({ children }: { children: React.ReactNode }) {
       ref={frameRef}
       data-testid="login-panel-preview"
       className="border-border overflow-hidden rounded-xl border shadow-xs"
-      style={{ height: PREVIEW_HEIGHT * scale }}
+      style={{ ...style, height: PREVIEW_HEIGHT * scale }}
     >
       <div
         aria-hidden="true"

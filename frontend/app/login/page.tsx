@@ -12,6 +12,7 @@ import {
   SeasonalLoginAtmosphere,
   SeasonalLoginCardEdge,
   SeasonalLoginGreeting,
+  SeasonalLoginWatermark,
   SeasonalShowcaseFoot,
 } from "@/components/seasonal/seasonal-login-decor";
 import { SystemAnnouncementBanner } from "@/components/layout/system-announcement-banner";
@@ -62,6 +63,9 @@ export default async function LoginPage({
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 [background-image:radial-gradient(var(--border)_1px,transparent_1px)] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_50%,transparent_100%)] [background-size:24px_24px] opacity-70"
         />
+
+        {/* Sunken seasonal watermark across the right-side canvas */}
+        <SeasonalLoginWatermark />
 
         {/* Ambient atmospheric lighting */}
         <div

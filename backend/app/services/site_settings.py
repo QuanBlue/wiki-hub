@@ -69,6 +69,7 @@ AUDITED_FIELDS = (
     "session_ttl_hours",
     "trash_retention_days",
     "public_shares_enabled",
+    "require_2fa_mode",
 )
 
 
@@ -212,6 +213,11 @@ class SiteSettingsService:
                 if getattr(row, "public_shares_enabled", None) is not None
                 else getattr(settings, "public_shares_enabled", True)
             ),
+            require_2fa_mode=(
+                raw_2fa
+                if (raw_2fa := getattr(row, "require_2fa_mode", None)) in ("off", "admins", "all")
+                else "off"
+            ),
         )
 
     async def read(self) -> SiteSettingsRead:
@@ -309,6 +315,8 @@ class SiteSettingsService:
                 update={"notified_occurrences": merged_notified}
             )
             data["seasonal_theme"] = stamped_seasonal.model_dump(mode="json")
+        if "require_2fa_mode" in data and data["require_2fa_mode"] is None:
+            data["require_2fa_mode"] = "off"
         for field in AUDITED_FIELDS:
             if field in data:
                 setattr(row, field, data[field])

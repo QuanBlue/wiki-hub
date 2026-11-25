@@ -51,6 +51,24 @@ spaces, save pages for later, like useful pages, and share a page link with
 people who already have access. Page restrictions can add user/group access
 rules beyond the parent space's permissions.
 
+### Page templates
+
+When creating a page, choose **Blank page** or pick from ready-made templates:
+
+- **Built-in templates** — 18 bilingual (EN/VI) templates available in every space:
+  *Meeting Notes*, *Operations Runbook*, *Architecture Decision Record (ADR)*,
+  *Incident Post-mortem*, *Team Onboarding Guide*, *Technical Proposal (RFC)*,
+  *PRD*, *Sprint Retrospective*, *Project Kickoff & Plan*, *Release Notes*,
+  *API Specification*, *System Architecture*, *Deployment Checklist*,
+  *Security Review*, *Weekly Status Update*, *1:1 Meeting Notes*, *SOP*, and
+  *Troubleshooting & FAQ*.
+- **Global & space templates** — System Administrators manage workspace-wide
+  templates under **Administration → Templates**; Space Owners and Admins manage
+  space-specific templates via **Templates** at the bottom of the space sidebar.
+- **Save as template** — open any existing page's **More** menu and select
+  **Save as template** to turn its content into a reusable space (or global)
+  template. Templates are included automatically in full backups and restores.
+
 ## AI assistant
 
 When an administrator has connected an AI service (see Administration), the AI
@@ -196,6 +214,15 @@ Open **Your account** from the account menu.
   email, avatar, bio, pronouns, company, website, and up to two social links.
 - **Password & authentication** lets you change your password after satisfying
   the displayed strength requirements. You can generate a strong password.
+- **Two-factor authentication (2FA)** protects your account with any standard
+  TOTP authenticator app (Google Authenticator, Authy, 1Password, Bitwarden).
+  QR codes are generated offline in your browser so secrets never leave WikiHub.
+  Entering all 6 digits in the OTP boxes verifies automatically (arrow keys and
+  clicking any box edit individual digits in place). When enabling or rotating
+  2FA, WikiHub issues 10 one-time recovery codes that must be downloaded as a
+  `.txt` file before continuing. You can switch to a new phone anytime with
+  **New QR code** (your old authenticator stays active until the new one is
+  confirmed), or regenerate recovery codes from **Account → Security**.
 - **Sessions** lists active browsers. Sign out all other sessions if you do not
   recognise activity, then change your password.
 
@@ -290,9 +317,16 @@ preview. Under **Settings → System Announcement**, publish a banner for every 
 with a level (Information, Warning, Critical, Resolved), a schedule and an optional dismiss
 button.
 
-Workspace settings control the site name, session duration, upload/archive
-limits, attachment types, and role visibility for sidebar areas. Storage lets
-administrators filter bucket objects, obtain safe download links, preview
+Workspace settings control the site name, session duration, two-factor
+authentication policy (*Off*, *Administrators only*, or *Everyone* — the
+protected bootstrap administrator is always exempt so the instance cannot be
+locked out), upload/archive limits, attachment types, and role visibility for
+sidebar areas. Under **Users**, administrators see which accounts have 2FA
+enabled and can **Reset 2FA** (recorded in **Audit logs**) if someone loses
+their authenticator device. Under **Templates**, system administrators manage
+global page templates. Under **Mail**, administrators configure outbound SMTP
+mailboxes, send broadcasts, and review grouped, sortable delivery logs. Storage
+lets administrators filter bucket objects, obtain safe download links, preview
 compatible files, and permanently delete unneeded objects.
 
 Under **Statistics**, system administrators see how the workspace is used over
@@ -306,8 +340,9 @@ introduced, and token counts depend on the AI service reporting its usage.
 Administration → **Backup** offers separate operations:
 
 1. **Full WikiHub backup ZIP** contains workspace data, pages, revisions,
-   permissions, attachments, and internal avatar files. Password hashes are
-   excluded by default and should only be included for a secure migration.
+   page templates, permissions, attachments, and internal avatar files. Password
+   hashes (and encrypted 2FA secrets) are excluded by default and should only be
+   included for a secure migration.
 2. **Confluence Data Center XML export** requires an explicit Data Center 8.x
    or 9.x profile. It contains space content and attachments, but not WikiHub
    users, groups, or settings.

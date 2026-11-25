@@ -441,6 +441,24 @@
   "text": "<>\nXuất bản một trang (nhấn Save) và chỉ đơn thuần có thay đổi\nchưa lưu là hai việc khác nhau trong WikiHub - một hệ thống bản nháp\nriêng nằm giữa hai việc đó, để một tab bị đóng hay trình duyệt bị treo\nkhông bao giờ khiến bạn mất công sức thực sự.\nBật/tắt tự động lưu: khi đang chỉnh sửa, bật\nAuto-save (trong thanh công cụ trình soạn thảo) để lưu\nbản chỉnh sửa đang dở lên server mỗi 30 giây - tách biệt với việc thực\nsự xuất bản trang. Một bản sao cục bộ cũng được giữ trong trình duyệt\ncủa bạn như một phương án dự phòng.\nKhôi phục một bản nháp: nếu bạn rời trang (hoặc trình\nduyệt đóng) trong khi còn một bản nháp chưa xuất bản, quay lại trang\nđó sẽ hiện một banner Draft not released - “This\ndraft was last saved on {\"\"} and has not been saved to the\npage.” Nhấn Open editor để tiếp tục đúng chỗ\nbạn đã dừng lại, hoặc Discard draft để bỏ nó đi.\nCảnh báo xung đột: nếu ai đó khác đã xuất bản thay\nđổi cho trang sau khi bản nháp của bạn được tạo, banner sẽ thêm\n“The page has changed since this draft was created.”\nđể bạn biết cần kiểm tra chồng chéo trước khi tiếp tục.\nDiscard draft sẽ hỏi “Discard unreleased\ndraft?” trước khi làm bất cứ điều gì - nó chỉ xoá bản nháp đã lưu\nvà khôi phục trang về nội dung hiện tại, đã xuất bản.\n),\n},"
  },
  {
+  "id": "page-templates",
+  "title": "Mẫu trang (Page Templates)",
+  "category": "Writing",
+  "keywords": [
+   "mẫu trang",
+   "template",
+   "page templates",
+   "biên bản họp",
+   "runbook",
+   "adr",
+   "post-mortem",
+   "onboarding",
+   "rfc",
+   "lưu làm mẫu"
+  ],
+  "text": "<>\nKhi tạo trang mới, bạn có thể chọn Trang trống hoặc bắt đầu\ntừ một mẫu có sẵn. Mọi Space đều có sẵn 18 mẫu dựng sẵn (Biên bản cuộc họp,\nSổ tay vận hành / Runbook, ADR, Báo cáo sau sự cố / Post-mortem, Hướng dẫn\nhội nhập / Onboarding, Đề xuất kỹ thuật / RFC, PRD, Họp cải tiến Sprint,\nKế hoạch dự án, Ghi chú phát hành, Đặc tả API, Kiến trúc hệ thống, Checklist\ntriển khai, Đánh giá bảo mật, Báo cáo tuần, Họp 1:1, Quy trình SOP, Xử lý\nsự cố & FAQ) cùng các mẫu toàn hệ thống và mẫu riêng của Space.\nDùng mẫu khi tạo trang: mở Tạo trang, lọc\ntheo Space, Toàn hệ thống hoặc Dựng sẵn, xem trước nội dung rồi tạo trang.\nLưu trang hiện có làm mẫu: mở menu Thêm\ncủa trang và chọn Lưu làm mẫu (dành cho Chủ Space, Quản\ntrị Space và Quản trị hệ thống).\nQuản lý mẫu: Chủ/Quản trị Space quản lý mẫu của Space tại\nmục Mẫu trang ở chân thanh bên; Quản trị hệ thống quản lý\nmẫu toàn hệ thống tại Quản trị → Mẫu trang. Các mẫu trang\nđược bao gồm trong sao lưu và khôi phục.\n),\n},"
+ },
+ {
   "id": "format-conversion",
   "title": "Chuyển đổi giữa Rich Text, Markdown & HTML",
   "category": "Writing",
@@ -592,6 +610,22 @@
    "đăng xuất"
   ],
   "text": "<>\nQuản lý tuỳ chọn tài khoản cá nhân của bạn trong Your\naccount từ menu hồ sơ.\nHồ sơ của một thành viên mở đầu bằng biểu đồ đóng góp: mỗi ô là một ngày\ntrong năm qua, càng đậm khi ngày đó sửa nhiều trang. Rê chuột vào ô để xem ngày và số lượng,\nchọn năm ở bên phải để xem các năm trước.\nTrong dòng hoạt động, một trang bạn sửa nhiều lần liên tiếp chỉ hiện một dòng,\nCập nhật 6 lần. Bấm vào dòng đó để xem từng lần sửa kèm liên kết\nxem thay đổi.\nTrạng thái cá nhân:\nMở menu tài khoản và chọn Đặt trạng thái (Cập nhật trạng thái\nkhi đã có) để chia sẻ một dòng ngắn với mọi người trong workspace: chọn biểu tượng, gõ tối đa\n140 ký tự hoặc bắt đầu từ mẫu có sẵn (Rảnh rỗi trò chuyện, Phản hồi chậm,\nĐang đi du lịch...), rồi chọn Xoá trạng thái sau 1 giờ, 4 giờ, 24 giờ,\n7 ngày hoặc không tự xoá. Trạng thái hiện thành bóng suy nghĩ trên hồ sơ và cạnh ảnh đại\ndiện, tooltip cho biết thời điểm hết hạn. Nó tự biến mất khi hết hạn, hoặc bấm\nXoá trạng thái.\nHiệu ứng chào khách:\nTrên trang Home của bạn, bấm nút bảng màu trên ảnh bìa, hoặc dùng dòng\nWelcome effect trong Tài khoản → Chỉnh sửa hồ sơ, để chọn hiệu ứng\nchào mừng phát cho khách khi họ ghé thăm (khoảng 5 giây). Có 26 theme chia thành bốn\nnhóm: Cổ điển, Trò chơi (Block Craft, Phiêu lưu 2D,\nĐua xe), Phiêu lưu (Cướp biển, Ninja, Tên lửa, Rừng nhiệt đới) và\nPhong cách (Cyberpunk, Steampunk, Kẹo ngọt, Kawaii). Cảnh các ngày lễ\nkhông nằm trong danh sách này mà đến từ chủ đề lễ hội (xem bên dưới).\nMọi theme đều theo cùng một kịch bản: cảnh mở ra, Hubby (chú cú linh vật\nWikiHub, mặc trang phục theo theme) chạy tới cạnh avatar và giới thiệu avatar, vòng\nsáng cùng các tia lấp lánh làm avatar nổi bật, rồi Hubby vẫy tay và mọi thứ mờ dần.\nHiệu ứng không bao giờ che avatar của bạn.\nBấm nút phát tròn trên mỗi thẻ để xem thử trong Home giả, sau đó bấm\nUse this theme để chọn và lưu ngay. Bạn cũng có thể bấm vào thẻ rồi chọn Save effect.\nLời chào tuỳ chỉnh (tuỳ chọn, tối đa 140 ký tự) hiện thành bóng thoại\ncủa Hubby. Để trống thì không có bóng thoại. Khách có thể bấm Skip bất\ncứ lúc nào; nếu hệ thống của họ bật giảm chuyển động, hiệu ứng được thay bằng lời chào\ntĩnh.\nHiệu ứng lễ hội trên Home: khi một chủ đề lễ hội đang chạy (Tết,\nValentine, 20/11, Thiếu nhi, Quốc khánh, Halloween, Giáng sinh và các dịp khác), trang\nHome của bạn phát cảnh riêng của dịp lễ đó kèm lời chúc mỗi lần bạn quay về Home, Hubby\nmặc trang phục theo dịp (ví dụ áo dài cho Tết). Bấm Skip để tắt trong\nphần còn lại của phiên; nút phát trên ảnh bìa vẫn phát lại được. Hiệu\nứng lễ được ưu tiên hơn hiệu ứng chào mừng của bạn trên Home (hiệu ứng riêng chỉ phát\nmột lần mỗi phiên). Khi vào trang cá nhân của người\nkhác, bạn vẫn thấy hiệu ứng riêng của họ. Cảnh lễ hội không nằm trong danh sách theme để\nchọn.\nQuản trị viên có thể đặt hiệu ứng cho thành viên khác từ trang hồ sơ của họ.\n1. Cài đặt hồ sơ người dùng:\nNhấn Edit profile để cập nhật tên hiển thị, email,\nảnh đại diện, tiểu sử, đại từ nhân xưng, công ty, và liên kết mạng xã\nhội.\nNhấn vào ảnh đại diện hoặc ảnh bìa để chọn Tải ảnh mới lên hoặc\nChỉnh vị trí. Chỉnh vị trí mở lại ảnh bạn đã tải lên để kéo hoặc\nthu phóng lại mà không cần tải ảnh lần nữa. Ảnh lưu từ trước đó, hoặc khôi phục từ\nbản sao lưu, sẽ chỉnh vị trí trên ảnh đã cắt.\nKiểm tra trường dữ liệu đưa phản hồi tức thì về lỗi định dạng hay yêu cầu.\nNếu có thay đổi chưa lưu mà bạn rời đi (nhấn Cancel, chuyển sang tab\ncài đặt khác, hoặc bấm liên kết sang trang khác), WikiHub sẽ hỏi bạn muốn làm gì:\nLưu và rời đi, Rời đi mà không lưu hoặc\nTiếp tục chỉnh sửa. Nếu lưu không thành công, bạn ở lại biểu mẫu để\nsửa lỗi.\n2. Bảo mật & Quy tắc mật khẩu:\nCập nhật mật khẩu của bạn trong Password &\nauthentication.\nThanh đo độ mạnh mật khẩu kiểm tra độ dài, số, ký tự đặc biệt, và quy\ntắc chữ hoa. Nhấn Generate password để tạo một mật\nkhẩu ngẫu nhiên mạnh.\n3. Quản lý phiên đang hoạt động:\nTrong Sessions, xem các trình duyệt đang hoạt động và\nđăng xuất mọi phiên khác nếu bạn thấy hoạt động không nhận ra. Bạn có\nthể thu hồi các thiết bị cụ thể hoặc nhấn Revoke all\nsessions để vô hiệu hoá ngay lập tức mọi token từ xa.\n),\n},"
+ },
+ {
+  "id": "two-factor-auth",
+  "title": "Xác thực hai yếu tố (2FA)",
+  "category": "Account",
+  "keywords": [
+   "2fa",
+   "xác thực hai yếu tố",
+   "totp",
+   "authenticator",
+   "mã qr",
+   "mã dự phòng",
+   "bảo mật",
+   "đặt lại 2fa"
+  ],
+  "text": "<>\nThêm bước xác minh thứ hai bằng ứng dụng TOTP chuẩn (Google Authenticator,\nAuthy, 1Password, Bitwarden). Mã QR được tạo hoàn toàn offline trên trình\nduyệt để khóa bí mật không bao giờ rời khỏi WikiHub.\nBật 2FA: vào Tài khoản của bạn → Bảo mật,\nbấm Bật 2FA, quét mã QR (hoặc sao chép khóa thủ công) và\nnhập đủ 6 chữ số (hệ thống tự động xác minh ngay khi điền đủ 6 ô).\nMã dự phòng & đổi thiết bị: WikiHub cấp 10 mã dự phòng\ndùng một lần và chỉ hiển thị một lần duy nhất — bạn cần bấm tải tệp\n.txt trước khi tiếp tục và lưu ở nơi an toàn phòng khi mất\nđiện thoại. Bạn có thể tạo lại bộ mã dự phòng hoặc bấm\nTạo mã QR mới để chuyển sang điện thoại mới bất cứ lúc\nnào trong Tài khoản → Bảo mật (mã 2FA cũ vẫn hoạt động cho\ntới khi bạn xác nhận mã mới).\nChính sách & đặt lại bởi quản trị viên: Quản trị hệ\nthống có thể bật bắt buộc 2FA cho nhóm Quản trị viên hoặc toàn bộ người\ndùng tại Quản trị → Cài đặt (tài khoản quản trị khởi tạo\nđược bảo vệ luôn được miễn bắt buộc để tránh tự khóa hệ thống), và có thể\nđặt lại 2FA của người dùng tại Quản trị → Người dùng (mọi\nthao tác đặt lại đều ghi nhật ký kiểm toán).\n),\n},"
  },
  {
   "id": "notifications",

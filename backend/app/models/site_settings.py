@@ -92,6 +92,10 @@ class SiteSettings(TimestampMixin, Base):
     #: Whether questions the wiki could not answer are kept for Administration > AI assistant >
     #: Unanswered questions. NULL = on. See ``ai.question_gaps``.
     record_unanswered_questions: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    #: Two-factor authentication enforcement policy: 'off' | 'admins' | 'all'.
+    require_2fa_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="off", server_default="off"
+    )
 
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True),
