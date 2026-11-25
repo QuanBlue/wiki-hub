@@ -128,6 +128,27 @@ async def test_an_option_the_gateway_rejects_is_dropped_and_the_request_repeated
     assert "reasoning_effort" not in bodies[-1] and "stream_options" not in bodies[-1]
 
 
+async def test_a_model_that_cannot_write_so_much_is_asked_for_less(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        asked.append(body["max_tokens"])
+        if body["max_tokens"] > 2048:
+            return httpx.Response(400, json={"error": "max_tokens is too large"})
+        return _sse(_chunk("fits"), "data: [DONE]\n\n")
+
+    _gateway(monkeypatch, handler)
+
+    pieces = [piece async for piece in chat_stream(CONFIG, MESSAGES, max_tokens=6500)]
+
+    assert pieces == ["fits"]
+    # The two optional hints are given up first, then room: halved, never below 2000.
+    assert asked == [6500, 6500, 6500, 3250, 2000]
+
+
 async def test_a_busy_gateway_is_retried_before_anything_is_shown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

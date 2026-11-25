@@ -79,7 +79,7 @@ you can already read, and has an hourly limit per person.
   Asking the same thing again while the pages are unchanged costs no model call.
 - **Chat with the AI assistant** - the sparkle button in the top bar of every page
   opens a panel where you can ask and follow up (`Enter` sends, `Shift+Enter` adds a
-  line). Answers stream in and cite wiki pages as in search. The panel can be dragged
+  line; questions typed while a reply is being written wait their turn). Answers stream in and cite wiki pages as in search. The panel can be dragged
   wider or narrower by its left edge, expanded to the whole page, and put away by
   clicking outside it. You can keep many chats: each is named after its first answer (rename
   or pin it as you like; clicking the name at the top of a wide panel renames it), found again
@@ -120,8 +120,10 @@ you can already read, and has an hourly limit per person.
   Nothing changes before that, it runs with your own permissions (a step you may not take is
   listed as not offered), it stops at the first step that fails, and each finished step has an
   *Open* link.
-  Under the box, *Detail* sets the length of answers: *Brief* (the key point), *Balanced* or
-  *Detailed* (steps, values, examples, limits). `Up` and `Down` in the box bring back the questions
+  Under the box, *Detail* sets the length of answers, as far as the source pages allow: *Brief*
+  (the key details, about 120-220 words), *Balanced* (steps, values, reasons and conditions, about
+  350-600) or *Detailed* (background, every step, examples, limits and troubleshooting, about
+  900-1600). `Up` and `Down` in the box bring back the questions
   you asked before; the caret goes to the end so you can edit and send. *Answer again* (under a
   question) asks once more and keeps the earlier answer as a version. *Stop* keeps the question,
   with what was written and a note that you cancelled it, and *Try again* asks it once more. The

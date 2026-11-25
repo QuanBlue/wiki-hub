@@ -3,7 +3,7 @@
  * one storage entry per thread, so writing one thread never rewrites the others.
  *
  *   wikihub:chat:v2:{userId}:index          -> { usedAt, active, threads: ThreadMeta[] }
- *   wikihub:chat:v2:{userId}:thread:{id}    -> { entries, slots, compact? }
+ *   wikihub:chat:v2:{userId}:thread:{id}    -> { entries, slots, compact?, queue? }
  *   wikihub:chat:v2:{userId}:files:{id}     -> files waiting in a thread's question box
  *   wikihub:chat:v2:{userId}:draft:{id}     -> words typed there and not sent
  *
@@ -24,6 +24,7 @@ import {
   LEGACY_CHAT_PREFIX,
   parseChatState,
   storableChatState,
+  type AttachedFile,
   type ChatState,
 } from "@/lib/ai-chat";
 import { isOpenName } from "@/lib/chat-vault";
@@ -52,7 +53,19 @@ export type ThreadCompact = {
   count: number;
 };
 
-export type ThreadData = ChatState & { compact?: ThreadCompact };
+/** A question typed while a reply was being written, waiting its turn. */
+export type QueuedQuestion = {
+  id: string;
+  content: string;
+  files?: AttachedFile[];
+  /** The one file it was to be answered from, when it was typed. */
+  scope?: string;
+};
+
+export type ThreadData = ChatState & {
+  compact?: ThreadCompact;
+  queue?: QueuedQuestion[];
+};
 
 type ChatIndex = {
   usedAt: number;
@@ -278,18 +291,31 @@ export function setActiveThread(userId: string, id: string | undefined): void {
   }));
 }
 
+const isQueued = (item: unknown): item is QueuedQuestion =>
+  !!item &&
+  typeof item === "object" &&
+  typeof (item as QueuedQuestion).id === "string" &&
+  typeof (item as QueuedQuestion).content === "string";
+
 /** A thread as it was kept; empty when there is none or it cannot be read. */
 export function loadThread(userId: string, id: string): ThreadData {
   const parsed = readJson(threadKey(userId, id));
   const state = parseChatState(parsed);
-  const compact = (parsed as { compact?: Partial<ThreadCompact> } | null)
-    ?.compact;
-  return compact &&
+  const { compact, queue } = (parsed ?? {}) as {
+    compact?: Partial<ThreadCompact>;
+    queue?: unknown;
+  };
+  const waiting = Array.isArray(queue) ? queue.filter(isQueued) : [];
+  return {
+    ...state,
+    ...(compact &&
     typeof compact.summary === "string" &&
     typeof compact.upTo === "string" &&
     typeof compact.count === "number"
-    ? { ...state, compact: compact as ThreadCompact }
-    : state;
+      ? { compact: compact as ThreadCompact }
+      : {}),
+    ...(waiting.length ? { queue: waiting } : {}),
+  };
 }
 
 /**
@@ -305,9 +331,11 @@ export function saveThread(userId: string, id: string, data: ThreadData): void {
     deleteThread(userId, id);
     return;
   }
-  const value = JSON.stringify(
-    data.compact ? { ...state, compact: data.compact } : state,
-  );
+  const value = JSON.stringify({
+    ...state,
+    ...(data.compact ? { compact: data.compact } : {}),
+    ...(data.queue?.length ? { queue: data.queue } : {}),
+  });
   let previous: string | null = null;
   try {
     previous = store.getItem(key);

@@ -26,6 +26,9 @@ _semaphore: asyncio.Semaphore | None = None
 #: Extra attempts, each with a doubled budget, when a reply was cut off.
 _RETRIES = 1
 
+#: A streamed request asking for no more room than this is not asked again with less.
+_SURE_TOKENS = 2000
+
 #: A busy or briefly unreachable gateway is worth a couple more tries: pauses
 #: (seconds) before each retry, so at most three attempts in all.
 _BACKOFF = (1.0, 2.0)
@@ -242,6 +245,12 @@ async def chat_stream(
                         await response.aread()
                         del body[rejected]
                         logger.info("ai_stream_hint_rejected", option=rejected)
+                        continue
+                    if body["max_tokens"] > _SURE_TOKENS:
+                        # More than this model may write, or than fits beside the question.
+                        await response.aread()
+                        body["max_tokens"] = max(_SURE_TOKENS, body["max_tokens"] // 2)
+                        logger.info("ai_stream_less_room", max_tokens=body["max_tokens"])
                         continue
                 response.raise_for_status()
                 if "json" in response.headers.get("content-type", ""):

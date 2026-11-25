@@ -367,7 +367,7 @@ async def test_a_brief_or_detailed_request_reaches_the_model_with_its_room_to_wr
         turn = await chat_module.ChatService(installed, owner).begin(request)
         [event async for event in turn.events()]
 
-    assert [tokens for tokens, _ in seen] == [700, 1800, 4000]
+    assert [tokens for tokens, _ in seen] == [1400, 3500, 6500]
     assert "SHORT" in seen[0][1] and "COMPLETE" in seen[1][1] and "DETAILED" in seen[2][1]
 
 

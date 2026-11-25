@@ -478,10 +478,13 @@ export const sectionsVi: HelpSection[] = [
             trong khung hoặc bấm dấu X.
           </li>
           <li>
-            <strong>Mức chi tiết.</strong> Dưới ô nhập, chọn <Code>Ngắn gọn</Code> (chỉ ý chính),{" "}
-            <Code>Vừa phải</Code> hoặc <Code>Chi tiết</Code> (các bước, giá trị, ví dụ và giới hạn).
-            Lựa chọn được nhớ trong trình duyệt này và áp dụng cho câu hỏi tiếp theo; muốn xem câu
-            trả lời cũ ở mức khác, đổi mức rồi bấm <Code>Trả lời lại</Code> ở câu hỏi.
+            <strong>Mức chi tiết.</strong> Dưới ô nhập, chọn <Code>Ngắn gọn</Code> (câu trả lời kèm
+            các chi tiết chính trong vài ý), <Code>Vừa phải</Code> (trả lời đầy đủ: các bước, giá
+            trị, lý do và điều kiện) hoặc <Code>Chi tiết</Code> (bài dài: bối cảnh, từng bước, ví dụ,
+            giới hạn và cách xử lý khi lỗi). Câu trả lời chỉ dài đến mức các trang nguồn cho phép, và
+            câu dài hơn thì viết lâu hơn. Lựa chọn được nhớ trong trình duyệt này và áp dụng cho câu
+            hỏi tiếp theo; muốn xem câu trả lời cũ ở mức khác, đổi mức rồi bấm{" "}
+            <Code>Trả lời lại</Code> ở câu hỏi.
           </li>
           <li>
             <strong>Câu hỏi trước đó.</strong> Trong ô nhập, bấm <Kbd>↑</Kbd> để nạp lại câu hỏi
@@ -513,6 +516,14 @@ export const sectionsVi: HelpSection[] = [
             hỏi. Với đoạn chat dài, các tin cũ được tự động tóm tắt (cũng tính vào hạn mức AI), và
             dòng <Code>Đã tóm tắt … tin nhắn trước để AI ghi nhớ</Code> đánh dấu vị trí; bấm vào để
             xem AI đang nhớ gì.
+          </li>
+          <li>
+            <strong>Hỏi nhiều câu liên tiếp.</strong> Không cần đợi trả lời xong: cứ gõ tiếp và
+            bấm <Kbd>Enter</Kbd> (hoặc nút xếp hàng cạnh nút <Code>Dừng</Code>). Tối đa 10 câu chờ
+            phía trên ô nhập và lần lượt được gửi khi có câu trả lời, đúng trong đoạn chat của chúng
+            kể cả khi bạn mở đoạn khác. Dấu <Code>×</Code> bỏ một câu khỏi hàng. Sau khi bạn bấm{" "}
+            <Code>Dừng</Code>, khi câu trả lời bị lỗi hoặc sau khi tải lại trang, các câu được giữ
+            lại cho tới khi bạn bấm <Code>Gửi ngay</Code>. Mỗi câu tính vào hạn mức AI lúc được gửi.
           </li>
           <li>
             <strong>Đoạn chat được lưu ở đâu.</strong> Chỉ trong trình duyệt này, theo tài khoản của
